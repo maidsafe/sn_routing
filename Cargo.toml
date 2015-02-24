@@ -1,0 +1,5 @@
+[package]
+
+name = "Routing"
+version = "0.0.1"
+authors = ["David Irvine <david.irvine@maidsafe.net>"]
