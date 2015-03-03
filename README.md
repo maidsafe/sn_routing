@@ -9,6 +9,8 @@ Travis build and test status
 
 ##Todo Items
 
+- [x] Set up facade design pattern
+- [x] Test facade pattern
 - [ ] Allow Sha512 has as ID type
 - [ ] Create sort and bucket index methods 
 - [ ] Implement routing table

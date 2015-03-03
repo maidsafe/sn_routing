@@ -16,33 +16,56 @@
 
 mod routing_table;
 use std::marker::MarkerTrait;
-trait Foo : MarkerTrait {}
-/*  */
-/* struct MyFoo; */
-/*  */
-/* impl Foo for MyFoo {} */
-/*  */
-struct Bar<'a> {
-foo: &'a (Foo + 'a),
-}
 
-impl<'a> Bar<'a> {
-  fn new(the_foo: &'a Foo) -> Bar<'a> {
-    Bar { foo: the_foo }
+trait Facade : MarkerTrait {
+  fn add(&mut self);
   }
 
-  fn get_foo(&'a self) -> &'a Foo {
-    self.foo
+struct RoutingNode<'a> {
+facade: &'a (Facade + 'a),
+}
+
+impl<'a> RoutingNode<'a> {
+  fn new(my_facade: &'a Facade) -> RoutingNode<'a> {
+    RoutingNode { facade: my_facade }
+  }
+
+  fn get_foo(&'a self) -> &'a Facade {
+    self.facade
   }
 }
 
 
-/* fn() { */
-/*     let myfoo = MyFoo; */
-/*     let mybar = Bar::new(&myfoo as &Foo); */
-/* } */
 
 
 #[test]
-fn it_works() {
+fn facade_implementation() {
+  struct ImmutableData {
+    name: String,
+    content: String,
+    tag: u8
+    }
+
+  struct MutableData {
+    name: String,
+    content: String,
+    tag: u8
+    }
+
+  enum DataTypes {
+    ImmutableData,
+    MutableData
+    }
+
+  struct MyFacade {
+    data_types: DataTypes,
+    persona: u8,
+    }
+  
+  impl Facade for MyFacade {
+    fn add(&mut self) {
+      self.persona += 1
+      }
+    } 
+
 }
