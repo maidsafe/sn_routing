@@ -17,21 +17,25 @@
 mod routing_table;
 use std::marker::MarkerTrait;
 
-trait Facade : MarkerTrait {
-  fn add(&mut self);
+trait Facade {
+  fn add(&mut self)->u32;
   }
 
 struct RoutingNode<'a> {
-facade: &'a (Facade + 'a),
+facade: &'a mut (Facade + 'a),
 }
 
 impl<'a> RoutingNode<'a> {
-  fn new(my_facade: &'a Facade) -> RoutingNode<'a> {
+  fn new(my_facade: &'a mut Facade) -> RoutingNode<'a> {
     RoutingNode { facade: my_facade }
   }
 
-  fn get_foo(&'a self) -> &'a Facade {
+  fn get_foo(&'a mut self) -> &'a mut Facade {
     self.facade
+  }
+  fn add(mut self)->u32 {
+     self.facade.add()
+
   }
 }
 
@@ -40,32 +44,15 @@ impl<'a> RoutingNode<'a> {
 
 #[test]
 fn facade_implementation() {
-  struct ImmutableData {
-    name: String,
-    content: String,
-    tag: u8
-    }
 
-  struct MutableData {
-    name: String,
-    content: String,
-    tag: u8
-    }
-
-  enum DataTypes {
-    ImmutableData,
-    MutableData
-    }
-
-  struct MyFacade {
-    data_types: DataTypes,
-    persona: u8,
-    }
+  struct MyFacade;
   
   impl Facade for MyFacade {
-    fn add(&mut self) {
-      self.persona += 1
+    fn add(&mut self)->u32 {
+      999u32
       }
     } 
-
+  let mut my_facade = MyFacade;
+  let mut my_routing = RoutingNode::new(& mut my_facade as & mut Facade);
+  assert_eq!(999, my_routing.get_foo().add()); 
 }
