@@ -18,7 +18,9 @@ mod routing_table;
 use std::marker::MarkerTrait;
 
 trait Facade {
-  fn add(&mut self)->u32;
+  fn handle_get_response(&mut self)->u32;
+  fn handle_put_response(&self);
+  fn handle_post_response(&self);
   }
 
 struct RoutingNode<'a> {
@@ -30,11 +32,11 @@ impl<'a> RoutingNode<'a> {
     RoutingNode { facade: my_facade }
   }
 
-  fn get_foo(&'a mut self) -> &'a mut Facade {
+  fn get_facade(&'a mut self) -> &'a mut Facade {
     self.facade
   }
   fn add(mut self)->u32 {
-     self.facade.add()
+     self.facade.handle_get_response()
 
   }
 }
@@ -48,11 +50,13 @@ fn facade_implementation() {
   struct MyFacade;
   
   impl Facade for MyFacade {
-    fn add(&mut self)->u32 {
+    fn handle_get_response(&mut self)->u32 {
       999u32
       }
+    fn handle_put_response(&self) {}
+    fn handle_post_response(&self) {}  
     } 
   let mut my_facade = MyFacade;
-  let mut my_routing = RoutingNode::new(& mut my_facade as & mut Facade);
-  assert_eq!(999, my_routing.get_foo().add()); 
+  let mut my_routing = RoutingNode::new(&mut my_facade as &mut Facade);
+  assert_eq!(999, my_routing.get_facade().handle_get_response()); 
 }
