@@ -13,9 +13,10 @@
     use of the MaidSafe
     Software.                                                                 */
 
-
+extern crate utp;
 mod routing_table;
-use std::marker::MarkerTrait;
+
+struct Address([u8; 64]);
 
 trait Facade {
   fn handle_get_response(&mut self)->u32;
@@ -31,6 +32,12 @@ impl<'a> RoutingNode<'a> {
   fn new(my_facade: &'a mut Facade) -> RoutingNode<'a> {
     RoutingNode { facade: my_facade }
   }
+  
+  pub fn get(&self, name: Address) {}
+  pub fn put(&self, name: Address, content: Vec<u8>) {}
+  pub fn post(&self, name: Address, content: Vec<u8>) {}
+  fn add_bootstrap(&self) {}
+
 
   fn get_facade(&'a mut self) -> &'a mut Facade {
     self.facade
