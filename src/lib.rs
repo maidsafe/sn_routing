@@ -49,8 +49,6 @@ impl<'a> RoutingNode<'a> {
 }
 
 
-
-
 #[test]
 fn facade_implementation() {
 

@@ -16,3 +16,6 @@ rand = "0.1.3"
 
 [dependencies.utp]
 git = "https://github.com/dirvine/rust-utp"
+
+[dependencies.sodiumoxide]
+git = "https://github.com/dnaq/sodiumoxide"
