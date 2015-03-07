@@ -13,18 +13,35 @@
     use of the MaidSafe
     Software.                                                                 */
 
-extern crate utp;
-mod routing_table;
+//! The main API for routing nodes (this is where you give the network it's rules)
+//! The network will report **From Authority your Authority** and validate cryptographically
+//! and via group consensus any message. This means any facade you implement will set out 
+//! what you deem to be a valid operation, routing will provide a valid message sender and authority
+//! that will allow you to set up many decentralised services
+//! See maidsafe.net to see what thye are doing as an example
+//! # Use
+#![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
+       html_favicon_url = "http://maidsafe.net/img/favicon.ico",
+              html_root_url = "http://doc.rust-lang.org/log/")]
+#![warn(missing_docs)]
+#![feature(io, collections, slicing_syntax)]
 
-struct Address([u8; 64]);
+extern crate utp;
+use utp::UtpStream;
+use std::old_io::net::ip::{Ipv4Addr, SocketAddr};
+mod types;
+
+struct IpAddress { address: Ipv4Addr, port: u32 }
 
 trait Facade {
-  fn handle_get_response(&mut self)->u32;
+  fn handle_get_response(&self)->u32;
   fn handle_put_response(&self);
   fn handle_post_response(&self);
   }
 
-struct RoutingNode<'a> {
+
+
+pub struct RoutingNode<'a> {
 facade: &'a mut (Facade + 'a),
 }
 
@@ -32,17 +49,28 @@ impl<'a> RoutingNode<'a> {
   fn new(my_facade: &'a mut Facade) -> RoutingNode<'a> {
     RoutingNode { facade: my_facade }
   }
-  
-  pub fn get(&self, name: Address) {}
-  pub fn put(&self, name: Address, content: Vec<u8>) {}
-  pub fn post(&self, name: Address, content: Vec<u8>) {}
+
+  /// Retreive something from the network (non mutating)   
+  pub fn get(&self, name: types::DhtAddress) {}
+
+  /// Add something to the network 
+  pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) {}
+
+  /// Mutate something on the network (you must prove ownership)
+  pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) {}
+
   fn add_bootstrap(&self) {}
 
 
   fn get_facade(&'a mut self) -> &'a mut Facade {
     self.facade
   }
-  fn add(mut self)->u32 {
+  
+  fn receive_message() {
+    
+    }
+
+  fn add(self)->u32 {
      self.facade.handle_get_response()
 
   }
@@ -55,10 +83,10 @@ fn facade_implementation() {
   struct MyFacade;
   
   impl Facade for MyFacade {
-    fn handle_get_response(&mut self)->u32 {
+    fn handle_get_response(&self)->u32 {
       999u32
       }
-    fn handle_put_response(&self) {}
+    fn handle_put_response(&self) { unimplemented!(); }
     fn handle_post_response(&self) {}  
     } 
   let mut my_facade = MyFacade;
