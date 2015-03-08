@@ -59,10 +59,10 @@ impl<'a> RoutingNode<'a> {
       Ok(x) => x,
       Err(_) => TcpListener::bind(any_address).unwrap()
     };
-    let mut utp_stream =  /* match */  UtpStream::bind(live_address); // {
-    /*   Ok(x) => x, */
-    /*   Err(_) => UtpStream::bind(any_address).unwrap() */
-    /* }; */
+    let mut utp_stream =   match  UtpStream::bind(live_address)  {
+      Ok(x) => x,
+      Err(_) => UtpStream::bind(any_address).unwrap()
+    };
     let mut writer = stdout();
     // TODO(dirvine) when socket_add() is implemented again use this below  :07/03/2015
     let _ = writeln!(&mut stderr(), "Serving Tcp on {}", live_address);
