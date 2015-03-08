@@ -29,11 +29,9 @@
 
 extern crate utp;
 use utp::UtpStream;
-use std::old_io::net::ip::{Ipv4Addr, SocketAddr};
-use std::old_io::{TcpListener, TcpStream};
-use std::old_io::{Acceptor, Listener};
+use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr};
 use std::str::FromStr;
-use std::old_io::{stdin, stdout, stderr};
+use std::io::{stdin, stdout, stderr, Write};
 use std::thread;
 mod types;
 
@@ -44,36 +42,38 @@ trait Facade {
   fn handle_post_response(&self);
   }
 
-
+unsafe impl<'a> Sync for RoutingNode<'a> { }
 /// DHT node 
 pub struct RoutingNode<'a> {
-facade: &'a mut (Facade + 'a),
-
+facade: &'a (Facade + 'a),
+/* utp: UtpStream, */
+tcp: TcpListener
 }
 
 impl<'a> RoutingNode<'a> {
-  fn new(my_facade: &'a mut Facade) -> RoutingNode<'a> {
-    let live_address = SocketAddr { ip: Ipv4Addr(127,0,0,1), port: 5483 };
-    let any_address = SocketAddr { ip: Ipv4Addr(127,0,0,1), port: 0 };
-    let mut tcp_listener = match TcpListener::bind(live_address) {
+  fn new(my_facade: &'a Facade) -> RoutingNode<'a> {
+    let live_address = SocketAddr::new(IpAddr::new_v4(127,0,0,1), 5483);
+    let any_address = SocketAddr::new(IpAddr::new_v4(127,0,0,1), 0);
+    let mut tcp_listener = match TcpListener::bind(&live_address) {
       Ok(x) => x,
-      Err(_) => TcpListener::bind(any_address).unwrap()
+      Err(_) => TcpListener::bind(&any_address).unwrap()
     };
-    let mut utp_stream =   match  UtpStream::bind(live_address)  {
-      Ok(x) => x,
-      Err(_) => UtpStream::bind(any_address).unwrap()
-    };
+    // [TODO]: Wait of Utp updating to std::net - 2015-03-08 01:11pm
+    /* let mut utp_stream =   match  UtpStream::bind(&live_address)  { */
+    /*   Ok(x) => x, */
+    /*   Err(_) => UtpStream::bind(&any_address).unwrap() */
+    /* }; */
     let mut writer = stdout();
     // TODO(dirvine) when socket_add() is implemented again use this below  :07/03/2015
-    let _ = writeln!(&mut stderr(), "Serving Tcp on {}", live_address);
-    let _ = writeln!(&mut stderr(), "Serving Utp on {}", live_address);
+    let _ = writeln!(&mut stderr(), "Serving Tcp on {}", &live_address);
+    let _ = writeln!(&mut stderr(), "Serving Utp on {}", &live_address);
     
-    let mut tcp_acceptor = tcp_listener.listen().unwrap(); //_or(panic!("cannot listen tcp port"));
+    /* let mut tcp_acceptor = tcp_listener.listen().unwrap(); //_or(panic!("cannot listen tcp port")); */
     /* let mut utp_acceptor = utp_listener.listen().unwrap_or(panic!("cannot listen tcp port")); */
 
 
 
-    RoutingNode { facade: my_facade }
+    RoutingNode { facade: my_facade, /* utp: utp_stream,  */tcp: tcp_listener }
   }
 
   /// Retreive something from the network (non mutating)   
@@ -84,31 +84,35 @@ impl<'a> RoutingNode<'a> {
 
   /// Mutate something on the network (you must prove ownership)
   pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) {}
+  
+  pub fn start() {
+    
+  }
+  
+  fn tcp_listener(&self) {
 
-
-  /* fn handle_tcp_message(&self, tcp_acceptor: TcpAcceptor) { */
-  /*   thread::spawn(move || { */
-  /*     for stream in tcp_acceptor.incoming() { */
-  /*       match stream { */
-  /*       Ok(stream) => { */
-  /*       thread::spawn(move|| { */
-  /*         // connection succeeded */
-  /*         RoutingNode::handle_tcp_message(self, stream) */
-  /*         }); */
-  /*       } */
-  /*       Err(e) => { /* connection failed */ } */
-  /*       } */
-  /*     }}); */
-  /*   } */
+    /* thread::spawn(move || { */
+    /*   for stream in self.tcp.read() { */
+    /*     match stream { */
+    /*     Ok(stream) => { */
+    /*     thread::spawn(move|| { */
+    /*       // connection succeeded */
+    /*       self.receive_tcp_message(stream) */
+    /*       }); */
+    /*     } */
+    /*     Err(e) => { /* connection failed */ } */
+    /*     } */
+    /*   }}); */
+    }
 
   fn add_bootstrap(&self) {}
 
 
-  fn get_facade(&'a mut self) -> &'a mut Facade {
+  fn get_facade(&'a mut self) -> &'a Facade {
     self.facade
   }
   
-  fn receive_message() {
+  fn receive_tcp_message(&self, message: TcpStream) {
     
     }
 
@@ -131,7 +135,7 @@ fn facade_implementation() {
     fn handle_put_response(&self) { unimplemented!(); }
     fn handle_post_response(&self) {}  
     } 
-  let mut my_facade = MyFacade;
-  let mut my_routing = RoutingNode::new(&mut my_facade as &mut Facade);
+  let my_facade = MyFacade;
+  let mut my_routing = RoutingNode::new(&my_facade as & Facade);
   assert_eq!(999, my_routing.get_facade().handle_get_response()); 
 }
