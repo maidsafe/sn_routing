@@ -20,6 +20,7 @@
 //! that will allow you to set up many decentralised services
 //! See maidsafe.net to see what thye are doing as an example
 //! # Use
+
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://doc.rust-lang.org/log/")]
@@ -29,9 +30,13 @@
 extern crate utp;
 use utp::UtpStream;
 use std::old_io::net::ip::{Ipv4Addr, SocketAddr};
+use std::old_io::{TcpListener, TcpStream};
+use std::old_io::{Acceptor, Listener};
+use std::str::FromStr;
+use std::old_io::{stdin, stdout, stderr};
+use std::thread;
 mod types;
 
-struct IpAddress { address: Ipv4Addr, port: u32 }
 
 trait Facade {
   fn handle_get_response(&self)->u32;
@@ -40,13 +45,34 @@ trait Facade {
   }
 
 
-
+/// DHT node 
 pub struct RoutingNode<'a> {
 facade: &'a mut (Facade + 'a),
+
 }
 
 impl<'a> RoutingNode<'a> {
   fn new(my_facade: &'a mut Facade) -> RoutingNode<'a> {
+    let live_address = SocketAddr { ip: Ipv4Addr(127,0,0,1), port: 5483 };
+    let any_address = SocketAddr { ip: Ipv4Addr(127,0,0,1), port: 0 };
+    let mut tcp_listener = match TcpListener::bind(live_address) {
+      Ok(x) => x,
+      Err(_) => TcpListener::bind(any_address).unwrap()
+    };
+    let mut utp_stream =  /* match */  UtpStream::bind(live_address); // {
+    /*   Ok(x) => x, */
+    /*   Err(_) => UtpStream::bind(any_address).unwrap() */
+    /* }; */
+    let mut writer = stdout();
+    // TODO(dirvine) when socket_add() is implemented again use this below  :07/03/2015
+    let _ = writeln!(&mut stderr(), "Serving Tcp on {}", live_address);
+    let _ = writeln!(&mut stderr(), "Serving Utp on {}", live_address);
+    
+    let mut tcp_acceptor = tcp_listener.listen().unwrap(); //_or(panic!("cannot listen tcp port"));
+    /* let mut utp_acceptor = utp_listener.listen().unwrap_or(panic!("cannot listen tcp port")); */
+
+
+
     RoutingNode { facade: my_facade }
   }
 
@@ -58,6 +84,22 @@ impl<'a> RoutingNode<'a> {
 
   /// Mutate something on the network (you must prove ownership)
   pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) {}
+
+
+  /* fn handle_tcp_message(&self, tcp_acceptor: TcpAcceptor) { */
+  /*   thread::spawn(move || { */
+  /*     for stream in tcp_acceptor.incoming() { */
+  /*       match stream { */
+  /*       Ok(stream) => { */
+  /*       thread::spawn(move|| { */
+  /*         // connection succeeded */
+  /*         RoutingNode::handle_tcp_message(self, stream) */
+  /*         }); */
+  /*       } */
+  /*       Err(e) => { /* connection failed */ } */
+  /*       } */
+  /*     }}); */
+  /*   } */
 
   fn add_bootstrap(&self) {}
 
