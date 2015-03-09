@@ -41,8 +41,9 @@ mod types;
 
 #[derive(RustEncodable,RustDecodable)]
 struct SignedKey {
-public_key: crypto::sign::PublicKey,
-signature: Vec<u8>  
+sign_public_key: crypto::sign::PublicKey,
+encrypt_public_key: crypto::asymmetricbox::PublicKey,
+signature: crypto::sign::Signature // detached signature  
   }
 
 trait Facade {
@@ -56,8 +57,10 @@ pub struct RoutingNode<'a> {
 facade: &'a (Facade + 'a),
 /* utp: UtpStream, */
 tcp: TcpListener,
-public_key: crypto::sign::PublicKey,
-secret_key: crypto::sign::SecretKey,
+sign_public_key: crypto::sign::PublicKey,
+sign_secret_key: crypto::sign::SecretKey,
+encrypt_public_key: crypto::asymmetricbox::PublicKey,
+encrypt_secret_key: crypto::asymmetricbox::SecretKey,
 }
 
 impl<'a> RoutingNode<'a> {
@@ -78,9 +81,12 @@ impl<'a> RoutingNode<'a> {
     /* let _ = writeln!(&mut stderr(), "Serving Utp on {}", &live_address); */
     sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
     let key_pair = crypto::sign::gen_keypair(); 
+    let encrypt_key_pair = crypto::asymmetricbox::gen_keypair(); 
       
 
-    RoutingNode { facade: my_facade, /* utp: utp_stream,  */tcp: tcp_listener, public_key: key_pair.0, secret_key: key_pair.1 }
+    RoutingNode { facade: my_facade, /* utp: utp_stream,  */tcp: tcp_listener, 
+                  sign_public_key: key_pair.0, sign_secret_key: key_pair.1,
+                  encrypt_public_key: encrypt_key_pair.0, encrypt_secret_key: encrypt_key_pair.1 }
   }
 
   /// Retreive something from the network (non mutating)   
@@ -136,12 +142,10 @@ fn facade_implementation() {
   struct MyFacade;
   
   impl Facade for MyFacade {
-    fn handle_get_response(&self)->u32 {
-      999u32
-      }
+    fn handle_get_response(&self)->u32 { 999u32 }
     fn handle_put_response(&self) { unimplemented!(); }
-    fn handle_post_response(&self) {}  
-    } 
+    fn handle_post_response(&self) { unimplemented!(); }  
+  } 
   let my_facade = MyFacade;
   let mut my_routing = RoutingNode::new(&my_facade as & Facade);
   assert_eq!(999, my_routing.get_facade().handle_get_response()); 
