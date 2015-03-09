@@ -35,7 +35,7 @@ use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::io::{stdin, stdout, stderr, Write};
 use std::thread;
-
+use sodiumoxide::*;
 mod types;
 
 
@@ -49,7 +49,9 @@ trait Facade {
 pub struct RoutingNode<'a> {
 facade: &'a (Facade + 'a),
 /* utp: UtpStream, */
-tcp: TcpListener
+tcp: TcpListener,
+public_key: sodiumoxide::crypto::sign::PublicKey,
+secret_key: sodiumoxide::crypto::sign::SecretKey,
 }
 
 impl<'a> RoutingNode<'a> {
@@ -68,10 +70,11 @@ impl<'a> RoutingNode<'a> {
     let mut writer = stdout();
     let _ = writeln!(&mut stderr(), "Serving Tcp on {:?}", tcp_listener.socket_addr());
     /* let _ = writeln!(&mut stderr(), "Serving Utp on {}", &live_address); */
-   
-  
+    sodiumoxide::init();
+    let key_pair = sodiumoxide::crypto::sign::gen_keypair(); 
+      
 
-    RoutingNode { facade: my_facade, /* utp: utp_stream,  */tcp: tcp_listener }
+    RoutingNode { facade: my_facade, /* utp: utp_stream,  */tcp: tcp_listener, public_key: key_pair.0, secret_key: key_pair.1 }
   }
 
   /// Retreive something from the network (non mutating)   
