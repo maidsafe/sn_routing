@@ -99,17 +99,17 @@ impl<'a> RoutingNode<'a> {
   fn tcp_listener(&self) {
 
     /* thread::spawn(move || { */
-    /*   for stream in self.tcp.read() { */
-    /*     match stream { */
-    /*     Ok(stream) => { */
-    /*     thread::spawn(move|| { */
-    /*       // connection succeeded */
-    /*       self.receive_tcp_message(stream) */
-    /*       }); */
-    /*     } */
-    /*     Err(e) => { /* connection failed */ } */
-    /*     } */
-    /*   }}); */
+      /* for stream in self.tcp.read() { */
+      /*   match stream { */
+      /*   Ok(stream) => { */
+      /*   thread::spawn(move|| { */
+      /*     // connection succeeded */
+      /*     self.receive_tcp_message(stream) */
+      /*     }); */
+      /*   } */
+      /*   Err(e) => { /* connection failed */ } */
+      /*   } */
+      /* }; */
     }
 
   fn add_bootstrap(&self) {}
