@@ -1,1 +1,15 @@
+env:
+  global:
+      - secure: QP358h7Zk6GN+IyaLBngDOPuafL7uWQcjhKZCpQ6R6ywFQpozuRRb9HxltBYKnjHrpshxxWuP6IeGMtvSWrr1/Zz/zqx8rtso3zEq69gMj3cI8n4TuW1ll1DFBNL/Ajr413oE64RQY1ECbAWZ4eJ+mJhPu06PvzDIo4AjRurC84=
 language: rust
+install:
+    - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
+    - tar xvfz libsodium-1.0.0.tar.gz
+    - cd libsodium-1.0.0 && ./configure --prefix=/usr && make && sudo make install && cd ..
+script:
+    - cargo build --verbose
+    - cargo test --verbose
+    - cargo doc
+after_script:
+    - mv target/doc doc
+    - curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
