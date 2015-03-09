@@ -25,19 +25,25 @@
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://doc.rust-lang.org/log/")]
 #![warn(missing_docs)]
-#![feature(io, collections, slicing_syntax)]
+#![feature(io, collections, slicing_syntax, custom_derive)]
 
 extern crate utp;
 extern crate sodiumoxide;
+extern crate msgpack;
 
 use utp::UtpStream;
 use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::io::{stdin, stdout, stderr, Write};
 use std::thread;
-use sodiumoxide::*;
+use sodiumoxide::crypto;
 mod types;
 
+#[derive(RustEncodable,RustDecodable)]
+struct SignedKey {
+public_key: crypto::sign::PublicKey,
+signature: Vec<u8>  
+  }
 
 trait Facade {
   fn handle_get_response(&self)->u32;
@@ -50,8 +56,8 @@ pub struct RoutingNode<'a> {
 facade: &'a (Facade + 'a),
 /* utp: UtpStream, */
 tcp: TcpListener,
-public_key: sodiumoxide::crypto::sign::PublicKey,
-secret_key: sodiumoxide::crypto::sign::SecretKey,
+public_key: crypto::sign::PublicKey,
+secret_key: crypto::sign::SecretKey,
 }
 
 impl<'a> RoutingNode<'a> {
@@ -70,8 +76,8 @@ impl<'a> RoutingNode<'a> {
     let mut writer = stdout();
     let _ = writeln!(&mut stderr(), "Serving Tcp on {:?}", tcp_listener.socket_addr());
     /* let _ = writeln!(&mut stderr(), "Serving Utp on {}", &live_address); */
-    sodiumoxide::init();
-    let key_pair = sodiumoxide::crypto::sign::gen_keypair(); 
+    sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
+    let key_pair = crypto::sign::gen_keypair(); 
       
 
     RoutingNode { facade: my_facade, /* utp: utp_stream,  */tcp: tcp_listener, public_key: key_pair.0, secret_key: key_pair.1 }

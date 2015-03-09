@@ -19,3 +19,6 @@ git = "https://github.com/dirvine/rust-utp"
 
 [dependencies.sodiumoxide]
 git = "https://github.com/dnaq/sodiumoxide"
+
+[dependencies.msgpack]
+git = "https://github.com/mneumann/rust-msgpack"
