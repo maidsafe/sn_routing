@@ -28,11 +28,14 @@
 #![feature(io, collections, slicing_syntax)]
 
 extern crate utp;
+//extern crate sodiumoxide;
+
 use utp::UtpStream;
 use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::io::{stdin, stdout, stderr, Write};
 use std::thread;
+
 mod types;
 
 
@@ -42,7 +45,6 @@ trait Facade {
   fn handle_post_response(&self);
   }
 
-unsafe impl<'a> Sync for RoutingNode<'a> { }
 /// DHT node 
 pub struct RoutingNode<'a> {
 facade: &'a (Facade + 'a),
@@ -64,14 +66,10 @@ impl<'a> RoutingNode<'a> {
     /*   Err(_) => UtpStream::bind(&any_address).unwrap() */
     /* }; */
     let mut writer = stdout();
-    // TODO(dirvine) when socket_add() is implemented again use this below  :07/03/2015
-    let _ = writeln!(&mut stderr(), "Serving Tcp on {}", &live_address);
-    let _ = writeln!(&mut stderr(), "Serving Utp on {}", &live_address);
-    
-    /* let mut tcp_acceptor = tcp_listener.listen().unwrap(); //_or(panic!("cannot listen tcp port")); */
-    /* let mut utp_acceptor = utp_listener.listen().unwrap_or(panic!("cannot listen tcp port")); */
-
-
+    let _ = writeln!(&mut stderr(), "Serving Tcp on {:?}", tcp_listener.socket_addr());
+    /* let _ = writeln!(&mut stderr(), "Serving Utp on {}", &live_address); */
+   
+     
 
     RoutingNode { facade: my_facade, /* utp: utp_stream,  */tcp: tcp_listener }
   }
