@@ -29,6 +29,7 @@
 
 extern crate utp;
 extern crate sodiumoxide;
+extern crate "rustc-serialize" as rustc_serialize;
 extern crate msgpack;
 
 use utp::UtpStream;
@@ -39,12 +40,25 @@ use std::thread;
 use sodiumoxide::crypto;
 mod types;
 
-#[derive(RustEncodable,RustDecodable)]
+//#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
 sign_public_key: crypto::sign::PublicKey,
 encrypt_public_key: crypto::asymmetricbox::PublicKey,
 signature: crypto::sign::Signature // detached signature  
-  }
+}
+
+//#[derive(RustcEncodable, RustcDecodable)]
+struct DhtIdentity {
+signed_key: SignedKey,  
+}
+
+impl DhtIdentity {
+  /* fn name(&self) { */
+  /*  msgpack::Encoder::to_msgpack(&self.signed_key).ok().unwrap()  */
+  /* }   */
+  
+}
+
 
 trait Facade {
   fn handle_get_response(&self)->u32;
