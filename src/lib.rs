@@ -27,18 +27,20 @@
 #![warn(missing_docs)]
 #![feature(io, collections, slicing_syntax, custom_derive)]
 
-extern crate utp;
 extern crate sodiumoxide;
 extern crate "rustc-serialize" as rustc_serialize;
 extern crate msgpack;
+extern crate utp;
 
-use utp::UtpStream;
-use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::io::{stdin, stdout, stderr, Write};
+use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr};
 use std::thread;
 use sodiumoxide::crypto;
+use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver};
 mod types;
+mod connections;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
@@ -60,7 +62,7 @@ impl DhtIdentity {
 }
 
 
-trait Facade {
+trait Facade : Sync {
   fn handle_get_response(&self)->u32;
   fn handle_put_response(&self);
   fn handle_post_response(&self);
@@ -69,38 +71,24 @@ trait Facade {
 /// DHT node 
 pub struct RoutingNode<'a> {
 facade: &'a (Facade + 'a),
-/* utp: UtpStream, */
-tcp: TcpListener,
 sign_public_key: crypto::sign::PublicKey,
 sign_secret_key: crypto::sign::SecretKey,
 encrypt_public_key: crypto::asymmetricbox::PublicKey,
 encrypt_secret_key: crypto::asymmetricbox::SecretKey,
+sender: Sender<TcpStream>, 
+receiver: Receiver<TcpStream>
 }
 
 impl<'a> RoutingNode<'a> {
   fn new(my_facade: &'a Facade) -> RoutingNode<'a> {
-    let live_address = SocketAddr::new(IpAddr::new_v4(127,0,0,1), 5483);
-    let any_address = SocketAddr::new(IpAddr::new_v4(127,0,0,1), 0);
-    let mut tcp_listener = match TcpListener::bind(&live_address) {
-      Ok(x) => x,
-      Err(_) => TcpListener::bind(&any_address).unwrap()
-    };
-    // [TODO]: Wait of Utp updating to std::net - 2015-03-08 01:11pm
-    /* let mut utp_stream =   match  UtpStream::bind(&live_address)  { */
-    /*   Ok(x) => x, */
-    /*   Err(_) => UtpStream::bind(&any_address).unwrap() */
-    /* }; */
-    let mut writer = stdout();
-    let _ = writeln!(&mut stderr(), "Serving Tcp on {:?}", tcp_listener.socket_addr());
-    /* let _ = writeln!(&mut stderr(), "Serving Utp on {}", &live_address); */
     sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
     let key_pair = crypto::sign::gen_keypair(); 
     let encrypt_key_pair = crypto::asymmetricbox::gen_keypair(); 
-      
+    let (tx, rx) : (Sender<TcpStream>, Receiver<TcpStream>) = mpsc::channel();
 
-    RoutingNode { facade: my_facade, /* utp: utp_stream,  */tcp: tcp_listener, 
+    RoutingNode { facade: my_facade, 
                   sign_public_key: key_pair.0, sign_secret_key: key_pair.1,
-                  encrypt_public_key: encrypt_key_pair.0, encrypt_secret_key: encrypt_key_pair.1 }
+                  encrypt_public_key: encrypt_key_pair.0, encrypt_secret_key: encrypt_key_pair.1, sender: tx, receiver: rx }
   }
 
   /// Retreive something from the network (non mutating)   
@@ -116,32 +104,12 @@ impl<'a> RoutingNode<'a> {
     
   }
   
-  fn tcp_listener(&self) {
-
-    /* thread::spawn(move || { */
-      /* for stream in self.tcp.read() { */
-      /*   match stream { */
-      /*   Ok(stream) => { */
-      /*   thread::spawn(move|| { */
-      /*     // connection succeeded */
-      /*     self.receive_tcp_message(stream) */
-      /*     }); */
-      /*   } */
-      /*   Err(e) => { /* connection failed */ } */
-      /*   } */
-      /* }; */
-    }
-
   fn add_bootstrap(&self) {}
 
 
   fn get_facade(&'a mut self) -> &'a Facade {
     self.facade
   }
-  
-  fn receive_tcp_message(&self, message: TcpStream) {
-    
-    }
 
   fn add(self)->u32 {
      self.facade.handle_get_response()
