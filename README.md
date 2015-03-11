@@ -10,5 +10,4 @@ Appveyor build status (Windows)
 
 [Documentation](http://dirvine.github.io/maidsafe_vault/)
 
-
 #Todo
