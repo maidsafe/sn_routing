@@ -6,7 +6,7 @@ Travis build status
 
 Appveyor build status (Windows)
 
-[![Build status](https://ci.appveyor.com/api/projects/status/l8obw1n8n7uec1yu?svg=true)](https://ci.appveyor.com/project/dirvine/maidsafe-vault)
+[![Build status](https://ci.appveyor.com/api/projects/status/qglf0d3o28mxid6k?svg=true)](https://ci.appveyor.com/project/dirvine/maidsafe-vault-hyyvf)
 
 [Documentation](http://dirvine.github.io/maidsafe_vault/)
 
