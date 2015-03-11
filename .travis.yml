@@ -1,6 +1,6 @@
 env:
   global:
-      - secure: QP358h7Zk6GN+IyaLBngDOPuafL7uWQcjhKZCpQ6R6ywFQpozuRRb9HxltBYKnjHrpshxxWuP6IeGMtvSWrr1/Zz/zqx8rtso3zEq69gMj3cI8n4TuW1ll1DFBNL/Ajr413oE64RQY1ECbAWZ4eJ+mJhPu06PvzDIo4AjRurC84=
+    secure: HPse/b5ho65gPE2nkOzHAaaeJSpp4Bg/+itrXt3422Cy8xJNzqJ9GiCBHS6lFYSgLQq9jj9BTW2mSUC9pV+oy2QUsg+8xiCNOreP9jP+U4YmqwHE2NTpRsiPsoSYBdcnUgoxetgFegtMdE71xkArV2qgtDF+Welp1qLHgAMuAa8=
 language: rust
 install:
     - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
@@ -10,6 +10,11 @@ script:
     - cargo build --verbose
     - cargo test --verbose
     - cargo doc
-after_script:
-    - mv target/doc doc
-    - curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
+after_success: |
+  [ $TRAVIS_BRANCH = master ] &&
+  [ $TRAVIS_PULL_REQUEST = false ] &&
+  cargo doc &&
+  echo "<meta http-equiv=refresh content=0;url=`echo $TRAVIS_REPO_SLUG | cut -d '/' -f 2`/index.html>" > target/doc/index.html &&
+  sudo pip install ghp-import &&
+  ghp-import -n target/doc &&
+  git push -fq https://${GH_TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git gh-pages
