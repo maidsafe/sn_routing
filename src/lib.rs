@@ -29,7 +29,7 @@
 
 extern crate sodiumoxide;
 extern crate "rustc-serialize" as rustc_serialize;
-extern crate msgpack;
+extern crate cbor;
 extern crate utp;
 
 use std::str::FromStr;
