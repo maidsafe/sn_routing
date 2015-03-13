@@ -77,6 +77,20 @@ NaeManager,
 NodeManager  
 }
 
+pub enum GetReply {
+  Data(Vec<u8>),
+  SendOn(DhtIdentity)
+}
+
+pub enum PutPostReply {
+  Data(Vec<u8>),
+  SendOn(DhtIdentity)
+}
+
+pub enum RoutingError {
+NoData,
+InvalidRequest  
+}
 
 trait Facade : Sync {
   fn handle_get(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
@@ -111,13 +125,13 @@ impl<'a> RoutingNode<'a> {
   }
 
   /// Retreive something from the network (non mutating)   
-  pub fn get(&self, name: types::DhtAddress) {}
+  pub fn get(&self, name: types::DhtAddress)->Result<GetReply, RoutingError> { unimplemented!()}
 
   /// Add something to the network 
-  pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) {}
+  pub fn put(&self, name: types::DhtAddress, content: Vec<u8>)->Result<PutPostReply, RoutingError> { unimplemented!() }
 
   /// Mutate something on the network (you must prove ownership)
-  pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) {}
+  pub fn post(&self, name: types::DhtAddress, content: Vec<u8>)->Result<PutPostReply, RoutingError> { unimplemented!() }
   
   pub fn start() {
     
