@@ -16,7 +16,8 @@ Travis build and test status
 - [ ] Create sort and bucket index methods 
 - [ ] Implement routing table
 - [ ] Test routing table 
-- [ ] Version 0.1 (crates.io)
+- [ ] Implement sentinel 
+- [ ] Test sentinel 
 - [ ] Implement connection manager
 - [ ] Allow tcp and then utp connections and wrap in connection object. [See here for tcp NAT traversal] (http://www.cmlab.csie.ntu.edu.tw/~franklai/NATBT.pdf) [and here fur ucp/dht NAT traversal
   ](http://maidsafe.net/Whitepapers/pdf/DHTbasedNATTraversal.pdf)
@@ -24,3 +25,5 @@ Travis build and test status
 - [ ] Implement Get Put Post messages 
 - [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Version 0.8
+- [ ] Implement NAT traversal
+- [ ] Version 0.1 (crates.io)

@@ -39,6 +39,7 @@ use std::thread;
 use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
+use std::default::Default;
 mod types;
 mod connections;
 
@@ -49,9 +50,16 @@ encrypt_public_key: crypto::asymmetricbox::PublicKey,
 signature: crypto::sign::Signature // detached signature  
 }
 
-//#[derive(RustcEncodable, RustcDecodable)]
-struct DhtIdentity {
-signed_key: SignedKey,  
+//#[derive(RustcEncodable, RustcDecodable, Default)]
+pub struct DhtIdentity {
+id: [u8; 64]  
+}
+
+impl Default for DhtIdentity {
+  #[inline]
+  fn default()->DhtIdentity {
+    DhtIdentity { id: [0; 64] }
+  }
 }
 
 impl DhtIdentity {
@@ -61,11 +69,22 @@ impl DhtIdentity {
   
 }
 
+enum Authority {
+Client,
+Node,
+ClientManager,
+NaeManager,
+NodeManager  
+}
+
 
 trait Facade : Sync {
-  fn handle_get_response(&self)->u32;
-  fn handle_put_response(&self);
-  fn handle_post_response(&self);
+  fn handle_get(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
+  fn handle_put(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
+  fn handle_post(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
+  fn handle_get_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->u32;
+  fn handle_put_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
+  fn handle_post_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
   }
 
 /// DHT node 
@@ -110,11 +129,6 @@ impl<'a> RoutingNode<'a> {
   fn get_facade(&'a mut self) -> &'a Facade {
     self.facade
   }
-
-  fn add(self)->u32 {
-     self.facade.handle_get_response()
-
-  }
 }
 
 
@@ -124,11 +138,14 @@ fn facade_implementation() {
   struct MyFacade;
   
   impl Facade for MyFacade {
-    fn handle_get_response(&self)->u32 { 999u32 }
-    fn handle_put_response(&self) { unimplemented!(); }
-    fn handle_post_response(&self) { unimplemented!(); }  
+    fn handle_get(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }
+    fn handle_put(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }
+    fn handle_post(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }
+    fn handle_get_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->u32 { 999u32 }
+    fn handle_put_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }
+    fn handle_post_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }  
   } 
   let my_facade = MyFacade;
   let mut my_routing = RoutingNode::new(&my_facade as & Facade);
-  assert_eq!(999, my_routing.get_facade().handle_get_response()); 
+  /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
 }
