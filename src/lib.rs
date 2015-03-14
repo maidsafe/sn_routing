@@ -93,10 +93,10 @@ InvalidRequest
 }
 
 trait Facade : Sync {
-  fn handle_get(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
-  fn handle_put(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
-  fn handle_post(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
-  fn handle_get_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->u32;
+  fn handle_get(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<GetReply, RoutingError>; 
+  fn handle_put(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<PutPostReply, RoutingError>;
+  fn handle_post(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<PutPostReply, RoutingError>;
+  fn handle_get_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
   fn handle_put_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
   fn handle_post_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
   }
@@ -125,13 +125,13 @@ impl<'a> RoutingNode<'a> {
   }
 
   /// Retreive something from the network (non mutating)   
-  pub fn get(&self, name: types::DhtAddress)->Result<GetReply, RoutingError> { unimplemented!()}
+  pub fn get(&self, name: types::DhtAddress)->bool { unimplemented!()}
 
   /// Add something to the network 
-  pub fn put(&self, name: types::DhtAddress, content: Vec<u8>)->Result<PutPostReply, RoutingError> { unimplemented!() }
+  pub fn put(&self, name: types::DhtAddress, content: Vec<u8>)->bool { unimplemented!() }
 
   /// Mutate something on the network (you must prove ownership)
-  pub fn post(&self, name: types::DhtAddress, content: Vec<u8>)->Result<PutPostReply, RoutingError> { unimplemented!() }
+  pub fn post(&self, name: types::DhtAddress, content: Vec<u8>)->bool { unimplemented!() }
   
   pub fn start() {
     
@@ -152,10 +152,10 @@ fn facade_implementation() {
   struct MyFacade;
   
   impl Facade for MyFacade {
-    fn handle_get(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }
-    fn handle_put(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }
-    fn handle_post(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }
-    fn handle_get_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->u32 { 999u32 }
+    fn handle_get(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<GetReply, RoutingError> { unimplemented!(); }
+    fn handle_put(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<PutPostReply, RoutingError> { unimplemented!(); }
+    fn handle_post(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<PutPostReply, RoutingError> { unimplemented!(); }
+    fn handle_get_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!() }
     fn handle_put_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }
     fn handle_post_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }  
   } 
