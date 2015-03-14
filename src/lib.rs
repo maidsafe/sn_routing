@@ -19,6 +19,15 @@
 //! what you deem to be a valid operation, routing will provide a valid message sender and authority
 //! that will allow you to set up many decentralised services
 //! See maidsafe.net to see what thye are doing as an example
+//!
+//! The data types are encoded with Concise Binary Object Representation (CBOR)
+//! This allows us to demand certain tags are valiable to routing that allows 
+//! it to confirm things liek data.name() when calculating authority
+//! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
+//! Please define our own for this library. These tags are non optional and your data MUST meet 
+//! the requirements and implement the following tags
+//! tag: 5483_0 -> name [u8; 64] type
+//! tag: 5483_1 -> XXXXXXXXXXXXXX 
 //! # Use
 
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
@@ -85,7 +94,8 @@ pub enum Action {
 
 pub enum RoutingError {
 NoData,
-InvalidRequest  
+InvalidRequest,
+IncorrectData(Vec<u8>) 
 }
 
 trait Facade : Sync {
@@ -93,9 +103,9 @@ trait Facade : Sync {
   fn handle_get(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>; 
   fn handle_put(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
   fn handle_post(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
-  fn handle_get_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
-  fn handle_put_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
-  fn handle_post_response(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>);
+  fn handle_get_response(&self, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
+  fn handle_put_response(&self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
+  fn handle_post_response(&self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
   }
 
 /// DHT node 
@@ -121,14 +131,14 @@ impl<'a> RoutingNode<'a> {
                   encrypt_public_key: encrypt_key_pair.0, encrypt_secret_key: encrypt_key_pair.1, sender: tx, receiver: rx }
   }
 
-  /// Retreive something from the network (non mutating)   
-  pub fn get(&self, name: types::DhtAddress)->bool { unimplemented!()}
+  /// Retreive something from the network (non mutating) - Direct call  
+  pub fn get(&self, name: types::DhtAddress) { unimplemented!()}
 
-  /// Add something to the network 
-  pub fn put(&self, name: types::DhtAddress, content: Vec<u8>)->bool { unimplemented!() }
+  /// Add something to the network, will always go via ClientManager group 
+  pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
 
-  /// Mutate something on the network (you must prove ownership)
-  pub fn post(&self, name: types::DhtAddress, content: Vec<u8>)->bool { unimplemented!() }
+  /// Mutate something on the network (you must prove ownership) - Direct call
+  pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
   
   pub fn start() {
     
@@ -152,9 +162,9 @@ fn facade_implementation() {
     fn handle_get(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_put(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_post(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-    fn handle_get_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!() }
-    fn handle_put_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }
-    fn handle_post_response(&self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>) { unimplemented!(); }  
+    fn handle_get_response(&self, from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
+    fn handle_put_response(&self, from_authority: Authority,from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+    fn handle_post_response(&self, from_authority: Authority,from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }  
   } 
   let my_facade = MyFacade;
   let mut my_routing = RoutingNode::new(&my_facade as & Facade);

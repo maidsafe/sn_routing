@@ -13,7 +13,7 @@ homepage = "http://www.maidsafe.net"
 [dependencies]
 rustc-serialize = "*"
 cbor = "0.2.2"
-#rust-crypto = "*"
+bchannel = "*"
 
 [dependencies.utp]
 git = "https://github.com/meqif/rust-utp"
