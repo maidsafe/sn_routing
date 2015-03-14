@@ -22,7 +22,7 @@
 //!
 //! The data types are encoded with Concise Binary Object Representation (CBOR)
 //! This allows us to demand certain tags are valiable to routing that allows 
-//! it to confirm things liek data.name() when calculating authority
+//! it to confirm things like data.name() when calculating authority
 //! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
 //! Please define our own for this library. These tags are non optional and your data MUST meet 
 //! the requirements and implement the following tags
