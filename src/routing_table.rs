@@ -29,6 +29,15 @@ struct NodeInfo {
 address: Address,
 }
 
+
+fn bucket_index(from: Address, to: Address)->u32 {
+  let it = from.iter().zip(to.iter());
+  for (i, (x, y)) in it.enumerate {
+    if i == 1 { return i as u32 }
+    }
+    0u32
+}
+
 /// The RoutingTable class is used to maintain a list of contacts to which we are connected.  
 struct RoutingTable {
 routing_table: Vec<NodeInfo>,

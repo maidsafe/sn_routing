@@ -12,6 +12,13 @@ Travis build and test status
 
 - [x] Set up facade design pattern
 - [x] Test facade pattern
+- [ ] Tcp Networking
+  - [ ] Tcp live port and backup random port selection 
+  - [ ] Create send/rcv channel from routing to connections object
+  - [ ] Implement test for basic "hello world" two way communication
+  - [ ] Add connection established/lost messages to be passed to routing (via channel)
+  - [ ] Benchmark tx/rv number of packets 
+  - [ ] Benchmark tx/rc Bytes per second 
 - [ ] Allow Sha512 has as ID type
 - [ ] Create sort and bucket index methods 
 - [ ] Implement routing table
@@ -24,6 +31,6 @@ Travis build and test status
 - [ ] Implement routing message types (Connect FindNode)
 - [ ] Implement Get Put Post messages 
 - [ ] Test basic facade (normal DHT Get Put with republish)
-- [ ] Version 0.8
+- [ ] Version 0.0.8
 - [ ] Implement NAT traversal
 - [ ] Version 0.1 (crates.io)
