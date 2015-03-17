@@ -14,29 +14,23 @@
     Software.                                                                 */
 
 
-
-
-use utp::UtpStream;
 use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr};
-use std::str::FromStr;
-use std::io::{stdin, stdout, stderr, Write};
-use std::thread;
-use std::sync::mpsc;
-use std::sync::mpsc::{Sender, Receiver};
+use std::io::{stdout, stderr, Write};
+use std::sync::mpsc::{Sender};
 
 
 /// Tcp and Udt Connections 
 pub struct Connections {
-/* utp: UtpStream, */
-tcp: TcpListener,
-sender: Sender<TcpStream>
+  /* utp: UtpStream, */
+  tcp: TcpListener,
+  sender: Sender<TcpStream>
 }
 
 impl Connections {
   fn new(sender: Sender<TcpStream>) -> Connections {
     let live_address = SocketAddr::new(IpAddr::new_v4(127,0,0,1), 5483);
     let any_address = SocketAddr::new(IpAddr::new_v4(127,0,0,1), 0);
-    let mut tcp_listener = match TcpListener::bind(&live_address) {
+    let tcp_listener = match TcpListener::bind(&live_address) {
       Ok(x) => x,
       Err(_) => TcpListener::bind(&any_address).unwrap()
     };
@@ -45,7 +39,7 @@ impl Connections {
     /*   Ok(x) => x, */
     /*   Err(_) => UtpStream::bind(&any_address).unwrap() */
     /* }; */
-    let mut writer = stdout();
+    let writer = stdout();
     let _ = writeln!(&mut stderr(), "Serving Tcp on {:?}", tcp_listener.socket_addr());
     /* let _ = writeln!(&mut stderr(), "Serving Utp on {}", &live_address); */
       
@@ -59,7 +53,7 @@ impl Connections {
 
         Ok(stream) => {
           /* thread::spawn(move || { */
-          self.sender.clone().send(stream);
+          self.sender.clone().send(stream).unwrap();
           /* }); */
 
         }
