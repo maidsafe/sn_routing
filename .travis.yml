@@ -1,6 +1,6 @@
 env:
   global:
-    secure: HPse/b5ho65gPE2nkOzHAaaeJSpp4Bg/+itrXt3422Cy8xJNzqJ9GiCBHS6lFYSgLQq9jj9BTW2mSUC9pV+oy2QUsg+8xiCNOreP9jP+U4YmqwHE2NTpRsiPsoSYBdcnUgoxetgFegtMdE71xkArV2qgtDF+Welp1qLHgAMuAa8=
+    secure:secure: "jYb73sf4o6nUOOzCiyfRYeGcTHPM7pwl+wqEa7YhGHcIfR7uGkI8NQAb0BzizA/Iiy3+wFQzDbbw1ZtpHNgG49EI7cXFQ7WRk+Wz1H4gzkEh2J6XEgyTYoqTOdV4Ka3YtbELc69VLXJCePSvxGqGED0ncUg/kZmWK5f9ZR47zn8="
 language: rust
 install:
     - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
