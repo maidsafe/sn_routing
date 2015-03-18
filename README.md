@@ -6,6 +6,10 @@ Travis build and test status
 
 [![Build Status](https://travis-ci.org/dirvine/routing.svg?branch=master)](https://travis-ci.org/dirvine/routing)
 
+Appveyor build status
+
+[![Build status](https://ci.appveyor.com/api/projects/status/ni7c20e9aux3g01i?svg=true)](https://ci.appveyor.com/project/dirvine/routing)
+
 [Documentation](http://dirvine.github.io/routing)
 
 ### Build Pre-requisite:
