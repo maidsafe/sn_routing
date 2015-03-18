@@ -8,6 +8,12 @@ Travis build and test status
 
 [Documentation](http://dirvine.github.io/routing)
 
+### Build Pre-requisite:
+libsodium is a native dependency for [sodiumxoide](https://github.com/dnaq/sodiumoxide). Thus, install sodium by following the instructions [here](http://doc.libsodium.org/installation/README.html).
+
+For windows, download and use the [prebuilt mingw library](https://download.libsodium.org/libsodium/releases/libsodium-1.0.2-mingw.tar.gz). 
+Extract and place the libsodium.a file in the "third_party_libs" folder in the Project Root.
+
 ##Todo Items
 
 - [x] Set up facade design pattern
