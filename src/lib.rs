@@ -34,7 +34,7 @@
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
-#![feature(custom_derive, net)]
+#![feature(custom_derive)]
 #![allow(dead_code, unused_variables)]
 
 extern crate sodiumoxide;

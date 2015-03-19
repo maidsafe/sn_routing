@@ -14,7 +14,7 @@
     Software.                                                                 */
 
 
-use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr};
+use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddrV4};
 use std::io::{stdout, stderr, Write};
 use std::sync::mpsc::{Sender};
 
@@ -28,8 +28,8 @@ pub struct Connections {
 
 impl Connections {
   fn new(sender: Sender<TcpStream>) -> Connections {
-    let live_address = SocketAddr::new(IpAddr::new_v4(127,0,0,1), 5483);
-    let any_address = SocketAddr::new(IpAddr::new_v4(127,0,0,1), 0);
+    let live_address = SocketAddrV4::new(Ipv4Addr::new(127,0,0,1), 5483);
+    let any_address = SocketAddrV4::new(Ipv4Addr::new(127,0,0,1), 0);
     let tcp_listener = match TcpListener::bind(&live_address) {
       Ok(x) => x,
       Err(_) => TcpListener::bind(&any_address).unwrap()
@@ -40,7 +40,7 @@ impl Connections {
     /*   Err(_) => UtpStream::bind(&any_address).unwrap() */
     /* }; */
     let writer = stdout();
-    let _ = writeln!(&mut stderr(), "Serving Tcp on {:?}", tcp_listener.socket_addr());
+    let _ = writeln!(&mut stderr(), "Serving Tcp on {:?}", tcp_listener.local_addr());
     /* let _ = writeln!(&mut stderr(), "Serving Utp on {}", &live_address); */
       
 
