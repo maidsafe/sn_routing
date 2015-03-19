@@ -15,11 +15,72 @@
 
 use types;
 
-/// Header of various message types used on routing level 
+/// Header of various message types used on routing level
 pub struct MessageHeader {
+  message_id : types::MessageId,
   destionation : types::DestinationAddress,
   source : types::SourceAddress,
-  message_id : types::MessageId,
   authority : types::Authority,
   signature : types::Signature
+}
+
+impl MessageHeader {
+  pub fn new(message_id : types::MessageId,
+             destionation : types::DestinationAddress,
+             source : types::SourceAddress,
+             authority : types::Authority,
+             signature : types::Signature) -> MessageHeader {
+    if source.from_node.len() == 64 {
+      MessageHeader {
+        message_id : message_id, destionation : destionation,
+        source : source, authority : authority, signature : signature
+      }
+    } else {
+      panic!("incorrect input for MessageHeader")
+    }
+  }
+
+  pub fn from_node(&self) -> types::Address {
+    self.source.from_node.clone()
+  }
+
+  pub fn from_group(&self) -> Option<types::Address> {
+    self.source.from_group.clone()
+  }
+
+  pub fn is_relayed(&self) -> bool {
+    match self.source.reply_to {
+      Some(_) => true,
+      None => false
+    }
+  }
+
+  pub fn reply_to(&self) -> Option<types::Address> {
+    self.source.reply_to.clone()
+  }
+
+  pub fn from(&self) -> types::Address {
+    match self.from_group() {
+      Some(address) => address,
+      None => self.from_node()
+    }
+  }
+
+  pub fn send_to(&self) -> types::DestinationAddress {
+    if self.is_relayed() {
+      types::DestinationAddress{
+        dest : self.source.from_node.clone(),
+        reply_to : self.reply_to()
+      }
+    } else {
+      types::DestinationAddress{
+        dest : self.source.from_node.clone(),
+        reply_to : None
+      }
+    }
+  }
+
+  pub fn get_filter(&self) -> (types::Address, types::MessageId) {
+    (self.source.from_node.clone(), self.message_id)
+  }
 }

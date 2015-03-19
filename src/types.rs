@@ -28,19 +28,20 @@ pub enum Authority {
   Client,         // detached
 }
 
-pub type Address = [u8;64];
+pub type Address = Vec<u8>; // [u8;64] using Vec allowing compare and clone
 pub type MessageId = u32;
-pub type Signature = [u8;512];
+pub type Signature = Vec<u8>; // [u8;512] using Vec allowing compare and clone
 
 /// Address of the source of the message
 pub struct SourceAddress {
-  from_node : Address,
-  from_group : Address,
-  reply_to : Option<Address>
+  pub from_node : Address,
+  pub from_group : Option<Address>,
+  pub reply_to : Option<Address>
 }
 
 /// Address of the destination of the message
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct DestinationAddress {
-  dest : Address,
-  reply_to : Option<Address>
+  pub dest : Address,
+  pub reply_to : Option<Address>
 }
