@@ -13,6 +13,9 @@
 // use of the MaidSafe
 // Software.
 
+use cbor::CborTagEncode;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+
 use types;
 
 /// Header of various message types used on routing level
@@ -22,6 +25,23 @@ pub struct MessageHeader {
   source : types::SourceAddress,
   authority : types::Authority,
   signature : types::Signature
+}
+
+impl Encodable for MessageHeader {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode { tag : 5483_004 ,
+                    data : &(&self.message_id, &self.destionation, &self.source,
+                             &self.authority, &self.signature) }.encode(e)
+  }
+}
+
+impl Decodable for MessageHeader {
+  fn decode<D: Decoder>(d: &mut D)->Result<MessageHeader, D::Error> {
+    try!(d.read_u64());
+    let (message_id, destionation, source, authority, signature) = try!(Decodable::decode(d));
+    Ok(MessageHeader{ message_id : message_id, destionation : destionation,
+                      source : source, authority : authority, signature : signature })
+  }
 }
 
 impl MessageHeader {
@@ -45,18 +65,27 @@ impl MessageHeader {
   }
 
   pub fn from_group(&self) -> Option<types::Address> {
-    self.source.from_group.clone()
+    if self.source.from_group.len() == 64 {
+      Some(self.source.from_group.clone())
+    } else {
+      None
+    }
   }
 
   pub fn is_relayed(&self) -> bool {
-    match self.source.reply_to {
-      Some(_) => true,
-      None => false
+    if self.source.reply_to.len() != 64 {
+      true
+    } else {
+      false
     }
   }
 
   pub fn reply_to(&self) -> Option<types::Address> {
-    self.source.reply_to.clone()
+    if self.source.reply_to.len() == 64 {
+      Some(self.source.reply_to.clone())
+    } else {
+      None
+    }
   }
 
   pub fn from(&self) -> types::Address {
@@ -70,12 +99,12 @@ impl MessageHeader {
     if self.is_relayed() {
       types::DestinationAddress{
         dest : self.source.from_node.clone(),
-        reply_to : self.reply_to()
+        reply_to : self.source.reply_to.clone()
       }
     } else {
       types::DestinationAddress{
         dest : self.source.from_node.clone(),
-        reply_to : None
+        reply_to : types::Address::new()
       }
     }
   }

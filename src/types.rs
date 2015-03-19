@@ -13,6 +13,11 @@
 // use of the MaidSafe
 // Software.
 
+#![allow(unused_assignments)]
+
+use cbor::CborTagEncode;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+
 static GROUP_SIZE: u32 = 23;
 static QUORUM_SIZE: u32 = 19;
 
@@ -26,6 +31,40 @@ pub enum Authority {
   ManagedNode,    // in our group and routing table
   ManagedClient,  // in our group
   Client,         // detached
+  Unknown
+}
+
+impl Encodable for Authority {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    let mut authority = "";
+    match *self {
+      Authority::ClientManager => authority = "ClientManager",
+      Authority::NaeManager => authority = "NaeManager",
+      Authority::NodeManager => authority = "NodeManager",
+      Authority::ManagedNode => authority = "ManagedNode",
+      Authority::ManagedClient => authority = "ManagedClient",
+      Authority::Client => authority = "Client",
+      Authority::Unknown => authority = "Unknown",
+    }
+    CborTagEncode { tag : 5483_000 , data : &authority }.encode(e)
+  }
+}
+
+impl Decodable for Authority {
+  fn decode<D: Decoder>(d: &mut D)->Result<Authority, D::Error> {
+    try!(d.read_u64());
+    let mut authority : String = String::new();
+    authority = try!(Decodable::decode(d));
+    match &authority[..] {
+      "ClientManager" => Ok(Authority::ClientManager),
+      "NaeManager" => Ok(Authority::NaeManager),
+      "NodeManager" => Ok(Authority::NodeManager),
+      "ManagedNode" => Ok(Authority::ManagedNode),
+      "ManagedClient" => Ok(Authority::ManagedClient),
+      "Client" => Ok(Authority::Client),
+      _ => Ok(Authority::Unknown)
+    }
+  }
 }
 
 pub type Address = Vec<u8>; // [u8;64] using Vec allowing compare and clone
@@ -35,13 +74,42 @@ pub type Signature = Vec<u8>; // [u8;512] using Vec allowing compare and clone
 /// Address of the source of the message
 pub struct SourceAddress {
   pub from_node : Address,
-  pub from_group : Option<Address>,
-  pub reply_to : Option<Address>
+  pub from_group : Address,
+  pub reply_to : Address
+}
+
+impl Encodable for SourceAddress {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode { tag : 5483_002 ,
+                    data : &(&self.from_node, &self.from_group, &self.reply_to) }.encode(e)
+  }
+}
+
+impl Decodable for SourceAddress {
+  fn decode<D: Decoder>(d: &mut D)->Result<SourceAddress, D::Error> {
+    try!(d.read_u64());
+    let (from_node, from_group, reply_to) = try!(Decodable::decode(d));
+    Ok(SourceAddress { from_node: from_node, from_group: from_group, reply_to: reply_to })
+  }
 }
 
 /// Address of the destination of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct DestinationAddress {
   pub dest : Address,
-  pub reply_to : Option<Address>
+  pub reply_to : Address
+}
+
+impl Encodable for DestinationAddress {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode { tag : 5483_001 , data : &(&self.dest, &self.reply_to) }.encode(e)
+  }
+}
+
+impl Decodable for DestinationAddress {
+  fn decode<D: Decoder>(d: &mut D)->Result<DestinationAddress, D::Error> {
+    try!(d.read_u64());
+    let (dest, reply_to) = try!(Decodable::decode(d));
+    Ok(DestinationAddress { dest: dest, reply_to: reply_to })
+  }
 }
