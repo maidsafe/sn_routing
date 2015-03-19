@@ -94,7 +94,7 @@ impl Decodable for SourceAddress {
 }
 
 /// Address of the destination of the message
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct DestinationAddress {
   pub dest : Address,
   pub reply_to : Address
@@ -113,3 +113,51 @@ impl Decodable for DestinationAddress {
     Ok(DestinationAddress { dest: dest, reply_to: reply_to })
   }
 }
+
+#[cfg(test)]
+#[allow(deprecated)]
+mod test {
+  extern crate cbor;
+  use super::*;
+  use std::rand;
+
+  pub fn generate_address() -> Vec<u8> {
+    let mut address: Vec<u8> = vec![];
+    for _ in (0..64) {
+      address.push(rand::random::<u8>());
+    }
+    address
+  }
+
+  #[test]
+  fn test_destination_address() {
+    let obj_before = DestinationAddress { dest: generate_address(), reply_to: generate_address() };
+    let mut e = cbor::Encoder::from_memory();
+    e.encode(&[&obj_before]).unwrap();
+
+    let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+    let obj_after: DestinationAddress = d.decode().next().unwrap().unwrap();
+    assert_eq!(obj_after, obj_before)
+  }
+}
+
+
+// #[test]
+// fn test_Authority() {
+
+// // ClientManager,  // from a node in our range but not routing table
+// // NaeManager,     // Target (name()) is in the group we are in 
+// // NodeManager,    // recieved from a node in our routing table (Handle refresh here)
+// // ManagedNode,    // in our group and routing table
+// // ManagedClient,  // in our group
+// // Client,         // detached
+// // Unknown
+
+//   let obj_before = Authority::ClientManager;
+//   let mut e = cbor::Encoder::from_memory();
+//   e.encode(&[&obj_before]).unwrap();
+
+//   let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+//   let obj_after: Authority = d.decode().next().unwrap().unwrap();
+//   assert_eq!(obj_after, obj_before)
+// }
