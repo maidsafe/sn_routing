@@ -13,34 +13,13 @@
 // use of the MaidSafe
 // Software.
 
-static GROUP_SIZE: u32 = 23;
-static QUORUM_SIZE: u32 = 19;
+use types;
 
-pub struct DhtAddress([u8; 64]);
-
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub enum Authority {
-  ClientManager,  // from a node in our range but not routing table
-  NaeManager,     // Target (name()) is in the group we are in 
-  NodeManager,    // recieved from a node in our routing table (Handle refresh here)
-  ManagedNode,    // in our group and routing table
-  ManagedClient,  // in our group
-  Client,         // detached
-}
-
-pub type Address = [u8;64];
-pub type MessageId = u32;
-pub type Signature = [u8;512];
-
-/// Address of the source of the message
-pub struct SourceAddress {
-  from_node : Address,
-  from_group : Address,
-  reply_to : Option<Address>
-}
-
-/// Address of the destination of the message
-pub struct DestinationAddress {
-  dest : Address,
-  reply_to : Option<Address>
+/// Header of various message types used on routing level 
+pub struct MessageHeader {
+  destionation : types::DestinationAddress,
+  source : types::SourceAddress,
+  message_id : types::MessageId,
+  authority : types::Authority,
+  signature : types::Signature
 }

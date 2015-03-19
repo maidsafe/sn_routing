@@ -49,6 +49,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
 mod types;
 mod connections;
+mod message_header;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
