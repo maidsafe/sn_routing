@@ -34,8 +34,8 @@
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
-#![feature(custom_derive, net)]
-#![allow(dead_code, unused_variables)]
+#![allow(dead_code, unused_variables, unused_features)]
+#![feature(custom_derive, rand)]
 
 extern crate sodiumoxide;
 extern crate "rustc-serialize" as rustc_serialize;
@@ -49,6 +49,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
 mod types;
 mod connections;
+mod message_header;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
