@@ -23,8 +23,10 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [x] Set up facade design pattern
 - [x] Test facade pattern
 - [x] Set up accumulator
+- [ ] Accumulator tests
 - [x] Message header 
 - [x] Message header tests
+- [ ] API version 0.0.6
 - [ ] Tcp Networking
   - [ ] Tcp live port and backup random port selection 
   - [ ] Create send/rcv channel from routing to connections object
