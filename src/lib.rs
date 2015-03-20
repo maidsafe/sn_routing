@@ -50,6 +50,7 @@ use std::default::Default;
 mod types;
 mod connections;
 mod message_header;
+mod routing_table;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
