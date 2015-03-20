@@ -23,9 +23,8 @@ install:
        }
   - ps: Start-FileDownload 'https://download.libsodium.org/libsodium/releases/libsodium-1.0.2-mingw.tar.gz'
   - 7z e libsodium-1.0.2-mingw.tar.gz && 7z x libsodium-1.0.2-mingw.tar -olibsodium -y
-  - mkdir third_party_libs
-  - if "%RUST_INSTALL_TRIPLE%" == "i686-pc-windows-gnu" copy libsodium\libsodium-win32\lib\libsodium.a third_party_libs\ && SET PATH=C:\MinGW\bin;%PATH%
-  - if "%RUST_INSTALL_TRIPLE%" == "x86_64-pc-windows-gnu" copy libsodium\libsodium-win64\lib\libsodium.a third_party_libs\ && SET PATH=C:\mingw64\bin;%PATH%
+  - if "%RUST_INSTALL_TRIPLE%" == "i686-pc-windows-gnu" mkdir bin\i686-pc-windows-gnu && copy libsodium\libsodium-win32\lib\libsodium.a bin\i686-pc-windows-gnu\ && SET PATH=C:\MinGW\bin;%PATH%
+  - if "%RUST_INSTALL_TRIPLE%" == "x86_64-pc-windows-gnu" mkdir bin\x86_64-pc-windows-gnu && copy libsodium\libsodium-win64\lib\libsodium.a bin\x86_64-pc-windows-gnu\ && SET PATH=C:\mingw64\bin;%PATH%
 
 build: false
 
