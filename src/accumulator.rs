@@ -17,11 +17,12 @@ use std::hash::Hash;
 use std::time::duration::Duration;
 
 use lru_cache::LruCache;
-use time::Timespec;
+use time::*;
 
 use types;
 
 /// entry in the accumulator
+#[derive(Clone)]
 pub struct Response<V> {
   /// address where the response come from
   pub address : types::Address,
@@ -38,16 +39,58 @@ pub struct Entry<V> {
 }
 
 /// Accumulator for various message type
-pub struct Accumulator<K, V> where K: Eq + Hash {
+pub struct Accumulator<K, V> where K: Eq + Hash, V: Clone {
   /// Expected threshold for resolve
-  quorum : u32,
+  quorum : usize,
   /// lifetime for entry, the entry will be cleaned up once expired
   time_to_live : Duration,
   storage : LruCache<K, Entry<V>>
 }
 
-impl<K: Eq + Hash, V> Accumulator<K, V> {
-  pub fn new(quorum : u32, time_to_live : Duration) -> Accumulator<K, V> {
+impl<K: Eq + Hash, V: Clone> Accumulator<K, V> {
+  pub fn new(quorum : usize, time_to_live : Duration) -> Accumulator<K, V> {
   	Accumulator { quorum: quorum, time_to_live: time_to_live, storage: LruCache::new(1000)}
+  }
+
+  pub fn have_name(&mut self, name : K) -> bool {
+  	self.storage.get(&name).is_none()
+  }
+
+  pub fn is_quorum_reached(&mut self, name : K) -> bool {
+  	let entry = self.storage.get(&name);
+  	if entry.is_none() {
+  	  false
+  	} else {
+  	  entry.unwrap().received_response.len() >= self.quorum
+  	}
+  }
+
+  pub fn add(&mut self, name : K, value : V, sender : types::Address) {
+  	let entry = self.storage.remove(&name);
+  	if entry.is_none() {
+  	  let entry_in = Entry { first_added_time : get_time(),
+  	  	                     received_response : vec![Response{ address : sender, value : value }] };
+  	} else {
+  	  let mut tmp = entry.unwrap();
+  	  tmp.received_response.push(Response{ address : sender, value : value });
+  	  self.storage.insert(name, tmp);
+  	}
+  }
+
+  pub fn get(&mut self, name : K) -> Option<(K, Vec<Response<V>>)>{
+  	let entry = self.storage.get(&name);
+  	if entry.is_none() {
+  	  None
+  	} else {
+  	  Some((name, entry.unwrap().received_response.clone()))
+  	}
+  }
+
+  pub fn delete(&mut self, name : K) {
+  	self.storage.remove(&name);
+  }
+
+  pub fn cache_size(&mut self) -> usize {
+  	self.storage.len()
   }
 }
