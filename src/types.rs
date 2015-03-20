@@ -23,7 +23,7 @@ static QUORUM_SIZE: u32 = 19;
 
 pub struct DhtAddress([u8; 64]);
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
   ClientManager,  // from a node in our range but not routing table
   NaeManager,     // Target (name()) is in the group we are in 
@@ -72,6 +72,7 @@ pub type MessageId = u32;
 pub type Signature = Vec<u8>; // [u8;512] using Vec allowing compare and clone
 
 /// Address of the source of the message
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {
   pub from_node : Address,
   pub from_group : Address,
@@ -120,6 +121,7 @@ mod test {
   extern crate cbor;
   use super::*;
   use std::rand;
+  use rustc_serialize::{Decodable, Encodable};
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];
@@ -129,35 +131,33 @@ mod test {
     address
   }
 
-  #[test]
-  fn test_destination_address() {
-    let obj_before = DestinationAddress { dest: generate_address(), reply_to: generate_address() };
+  fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
     let mut e = cbor::Encoder::from_memory();
     e.encode(&[&obj_before]).unwrap();
-
     let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-    let obj_after: DestinationAddress = d.decode().next().unwrap().unwrap();
-    assert_eq!(obj_after, obj_before)
+    let obj_after: T = d.decode().next().unwrap().unwrap();
+    assert_eq!(obj_after == obj_before, true)
+  }
+
+  #[test]
+  fn test_authority() {
+    test_object(Authority::ClientManager);
+    test_object(Authority::NaeManager);
+    test_object(Authority::NodeManager);
+    test_object(Authority::ManagedNode);
+    test_object(Authority::Client);
+    test_object(Authority::Unknown);
+  }
+
+  #[test]
+  fn test_destination_address() {
+    test_object(DestinationAddress { dest: generate_address(), reply_to: generate_address() });
+  }
+
+  #[test]
+  fn test_source_address() {
+    test_object(SourceAddress { from_node : generate_address(),
+                                from_group : generate_address(),
+                                reply_to: generate_address() });
   }
 }
-
-
-// #[test]
-// fn test_Authority() {
-
-// // ClientManager,  // from a node in our range but not routing table
-// // NaeManager,     // Target (name()) is in the group we are in 
-// // NodeManager,    // recieved from a node in our routing table (Handle refresh here)
-// // ManagedNode,    // in our group and routing table
-// // ManagedClient,  // in our group
-// // Client,         // detached
-// // Unknown
-
-//   let obj_before = Authority::ClientManager;
-//   let mut e = cbor::Encoder::from_memory();
-//   e.encode(&[&obj_before]).unwrap();
-
-//   let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-//   let obj_after: Authority = d.decode().next().unwrap().unwrap();
-//   assert_eq!(obj_after, obj_before)
-// }

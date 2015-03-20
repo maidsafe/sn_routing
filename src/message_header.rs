@@ -19,9 +19,10 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use types;
 
 /// Header of various message types used on routing level
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct MessageHeader {
   message_id : types::MessageId,
-  destionation : types::DestinationAddress,
+  destination : types::DestinationAddress,
   source : types::SourceAddress,
   authority : types::Authority,
   signature : types::Signature
@@ -30,7 +31,7 @@ pub struct MessageHeader {
 impl Encodable for MessageHeader {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode { tag : 5483_004 ,
-                    data : &(&self.message_id, &self.destionation, &self.source,
+                    data : &(&self.message_id, &self.destination, &self.source,
                              &self.authority, &self.signature) }.encode(e)
   }
 }
@@ -38,21 +39,21 @@ impl Encodable for MessageHeader {
 impl Decodable for MessageHeader {
   fn decode<D: Decoder>(d: &mut D)->Result<MessageHeader, D::Error> {
     try!(d.read_u64());
-    let (message_id, destionation, source, authority, signature) = try!(Decodable::decode(d));
-    Ok(MessageHeader{ message_id : message_id, destionation : destionation,
+    let (message_id, destination, source, authority, signature) = try!(Decodable::decode(d));
+    Ok(MessageHeader{ message_id : message_id, destination : destination,
                       source : source, authority : authority, signature : signature })
   }
 }
 
 impl MessageHeader {
   pub fn new(message_id : types::MessageId,
-             destionation : types::DestinationAddress,
+             destination : types::DestinationAddress,
              source : types::SourceAddress,
              authority : types::Authority,
              signature : types::Signature) -> MessageHeader {
     if source.from_node.len() == 64 {
       MessageHeader {
-        message_id : message_id, destionation : destionation,
+        message_id : message_id, destination : destination,
         source : source, authority : authority, signature : signature
       }
     } else {
@@ -112,4 +113,43 @@ impl MessageHeader {
   pub fn get_filter(&self) -> (types::Address, types::MessageId) {
     (self.source.from_node.clone(), self.message_id)
   }
+}
+
+#[cfg(test)]
+#[allow(deprecated)]
+mod test {
+  extern crate cbor;
+  use super::*;
+  use std::rand;
+  use rustc_serialize::{Decodable, Encodable};
+  use types;
+
+  pub fn generate_u8_64() -> Vec<u8> {
+    let mut u8_64: Vec<u8> = vec![];
+    for _ in (0..64) {
+      u8_64.push(rand::random::<u8>());
+    }
+    u8_64
+  }
+
+  fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
+    let mut e = cbor::Encoder::from_memory();
+    e.encode(&[&obj_before]).unwrap();
+    let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+    let obj_after: T = d.decode().next().unwrap().unwrap();
+    assert_eq!(obj_after == obj_before, true)
+  }
+
+  #[test]
+  fn test_message_header() {
+    test_object(MessageHeader {
+      message_id : rand::random::<u32>(),
+      destination : types::DestinationAddress{dest: generate_u8_64(), reply_to: generate_u8_64()},
+      source : types::SourceAddress { from_node : generate_u8_64(),
+                                      from_group : generate_u8_64(),
+                                      reply_to: generate_u8_64() },
+      authority : types::Authority::ManagedNode,
+      signature : generate_u8_64() });
+  }
+
 }
