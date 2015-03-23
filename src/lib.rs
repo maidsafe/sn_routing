@@ -35,7 +35,7 @@
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features)]
-#![feature(custom_derive, rand, std_misc)]
+#![feature(custom_derive, rand, std_misc, unboxed_closures)]
 
 extern crate sodiumoxide;
 extern crate "lru-cache" as lru_cache;
@@ -53,6 +53,7 @@ mod types;
 mod connections;
 mod message_header;
 mod accumulator;
+mod sentinel;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {

@@ -70,6 +70,14 @@ impl Decodable for Authority {
 pub type Address = Vec<u8>; // [u8;64] using Vec allowing compare and clone
 pub type MessageId = u32;
 pub type Signature = Vec<u8>; // [u8;512] using Vec allowing compare and clone
+pub type NodeAddress = Address; // (Address, NodeTag)
+pub type GroupAddress = Address; // (Address, GroupTag)
+pub type SerialisedMessage = Vec<u8>;
+
+pub trait SentinelTraits {
+  fn get_address(&mut self, Address);
+  fn get_group_address(&mut self, Address);
+}
 
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -114,6 +122,27 @@ impl Decodable for DestinationAddress {
     Ok(DestinationAddress { dest: dest, reply_to: reply_to })
   }
 }
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub enum MessageTypeTag {
+  Connect,
+  ConnectResponse,
+  FindGroup,
+  FindGroupResponse,
+  GetData,
+  GetDataResponse,
+  GetClientKey,
+  GetClientKeyResponse,
+  GetGroupKey,
+  GetGroupKeyResponse,
+  Post,
+  PostResponse,
+  PutData,
+  PutDataResponse,
+  PutKey,
+  AccountTransfer
+}
+
 
 #[cfg(test)]
 #[allow(deprecated)]
