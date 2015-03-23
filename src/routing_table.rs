@@ -29,7 +29,7 @@ static BUCKET_SIZE: u32 = 1;
 static PARALELISM: u32 = 4;
 static OPTIMAL_SIZE: u32 = 64;
 
-type Address = [u8;64];
+type Address = maidsafe_types::NameType; // [u8;64];
 struct PublicKey;
 
 struct KeyFob {
@@ -74,16 +74,6 @@ impl Clone for NodeInfo {
       connected: self.connected,
     }
   }
-}
-
-fn bucket_index(from: Address, to: Address)->u32 {
-  let it = from.iter().zip(to.iter());
-  /*
-  for (i, (x, y)) in it.enumerate {
-    if x ^ y  == 1 { return i as u32 }
-    }
-    */
-    0u32
 }
 
 /// The RoutingTable class is used to maintain a list of contacts to which we are connected.  
@@ -147,7 +137,20 @@ impl RoutingTable {
   pub fn check_node(&self, their_id: Address)->bool { false }
 
   // This unconditionally removes the contact from the table.
-  pub fn drop_node(&self, node_to_drop: Address) {  }
+  pub fn drop_node(&mut self, node_to_drop: &Address) {
+    let mut index_of_removal = 0usize;
+
+    for i in 0..self.routing_table.len() {
+      if maidsafe_types::helper::compare_arr_u8_64(&self.routing_table[i].fob.id.0, &node_to_drop.0) {
+        index_of_removal = i;
+        break;
+      }
+    }
+
+    if index_of_removal < self.routing_table.len() {
+      self.routing_table.remove(index_of_removal);
+    }
+  }
 
   // This returns a collection of contacts to which a message should be sent onwards.  It will
   // return all of our close group (comprising 'GroupSize' contacts) if the closest one to the
@@ -162,7 +165,7 @@ impl RoutingTable {
   // This returns the public key for the given node if the node is in our table.
   pub fn get_public_key(their_id: Address)->Option<PublicKey> { None }
 
-  pub fn our_id(&self)->Address { [0; 64] }
+  //pub fn our_id(&self)->Address { [0; 64] }
 
   pub fn size()->usize { 8usize }
 
@@ -207,7 +210,7 @@ impl RoutingTable {
       return 8 * self.our_id.0.len();
     }
 
-    let common_bits = k_common_bits[self.our_id.0[index_of_mismatch] as usize][id.0[index_of_mismatch] as usize];
+    let common_bits = K_COMMON_BITS[self.our_id.0[index_of_mismatch] as usize][id.0[index_of_mismatch] as usize];
     8 * index_of_mismatch + common_bits as usize
   }
 
@@ -253,7 +256,7 @@ impl RoutingTable {
   }
 }
 
-static k_common_bits: [[u8; 256]; 256] =
+static K_COMMON_BITS: [[u8; 256]; 256] =
 [[ 8, 7, 6, 6, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ],
     [ 7, 8, 6, 6, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ],
     [ 6, 6, 8, 7, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ],
