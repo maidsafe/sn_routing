@@ -141,11 +141,31 @@ impl RoutingTable {
     ret_val
   }
 
+  /**** Days Work******************************************/
   /// This is used to see whether to bother retrieving a contact's public key from the PKI with a
   /// view to adding the contact to our table.  The checking procedure is the same as for 'AddNode'
   /// above, except for the lack of a public key to check in step 1.
-  pub fn check_node(&self, their_id: Address)->bool { false }
-
+  pub fn check_node(&self, their_id: Address)->bool {
+  	if (!self.is_valid()) {
+  		panic!("Routing Table id is not valid");
+  	}
+  	if (!maidsafe_types::helper::compare_arr_u8_64(&self.our_id.0, &their_id)) {
+		  return false;
+  	}
+  	if (self.has_node(their_id)) {
+	    return false;	
+  	}
+    //  std::lock_guard<std::mutex> lock(mutex_);
+    if (self.routing_table.len() < (RoutingTable::get_optimal_size() as usize)) {
+    	return true;
+    }
+    let group_size = (RoutingTable::get_group_size() - 1) as usize;    
+    if self.closer_to_target(&maidsafe_types::NameType(their_id), &self.routing_table[group_size].fob.id) {
+    	return true;
+  	}
+    return self.new_node_is_better_than_existing(&maidsafe_types::NameType(their_id), self.find_candidate_for_removal());        	
+	}
+  /**** Days Work End******************************************/
   // This unconditionally removes the contact from the table.
   pub fn drop_node(&self, node_to_drop: Address) {  }
 
@@ -162,20 +182,36 @@ impl RoutingTable {
   // This returns the public key for the given node if the node is in our table.
   pub fn get_public_key(their_id: Address)->Option<PublicKey> { None }
 
-  pub fn our_id(&self)->Address { [0; 64] }
+  pub fn our_id(&self)->Address {
+  	self.our_id.0 
+	}
 
-  pub fn size()->usize { 8usize }
+  pub fn size(&self)->usize {
+  	//std::lock_guard<std::mutex> lock(mutex_);
+    self.routing_table.len()
+	}
 
-  pub fn bucket_index(&self, node_id: Address)->u32 { 8u32 }
+  pub fn bucket_index(&self, node_id: Address)->u32 {  	 
+  	8u32
+	}
 
   // privates
-  fn has_node(&self, node_id: &maidsafe_types::NameType) -> bool {
+/*  fn has_node(&self, node_id: &maidsafe_types::NameType) -> bool {
     for node_info in &self.routing_table {
       if maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &node_id.0) {
         return true;
       }
     }
 
+    false
+  }*/
+  
+  fn has_node(&self, node_id: Address) -> bool {
+    for node_info in &self.routing_table {
+      if maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &node_id) {
+        return true;
+      }
+    }
     false
   }
 
@@ -209,6 +245,48 @@ impl RoutingTable {
 
     false
   }
+  
+
+  
+  /************************Day's work *********************************/
+  pub fn is_valid(&self) -> bool {
+   let maidsafe_types::NameType(id) = self.our_id;
+   for it in id.iter() {
+    if *it != 0 {
+      return true;
+    }
+   }
+   false
+  }
+    
+  fn closer_to_target(&self, lhs: &maidsafe_types::NameType, rhs: &maidsafe_types::NameType) -> bool {
+    for i in 0..lhs.0.len() {
+      let res_0 = lhs.0[i] ^ self.our_id.0[i];
+      let res_1 = rhs.0[i] ^ self.our_id.0[i];
+
+      if res_1 < res_0 {
+        return true;
+      }
+    }
+
+    false
+  }
+  
+  fn find_candidate_for_removal(&self) -> &NodeInfo {
+  	&self.routing_table[0]
+  }
+  
+  fn new_node_is_better_than_existing (&self, new_node: &maidsafe_types::NameType, removal_node: &NodeInfo) -> bool {
+ 	  if self.routing_table.is_empty() {
+ 	  	return true;
+ 	  }
+    let last_node_fob_id = self.routing_table[self.routing_table.len() -1 ].fob.id.0;
+    let removal_node_fob_id = removal_node.fob.id.0;
+    let new_node_id = (*new_node).0;
+    
+    !maidsafe_types::helper::compare_arr_u8_64(&last_node_fob_id, &removal_node_fob_id) && &self.bucket_index(new_node_id) > &self.bucket_index(removal_node_fob_id)
+  }
+  /**************** Day END ********************/
 }
 
 #[test]
