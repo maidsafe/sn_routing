@@ -19,7 +19,7 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 static GROUP_SIZE: u32 = 23;
-static QUORUM_SIZE: u32 = 19;
+pub static QUORUM_SIZE: u32 = 19;
 
 pub struct DhtAddress([u8; 64]);
 
@@ -77,6 +77,42 @@ pub type SerialisedMessage = Vec<u8>;
 pub trait KeyGetterTraits {
   fn get_client_key(&mut self, Address);
   fn get_group_key(&mut self, GroupAddress);
+}
+
+pub trait RoutingTrait {
+  fn get_name(&self)->Vec<u8>;
+  fn get_owner(&self)->Vec<u8>;
+  fn refresh(&self)->bool;
+  fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct AccountTransferInfo {
+  pub name : Vec<u8>
+}
+
+impl Encodable for AccountTransferInfo {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode { tag : 5483_000 ,
+                    data : &(&self.name) }.encode(e)
+  }
+}
+
+impl Decodable for AccountTransferInfo {
+  fn decode<D: Decoder>(d: &mut D)->Result<AccountTransferInfo, D::Error> {
+    try!(d.read_u64());
+    let name = try!(Decodable::decode(d));
+    Ok(AccountTransferInfo { name: name })
+  }
+}
+
+impl RoutingTrait for AccountTransferInfo {
+  fn get_name(&self)->Vec<u8> { self.name.clone() }
+  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
+  fn refresh(&self)->bool { false } // TODO is this an account transfer type
+
+   // TODO how do we merge these
+  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
 }
 
 /// Address of the source of the message

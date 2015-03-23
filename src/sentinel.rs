@@ -13,18 +13,30 @@
 // use of the MaidSafe
 // Software.
 
+extern crate cbor;
+
 use accumulator;
 use message_header;
 use types;
+use types::RoutingTrait;
 
 pub type ResultType = (message_header::MessageHeader,
-	                     types::MessageTypeTag, types::SerialisedMessage);
+	                   types::MessageTypeTag, types::SerialisedMessage);
 
 type NodeKeyType = (types::NodeAddress, types::MessageId);
 type GroupKeyType = (types::GroupAddress, types::MessageId);
 type NodeAccumulatorType = accumulator::Accumulator<NodeKeyType, ResultType>;
 type GroupAccumulatorType = accumulator::Accumulator<GroupKeyType, ResultType>;
 type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultType>;
+
+
+pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
+  let mut vector = Vec::new();
+  for i in arr.iter() {
+    vector.push(*i);
+  }
+  vector
+}
 
 
 pub struct Sentinel<'a> {
@@ -146,8 +158,41 @@ impl<'a> Sentinel<'a> {
     Vec::<ResultType>::new()
   }
 
-  fn resolve(&self, _ : Vec<ResultType>, _ : bool) -> Option<ResultType> {
-    None
+  fn resolve(&self, verified_messages : Vec<ResultType>, _ : bool) -> Option<ResultType> {
+	  if verified_messages.len() < types::QUORUM_SIZE as usize {
+	    return None;
+	  }
+	  // if part addresses non-account transfer message types, where an exact match is required
+	  if verified_messages[0].1 != types::MessageTypeTag::AccountTransfer {
+	    for index in 0..verified_messages.len() {
+	      let serialised_message = verified_messages[index].2.clone();
+	      let mut count = 0;
+	      for message in verified_messages.iter() {
+	      	if message.2 == serialised_message {
+	      		count = count + 1;
+	      	}
+	      }
+	      if count > types::QUORUM_SIZE {
+	      	return Some(verified_messages[index].clone());
+	      }
+	    }
+	  } else {  // account transfer
+	    let mut accounts : Vec<types::AccountTransferInfo> = Vec::new();
+	    for message in verified_messages.iter() {
+	      let mut d = cbor::Decoder::from_bytes(message.2.clone());
+	      let obj_after: types::AccountTransferInfo = d.decode().next().unwrap().unwrap();
+	      accounts.push(obj_after);
+	    }
+	    let result = accounts[0].merge(&accounts);
+	    if result.is_some() {
+	      let mut tmp = verified_messages[0].clone();
+		    let mut e = cbor::Encoder::from_memory();
+		    e.encode(&[&result.unwrap()]).unwrap();
+	      tmp.2 = array_as_vector(e.as_bytes());
+	      return Some(tmp);
+	    }
+	  }
+	  None
   }
 
 }

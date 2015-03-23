@@ -35,7 +35,7 @@
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features)]
-#![feature(custom_derive, rand, std_misc, unsafe_destructor, unboxed_closures)]
+#![feature(custom_derive, rand, std_misc, unsafe_destructor, unboxed_closures, io)]
 
 extern crate sodiumoxide;
 extern crate "lru-cache" as lru_cache;
