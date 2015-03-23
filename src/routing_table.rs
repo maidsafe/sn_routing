@@ -21,6 +21,7 @@ extern crate maidsafe_types;
 extern crate sodiumoxide;
 extern crate utp;
 
+use bit_matrix;
 use std::net::{TcpStream};
 use sodiumoxide::crypto;
 use std::default::Default;
@@ -86,6 +87,27 @@ fn bucket_index(from: Address, to: Address)->u32 {
     0u32
 }
 
+fn common_leading_bits(id1: Address, id2: Address) -> u32 {
+    let (mut missmatch_first, mut missmatch_second)= (0u8, 0u8);
+    let mut index: u32 = 0;
+    let identity_size = id1.len() as u32;
+    for i in 0..id1.len() {
+        if (id1[i] !=  id2[i]) {
+          missmatch_first = id1[i];
+          missmatch_second = id2[i];
+          index  = i as u32;
+          break
+        }
+    }
+
+    if (index == identity_size) {
+        return 8u32 * identity_size;
+    }
+
+    let bm_result = bit_matrix::bit_matrix(missmatch_first, missmatch_second) as u32;
+    (8u32 * index) + bm_result
+}
+
 /// The RoutingTable class is used to maintain a list of contacts to which we are connected.  
 struct RoutingTable {
   routing_table: Vec<NodeInfo>,
@@ -123,7 +145,7 @@ impl RoutingTable {
   ///     bucket closer to our own bucket, then we add the new contact.
   pub fn add_node(&self, their_info: &NodeInfo)->(bool, Option<NodeInfo>) {
     let ret_val: (bool, Option<NodeInfo>) = (false, None);
-    
+
     /*
     if their_info.fob.is_valid() &&
        their_info.fob.id != self.our_id {
@@ -166,7 +188,9 @@ impl RoutingTable {
 
   pub fn size()->usize { 8usize }
 
-  pub fn bucket_index(&self, node_id: Address)->u32 { 8u32 }
+  pub fn bucket_index(&self, node_id: Address) -> u32 {
+    return common_leading_bits(self.our_id(), node_id);
+  }
 
   // privates
   fn has_node(&self, node_id: &maidsafe_types::NameType) -> bool {
@@ -216,6 +240,18 @@ impl RoutingTable {
 
     false
   }
+
+  fn new_node_is_better_than_existing (&self, new_node: &maidsafe_types::NameType, removal_node: &NodeInfo) -> bool {
+    if self.routing_table.is_empty() {
+    return true;
+    }
+    let last_node_fob_id = self.routing_table[self.routing_table.len() -1 ].fob.id.0;
+    let removal_node_fob_id = removal_node.fob.id.0;
+    let new_node_id = (*new_node).0;
+
+    !maidsafe_types::helper::compare_arr_u8_64(&last_node_fob_id, &removal_node_fob_id) && &self.bucket_index(new_node_id) > &self.bucket_index(removal_node_fob_id)
+  }
+
 }
 
 #[test]

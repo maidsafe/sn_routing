@@ -16,12 +16,13 @@ cbor = "0.2.2"
 bchannel = "*"
 
 [dependencies.maidsafe_types]
-path = "/home/spandan/virtualization/coding/rust-maidsafe/maidsafe-types/maidsafe_types"
+path = "G:/Shankar/Project/git/maidsafe/Rust/maidsafe_types"
 #git = "https://github.com/ustulation/maidsafe_types.git"
 #branch = "misc"
 
 [dependencies.utp]
-git = "https://github.com/meqif/rust-utp"
+path = "G:/Shankar/Project/git/maidsafe/rust-utp"
+#git = "https://github.com/meqif/rust-utp"
 
 [dependencies.sodiumoxide]
 git = "https://github.com/dnaq/sodiumoxide"
