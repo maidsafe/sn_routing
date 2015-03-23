@@ -21,7 +21,7 @@ extern crate maidsafe_types;
 extern crate sodiumoxide;
 extern crate utp;
 
-use bit_matrix;
+use common_bits::*;
 use std::net::{TcpStream};
 use sodiumoxide::crypto;
 use std::default::Default;
@@ -30,7 +30,7 @@ static BUCKET_SIZE: u32 = 1;
 static PARALELISM: u32 = 4;
 static OPTIMAL_SIZE: u32 = 64;
 
-type Address = [u8;64];
+type Address = maidsafe_types::NameType; // [u8;64];
 struct PublicKey;
 
 struct KeyFob {
@@ -77,37 +77,6 @@ impl Clone for NodeInfo {
   }
 }
 
-fn bucket_index(from: Address, to: Address)->u32 {
-  let it = from.iter().zip(to.iter());
-  /*
-  for (i, (x, y)) in it.enumerate {
-    if x ^ y  == 1 { return i as u32 }
-    }
-    */
-    0u32
-}
-
-fn common_leading_bits(id1: Address, id2: Address) -> u32 {
-    let (mut missmatch_first, mut missmatch_second)= (0u8, 0u8);
-    let mut index: u32 = 0;
-    let identity_size = id1.len() as u32;
-    for i in 0..id1.len() {
-        if (id1[i] !=  id2[i]) {
-          missmatch_first = id1[i];
-          missmatch_second = id2[i];
-          index  = i as u32;
-          break
-        }
-    }
-
-    if (index == identity_size) {
-        return 8u32 * identity_size;
-    }
-
-    let bm_result = bit_matrix::bit_matrix(missmatch_first, missmatch_second) as u32;
-    (8u32 * index) + bm_result
-}
-
 /// The RoutingTable class is used to maintain a list of contacts to which we are connected.  
 struct RoutingTable {
   routing_table: Vec<NodeInfo>,
@@ -115,20 +84,20 @@ struct RoutingTable {
 }
 
 impl RoutingTable {
-  pub fn get_bucket_size() -> u8 {
-    1u8
+  pub fn get_bucket_size() -> usize {
+    1
   }
 
-  pub fn get_parallelism() -> u8 {
-    4u8
+  pub fn get_parallelism() -> usize {
+    4
   }
 
-  pub fn get_optimal_size() -> u8 {
-    64u8
+  pub fn get_optimal_size() -> usize {
+    64
   }
 
-  pub fn get_group_size() -> u8 {
-    23u8
+  pub fn get_group_size() -> usize {
+    23
   }
 
   /// Potentially adds a contact to the routing table.  If the contact is added, the first return arg
@@ -147,7 +116,7 @@ impl RoutingTable {
     let ret_val: (bool, Option<NodeInfo>) = (false, None);
 
     /*
-    if their_info.fob.is_valid() &&
+    if their_in fo.fob.is_valid() &&
        their_info.fob.id != self.our_id {
       if !have_node(their_info.fob.id) {
         if routing_table.len() < get_optimal_size() {
@@ -162,8 +131,7 @@ impl RoutingTable {
 
     ret_val
   }
-
-  /**** Days Work******************************************/
+  
   /// This is used to see whether to bother retrieving a contact's public key from the PKI with a
   /// view to adding the contact to our table.  The checking procedure is the same as for 'AddNode'
   /// above, except for the lack of a public key to check in step 1.
@@ -171,7 +139,7 @@ impl RoutingTable {
   	if (!self.is_valid()) {
   		panic!("Routing Table id is not valid");
   	}
-  	if (!maidsafe_types::helper::compare_arr_u8_64(&self.our_id.0, &their_id)) {
+  	if (!maidsafe_types::helper::compare_arr_u8_64(&self.our_id.0, &their_id.0)) {
 		  return false;
   	}
   	if (self.has_node(their_id)) {
@@ -181,15 +149,29 @@ impl RoutingTable {
     if (self.routing_table.len() < (RoutingTable::get_optimal_size() as usize)) {
     	return true;
     }
-    let group_size = (RoutingTable::get_group_size() - 1) as usize;    
-    if self.closer_to_target(&maidsafe_types::NameType(their_id), &self.routing_table[group_size].fob.id) {
+    let group_size = (RoutingTable::get_group_size() - 1) as usize;
+    let thier_id_clone = their_id.clone();    
+    if self.closer_to_target(&thier_id_clone, &self.routing_table[group_size].fob.id) {
     	return true;
   	}
-    return self.new_node_is_better_than_existing(&maidsafe_types::NameType(their_id), self.find_candidate_for_removal());        	
+    return self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal());        	
 	}
-  /**** Days Work End******************************************/
+  
   // This unconditionally removes the contact from the table.
-  pub fn drop_node(&self, node_to_drop: Address) {  }
+  pub fn drop_node(&mut self, node_to_drop: &Address) {
+    let mut index_of_removal = 0usize;
+
+    for i in 0..self.routing_table.len() {
+      if maidsafe_types::helper::compare_arr_u8_64(&self.routing_table[i].fob.id.0, &node_to_drop.0) {
+        index_of_removal = i;
+        break;
+      }
+    }
+
+    if index_of_removal < self.routing_table.len() {
+      self.routing_table.remove(index_of_removal);
+    }
+  }
 
   // This returns a collection of contacts to which a message should be sent onwards.  It will
   // return all of our close group (comprising 'GroupSize' contacts) if the closest one to the
@@ -204,33 +186,64 @@ impl RoutingTable {
   // This returns the public key for the given node if the node is in our table.
   pub fn get_public_key(their_id: Address)->Option<PublicKey> { None }
 
-  pub fn our_id(&self)->Address {
-  	self.our_id.0 
-	}
+
+//  pub fn our_id(&self)->Address {
+//  	self.our_id.0 
+//	}
+
 
   pub fn size(&self)->usize {
   	//std::lock_guard<std::mutex> lock(mutex_);
     self.routing_table.len()
 	}
 
-  pub fn bucket_index(&self, node_id: Address) -> u32 {
-    return common_leading_bits(self.our_id(), node_id);
+  fn find_candidate_for_removal(&self) -> usize {
+    assert!(self.routing_table.len() >= RoutingTable::get_optimal_size());
+
+    let mut number_in_bucket = 0usize;
+    let mut bucket = 0usize;
+
+    let mut start = self.routing_table.len() - 1;
+    let finish = RoutingTable::get_group_size();
+
+    while start >= finish {
+      let index = self.bucket_index(&self.routing_table[start].fob.id);
+      if index != bucket {
+        bucket = index;
+        number_in_bucket = 0;
+      }
+
+      number_in_bucket += 1;
+      if number_in_bucket > RoutingTable::get_bucket_size() {
+        break;
+      }
+
+      start -= 1;
+    }
+    start
   }
 
-  // privates
-/*  fn has_node(&self, node_id: &maidsafe_types::NameType) -> bool {
-    for node_info in &self.routing_table {
-      if maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &node_id.0) {
-        return true;
+  fn bucket_index(&self, id: &maidsafe_types::NameType) -> usize {
+    let mut index_of_mismatch = 0usize;
+
+    while index_of_mismatch < self.our_id.0.len() {
+      if id.0[index_of_mismatch] != self.our_id.0[index_of_mismatch] {
+        break;
       }
+      index_of_mismatch += 1;
     }
 
-    false
-  }*/
+    if index_of_mismatch == self.our_id.0.len() {
+      return 8 * self.our_id.0.len();
+    }
+
+    let common_bits = K_COMMON_BITS[self.our_id.0[index_of_mismatch] as usize][id.0[index_of_mismatch] as usize];
+    8 * index_of_mismatch + common_bits as usize
+  }
   
   fn has_node(&self, node_id: Address) -> bool {
     for node_info in &self.routing_table {
-      if maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &node_id) {
+      if maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &node_id.0) {
         return true;
       }
     }
@@ -268,9 +281,6 @@ impl RoutingTable {
     false
   }
   
-
-  
-  /************************Day's work *********************************/
   pub fn is_valid(&self) -> bool {
    let maidsafe_types::NameType(id) = self.our_id;
    for it in id.iter() {
@@ -294,9 +304,6 @@ impl RoutingTable {
     false
   }
   
-  fn find_candidate_for_removal(&self) -> &NodeInfo {
-  	&self.routing_table[0]
-  }
   
   fn new_node_is_better_than_existing (&self, new_node: &maidsafe_types::NameType, removal_node: &NodeInfo) -> bool {
  	  if self.routing_table.is_empty() {
@@ -304,13 +311,10 @@ impl RoutingTable {
  	  }
     let last_node_fob_id = self.routing_table[self.routing_table.len() -1 ].fob.id.0;
     let removal_node_fob_id = removal_node.fob.id.0;
-    let new_node_id = (*new_node).0;
+    //let new_node_id = (*new_node).0;
     
-    !maidsafe_types::helper::compare_arr_u8_64(&last_node_fob_id, &removal_node_fob_id) && &self.bucket_index(new_node_id) > &self.bucket_index(removal_node_fob_id)
+    !maidsafe_types::helper::compare_arr_u8_64(&last_node_fob_id, &removal_node_fob_id) && &self.bucket_index(new_node) > &self.bucket_index(&removal_node.fob.id)
   }
-  /**************** Day END ********************/
-
-
 
 }
 
