@@ -17,6 +17,11 @@ bchannel = "*"
 lru-cache = "0.0.1"
 time = "0.1.20"
 
+[dependencies.maidsafe_types]
+path = "/home/spandan/virtualization/coding/rust-maidsafe/maidsafe-types/maidsafe_types"
+#git = "https://github.com/ustulation/maidsafe_types.git"
+#branch = "misc"
+
 [dependencies.utp]
 git = "https://github.com/meqif/rust-utp"
 
