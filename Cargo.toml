@@ -24,6 +24,8 @@ path = "../maidsafe_types"
 
 [dependencies.utp]
 path = "../rust-utp"
+#git = "https://github.com/meqif/rust-utp"
+
 
 [dependencies.sodiumoxide]
 git = "https://github.com/dnaq/sodiumoxide"

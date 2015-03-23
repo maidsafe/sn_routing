@@ -55,6 +55,7 @@ mod connections;
 mod message_header;
 mod routing_table;
 mod accumulator;
+mod bit_matrix;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
