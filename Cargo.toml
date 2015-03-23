@@ -14,6 +14,8 @@ homepage = "http://www.maidsafe.net"
 rustc-serialize = "*"
 cbor = "0.2.2"
 bchannel = "*"
+lru-cache = "0.0.1"
+time = "0.1.20"
 
 [dependencies.maidsafe_types]
 path = "/home/spandan/virtualization/coding/rust-maidsafe/maidsafe-types/maidsafe_types"

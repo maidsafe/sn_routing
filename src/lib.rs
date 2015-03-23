@@ -35,12 +35,15 @@
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features)]
-#![feature(custom_derive, rand)]
+#![feature(custom_derive, rand, std_misc, unsafe_destructor)]
 
 extern crate sodiumoxide;
+extern crate "lru-cache" as lru_cache;
 extern crate "rustc-serialize" as rustc_serialize;
 extern crate cbor;
 extern crate utp;
+extern crate time;
+extern crate bchannel;
 
 use std::net::{TcpStream};
 use sodiumoxide::crypto;
@@ -51,6 +54,7 @@ mod types;
 mod connections;
 mod message_header;
 mod routing_table;
+mod accumulator;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {

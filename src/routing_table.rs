@@ -171,10 +171,7 @@ impl RoutingTable {
   // privates
   fn has_node(&self, node_id: &maidsafe_types::NameType) -> bool {
     for node_info in &self.routing_table {
-      let maidsafe_types::NameType(lhs) = node_info.fob.id;
-      let &maidsafe_types::NameType(rhs) = node_id;
-
-      if maidsafe_types::helper::compare_arr_u8_64(&lhs, &rhs) {
+      if maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &node_id.0) {
         return true;
       }
     }
@@ -201,13 +198,9 @@ impl RoutingTable {
   }
 
   fn is_rhs_less(&self, lhs: &maidsafe_types::NameType, rhs: &maidsafe_types::NameType) -> bool {
-    let &maidsafe_types::NameType(lhs_arr) = lhs;
-    let &maidsafe_types::NameType(rhs_arr) = lhs;
-    let maidsafe_types::NameType(our_arr) = self.our_id;
-
-    for i in 0..lhs_arr.len() {
-      let res_0 = lhs_arr[i] ^ our_arr[i];
-      let res_1 = rhs_arr[i] ^ our_arr[i];
+    for i in 0..lhs.0.len() {
+      let res_0 = lhs.0[i] ^ self.our_id.0[i];
+      let res_1 = rhs.0[i] ^ self.our_id.0[i];
 
       if res_1 < res_0 {
         return true;
