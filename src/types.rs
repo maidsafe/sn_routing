@@ -74,9 +74,9 @@ pub type NodeAddress = Address; // (Address, NodeTag)
 pub type GroupAddress = Address; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
 
-pub trait SentinelTraits {
-  fn get_address(&mut self, Address);
-  fn get_group_address(&mut self, Address);
+pub trait KeyGetterTraits {
+  fn get_client_key(&mut self, Address);
+  fn get_group_key(&mut self, GroupAddress);
 }
 
 /// Address of the source of the message

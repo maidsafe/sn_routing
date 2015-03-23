@@ -30,7 +30,7 @@ type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultTy
 pub struct Sentinel<'a> {
   // send_get_client_key_ : for <'a> Fn<(types::Address)>,
   // send_get_group_key_ : Fn<(types::GroupAddress),>,
-  traits_: &'a mut (types::SentinelTraits + 'a),
+  key_getter_traits_: &'a mut (types::KeyGetterTraits + 'a),
   node_accumulator_ : NodeAccumulatorType,
   group_accumulator_ : GroupAccumulatorType,
   group_key_accumulator_ : KeyAccumulatorType,
@@ -38,13 +38,116 @@ pub struct Sentinel<'a> {
 }
 
 impl<'a> Sentinel<'a> {
-  pub fn new(traits_in: &'a mut types::SentinelTraits) -> Sentinel {
+  pub fn new(key_getter_traits_in: &'a mut types::KeyGetterTraits) -> Sentinel {
   	Sentinel {
-  		traits_: traits_in,
+  		key_getter_traits_: key_getter_traits_in,
   	  node_accumulator_: NodeAccumulatorType::new(20),
   	  group_accumulator_: NodeAccumulatorType::new(20),
   	  group_key_accumulator_: KeyAccumulatorType::new(20),
   	  node_key_accumulator_: KeyAccumulatorType::new(20)
   	}
   }
+
+  pub fn add(&mut self, header : message_header::MessageHeader, type_tag : types::MessageTypeTag,
+  	         message : types::SerialisedMessage) -> Option<ResultType> {
+  	match type_tag {
+  		types::MessageTypeTag::GetClientKeyResponse => {
+  			if header.is_from_group() {
+	  			let keys = self.node_key_accumulator_.add(header.from_group().unwrap(),
+			  				                                    (header.clone(), type_tag, message),
+			  				                                    header.from_node());
+		      if keys.is_some() {
+		      	let key = (header.from_group().unwrap(), header.message_id());
+		      	let messages = self.node_accumulator_.get(&key);
+		      	if messages.is_some() {
+	      			let resolved = self.resolve(self.validate_node(messages.unwrap().1,
+	      				                                             keys.unwrap().1), false);
+	      			if resolved.is_some() {
+      					self.node_accumulator_.delete(key);
+      					return resolved;
+	      			}
+		      	}
+		      }
+			  }
+  		}
+			types::MessageTypeTag::GetGroupKeyResponse => {
+				if header.is_from_group() {
+	  			let keys = self.group_key_accumulator_.add(header.from_group().unwrap(),
+			  				                                     (header.clone(), type_tag, message),
+			  				                                     header.from_node());
+	  			if keys.is_some() {
+		      	let key = (header.from_group().unwrap(), header.message_id());
+		      	let messages = self.group_accumulator_.get(&key);
+		      	if messages.is_some() {
+	      			let resolved = self.resolve(self.validate_group(messages.unwrap().1,
+	      				                                              keys.unwrap().1), true);
+	      			if resolved.is_some() {
+      					self.group_accumulator_.delete(key);
+      					return resolved;
+	      			}
+		      	}
+			    }
+			  }
+			}
+			_ => {
+				if header.is_from_group() {
+					let key = (header.from_group().unwrap(), header.message_id());
+					if !self.group_accumulator_.have_name(&key) {
+						self.key_getter_traits_.get_group_key(header.from_group().unwrap());
+					} else {
+						let messages = self.group_accumulator_.add(key.clone(),
+							                                         (header.clone(), type_tag, message),
+							                                         header.from_node());
+						if messages.is_some() {
+							let keys = self.group_key_accumulator_.get(&header.from_group().unwrap());
+							if keys.is_some() {
+		      			let resolved = self.resolve(self.validate_group(messages.unwrap().1,
+		      				                                              keys.unwrap().1), true);
+		      			if resolved.is_some() {
+	      					self.group_accumulator_.delete(key);
+	      					return resolved;
+		      			}
+			      	}
+						}
+					}
+				} else {
+					let key = (header.from_node(), header.message_id());
+					if !self.node_accumulator_.have_name(&key) {
+						self.key_getter_traits_.get_client_key(header.from_group().unwrap());
+					} else {
+						let messages = self.node_accumulator_.add(key.clone(),
+							                                        (header.clone(), type_tag, message),
+							                                        header.from_node());
+						if messages.is_some() {
+							let keys = self.node_key_accumulator_.get(&header.from_group().unwrap());
+							if keys.is_some() {
+		      			let resolved = self.resolve(self.validate_node(messages.unwrap().1,
+		      				                                             keys.unwrap().1), false);
+		      			if resolved.is_some() {
+	      					self.node_accumulator_.delete(key);
+	      					return resolved;
+		      			}
+			      	}
+						}
+					}
+				}
+			}
+		}
+  	None
+  }
+
+  fn validate_node(&self, _ : Vec<accumulator::Response<ResultType>>,
+  	               _ : Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+  	Vec::<ResultType>::new()
+  }
+
+  fn validate_group(&self, _ : Vec<accumulator::Response<ResultType>>,
+  	                _ : Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+    Vec::<ResultType>::new()
+  }
+
+  fn resolve(&self, _ : Vec<ResultType>, _ : bool) -> Option<ResultType> {
+    None
+  }
+
 }

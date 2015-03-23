@@ -61,6 +61,10 @@ impl MessageHeader {
     }
   }
 
+  pub fn message_id(&self) -> types::MessageId {
+    self.message_id
+  }
+
   pub fn from_node(&self) -> types::Address {
     self.source.from_node.clone()
   }
@@ -70,6 +74,14 @@ impl MessageHeader {
       Some(self.source.from_group.clone())
     } else {
       None
+    }
+  }
+
+  pub fn is_from_group(&self) -> bool {
+    if self.source.from_group.len() == 64 {
+      true
+    } else {
+      false
     }
   }
 
