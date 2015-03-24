@@ -19,7 +19,7 @@
 
 extern crate maidsafe_types;
 extern crate sodiumoxide;
-extern crate utp;
+//extern crate utp;
 
 use common_bits::*;
 use std::net::{TcpStream};
@@ -200,7 +200,54 @@ impl RoutingTable {
   // return all of our close group (comprising 'GroupSize' contacts) if the closest one to the
   // target is within our close group.  If not, it will return the 'Parallelism()' closest contacts
   // to the target.
-  pub fn target_nodes(&self, target: Address)->Vec<NodeInfo> { Vec::new() }
+  pub fn target_nodes(&self, target: Address)->Vec<NodeInfo> {
+    let mut our_close_group: Vec<NodeInfo> = Vec::new();
+    let mut closest_to_target: Vec<NodeInfo> = Vec::new();
+    let mut result: Vec<NodeInfo> = Vec::new();
+    let mut iterations = 0usize;
+
+    let parallelism = if RoutingTable::get_group_size() < self.routing_table.len() {
+      RoutingTable::get_group_size()
+    } else {
+      self.routing_table.len()
+    };
+
+    for iter in self.routing_table.iter() {
+      if iterations < RoutingTable::get_group_size() {
+        our_close_group.push(iter.clone());
+      }
+      closest_to_target.push(iter.clone());
+      iterations += 1;
+    }
+
+    if closest_to_target.is_empty() {
+      return result;
+    }
+
+    self.partial_sort(&mut closest_to_target, parallelism);
+
+    if self.is_any_of(&our_close_group, &closest_to_target) {
+      for iter in our_close_group.iter() {
+        result.push(iter.clone());
+      }
+    } else {
+      for iter in closest_to_target.iter().take(parallelism) {
+        result.push(iter.clone());
+      }
+    }
+
+
+    result
+  }
+
+  fn is_any_of(&self, vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
+    ;
+    false
+  }
+
+  fn partial_sort(&self, vec: &mut Vec<NodeInfo>, parallelism: usize) {
+    ;
+  }
 
   // This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
   // table if we hold less than 'GroupSize' contacts in total).
@@ -303,7 +350,7 @@ impl RoutingTable {
       let mut j = i - 1;
       let rhs_id = self.routing_table[i].clone();
 
-      while j >=0 && self.is_rhs_less(&self.routing_table[j].fob.id, &rhs_id.fob.id) {
+      while j != (-1 as usize) && self.is_rhs_less(&self.routing_table[j].fob.id, &rhs_id.fob.id) {
         self.routing_table[j + 1] = self.routing_table[j].clone();
         j -= 1;
       }
