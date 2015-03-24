@@ -59,6 +59,7 @@ mod accumulator;
 mod common_bits;
 mod sentinel;
 mod get_client_key_response;
+mod get_group_key_response;
 
 
 //#[derive(RustcEncodable, RustcDecodable)]
