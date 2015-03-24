@@ -45,8 +45,8 @@ impl Encodable for Authority {
       Authority::ManagedClient => authority = "ManagedClient",
       Authority::Client => authority = "Client",
       Authority::Unknown => authority = "Unknown",
-    }
-    CborTagEncode::new(5483_100, &(&self)).encode(e)
+    };
+    CborTagEncode::new(5483_100, &(&authority)).encode(e)
   }
 }
 
