@@ -15,15 +15,15 @@
 
 
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddr, SocketAddrV4, Shutdown};
-use std::io::{stdout, stderr, Write};
+use std::io::{stdout, stderr, Write, BufReader};
 use std::sync::mpsc::{Sender};
 use std::io::Result as IoResult;
 use std::io::Error as IoError;
 use std::io::{ ErrorKind };
-use cbor::{ Encoder, CborError }; 
+use cbor::{ Encoder, CborError, Decoder }; 
 use std::thread::spawn;
 use std::marker::PhantomData;
-use rustc_serialize::{ Encodable };
+use rustc_serialize::{ Decodable, Encodable };
 use bchannel::channel;
 
 pub use bchannel::Receiver;
