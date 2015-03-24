@@ -24,6 +24,7 @@ use message_header;
 use types;
 use types::RoutingTrait;
 use get_client_key_response::GetClientKeyResponse;
+use get_group_key_response::GetGroupKeyResponse;
 
 pub type ResultType = (message_header::MessageHeader,
 	                   types::MessageTypeTag, types::SerialisedMessage);
@@ -201,9 +202,57 @@ impl<'a> Sentinel<'a> {
   	verified_messages
   }
 
-  fn validate_group(&self, _ : Vec<accumulator::Response<ResultType>>,
-  	                _ : Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
-    Vec::<ResultType>::new()
+  fn validate_group(&self, messages : Vec<accumulator::Response<ResultType>>,
+  	                keys : Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+	  if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
+	    return Vec::<ResultType>::new();
+	  }
+  	let mut verified_messages : Vec<ResultType> = Vec::new();
+  	let mut keys_map : HashMap<types::Address, Vec<types::PublicKey>> = HashMap::new();
+  	for group_key in keys.iter() {
+      let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
+      let group_key_response: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
+      for public_key in group_key_response.public_keys.iter() {
+      	if !keys_map.contains_key(&public_key.0) {
+	      	keys_map.insert(public_key.0.clone(), vec![types::PublicKey{ public_key : public_key.1.clone() }]);
+      	} else {
+		      let public_keys = keys_map.get_mut(&public_key.0);
+	      	let mut public_keys_holder = public_keys.unwrap();
+	      	let mut not_spotted = true;
+	        for pub_key in public_keys_holder.iter() {
+	        	if public_key.1 == pub_key.public_key {
+	        		not_spotted = false;
+	            break;
+	        	}
+	        }
+	        if not_spotted {
+	        	public_keys_holder.push(types::PublicKey{ public_key : public_key.1.clone() });
+	        }
+		    }
+	    }
+  	}
+  	// TODO(mmoadeli): For the time being, we assume that no invalid public is received
+    for (_, pub_key_list) in keys_map.iter() {
+    	if pub_key_list.len() != 1 {
+    		return Vec::<ResultType>::new();
+    	}
+    }
+    for message in messages.iter() {
+    	let key_map_iter = keys_map.get_mut(&message.value.0.from_node());
+    	if key_map_iter.is_some() {
+		  	let public_key = key_map_iter.unwrap()[0].get_public_key();
+        let signature = message.value.0.get_signature();
+        let ref msg = message.value.2;
+	  		if crypto::sign::verify_detached(&signature, msg.as_slice(), &public_key) {
+	  		  verified_messages.push(message.value.clone());
+	  		}
+		  }
+	  }
+	  if verified_messages.len() >= types::QUORUM_SIZE as usize {
+  		verified_messages
+  	} else {
+  		Vec::<ResultType>::new()
+  	}
   }
 
   fn resolve(&self, verified_messages : Vec<ResultType>, _ : bool) -> Option<ResultType> {

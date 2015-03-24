@@ -123,8 +123,7 @@ pub struct AccountTransferInfo {
 
 impl Encodable for AccountTransferInfo {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode { tag : 5483_000 ,
-                    data : &(&self.name) }.encode(e)
+    CborTagEncode::new(5483_000, &(&self.name)).encode(e)
   }
 }
 

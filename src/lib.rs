@@ -58,6 +58,7 @@ mod accumulator;
 mod sentinel;
 
 mod get_client_key_response;
+mod get_group_key_response;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
