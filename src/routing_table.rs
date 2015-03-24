@@ -112,24 +112,46 @@ impl RoutingTable {
   /// 4 - if we can find a candidate for removal (a contact in a bucket with more than 'BucketSize()'
   ///     contacts, which is also not within our close group), and if the new contact will fit in a
   ///     bucket closer to our own bucket, then we add the new contact.
-  pub fn add_node(&self, their_info: &NodeInfo)->(bool, Option<NodeInfo>) {
-    let ret_val: (bool, Option<NodeInfo>) = (false, None);
+  pub fn add_node(&mut self, their_info: NodeInfo)->(bool, Option<NodeInfo>) {
+    //  Validate(their_info.id);
 
-    /*
-    if their_in fo.fob.is_valid() &&
-       their_info.fob.id != self.our_id {
-      if !have_node(their_info.fob.id) {
-        if routing_table.len() < get_optimal_size() {
-          push_back_then_sort(their_info);
-          ret_val = (true, None);
-        } else {
-          ;
-        }
+    let maidsafe_types::NameType(their_info_id) = their_info.fob.id;
+    let maidsafe_types::NameType(our_id) = self.our_id;
+    let mut new_node_index: usize = 0;
+
+    if maidsafe_types::helper::compare_arr_u8_64(&their_info_id, &our_id) {
+      return (false, None);
+    }
+
+    if self.has_node(&their_info.fob.id) {
+      return (false, None);
+    }
+
+    if self.routing_table.len() < RoutingTable::get_optimal_size() {
+      new_node_index = self.push_back_then_sort(their_info);
+      return (true, None);
+    }
+
+    if self.closer_to_target(&their_info.fob.id, &self.our_id) {
+      new_node_index = self.push_back_then_sort(their_info);
+      let removal_node_index = self.find_candidate_for_removal();
+      if removal_node_index == self.routing_table.len() {
+        return (true, None);
+      } else {
+        let removal_node = self.routing_table[removal_node_index].clone();
+        self.routing_table.remove(removal_node_index);
+        return (true, Some(removal_node));
       }
     }
-    */
 
-    ret_val
+    let removal_node_index = self.find_candidate_for_removal();
+    if self.new_node_is_better_than_existing(&their_info.fob.id, removal_node_index) {
+      let removal_node = self.routing_table[removal_node_index].clone();
+      self.routing_table.remove(removal_node_index);
+      new_node_index = self.push_back_then_sort(their_info);
+      return (true, Some(removal_node));
+    }
+    (false, None)
   }
   
   /// This is used to see whether to bother retrieving a contact's public key from the PKI with a
@@ -250,8 +272,9 @@ impl RoutingTable {
     false
   }
 
-  fn push_back_then_sort(&mut self, node_info: NodeInfo) {
+  fn push_back_then_sort(&mut self, node_info: NodeInfo) -> usize {
     self.routing_table.push(node_info);
+    let mut index = self.routing_table.len() - 1;
 
     for i in 1..self.routing_table.len() {
       let mut j = i - 1;
@@ -264,8 +287,12 @@ impl RoutingTable {
 
       if j + 1 != i {
         self.routing_table[j + 1] = rhs_id;
+        if i == self.routing_table.len() - 1 {
+          index = j + 1;
+        }
       }
     }
+    index
   }
 
   fn is_rhs_less(&self, lhs: &maidsafe_types::NameType, rhs: &maidsafe_types::NameType) -> bool {
