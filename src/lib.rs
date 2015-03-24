@@ -35,7 +35,7 @@
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features)]
-#![feature(custom_derive, rand, std_misc, unsafe_destructor)]
+#![feature(custom_derive, rand, std_misc, unsafe_destructor, unboxed_closures, io, core)]
 
 extern crate sodiumoxide;
 extern crate "lru-cache" as lru_cache;
@@ -50,23 +50,27 @@ use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
+
 mod types;
-mod connections;
+mod tcp_connections;
 mod message_header;
 mod routing_table;
 mod accumulator;
 mod common_bits;
+mod sentinel;
+mod get_client_key_response;
+
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
-sign_public_key: crypto::sign::PublicKey,
-encrypt_public_key: crypto::asymmetricbox::PublicKey,
-signature: crypto::sign::Signature // detached signature  
+  sign_public_key: crypto::sign::PublicKey,
+  encrypt_public_key: crypto::asymmetricbox::PublicKey,
+  signature: crypto::sign::Signature // detached signature  
 }
 
 //#[derive(RustcEncodable, RustcDecodable, Default)]
 pub struct DhtIdentity {
-id: [u8; 64]  
+  id: [u8; 64]  
 }
 
 impl Default for DhtIdentity {
