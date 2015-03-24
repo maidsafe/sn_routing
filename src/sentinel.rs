@@ -14,11 +14,16 @@
 // Software.
 
 extern crate cbor;
+extern crate sodiumoxide;
+
+use std::collections::HashMap;
+use sodiumoxide::crypto;
 
 use accumulator;
 use message_header;
 use types;
 use types::RoutingTrait;
+use get_client_key_response::GetClientKeyResponse;
 
 pub type ResultType = (message_header::MessageHeader,
 	                   types::MessageTypeTag, types::SerialisedMessage);
@@ -148,9 +153,52 @@ impl<'a> Sentinel<'a> {
   	None
   }
 
-  fn validate_node(&self, _ : Vec<accumulator::Response<ResultType>>,
-  	               _ : Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
-  	Vec::<ResultType>::new()
+  fn validate_node(&self, messages : Vec<accumulator::Response<ResultType>>,
+  	               keys : Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+	  if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
+	    return Vec::<ResultType>::new();
+	  }
+  	let mut verified_messages : Vec<ResultType> = Vec::new();
+  	let mut keys_map : HashMap<types::Address, Vec<types::PublicKey>> = HashMap::new();
+  	for node_key in keys.iter() {
+      let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
+      let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
+      {
+	      let public_keys = keys_map.get_mut(&key_response.address);
+	      if public_keys.is_some() {
+	      	let mut public_keys_holder = public_keys.unwrap();
+	      	let mut not_spotted = true;
+	        for public_key in public_keys_holder.iter() {
+	        	if key_response.public_key == public_key.public_key {
+	        		not_spotted = false;
+	            break;
+	        	}
+	        }
+	        if not_spotted {
+	        	public_keys_holder.push(types::PublicKey{ public_key : key_response.public_key });
+	        }
+	        continue;
+	      }
+	    }
+      keys_map.insert(key_response.address, vec![types::PublicKey{ public_key : key_response.public_key }]);
+  	}
+  	let mut pub_key_list : Vec<types::PublicKey> = Vec::new();
+  	for (_, value) in keys_map.iter() {
+  		pub_key_list = value.clone();
+  		break;
+  	}
+  	if keys_map.len() != 1 || pub_key_list.len() != 1 {
+  		return Vec::<ResultType>::new();
+  	}
+  	let public_key = pub_key_list[0].get_public_key();
+  	for message in messages.iter() {
+  		let signature = message.value.0.get_signature();
+  		let ref msg = message.value.2;
+  		if crypto::sign::verify_detached(&signature, msg.as_slice(), &public_key) {
+  		  verified_messages.push(message.value.clone());
+  		}
+  	}
+  	verified_messages
   }
 
   fn validate_group(&self, _ : Vec<accumulator::Response<ResultType>>,

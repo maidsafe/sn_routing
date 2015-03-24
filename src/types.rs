@@ -14,9 +14,28 @@
 // Software.
 
 #![allow(unused_assignments)]
+extern crate sodiumoxide;
+
+use sodiumoxide::crypto;
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+
+pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8;64] {
+  let mut arr = [0u8;64];
+  for i in (0..64) {
+    arr[i] = vector[i];
+  }
+  arr
+}
+
+pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
+  let mut arr = [0u8;32];
+  for i in (0..32) {
+    arr[i] = vector[i];
+  }
+  arr
+}
 
 static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
@@ -87,6 +106,17 @@ pub trait RoutingTrait {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct PublicKey {
+  pub public_key : Vec<u8> // Vec form of crypto::asymmetricbox::PublicKey which is an array
+}
+
+impl PublicKey {
+  pub fn get_public_key(&self) -> crypto::sign::PublicKey {
+    crypto::sign::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct AccountTransferInfo {
   pub name : Vec<u8>
 }
@@ -109,7 +139,7 @@ impl Decodable for AccountTransferInfo {
 impl RoutingTrait for AccountTransferInfo {
   fn get_name(&self)->Vec<u8> { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-  fn refresh(&self)->bool { false } // TODO is this an account transfer type
+  fn refresh(&self)->bool { true } // TODO is this an account transfer type
 
    // TODO how do we merge these
   fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }

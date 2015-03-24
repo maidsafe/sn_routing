@@ -13,6 +13,9 @@
 // use of the MaidSafe
 // Software.
 
+extern crate sodiumoxide;
+
+use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
@@ -124,6 +127,10 @@ impl MessageHeader {
 
   pub fn get_filter(&self) -> (types::Address, types::MessageId) {
     (self.source.from_node.clone(), self.message_id)
+  }
+
+  pub fn get_signature(&self) -> crypto::sign::Signature {
+    crypto::sign::Signature(types::vector_as_u8_64_array(self.signature.clone()))
   }
 }
 
