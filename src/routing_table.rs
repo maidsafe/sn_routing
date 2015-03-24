@@ -25,6 +25,7 @@ use common_bits::*;
 use std::net::{TcpStream};
 use sodiumoxide::crypto;
 use std::default::Default;
+use std::cmp;
 
 static BUCKET_SIZE: u32 = 1;
 static PARALELISM: u32 = 4;
@@ -131,7 +132,7 @@ impl RoutingTable {
       new_node_index = self.push_back_then_sort(their_info);
       return (true, None);
     }
-    if RoutingTable::closer_to_target(&self.our_id, &their_info.fob.id, &self.routing_table[RoutingTable::get_group_size()].fob.id) {
+    if RoutingTable::closer_to_target(&self.our_id, &their_info.fob.id, &self.routing_table[RoutingTable::get_group_size()].fob.id)  == cmp::Ordering::Greater {
       new_node_index = self.push_back_then_sort(their_info);
       let removal_node_index = self.find_candidate_for_removal();
       if removal_node_index == self.routing_table.len() {
@@ -172,7 +173,7 @@ impl RoutingTable {
     }
     let group_size = (RoutingTable::get_group_size() - 1) as usize;
     let thier_id_clone = their_id.clone();    
-    if RoutingTable::closer_to_target(&self.our_id, &their_id, &self.routing_table[group_size].fob.id) {
+    if RoutingTable::closer_to_target(&self.our_id, &their_id, &self.routing_table[group_size].fob.id) == cmp::Ordering::Greater {
     	return true;
   	}    
     self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal())        	
@@ -223,7 +224,8 @@ impl RoutingTable {
     }
 
     let high = closest_to_target.len() - 1;
-    RoutingTable::partial_sort(&mut closest_to_target, 0, high, parallelism, &self.our_id);
+    closest_to_target.sort_by(|a, b| RoutingTable::closer_to_target(&self.our_id, &a.fob.id, &b.fob.id));
+    //RoutingTable::partial_sort(&mut closest_to_target, 0, high, parallelism, &self.our_id);
 
     if RoutingTable::is_any_of(&our_close_group, &closest_to_target) {
       for iter in our_close_group.iter() {
@@ -317,7 +319,7 @@ impl RoutingTable {
       let mut j = i - 1;
       let rhs_id = self.routing_table[i].clone();
 
-      while j != (-1 as usize) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) {
+      while j != (-1 as usize) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) == cmp::Ordering::Greater {
         self.routing_table[j + 1] = self.routing_table[j].clone();
         j -= 1;
       }
@@ -344,19 +346,18 @@ impl RoutingTable {
     
   fn closer_to_target(base: &maidsafe_types::NameType,
                       lhs: &maidsafe_types::NameType,
-                      rhs: &maidsafe_types::NameType) -> bool {
+                      rhs: &maidsafe_types::NameType) -> cmp::Ordering {
     for i in 0..lhs.0.len() {
       let res_0 = lhs.0[i] ^ base.0[i];
       let res_1 = rhs.0[i] ^ base.0[i];
 
       if res_1 < res_0 {
-        return true;
+        return cmp::Ordering::Greater;
       }
     }
 
-    false
+    cmp::Ordering::Less
   }
-  
   
   fn new_node_is_better_than_existing (&self, new_node: &maidsafe_types::NameType, removal_node_index: usize) -> bool {
   	if removal_node_index >= self.routing_table.len() {
@@ -378,6 +379,7 @@ impl RoutingTable {
     false
   }
 
+  /*
   fn get_pivot(low: usize, high: usize) -> usize {
     // TODO(Spandan) get a random value in the range [low, high] - rand is currently broken on my
     // Rust right now
@@ -394,7 +396,7 @@ impl RoutingTable {
       vec[high] = temp.clone();
 
       for i in low..high {
-        if RoutingTable::closer_to_target(&base, &vec[high].fob.id, &vec[i].fob.id) {
+        if RoutingTable::closer_to_target(&base, &vec[high].fob.id, &vec[i].fob.id) == cmp::Ordering::Greater {
           if i != new_pivot {
             let temp = vec[new_pivot].clone();
             vec[new_pivot] = vec[i].clone();
@@ -426,7 +428,7 @@ impl RoutingTable {
       }
     }
   }
-
+  */
 }
 
 #[test]
