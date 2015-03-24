@@ -23,45 +23,28 @@ extern crate sodiumoxide;
 use common_bits::*;
 use sodiumoxide::crypto;
 use std::cmp;
+use std::net::{SocketAddr};
 
-static BUCKET_SIZE: u32 = 1;
-static PARALELISM: u32 = 4;
-static OPTIMAL_SIZE: u32 = 64;
+static BUCKET_SIZE: usize = 1;
+static GROUP_SIZE: usize = 23;
+static PARALELISM: usize = 4;
+static OPTIMAL_SIZE: usize = 64;
 
 type Address = maidsafe_types::NameType;
-
+#[derive(Clone)]
 struct KeyFob {
   id: maidsafe_types::NameType,
   keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   signature: crypto::sign::Signature,
 }
 
-
-impl Clone for KeyFob {
-  fn clone(&self) -> Self {
-    KeyFob {
-      id: self.id.clone(),
-      keys: self.keys.clone(),
-      signature: self.signature.clone(),
-    }
-  }
-}
-
+#[derive(Clone)]
 pub struct NodeInfo {
   fob: KeyFob,
-  //endpoint: ip::SocketAddress,
+  endpoint: SocketAddr,
   connected: bool,
 }
 
-impl Clone for NodeInfo {
-  fn clone(&self) -> Self {
-    NodeInfo {
-      fob: self.fob.clone(),
-      //endpoint: self.endpoint
-      connected: self.connected,
-    }
-  }
-}
 
 /// The RoutingTable class is used to maintain a list of contacts to which we are connected.  
 struct RoutingTable {
@@ -71,19 +54,19 @@ struct RoutingTable {
 
 impl RoutingTable {
   pub fn get_bucket_size() -> usize {
-    1
+    BUCKET_SIZE
   }
 
   pub fn get_parallelism() -> usize {
-    4
+    PARALELISM
   }
 
   pub fn get_optimal_size() -> usize {
-    64
+    OPTIMAL_SIZE
   }
 
   pub fn get_group_size() -> usize {
-    23
+    GROUP_SIZE
   }
 
   /// Potentially adds a contact to the routing table.  If the contact is added, the first return arg
@@ -186,8 +169,8 @@ impl RoutingTable {
   /// target is within our close group.  If not, it will return the 'Parallelism()' closest contacts
   /// to the target.
   pub fn target_nodes(&self, target: Address)->Vec<NodeInfo> {
-    let mut our_close_group: Vec<NodeInfo> = Vec::new();
-    let mut closest_to_target: Vec<NodeInfo> = Vec::new();
+    let mut our_close_group = Vec::new();
+    let mut closest_to_target = Vec::new();
     let mut result: Vec<NodeInfo> = Vec::new();
     let mut iterations = 0usize;
 
