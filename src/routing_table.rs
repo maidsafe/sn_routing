@@ -29,7 +29,6 @@ static PARALELISM: u32 = 4;
 static OPTIMAL_SIZE: u32 = 64;
 
 type Address = maidsafe_types::NameType; // [u8;64];
-struct PublicKey;
 
 struct KeyFob {
   id: maidsafe_types::NameType,
