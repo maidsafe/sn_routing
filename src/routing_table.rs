@@ -28,7 +28,7 @@ static BUCKET_SIZE: u32 = 1;
 static PARALELISM: u32 = 4;
 static OPTIMAL_SIZE: u32 = 64;
 
-type Address = maidsafe_types::NameType; // [u8;64];
+type Address = maidsafe_types::NameType;
 
 struct KeyFob {
   id: maidsafe_types::NameType,
@@ -36,17 +36,6 @@ struct KeyFob {
   signature: crypto::sign::Signature,
 }
 
-impl KeyFob {
-  pub fn is_valid(&self) -> bool {
-   let maidsafe_types::NameType(id) = self.id;
-   for it in id.iter() {
-    if *it != 0 {
-      return true;
-    }
-   }
-   false
-  }
-}
 
 impl Clone for KeyFob {
   fn clone(&self) -> Self {
@@ -116,7 +105,7 @@ impl RoutingTable {
     let maidsafe_types::NameType(our_id) = self.our_id;
     let mut new_node_index: usize = 0;
 
-    if maidsafe_types::helper::compare_arr_u8_64(&their_info_id, &our_id) {
+    if self.our_id == their_info.fob.id {
       return (false, None);
     }
 
@@ -155,10 +144,10 @@ impl RoutingTable {
   /// view to adding the contact to our table.  The checking procedure is the same as for 'AddNode'
   /// above, except for the lack of a public key to check in step 1.
   pub fn check_node(&self, their_id: &Address)->bool {
-  	if !self.is_valid() {
+  	if !self.our_id.is_valid() {
   		panic!("Routing Table id is not valid");
   	}
-  	if !maidsafe_types::helper::compare_arr_u8_64(&self.our_id.0, &their_id.0) {
+  	if self.our_id == *their_id {
 		  return false;
   	}
   	if self.has_node(their_id) {
@@ -172,7 +161,7 @@ impl RoutingTable {
     let thier_id_clone = their_id.clone();    
     if RoutingTable::closer_to_target(&self.our_id, &their_id, &self.routing_table[group_size].fob.id) {
     	return true;
-  	}    
+  	}
     self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal())        	
 	}
   
@@ -181,7 +170,7 @@ impl RoutingTable {
     let mut index_of_removal = 0usize;
 
     for i in 0..self.routing_table.len() {
-      if maidsafe_types::helper::compare_arr_u8_64(&self.routing_table[i].fob.id.0, &node_to_drop.0) {
+      if self.routing_table[i].fob.id == *node_to_drop {
         index_of_removal = i;
         break;
       }
@@ -250,14 +239,16 @@ impl RoutingTable {
   }
 
   /// This returns the public key for the given node if the node is in our table.
-  pub fn get_public_key(&self, their_id: Address)->Option<crypto::asymmetricbox::PublicKey> {
-  	 //Validate(their_id);
+  pub fn get_public_key(&self, their_id: Address)->Option<crypto::asymmetricbox::PublicKey> {  	 
+  	 if !their_id.is_valid() {
+  	 	 panic!("Id is not valid");
+  	 }
     //std::lock_guard<std::mutex> lock(mutex_);    
     if !self.is_nodes_sorted() {
     	panic!("Nodes are not sorted");
     }
     let found_node_option = self.routing_table.iter().find(|&node_info| {
-    		  maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &their_id.0) 
+    		  node_info.fob.id == their_id 
     		});
     match found_node_option {
     	Some(node) => { Some(node.fob.keys.1) }
@@ -322,7 +313,7 @@ impl RoutingTable {
   
   fn has_node(&self, node_id: &Address) -> bool {
     for node_info in &self.routing_table {
-      if maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &node_id.0) {
+      if node_info.fob.id == *node_id {
         return true;
       }
     }
@@ -350,16 +341,6 @@ impl RoutingTable {
       }
     }
     index
-  }
-
-  pub fn is_valid(&self) -> bool {
-   let maidsafe_types::NameType(id) = self.our_id;
-   for it in id.iter() {
-    if *it != 0 {
-      return true;
-    }
-   }
-   false
   }
     
   fn closer_to_target(base: &maidsafe_types::NameType,
@@ -390,15 +371,15 @@ impl RoutingTable {
   		return false;
   	}
   	let removal_node = &self.routing_table[removal_node_index];
-    let last_node_fob_id = self.routing_table[self.routing_table.len() -1 ].fob.id.0;
-    let removal_node_fob_id = removal_node.fob.id.0;
+    let last_node_fob_id = &self.routing_table[self.routing_table.len() -1 ].fob.id;    
     
-    !maidsafe_types::helper::compare_arr_u8_64(&last_node_fob_id, &removal_node_fob_id) && &self.bucket_index(new_node) > &self.bucket_index(&removal_node.fob.id)
+    *last_node_fob_id != removal_node.fob.id && 
+      &self.bucket_index(new_node) > &self.bucket_index(&removal_node.fob.id)
   }
 
   fn is_any_of(vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
     for iter in vec_close_group.iter() {
-      if maidsafe_types::helper::compare_arr_u8_64(&iter.fob.id.0, &vec_closest_to_target[0].fob.id.0) {
+      if iter.fob.id == vec_closest_to_target[0].fob.id {
         return true;
       }
     }
