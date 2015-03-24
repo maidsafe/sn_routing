@@ -14,7 +14,7 @@ Appveyor build status (Windows)
 #Todo
 
 - [ ] Implement VaultFacade
-    - [ ] Got the interface design with routing settled
+    - [ ] Follow the interface design with routing (already in place as first go)
     - [ ] Implement VaultFacade initally (provide a guide line for later on persona implementation)
 - [ ] Implement MaidManager
 - [ ] Implement DataManager
