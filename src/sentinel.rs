@@ -168,16 +168,10 @@ impl<'a> Sentinel<'a> {
 	      let public_keys = keys_map.get_mut(&key_response.address);
 	      if public_keys.is_some() {
 	      	let mut public_keys_holder = public_keys.unwrap();
-	      	let mut not_spotted = true;
-	        for public_key in public_keys_holder.iter() {
-	        	if key_response.public_key == public_key.public_key {
-	        		not_spotted = false;
-	            break;
-	        	}
-	        }
-	        if not_spotted {
-	        	public_keys_holder.push(types::PublicKey{ public_key : key_response.public_key });
-	        }
+          let target_key = types::PublicKey{ public_key : key_response.public_key };
+	      	if !public_keys_holder.contains(&target_key) {
+	      		public_keys_holder.push(target_key);
+	      	}
 	        continue;
 	      }
 	    }
@@ -218,15 +212,9 @@ impl<'a> Sentinel<'a> {
       	} else {
 		      let public_keys = keys_map.get_mut(&public_key.0);
 	      	let mut public_keys_holder = public_keys.unwrap();
-	      	let mut not_spotted = true;
-	        for pub_key in public_keys_holder.iter() {
-	        	if public_key.1 == pub_key.public_key {
-	        		not_spotted = false;
-	            break;
-	        	}
-	        }
-	        if not_spotted {
-	        	public_keys_holder.push(types::PublicKey{ public_key : public_key.1.clone() });
+          let target_key = types::PublicKey{ public_key : public_key.1.clone() };
+	      	if !public_keys_holder.contains(&target_key) {
+	          public_keys_holder.push(target_key);
 	        }
 		    }
 	    }
