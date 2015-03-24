@@ -12,18 +12,15 @@ homepage = "http://www.maidsafe.net"
 
 [dependencies]
 rustc-serialize = "*"
-cbor = "0.3.1"
+cbor = "*"
 bchannel = "*"
-lru-cache = "0.0.1"
-time = "0.1.20"
+lru-cache = "*"
+time = "*"
 
 [dependencies.maidsafe_types]
 path = "../maidsafe_types"
-#git = "https://github.com/ustulation/maidsafe_types.git"
-#branch = "misc"
 
-[dependencies.utp]
-path = "../rust-utp"
+#[dependencies.utp]
 #git = "https://github.com/meqif/rust-utp"
 
 [dependencies.sodiumoxide]

@@ -45,8 +45,8 @@ impl Encodable for Authority {
       Authority::ManagedClient => authority = "ManagedClient",
       Authority::Client => authority = "Client",
       Authority::Unknown => authority = "Unknown",
-    }
-    CborTagEncode::new(5483_000 , &authority).encode(e)
+    };
+    CborTagEncode::new(5483_100, &(&authority)).encode(e)
   }
 }
 
@@ -81,7 +81,7 @@ pub struct SourceAddress {
 
 impl Encodable for SourceAddress {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_002 , &(&self.from_node, &self.from_group, &self.reply_to)).encode(e)
+    CborTagEncode::new(5483_102 , &(&self.from_node, &self.from_group, &self.reply_to)).encode(e)
   }
 }
 
@@ -102,7 +102,7 @@ pub struct DestinationAddress {
 
 impl Encodable for DestinationAddress {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001 , &(&self.dest, &self.reply_to)).encode(e)
+    CborTagEncode::new(5483_101, &(&self.dest, &self.reply_to)).encode(e)
   }
 }
 

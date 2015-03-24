@@ -275,7 +275,7 @@ impl RoutingTable {
   pub fn size(&self)->usize {
   	//std::lock_guard<std::mutex> lock(mutex_);
     self.routing_table.len()
-	}
+  }
 
   fn find_candidate_for_removal(&self) -> usize {
     assert!(self.routing_table.len() >= RoutingTable::get_optimal_size());
