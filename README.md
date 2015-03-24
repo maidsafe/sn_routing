@@ -27,6 +27,8 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [x] Message header 
 - [x] Message header tests
 - [ ] API version 0.0.6
+- [ ] Bootstrap handler implementation
+- [ ] Bootstrap handler test
 - [ ] Tcp Networking
   - [ ] Tcp live port and backup random port selection 
   - [ ] Create send/rcv channel from routing to connections object
