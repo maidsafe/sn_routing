@@ -164,18 +164,17 @@ impl<'a> Sentinel<'a> {
   	for node_key in keys.iter() {
       let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
       let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
-      {
+      if !keys_map.contains_key(&key_response.address) {
+				keys_map.insert(key_response.address,
+					              vec![types::PublicKey{ public_key : key_response.public_key }]);
+      } else {
 	      let public_keys = keys_map.get_mut(&key_response.address);
-	      if public_keys.is_some() {
-	      	let mut public_keys_holder = public_keys.unwrap();
-          let target_key = types::PublicKey{ public_key : key_response.public_key };
-	      	if !public_keys_holder.contains(&target_key) {
-	      		public_keys_holder.push(target_key);
-	      	}
-	        continue;
-	      }
-	    }
-      keys_map.insert(key_response.address, vec![types::PublicKey{ public_key : key_response.public_key }]);
+      	let mut public_keys_holder = public_keys.unwrap();
+        let target_key = types::PublicKey{ public_key : key_response.public_key };
+      	if !public_keys_holder.contains(&target_key) {
+      		public_keys_holder.push(target_key);
+      	}
+	    }      
   	}
   	let mut pub_key_list : Vec<types::PublicKey> = Vec::new();
   	for (_, value) in keys_map.iter() {
