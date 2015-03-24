@@ -54,11 +54,13 @@ use std::default::Default;
 mod types;
 mod tcp_connections;
 mod message_header;
+mod routing_table;
 mod accumulator;
+mod common_bits;
 mod sentinel;
-
 mod get_client_key_response;
 mod get_group_key_response;
+
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
