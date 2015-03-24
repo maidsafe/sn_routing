@@ -131,8 +131,7 @@ impl RoutingTable {
       new_node_index = self.push_back_then_sort(their_info);
       return (true, None);
     }
-
-    if self.closer_to_target(&their_info.fob.id, &self.our_id) {
+    if RoutingTable::closer_to_target(&self.our_id, &their_info.fob.id, &self.routing_table[RoutingTable::get_group_size()].fob.id) {
       new_node_index = self.push_back_then_sort(their_info);
       let removal_node_index = self.find_candidate_for_removal();
       if removal_node_index == self.routing_table.len() {
@@ -173,7 +172,7 @@ impl RoutingTable {
     }
     let group_size = (RoutingTable::get_group_size() - 1) as usize;
     let thier_id_clone = their_id.clone();    
-    if self.closer_to_target(&their_id, &self.routing_table[group_size].fob.id) {
+    if RoutingTable::closer_to_target(&self.our_id, &their_id, &self.routing_table[group_size].fob.id) {
     	return true;
   	}    
     self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal())        	
@@ -223,9 +222,10 @@ impl RoutingTable {
       return result;
     }
 
-    self.partial_sort(&mut closest_to_target, parallelism);
+    let high = closest_to_target.len() - 1;
+    RoutingTable::partial_sort(&mut closest_to_target, 0, high, parallelism, &self.our_id);
 
-    if self.is_any_of(&our_close_group, &closest_to_target) {
+    if RoutingTable::is_any_of(&our_close_group, &closest_to_target) {
       for iter in our_close_group.iter() {
         result.push(iter.clone());
       }
@@ -235,17 +235,7 @@ impl RoutingTable {
       }
     }
 
-
     result
-  }
-
-  fn is_any_of(&self, vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
-    ;
-    false
-  }
-
-  fn partial_sort(&self, vec: &mut Vec<NodeInfo>, parallelism: usize) {
-    ;
   }
 
   // This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
@@ -327,7 +317,7 @@ impl RoutingTable {
       let mut j = i - 1;
       let rhs_id = self.routing_table[i].clone();
 
-      while j != (-1 as usize) && self.is_rhs_less(&self.routing_table[j].fob.id, &rhs_id.fob.id) {
+      while j != (-1 as usize) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) {
         self.routing_table[j + 1] = self.routing_table[j].clone();
         j -= 1;
       }
@@ -342,19 +332,6 @@ impl RoutingTable {
     index
   }
 
-  fn is_rhs_less(&self, lhs: &maidsafe_types::NameType, rhs: &maidsafe_types::NameType) -> bool {
-    for i in 0..lhs.0.len() {
-      let res_0 = lhs.0[i] ^ self.our_id.0[i];
-      let res_1 = rhs.0[i] ^ self.our_id.0[i];
-
-      if res_1 < res_0 {
-        return true;
-      }
-    }
-
-    false
-  }
-  
   pub fn is_valid(&self) -> bool {
    let maidsafe_types::NameType(id) = self.our_id;
    for it in id.iter() {
@@ -365,10 +342,12 @@ impl RoutingTable {
    false
   }
     
-  fn closer_to_target(&self, lhs: &maidsafe_types::NameType, rhs: &maidsafe_types::NameType) -> bool {
+  fn closer_to_target(base: &maidsafe_types::NameType,
+                      lhs: &maidsafe_types::NameType,
+                      rhs: &maidsafe_types::NameType) -> bool {
     for i in 0..lhs.0.len() {
-      let res_0 = lhs.0[i] ^ self.our_id.0[i];
-      let res_1 = rhs.0[i] ^ self.our_id.0[i];
+      let res_0 = lhs.0[i] ^ base.0[i];
+      let res_1 = rhs.0[i] ^ base.0[i];
 
       if res_1 < res_0 {
         return true;
@@ -388,6 +367,64 @@ impl RoutingTable {
     let removal_node_fob_id = removal_node.fob.id.0;
     
     !maidsafe_types::helper::compare_arr_u8_64(&last_node_fob_id, &removal_node_fob_id) && &self.bucket_index(new_node) > &self.bucket_index(&removal_node.fob.id)
+  }
+
+  fn is_any_of(vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
+    for iter in vec_close_group.iter() {
+      if maidsafe_types::helper::compare_arr_u8_64(&iter.fob.id.0, &vec_closest_to_target[0].fob.id.0) {
+        return true;
+      }
+    }
+    false
+  }
+
+  fn get_pivot(low: usize, high: usize) -> usize {
+    // TODO(Spandan) get a random value in the range [low, high] - rand is currently broken on my
+    // Rust right now
+    (high - low) / 2
+  }
+
+  fn partition(vec: &mut Vec<NodeInfo>, low: usize, high: usize, base: &maidsafe_types::NameType) -> usize {
+    if low < high {
+      let pivot = RoutingTable::get_pivot(low, high);
+      let mut new_pivot = low;
+
+      let temp = vec[pivot].clone();
+      vec[pivot] = vec[high].clone();
+      vec[high] = temp.clone();
+
+      for i in low..high {
+        if RoutingTable::closer_to_target(&base, &vec[high].fob.id, &vec[i].fob.id) {
+          if i != new_pivot {
+            let temp = vec[new_pivot].clone();
+            vec[new_pivot] = vec[i].clone();
+            vec[i] = temp.clone();
+          }
+          new_pivot += 1;
+        }
+      }
+
+      if new_pivot != high {
+        let temp = vec[new_pivot].clone();
+        vec[new_pivot] = vec[high].clone();
+        vec[high] = temp.clone();
+      }
+
+      new_pivot
+    } else {
+      low
+    }
+  }
+
+  fn partial_sort(vec: &mut Vec<NodeInfo>, low: usize, high: usize, parallelism: usize, base: &maidsafe_types::NameType) {
+    if low < high {
+      let new_pivot = RoutingTable::partition(vec, low, high, base);
+      RoutingTable::partial_sort(vec, low, new_pivot - 1, parallelism, base);
+
+      if new_pivot < parallelism {
+        RoutingTable::partial_sort(vec, new_pivot, high, parallelism, base);
+      }
+    }
   }
 
 }
