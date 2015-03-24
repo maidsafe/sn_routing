@@ -41,7 +41,7 @@ extern crate sodiumoxide;
 extern crate "lru-cache" as lru_cache;
 extern crate "rustc-serialize" as rustc_serialize;
 extern crate cbor;
-extern crate utp;
+//extern crate utp;
 extern crate time;
 extern crate bchannel;
 
