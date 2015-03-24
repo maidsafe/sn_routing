@@ -135,7 +135,7 @@ impl RoutingTable {
   /// This is used to see whether to bother retrieving a contact's public key from the PKI with a
   /// view to adding the contact to our table.  The checking procedure is the same as for 'AddNode'
   /// above, except for the lack of a public key to check in step 1.
-  pub fn check_node(&self, their_id: Address)->bool {
+  pub fn check_node(&self, their_id: &Address)->bool {
   	if (!self.is_valid()) {
   		panic!("Routing Table id is not valid");
   	}
@@ -151,10 +151,10 @@ impl RoutingTable {
     }
     let group_size = (RoutingTable::get_group_size() - 1) as usize;
     let thier_id_clone = their_id.clone();    
-    if self.closer_to_target(&thier_id_clone, &self.routing_table[group_size].fob.id) {
+    if self.closer_to_target(&their_id, &self.routing_table[group_size].fob.id) {
     	return true;
-  	}
-    return self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal());        	
+  	}    
+    self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal())        	
 	}
   
   // This unconditionally removes the contact from the table.
@@ -241,7 +241,7 @@ impl RoutingTable {
     8 * index_of_mismatch + common_bits as usize
   }
   
-  fn has_node(&self, node_id: Address) -> bool {
+  fn has_node(&self, node_id: &Address) -> bool {
     for node_info in &self.routing_table {
       if maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &node_id.0) {
         return true;
@@ -305,13 +305,13 @@ impl RoutingTable {
   }
   
   
-  fn new_node_is_better_than_existing (&self, new_node: &maidsafe_types::NameType, removal_node: &NodeInfo) -> bool {
- 	  if self.routing_table.is_empty() {
- 	  	return true;
- 	  }
+  fn new_node_is_better_than_existing (&self, new_node: &maidsafe_types::NameType, removal_node_index: usize) -> bool {
+  	if removal_node_index >= self.routing_table.len() {
+  		return false;
+  	}
+  	let removal_node = &self.routing_table[removal_node_index];
     let last_node_fob_id = self.routing_table[self.routing_table.len() -1 ].fob.id.0;
     let removal_node_fob_id = removal_node.fob.id.0;
-    //let new_node_id = (*new_node).0;
     
     !maidsafe_types::helper::compare_arr_u8_64(&last_node_fob_id, &removal_node_fob_id) && &self.bucket_index(new_node) > &self.bucket_index(&removal_node.fob.id)
   }
