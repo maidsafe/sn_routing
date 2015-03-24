@@ -52,7 +52,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
 
 mod types;
-mod connections;
+mod tcp_connections;
 mod message_header;
 mod accumulator;
 mod sentinel;
