@@ -29,8 +29,7 @@ pub struct GetClientKeyResponse {
 
 impl Encodable for GetClientKeyResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode { tag : 5483_001 ,
-                    data : &(&self.address, &self.public_key) }.encode(e)
+    CborTagEncode::new(5483_001, &(&self.address, &self.public_key)).encode(e)
   }
 }
 
