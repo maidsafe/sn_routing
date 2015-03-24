@@ -1,4 +1,4 @@
-// Copyright 2014 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited
 // This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -19,11 +19,11 @@ use std::io::{stdout, stderr, Write};
 use std::sync::mpsc::{Sender};
 use std::io::Result as IoResult;
 use std::io::Error as IoError;
-use std::io::{BufReader, ErrorKind};
-use cbor::{Encoder, Decoder, Cbor, CborBytes, CborTagEncode, ReadError, WriteError, CborError}; 
+use std::io::{ ErrorKind };
+use cbor::{ Encoder, CborError }; 
 use std::thread::spawn;
 use std::marker::PhantomData;
-use rustc_serialize::{Decodable, Encodable};
+use rustc_serialize::{ Encodable };
 use bchannel::channel;
 
 pub use bchannel::Receiver;

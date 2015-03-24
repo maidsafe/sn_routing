@@ -14,12 +14,31 @@
 // Software.
 
 #![allow(unused_assignments)]
+extern crate sodiumoxide;
+
+use sodiumoxide::crypto;
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
+pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8;64] {
+  let mut arr = [0u8;64];
+  for i in (0..64) {
+    arr[i] = vector[i];
+  }
+  arr
+}
+
+pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
+  let mut arr = [0u8;32];
+  for i in (0..32) {
+    arr[i] = vector[i];
+  }
+  arr
+}
+
 static GROUP_SIZE: u32 = 23;
-static QUORUM_SIZE: u32 = 19;
+pub static QUORUM_SIZE: u32 = 19;
 
 pub struct DhtAddress([u8; 64]);
 
@@ -70,6 +89,61 @@ impl Decodable for Authority {
 pub type Address = Vec<u8>; // [u8;64] using Vec allowing compare and clone
 pub type MessageId = u32;
 pub type Signature = Vec<u8>; // [u8;512] using Vec allowing compare and clone
+pub type NodeAddress = Address; // (Address, NodeTag)
+pub type GroupAddress = Address; // (Address, GroupTag)
+pub type SerialisedMessage = Vec<u8>;
+
+pub trait KeyGetterTraits {
+  fn get_client_key(&mut self, Address);
+  fn get_group_key(&mut self, GroupAddress);
+}
+
+pub trait RoutingTrait {
+  fn get_name(&self)->Vec<u8>;
+  fn get_owner(&self)->Vec<u8>;
+  fn refresh(&self)->bool;
+  fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct PublicKey {
+  pub public_key : Vec<u8> // Vec form of crypto::asymmetricbox::PublicKey which is an array
+}
+
+impl PublicKey {
+  pub fn get_public_key(&self) -> crypto::sign::PublicKey {
+    crypto::sign::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct AccountTransferInfo {
+  pub name : Vec<u8>
+}
+
+impl Encodable for AccountTransferInfo {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode { tag : 5483_000 ,
+                    data : &(&self.name) }.encode(e)
+  }
+}
+
+impl Decodable for AccountTransferInfo {
+  fn decode<D: Decoder>(d: &mut D)->Result<AccountTransferInfo, D::Error> {
+    try!(d.read_u64());
+    let name = try!(Decodable::decode(d));
+    Ok(AccountTransferInfo { name: name })
+  }
+}
+
+impl RoutingTrait for AccountTransferInfo {
+  fn get_name(&self)->Vec<u8> { self.name.clone() }
+  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
+  fn refresh(&self)->bool { true } // TODO is this an account transfer type
+
+   // TODO how do we merge these
+  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+}
 
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -113,6 +187,27 @@ impl Decodable for DestinationAddress {
     Ok(DestinationAddress { dest: dest, reply_to: reply_to })
   }
 }
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub enum MessageTypeTag {
+  Connect,
+  ConnectResponse,
+  FindGroup,
+  FindGroupResponse,
+  GetData,
+  GetDataResponse,
+  GetClientKey,
+  GetClientKeyResponse,
+  GetGroupKey,
+  GetGroupKeyResponse,
+  Post,
+  PostResponse,
+  PutData,
+  PutDataResponse,
+  PutKey,
+  AccountTransfer
+}
+
 
 #[cfg(test)]
 #[allow(deprecated)]
