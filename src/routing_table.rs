@@ -382,7 +382,7 @@ impl RoutingTable {
       let j = i - 1;
       let rhs_id = self.routing_table[i].clone();
 
-      while j != (-1 as usize) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) {
+      if j != (-1 as usize) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) {
         return false;
       }
     }
