@@ -21,9 +21,7 @@ extern crate maidsafe_types;
 extern crate sodiumoxide;
 
 use common_bits::*;
-use std::net::{TcpStream};
 use sodiumoxide::crypto;
-use std::default::Default;
 use std::cmp;
 
 static BUCKET_SIZE: u32 = 1;
@@ -132,10 +130,10 @@ impl RoutingTable {
       return (true, None);
     }
 
-    if self.closer_to_target(&their_info.fob.id, &self.our_id) {
+    if self.closer_to_target(&their_info.fob.id, &self.routing_table[RoutingTable::get_group_size() - 1].fob.id) {
       new_node_index = self.push_back_then_sort(their_info);
       let removal_node_index = self.find_candidate_for_removal();
-      if removal_node_index == self.routing_table.len() {
+      if removal_node_index == (self.routing_table.len() - 1) {
         return (true, None);
       } else {
         let removal_node = self.routing_table[removal_node_index].clone();
@@ -158,17 +156,17 @@ impl RoutingTable {
   /// view to adding the contact to our table.  The checking procedure is the same as for 'AddNode'
   /// above, except for the lack of a public key to check in step 1.
   pub fn check_node(&self, their_id: &Address)->bool {
-  	if (!self.is_valid()) {
+  	if !self.is_valid() {
   		panic!("Routing Table id is not valid");
   	}
-  	if (!maidsafe_types::helper::compare_arr_u8_64(&self.our_id.0, &their_id.0)) {
+  	if !maidsafe_types::helper::compare_arr_u8_64(&self.our_id.0, &their_id.0) {
 		  return false;
   	}
-  	if (self.has_node(their_id)) {
+  	if self.has_node(their_id) {
 	    return false;	
   	}
     //  std::lock_guard<std::mutex> lock(mutex_);
-    if (self.routing_table.len() < (RoutingTable::get_optimal_size() as usize)) {
+    if self.routing_table.len() < (RoutingTable::get_optimal_size() as usize) {
     	return true;
     }
     let group_size = (RoutingTable::get_group_size() - 1) as usize;
@@ -195,10 +193,10 @@ impl RoutingTable {
     }
   }
 
-  // This returns a collection of contacts to which a message should be sent onwards.  It will
-  // return all of our close group (comprising 'GroupSize' contacts) if the closest one to the
-  // target is within our close group.  If not, it will return the 'Parallelism()' closest contacts
-  // to the target.
+  /// This returns a collection of contacts to which a message should be sent onwards.  It will
+  /// return all of our close group (comprising 'GroupSize' contacts) if the closest one to the
+  /// target is within our close group.  If not, it will return the 'Parallelism()' closest contacts
+  /// to the target.
   pub fn target_nodes(&self, target: Address)->Vec<NodeInfo> {
     let mut our_close_group: Vec<NodeInfo> = Vec::new();
     let mut closest_to_target: Vec<NodeInfo> = Vec::new();
@@ -272,7 +270,7 @@ impl RoutingTable {
     		  maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &their_id.0) 
     		});
     match found_node_option {
-    	Some(node) => { Some(node.fob.keys.1) } 
+    	Some(node) => { Some(node.fob.keys.1) }
     	None => {None}
     }
   }
