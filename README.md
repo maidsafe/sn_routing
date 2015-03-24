@@ -37,5 +37,6 @@ Appveyor build status (Windows)
     - [ ] Complete the get route (checking message)
 - [ ] Test with client having messaging ability
 - [ ] Integration Test
+- [ ] API version 0.1.0
 - [ ] Performance Test
 - [ ] Coverage analysis
