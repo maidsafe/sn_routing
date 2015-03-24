@@ -25,6 +25,7 @@ use common_bits::*;
 use std::net::{TcpStream};
 use sodiumoxide::crypto;
 use std::default::Default;
+use std::cmp;
 
 static BUCKET_SIZE: u32 = 1;
 static PARALELISM: u32 = 4;
@@ -203,7 +204,16 @@ impl RoutingTable {
 
   // This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
   // table if we hold less than 'GroupSize' contacts in total).
-  pub fn our_close_group()->Vec<NodeInfo>{ Vec::new() }
+  pub fn our_close_group(&self) -> Vec<NodeInfo> {
+    let group_size = RoutingTable::get_group_size();
+    let size = cmp::min(group_size, self.routing_table.len());
+    let mut result = Vec::new();
+    for i in 0..size {
+      // is cloning advisable?
+      result.push(self.routing_table[i].clone());
+    }
+    result
+  }
 
   // This returns the public key for the given node if the node is in our table.
   pub fn get_public_key(their_id: Address)->Option<PublicKey> { None }
