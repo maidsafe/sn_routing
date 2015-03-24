@@ -378,12 +378,9 @@ impl RoutingTable {
   
   fn is_nodes_sorted(&self) -> bool {
   	for i in 1..self.routing_table.len() {
-      let j = i - 1;
-      let rhs_id = self.routing_table[i].clone();
-
-      if j != (-1 as usize) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) {
-        return false;
-      }
+  		if RoutingTable::closer_to_target(&self.our_id, &self.routing_table[i - 1].fob.id, &self.routing_table[i].fob.id) { 
+  			return false;
+			}
     }
   	true
   }
