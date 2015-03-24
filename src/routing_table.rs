@@ -177,7 +177,7 @@ impl RoutingTable {
     self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal())        	
 	}
   
-  // This unconditionally removes the contact from the table.
+  /// This unconditionally removes the contact from the table.
   pub fn drop_node(&mut self, node_to_drop: &Address) {
     let mut index_of_removal = 0usize;
 
@@ -237,8 +237,8 @@ impl RoutingTable {
     result
   }
 
-  // This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
-  // table if we hold less than 'GroupSize' contacts in total).
+  /// This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
+  /// table if we hold less than 'GroupSize' contacts in total).
   pub fn our_close_group(&self) -> Vec<NodeInfo> {
     let group_size = RoutingTable::get_group_size();
     let size = cmp::min(group_size, self.routing_table.len());
@@ -250,7 +250,7 @@ impl RoutingTable {
     result
   }
 
-  // This returns the public key for the given node if the node is in our table.
+  /// This returns the public key for the given node if the node is in our table.
   pub fn get_public_key(&self, their_id: Address)->Option<crypto::asymmetricbox::PublicKey> {
   	 //Validate(their_id);
     //std::lock_guard<std::mutex> lock(mutex_);    
@@ -271,7 +271,7 @@ impl RoutingTable {
 //  	self.our_id.0 
 //	}
 
-
+  
   pub fn size(&self)->usize {
   	//std::lock_guard<std::mutex> lock(mutex_);
     self.routing_table.len()
