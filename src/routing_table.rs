@@ -19,7 +19,6 @@
 
 extern crate maidsafe_types;
 extern crate sodiumoxide;
-//extern crate utp;
 
 use common_bits::*;
 use std::net::{TcpStream};
