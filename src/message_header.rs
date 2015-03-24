@@ -33,9 +33,9 @@ pub struct MessageHeader {
 
 impl Encodable for MessageHeader {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode { tag : 5483_004 ,
-                    data : &(&self.message_id, &self.destination, &self.source,
-                             &self.authority, &self.signature) }.encode(e)
+    CborTagEncode::new(5483_004,
+                    &(&self.message_id, &self.destination, &self.source,
+                             &self.authority, &self.signature)).encode(e)
   }
 }
 
