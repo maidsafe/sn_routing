@@ -25,6 +25,7 @@ use common_bits::*;
 use std::net::{TcpStream};
 use sodiumoxide::crypto;
 use std::default::Default;
+use std::cmp;
 
 static BUCKET_SIZE: u32 = 1;
 static PARALELISM: u32 = 4;
@@ -203,10 +204,32 @@ impl RoutingTable {
 
   // This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
   // table if we hold less than 'GroupSize' contacts in total).
-  pub fn our_close_group()->Vec<NodeInfo>{ Vec::new() }
+  pub fn our_close_group(&self) -> Vec<NodeInfo> {
+    let group_size = RoutingTable::get_group_size();
+    let size = cmp::min(group_size, self.routing_table.len());
+    let mut result = Vec::new();
+    for i in 0..size {
+      // is cloning advisable?
+      result.push(self.routing_table[i].clone());
+    }
+    result
+  }
 
   // This returns the public key for the given node if the node is in our table.
-  pub fn get_public_key(their_id: Address)->Option<PublicKey> { None }
+  pub fn get_public_key(&self, their_id: Address)->Option<crypto::asymmetricbox::PublicKey> {
+  	 //Validate(their_id);
+    //std::lock_guard<std::mutex> lock(mutex_);    
+    if !self.is_nodes_sorted() {
+    	panic!("Nodes are not sorted");
+    }
+    let found_node_option = self.routing_table.iter().find(|&node_info| {
+    		  maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &their_id.0) 
+    		});
+    match found_node_option {
+    	Some(node) => { Some(node.fob.keys.1) } 
+    	None => {None}
+    }
+  }
 
 
 //  pub fn our_id(&self)->Address {
@@ -304,7 +327,6 @@ impl RoutingTable {
         return true;
       }
     }
-
     false
   }
   
@@ -327,10 +349,20 @@ impl RoutingTable {
         return true;
       }
     }
-
     false
   }
   
+  fn is_nodes_sorted(&self) -> bool {
+  	for i in 1..self.routing_table.len() {
+      let mut j = i - 1;
+      let rhs_id = self.routing_table[i].clone();
+
+      while j >=0 && self.is_rhs_less(&self.routing_table[j].fob.id, &rhs_id.fob.id) {
+        return false;
+      }
+    }
+  	true
+  }
   
   fn new_node_is_better_than_existing (&self, new_node: &maidsafe_types::NameType, removal_node_index: usize) -> bool {
   	if removal_node_index >= self.routing_table.len() {
