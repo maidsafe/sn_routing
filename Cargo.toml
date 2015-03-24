@@ -17,6 +17,9 @@ bchannel = "*"
 lru-cache = "*"
 time = "*"
 
+[dependencies.maidsafe_types]
+git = "https://github.com/dirvine/maidsafe_types"
+
 #[dependencies.utp]
 #git = "https://github.com/meqif/rust-utp"
 
