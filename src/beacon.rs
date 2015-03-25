@@ -43,18 +43,23 @@ pub struct Notification {
 
 pub struct OutBeaconStream<T> {
   udp_socket: UdpSocket,
+  peer_addr : SocketAddr,
   _phantom: PhantomData<T>
 }
 
 impl <'a, T> OutBeaconStream<T> where T: Encodable {
-  pub fn send(&mut self, m: &T, peer_addr : SocketAddr) -> Result<usize, Error> {
+  pub fn send(&mut self, m: &T) -> Result<usize, Error> {
     let mut e = cbor::Encoder::from_memory();
     e.encode(&[&m]).unwrap();
-    self.udp_socket.send_to(e.as_bytes(), peer_addr)
+    self.udp_socket.send_to(e.as_bytes(), self.peer_addr)
   }
 
   pub fn close(self) {
-    drop(self.udp_socket);
+    // instead of closing the whole socket, stop expecting msg from it
+    // drop(self.udp_socket);
+    if (self.udp_socket.leave_multicast(&self.peer_addr)).is_err() {
+      panic!("can not disconnect the specified udp peer");
+    }
   }
 }
 
@@ -63,13 +68,6 @@ pub fn connect_udp<'a, 'b, I, O>(addr: SocketAddr, peer_addr: SocketAddr) ->
   IoResult<(Receiver<I, CborError>, OutBeaconStream<O>)>
       where I: Send + Decodable + 'static, O: Encodable {
   Ok(try!(upgrade_udp(try!(UdpSocket::bind(&addr)), peer_addr)))
-}
-
-/// Connect to a server and open a send-receive pair.  See `upgrade` for more details.
-pub fn disconnect_udp(udp_socket: UdpSocket, peer_addr: &SocketAddr) {
-  if (udp_socket.leave_multicast(peer_addr)).is_err() {
-    panic!("can not disconnect the specified udp peer");
-  }
 }
 
 pub fn listen()  -> IoResult<(Receiver<Notification, IoError>, UdpSocket)> {
@@ -98,6 +96,7 @@ pub fn listen()  -> IoResult<(Receiver<Notification, IoError>, UdpSocket)> {
         }
       }
     }
+    drop(socket2);
   });
   Ok((rx, socket))
 }
@@ -111,11 +110,11 @@ pub fn upgrade_udp<'a, 'b, I, O>(udp_socket: UdpSocket, peer_addr: SocketAddr)
     -> IoResult<(InBeaconStream<I>, OutBeaconStream<O>)> where I: Send + Decodable + 'static, O: Encodable {
   let s1 = udp_socket;
   let s2 = try!(s1.try_clone());
-  Ok((upgrade_reader(s1, peer_addr), upgrade_writer(s2)))
+  Ok((upgrade_reader(s1, peer_addr), upgrade_writer(s2, peer_addr)))
 }
 
-fn upgrade_writer<'a, T>(udp_socket: UdpSocket) -> OutBeaconStream<T> where T: Encodable {
-  OutBeaconStream { udp_socket: udp_socket, _phantom: PhantomData }
+fn upgrade_writer<'a, T>(udp_socket: UdpSocket, peer_addr: SocketAddr) -> OutBeaconStream<T> where T: Encodable {
+  OutBeaconStream { udp_socket: udp_socket, peer_addr: peer_addr, _phantom: PhantomData }
 }
 
 fn upgrade_reader<'a, T>(socket: UdpSocket, peer_address : SocketAddr)
@@ -136,9 +135,12 @@ fn upgrade_reader<'a, T>(socket: UdpSocket, peer_address : SocketAddr)
           }
         }
       }
-
     }
-    drop(socket);
+    // instead of closing the whole socket, stop expecting msg from it
+    // drop(self.udp_socket);
+    if (socket.leave_multicast(&peer_address)).is_err() {
+      panic!("can not disconnect the specified udp peer");
+    }
   });
   in_rec
 }
