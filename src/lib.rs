@@ -35,7 +35,7 @@
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features)]
-#![feature(custom_derive, rand, std_misc, unsafe_destructor, unboxed_closures, io, core)]
+#![feature(custom_derive, rand, std_misc, unsafe_destructor, unboxed_closures, io, core, udp)]
 
 extern crate sodiumoxide;
 extern crate "lru-cache" as lru_cache;
@@ -53,6 +53,7 @@ use std::default::Default;
 
 mod types;
 mod tcp_connections;
+mod beacon;
 mod message_header;
 mod routing_table;
 mod accumulator;
