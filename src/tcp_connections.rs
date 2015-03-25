@@ -1,29 +1,29 @@
 // Copyright 2015 MaidSafe.net limited
+//
 // This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
+//
 // By contributing code to the MaidSafe Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
 // directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
 // available at: http://www.maidsafe.net/licenses
+//
 // Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 // OF ANY KIND, either express or implied.
+//
 // See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe
-// Software.                                                                 
-
+// use of the MaidSafe Software.
 
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddr, SocketAddrV4, Shutdown};
-use std::io::{stdout, stderr, Write, BufReader};
-use std::sync::mpsc::{Sender};
+use std::io::{BufReader, ErrorKind};
 use std::io::Result as IoResult;
 use std::io::Error as IoError;
-use std::io::{ ErrorKind };
-use cbor::{ Encoder, CborError, Decoder }; 
+use cbor::{Encoder, CborError, Decoder};
 use std::thread::spawn;
 use std::marker::PhantomData;
-use rustc_serialize::{ Decodable, Encodable };
+use rustc_serialize::{Decodable, Encodable};
 use bchannel::channel;
 
 pub use bchannel::Receiver;
@@ -74,7 +74,7 @@ where I: Send + Decodable + 'static, O: Encodable {
     Ok(try!(upgrade_tcp(try!(TcpStream::connect(&addr)))))
 }
 
-pub fn listen()  -> IoResult<(Receiver<(TcpStream, SocketAddr), IoError>, TcpListener)> {
+pub fn listen() -> IoResult<(Receiver<(TcpStream, SocketAddr), IoError>, TcpListener)> {
   let live_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 5483);
   let any_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0);
   let tcp_listener = match TcpListener::bind(live_address) {
@@ -137,7 +137,7 @@ where T: Send + Decodable + 'static {
         let mut buffer = BufReader::new(stream);
         loop {
             let mut dec = Decoder::from_reader(&mut buffer);
-            match dec.decode().next().unwrap() {  
+            match dec.decode().next().unwrap() {
                 Ok(a) => {
                     // Try to send, and if we can't, then the channel is closed.
                     if in_snd.send(a).is_err() {
@@ -162,23 +162,22 @@ where T: Send + Decodable + 'static {
 #[cfg(test)]
 /// Unit tests!
 mod test {
+  use std;
   use super::*;
-  use std::thread::spawn;
-  use std::net::{SocketAddrV4, Ipv4Addr};
+//  use std::net::{SocketAddrV4, Ipv4Addr};
 #[test]
 fn test_small_stream() {
-
-    spawn(move || {
-    let (listener, u32) = listen().unwrap();
-    for (connection, u32) in listener.into_blocking_iter() {
-        // Spawn a new thread for each connection that we get.
-        spawn(move || {
-            let (i, mut o) = upgrade_tcp(connection).unwrap();
-            for x in i.into_blocking_iter() {
-                o.send(&(x, x + 1)).ok();
-            }
-        });
-    }
+    std::thread::spawn(move || {
+        let (listener, u32) = listen().unwrap();
+        for (connection, u32) in listener.into_blocking_iter() {
+            // Spawn a new thread for each connection that we get.
+            std::thread::spawn(move || {
+                let (i, mut o) = super::upgrade_tcp(connection).unwrap();
+                for x in i.into_blocking_iter() {
+                    o.send(&(x, x + 1)).ok();
+                }
+            });
+        }
     });
     // let (i, mut o) = connect_tcp(SocketAddrV4::new(Ipv4Addr::new(127,0,0,1), 5483)).unwrap();
     // for x in 0u64 .. 10u64 {
