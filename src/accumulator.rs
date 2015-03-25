@@ -29,25 +29,26 @@ pub struct Response<V> {
 }
 
 /// entry in the accumulator
+#[derive(Clone)]
 pub struct Entry<V> {
   /// Expected threshold for resolve
   pub received_response : Vec<Response<V>>
 }
 
 /// Accumulator for various message type
-pub struct Accumulator<K, V> where K: Eq + Hash, V: Clone {
+pub struct Accumulator<K, V> where K: Eq + Hash + Clone, V: Clone {
   /// Expected threshold for resolve
   quorum : usize,
   storage : LruCache<K, Entry<V>>
 }
 
-impl<K: Eq + Hash, V: Clone> Accumulator<K, V> {
+impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
   pub fn new(quorum : usize) -> Accumulator<K, V> {
   	Accumulator { quorum: quorum, storage: LruCache::new(1000)}
   }
 
-  pub fn have_name(&mut self, name : K) -> bool {
-  	self.storage.get(&name).is_none()
+  pub fn have_name(&mut self, name : &K) -> bool {
+  	self.storage.get(name).is_some()
   }
 
   pub fn is_quorum_reached(&mut self, name : K) -> bool {
@@ -59,23 +60,32 @@ impl<K: Eq + Hash, V: Clone> Accumulator<K, V> {
   	}
   }
 
-  pub fn add(&mut self, name : K, value : V, sender : types::Address) {
+  pub fn add(&mut self, name : K, value : V, sender : types::Address)-> Option<(K, Vec<Response<V>>)> {
   	let entry = self.storage.remove(&name);
   	if entry.is_none() {
   	  let entry_in = Entry { received_response : vec![Response{ address : sender, value : value }] };
+  	  self.storage.insert(name.clone(), entry_in.clone());
+  	  if self.quorum == 1 {
+  	  	let result = (name, entry_in.received_response);
+  	  	return Some(result);
+  	  }
   	} else {
   	  let mut tmp = entry.unwrap();
   	  tmp.received_response.push(Response{ address : sender, value : value });
-  	  self.storage.insert(name, tmp);
+  	  self.storage.insert(name.clone(), tmp.clone());
+  	  if tmp.received_response.len() >= self.quorum {
+  	  	return Some((name, tmp.received_response));
+  	  }
   	}
+  	None
   }
 
-  pub fn get(&mut self, name : K) -> Option<(K, Vec<Response<V>>)>{
-  	let entry = self.storage.get(&name);
+  pub fn get(&mut self, name : &K) -> Option<(K, Vec<Response<V>>)>{
+  	let entry = self.storage.get(name);
   	if entry.is_none() {
   	  None
   	} else {
-  	  Some((name, entry.unwrap().received_response.clone()))
+  	  Some((name.clone(), entry.unwrap().received_response.clone()))
   	}
   }
 
