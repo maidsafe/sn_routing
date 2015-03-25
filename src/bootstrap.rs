@@ -19,11 +19,13 @@
 
 extern crate maidsafe_types;
 extern crate sodiumoxide;
+extern crate time;
 
 use common_bits::*;
 use sodiumoxide::crypto;
 use std::cmp;
 use std::net;
+use std::time::duration::Duration;
 
 type BootStrapContacts = Vec<Contact>;
 
@@ -45,14 +47,14 @@ impl Clone for Contact {
 
 struct BootStrapHandler {
   database: Vec<String>,
-  last_updated: u8,
+  last_updated: time::Tm,
 }
 
 impl BootStrapHandler {
   pub fn new() -> BootStrapHandler {
     BootStrapHandler {
       database: vec!["hello".to_string(); 32],
-      last_updated: 10,
+      last_updated: time::now(),
     }
   }
 
@@ -60,8 +62,16 @@ impl BootStrapHandler {
     1500
   }
 
+  pub fn get_update_duration() -> Duration {
+    Duration::hours(4)
+  }
+
   pub fn add_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
     self.insert_bootstrap_contacts(contacts);
+
+    if time::now() + BootStrapHandler::get_update_duration() > self.last_updated {
+      self.check_bootstrap_contacts();
+    }
   }
 
   pub fn read_bootstrap_contacts(&self) -> BootStrapContacts {
@@ -74,7 +84,11 @@ impl BootStrapHandler {
   }
 
   pub fn out_of_date(&self) -> bool {
-    true
+    time::now() + BootStrapHandler::get_update_duration() > self.last_updated
+  }
+
+  pub fn reset_timer(&mut self) {
+    self.last_updated = time::now();
   }
 
   fn insert_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
@@ -85,7 +99,7 @@ impl BootStrapHandler {
     ;
   }
 
-  fn check_bootstrap_contacts() {
+  fn check_bootstrap_contacts(&self) {
     ;
   }
 }
