@@ -86,7 +86,6 @@ impl RoutingTable {
 
     let maidsafe_types::NameType(their_info_id) = their_info.fob.id;
     let maidsafe_types::NameType(our_id) = self.our_id;
-    let mut new_node_index: usize = 0;
 
     if self.our_id == their_info.fob.id {
       return (false, None);
@@ -97,12 +96,12 @@ impl RoutingTable {
     }
 
     if self.routing_table.len() < RoutingTable::get_optimal_size() {
-      new_node_index = self.push_back_then_sort(their_info);
+      self.push_back_then_sort(their_info);
       return (true, None);
     }
 
     if RoutingTable::closer_to_target(&self.our_id, &their_info.fob.id, &self.routing_table[RoutingTable::get_group_size()].fob.id) {
-      new_node_index = self.push_back_then_sort(their_info);
+      self.push_back_then_sort(their_info);
       let removal_node_index = self.find_candidate_for_removal();
       if removal_node_index == (self.routing_table.len() - 1) {
         return (true, None);
@@ -117,7 +116,7 @@ impl RoutingTable {
     if self.new_node_is_better_than_existing(&their_info.fob.id, removal_node_index) {
       let removal_node = self.routing_table[removal_node_index].clone();
       self.routing_table.remove(removal_node_index);
-      new_node_index = self.push_back_then_sort(their_info);
+      self.push_back_then_sort(their_info);
       return (true, Some(removal_node));
     }
     (false, None)

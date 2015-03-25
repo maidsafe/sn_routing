@@ -15,8 +15,7 @@
 
 
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddr, SocketAddrV4, Shutdown};
-use std::io::{stdout, stderr, Write, BufReader};
-use std::sync::mpsc::{Sender};
+use std::io::{BufReader};
 use std::io::Result as IoResult;
 use std::io::Error as IoError;
 use std::io::{ ErrorKind };
