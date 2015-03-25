@@ -163,7 +163,7 @@ where T: Send + Decodable + 'static {
 mod test {
   use super::*;
   use std::thread::spawn;
-  use std::net::{SocketAddrV4, Ipv4Addr};
+  // use std::net::{SocketAddrV4, Ipv4Addr};
 #[test]
 fn test_small_stream() {
 
