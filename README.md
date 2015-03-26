@@ -36,13 +36,6 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
   - [ ] Add connection established/lost messages to be passed to routing (via channel)
   - [ ] Benchmark tx/rv number of packets 
   - [ ] Benchmark tx/rc Bytes per second 
-- [ ] Utp Networking
-  - [ ] Utp live port and backup random port selection 
-  - [ ] Create send/rcv channel from routing to connections object
-  - [ ] Implement test for basic "hello world" two way communication
-  - [ ] Add connection established/lost messages to be passed to routing (via channel)
-  - [ ] Benchmark tx/rv number of packets 
-  - [ ] Benchmark tx/rc Bytes per second 
 - [x] Create sort and bucket index methods 
 - [x] Implement routing table
 - [ ] Test routing table 
@@ -56,5 +49,12 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [ ] Implement routing node
 - [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Version 0.0.8
+- [ ] Utp Networking
+  - [ ] Utp live port and backup random port selection 
+  - [ ] Create send/rcv channel from routing to connections object
+  - [ ] Implement test for basic "hello world" two way communication
+  - [ ] Add connection established/lost messages to be passed to routing (via channel)
+  - [ ] Benchmark tx/rv number of packets 
+  - [ ] Benchmark tx/rc Bytes per second 
 - [ ] Implement NAT traversal
 - [ ] Version 0.1 (crates.io)
