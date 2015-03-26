@@ -175,7 +175,7 @@ impl BootStrapHandler {
   }
 
   fn remove_bootstrap_contacts(&mut self) {
-    ;
+    &self.database.exec("DELETE FROM BOOTSTRAP_CONTACTS").unwrap();
   }
 
   fn check_bootstrap_contacts(&self) {
