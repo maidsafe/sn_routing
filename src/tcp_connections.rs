@@ -17,7 +17,7 @@
 // use of the MaidSafe Software.
 
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddr, SocketAddrV4, Shutdown};
-use std::io::{BufReader};
+use std::io::{BufReader, ErrorKind};
 use std::io::Result as IoResult;
 use std::io::Error as IoError;
 use cbor::{Encoder, CborError, Decoder};
@@ -66,8 +66,7 @@ impl <T> Drop for OutTcpStream<T> {
     }
 }
 
-/// Connect to a server and open a send-receive pair.  See `upgrade` for more
-/// details.
+/// Connect to a server and open a send-receive pair.  See `upgrade` for more details.
 pub fn connect_tcp<'a, 'b, I, O>(addr: SocketAddr) ->
 IoResult<(Receiver<I, CborError>, OutTcpStream<O>)>
 where I: Send + Decodable + 'static, O: Encodable {
@@ -75,37 +74,37 @@ where I: Send + Decodable + 'static, O: Encodable {
 }
 
 pub fn listen() -> IoResult<(Receiver<(TcpStream, SocketAddr), IoError>, TcpListener)> {
-  let live_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 5483);
-  let any_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0);
-  let tcp_listener = match TcpListener::bind(live_address) {
-    Ok(x) => x,
-      Err(_) => TcpListener::bind(&any_address).unwrap()
-  };
-  let (tx, rx) = channel();
+    let live_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 5483);
+    let any_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0);
+    let tcp_listener = match TcpListener::bind(live_address) {
+        Ok(x) => x,
+        Err(_) => TcpListener::bind(&any_address).unwrap()
+    };
+    let (tx, rx) = channel();
 
-  let tcp_listener2 = try!(tcp_listener.try_clone());
-  spawn(move || {
-      loop {
-      if tx.is_closed() {
-      break;
-      }
-      match tcp_listener2.accept() {
-      Ok(stream) => {
-      if tx.send(stream).is_err() {
-      break;
-      }
-      }
-      Err(ref e) if e.kind() == ErrorKind::TimedOut => {
-      continue;
-      }
-      Err(e) => {
-      let _  = tx.error(e);
-      break;
-      }
-      }
-      }
-      });
-  Ok((rx, tcp_listener))
+    let tcp_listener2 = try!(tcp_listener.try_clone());
+    spawn(move || {
+        loop {
+            if tx.is_closed() {
+                break;
+            }
+            match tcp_listener2.accept() {
+                Ok(stream) => {
+                    if tx.send(stream).is_err() {
+                        break;
+                    }
+                }
+                Err(ref e) if e.kind() == ErrorKind::TimedOut => {
+                    continue;
+                }
+                Err(e) => {
+                    let _  = tx.error(e);
+                    break;
+                }
+            }
+        }
+    });
+    Ok((rx, tcp_listener))
 }
 
 
@@ -117,8 +116,7 @@ pub fn upgrade_tcp<'a, 'b, I, O>(stream: TcpStream) -> IoResult<(InTcpStream<I>,
 where I: Send + Decodable + 'static, O: Encodable {
     let s1 = stream;
     let s2 = try!(s1.try_clone());
-    Ok((upgrade_reader(s1),
-     upgrade_writer(s2)))
+    Ok((upgrade_reader(s1), upgrade_writer(s2)))
 }
 
 fn upgrade_writer<'a, T>(stream: TcpStream) -> OutTcpStream<T>
@@ -160,37 +158,37 @@ where T: Send + Decodable + 'static {
 
 
 #[cfg(test)]
-/// Unit tests!
 mod test {
-  use std;
-  use super::*;
-  use std::thread::spawn;
-  // use std::net::{SocketAddrV4, Ipv4Addr};
+    use super::*;
+    use std::thread;
+    use std::net::SocketAddr;
+    use std::str::FromStr;
 #[test]
-fn test_small_stream() {
-    std::thread::spawn(move || {
-        let (listener, u32) = listen().unwrap();
-        for (connection, u32) in listener.into_blocking_iter() {
-            // Spawn a new thread for each connection that we get.
-            std::thread::spawn(move || {
-                let (i, mut o) = super::upgrade_tcp(connection).unwrap();
-                for x in i.into_blocking_iter() {
-                    o.send(&(x, x + 1)).ok();
-                }
-            });
+    fn test_small_stream() {
+        thread::spawn(move || {
+            let (listener, u32) = listen().unwrap();
+            for (connection, u32) in listener.into_blocking_iter() {
+                // Spawn a new thread for each connection that we get.
+                thread::spawn(move || {
+                    let (i, mut o) = upgrade_tcp(connection).unwrap();
+                    for x in i.into_blocking_iter() {
+                        o.send(&(x, x + 1)).ok();
+                    }
+                });
+            }
+        });
+
+        let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
+        for x in 0u64 .. 10u64 {
+            o.send(&x).ok();
         }
-    });
-    // let (i, mut o) = connect_tcp(SocketAddrV4::new(Ipv4Addr::new(127,0,0,1), 5483)).unwrap();
-    // for x in 0u64 .. 10u64 {
-    //     o.send(&x).ok();
-    // }
-    // o.close();
-    // Print everything that we get back.
-    // for a in i.into_blocking_iter() {
-    //     let (x, fx): (u64, u64) = a;
-    //     println!("{} -> {}", x, fx);
-    // }
-}
+        o.close();
+        // Print everything that we get back.
+        for a in i.into_blocking_iter() {
+            let (x, fx): (u64, u64) = a;
+            println!("{} -> {}", x, fx);
+        }
+    }
 
 // #[test]
 // fn test_stream_large_data() {
