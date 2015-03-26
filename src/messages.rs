@@ -17,3 +17,5 @@
 pub mod get_client_key_response;
 #[path="messages/get_group_key_response.rs"]
 pub mod get_group_key_response;
+#[path="messages/connect.rs"]
+pub mod connect;
