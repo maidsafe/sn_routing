@@ -55,7 +55,7 @@ struct Contact {
   public_key: crypto::asymmetricbox::PublicKey,
 }
 
-impl Contact {  
+impl Contact {
   pub fn new(id: maidsafe_types::NameType, endpoint_pair: (net::SocketAddrV4, net::SocketAddrV4), public_key: crypto::asymmetricbox::PublicKey) -> Contact {
     Contact {
       id: id,
@@ -79,7 +79,7 @@ impl Encodable for Contact {
 impl Decodable for Contact {
   fn decode<D: Decoder>(d: &mut D)->Result<Contact, D::Error> {
     try!(d.read_u64());
-    
+
     let (id_, addr_0_ip_, addr_0_port, addr_1_ip_, addr_1_port, public_key) = try!(Decodable::decode(d));
     let id = maidsafe_types::helper::vector_as_u8_64_array(id_);
     let addr_0_ip: [u8;4] = vector_as_u8_4_array(addr_0_ip_);
@@ -87,7 +87,7 @@ impl Decodable for Contact {
     let addr_0 = net::SocketAddrV4::new(net::Ipv4Addr::new(addr_0_ip[0], addr_0_ip[1], addr_0_ip[2], addr_0_ip[3]), addr_0_port);
     let addr_1 = net::SocketAddrV4::new(net::Ipv4Addr::new(addr_1_ip[0], addr_1_ip[1], addr_1_ip[2], addr_1_ip[3]), addr_1_port);
     let pub_ = crypto::asymmetricbox::PublicKey(maidsafe_types::helper::vector_as_u8_32_array(public_key));
-    
+
     Ok(Contact::new(maidsafe_types::NameType(id), (addr_0, addr_1), pub_))
   }
 }
@@ -108,7 +108,7 @@ struct BootStrapHandler {
 }
 
 impl BootStrapHandler {
-  pub fn new() -> BootStrapHandler {        
+  pub fn new() -> BootStrapHandler {
     let mut bootstrap = BootStrapHandler {
       database: Box::new(open("./bootstrap.cache").unwrap()),
       last_updated: time::now(),
@@ -127,8 +127,8 @@ impl BootStrapHandler {
 
   pub fn add_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
     self.insert_bootstrap_contacts(contacts);
-    
-    if time::now() + BootStrapHandler::get_update_duration() > self.last_updated {
+
+    if time::now() > self.last_updated + BootStrapHandler::get_update_duration() {
       self.check_bootstrap_contacts();
     }
   }
@@ -143,7 +143,7 @@ impl BootStrapHandler {
       }
       //let data = array_to_vec(cur.get_blob(0).unwrap());
       let mut d = cbor::Decoder::from_bytes(cur.get_blob(0).unwrap());
-      contacts.push(d.decode().next().unwrap().unwrap());    
+      contacts.push(d.decode().next().unwrap().unwrap());
     }
     contacts
   }
@@ -154,24 +154,24 @@ impl BootStrapHandler {
   }
 
   pub fn out_of_date(&self) -> bool {
-    time::now() + BootStrapHandler::get_update_duration() > self.last_updated
+    time::now() > self.last_updated + BootStrapHandler::get_update_duration()
   }
 
   pub fn reset_timer(&mut self) {
     self.last_updated = time::now();
   }
-    
+
   fn insert_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
     if contacts.is_empty() {
       return;
-    }    
+    }
     for contact in contacts.iter() {
-      let mut e = cbor::Encoder::from_memory();    
-      e.encode(&[contact]).unwrap();      
+      let mut e = cbor::Encoder::from_memory();
+      e.encode(&[contact]).unwrap();
       let mut query = self.database.prepare("INSERT INTO BOOTSTRAP_CONTACTS (CONTACT) VALUES(?)", &None).unwrap();
       query.bind_params(&[types::BindArg::Blob(e.into_bytes())]);
       query.step();
-    }    
+    }
   }
 
   fn remove_bootstrap_contacts(&mut self) {
