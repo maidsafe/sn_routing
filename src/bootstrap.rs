@@ -36,9 +36,9 @@ static BOOTSTRAP_FILE_NAME: &'static str = "bootstrap.cache";
 static MAX_LIST_SIZE: usize = 1500;
 
 fn array_to_vec(arr: &[u8]) -> Vec<u8> {
-	let mut vector: Vec<u8> = Vec::new();
-	vector.push_all(&arr);
-	vector
+  let mut vector: Vec<u8> = Vec::new();
+  vector.push_all(&arr);
+  vector
 }
 
 fn vector_as_u8_4_array(vector: Vec<u8>) -> [u8;4] {
@@ -56,21 +56,21 @@ struct Contact {
   public_key: crypto::asymmetricbox::PublicKey,
 }
 
-impl Contact {	
-	pub fn new(id: maidsafe_types::NameType, endpoint_pair: (net::SocketAddrV4, net::SocketAddrV4), public_key: crypto::asymmetricbox::PublicKey) -> Contact {
-		Contact {
-			id: id,
-			endpoint_pair: endpoint_pair,
-			public_key: public_key
-		}
-	}
+impl Contact {  
+  pub fn new(id: maidsafe_types::NameType, endpoint_pair: (net::SocketAddrV4, net::SocketAddrV4), public_key: crypto::asymmetricbox::PublicKey) -> Contact {
+    Contact {
+      id: id,
+      endpoint_pair: endpoint_pair,
+      public_key: public_key
+    }
+  }
 }
 
 impl Encodable for Contact {
-	fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-		let addr_0_ip = array_to_vec(&self.endpoint_pair.0.ip().octets());
-		let addr_0_port = &self.endpoint_pair.0.port();
-		let addr_1_ip = array_to_vec(&self.endpoint_pair.1.ip().octets());
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    let addr_0_ip = array_to_vec(&self.endpoint_pair.0.ip().octets());
+    let addr_0_port = &self.endpoint_pair.0.port();
+    let addr_1_ip = array_to_vec(&self.endpoint_pair.1.ip().octets());
     let addr_1_port = &self.endpoint_pair.1.port();
     let public_key = array_to_vec(&self.public_key.0);
     CborTagEncode::new(5483_000, &(&self.id, addr_0_ip, addr_0_port, addr_1_ip, addr_1_port, public_key)).encode(e)
@@ -78,7 +78,7 @@ impl Encodable for Contact {
 }
 
 impl Decodable for Contact {
-	fn decode<D: Decoder>(d: &mut D)->Result<Contact, D::Error> {
+  fn decode<D: Decoder>(d: &mut D)->Result<Contact, D::Error> {
     try!(d.read_u64());
     
     let (id_, addr_0_ip_, addr_0_port, addr_1_ip_, addr_1_port, public_key) = try!(Decodable::decode(d));
@@ -110,7 +110,7 @@ struct BootStrapHandler {
 
 impl BootStrapHandler {
   pub fn new() -> BootStrapHandler {
-  	// TODO instead of in-memory pass the file path    	
+    // TODO instead of in-memory pass the file path     
     let mut bootstrap = BootStrapHandler {
       database: Box::new(open(":memory:").unwrap()),
       last_updated: time::now(),
@@ -136,9 +136,9 @@ impl BootStrapHandler {
   }
 
   pub fn read_bootstrap_contacts(&self) -> BootStrapContacts {
-  	let mut contacts = BootStrapContacts::new();
-  	let mut cur: cursor::Cursor = self.database.prepare("select * from BOOTSTRAP_CONTACTS", &Some("")).unwrap();
-  	loop {
+    let mut contacts = BootStrapContacts::new();
+    let mut cur: cursor::Cursor = self.database.prepare("select * from BOOTSTRAP_CONTACTS", &Some("")).unwrap();
+    loop {
       let step_result = cur.step();
       if step_result == types::ResultCode::SQLITE_DONE {
         break;
@@ -165,10 +165,10 @@ impl BootStrapHandler {
     
   fn insert_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
     if contacts.is_empty() {
-    	return;
+      return;
     }    
     for contact in contacts.iter() {
-    	let mut e = cbor::Encoder::from_memory();    
+      let mut e = cbor::Encoder::from_memory();    
       e.encode(&[contact]).unwrap();      
       let mut query = self.database.prepare("INSERT INTO BOOTSTRAP_CONTACTS (CONTACT) VALUES(?)", &None).unwrap();
       query.bind_params(&[types::BindArg::Blob(e.into_bytes())]);
