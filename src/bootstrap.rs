@@ -32,7 +32,6 @@ use sqlite3::*;
 
 type BootStrapContacts = Vec<Contact>;
 
-static BOOTSTRAP_FILE_NAME: &'static str = "bootstrap.cache";
 static MAX_LIST_SIZE: usize = 1500;
 
 fn array_to_vec(arr: &[u8]) -> Vec<u8> {
@@ -109,10 +108,9 @@ struct BootStrapHandler {
 }
 
 impl BootStrapHandler {
-  pub fn new() -> BootStrapHandler {
-    // TODO instead of in-memory pass the file path     
+  pub fn new() -> BootStrapHandler {        
     let mut bootstrap = BootStrapHandler {
-      database: Box::new(open(":memory:").unwrap()),
+      database: Box::new(open("./bootstrap.cache").unwrap()),
       last_updated: time::now(),
     };
     bootstrap.database.exec("CREATE TABLE IF NOT EXISTS BOOTSTRAP_CONTACTS(CONTACT BLOB PRIMARY KEY NOT NULL)").unwrap();
