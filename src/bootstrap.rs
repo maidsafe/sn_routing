@@ -136,7 +136,18 @@ impl BootStrapHandler {
   }
 
   pub fn read_bootstrap_contacts(&self) -> BootStrapContacts {
-    BootStrapContacts::new()
+  	let mut contacts = BootStrapContacts::new();
+  	let mut cur: cursor::Cursor = self.database.prepare("select * from BOOTSTRAP_CONTACTS", &Some("")).unwrap();
+  	loop {
+      let step_result = cur.step();
+      if step_result == types::ResultCode::SQLITE_DONE {
+        break;
+      }
+      //let data = array_to_vec(cur.get_blob(0).unwrap());
+      let mut d = cbor::Decoder::from_bytes(cur.get_blob(0).unwrap());
+      contacts.push(d.decode().next().unwrap().unwrap());    
+    }
+    contacts
   }
 
   pub fn replace_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
