@@ -44,6 +44,7 @@ extern crate cbor;
 //extern crate utp;
 extern crate time;
 extern crate bchannel;
+extern crate sqlite3;
 
 use std::net::{TcpStream};
 use sodiumoxide::crypto;

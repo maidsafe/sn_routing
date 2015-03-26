@@ -20,19 +20,77 @@
 extern crate maidsafe_types;
 extern crate sodiumoxide;
 extern crate time;
+extern crate sqlite3;
+extern crate cbor;
 
-use common_bits::*;
+use cbor::CborTagEncode;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto;
-use std::cmp;
 use std::net;
 use std::time::duration::Duration;
+use sqlite3::*;
 
 type BootStrapContacts = Vec<Contact>;
 
+static BOOTSTRAP_FILE_NAME: &'static str = "bootstrap.cache";
+static MAX_LIST_SIZE: usize = 1500;
+
+fn array_to_vec(arr: &[u8]) -> Vec<u8> {
+	let mut vector: Vec<u8> = Vec::new();
+	vector.push_all(&arr);
+	vector
+}
+
+// TODO Move Contact to maidsafe_types
 struct Contact {
   id: maidsafe_types::NameType,
   endpoint_pair: (net::SocketAddrV4, net::SocketAddrV4),
   public_key: crypto::asymmetricbox::PublicKey,
+}
+
+impl Contact {	
+	pub fn new(id: maidsafe_types::NameType, endpoint_pair: (net::SocketAddrV4, net::SocketAddrV4), public_key: crypto::asymmetricbox::PublicKey) -> Contact {
+		Contact {
+			id: id,
+			endpoint_pair: endpoint_pair,
+			public_key: public_key
+		}
+	}
+}
+
+impl Encodable for Contact {
+	fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+		let addr_0_ip = array_to_vec(&self.endpoint_pair.0.ip().octets());
+		let addr_0_port = &self.endpoint_pair.0.port();
+		let addr_1_ip = array_to_vec(&self.endpoint_pair.1.ip().octets());
+    let addr_1_port = &self.endpoint_pair.1.port();
+    let public_key = array_to_vec(&self.public_key.0);
+    CborTagEncode::new(5483_000, &(&self.id, addr_0_ip, addr_0_port, addr_1_ip, addr_1_port, public_key)).encode(e)
+  }
+}
+
+fn vector_as_u8_4_array(vector: Vec<u8>) -> [u8;4] {
+  let mut arr = [0u8;4];
+  for i in (0..4) {
+    arr[i] = vector[i];
+  }
+  arr
+}
+
+impl Decodable for Contact {
+	fn decode<D: Decoder>(d: &mut D)->Result<Contact, D::Error> {
+    try!(d.read_u64());
+    
+    let (id_, addr_0_ip_, addr_0_port, addr_1_ip_, addr_1_port, public_key) = try!(Decodable::decode(d));
+    let id = maidsafe_types::helper::vector_as_u8_64_array(id_);
+    let addr_0_ip: [u8;4] = vector_as_u8_4_array(addr_0_ip_);
+    let addr_1_ip: [u8;4] = vector_as_u8_4_array(addr_1_ip_);
+    let addr_0 = net::SocketAddrV4::new(net::Ipv4Addr::new(addr_0_ip[0], addr_0_ip[1], addr_0_ip[2], addr_0_ip[3]), addr_0_port);
+    let addr_1 = net::SocketAddrV4::new(net::Ipv4Addr::new(addr_1_ip[0], addr_1_ip[1], addr_1_ip[2], addr_1_ip[3]), addr_1_port);
+    let pub_ = crypto::asymmetricbox::PublicKey(maidsafe_types::helper::vector_as_u8_32_array(public_key));
+    
+    Ok(Contact::new(maidsafe_types::NameType(id), (addr_0, addr_1), pub_))
+  }
 }
 
 impl Clone for Contact {
@@ -46,20 +104,23 @@ impl Clone for Contact {
 }
 
 struct BootStrapHandler {
-  database: Vec<String>,
+  database: Database,
   last_updated: time::Tm,
 }
 
 impl BootStrapHandler {
   pub fn new() -> BootStrapHandler {
+  	// TODO instead of in-memory pass the file path
+  	let mut db = open(":memory:").unwrap();
+  	db.exec("CREATE TABLE IF NOT EXISTS BOOTSTRAP_CONTACTS(CONTACT BLOB PRIMARY KEY NOT NULL)").unwrap();  	
     BootStrapHandler {
-      database: vec!["hello".to_string(); 32],
+      database: db,
       last_updated: time::now(),
     }
   }
 
   pub fn get_max_list_size() -> usize {
-    1500
+    MAX_LIST_SIZE
   }
 
   pub fn get_update_duration() -> Duration {
@@ -68,7 +129,7 @@ impl BootStrapHandler {
 
   pub fn add_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
     self.insert_bootstrap_contacts(contacts);
-
+    
     if time::now() + BootStrapHandler::get_update_duration() > self.last_updated {
       self.check_bootstrap_contacts();
     }
@@ -90,9 +151,11 @@ impl BootStrapHandler {
   pub fn reset_timer(&mut self) {
     self.last_updated = time::now();
   }
-
+    
   fn insert_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
-
+    if contacts.is_empty() {
+    	return;
+    }    
   }
 
   fn remove_bootstrap_contacts(&mut self) {
