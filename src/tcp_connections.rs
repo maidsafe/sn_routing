@@ -17,7 +17,7 @@
 // use of the MaidSafe Software.
 
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddr, SocketAddrV4, Shutdown};
-use std::io::{BufReader, ErrorKind};
+use std::io::{BufReader};
 use std::io::Result as IoResult;
 use std::io::Error as IoError;
 use cbor::{Encoder, CborError, Decoder};
@@ -164,7 +164,8 @@ where T: Send + Decodable + 'static {
 mod test {
   use std;
   use super::*;
-//  use std::net::{SocketAddrV4, Ipv4Addr};
+  use std::thread::spawn;
+  // use std::net::{SocketAddrV4, Ipv4Addr};
 #[test]
 fn test_small_stream() {
     std::thread::spawn(move || {
