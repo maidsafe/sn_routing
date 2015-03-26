@@ -132,7 +132,7 @@ impl RoutingTable {
       return (true, None);
     }
 
-    if self.closer_to_target(&their_info.fob.id, &self.our_id) {
+    if self.closer_to_target(&their_info.fob.id, &self.routing_table[RoutingTable::get_group_size()].fob.id) {
       new_node_index = self.push_back_then_sort(their_info);
       let removal_node_index = self.find_candidate_for_removal();
       if removal_node_index == self.routing_table.len() {
