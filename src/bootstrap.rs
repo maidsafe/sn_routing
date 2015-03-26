@@ -49,7 +49,7 @@ fn vector_as_u8_4_array(vector: Vec<u8>) -> [u8;4] {
 }
 
 // TODO Move Contact to maidsafe_types
-struct Contact {
+pub struct Contact {
   id: maidsafe_types::NameType,
   endpoint_pair: (net::SocketAddrV4, net::SocketAddrV4),
   public_key: crypto::asymmetricbox::PublicKey,
