@@ -26,8 +26,8 @@ use accumulator;
 use message_header;
 use types;
 use types::RoutingTrait;
-use get_client_key_response::GetClientKeyResponse;
-use get_group_key_response::GetGroupKeyResponse;
+use messages::get_client_key_response::GetClientKeyResponse;
+use messages::get_group_key_response::GetGroupKeyResponse;
 
 pub type ResultType = (message_header::MessageHeader,
 	                   types::MessageTypeTag, types::SerialisedMessage);
@@ -37,15 +37,6 @@ type GroupKeyType = (types::GroupAddress, types::MessageId);
 type NodeAccumulatorType = accumulator::Accumulator<NodeKeyType, ResultType>;
 type GroupAccumulatorType = accumulator::Accumulator<GroupKeyType, ResultType>;
 type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultType>;
-
-
-pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
-  let mut vector = Vec::new();
-  for i in arr.iter() {
-    vector.push(*i);
-  }
-  vector
-}
 
 
 pub struct Sentinel<'a> {
@@ -275,7 +266,7 @@ impl<'a> Sentinel<'a> {
 	      let mut tmp = verified_messages[0].clone();
 		    let mut e = cbor::Encoder::from_memory();
 		    e.encode(&[&result.unwrap()]).unwrap();
-	      tmp.2 = array_as_vector(e.as_bytes());
+	      tmp.2 = types::array_as_vector(e.as_bytes());
 	      return Some(tmp);
 	    }
 	  }

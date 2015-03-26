@@ -133,7 +133,7 @@ impl MessageHeader {
   }
 
   pub fn get_signature(&self) -> crypto::sign::Signature {
-    crypto::sign::Signature(types::vector_as_u8_64_array(self.signature.clone()))
+    self.signature.get_signature()
   }
 }
 
@@ -171,7 +171,7 @@ mod test {
                                       from_group : generate_u8_64(),
                                       reply_to: generate_u8_64() },
       authority : types::Authority::ManagedNode,
-      signature : generate_u8_64() });
+      signature : types::Signature{ signature: generate_u8_64() } });
   }
 
 }
