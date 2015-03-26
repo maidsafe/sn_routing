@@ -116,6 +116,40 @@ impl PublicKey {
   }
 }
 
+impl Encodable for PublicKey {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.public_key)).encode(e)
+  }
+}
+
+impl Decodable for PublicKey {
+  fn decode<D: Decoder>(d: &mut D)->Result<PublicKey, D::Error> {
+    try!(d.read_u64());
+    let public_key = try!(Decodable::decode(d));
+    Ok(PublicKey { public_key: public_key })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct PublicPmid {
+  public_key: PublicKey,
+  validation_token: Signature
+}
+
+impl Encodable for PublicPmid {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_001, &(&self.public_key, &self.validation_token)).encode(e)
+  }
+}
+
+impl Decodable for PublicPmid {
+  fn decode<D: Decoder>(d: &mut D)->Result<PublicPmid, D::Error> {
+    try!(d.read_u64());
+    let (public_key, validation_token) = try!(Decodable::decode(d));
+    Ok(PublicPmid { public_key: public_key, validation_token: validation_token })
+  }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct EndPoint {
   pub ip_addr : Vec<u8>,
