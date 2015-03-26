@@ -13,29 +13,29 @@
 // use of the MaidSafe
 // Software.
 
-#[path="messages/connect.rs"]
-pub mod connect;
-#[path="messages/connect_response.rs"]
-pub mod connect_response;
-#[path="messages/find_group.rs"]
-pub mod find_group;
-#[path="messages/find_group_response.rs"]
-pub mod find_group_response;
-#[path="messages/get_client_key.rs"]
-pub mod get_client_key;
-#[path="messages/get_client_key_response.rs"]
-pub mod get_client_key_response;
-#[path="messages/get_data.rs"]
-pub mod get_data;
-#[path="messages/get_data_response.rs"]
-pub mod get_data_response;
-#[path="messages/get_group_key.rs"]
-pub mod get_group_key;
-#[path="messages/get_group_key_response.rs"]
-pub mod get_group_key_response;
-#[path="messages/post.rs"]
-pub mod post;
-#[path="messages/put_data.rs"]
-pub mod put_data;
-#[path="messages/put_data_response.rs"]
-pub mod put_data_response;
+#![allow(unused_assignments)]
+
+use cbor::CborTagEncode;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+
+use types;
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct PutData {
+  pub name_and_type_id : types::NameAndTypeId,
+  pub data : Vec<u8>
+}
+
+impl Encodable for PutData {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_001, &(&self.name_and_type_id, &self.data)).encode(e)
+  }
+}
+
+impl Decodable for PutData {
+  fn decode<D: Decoder>(d: &mut D)->Result<PutData, D::Error> {
+    try!(d.read_u64());
+    let (name_and_type_id, data) = try!(Decodable::decode(d));
+    Ok(PutData { name_and_type_id: name_and_type_id, data: data })
+  }
+}
