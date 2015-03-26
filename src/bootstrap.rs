@@ -41,6 +41,14 @@ fn array_to_vec(arr: &[u8]) -> Vec<u8> {
 	vector
 }
 
+fn vector_as_u8_4_array(vector: Vec<u8>) -> [u8;4] {
+  let mut arr = [0u8;4];
+  for i in (0..4) {
+    arr[i] = vector[i];
+  }
+  arr
+}
+
 // TODO Move Contact to maidsafe_types
 struct Contact {
   id: maidsafe_types::NameType,
@@ -67,14 +75,6 @@ impl Encodable for Contact {
     let public_key = array_to_vec(&self.public_key.0);
     CborTagEncode::new(5483_000, &(&self.id, addr_0_ip, addr_0_port, addr_1_ip, addr_1_port, public_key)).encode(e)
   }
-}
-
-fn vector_as_u8_4_array(vector: Vec<u8>) -> [u8;4] {
-  let mut arr = [0u8;4];
-  for i in (0..4) {
-    arr[i] = vector[i];
-  }
-  arr
 }
 
 impl Decodable for Contact {
@@ -104,21 +104,21 @@ impl Clone for Contact {
 }
 
 struct BootStrapHandler {
-  database: Database,
+  database: Box<Database>,
   last_updated: time::Tm,
 }
 
 impl BootStrapHandler {
   pub fn new() -> BootStrapHandler {
-  	// TODO instead of in-memory pass the file path
-  	let mut db = open(":memory:").unwrap();
-  	db.exec("CREATE TABLE IF NOT EXISTS BOOTSTRAP_CONTACTS(CONTACT BLOB PRIMARY KEY NOT NULL)").unwrap();  	
-    BootStrapHandler {
-      database: db,
+  	// TODO instead of in-memory pass the file path    	
+    let mut bootstrap = BootStrapHandler {
+      database: Box::new(open(":memory:").unwrap()),
       last_updated: time::now(),
-    }
+    };
+    bootstrap.database.exec("CREATE TABLE IF NOT EXISTS BOOTSTRAP_CONTACTS(CONTACT BLOB PRIMARY KEY NOT NULL)").unwrap();
+    bootstrap
   }
-
+ 
   pub fn get_max_list_size() -> usize {
     MAX_LIST_SIZE
   }
@@ -155,6 +155,11 @@ impl BootStrapHandler {
   fn insert_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
     if contacts.is_empty() {
     	return;
+    }    
+    for contact in contacts.iter() {
+    	let mut e = cbor::Encoder::from_memory();    
+      e.encode(&[contact]).unwrap();      
+      &self.database.exec(format!("INSERT INTO BOOTSTRAP_CONTACTS VALUES('{}')", String::from_utf8(e.into_bytes()).unwrap()).as_slice()).unwrap();
     }    
   }
 
