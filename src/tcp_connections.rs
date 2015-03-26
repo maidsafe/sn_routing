@@ -15,8 +15,7 @@
 
 
 use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddr, SocketAddrV4, Shutdown};
-use std::io::{stdout, stderr, Write, BufReader};
-use std::sync::mpsc::{Sender};
+use std::io::{BufReader};
 use std::io::Result as IoResult;
 use std::io::Error as IoError;
 use std::io::{ ErrorKind };
@@ -164,7 +163,7 @@ where T: Send + Decodable + 'static {
 mod test {
   use super::*;
   use std::thread::spawn;
-  use std::net::{SocketAddrV4, Ipv4Addr};
+  // use std::net::{SocketAddrV4, Ipv4Addr};
 #[test]
 fn test_small_stream() {
 

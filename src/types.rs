@@ -21,6 +21,14 @@ use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
+pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
+  let mut vector = Vec::new();
+  for i in arr.iter() {
+    vector.push(*i);
+  }
+  vector
+}
+
 pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8;64] {
   let mut arr = [0u8;64];
   for i in (0..64) {
@@ -88,7 +96,6 @@ impl Decodable for Authority {
 
 pub type Address = Vec<u8>; // [u8;64] using Vec allowing compare and clone
 pub type MessageId = u32;
-pub type Signature = Vec<u8>; // [u8;512] using Vec allowing compare and clone
 pub type NodeAddress = Address; // (Address, NodeTag)
 pub type GroupAddress = Address; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
@@ -106,6 +113,51 @@ pub trait RoutingTrait {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct NameAndTypeId {
+  pub name : Vec<u8>,
+  pub type_id : u32
+}
+
+impl Encodable for NameAndTypeId {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.name, &self.type_id)).encode(e)
+  }
+}
+
+impl Decodable for NameAndTypeId {
+  fn decode<D: Decoder>(d: &mut D)->Result<NameAndTypeId, D::Error> {
+    try!(d.read_u64());
+    let (name, type_id) = try!(Decodable::decode(d));
+    Ok(NameAndTypeId { name: name, type_id: type_id })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct Signature {
+  pub signature : Vec<u8> // Vec form of crypto::asymmetricbox::Signature which is an array
+}
+
+impl Signature {
+  pub fn get_signature(&self) -> crypto::sign::Signature {
+    crypto::sign::Signature(vector_as_u8_64_array(self.signature.clone()))
+  }
+}
+
+impl Encodable for Signature {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.signature)).encode(e)
+  }
+}
+
+impl Decodable for Signature {
+  fn decode<D: Decoder>(d: &mut D)->Result<Signature, D::Error> {
+    try!(d.read_u64());
+    let signature = try!(Decodable::decode(d));
+    Ok(Signature { signature: signature })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicKey {
   pub public_key : Vec<u8> // Vec form of crypto::asymmetricbox::PublicKey which is an array
 }
@@ -113,6 +165,60 @@ pub struct PublicKey {
 impl PublicKey {
   pub fn get_public_key(&self) -> crypto::sign::PublicKey {
     crypto::sign::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
+  }
+}
+
+impl Encodable for PublicKey {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.public_key)).encode(e)
+  }
+}
+
+impl Decodable for PublicKey {
+  fn decode<D: Decoder>(d: &mut D)->Result<PublicKey, D::Error> {
+    try!(d.read_u64());
+    let public_key = try!(Decodable::decode(d));
+    Ok(PublicKey { public_key: public_key })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct PublicPmid {
+  public_key: PublicKey,
+  validation_token: Signature
+}
+
+impl Encodable for PublicPmid {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_001, &(&self.public_key, &self.validation_token)).encode(e)
+  }
+}
+
+impl Decodable for PublicPmid {
+  fn decode<D: Decoder>(d: &mut D)->Result<PublicPmid, D::Error> {
+    try!(d.read_u64());
+    let (public_key, validation_token) = try!(Decodable::decode(d));
+    Ok(PublicPmid { public_key: public_key, validation_token: validation_token })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct EndPoint {
+  pub ip_addr : Vec<u8>,
+  pub socket : u32,
+}
+
+impl Encodable for EndPoint {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_001, &(&self.ip_addr, &self.socket)).encode(e)
+  }
+}
+
+impl Decodable for EndPoint {
+  fn decode<D: Decoder>(d: &mut D)->Result<EndPoint, D::Error> {
+    try!(d.read_u64());
+    let (ip_addr, socket) = try!(Decodable::decode(d));
+    Ok(EndPoint { ip_addr: ip_addr, socket: socket })
   }
 }
 
