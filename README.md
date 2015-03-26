@@ -18,6 +18,12 @@ libsodium is a native dependency for [sodiumxoide](https://github.com/dnaq/sodiu
 For windows, download and use the [prebuilt mingw library](https://download.libsodium.org/libsodium/releases/libsodium-1.0.2-mingw.tar.gz).
 Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit System or "bin\i686-pc-windows-gnu" for a 32bit system.
 
+Sqlite3 is also native dependency for [rustsqlite](https://github.com/linuxfood/rustsqlite). Compile Sqlite by following the instriction [here](https://www.sqlite.org/howtocompile.html)
+
+Extract the libsqlite3.a file from the libs folder and place in usr\libs or in "bin\{TRIPLE}". Also place the .so or
+.dll file in the project root folder.
+
+ 
 ##Todo Items
 
 - [x] Set up facade design pattern
