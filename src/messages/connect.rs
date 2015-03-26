@@ -26,7 +26,7 @@ pub struct ConnectRequest {
   pub external : types::EndPoint,
   pub request_id : types::Address,
   pub receiver_id : types::Address,
-  pub requester_fob : Vec<u8>  // TODO : PublicPmid is missing in maidsafe_types
+  pub requester_fob : types::PublicPmid
 }
 
 impl Encodable for ConnectRequest {

@@ -88,7 +88,6 @@ impl Decodable for Authority {
 
 pub type Address = Vec<u8>; // [u8;64] using Vec allowing compare and clone
 pub type MessageId = u32;
-pub type Signature = Vec<u8>; // [u8;512] using Vec allowing compare and clone
 pub type NodeAddress = Address; // (Address, NodeTag)
 pub type GroupAddress = Address; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
@@ -103,6 +102,31 @@ pub trait RoutingTrait {
   fn get_owner(&self)->Vec<u8>;
   fn refresh(&self)->bool;
   fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct Signature {
+  pub signature : Vec<u8> // Vec form of crypto::asymmetricbox::Signature which is an array
+}
+
+impl Signature {
+  pub fn get_signature(&self) -> crypto::sign::Signature {
+    crypto::sign::Signature(vector_as_u8_64_array(self.signature.clone()))
+  }
+}
+
+impl Encodable for Signature {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.signature)).encode(e)
+  }
+}
+
+impl Decodable for Signature {
+  fn decode<D: Decoder>(d: &mut D)->Result<Signature, D::Error> {
+    try!(d.read_u64());
+    let signature = try!(Decodable::decode(d));
+    Ok(Signature { signature: signature })
+  }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
