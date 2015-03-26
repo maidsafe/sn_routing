@@ -23,8 +23,8 @@ use accumulator;
 use message_header;
 use types;
 use types::RoutingTrait;
-use get_client_key_response::GetClientKeyResponse;
-use get_group_key_response::GetGroupKeyResponse;
+use messages::get_client_key_response::GetClientKeyResponse;
+use messages::get_group_key_response::GetGroupKeyResponse;
 
 pub type ResultType = (message_header::MessageHeader,
 	                   types::MessageTypeTag, types::SerialisedMessage);
