@@ -47,6 +47,7 @@ extern crate cbor;
 //extern crate utp;
 extern crate time;
 extern crate bchannel;
+extern crate sqlite3;
 
 use std::net::{TcpStream};
 use sodiumoxide::crypto;
@@ -62,8 +63,8 @@ mod routing_table;
 mod accumulator;
 mod common_bits;
 mod sentinel;
+mod bootstrap;
 mod messages;
-
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
