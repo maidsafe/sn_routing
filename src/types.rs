@@ -21,6 +21,14 @@ use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
+pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
+  let mut vector = Vec::new();
+  for i in arr.iter() {
+    vector.push(*i);
+  }
+  vector
+}
+
 pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8;64] {
   let mut arr = [0u8;64];
   for i in (0..64) {

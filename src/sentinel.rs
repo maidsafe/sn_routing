@@ -36,15 +36,6 @@ type GroupAccumulatorType = accumulator::Accumulator<GroupKeyType, ResultType>;
 type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultType>;
 
 
-pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
-  let mut vector = Vec::new();
-  for i in arr.iter() {
-    vector.push(*i);
-  }
-  vector
-}
-
-
 pub struct Sentinel<'a> {
   // send_get_client_key_ : for <'a> Fn<(types::Address)>,
   // send_get_group_key_ : Fn<(types::GroupAddress),>,
@@ -272,7 +263,7 @@ impl<'a> Sentinel<'a> {
 	      let mut tmp = verified_messages[0].clone();
 		    let mut e = cbor::Encoder::from_memory();
 		    e.encode(&[&result.unwrap()]).unwrap();
-	      tmp.2 = array_as_vector(e.as_bytes());
+	      tmp.2 = types::array_as_vector(e.as_bytes());
 	      return Some(tmp);
 	    }
 	  }
