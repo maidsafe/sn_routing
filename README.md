@@ -51,8 +51,8 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [ ] Implement connection manager
 - [ ] Allow tcp and then utp connections and wrap in connection object. [See here for tcp NAT traversal] (http://www.cmlab.csie.ntu.edu.tw/~franklai/NATBT.pdf) [and here fur ucp/dht NAT traversal
   ](http://maidsafe.net/Whitepapers/pdf/DHTbasedNATTraversal.pdf)
-- [ ] Implement routing message types (Connect FindNode)
-- [ ] Implement Get Put Post messages 
+- [x] Implement routing message types (Connect FindNode)
+- [x] Implement Get Put Post messages 
 - [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Version 0.0.8
 - [ ] Implement NAT traversal
