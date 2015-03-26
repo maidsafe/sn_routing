@@ -170,14 +170,14 @@ impl BootStrapHandler {
     for contact in contacts.iter() {
     	let mut e = cbor::Encoder::from_memory();    
       e.encode(&[contact]).unwrap();      
-      let mut query = self.database.prepare("INSERT INTO BOOTSTRAP_CONTACTS(CONTACT) VALUES(?)", &None).unwrap();
+      let mut query = self.database.prepare("INSERT INTO BOOTSTRAP_CONTACTS (CONTACT) VALUES(?)", &None).unwrap();
       query.bind_params(&[types::BindArg::Blob(e.into_bytes())]);
       query.step();
     }    
   }
 
   fn remove_bootstrap_contacts(&mut self) {
-    &self.database.exec("DELETE FROM BOOTSTRAP_CONTACTS").unwrap();
+    self.database.exec("DELETE FROM BOOTSTRAP_CONTACTS").unwrap();
   }
 
   fn check_bootstrap_contacts(&self) {
