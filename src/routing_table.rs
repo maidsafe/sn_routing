@@ -21,61 +21,30 @@ extern crate maidsafe_types;
 extern crate sodiumoxide;
 
 use common_bits::*;
-use std::net::{TcpStream};
 use sodiumoxide::crypto;
-use std::default::Default;
 use std::cmp;
+use std::net::{SocketAddr};
 
-static BUCKET_SIZE: u32 = 1;
-static PARALELISM: u32 = 4;
-static OPTIMAL_SIZE: u32 = 64;
+static BUCKET_SIZE: usize = 1;
+static GROUP_SIZE: usize = 23;
+static PARALELISM: usize = 4;
+static OPTIMAL_SIZE: usize = 64;
 
-type Address = maidsafe_types::NameType; // [u8;64];
-struct PublicKey;
-
+type Address = maidsafe_types::NameType;
+#[derive(Clone)]
 struct KeyFob {
   id: maidsafe_types::NameType,
   keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   signature: crypto::sign::Signature,
 }
 
-impl KeyFob {
-  pub fn is_valid(&self) -> bool {
-   let maidsafe_types::NameType(id) = self.id;
-   for it in id.iter() {
-    if *it != 0 {
-      return true;
-    }
-   }
-   false
-  }
-}
-
-impl Clone for KeyFob {
-  fn clone(&self) -> Self {
-    KeyFob {
-      id: self.id.clone(),
-      keys: self.keys.clone(),
-      signature: self.signature.clone(),
-    }
-  }
-}
-
+#[derive(Clone)]
 pub struct NodeInfo {
   fob: KeyFob,
-  //endpoint: ip::SocketAddress,
+  endpoint: SocketAddr,
   connected: bool,
 }
 
-impl Clone for NodeInfo {
-  fn clone(&self) -> Self {
-    NodeInfo {
-      fob: self.fob.clone(),
-      //endpoint: self.endpoint
-      connected: self.connected,
-    }
-  }
-}
 
 /// The RoutingTable class is used to maintain a list of contacts to which we are connected.  
 struct RoutingTable {
@@ -85,19 +54,19 @@ struct RoutingTable {
 
 impl RoutingTable {
   pub fn get_bucket_size() -> usize {
-    1
+    BUCKET_SIZE
   }
 
   pub fn get_parallelism() -> usize {
-    4
+    PARALELISM
   }
 
   pub fn get_optimal_size() -> usize {
-    64
+    OPTIMAL_SIZE
   }
 
   pub fn get_group_size() -> usize {
-    23
+    GROUP_SIZE
   }
 
   /// Potentially adds a contact to the routing table.  If the contact is added, the first return arg
@@ -119,7 +88,7 @@ impl RoutingTable {
     let maidsafe_types::NameType(our_id) = self.our_id;
     let mut new_node_index: usize = 0;
 
-    if maidsafe_types::helper::compare_arr_u8_64(&their_info_id, &our_id) {
+    if self.our_id == their_info.fob.id {
       return (false, None);
     }
 
@@ -132,10 +101,10 @@ impl RoutingTable {
       return (true, None);
     }
 
-    if self.closer_to_target(&their_info.fob.id, &self.routing_table[RoutingTable::get_group_size()].fob.id) {
+    if RoutingTable::closer_to_target(&self.our_id, &their_info.fob.id, &self.routing_table[RoutingTable::get_group_size()].fob.id)  == cmp::Ordering::Greater {
       new_node_index = self.push_back_then_sort(their_info);
       let removal_node_index = self.find_candidate_for_removal();
-      if removal_node_index == self.routing_table.len() {
+      if removal_node_index == (self.routing_table.len() - 1) {
         return (true, None);
       } else {
         let removal_node = self.routing_table[removal_node_index].clone();
@@ -158,33 +127,33 @@ impl RoutingTable {
   /// view to adding the contact to our table.  The checking procedure is the same as for 'AddNode'
   /// above, except for the lack of a public key to check in step 1.
   pub fn check_node(&self, their_id: &Address)->bool {
-  	if (!self.is_valid()) {
+  	if !self.our_id.is_valid() {
   		panic!("Routing Table id is not valid");
   	}
-  	if (!maidsafe_types::helper::compare_arr_u8_64(&self.our_id.0, &their_id.0)) {
+  	if self.our_id == *their_id {
 		  return false;
   	}
-  	if (self.has_node(their_id)) {
+  	if self.has_node(their_id) {
 	    return false;	
   	}
     //  std::lock_guard<std::mutex> lock(mutex_);
-    if (self.routing_table.len() < (RoutingTable::get_optimal_size() as usize)) {
+    if self.routing_table.len() < (RoutingTable::get_optimal_size() as usize) {
     	return true;
     }
     let group_size = (RoutingTable::get_group_size() - 1) as usize;
     let thier_id_clone = their_id.clone();    
-    if self.closer_to_target(&their_id, &self.routing_table[group_size].fob.id) {
+    if RoutingTable::closer_to_target(&self.our_id, &their_id, &self.routing_table[group_size].fob.id) == cmp::Ordering::Greater {
     	return true;
-  	}    
+  	}
     self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal())        	
 	}
   
-  // This unconditionally removes the contact from the table.
+  /// This unconditionally removes the contact from the table.
   pub fn drop_node(&mut self, node_to_drop: &Address) {
     let mut index_of_removal = 0usize;
 
     for i in 0..self.routing_table.len() {
-      if maidsafe_types::helper::compare_arr_u8_64(&self.routing_table[i].fob.id.0, &node_to_drop.0) {
+      if self.routing_table[i].fob.id == *node_to_drop {
         index_of_removal = i;
         break;
       }
@@ -195,13 +164,13 @@ impl RoutingTable {
     }
   }
 
-  // This returns a collection of contacts to which a message should be sent onwards.  It will
-  // return all of our close group (comprising 'GroupSize' contacts) if the closest one to the
-  // target is within our close group.  If not, it will return the 'Parallelism()' closest contacts
-  // to the target.
+  /// This returns a collection of contacts to which a message should be sent onwards.  It will
+  /// return all of our close group (comprising 'GroupSize' contacts) if the closest one to the
+  /// target is within our close group.  If not, it will return the 'Parallelism()' closest contacts
+  /// to the target.
   pub fn target_nodes(&self, target: Address)->Vec<NodeInfo> {
-    let mut our_close_group: Vec<NodeInfo> = Vec::new();
-    let mut closest_to_target: Vec<NodeInfo> = Vec::new();
+    let mut our_close_group = Vec::new();
+    let mut closest_to_target = Vec::new();
     let mut result: Vec<NodeInfo> = Vec::new();
     let mut iterations = 0usize;
 
@@ -223,9 +192,13 @@ impl RoutingTable {
       return result;
     }
 
-    self.partial_sort(&mut closest_to_target, parallelism);
+    // Partial Sort:
+    // let high = closest_to_target.len() - 1;
+    // RoutingTable::partial_sort(&mut closest_to_target, 0, high, parallelism, &self.our_id);
 
-    if self.is_any_of(&our_close_group, &closest_to_target) {
+    closest_to_target.sort_by(|a, b| RoutingTable::closer_to_target(&self.our_id, &a.fob.id, &b.fob.id));
+
+    if RoutingTable::is_any_of(&our_close_group, &closest_to_target) {
       for iter in our_close_group.iter() {
         result.push(iter.clone());
       }
@@ -235,21 +208,11 @@ impl RoutingTable {
       }
     }
 
-
     result
   }
 
-  fn is_any_of(&self, vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
-    ;
-    false
-  }
-
-  fn partial_sort(&self, vec: &mut Vec<NodeInfo>, parallelism: usize) {
-    ;
-  }
-
-  // This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
-  // table if we hold less than 'GroupSize' contacts in total).
+  /// This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
+  /// table if we hold less than 'GroupSize' contacts in total).
   pub fn our_close_group(&self) -> Vec<NodeInfo> {
     let group_size = RoutingTable::get_group_size();
     let size = cmp::min(group_size, self.routing_table.len());
@@ -261,18 +224,20 @@ impl RoutingTable {
     result
   }
 
-  // This returns the public key for the given node if the node is in our table.
-  pub fn get_public_key(&self, their_id: Address)->Option<crypto::asymmetricbox::PublicKey> {
-  	 //Validate(their_id);
+  /// This returns the public key for the given node if the node is in our table.
+  pub fn get_public_key(&self, their_id: Address)->Option<crypto::asymmetricbox::PublicKey> {  	 
+  	 if !their_id.is_valid() {
+  	 	 panic!("Id is not valid");
+  	 }
     //std::lock_guard<std::mutex> lock(mutex_);    
     if !self.is_nodes_sorted() {
     	panic!("Nodes are not sorted");
     }
     let found_node_option = self.routing_table.iter().find(|&node_info| {
-    		  maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &their_id.0) 
+    		  node_info.fob.id == their_id 
     		});
     match found_node_option {
-    	Some(node) => { Some(node.fob.keys.1) } 
+    	Some(node) => { Some(node.fob.keys.1) }
     	None => {None}
     }
   }
@@ -282,11 +247,11 @@ impl RoutingTable {
 //  	self.our_id.0 
 //	}
 
-
+  
   pub fn size(&self)->usize {
   	//std::lock_guard<std::mutex> lock(mutex_);
     self.routing_table.len()
-	}
+  }
 
   fn find_candidate_for_removal(&self) -> usize {
     assert!(self.routing_table.len() >= RoutingTable::get_optimal_size());
@@ -334,7 +299,7 @@ impl RoutingTable {
   
   fn has_node(&self, node_id: &Address) -> bool {
     for node_info in &self.routing_table {
-      if maidsafe_types::helper::compare_arr_u8_64(&node_info.fob.id.0, &node_id.0) {
+      if node_info.fob.id == *node_id {
         return true;
       }
     }
@@ -349,7 +314,7 @@ impl RoutingTable {
       let mut j = i - 1;
       let rhs_id = self.routing_table[i].clone();
 
-      while j != (-1 as usize) && self.is_rhs_less(&self.routing_table[j].fob.id, &rhs_id.fob.id) {
+      while j != (-1 as usize) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) == cmp::Ordering::Greater {
         self.routing_table[j + 1] = self.routing_table[j].clone();
         j -= 1;
       }
@@ -363,47 +328,25 @@ impl RoutingTable {
     }
     index
   }
-
-  fn is_rhs_less(&self, lhs: &maidsafe_types::NameType, rhs: &maidsafe_types::NameType) -> bool {
-    for i in 0..lhs.0.len() {
-      let res_0 = lhs.0[i] ^ self.our_id.0[i];
-      let res_1 = rhs.0[i] ^ self.our_id.0[i];
-
-      if res_1 < res_0 {
-        return true;
-      }
-    }
-    false
-  }
-  
-  pub fn is_valid(&self) -> bool {
-   let maidsafe_types::NameType(id) = self.our_id;
-   for it in id.iter() {
-    if *it != 0 {
-      return true;
-    }
-   }
-   false
-  }
     
-  fn closer_to_target(&self, lhs: &maidsafe_types::NameType, rhs: &maidsafe_types::NameType) -> bool {
+  fn closer_to_target(base: &maidsafe_types::NameType,
+                      lhs: &maidsafe_types::NameType,
+                      rhs: &maidsafe_types::NameType) -> cmp::Ordering {
     for i in 0..lhs.0.len() {
-      let res_0 = lhs.0[i] ^ self.our_id.0[i];
-      let res_1 = rhs.0[i] ^ self.our_id.0[i];
+      let res_0 = lhs.0[i] ^ base.0[i];
+      let res_1 = rhs.0[i] ^ base.0[i];
 
       if res_1 < res_0 {
-        return true;
+        return cmp::Ordering::Greater;
       }
     }
-    false
+
+    cmp::Ordering::Less
   }
   
   fn is_nodes_sorted(&self) -> bool {
   	for i in 1..self.routing_table.len() {
-      let mut j = i - 1;
-      let rhs_id = self.routing_table[i].clone();
-
-      while j >=0 && self.is_rhs_less(&self.routing_table[j].fob.id, &rhs_id.fob.id) {
+      if RoutingTable::closer_to_target(&self.our_id, &self.routing_table[i - 1].fob.id, &self.routing_table[i].fob.id) == cmp::Ordering::Greater { 
         return false;
       }
     }
@@ -415,12 +358,71 @@ impl RoutingTable {
   		return false;
   	}
   	let removal_node = &self.routing_table[removal_node_index];
-    let last_node_fob_id = self.routing_table[self.routing_table.len() -1 ].fob.id.0;
-    let removal_node_fob_id = removal_node.fob.id.0;
+    let last_node_fob_id = &self.routing_table[self.routing_table.len() -1 ].fob.id;    
     
-    !maidsafe_types::helper::compare_arr_u8_64(&last_node_fob_id, &removal_node_fob_id) && &self.bucket_index(new_node) > &self.bucket_index(&removal_node.fob.id)
+    *last_node_fob_id != removal_node.fob.id && 
+      &self.bucket_index(new_node) > &self.bucket_index(&removal_node.fob.id)
   }
 
+  fn is_any_of(vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
+    for iter in vec_close_group.iter() {
+      if iter.fob.id == vec_closest_to_target[0].fob.id {
+        return true;
+      }
+    }
+    false
+  }
+
+  /*
+  fn get_pivot(low: usize, high: usize) -> usize {
+    // TODO(Spandan) get a random value in the range [low, high] - rand is currently broken on my
+    // Rust right now
+    (high - low) / 2
+  }
+
+  fn partition(vec: &mut Vec<NodeInfo>, low: usize, high: usize, base: &maidsafe_types::NameType) -> usize {
+    if low < high {
+      let pivot = RoutingTable::get_pivot(low, high);
+      let mut new_pivot = low;
+
+      let temp = vec[pivot].clone();
+      vec[pivot] = vec[high].clone();
+      vec[high] = temp.clone();
+
+      for i in low..high {
+        if RoutingTable::closer_to_target(&base, &vec[high].fob.id, &vec[i].fob.id) == cmp::Ordering::Greater {
+          if i != new_pivot {
+            let temp = vec[new_pivot].clone();
+            vec[new_pivot] = vec[i].clone();
+            vec[i] = temp.clone();
+          }
+          new_pivot += 1;
+        }
+      }
+
+      if new_pivot != high {
+        let temp = vec[new_pivot].clone();
+        vec[new_pivot] = vec[high].clone();
+        vec[high] = temp.clone();
+      }
+
+      new_pivot
+    } else {
+      low
+    }
+  }
+
+  fn partial_sort(vec: &mut Vec<NodeInfo>, low: usize, high: usize, parallelism: usize, base: &maidsafe_types::NameType) {
+    if low < high {
+      let new_pivot = RoutingTable::partition(vec, low, high, base);
+      RoutingTable::partial_sort(vec, low, new_pivot - 1, parallelism, base);
+
+      if new_pivot < parallelism {
+        RoutingTable::partial_sort(vec, new_pivot, high, parallelism, base);
+      }
+    }
+  }
+  */
 }
 
 #[test]
