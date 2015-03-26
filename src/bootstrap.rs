@@ -162,15 +162,14 @@ impl BootStrapHandler {
   }
 
   fn insert_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
-    if contacts.is_empty() {
-      return;
-    }
-    for contact in contacts.iter() {
-      let mut e = cbor::Encoder::from_memory();
-      e.encode(&[contact]).unwrap();
-      let mut query = self.database.prepare("INSERT INTO BOOTSTRAP_CONTACTS (CONTACT) VALUES(?)", &None).unwrap();
-      query.bind_params(&[types::BindArg::Blob(e.into_bytes())]);
-      query.step();
+    if !contacts.is_empty() {
+      for contact in contacts.iter() {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[contact]).unwrap();
+        let mut query = self.database.prepare("INSERT INTO BOOTSTRAP_CONTACTS (CONTACT) VALUES(?)", &None).unwrap();
+        query.bind_params(&[types::BindArg::Blob(e.into_bytes())]);
+        query.step();
+      }
     }
   }
 
