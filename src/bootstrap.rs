@@ -170,7 +170,9 @@ impl BootStrapHandler {
     for contact in contacts.iter() {
     	let mut e = cbor::Encoder::from_memory();    
       e.encode(&[contact]).unwrap();      
-      &self.database.exec(format!("INSERT INTO BOOTSTRAP_CONTACTS VALUES('{}')", String::from_utf8(e.into_bytes()).unwrap()).as_slice()).unwrap();
+      let mut query = self.database.prepare("INSERT INTO BOOTSTRAP_CONTACTS(CONTACT) VALUES(?)", &None).unwrap();
+      query.bind_params(&[types::BindArg::Blob(e.into_bytes())]);
+      query.step();
     }    
   }
 
