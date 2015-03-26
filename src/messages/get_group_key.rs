@@ -13,19 +13,29 @@
 // use of the MaidSafe
 // Software.
 
-#[path="messages/connect.rs"]
-pub mod connect;
-#[path="messages/connect_response.rs"]
-pub mod connect_response;
-#[path="messages/find_group.rs"]
-pub mod find_group;
-#[path="messages/find_group_response.rs"]
-pub mod find_group_response;
-#[path="messages/get_client_key.rs"]
-pub mod get_client_key;
-#[path="messages/get_client_key_response.rs"]
-pub mod get_client_key_response;
-#[path="messages/get_group_key.rs"]
-pub mod get_group_key;
-#[path="messages/get_group_key_response.rs"]
-pub mod get_group_key_response;
+#![allow(unused_assignments)]
+
+use cbor::CborTagEncode;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+
+use types;
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct GetGroupKey {
+  pub requester : types::SourceAddress,
+  pub target_id : types::Address,
+}
+
+impl Encodable for GetGroupKey {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_001, &(&self.requester, &self.target_id)).encode(e)
+  }
+}
+
+impl Decodable for GetGroupKey {
+  fn decode<D: Decoder>(d: &mut D)->Result<GetGroupKey, D::Error> {
+    try!(d.read_u64());
+    let (requester, target_id) = try!(Decodable::decode(d));
+    Ok(GetGroupKey { requester: requester, target_id: target_id})
+  }
+}
