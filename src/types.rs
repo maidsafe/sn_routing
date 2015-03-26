@@ -105,6 +105,26 @@ pub trait RoutingTrait {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct NameAndTypeId {
+  pub name : Vec<u8>,
+  pub type_id : u32
+}
+
+impl Encodable for NameAndTypeId {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.name, &self.type_id)).encode(e)
+  }
+}
+
+impl Decodable for NameAndTypeId {
+  fn decode<D: Decoder>(d: &mut D)->Result<NameAndTypeId, D::Error> {
+    try!(d.read_u64());
+    let (name, type_id) = try!(Decodable::decode(d));
+    Ok(NameAndTypeId { name: name, type_id: type_id })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct Signature {
   pub signature : Vec<u8> // Vec form of crypto::asymmetricbox::Signature which is an array
 }
