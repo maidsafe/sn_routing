@@ -53,6 +53,7 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
   ](http://maidsafe.net/Whitepapers/pdf/DHTbasedNATTraversal.pdf)
 - [ ] Implement routing message types (Connect FindNode)
 - [ ] Implement Get Put Post messages 
+- [ ] Implement routing node
 - [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Version 0.0.8
 - [ ] Implement NAT traversal
