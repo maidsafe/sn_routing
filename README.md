@@ -33,7 +33,7 @@ Extract the libsqlite3.a file from the libs folder and place in usr\libs or in "
 - [x] Message header 
 - [x] Message header tests
 - [ ] API version 0.0.6
-- [ ] Bootstrap handler implementation
+- [x] Bootstrap handler implementation
 - [ ] Bootstrap handler test
 - [ ] Tcp Networking
   - [ ] Tcp live port and backup random port selection 
