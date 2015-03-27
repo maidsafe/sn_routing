@@ -16,5 +16,5 @@
 use chunk_store;
 
 pub struct PmidNode {
-  store: chunk_store::ChunkStore,
+  pub store: chunk_store::ChunkStore,
 }
