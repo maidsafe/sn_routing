@@ -51,7 +51,7 @@ impl ChunkStore {
     }
 
 
-    match self_encryption::encrypt(value.as_slice(), key.as_slice(), iv.as_slice()) {
+    match self_encryption::encryption::encrypt(value.as_slice(), key.as_slice(), iv.as_slice()) {
       Ok(content) => {
         self.current_disk_usage += content.len();
 
@@ -93,10 +93,8 @@ impl ChunkStore {
           iv.push(*it);
         }
 
-        let result: Vec<u8> = Vec::new();
-
-        match self_encryption::decrypt(it.data.as_slice(), key.as_slice(), iv.as_slice()) {
-          Ok(vec) => result = vec,
+        match self_encryption::encryption::decrypt(it.data.as_slice(), key.as_slice(), iv.as_slice()) {
+          Ok(vec) => return_val = vec,
           _ => panic!("Unable to decrypt"),
         };
         break;
@@ -104,7 +102,7 @@ impl ChunkStore {
     }
 
     assert!(!return_val.is_empty());
-    result
+    return_val
   }
 
   pub fn max_disk_usage(&self) -> usize {

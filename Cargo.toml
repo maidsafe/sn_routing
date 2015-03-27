@@ -17,11 +17,11 @@ bchannel = "*"
 lru-cache = "*"
 time = "*"
 
-[dependencies.self_encryption]
-path = "../../maidsafe-encryption/self_encryption"
-
 [dependencies.maidsafe_types]
 git = "https://github.com/dirvine/maidsafe_types"
+
+[dependencies.self_encryption]
+git = "https://github.com/dirvine/self_encryption"
 
 #[dependencies.utp]
 #git = "https://github.com/meqif/rust-utp"
@@ -30,4 +30,4 @@ git = "https://github.com/dirvine/maidsafe_types"
 git = "https://github.com/dnaq/sodiumoxide"
 
 [dependencies.Routing]
-path = "../../maidsafe-routing/routing"
+git = "https://github.com/dirvine/routing"

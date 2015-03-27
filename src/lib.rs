@@ -5,6 +5,7 @@
               html_root_url = "http://dirvine.github.io/dirvine/maidsafe_vault/")]
 //! Placeholder
 
+extern crate self_encryption;
 extern crate sodiumoxide;
 extern crate "lru-cache" as lru_cache;
 extern crate "rustc-serialize" as rustc_serialize;
