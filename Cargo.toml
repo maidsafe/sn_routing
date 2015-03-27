@@ -25,6 +25,3 @@ git = "https://github.com/dirvine/maidsafe_types"
 
 [dependencies.sodiumoxide]
 git = "https://github.com/dnaq/sodiumoxide"
-
-[dependencies.maidsafe_vault]
-path = "../../maidsafe-vault/maidsafe_vault"

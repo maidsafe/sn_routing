@@ -44,14 +44,12 @@ extern crate cbor;
 //extern crate utp;
 extern crate time;
 extern crate bchannel;
-extern crate maidsafe_vault;
 
 use std::net::{TcpStream};
 use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
-use maidsafe_vault::pmid_node::PmidNode;
 
 mod types;
 mod tcp_connections;
@@ -91,7 +89,7 @@ impl DhtIdentity {
   
 }
 
-enum Authority {
+pub enum Authority {
 Client,
 Node,
 ClientManager,
@@ -111,7 +109,7 @@ InvalidRequest,
 IncorrectData(Vec<u8>) 
 }
 
-trait Facade : Sync {
+pub trait Facade : Sync {
   /// if reply is data then we send back the response message (ie get_response )
   fn handle_get(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>; 
   fn handle_put(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
@@ -120,37 +118,6 @@ trait Facade : Sync {
   fn handle_put_response(&self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
   fn handle_post_response(&self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
   }
-
-impl Facade for PmidNode {
-  fn handle_get(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
-    let get_result = self.store.get(data);
-    Ok(Action::Reply(get_result))
-  }
-
-  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
-	let mut e = cbor::Encoder::from_memory();
-	e.encode(&data).unwrap();
-    self.store.put(data, e.into_bytes());
-    Ok(Action::SendOn(from_address))
-  }
-
-  fn handle_post(&self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
-    ;
-    Err(RoutingError::InvalidRequest)
-  }
-
-  fn handle_get_response(&self, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>) {
-    ;
-  }
-
-  fn handle_put_response(&self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>) {
-    ;
-  }
-
-  fn handle_post_response(&self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>) {
-    ;
-  }
-}
 
 /// DHT node 
 pub struct RoutingNode<'a> {
