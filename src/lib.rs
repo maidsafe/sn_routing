@@ -5,6 +5,20 @@
               html_root_url = "http://dirvine.github.io/dirvine/maidsafe_vault/")]
 //! Placeholder
 
+extern crate sodiumoxide;
+extern crate "lru-cache" as lru_cache;
+extern crate "rustc-serialize" as rustc_serialize;
+extern crate cbor;
+extern crate time;
+extern crate bchannel;
+
+use std::net::{TcpStream};
+use sodiumoxide::crypto;
+use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver};
+use std::default::Default;
+
+mod chunk_store;
 
 /// Placeholder doc test
 pub fn always_true() -> bool { true }

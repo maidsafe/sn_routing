@@ -9,3 +9,20 @@ repository = "https://github.com/dirvine/maidsafe_vault"
 readme = "README.md"
 license = "GPL-3.0"
 homepage = "http://www.maidsafe.net"
+
+[dependencies]
+rustc-serialize = "*"
+cbor = "*"
+bchannel = "*"
+lru-cache = "*"
+time = "*"
+
+[dependencies.maidsafe_types]
+git = "https://github.com/dirvine/maidsafe_types"
+
+#[dependencies.utp]
+#git = "https://github.com/meqif/rust-utp"
+
+[dependencies.sodiumoxide]
+git = "https://github.com/dnaq/sodiumoxide"
+
