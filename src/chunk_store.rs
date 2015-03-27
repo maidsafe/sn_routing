@@ -16,6 +16,7 @@
 #![allow(dead_code)]
 
 extern crate self_encryption;
+use std::convert::AsRef;
 
 static AES256_KEYSIZE: usize = 32;
 static AES256_IVSIZE: usize = 16;
@@ -50,7 +51,7 @@ impl ChunkStore {
       iv.push(*it);
     }
 
-    match self_encryption::encryption::encrypt(&value[..], &key[..], &iv[..]) {
+    match self_encryption::encryption::encrypt(value.as_ref(), key.as_ref(), iv.as_ref()) {
       Ok(content) => {
         self.current_disk_usage += content.len();
 
@@ -92,7 +93,7 @@ impl ChunkStore {
           iv.push(*it);
         }
 
-        match self_encryption::encryption::decrypt(&it.data[..], &key[..], &iv[..]) {
+        match self_encryption::encryption::decrypt(it.data.as_ref(), key.as_ref(), iv.as_ref()) {
           Ok(vec) => return_val = vec,
           _ => panic!("Unable to decrypt"),
         };

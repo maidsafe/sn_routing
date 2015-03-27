@@ -13,9 +13,14 @@ homepage = "http://www.maidsafe.net"
 [dependencies]
 rustc-serialize = "*"
 cbor = "*"
-bchannel = "*"
-lru-cache = "*"
 time = "*"
+
+
+[dependencies.bchannel]
+git="https://github.com/dirvine/bchannel"
+
+[dependencies.lru-cache]
+git="https://github.com/contain-rs/lru-cache.git"
 
 [dependencies.maidsafe_types]
 git = "https://github.com/dirvine/maidsafe_types"
