@@ -113,7 +113,7 @@ impl BootStrapHandler {
       database: Box::new(open("./bootstrap.cache").unwrap()),
       last_updated: time::now(),
     };
-    bootstrap.database.exec("CREATE TABLE IF NOT EXISTS BOOTSTRAP_CONTACTS(CONTACT BLOB PRIMARY KEY NOT NULL)");
+    bootstrap.database.exec("CREATE TABLE IF NOT EXISTS BOOTSTRAP_CONTACTS(CONTACT BLOB PRIMARY KEY NOT NULL)").unwrap();
     bootstrap
   }
  
