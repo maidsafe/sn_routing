@@ -13,6 +13,7 @@
     use of the MaidSafe
     Software.                                                                 */
 
+/*
 extern crate Routing;
 extern crate sodiumoxide;
 extern crate "lru-cache" as lru_cache;
@@ -64,5 +65,4 @@ impl Routing::Facade for PmidNode {
     ;
   }
 }
-
-
+*/
