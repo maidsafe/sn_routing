@@ -16,7 +16,7 @@ Appveyor build status (Windows)
 - [ ] Implement VaultFacade
     - [ ] Follow the interface design with routing (already in place as first go)
     - [ ] Implement VaultFacade initally (provide a guide line for later on persona implementation)
-- [ ] Implement chunkstore
+- [x] Implement chunkstore
 - [ ] Test chunkstore
 - [ ] Implement MaidManager
 - [ ] Implement DataManager
