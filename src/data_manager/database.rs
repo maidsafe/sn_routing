@@ -19,6 +19,7 @@ extern crate lru_cache;
 
 use self::lru_cache::LruCache;
 
+// TODO the following three types shall be defined somewhere in maidsafe_types or routing
 pub type Identity = Vec<u8>; // name of the chunk
 pub type PmidNode = Vec<u8>; // identity of the pmid_node
 pub type PmidNodes = Vec<PmidNode>;
