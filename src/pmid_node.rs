@@ -13,4 +13,8 @@
     use of the MaidSafe
     Software.                                                                 */
 
-pub struct PmidNode;
+use chunk_store;
+
+pub struct PmidNode {
+  store: chunk_store::ChunkStore,
+}
