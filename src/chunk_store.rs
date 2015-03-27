@@ -16,8 +16,8 @@
 extern crate self_encryption;
 use std::convert::AsRef;
 
-static AES256_KeySize: usize = 32;
-static AES256_IVSize: usize = 16;
+static AES256_KEY_SIZE: usize = 32;
+static AES256_IV_SIZE: usize = 16;
 
 pub struct Entry {
   name: Vec<u8>,
@@ -40,14 +40,13 @@ impl ChunkStore {
   }
 
   pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
-    let mut content: Vec<u8> = Vec::new();
-    let mut iv: Vec<u8> = Vec::with_capacity(AES256_IVSize);
-    let mut key: Vec<u8> = Vec::with_capacity(AES256_KeySize);
+    let mut iv: Vec<u8> = Vec::with_capacity(AES256_IV_SIZE);
+    let mut key: Vec<u8> = Vec::with_capacity(AES256_KEY_SIZE);
 
-    for it in name.iter().take(AES256_KeySize) {
+    for it in name.iter().take(AES256_KEY_SIZE) {
       key.push(*it);
     }
-    for it in name.iter().skip(AES256_KeySize).take(AES256_IVSize) {
+    for it in name.iter().skip(AES256_KEY_SIZE).take(AES256_IV_SIZE) {
       iv.push(*it);
     }
 
@@ -84,13 +83,13 @@ impl ChunkStore {
 
     for it in self.entries.iter() {
       if it.name == name {
-        let mut iv: Vec<u8> = Vec::with_capacity(AES256_IVSize);
-        let mut key: Vec<u8> = Vec::with_capacity(AES256_KeySize);
+        let mut iv: Vec<u8> = Vec::with_capacity(AES256_IV_SIZE);
+        let mut key: Vec<u8> = Vec::with_capacity(AES256_KEY_SIZE);
 
-        for it in name.iter().take(AES256_KeySize) {
+        for it in name.iter().take(AES256_KEY_SIZE) {
           key.push(*it);
         }
-        for it in name.iter().skip(AES256_KeySize).take(AES256_IVSize) {
+        for it in name.iter().skip(AES256_KEY_SIZE).take(AES256_IV_SIZE) {
           iv.push(*it);
         }
 
@@ -136,9 +135,9 @@ impl ChunkStore {
 
     name_vec
   }
-
-  fn has_disk_space(&self, required_space: usize) -> bool {
-    self.current_disk_usage + required_space <= self.max_disk_usage
-  }
+// FIXME: Unused
+  // fn has_disk_space(&self, required_space: usize) -> bool {
+  //   self.current_disk_usage + required_space <= self.max_disk_usage
+  // }
 }
 

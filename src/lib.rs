@@ -14,11 +14,6 @@ extern crate cbor;
 extern crate time;
 extern crate bchannel;
 
-use std::net::{TcpStream};
-use sodiumoxide::crypto;
-use std::sync::mpsc;
-use std::sync::mpsc::{Sender, Receiver};
-use std::default::Default;
 
 pub mod chunk_store;
 pub mod pmid_manager;
