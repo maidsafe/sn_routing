@@ -13,10 +13,12 @@
     use of the MaidSafe
     Software.                                                                 */
 
+#![allow(dead_code)]
+
 extern crate self_encryption;
 
-static AES256_KeySize: usize = 32;
-static AES256_IVSize: usize = 16;
+static AES256_KEYSIZE: usize = 32;
+static AES256_IVSIZE: usize = 16;
 
 pub struct Entry {
   name: Vec<u8>,
@@ -39,19 +41,16 @@ impl ChunkStore {
   }
 
   pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
-    let mut content: Vec<u8> = Vec::new();
-    let mut iv: Vec<u8> = Vec::with_capacity(AES256_IVSize);
-    let mut key: Vec<u8> = Vec::with_capacity(AES256_KeySize);
-
-    for it in name.iter().take(AES256_KeySize) {
+    let mut iv: Vec<u8> = Vec::with_capacity(AES256_IVSIZE);
+    let mut key: Vec<u8> = Vec::with_capacity(AES256_KEYSIZE);
+    for it in name.iter().take(AES256_KEYSIZE) {
       key.push(*it);
     }
-    for it in name.iter().skip(AES256_KeySize).take(AES256_IVSize) {
+    for it in name.iter().skip(AES256_KEYSIZE).take(AES256_IVSIZE) {
       iv.push(*it);
     }
 
-
-    match self_encryption::encryption::encrypt(value.as_slice(), key.as_slice(), iv.as_slice()) {
+    match self_encryption::encryption::encrypt(&value[..], &key[..], &iv[..]) {
       Ok(content) => {
         self.current_disk_usage += content.len();
 
@@ -83,17 +82,17 @@ impl ChunkStore {
 
     for it in self.entries.iter() {
       if it.name == name {
-        let mut iv: Vec<u8> = Vec::with_capacity(AES256_IVSize);
-        let mut key: Vec<u8> = Vec::with_capacity(AES256_KeySize);
+        let mut iv: Vec<u8> = Vec::with_capacity(AES256_IVSIZE);
+        let mut key: Vec<u8> = Vec::with_capacity(AES256_KEYSIZE);
 
-        for it in name.iter().take(AES256_KeySize) {
+        for it in name.iter().take(AES256_KEYSIZE) {
           key.push(*it);
         }
-        for it in name.iter().skip(AES256_KeySize).take(AES256_IVSize) {
+        for it in name.iter().skip(AES256_KEYSIZE).take(AES256_IVSIZE) {
           iv.push(*it);
         }
 
-        match self_encryption::encryption::decrypt(it.data.as_slice(), key.as_slice(), iv.as_slice()) {
+        match self_encryption::encryption::decrypt(&it.data[..], &key[..], &iv[..]) {
           Ok(vec) => return_val = vec,
           _ => panic!("Unable to decrypt"),
         };
