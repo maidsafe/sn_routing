@@ -12,8 +12,9 @@
     See the Licences for the specific language governing permissions and limitations relating to
     use of the MaidSafe
     Software.                                                                 */
-
+  
 extern crate self_encryption;
+use std::convert::AsRef;
 
 static AES256_KeySize: usize = 32;
 static AES256_IVSize: usize = 16;
@@ -51,7 +52,7 @@ impl ChunkStore {
     }
 
 
-    match self_encryption::encryption::encrypt(value.as_slice(), key.as_slice(), iv.as_slice()) {
+    match self_encryption::encryption::encrypt(value.as_ref(), key.as_ref(), iv.as_ref()) {
       Ok(content) => {
         self.current_disk_usage += content.len();
 
@@ -93,7 +94,7 @@ impl ChunkStore {
           iv.push(*it);
         }
 
-        match self_encryption::encryption::decrypt(it.data.as_slice(), key.as_slice(), iv.as_slice()) {
+        match self_encryption::encryption::decrypt(it.data.as_ref(), key.as_ref(), iv.as_ref()) {
           Ok(vec) => return_val = vec,
           _ => panic!("Unable to decrypt"),
         };
