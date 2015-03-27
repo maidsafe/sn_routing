@@ -1,6 +1,6 @@
 branches:
-  except:
-    - gh-pages
+  only:
+    - bootstrap
 
 platform:
   - x64
@@ -17,15 +17,20 @@ install:
   - rustc --version
   - cargo --version
   - cinst 7zip.commandline -x86
+  - ps: if ($env:RUST_INSTALL_TRIPLE -eq 'i686-pc-windows-gnu') {
+          Start-FileDownload "http://downloads.sourceforge.net/project/msys2/Base/i686/msys2-i686-20150202.exe";
+        }
   - ps: if($env:RUST_INSTALL_TRIPLE -eq 'x86_64-pc-windows-gnu') {
          Start-FileDownload "http://libgd.blob.core.windows.net/mingw/mingw-w64-dgn-x86_64-20141001.7z";
          7z x -oC:\ mingw-w64-dgn-x86_64-20141001.7z;
+         Start-FileDownload "http://downloads.sourceforge.net/project/msys2/Base/x86_64/msys2-x86_64-20150202.exe";
        }
   - ps: Start-FileDownload 'https://download.libsodium.org/libsodium/releases/libsodium-1.0.2-mingw.tar.gz'
   - 7z e libsodium-1.0.2-mingw.tar.gz && 7z x libsodium-1.0.2-mingw.tar -olibsodium -y
-  - if "%RUST_INSTALL_TRIPLE%" == "i686-pc-windows-gnu" mkdir bin\i686-pc-windows-gnu && copy libsodium\libsodium-win32\lib\libsodium.a bin\i686-pc-windows-gnu\ && SET PATH=C:\MinGW\bin;%PATH%
-  - if "%RUST_INSTALL_TRIPLE%" == "x86_64-pc-windows-gnu" mkdir bin\x86_64-pc-windows-gnu && copy libsodium\libsodium-win64\lib\libsodium.a bin\x86_64-pc-windows-gnu\ && SET PATH=C:\mingw64\bin;%PATH%
-
+  - if "%RUST_INSTALL_TRIPLE%" == "i686-pc-windows-gnu" mkdir bin\i686-pc-windows-gnu && copy libsodium\libsodium-win32\lib\libsodium.a bin\i686-pc-windows-gnu\ && msys2-i686-20150202.exe /VERYSILENT /NORESTART /DIR="C:\mysys2_x86" && SET PATH=%PATH%;C:\mysys2_x86\bin;C:\MinGW\bin;
+  - if "%RUST_INSTALL_TRIPLE%" == "x86_64-pc-windows-gnu" mkdir bin\x86_64-pc-windows-gnu && copy libsodium\libsodium-win64\lib\libsodium.a bin\x86_64-pc-windows-gnu\ && msys2-x86_64-20150202.exe /VERYSILENT /NORESTART /DIR="C:\mysys2_x64" && SET PATH=%PATH%;C:\mysys2_x64\bin;C:\mingw64\bin;
+  - cmd: git clone https://github.com/mackyle/sqlite.git
+  -
 build: false
 
 test_script:

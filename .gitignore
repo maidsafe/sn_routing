@@ -7,3 +7,5 @@ build-tests/
 target/
 
 /.idea
+/bin
+/sqlite3.dll
