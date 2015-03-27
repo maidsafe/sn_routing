@@ -16,7 +16,6 @@
     See the Licences for the specific language governing permissions and limitations relating to
     use of the MaidSafe Software.                                                                 */
 
-
 extern crate maidsafe_types;
 extern crate sodiumoxide;
 extern crate time;
@@ -36,8 +35,9 @@ static MAX_LIST_SIZE: usize = 1500;
 
 fn array_to_vec(arr: &[u8]) -> Vec<u8> {
   let mut vector: Vec<u8> = Vec::new();
-  vector.push_all(&arr);
-  vector
+// FIXME: Please replace 
+  // vector.push_all(arr);
+  vector 
 }
 
 fn vector_as_u8_4_array(vector: Vec<u8>) -> [u8;4] {

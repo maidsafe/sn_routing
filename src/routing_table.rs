@@ -135,10 +135,10 @@ impl RoutingTable {
 	    return false;	
   	}
     //  std::lock_guard<std::mutex> lock(mutex_);
-    if self.routing_table.len() < (RoutingTable::get_optimal_size() as usize) {
+    if self.routing_table.len() < RoutingTable::get_optimal_size() {
     	return true;
     }
-    let group_size = (RoutingTable::get_group_size() - 1) as usize;
+    let group_size = RoutingTable::get_group_size() - 1;
     let thier_id_clone = their_id.clone();    
     if RoutingTable::closer_to_target(&self.our_id, &their_id, &self.routing_table[group_size].fob.id) == cmp::Ordering::Greater {
     	return true;
@@ -312,7 +312,7 @@ impl RoutingTable {
       let mut j = i - 1;
       let rhs_id = self.routing_table[i].clone();
 
-      while j != (-1 as usize) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) == cmp::Ordering::Greater {
+      while j != (-1) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) == cmp::Ordering::Greater {
         self.routing_table[j + 1] = self.routing_table[j].clone();
         j -= 1;
       }

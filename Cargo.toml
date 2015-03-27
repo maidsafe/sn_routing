@@ -14,9 +14,11 @@ homepage = "http://www.maidsafe.net"
 rustc-serialize = "*"
 cbor = "*"
 bchannel = "*"
-lru-cache = "*"
 time = "*"
 #sodiumoxide= "*"
+
+[dependencies.lru-cache]
+git="https://github.com/contain-rs/lru-cache.git"
 
 [dependencies.sqlite3]
 git="https://github.com/linuxfood/rustsqlite.git"
