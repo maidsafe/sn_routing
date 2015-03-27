@@ -1,9 +1,28 @@
+platform:
+  - x64
+environment:
+  RUST_INSTALL_DIR: C:\Rust
+  matrix:
+    - RUST_INSTALL_TRIPLE: i686-pc-windows-gnu
+    - RUST_INSTALL_TRIPLE: x86_64-pc-windows-gnu
+
 install:
-  - ps: Start-FileDownload 'https://static.rust-lang.org/dist/rust-nightly-i686-pc-windows-gnu.exe'
-  - rust-nightly-i686-pc-windows-gnu.exe /VERYSILENT /NORESTART /DIR="C:\Program Files (x86)\Rust"
-  - SET PATH=%PATH%;C:\Program Files (x86)\Rust\bin
+  - ps: Start-FileDownload "https://static.rust-lang.org/dist/rust-nightly-$Env:RUST_INSTALL_TRIPLE.exe"
+  - cmd: rust-nightly-%RUST_INSTALL_TRIPLE%.exe /VERYSILENT /NORESTART /COMPONENTS="rust,gcc,cargo" /DIR="%RUST_INSTALL_DIR%"
+  - cmd: SET PATH=%PATH%;%RUST_INSTALL_DIR%\bin;
   - rustc -V
   - cargo -V
+  - cinst 7zip.commandline -x86
+  - ps: if($env:RUST_INSTALL_TRIPLE -eq 'x86_64-pc-windows-gnu') {
+         Start-FileDownload "http://libgd.blob.core.windows.net/mingw/mingw-w64-dgn-x86_64-20141001.7z";
+         7z x -oC:\ mingw-w64-dgn-x86_64-20141001.7z;
+       }
+  - ps: Start-FileDownload 'https://download.libsodium.org/libsodium/releases/libsodium-1.0.2-mingw.tar.gz'
+  - 7z e libsodium-1.0.2-mingw.tar.gz && 7z x libsodium-1.0.2-mingw.tar -olibsodium -y
+  - mkdir third_party_libs
+  - if "%RUST_INSTALL_TRIPLE%" == "i686-pc-windows-gnu" copy libsodium\libsodium-win32\lib\libsodium.a third_party_libs\ && SET PATH=C:\MinGW\bin;%PATH%
+  - if "%RUST_INSTALL_TRIPLE%" == "x86_64-pc-windows-gnu" copy libsodium\libsodium-win64\lib\libsodium.a third_party_libs\ && SET PATH=C:\mingw64\bin;%PATH%
+
 
 build: false
 
