@@ -9,3 +9,6 @@ repository = "https://github.com/dirvine/maidsafe_vault"
 readme = "README.md"
 license = "GPL-3.0"
 homepage = "http://www.maidsafe.net"
+
+[dependencies]
+lru-cache = "*"
