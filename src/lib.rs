@@ -53,7 +53,6 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
 use maidsafe_vault::pmid_node::PmidNode;
 
-mod vault;
 mod types;
 mod tcp_connections;
 mod beacon;
