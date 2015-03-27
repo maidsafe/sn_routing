@@ -17,6 +17,9 @@ bchannel = "*"
 lru-cache = "*"
 time = "*"
 
+[dependencies.self_encryption]
+path = "../../maidsafe-encryption/self_encryption"
+
 [dependencies.maidsafe_types]
 git = "https://github.com/dirvine/maidsafe_types"
 

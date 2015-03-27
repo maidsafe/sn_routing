@@ -13,6 +13,8 @@
     use of the MaidSafe
     Software.                                                                 */
 
+extern crate self_encryption;
+
 static AES256_KeySize: usize = 32;
 static AES256_IVSize: usize = 16;
 
@@ -38,20 +40,28 @@ impl ChunkStore {
 
   pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
     let mut content: Vec<u8> = Vec::new();
-    let mut key_and_iv: Vec<u8> = Vec::with_capacity(AES256_KeySize + AES256_IVSize);
+    let mut iv: Vec<u8> = Vec::with_capacity(AES256_IVSize);
+    let mut key: Vec<u8> = Vec::with_capacity(AES256_KeySize);
 
-    for it in name.iter().take(AES256_KeySize + AES256_IVSize) {
-      key_and_iv.push(*it);
+    for it in name.iter().take(AES256_KeySize) {
+      key.push(*it);
+    }
+    for it in name.iter().skip(AES256_KeySize).take(AES256_IVSize) {
+      iv.push(*it);
     }
 
-    //auto content(crypto::SymmEncrypt(value, key_and_iv));
 
-    self.current_disk_usage += content.len();
+    match self_encryption::encrypt(value.as_slice(), key.as_slice(), iv.as_slice()) {
+      Ok(content) => {
+        self.current_disk_usage += content.len();
 
-    self.entries.push(Entry {
-      name: name,
-      data: content,
-    });
+        self.entries.push(Entry {
+          name: name,
+          data: content,
+        });
+      },
+      _ => panic!("Unable to encrypt")
+    };
   }
 
   pub fn delete(&mut self, name: Vec<u8>) {
@@ -73,17 +83,28 @@ impl ChunkStore {
 
     for it in self.entries.iter() {
       if it.name == name {
-        let mut key_and_iv: Vec<u8> = Vec::with_capacity(AES256_KeySize + AES256_IVSize);
-        for iter in name.iter().take(AES256_KeySize + AES256_IVSize) {
-          key_and_iv.push(*iter);
+        let mut iv: Vec<u8> = Vec::with_capacity(AES256_IVSize);
+        let mut key: Vec<u8> = Vec::with_capacity(AES256_KeySize);
+
+        for it in name.iter().take(AES256_KeySize) {
+          key.push(*it);
         }
-        //return_val = crypto::CipherText(it.data, key_and_iv);
+        for it in name.iter().skip(AES256_KeySize).take(AES256_IVSize) {
+          iv.push(*it);
+        }
+
+        let result: Vec<u8> = Vec::new();
+
+        match self_encryption::decrypt(it.data.as_slice(), key.as_slice(), iv.as_slice()) {
+          Ok(vec) => result = vec,
+          _ => panic!("Unable to decrypt"),
+        };
         break;
       }
     }
 
     assert!(!return_val.is_empty());
-    return_val
+    result
   }
 
   pub fn max_disk_usage(&self) -> usize {
