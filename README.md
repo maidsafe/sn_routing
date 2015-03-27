@@ -18,11 +18,12 @@ libsodium is a native dependency for [sodiumxoide](https://github.com/dnaq/sodiu
 For windows, download and use the [prebuilt mingw library](https://download.libsodium.org/libsodium/releases/libsodium-1.0.2-mingw.tar.gz).
 Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit System or "bin\i686-pc-windows-gnu" for a 32bit system.
 
-Sqlite3 is also native dependency for [rustsqlite](https://github.com/linuxfood/rustsqlite). Compile Sqlite by following the instriction [here](https://www.sqlite.org/howtocompile.html)
-
-Extract the libsqlite3.a file from the libs folder and place in usr\libs or in "bin\{TRIPLE}". Also place the .so or
-.dll file in the project root folder.
-
+SQLite3 is also native dependency for [rustsqlite](https://github.com/linuxfood/rustsqlite).
+Steps to compile SQLite by,
+1. Download SQLite Source code which includes a "configure" script from [SQLite download page](https://www.sqlite.org/download.html) 
+2. Run `./configure && make` to build the SQLite source. Windows Users can build using (mingw + msys)
+3. Copy the `libsqlite3.a` file from the .libs folder to the users/lib, windows users can place `libsqlite3.a` file in "bin\{TRIPLE}" in the project root folder.
+ 
  
 ##Todo Items
 
@@ -33,7 +34,7 @@ Extract the libsqlite3.a file from the libs folder and place in usr\libs or in "
 - [x] Message header 
 - [x] Message header tests
 - [ ] API version 0.0.6
-- [ ] Bootstrap handler implementation
+- [x] Bootstrap handler implementation
 - [ ] Bootstrap handler test
 - [ ] Tcp Networking
   - [ ] Tcp live port and backup random port selection 

@@ -73,6 +73,10 @@ where I: Send + Decodable + 'static, O: Encodable {
     Ok(try!(upgrade_tcp(try!(TcpStream::connect(&addr)))))
 }
 
+/// Starts listening for connections on this ip and port.
+/// Returns:
+/// * A receiver of Tcp stream objects.  It is recommended that you `upgrade` these.
+/// * A TcpAcceptor.  This can be used to close the listener from outside of the listening thread.
 pub fn listen() -> IoResult<(Receiver<(TcpStream, SocketAddr), IoError>, TcpListener)> {
     let live_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 5483);
     let any_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0);
@@ -80,6 +84,7 @@ pub fn listen() -> IoResult<(Receiver<(TcpStream, SocketAddr), IoError>, TcpList
         Ok(x) => x,
         Err(_) => TcpListener::bind(&any_address).unwrap()
     };
+    println!("Listening on {:?}", tcp_listener.local_addr().unwrap());
     let (tx, rx) = channel();
 
     let tcp_listener2 = try!(tcp_listener.try_clone());
@@ -133,19 +138,21 @@ where T: Send + Decodable + 'static {
 
     spawn(move || {
         let mut buffer = BufReader::new(stream);
-        loop {
-            let mut dec = Decoder::from_reader(&mut buffer);
-            match dec.decode().next().unwrap() {
-                Ok(a) => {
-                    // Try to send, and if we can't, then the channel is closed.
-                    if in_snd.send(a).is_err() {
+        {
+            let mut decoder = Decoder::from_reader(&mut buffer);
+            loop {
+                match decoder.decode().next().unwrap() {
+                    Ok(a) => {
+                        // Try to send, and if we can't, then the channel is closed.
+                        if in_snd.send(a).is_err() {
+                            break;
+                        }
+                    },
+                    // if we can't decode, close the stream with an error.
+                    Err(e) => {
+                        let _ = in_snd.error(e);
                         break;
                     }
-                },
-                // if we can't decode, close the stream with an error.
-                Err(e) => {
-                    let _ = in_snd.error(e);
-                    break;
                 }
             }
         }
@@ -163,6 +170,7 @@ mod test {
     use std::thread;
     use std::net::SocketAddr;
     use std::str::FromStr;
+
 #[test]
     fn test_small_stream() {
         thread::spawn(move || {
@@ -183,11 +191,14 @@ mod test {
             o.send(&x).ok();
         }
         o.close();
-        // Print everything that we get back.
+
+        // Collect everything that we get back.
+        let mut responses: Vec<(u64, u64)> = Vec::new();
         for a in i.into_blocking_iter() {
-            let (x, fx): (u64, u64) = a;
-            println!("{} -> {}", x, fx);
+            responses.push(a);
         }
+        println!("Responses: {:?}", responses);
+        assert_eq!(10, responses.len());
     }
 
 // #[test]
