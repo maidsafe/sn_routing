@@ -18,7 +18,11 @@ use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
 
-mod chunk_store;
+pub mod chunk_store;
+pub mod pmid_manager;
+pub mod pmid_node;
+pub mod vault;
+pub mod address;
 
 /// Placeholder doc test
 pub fn always_true() -> bool { true }
