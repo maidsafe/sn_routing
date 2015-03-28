@@ -134,7 +134,7 @@ receiver: Receiver<TcpStream>
 }
 
 impl<'a> RoutingNode<'a> {
-  fn new(my_facade: &'a Facade) -> RoutingNode<'a> {
+  pub fn new(my_facade: &'a Facade) -> RoutingNode<'a> {
     sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
     let key_pair = crypto::sign::gen_keypair(); 
     let encrypt_key_pair = crypto::asymmetricbox::gen_keypair(); 
