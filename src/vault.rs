@@ -15,15 +15,15 @@
 
 #![allow(unused_variables)]
 
-extern crate Routing;
+extern crate routing;
 
 #[path="data_manager/data_manager.rs"]
 mod data_manager;
 
-use self::Routing::Authority;
-use self::Routing::DhtIdentity;
-use self::Routing::Action;
-use self::Routing::RoutingError;
+use self::routing::Authority;
+use self::routing::DhtIdentity;
+use self::routing::Action;
+use self::routing::RoutingError;
 
 use self::data_manager::DataManager;
 
@@ -31,9 +31,9 @@ pub struct VaultFacade {
   data_manager : DataManager
 }
 
-impl Routing::Facade for VaultFacade {
+impl routing::Facade for VaultFacade {
   fn handle_get(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
-    // let from = self::Routing::types::SourceAddress { from_node : self::Routing::types::array_as_vector(&from_address.id),
+    // let from = self::routing::types::SourceAddress { from_node : self::routing::types::array_as_vector(&from_address.id),
     //     from_group : Vec::<u8>::new(), reply_to : Vec::<u8>::new() };
     self.data_manager.handle_get(&data)
   }

@@ -15,14 +15,14 @@
 
 #![allow(dead_code)]
 
-extern crate Routing;
+extern crate routing;
 
 mod database;
 
-use self::Routing::types;
+use self::routing::types;
 
-type CloseGroupDifference = self::Routing::types::CloseGroupDifference;
-type Address = self::Routing::types::Address;
+type CloseGroupDifference = self::routing::types::CloseGroupDifference;
+type Address = self::routing::types::Address;
 
 pub struct DataManager {
   db_ : database::DataManagerDatabase
@@ -35,16 +35,16 @@ impl DataManager {
                   // close_group_: CloseGroupDifference(Vec::<Address>::new(), Vec::<Address>::new()) }
   }
 
-  pub fn handle_get(&mut self, name : &Routing::types::Identity) ->Result<Routing::Action, Routing::RoutingError> {
+  pub fn handle_get(&mut self, name : &routing::types::Identity) ->Result<routing::Action, routing::RoutingError> {
 	  let result = self.db_.get_pmid_nodes(name);
 	  if result.len() == 0 {
-	    return Err(Routing::RoutingError::NoData);
+	    return Err(routing::RoutingError::NoData);
 	  }
       
-	  let mut dest_pmids : Vec<Routing::DhtIdentity> = Vec::new();
+	  let mut dest_pmids : Vec<routing::DhtIdentity> = Vec::new();
 	  for pmid in result.iter() {
-        dest_pmids.push(Routing::DhtIdentity { id: types::vector_as_u8_64_array(pmid.clone()) });
+        dest_pmids.push(routing::DhtIdentity { id: types::vector_as_u8_64_array(pmid.clone()) });
 	  }
-	  Ok(Routing::Action::SendOn(dest_pmids))
+	  Ok(routing::Action::SendOn(dest_pmids))
   }
 }

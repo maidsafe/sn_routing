@@ -34,5 +34,5 @@ git = "https://github.com/dirvine/self_encryption"
 [dependencies.sodiumoxide]
 git = "https://github.com/dnaq/sodiumoxide"
 
-[dependencies.Routing]
+[dependencies.routing]
 git = "https://github.com/dirvine/routing"
