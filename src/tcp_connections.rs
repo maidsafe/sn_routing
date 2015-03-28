@@ -86,7 +86,7 @@ pub fn listen() -> IoResult<(Receiver<(TcpStream, SocketAddr), IoError>, TcpList
         Ok(x) => x,
         Err(_) => TcpListener::bind(&any_address).unwrap()
     };
-    println!("Listening on {:?}", tcp_listener.local_addr().unwrap());
+    //println!("Listening on {:?}", tcp_listener.local_addr().unwrap());
     let (tx, rx) = channel();
 
     let tcp_listener2 = try!(tcp_listener.try_clone());
@@ -182,7 +182,7 @@ mod test {
         //         thread::spawn(move || {
         //             let (i, mut o) = upgrade_tcp(connection).unwrap();
         //             for x in i.into_blocking_iter() {
-        //                 o.send(&(x, x + 1)).ok();
+        //                 if o.send(&(x, x + 1)).is_err() { break; }
         //             }
         //         });
         //     }
@@ -190,7 +190,7 @@ mod test {
         // let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
         //
         // for x in 0u64 .. 10u64 {
-        //     o.send(&x).ok();
+        //     if o.send(&x).is_err() { break; }
         // }
         // o.close();
         //

@@ -127,10 +127,10 @@ impl BootStrapHandler {
 
   pub fn add_bootstrap_contacts(&mut self, contacts: BootStrapContacts) {
     self.insert_bootstrap_contacts(contacts);
-
-    if time::now() > self.last_updated + BootStrapHandler::get_update_duration() {
-      self.check_bootstrap_contacts();
-    }
+// FIXME: Please fix and test
+    // if time::now() > self.last_updated + BootStrapHandler::get_update_duration() {
+    //   self.check_bootstrap_contacts();
+    // }
   }
 
   pub fn read_bootstrap_contacts(&self) -> BootStrapContacts {
@@ -154,7 +154,9 @@ impl BootStrapHandler {
   }
 
   pub fn out_of_date(&self) -> bool {
-    time::now() > self.last_updated + BootStrapHandler::get_update_duration()
+   // FIXME: Please fix and test
+   false
+    // time::now() > self.last_updated + BootStrapHandler::get_update_duration()
   }
 
   pub fn reset_timer(&mut self) {
