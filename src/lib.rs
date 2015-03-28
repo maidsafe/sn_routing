@@ -20,9 +20,6 @@ pub mod pmid_manager;
 pub mod pmid_node;
 pub mod vault;
 
-#[path="data_manager/data_manager.rs"]
-mod data_manager;
-
 /// Placeholder doc test
 pub fn always_true() -> bool { true }
 

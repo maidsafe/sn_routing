@@ -13,4 +13,38 @@
 // use of the MaidSafe
 // Software.
 
+#![allow(dead_code)]
+
+extern crate Routing;
+
 mod database;
+
+use self::Routing::types;
+
+type CloseGroupDifference = self::Routing::types::CloseGroupDifference;
+type Address = self::Routing::types::Address;
+
+pub struct DataManager {
+  db_ : database::DataManagerDatabase
+  // close_group_ : CloseGroupDifference
+}
+
+impl DataManager {
+  pub fn new() -> DataManager {
+    DataManager { db_: database::DataManagerDatabase::new() }
+                  // close_group_: CloseGroupDifference(Vec::<Address>::new(), Vec::<Address>::new()) }
+  }
+
+  pub fn handle_get(&mut self, name : &Routing::types::Identity) ->Result<Routing::Action, Routing::RoutingError> {
+	  let result = self.db_.get_pmid_nodes(name);
+	  if result.len() == 0 {
+	    return Err(Routing::RoutingError::NoData);
+	  }
+      
+	  let mut dest_pmids : Vec<Routing::DhtIdentity> = Vec::new();
+	  for pmid in result.iter() {
+        dest_pmids.push(Routing::DhtIdentity { id: types::vector_as_u8_64_array(pmid.clone()) });
+	  }
+	  Ok(Routing::Action::SendOn(dest_pmids))
+  }
+}
