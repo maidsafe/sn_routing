@@ -9,7 +9,7 @@ fn main() {
     let (i, mut o) = routing::tcp_connections::connect_tcp(std::net::SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
 
     // Send all the numbers from 0 to 10.
-    for x in 0u64 .. 10u64 {
+    for x in (0u64..10u64) {
         o.send(&x).ok();
     }
 
