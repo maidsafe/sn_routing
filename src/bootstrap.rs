@@ -34,7 +34,7 @@ type BootStrapContacts = Vec<Contact>;
 static MAX_LIST_SIZE: usize = 1500;
 
 fn array_to_vec(arr: &[u8]) -> Vec<u8> {
-  let mut vector: Vec<u8> = Vec::new();
+  let vector: Vec<u8> = Vec::new();
 // FIXME: Please replace 
   // vector.push_all(arr);
   vector 
