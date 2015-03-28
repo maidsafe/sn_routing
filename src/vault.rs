@@ -63,4 +63,11 @@ impl routing::Facade for VaultFacade {
   fn handle_post_response(&mut self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>) {
     ;
   }
+
+}
+
+impl VaultFacade {
+  pub fn new() -> VaultFacade {
+    VaultFacade { data_manager: DataManager::new() }
+  }
 }

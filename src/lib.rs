@@ -6,7 +6,6 @@
 //! Placeholder
 
 #![feature(convert)]
-extern crate self_encryption;
 extern crate sodiumoxide;
 extern crate lru_cache;
 extern crate rustc_serialize;
@@ -14,14 +13,35 @@ extern crate cbor;
 extern crate time;
 extern crate bchannel;
 
+extern crate self_encryption;
+extern crate routing;
 
 pub mod chunk_store;
 pub mod pmid_manager;
 pub mod pmid_node;
 pub mod vault;
 
+use vault::VaultFacade;
+
 /// Placeholder doc test
 pub fn always_true() -> bool { true }
+
+pub struct Vault {
+  my_facade : VaultFacade
+}
+
+impl Vault {
+  pub fn new() -> Vault {
+    Vault { my_facade: VaultFacade::new() }
+  }
+
+  pub fn start_vault(&self) {
+    let my_routing = routing::RoutingNode::new(&self.my_facade);
+    loop {
+      always_true();
+    }
+  }
+}
 
 #[test]
 fn it_works() {
