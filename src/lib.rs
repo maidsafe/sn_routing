@@ -36,7 +36,7 @@ impl Vault {
   }
 
   pub fn start_vault(&self) {
-    let my_routing = Some(routing::RoutingNode::new(&self.my_facade));
+    let my_routing = routing::RoutingNode::new(&self.my_facade);
     loop {
       always_true();
     }
