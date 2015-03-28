@@ -143,7 +143,11 @@ where T: Send + Decodable + 'static {
         {
             let mut decoder = Decoder::from_reader(&mut buffer);
             loop {
-                match decoder.decode().next().unwrap() {
+                let data = match decoder.decode().next() {
+                  Some(a) => a,
+                  None => { break; }
+                  };
+                match data {
                     Ok(a) => {
                         // Try to send, and if we can't, then the channel is closed.
                         if in_snd.send(a).is_err() {
@@ -175,32 +179,34 @@ mod test {
 
 #[test]
     fn test_small_stream() {
-        // thread::spawn(move || {
-        //     let (listener, u32) = listen().unwrap();
-        //     for (connection, u32) in listener.into_blocking_iter() {
-        //         // Spawn a new thread for each connection that we get.
-        //         thread::spawn(move || {
-        //             let (i, mut o) = upgrade_tcp(connection).unwrap();
-        //             for x in i.into_blocking_iter() {
-        //                 if o.send(&(x, x + 1)).is_err() { break; }
-        //             }
-        //         });
-        //     }
-        // });
-        // let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
-        //
-        // for x in 0u64 .. 10u64 {
-        //     if o.send(&x).is_err() { break; }
-        // }
-        // o.close();
-        //
-        // // Collect everything that we get back.
-        // let mut responses: Vec<(u64, u64)> = Vec::new();
-        // for a in i.into_blocking_iter() {
-        //     responses.push(a);
-        // }
-        // println!("Responses: {:?}", responses);
-        // assert_eq!(10, responses.len());
+        thread::spawn(move || {
+          loop {
+            let (listener, u32) = listen().unwrap();
+            for (connection, u32) in listener.into_blocking_iter() {
+                // Spawn a new thread for each connection that we get.
+                thread::spawn(move || {
+                    let (i, mut o) = upgrade_tcp(connection).unwrap();
+                    for x in i.into_blocking_iter() {
+                        if o.send(&(x, x + 1)).is_err() { break; }
+                    }
+                });
+            }
+          }
+        });
+        let (i, mut o) = connect_tcp(SocketAddr::from_str("192.168.0.101:5483").unwrap()).unwrap();
+
+        for x in 0u64 .. 10u64 {
+            if o.send(&x).is_err() { break; }
+        }
+        o.close();
+
+        // Collect everything that we get back.
+        let mut responses: Vec<(u64, u64)> = Vec::new();
+        for a in i.into_blocking_iter() {
+            responses.push(a);
+        }
+        println!("Responses: {:?}", responses);
+        assert_eq!(10, responses.len());
     }
 
 // #[test]
