@@ -98,10 +98,14 @@ impl Decodable for Authority {
 }
 
 pub type Address = Vec<u8>; // [u8;64] using Vec allowing compare and clone
+pub type Identity = Vec<u8>; // chunk_name or node_id
 pub type MessageId = u32;
 pub type NodeAddress = Address; // (Address, NodeTag)
 pub type GroupAddress = Address; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
+pub type CloseGroupDifference = (Vec<Address>, Vec<Address>);
+pub type PmidNode = Address;
+pub type PmidNodes = Vec<PmidNode>;
 
 pub trait KeyGetterTraits {
   fn get_client_key(&mut self, Address);
