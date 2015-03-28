@@ -17,13 +17,13 @@
 
 extern crate lru_cache;
 
-extern crate Routing;
+extern crate routing;
 
 use self::lru_cache::LruCache;
 
-type Identity = self::Routing::types::Identity; // name of the chunk
-type PmidNode = self::Routing::types::PmidNode;
-type PmidNodes = self::Routing::types::PmidNodes;
+type Identity = self::routing::types::Identity; // name of the chunk
+type PmidNode = self::routing::types::PmidNode;
+type PmidNodes = self::routing::types::PmidNodes;
 
 pub struct DataManagerDatabase {
   storage : LruCache<Identity, PmidNodes>
