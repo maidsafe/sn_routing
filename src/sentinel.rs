@@ -182,7 +182,7 @@ impl<'a> Sentinel<'a> {
   	for message in messages.iter() {
   		let signature = message.value.0.get_signature();
   		let ref msg = message.value.2;
-  		if crypto::sign::verify_detached(&signature, msg.as_slice(), &public_key) {
+  		if crypto::sign::verify_detached(&signature, &msg[..], &public_key) {
   		  verified_messages.push(message.value.clone());
   		}
   	}
@@ -224,7 +224,7 @@ impl<'a> Sentinel<'a> {
 		  	let public_key = key_map_iter.unwrap()[0].get_public_key();
         let signature = message.value.0.get_signature();
         let ref msg = message.value.2;
-	  		if crypto::sign::verify_detached(&signature, msg.as_slice(), &public_key) {
+	  		if crypto::sign::verify_detached(&signature, &msg[..], &public_key) {
 	  		  verified_messages.push(message.value.clone());
 	  		}
 		  }

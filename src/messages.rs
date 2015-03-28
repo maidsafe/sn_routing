@@ -160,7 +160,7 @@ impl RoutingMessage {
   }
 
   pub fn get_message_body<T>(&self) -> T where T: for<'a> Encodable + Decodable {
-    let mut d = cbor::Decoder::from_bytes(self.serialised_body.as_slice());
+    let mut d = cbor::Decoder::from_bytes(&self.serialised_body[..]);
     let obj: T = d.decode().next().unwrap().unwrap();
     obj
   }
