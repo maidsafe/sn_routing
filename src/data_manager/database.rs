@@ -17,12 +17,13 @@
 
 extern crate lru_cache;
 
+extern crate Routing;
+
 use self::lru_cache::LruCache;
 
-// TODO the following three types shall be defined somewhere in maidsafe_types or routing
-pub type Identity = Vec<u8>; // name of the chunk
-pub type PmidNode = Vec<u8>; // identity of the pmid_node
-pub type PmidNodes = Vec<PmidNode>;
+type Identity = self::Routing::types::Identity; // name of the chunk
+type PmidNode = self::Routing::types::PmidNode;
+type PmidNodes = self::Routing::types::PmidNodes;
 
 pub struct DataManagerDatabase {
   storage : LruCache<Identity, PmidNodes>

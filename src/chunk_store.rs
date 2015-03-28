@@ -12,7 +12,9 @@
     See the Licences for the specific language governing permissions and limitations relating to
     use of the MaidSafe
     Software.                                                                 */
-  
+
+#![allow(dead_code)]
+
 extern crate self_encryption;
 use std::convert::AsRef;
 
@@ -49,7 +51,6 @@ impl ChunkStore {
     for it in name.iter().skip(AES256_KEY_SIZE).take(AES256_IV_SIZE) {
       iv.push(*it);
     }
-
 
     match self_encryption::encryption::encrypt(value.as_ref(), key.as_ref(), iv.as_ref()) {
       Ok(content) => {
