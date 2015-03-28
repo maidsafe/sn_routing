@@ -56,7 +56,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
 
 mod types;
-mod tcp_connections;
+pub mod tcp_connections;
 mod beacon;
 mod message_header;
 mod routing_table;

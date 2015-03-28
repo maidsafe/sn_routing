@@ -1,6 +1,6 @@
 [package]
 
-name = "Routing"
+name = "routing"
 version = "0.0.1"
 authors = ["David Irvine <david.irvine@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."

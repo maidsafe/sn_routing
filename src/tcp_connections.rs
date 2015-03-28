@@ -16,7 +16,7 @@
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe Software.
 
-use std::net::{TcpListener, TcpStream, Ipv4Addr, SocketAddr, SocketAddrV4, Shutdown};
+use std::net::{TcpListener, TcpStream, SocketAddr, Shutdown};
 use std::io::{BufReader, ErrorKind};
 use std::io::Result as IoResult;
 use std::io::Error as IoError;
@@ -56,7 +56,9 @@ where T: Encodable {
         }
     }
 
-    pub fn close(self) {}
+    pub fn close(self) {
+        self.tcp_stream.shutdown(Shutdown::Write).ok();
+    }
 }
 
 #[unsafe_destructor]
@@ -78,8 +80,8 @@ where I: Send + Decodable + 'static, O: Encodable {
 /// * A receiver of Tcp stream objects.  It is recommended that you `upgrade` these.
 /// * A TcpAcceptor.  This can be used to close the listener from outside of the listening thread.
 pub fn listen() -> IoResult<(Receiver<(TcpStream, SocketAddr), IoError>, TcpListener)> {
-    let live_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 5483);
-    let any_address = SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0);
+    let live_address = (("0.0.0.0"), 5483);
+    let any_address = (("0.0.0.0"), 0);
     let tcp_listener = match TcpListener::bind(live_address) {
         Ok(x) => x,
         Err(_) => TcpListener::bind(&any_address).unwrap()
@@ -168,7 +170,7 @@ where T: Send + Decodable + 'static {
 mod test {
     use super::*;
     use std::thread;
-    use std::net::SocketAddr;
+    use std::net::{Ipv4Addr, SocketAddr};
     use std::str::FromStr;
 
 #[test]
@@ -185,8 +187,8 @@ mod test {
                 });
             }
         });
-
-        let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
+        let (i, mut o) = connect_tcp(SocketAddr::from_str("192.168.0.101:5483").unwrap()).unwrap();
+        
         for x in 0u64 .. 10u64 {
             o.send(&x).ok();
         }
