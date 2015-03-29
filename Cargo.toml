@@ -14,7 +14,7 @@ homepage = "http://www.maidsafe.net"
 rustc-serialize = "*"
 cbor = "*"
 time = "*"
-
+sodiumoxide = "*"
 
 [dependencies.bchannel]
 git="https://github.com/dirvine/bchannel"
@@ -30,9 +30,6 @@ git = "https://github.com/dirvine/self_encryption"
 
 #[dependencies.utp]
 #git = "https://github.com/meqif/rust-utp"
-
-[dependencies.sodiumoxide]
-git = "https://github.com/dnaq/sodiumoxide"
 
 [dependencies.routing]
 git = "https://github.com/dirvine/routing"
