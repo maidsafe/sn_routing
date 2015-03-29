@@ -8,6 +8,10 @@ Appveyor build status (Windows)
 
 [![Build status](https://ci.appveyor.com/api/projects/status/qglf0d3o28mxid6k?svg=true)](https://ci.appveyor.com/project/dirvine/maidsafe-vault-hyyvf)
 
+Code Coverage
+
+[![Coverage Status](https://coveralls.io/repos/dirvine/maidsafe_vault/badge.svg?branch=master)](https://coveralls.io/r/dirvine/maidsafe_vault?branch=master)
+
 [Documentation](http://dirvine.github.io/maidsafe_vault/)
 
 #Todo
