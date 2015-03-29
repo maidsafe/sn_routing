@@ -179,31 +179,31 @@ mod test {
 
 #[test]
     fn test_small_stream() {
-        let (listener, u32) = listen().unwrap();
-        let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
+      let (listener, u32) = listen().unwrap();
+      let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
 
-        for x in 0u64 .. 10u64 {
-            if o.send(&x).is_err() { break; }
-        }
-        o.close();
-         thread::spawn(move || {
-            for (connection, u32) in listener.into_blocking_iter() {
-                // Spawn a new thread for each connection that we get.
-                thread::spawn(move || {
-                    let (i, mut o) = upgrade_tcp(connection).unwrap();
-                    for x in i.into_blocking_iter() {
-                        if o.send(&(x, x + 1)).is_err() { break; }
-                    }
-                });
+      for x in 0u64 .. 10u64 {
+        if o.send(&x).is_err() { break; }
+      }
+      o.close();
+      thread::spawn(move || {
+          for (connection, u32) in listener.into_blocking_iter() {
+          // Spawn a new thread for each connection that we get.
+          thread::spawn(move || {
+            let (i, mut o) = upgrade_tcp(connection).unwrap();
+            for x in i.into_blocking_iter() {
+            if o.send(&(x, x + 1)).is_err() { break; }
             }
-});
-        // Collect everything that we get back.
-        let mut responses: Vec<(u64, u64)> = Vec::new();
-        for a in i.into_blocking_iter() {
-            responses.push(a);
-        }
-        println!("Responses: {:?}", responses);
-        assert_eq!(10, responses.len());
+            });
+          }
+          });
+      // Collect everything that we get back.
+      let mut responses: Vec<(u64, u64)> = Vec::new();
+      for a in i.into_blocking_iter() {
+        responses.push(a);
+      }
+      println!("Responses: {:?}", responses);
+      assert_eq!(10, responses.len());
     }
 
 // #[test]
