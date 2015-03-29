@@ -10,6 +10,10 @@ Appveyor build status
 
 [![Build status](https://ci.appveyor.com/api/projects/status/ni7c20e9aux3g01i?svg=true)](https://ci.appveyor.com/project/dirvine/routing)
 
+Code Coverage
+
+[![Coverage Status](https://coveralls.io/repos/dirvine/routing/badge.svg?branch=master)](https://coveralls.io/r/dirvine/routing?branch=master)
+
 [Documentation](http://dirvine.github.io/routing)
 
 ###Pre-requisite:
