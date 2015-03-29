@@ -14,7 +14,7 @@ homepage = "http://www.maidsafe.net"
 rustc-serialize = "*"
 cbor = "*"
 time = "*"
-#sodiumoxide= "*"
+sodiumoxide= "*"
 
 [dependencies.bchannel]
 git="https://github.com/dirvine/bchannel"
@@ -27,6 +27,3 @@ git="https://github.com/linuxfood/rustsqlite.git"
 
 [dependencies.maidsafe_types]
 git = "https://github.com/dirvine/maidsafe_types"
-
-[dependencies.sodiumoxide]
-git = "https://github.com/dnaq/sodiumoxide"
