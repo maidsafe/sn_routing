@@ -46,7 +46,8 @@ Steps to compile SQLite by,
 - [x] Create sort and bucket index methods 
 - [x] Implement routing table
 - [ ] Test routing table 
-- [ ] Implement sentinel 
+- [x] Implement sentinel (initial)
+- [ ] Finalise sentinel in line with tests
 - [ ] Test sentinel 
 - [ ] Implement connection manager
 - [ ] Allow tcp and then utp connections and wrap in connection object. [See here for tcp NAT traversal] (http://www.cmlab.csie.ntu.edu.tw/~franklai/NATBT.pdf) [and here fur ucp/dht NAT traversal
