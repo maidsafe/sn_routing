@@ -102,7 +102,7 @@ impl Clone for Contact {
   }
 }
 
-struct BootStrapHandler {
+pub struct BootStrapHandler {
   database: Box<Database>,
   last_updated: time::Tm,
 }

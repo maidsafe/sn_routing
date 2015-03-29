@@ -46,7 +46,7 @@ pub struct NodeInfo {
 
 
 /// The RoutingTable class is used to maintain a list of contacts to which we are connected.  
-struct RoutingTable {
+pub struct RoutingTable {
   routing_table: Vec<NodeInfo>,
   our_id: maidsafe_types::NameType,
 }

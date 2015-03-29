@@ -57,6 +57,7 @@ use std::default::Default;
 
 pub mod types;
 pub mod tcp_connections;
+mod connection_manager;
 mod beacon;
 mod message_header;
 mod routing_table;
