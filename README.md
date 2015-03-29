@@ -38,6 +38,15 @@ Appveyor build status (Windows)
     - [ ] Complete the get route (checking message)
 - [ ] Test with client having messaging ability
 - [ ] Integration Test
+- [ ] linux 32 bit .deb installer (oldest possible version)
+- [ ] linux 64 bit .deb installer (oldest possible version)
+- [ ] linux 32 bit .rpm installer (oldest possible version)
+- [ ] linux 64 bit .rpm installer (oldest possible version)
+- [ ] linux 32 bit .zip/gzip installer (oldest possible version)
+- [ ] linux 64 bit .zip/gzip installer (oldest possible version)
+- [ ] OS/X installer (fpm)
+- [ ] Win32 installer (windows advanced installer)
+- [ ] Win64 installer (windows advanced installer)
 - [ ] API version 0.1.0
 - [ ] Performance Test
 - [ ] Coverage analysis
