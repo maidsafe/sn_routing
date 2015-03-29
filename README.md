@@ -21,8 +21,8 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 SQLite3 is also native dependency for [rustsqlite](https://github.com/linuxfood/rustsqlite).
 Steps to compile SQLite by,
 1. Download SQLite Source code which includes a "configure" script from [SQLite download page](https://www.sqlite.org/download.html) 
-2. Run `./configure && make` to build the SQLite source. Windows Users can build using (mingw + msys)
-3. Copy the `libsqlite3.a` file from the .libs folder to the users/lib, windows users can place `libsqlite3.a` file in "bin\{TRIPLE}" in the project root folder.
+2. On Linux, Run `./configure --prefix=/usr && make && sudo make install` to build the SQLite source. While on Windows Users can build using (mingw + msys) and run './configure && make' 
+3. On Windows, Copy the `libsqlite3.a` file from the .libs folder to the "bin\{TARGET-TRIPLE}" in the project root folder.
  
  
 ##Todo Items
