@@ -44,16 +44,23 @@ Steps to compile SQLite by,
   - [x] Tcp live port and backup random port selection 
   - [x] Create send/rcv channel from routing to connections object
   - [x] Implement test for basic "hello world" two way communication
+  - [ ] Integrate into connection_manager
+  - [ ] Set up Udp broadcast and respond when we have live port available (5483)
+  - [ ] Have connection manger start, broadcast on udp broadcast for port 5483 (later multicast for ipv6)
+  - [ ] Link ability to read and write bootstrap file as well as send to any node requesting it. 
   - [ ] Add connection established/lost messages to be passed to routing (via channel)
+  - [ ] Add maintain_connection() to connecton manager for lib.rs to be able to confirm a routing table contact we must keep. 
   - [ ] Benchmark tx/rv number of packets 
-  - [ ] Benchmark tx/rc Bytes per second 
+  - [ ] Benchmark tx/rc Bytes per second
+- [ ] Allow node to create it's ID and store on network
+- [ ] zero state network
+- [ ] Network stanrs any number of nodes automatically (test)
 - [x] Create sort and bucket index methods 
 - [x] Implement routing table
 - [ ] Test routing table 
 - [x] Implement sentinel (initial)
 - [ ] Finalise sentinel in line with tests
 - [ ] Test sentinel 
-- [ ] Implement connection manager
 - [ ] Allow tcp and then utp connections and wrap in connection object. [See here for tcp NAT traversal] (http://www.cmlab.csie.ntu.edu.tw/~franklai/NATBT.pdf) [and here fur ucp/dht NAT traversal
   ](http://maidsafe.net/Whitepapers/pdf/DHTbasedNATTraversal.pdf)
 - [x] Implement routing message types (Connect FindNode)
