@@ -28,4 +28,4 @@ after_success: |
   make &&
   sudo make install &&
   cd ../.. &&
-  kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/kcov target/debug/maidsafe_valut-*;
+  kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/kcov target/debug/maidsafe_vault-*;
