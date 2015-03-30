@@ -10,7 +10,8 @@ Appveyor build status (Windows)
 
 Code Coverage
 
-[![Coverage Status](https://coveralls.io/repos/dirvine/maidsafe_vault/badge.svg?branch=master)](https://coveralls.io/r/dirvine/maidsafe_vault?branch=master)
+[![Coverage Status](https://coveralls.io/repos/dirvine/maidsafe_vault/badge.svg)](https://coveralls.io/r/dirvine/maidsafe_vault)
+
 
 [Documentation](http://dirvine.github.io/maidsafe_vault/)
 
