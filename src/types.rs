@@ -1,25 +1,55 @@
-// Copyright 2014 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited
+//
 // This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
+//
 // By contributing code to the MaidSafe Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
 // directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
 // available at: http://www.maidsafe.net/licenses
+//
 // Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 // OF ANY KIND, either express or implied.
+//
 // See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe
-// Software.
+// use of the MaidSafe Software.
 
 #![allow(unused_assignments)]
+extern crate sodiumoxide;
+
+use sodiumoxide::crypto;
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
+pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
+  let mut vector = Vec::new();
+  for i in arr.iter() {
+    vector.push(*i);
+  }
+  vector
+}
+
+pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8;64] {
+  let mut arr = [0u8;64];
+  for i in (0..64) {
+    arr[i] = vector[i];
+  }
+  arr
+}
+
+pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
+  let mut arr = [0u8;32];
+  for i in (0..32) {
+    arr[i] = vector[i];
+  }
+  arr
+}
+
 static GROUP_SIZE: u32 = 23;
-static QUORUM_SIZE: u32 = 19;
+pub static QUORUM_SIZE: u32 = 19;
 
 pub struct DhtAddress([u8; 64]);
 
@@ -45,8 +75,8 @@ impl Encodable for Authority {
       Authority::ManagedClient => authority = "ManagedClient",
       Authority::Client => authority = "Client",
       Authority::Unknown => authority = "Unknown",
-    }
-    CborTagEncode { tag : 5483_000 , data : &authority }.encode(e)
+    };
+    CborTagEncode::new(5483_100, &(&authority)).encode(e)
   }
 }
 
@@ -68,8 +98,164 @@ impl Decodable for Authority {
 }
 
 pub type Address = Vec<u8>; // [u8;64] using Vec allowing compare and clone
+pub type Identity = Vec<u8>; // chunk_name or node_id
 pub type MessageId = u32;
-pub type Signature = Vec<u8>; // [u8;512] using Vec allowing compare and clone
+pub type NodeAddress = Address; // (Address, NodeTag)
+pub type GroupAddress = Address; // (Address, GroupTag)
+pub type SerialisedMessage = Vec<u8>;
+pub type CloseGroupDifference = (Vec<Address>, Vec<Address>);
+pub type PmidNode = Address;
+pub type PmidNodes = Vec<PmidNode>;
+
+pub trait KeyGetterTraits {
+  fn get_client_key(&mut self, Address);
+  fn get_group_key(&mut self, GroupAddress);
+}
+
+pub trait RoutingTrait {
+  fn get_name(&self)->Vec<u8>;
+  fn get_owner(&self)->Vec<u8>;
+  fn refresh(&self)->bool;
+  fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct NameAndTypeId {
+  pub name : Vec<u8>,
+  pub type_id : u32
+}
+
+impl Encodable for NameAndTypeId {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.name, &self.type_id)).encode(e)
+  }
+}
+
+impl Decodable for NameAndTypeId {
+  fn decode<D: Decoder>(d: &mut D)->Result<NameAndTypeId, D::Error> {
+    try!(d.read_u64());
+    let (name, type_id) = try!(Decodable::decode(d));
+    Ok(NameAndTypeId { name: name, type_id: type_id })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct Signature {
+  pub signature : Vec<u8> // Vec form of crypto::asymmetricbox::Signature which is an array
+}
+
+impl Signature {
+  pub fn get_signature(&self) -> crypto::sign::Signature {
+    crypto::sign::Signature(vector_as_u8_64_array(self.signature.clone()))
+  }
+}
+
+impl Encodable for Signature {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.signature)).encode(e)
+  }
+}
+
+impl Decodable for Signature {
+  fn decode<D: Decoder>(d: &mut D)->Result<Signature, D::Error> {
+    try!(d.read_u64());
+    let signature = try!(Decodable::decode(d));
+    Ok(Signature { signature: signature })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct PublicKey {
+  pub public_key : Vec<u8> // Vec form of crypto::asymmetricbox::PublicKey which is an array
+}
+
+impl PublicKey {
+  pub fn get_public_key(&self) -> crypto::sign::PublicKey {
+    crypto::sign::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
+  }
+}
+
+impl Encodable for PublicKey {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.public_key)).encode(e)
+  }
+}
+
+impl Decodable for PublicKey {
+  fn decode<D: Decoder>(d: &mut D)->Result<PublicKey, D::Error> {
+    try!(d.read_u64());
+    let public_key = try!(Decodable::decode(d));
+    Ok(PublicKey { public_key: public_key })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct PublicPmid {
+  public_key: PublicKey,
+  validation_token: Signature
+}
+
+impl Encodable for PublicPmid {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_001, &(&self.public_key, &self.validation_token)).encode(e)
+  }
+}
+
+impl Decodable for PublicPmid {
+  fn decode<D: Decoder>(d: &mut D)->Result<PublicPmid, D::Error> {
+    try!(d.read_u64());
+    let (public_key, validation_token) = try!(Decodable::decode(d));
+    Ok(PublicPmid { public_key: public_key, validation_token: validation_token })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct EndPoint {
+  pub ip_addr : Vec<u8>,
+  pub socket : u32,
+}
+
+impl Encodable for EndPoint {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_001, &(&self.ip_addr, &self.socket)).encode(e)
+  }
+}
+
+impl Decodable for EndPoint {
+  fn decode<D: Decoder>(d: &mut D)->Result<EndPoint, D::Error> {
+    try!(d.read_u64());
+    let (ip_addr, socket) = try!(Decodable::decode(d));
+    Ok(EndPoint { ip_addr: ip_addr, socket: socket })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct AccountTransferInfo {
+  pub name : Vec<u8>
+}
+
+impl Encodable for AccountTransferInfo {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.name)).encode(e)
+  }
+}
+
+impl Decodable for AccountTransferInfo {
+  fn decode<D: Decoder>(d: &mut D)->Result<AccountTransferInfo, D::Error> {
+    try!(d.read_u64());
+    let name = try!(Decodable::decode(d));
+    Ok(AccountTransferInfo { name: name })
+  }
+}
+
+impl RoutingTrait for AccountTransferInfo {
+  fn get_name(&self)->Vec<u8> { self.name.clone() }
+  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
+  fn refresh(&self)->bool { true } // TODO is this an account transfer type
+
+   // TODO how do we merge these
+  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+}
 
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -81,8 +267,7 @@ pub struct SourceAddress {
 
 impl Encodable for SourceAddress {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode { tag : 5483_002 ,
-                    data : &(&self.from_node, &self.from_group, &self.reply_to) }.encode(e)
+    CborTagEncode::new(5483_102 , &(&self.from_node, &self.from_group, &self.reply_to)).encode(e)
   }
 }
 
@@ -103,7 +288,7 @@ pub struct DestinationAddress {
 
 impl Encodable for DestinationAddress {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode { tag : 5483_001 , data : &(&self.dest, &self.reply_to) }.encode(e)
+    CborTagEncode::new(5483_101, &(&self.dest, &self.reply_to)).encode(e)
   }
 }
 
@@ -114,6 +299,27 @@ impl Decodable for DestinationAddress {
     Ok(DestinationAddress { dest: dest, reply_to: reply_to })
   }
 }
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub enum MessageTypeTag {
+  Connect,
+  ConnectResponse,
+  FindGroup,
+  FindGroupResponse,
+  GetData,
+  GetDataResponse,
+  GetClientKey,
+  GetClientKeyResponse,
+  GetGroupKey,
+  GetGroupKeyResponse,
+  Post,
+  PostResponse,
+  PutData,
+  PutDataResponse,
+  PutKey,
+  AccountTransfer
+}
+
 
 #[cfg(test)]
 #[allow(deprecated)]

@@ -1,6 +1,6 @@
 [package]
 
-name = "Routing"
+name = "routing"
 version = "0.0.1"
 authors = ["David Irvine <david.irvine@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
@@ -12,12 +12,18 @@ homepage = "http://www.maidsafe.net"
 
 [dependencies]
 rustc-serialize = "*"
-cbor = "0.2.2"
-bchannel = "*"
+cbor = "*"
+time = "*"
+sodiumoxide= "*"
 
-[dependencies.utp]
-git = "https://github.com/meqif/rust-utp"
+[dependencies.bchannel]
+git="https://github.com/dirvine/bchannel"
 
-[dependencies.sodiumoxide]
-git = "https://github.com/dnaq/sodiumoxide"
+[dependencies.lru-cache]
+git="https://github.com/contain-rs/lru-cache.git"
 
+[dependencies.sqlite3]
+git="https://github.com/linuxfood/rustsqlite.git"
+
+[dependencies.maidsafe_types]
+git = "https://github.com/dirvine/maidsafe_types"

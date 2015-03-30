@@ -1,18 +1,24 @@
-// Copyright 2014 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited
+//
 // This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
+//
 // By contributing code to the MaidSafe Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
 // directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
 // available at: http://www.maidsafe.net/licenses
+//
 // Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 // OF ANY KIND, either express or implied.
+//
 // See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe
-// Software.
+// use of the MaidSafe Software.
 
+extern crate sodiumoxide;
+
+use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
@@ -30,9 +36,9 @@ pub struct MessageHeader {
 
 impl Encodable for MessageHeader {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode { tag : 5483_004 ,
-                    data : &(&self.message_id, &self.destination, &self.source,
-                             &self.authority, &self.signature) }.encode(e)
+    CborTagEncode::new(5483_004,
+                    &(&self.message_id, &self.destination, &self.source,
+                             &self.authority, &self.signature)).encode(e)
   }
 }
 
@@ -61,6 +67,10 @@ impl MessageHeader {
     }
   }
 
+  pub fn message_id(&self) -> types::MessageId {
+    self.message_id
+  }
+
   pub fn from_node(&self) -> types::Address {
     self.source.from_node.clone()
   }
@@ -70,6 +80,14 @@ impl MessageHeader {
       Some(self.source.from_group.clone())
     } else {
       None
+    }
+  }
+
+  pub fn is_from_group(&self) -> bool {
+    if self.source.from_group.len() == 64 {
+      true
+    } else {
+      false
     }
   }
 
@@ -113,6 +131,10 @@ impl MessageHeader {
   pub fn get_filter(&self) -> (types::Address, types::MessageId) {
     (self.source.from_node.clone(), self.message_id)
   }
+
+  pub fn get_signature(&self) -> crypto::sign::Signature {
+    self.signature.get_signature()
+  }
 }
 
 #[cfg(test)]
@@ -149,7 +171,7 @@ mod test {
                                       from_group : generate_u8_64(),
                                       reply_to: generate_u8_64() },
       authority : types::Authority::ManagedNode,
-      signature : generate_u8_64() });
+      signature : types::Signature{ signature: generate_u8_64() } });
   }
 
 }
