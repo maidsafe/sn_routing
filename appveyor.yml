@@ -3,7 +3,7 @@ branches:
     - bootstrap
 
 platform:
-  - x64
+  - x86
 environment:
   RUST_INSTALL_DIR: C:\Rust
   matrix:
