@@ -20,22 +20,27 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct GetClientKeyResponse {
-  pub address : types::Address,
-  pub public_key : Vec<u8>
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct ConnectRequest {
+  pub local : types::EndPoint,
+  pub external : types::EndPoint,
+  pub request_id : types::Address,
+  pub receiver_id : types::Address,
+  pub requester_fob : types::PublicPmid
 }
 
-impl Encodable for GetClientKeyResponse {
+impl Encodable for ConnectRequest {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.address, &self.public_key)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.local, &self.external, &self.request_id,
+                                   &self.receiver_id, &self.requester_fob)).encode(e)
   }
 }
 
-impl Decodable for GetClientKeyResponse {
-  fn decode<D: Decoder>(d: &mut D)->Result<GetClientKeyResponse, D::Error> {
+impl Decodable for ConnectRequest {
+  fn decode<D: Decoder>(d: &mut D)->Result<ConnectRequest, D::Error> {
     try!(d.read_u64());
-    let (address, public_key) = try!(Decodable::decode(d));
-    Ok(GetClientKeyResponse { address: address , public_key: public_key})
+    let (local, external, request_id, receiver_id, requester_fob) = try!(Decodable::decode(d));
+    Ok(ConnectRequest { local: local, external: external, request_id: request_id,
+                        receiver_id: receiver_id, requester_fob: requester_fob})
   }
 }

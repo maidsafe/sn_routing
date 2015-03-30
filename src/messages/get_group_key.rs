@@ -20,22 +20,22 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct GetGroupKeyResponse {
-  pub target_id : types::GroupAddress,
-  pub public_keys : Vec<(types::Address, Vec<u8>)>
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct GetGroupKey {
+  pub requester : types::SourceAddress,
+  pub target_id : types::Address,
 }
 
-impl Encodable for GetGroupKeyResponse {
+impl Encodable for GetGroupKey {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.target_id, &self.public_keys)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.requester, &self.target_id)).encode(e)
   }
 }
 
-impl Decodable for GetGroupKeyResponse {
-  fn decode<D: Decoder>(d: &mut D)->Result<GetGroupKeyResponse, D::Error> {
+impl Decodable for GetGroupKey {
+  fn decode<D: Decoder>(d: &mut D)->Result<GetGroupKey, D::Error> {
     try!(d.read_u64());
-    let (target_id, public_keys) = try!(Decodable::decode(d));
-    Ok(GetGroupKeyResponse { target_id: target_id , public_keys: public_keys})
+    let (requester, target_id) = try!(Decodable::decode(d));
+    Ok(GetGroupKey { requester: requester, target_id: target_id})
   }
 }

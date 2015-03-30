@@ -1,17 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
+//
 // This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
+//
 // By contributing code to the MaidSafe Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
 // directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
 // available at: http://www.maidsafe.net/licenses
+//
 // Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 // OF ANY KIND, either express or implied.
+//
 // See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe
-// Software.
+// use of the MaidSafe Software.
 
 extern crate cbor;
 extern crate sodiumoxide;
@@ -23,8 +26,8 @@ use accumulator;
 use message_header;
 use types;
 use types::RoutingTrait;
-use get_client_key_response::GetClientKeyResponse;
-use get_group_key_response::GetGroupKeyResponse;
+use messages::get_client_key_response::GetClientKeyResponse;
+use messages::get_group_key_response::GetGroupKeyResponse;
 
 pub type ResultType = (message_header::MessageHeader,
 	                   types::MessageTypeTag, types::SerialisedMessage);
@@ -34,15 +37,6 @@ type GroupKeyType = (types::GroupAddress, types::MessageId);
 type NodeAccumulatorType = accumulator::Accumulator<NodeKeyType, ResultType>;
 type GroupAccumulatorType = accumulator::Accumulator<GroupKeyType, ResultType>;
 type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultType>;
-
-
-pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
-  let mut vector = Vec::new();
-  for i in arr.iter() {
-    vector.push(*i);
-  }
-  vector
-}
 
 
 pub struct Sentinel<'a> {
@@ -188,7 +182,7 @@ impl<'a> Sentinel<'a> {
   	for message in messages.iter() {
   		let signature = message.value.0.get_signature();
   		let ref msg = message.value.2;
-  		if crypto::sign::verify_detached(&signature, msg.as_slice(), &public_key) {
+  		if crypto::sign::verify_detached(&signature, &msg[..], &public_key) {
   		  verified_messages.push(message.value.clone());
   		}
   	}
@@ -230,7 +224,7 @@ impl<'a> Sentinel<'a> {
 		  	let public_key = key_map_iter.unwrap()[0].get_public_key();
         let signature = message.value.0.get_signature();
         let ref msg = message.value.2;
-	  		if crypto::sign::verify_detached(&signature, msg.as_slice(), &public_key) {
+	  		if crypto::sign::verify_detached(&signature, &msg[..], &public_key) {
 	  		  verified_messages.push(message.value.clone());
 	  		}
 		  }
@@ -272,7 +266,7 @@ impl<'a> Sentinel<'a> {
 	      let mut tmp = verified_messages[0].clone();
 		    let mut e = cbor::Encoder::from_memory();
 		    e.encode(&[&result.unwrap()]).unwrap();
-	      tmp.2 = array_as_vector(e.as_bytes());
+	      tmp.2 = types::array_as_vector(e.as_bytes());
 	      return Some(tmp);
 	    }
 	  }
