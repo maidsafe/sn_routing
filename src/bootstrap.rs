@@ -21,7 +21,6 @@ extern crate sodiumoxide;
 extern crate time;
 extern crate sqlite3;
 extern crate cbor;
-extern crate rand;
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
@@ -186,57 +185,70 @@ impl BootStrapHandler {
   }
 }
 
-#[test]
-fn serialisation_contact() {
-  let name_type = maidsafe_types::NameType([3u8; 64]);
-  let addr_1 = net::SocketAddrV4::new(net::Ipv4Addr::new(1,2,3,4), 8080);
-  let addr_2 = net::SocketAddrV4::new(net::Ipv4Addr::new(1,2,3,4), 9080);
-  let pub_key = crypto::asymmetricbox::PublicKey([20u8;32]);
-  let contact_before = Contact::new(name_type, (addr_1, addr_2), pub_key);
+mod test {
+  extern crate maidsafe_types;
+  extern crate sodiumoxide;
+  extern crate time;
+  extern crate sqlite3;
+  extern crate cbor;
+  extern crate rand;
 
-  let mut e = cbor::Encoder::from_memory();
-  e.encode(&[&contact_before]).unwrap();
+  use bootstrap::{Contact, BootStrapHandler};
+  use std::net;
 
-  let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-  let contact_after: Contact = d.decode().next().unwrap().unwrap();
-  assert!(contact_before.id == contact_after.id);
-}
+  #[test]
+  fn serialisation_contact() {
+    let name_type = maidsafe_types::NameType([3u8; 64]);
+    let addr_1 = net::SocketAddrV4::new(net::Ipv4Addr::new(1,2,3,4), 8080);
+    let addr_2 = net::SocketAddrV4::new(net::Ipv4Addr::new(1,2,3,4), 9080);
+    let pub_key = sodiumoxide::crypto::asymmetricbox::PublicKey([20u8;32]);
+    let contact_before = Contact::new(name_type, (addr_1, addr_2), pub_key);
 
-#[test]
-fn bootstrap_crud_test() {
-  use std::fs::File;
-  use std::path::Path;
+    let mut e = cbor::Encoder::from_memory();
+    e.encode(&[&contact_before]).unwrap();
 
-  let mut contacts = Vec::new();
-  for i in 0..10 {
-    let random_id = [rand::random::<u8>(); 64];
-    let random_addr_0 = [rand::random::<u8>(); 4];
-    let random_addr_1 = [rand::random::<u8>(); 4];
-    let port_0: u8 = rand::random::<u8>();
-    let port_1: u8 = rand::random::<u8>();
-    let addr_0 = net::SocketAddrV4::new(net::Ipv4Addr::new(random_addr_0[0], random_addr_0[1], random_addr_0[2], random_addr_0[3]), port_0 as u16);
-    let addr_1 = net::SocketAddrV4::new(net::Ipv4Addr::new(random_addr_1[0], random_addr_1[1], random_addr_1[2], random_addr_1[3]), port_1 as u16);
-    let (public_key, _) = crypto::asymmetricbox::gen_keypair();
-    let new_contact = Contact::new(maidsafe_types::NameType::new(random_id), (addr_0, addr_1), public_key);
-    contacts.push(new_contact);
+    let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+    let contact_after: Contact = d.decode().next().unwrap().unwrap();
+    assert!(contact_before.id == contact_after.id);
   }
 
-  let contacts_clone = contacts.clone();
-  let path = Path::new("./bootstrap.cache");
+  #[test]
+  fn bootstrap_crud_test() {
+    use std::fs::File;
+    use std::path::Path;
 
-  let mut bootstrap_handler = BootStrapHandler::new();
-  let file = File::open(&path);
-  file.unwrap(); // Check whether the database file is created
-  // Add Contacts
-  bootstrap_handler.add_bootstrap_contacts(contacts);
-  // Read Contacts
-  let mut read_contact = bootstrap_handler.read_bootstrap_contacts();
-  assert!(read_contact.len() == 10);
-  let empty_contact: Vec<Contact> = Vec::new();
-  // Replace Contacts
-  bootstrap_handler.replace_bootstrap_contacts(empty_contact);
-  assert_eq!(contacts_clone.len(), read_contact.len());
-  // Assert Replace
-  read_contact = bootstrap_handler.read_bootstrap_contacts();
-  assert!(read_contact.len() == 0);
+    let mut contacts = Vec::new();
+    for i in 0..10 {
+      let random_id = [rand::random::<u8>(); 64];
+      let random_addr_0 = [rand::random::<u8>(); 4];
+      let random_addr_1 = [rand::random::<u8>(); 4];
+      let port_0: u8 = rand::random::<u8>();
+      let port_1: u8 = rand::random::<u8>();
+      let addr_0 = net::SocketAddrV4::new(net::Ipv4Addr::new(random_addr_0[0], random_addr_0[1], random_addr_0[2], random_addr_0[3]), port_0 as u16);
+      let addr_1 = net::SocketAddrV4::new(net::Ipv4Addr::new(random_addr_1[0], random_addr_1[1], random_addr_1[2], random_addr_1[3]), port_1 as u16);
+      let (public_key, _) = sodiumoxide::crypto::asymmetricbox::gen_keypair();
+      let new_contact = Contact::new(maidsafe_types::NameType::new(random_id), (addr_0, addr_1), public_key);
+      contacts.push(new_contact);
+    }
+
+    let contacts_clone = contacts.clone();
+    let path = Path::new("./bootstrap.cache");
+
+    let mut bootstrap_handler = BootStrapHandler::new();
+    let file = File::open(&path);
+    file.unwrap(); // Check whether the database file is created
+    // Add Contacts
+    bootstrap_handler.add_bootstrap_contacts(contacts);
+    // Read Contacts
+    let mut read_contact = bootstrap_handler.read_bootstrap_contacts();
+    assert!(read_contact.len() == 10);
+    let empty_contact: Vec<Contact> = Vec::new();
+    // Replace Contacts
+    bootstrap_handler.replace_bootstrap_contacts(empty_contact);
+    assert_eq!(contacts_clone.len(), read_contact.len());
+    // Assert Replace
+    read_contact = bootstrap_handler.read_bootstrap_contacts();
+    assert!(read_contact.len() == 0);
+  }
+
 }
