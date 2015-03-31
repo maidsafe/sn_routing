@@ -925,7 +925,7 @@ fn drop_node_test() {
 fn routing_table_check_node() {
   let mut routing_table_utest = RoutingTableUnitTest::new();
 
-  // TODO EXPECT_THROW(table_.CheckNode(Address{}), common_error);
+  // TODO(Shankar) EXPECT_THROW(table_.CheckNode(Address{}), common_error);
 
   // Try with our ID
   assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.table.our_id), false);
@@ -999,4 +999,46 @@ fn routing_table_check_node() {
 
   // Check final close contact which would push size of table_ above OptimalSize()
   assert!(routing_table_utest.table.check_node(&routing_table_utest.buckets[RoutingTable::get_optimal_size()].mid_contact.clone()));      
+}
+
+#[test]
+fn churn_test() {
+    let network_size = 200usize;
+    let nodes_to_remove = 20usize;
+
+    let mut tables = create_random_routing_tables(network_size);
+    let mut addresses: Vec<Address> = Vec::with_capacity(network_size);
+
+    for i in 0..tables.len() {
+        addresses.push(tables[i].our_id.clone());
+        for j in 0..tables.len() {
+            let mut node_info = create_random_node_info();
+            node_info.fob.id = tables[j].our_id.clone();
+            tables[i].add_node(node_info);
+        }
+    }
+
+    // now remove nodes
+    let mut drop_vec: Vec<Address> = Vec::with_capacity(nodes_to_remove);
+    for i in 0..nodes_to_remove {
+        drop_vec.push(addresses[i].clone());
+    }
+
+    tables = tables.split_off(nodes_to_remove);
+
+    for i in 0..tables.len() {
+        for j in 0..drop_vec.len() {
+            tables[i].drop_node(&drop_vec[j]);
+        }
+    }
+    // remove ids too
+    addresses = addresses.split_off(nodes_to_remove);
+
+    for i in 0..tables.len() {
+        let size = if RoutingTable::get_group_size() < tables[i].size() { RoutingTable::get_group_size() } else { tables[i].size() };
+        let id = tables[i].our_id.clone();
+        addresses.sort_by(|a, b| if RoutingTable::closer_to_target(&id, &a, &b) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
+        let groups = tables[i].our_close_group();
+        assert_eq!(groups.len(), size);
+    }
 }
