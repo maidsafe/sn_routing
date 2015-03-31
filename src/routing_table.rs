@@ -339,7 +339,7 @@ impl RoutingTable {
     }
     index
   }
-    
+
   fn closer_to_target(base: &maidsafe_types::NameType,
                       lhs: &maidsafe_types::NameType,
                       rhs: &maidsafe_types::NameType) -> cmp::Ordering {
@@ -439,6 +439,7 @@ impl RoutingTable {
 ///////////////////////////////////////////////////
 use std::rand;
 use std::collections::BitVec;
+use std::mem;
 
 enum ContactType {
     Far,
@@ -490,9 +491,56 @@ impl Bucket {
     }
 }
 
-// struct RoutingTableUnitTest {
-//     ;
-// }
+struct RoutingTableUnitTest {
+    our_id: maidsafe_types::NameType,
+    table: RoutingTable,
+    buckets: [Bucket; 100],
+    node_info: NodeInfo,
+    initial_count: usize,
+    added_ids: Vec<maidsafe_types::NameType>,
+}
+
+impl RoutingTableUnitTest {
+    fn new() -> RoutingTableUnitTest {
+        let node_info = create_random_node_info();
+        let table = RoutingTableUnitTest {
+            our_id: node_info.fob.id.clone(),
+            table: RoutingTable { our_id: node_info.fob.id.clone(), routing_table: Vec::new(), },
+            buckets: RoutingTableUnitTest::initialise_buckets(&node_info.fob.id),
+            node_info: node_info,
+            initial_count: (rand::random::<usize>() % (RoutingTable::get_group_size() - 1)) + 1,
+            added_ids: Vec::new(),
+        };
+
+        for i in 0..99 {
+            assert!(RoutingTable::closer_to_target(&table.buckets[i].mid_contact, &table.buckets[i].far_contact, &table.our_id) == cmp::Ordering::Greater);
+            assert!(RoutingTable::closer_to_target(&table.buckets[i].close_contact, &table.buckets[i].mid_contact, &table.our_id) == cmp::Ordering::Greater);
+            assert!(RoutingTable::closer_to_target(&table.buckets[i + 1].far_contact, &table.buckets[i].close_contact, &table.our_id) == cmp::Ordering::Greater);
+        }
+
+        assert!(RoutingTable::closer_to_target(&table.buckets[99].mid_contact, &table.buckets[99].far_contact, &table.our_id) == cmp::Ordering::Greater);
+        assert!(RoutingTable::closer_to_target(&table.buckets[99].close_contact, &table.buckets[99].mid_contact, &table.our_id) == cmp::Ordering::Greater);
+
+        table
+    }
+
+    fn initialise_buckets(our_id: &maidsafe_types::NameType) -> [Bucket; 100] {
+        let arr = [255u8; 64];
+        let mut arr_res = [0u8; 64];
+        for i in 0..64 {
+            arr_res[i] = arr[i] ^ our_id.0[i];
+        }
+
+        let farthest_from_tables_own_id = maidsafe_types::NameType(arr_res);
+
+        let mut buckets: [Bucket; 100] = unsafe{mem::uninitialized()};
+        for i in 0..buckets.len() {
+            buckets[i] = Bucket::new(farthest_from_tables_own_id.clone(), i);
+        }
+
+        buckets
+    }
+}
 
 fn create_random_socket_address() -> SocketAddr {
   SocketAddr::V4(SocketAddrV4::new(
