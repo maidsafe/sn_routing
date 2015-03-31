@@ -1237,7 +1237,7 @@ fn trivial_functions_test() {
     // EXPECT_FALSE(table_.GetPublicKey(buckets_.back().far_contact));
     assert!(table_unit_test.our_id == table_unit_test.table.our_id);
     assert_eq!(table_unit_test.initial_count + 1, table_unit_test.table.routing_table.len());
-    
+
     table_unit_test.table.drop_node(&new_node_0_clone.fob.id);
     table_unit_test.complete_filling_table();
     table_unit_test.table.drop_node(&table_unit_test.buckets[0].mid_contact.clone());
