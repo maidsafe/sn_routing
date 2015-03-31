@@ -26,6 +26,7 @@ use std::marker::PhantomData;
 use rustc_serialize::{Decodable, Encodable};
 use bchannel::channel;
 
+
 pub use bchannel::Receiver;
 pub type InTcpStream<T> = Receiver<T, CborError>;
 
@@ -177,6 +178,7 @@ mod test {
     use std::net::{SocketAddr};
     use std::str::FromStr;
 
+
 #[test]
     fn test_small_stream() {
       let (listener, u32) = listen().unwrap();
@@ -211,13 +213,20 @@ mod test {
         let (listener, u32) = listen().unwrap();
         let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
         let (i1, mut o1) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
-        for x in 0u64 .. 10u64 {
-            if o.send(&x).is_err() { break; }
-            if o1.send(&x).is_err() { break; }
+
+        let mut vector_senders = Vec::new();
+        vector_senders.push(o);
+        vector_senders.push(o1);
+
+        for mut v in vector_senders.iter() {
+            for x in 0u64 .. 10u64 {
+                if v.send(&x).is_err() { break; }
+            }
         }
 
-        o.close();
-        o1.close();
+        for mut v in vector_senders.iter() {
+            v.close();
+        }
 
 
         thread::spawn(move || {
@@ -231,9 +240,16 @@ mod test {
                 });
             }
         });
+
+
+        //let (sx, rx): (channel::Sender<u64, ()>, channel::Receiver<u64, ()>) = channel();
+
         // Collect everything that we get back.
         let mut responses: Vec<(u64, u64)> = Vec::new();
         for a in i.into_blocking_iter() {
+            responses.push(a);
+        }
+        for a in i1.into_blocking_iter() {
             responses.push(a);
         }
         println!("Responses: {:?}", responses);
