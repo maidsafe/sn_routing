@@ -153,9 +153,7 @@ impl BootStrapHandler {
   }
 
   pub fn out_of_date(&self) -> bool {
-    // FIXME: Please fix and test
-    false
-    // time::now() > self.last_updated + BootStrapHandler::get_update_duration()
+     time::now() > self.last_updated + BootStrapHandler::get_update_duration()
   }
 
   pub fn reset_timer(&mut self) {
