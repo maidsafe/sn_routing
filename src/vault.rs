@@ -39,12 +39,7 @@ impl routing::Facade for VaultFacade {
   }
 
   fn handle_put(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
-    ;
-    Err(RoutingError::InvalidRequest)
-	// let mut e = cbor::Encoder::from_memory();
-	// e.encode(&data).unwrap();
- //    self.store.put(data, e.into_bytes());
- //    Ok(Action::SendOn(from_address))
+    self.data_manager.handle_put(&data)
   }
 
   fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
