@@ -22,7 +22,8 @@ extern crate sodiumoxide;
 use common_bits::*;
 use sodiumoxide::crypto;
 use std::cmp;
-use std::net::{SocketAddr};
+use std::net::*;
+use std::usize;
 
 static BUCKET_SIZE: usize = 1;
 static GROUP_SIZE: usize = 23;
@@ -49,6 +50,15 @@ pub struct NodeInfo {
 pub struct RoutingTable {
   routing_table: Vec<NodeInfo>,
   our_id: maidsafe_types::NameType,
+}
+
+impl Clone for RoutingTable {
+    fn clone(&self) -> RoutingTable {
+        RoutingTable {
+            routing_table: self.routing_table.clone(),
+            our_id: self.our_id.clone(),
+        }
+    }
 }
 
 impl RoutingTable {
@@ -312,15 +322,18 @@ impl RoutingTable {
       let mut j = i - 1;
       let rhs_id = self.routing_table[i].clone();
 
-      while j != (-1) && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) == cmp::Ordering::Greater {
+      while j != usize::MAX && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) == cmp::Ordering::Greater {
         self.routing_table[j + 1] = self.routing_table[j].clone();
-        j -= 1;
+        if j != 0 { j -= 1; }
+        else      { j = usize::MAX; }
       }
 
-      if j + 1 != i {
-        self.routing_table[j + 1] = rhs_id;
+      j = if j == usize::MAX { 0 } else { j + 1 };
+
+      if j != i {
+        self.routing_table[j] = rhs_id;
         if i == self.routing_table.len() - 1 {
-          index = j + 1;
+          index = j;
         }
       }
     }
@@ -423,6 +436,220 @@ impl RoutingTable {
   */
 }
 
-#[test]
-fn it_works() {
+///////////////////////////////////////////////////
+use std::rand;
+use std::collections::BitVec;
+
+enum ContactType {
+    Far,
+    Mid,
+    Close,
 }
+
+fn get_contact(farthest_from_tables_own_id: &maidsafe_types::NameType, index: usize, contact_type: ContactType) -> maidsafe_types::NameType {
+    let mut binary_id = BitVec::from_bytes(&farthest_from_tables_own_id.0);
+    if index > 0 {
+        for i in 0..index {
+            let bit = binary_id.get(i).unwrap();
+            binary_id.set(i, !bit);
+        }
+    }
+
+    match contact_type {
+        ContactType::Mid => {
+            let bit_num = binary_id.len() - 1;
+            let bit = binary_id.get(bit_num).unwrap();
+            binary_id.set(bit_num, !bit);
+        },
+        ContactType::Close => {
+            let bit_num = binary_id.len() - 2;
+            let bit = binary_id.get(bit_num).unwrap();
+            binary_id.set(bit_num, !bit);
+        },
+        ContactType::Far => {},
+    };
+
+    maidsafe_types::NameType(binary_id.to_bytes())
+}
+
+struct Bucket {
+    index: usize,
+    far_contact: maidsafe_types::NameType,
+    mid_contact: maidsafe_types::NameType,
+    close_contact: maidsafe_types::NameType,
+}
+
+impl Bucket {
+    fn new(farthest_from_tables_own_id: maidsafe_types::NameType, index: usize) -> Bucket {
+        Bucket {
+            index: index,
+            far_contact: get_contact(&farthest_from_tables_own_id, index, ContactType::Far),
+            mid_contact: get_contact(&farthest_from_tables_own_id, index, ContactType::Mid),
+            close_contact: get_contact(&farthest_from_tables_own_id, index, ContactType::Close),
+        }
+    }
+}
+
+// struct RoutingTableUnitTest {
+//     ;
+// }
+
+fn create_random_socket_address() -> SocketAddr {
+  SocketAddr::V4(SocketAddrV4::new(
+      Ipv4Addr::new(rand::random::<u8>(),
+                    rand::random::<u8>(),
+                    rand::random::<u8>(),
+                    rand::random::<u8>()),
+      rand::random::<u16>()))
+}
+
+fn create_random_arr() -> [u8; 64] {
+  let mut arr = [0u8; 64];
+  for i in 0..arr.len() {
+    arr[i] = rand::random::<u8>();
+  }
+  arr
+}
+
+fn create_random_id() -> maidsafe_types::NameType {
+  maidsafe_types::NameType(create_random_arr())
+}
+
+fn create_random_fob() -> KeyFob {
+  let id = create_random_id();
+  let sig = crypto::sign::Signature(id.0);
+  KeyFob {
+    id: id,
+    keys: (crypto::sign::gen_keypair().0, crypto::asymmetricbox::gen_keypair().0),
+    signature: sig,
+  }
+}
+
+fn create_random_node_info() -> NodeInfo {
+  NodeInfo {
+      fob: create_random_fob(),
+      endpoint: create_random_socket_address(),
+      connected: false,
+  }
+}
+
+fn create_random_routing_tables(num_of_tables: usize) -> Vec<RoutingTable> {
+    vec![RoutingTable { routing_table: Vec::new(), our_id: create_random_id(), }; num_of_tables]
+}
+
+#[test]
+fn add_check_nodes_test() {
+  let num_of_tables = 50usize;
+  let mut tables = create_random_routing_tables(num_of_tables);
+
+  for i in 0..num_of_tables {
+    for j in 0..num_of_tables {
+      let mut node_info = create_random_node_info();
+      node_info.fob.id = tables[j].our_id.clone();
+
+      if tables[i].check_node(&node_info.fob.id) {
+        let removed_node = tables[i].add_node(node_info);
+        assert!(removed_node.0);
+      }
+    }
+  }
+}
+
+#[test]
+fn routing_table_test() {
+    let mut table = RoutingTable {
+        routing_table: Vec::new(),
+        our_id: create_random_id(),
+    };
+
+    for i in 0..RoutingTable::get_group_size() {
+        let id = create_random_id();
+        assert!(table.check_node(&id));
+    }
+
+    assert_eq!(table.size(), 0);
+
+    for i in 0..RoutingTable::get_group_size() {
+        let node_info = create_random_node_info();
+        assert!(table.add_node(node_info).0);
+    }
+
+    assert_eq!(table.size(), RoutingTable::get_group_size());
+}
+
+#[test]
+fn add_check_close_group_test() {
+    let num_of_tables = 50usize;
+    let mut tables = create_random_routing_tables(num_of_tables);
+    let mut addresses: Vec<maidsafe_types::NameType> = Vec::with_capacity(num_of_tables);
+
+    for i in 0..num_of_tables {
+        addresses.push(tables[i].our_id.clone());
+        for j in 0..num_of_tables {
+            let mut node_info = create_random_node_info();
+            node_info.fob.id = tables[j].our_id.clone();
+            assert!(tables[i].add_node(node_info).0);
+        }
+    }
+
+    for it in tables.iter() {
+        let id = it.our_id.clone();
+        addresses.sort_by(|a, b| RoutingTable::closer_to_target(&id, &a, &b));
+        let mut groups = it.our_close_group();
+        assert_eq!(groups.len(), RoutingTable::get_group_size());
+
+        // TODO(Spandan) vec.dedup does not compile - manually doing it
+        if groups.len() > 1 {
+            let mut new_end = 1usize;
+            for i in 1..groups.len() {
+                if groups[new_end - 1].fob.id != groups[i].fob.id {
+                    if new_end != i {
+                        groups[new_end] = groups[i].clone();
+                    }
+                    new_end += 1;
+                }
+            }
+            assert_eq!(new_end, groups.len());
+        }
+
+        assert_eq!(groups.len(), RoutingTable::get_group_size());
+
+        for i in 0..RoutingTable::get_group_size() {
+            assert!(groups[i].fob.id == addresses[i + 1]);
+        }
+    }
+}
+
+#[test]
+fn add_node_test() {
+    let mut table = RoutingTable {
+        routing_table: Vec::new(),
+        our_id: create_random_id(),
+    };
+
+    // try with our id - should fail
+    let mut node_info = create_random_node_info();
+    node_info.fob.id = table.our_id.clone();
+    let result_of_first_add = table.add_node(node_info);
+    assert!(!result_of_first_add.0);
+    match result_of_first_add.1 {
+        None => {},
+        Some(_) => panic!("Unexpected!"),
+    };
+    assert_eq!(table.size(), 0);
+
+    // add first contact
+
+}
+
+// #[test]
+// fn drop_node_test() {
+//     let mut table = RoutingTable {
+//         routing_table: Vec::new(),
+//         our_id: create_random_id(),
+//     };
+// 
+//     table.drop_node(&create_random_id());
+// 
+//     assert_eq!(table.size(), 0);
+// }
