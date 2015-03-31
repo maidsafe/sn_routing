@@ -886,26 +886,37 @@ fn add_node_test() {
     assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
 }
 
-// #[test]
-// fn drop_node_test() {
-//     let mut table = RoutingTable {
-//         routing_table: Vec::new(),
-//         our_id: create_random_id(),
-//     };
-// 
-//     table.drop_node(&create_random_id());
-// 
-//     assert_eq!(table.size(), 0);
-// }
+/*
+#[test]
+fn drop_node_test() {
+    // Check on empty table
+    let mut test = RoutingTableUnitTest::new();
 
-// #[test]
-// fn drop_node_test() {
-//     let mut table = RoutingTable {
-//         routing_table: Vec::new(),
-//         our_id: create_random_id(),
-//     };
+    assert_eq!(test.table.size(), 0);
+
+    // Fill the table
+    test.partially_fill_table();
+    test.complete_filling_table();
+
+    // Try with invalid Address
+    test.table.drop_node(&create_random_id());
+    assert_eq!(RoutingTable::OptimalSize(), test.table.size());
+
+    // Try with our ID
+//   EXPECT_NO_THROW(table_.DropNode(table_.OurId()));
+//   EXPECT_EQ(RoutingTable::OptimalSize(), table_.Size());
 // 
-//     table.drop_node(&create_random_id());
+//   // Try with Address of node not in table
+//   EXPECT_NO_THROW(table_.DropNode(buckets_[0].far_contact));
+//   EXPECT_EQ(RoutingTable::OptimalSize(), table_.Size());
 // 
-//     assert_eq!(table.size(), 0);
-// }
+//   // Remove all nodes one at a time
+//   std::mt19937 rng(RandomUint32());
+//   std::shuffle(std::begin(added_ids_), std::end(added_ids_), rng);
+//   auto size = table_.Size();
+//   for (const auto& id : added_ids_) {
+//     EXPECT_NO_THROW(table_.DropNode(id));
+//     EXPECT_EQ(--size, table_.Size());
+//   }
+}
+*/
