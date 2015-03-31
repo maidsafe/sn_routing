@@ -26,7 +26,6 @@ use std::marker::PhantomData;
 use rustc_serialize::{Decodable, Encodable};
 use bchannel::channel;
 
-
 pub use bchannel::Receiver;
 pub type InTcpStream<T> = Receiver<T, CborError>;
 
@@ -178,7 +177,6 @@ mod test {
     use std::net::{SocketAddr};
     use std::str::FromStr;
 
-
 #[test]
     fn test_small_stream() {
       let (listener, u32) = listen().unwrap();
@@ -209,7 +207,6 @@ mod test {
     }
 
 #[test]
-
     fn test_multiple_client_small_stream() {
         const MSG_COUNT: usize = 5;
         const CLIENT_COUNT: usize = 101;
