@@ -212,11 +212,11 @@ mod test {
 
     fn cp_test() {
         let (listener, u32) = listen().unwrap();
-        let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
-        let (i1, mut o1) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
+        let (i, o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
+        let (i1, o1) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
 
-        let mut boxed_o: Box<OutTcpStream<u64>> = Box::new(o);
-        let mut boxed_o1: Box<OutTcpStream<u64>> = Box::new(o1);
+        let boxed_o: Box<OutTcpStream<u64>> = Box::new(o);
+        let boxed_o1: Box<OutTcpStream<u64>> = Box::new(o1);
 
         let mut vector_senders = Vec::new();
         // let mut vector_senders : Vec<Box<OutTcpStream<u64>>>= Vec::new();
@@ -229,8 +229,12 @@ mod test {
             }
         }
 
-        for mut v in &mut vector_senders {
-            v.close();
+
+        loop {
+           let sender = match vector_senders.pop() {
+                None => break, // empty
+                Some(sender) => sender.close(),
+            };
         }
 
         thread::spawn(move || {
