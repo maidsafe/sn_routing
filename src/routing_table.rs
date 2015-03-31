@@ -1209,3 +1209,49 @@ fn target_nodes_test() {
     }    
   }
 }
+
+#[test]
+fn trivial_functions_test() {
+    let mut table_unit_test = RoutingTableUnitTest::new();
+    let mut public_key = table_unit_test.table.get_public_key(table_unit_test.buckets[0].mid_contact.clone());
+    match public_key {
+      Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
+      None => assert!(true),
+    }
+    assert!(table_unit_test.our_id == table_unit_test.table.our_id);
+    assert_eq!(0, table_unit_test.table.routing_table.len());
+
+    table_unit_test.partially_fill_table();
+    let test_id = create_random_id();
+    let new_node_0 = create_random_node_info();
+    let new_node_0_clone = new_node_0.clone();
+    table_unit_test.table.add_node(new_node_0);
+    assert_eq!(0, table_unit_test.table.routing_table.len());
+
+    public_key = table_unit_test.table.get_public_key(new_node_0_clone.fob.id.clone());
+    match public_key {
+      Some(crypto::asymmetricbox::PublicKey(p)) => assert!(true),
+      None => panic!("PublicKey None"),
+    }
+    // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(), *table_.GetPublicKey(info_.id)));
+    // EXPECT_FALSE(table_.GetPublicKey(buckets_.back().far_contact));
+    assert!(table_unit_test.our_id == table_unit_test.table.our_id);
+    assert_eq!(table_unit_test.initial_count + 1, table_unit_test.table.routing_table.len());
+
+    table_unit_test.table.drop_node(&new_node_0_clone.fob.id);
+    table_unit_test.complete_filling_table();
+    table_unit_test.table.drop_node(&table_unit_test.buckets[0].mid_contact.clone());
+    let new_node_1 = create_random_node_info();
+    let new_node_1_clone = new_node_1.clone();
+    table_unit_test.table.add_node(new_node_1);
+
+    public_key = table_unit_test.table.get_public_key(new_node_1_clone.fob.id);
+    match public_key {
+      Some(crypto::asymmetricbox::PublicKey(p)) => assert!(true),
+      None => panic!("PublicKey None"),
+    }
+    // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(), *table_.GetPublicKey(info_.id)));
+    // EXPECT_FALSE(table_.GetPublicKey(buckets_.back().far_contact));
+    assert!(table_unit_test.our_id == table_unit_test.table.our_id);
+    assert_eq!(RoutingTable::get_optimal_size(), table_unit_test.table.routing_table.len());
+}
