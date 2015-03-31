@@ -919,3 +919,26 @@ fn drop_node_test() {
         assert_eq!(size, test.table.size());
     }
 }
+
+#[test]
+fn our_close_group_test() {
+    let mut table_unit_test = RoutingTableUnitTest::new();
+    assert!(table_unit_test.table.our_close_group().is_empty());
+
+    table_unit_test.partially_fill_table();
+    assert_eq!(table_unit_test.initial_count, table_unit_test.table.our_close_group().len());
+
+    for i in 0..table_unit_test.initial_count {
+        assert!(table_unit_test.table.our_close_group().iter().filter(|&node| { node.fob.id == table_unit_test.buckets[i].mid_contact }).count() > 0);
+    }
+
+    table_unit_test.complete_filling_table();
+    assert_eq!(RoutingTable::get_group_size(), table_unit_test.table.our_close_group().len());
+
+    table_unit_test.table.our_close_group()
+    .sort_by(|a, b| if RoutingTable::closer_to_target(&table_unit_test.our_id, &a.fob.id, &b.fob.id) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
+
+    for close_node in table_unit_test.table.our_close_group().iter() {
+        assert!(table_unit_test.added_ids.iter().filter(|&node| { node == &close_node.fob.id }).count() > 0);
+    }
+}
