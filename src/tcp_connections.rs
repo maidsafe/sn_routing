@@ -212,24 +212,26 @@ mod test {
 
     fn cp_test() {
         let (listener, u32) = listen().unwrap();
-        let (i, o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
-        let (i1, o1) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
-
-        let boxed_o: Box<OutTcpStream<u64>> = Box::new(o);
-        let boxed_o1: Box<OutTcpStream<u64>> = Box::new(o1);
 
         let mut vector_senders = Vec::new();
-        // let mut vector_senders : Vec<Box<OutTcpStream<u64>>>= Vec::new();
-        vector_senders.push(boxed_o);
-        vector_senders.push(boxed_o1);
+        let mut vector_receiver = Vec::new();
+        for x in 0..2 {
+            let (i, o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
+            let boxed_o: Box<OutTcpStream<u64>> = Box::new(o);
+            vector_senders.push(boxed_o);
 
+            let boxed_i: Box<InTcpStream<u64, u64>> = Box::new(i);
+            vector_receiver.push(boxed_i);
+        }
+
+        //  send
         for mut v in &mut vector_senders {
             for x in 0u64 .. 10u64 {
                 if v.send(&x).is_err() { break; }
             }
         }
 
-
+        //  close sender
         loop {
            let sender = match vector_senders.pop() {
                 None => break, // empty
@@ -237,6 +239,7 @@ mod test {
             };
         }
 
+        // listener
         thread::spawn(move || {
             for (connection, u32) in listener.into_blocking_iter() {
                 // Spawn a new thread for each connection that we get.
@@ -250,16 +253,23 @@ mod test {
         });
 
 
-        //let (sx, rx): (channel::Sender<u64, ()>, channel::Receiver<u64, ()>) = channel();
-
         // Collect everything that we get back.
         let mut responses: Vec<(u64, u64)> = Vec::new();
-        for a in i.into_blocking_iter() {
-            responses.push(a);
+
+
+        for mut v in &mut vector_receiver {
+            for a in v.into_blocking_iter() {
+                responses.push(a);
+            }
         }
-        for a in i1.into_blocking_iter() {
-            responses.push(a);
-        }
+
+
+        // for a in i.into_blocking_iter() {
+        //     responses.push(a);
+        // }
+        // for a in i1.into_blocking_iter() {
+        //     responses.push(a);
+        // }
         println!("Responses: {:?}", responses);
         assert_eq!(20, responses.len());
     }
