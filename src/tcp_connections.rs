@@ -214,9 +214,13 @@ mod test {
         let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
         let (i1, mut o1) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
 
+        let mut boxed_o: Box<OutTcpStream<u64>> = Box::new(o);
+        let mut boxed_o1: Box<OutTcpStream<u64>> = Box::new(o1);
+
         let mut vector_senders = Vec::new();
-        vector_senders.push(o);
-        vector_senders.push(o1);
+        // let mut vector_senders : Vec<Box<OutTcpStream<u64>>>= Vec::new();
+        vector_senders.push(boxed_o);
+        vector_senders.push(boxed_o1);
 
         for mut v in vector_senders.iter() {
             for x in 0u64 .. 10u64 {
@@ -224,7 +228,7 @@ mod test {
             }
         }
 
-        for mut v in vector_senders.iter() {
+        for v in vector_senders.iter() {
             v.close();
         }
 
