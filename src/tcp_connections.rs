@@ -209,6 +209,7 @@ mod test {
     }
 
 #[test]
+
     fn cp_test() {
         let (listener, u32) = listen().unwrap();
         let (i, mut o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
@@ -222,16 +223,15 @@ mod test {
         vector_senders.push(boxed_o);
         vector_senders.push(boxed_o1);
 
-        for mut v in vector_senders.iter() {
+        for mut v in &mut vector_senders {
             for x in 0u64 .. 10u64 {
                 if v.send(&x).is_err() { break; }
             }
         }
 
-        for v in vector_senders.iter() {
+        for mut v in &mut vector_senders {
             v.close();
         }
-
 
         thread::spawn(move || {
             for (connection, u32) in listener.into_blocking_iter() {
