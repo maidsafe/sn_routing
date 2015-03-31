@@ -29,17 +29,17 @@ static GROUP_SIZE: usize = 23;
 static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
-type Address = maidsafe_types::NameType;
+pub type Address = maidsafe_types::NameType;
 #[derive(Clone)]
-struct KeyFob {
-  id: maidsafe_types::NameType,
+pub struct KeyFob {
+  pub id: maidsafe_types::NameType,
   keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   signature: crypto::sign::Signature,
 }
 
 #[derive(Clone)]
 pub struct NodeInfo {
-  fob: KeyFob,
+  pub fob: KeyFob,
   endpoint: SocketAddr,
   connected: bool,
 }
@@ -52,6 +52,10 @@ pub struct RoutingTable {
 }
 
 impl RoutingTable {
+  pub fn new(our_id: maidsafe_types::NameType) -> RoutingTable {
+    RoutingTable { routing_table: Vec::<NodeInfo>::new(), our_id: our_id }
+  }
+
   pub fn get_bucket_size() -> usize {
     BUCKET_SIZE
   }
