@@ -1098,6 +1098,7 @@ fn our_close_group_test() {
     }
 }
 
+#[test]
 fn target_nodes_test() {
   let mut routing_table_utest = RoutingTableUnitTest::new();
 
