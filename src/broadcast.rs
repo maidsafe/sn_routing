@@ -17,6 +17,10 @@
 // use of the MaidSafe Software.
 
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
+use std::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 fn serialise_address(our_listening_address: SocketAddr) -> [u8; 27] {
     let mut our_details = [0u8; 27];
@@ -84,6 +88,20 @@ fn parse_address(buffer: &[u8]) -> Option<SocketAddr> {
     }
 }
 
+fn handle_receive(socket: &UdpSocket) -> Option<SocketAddr> {
+    let mut buffer = [0; 27];
+    match socket.recv_from(&mut buffer) {
+        Ok((received_length, source)) => {
+            assert_eq!(27, received_length);
+            parse_address(&buffer)
+        }
+        Err(e) => {
+            println!("Failed receiving a message: {}", e);
+            None
+        }
+    }
+}
+
 pub fn listen_for_broadcast(our_listening_address: SocketAddr) {
     let socket = match UdpSocket::bind("0.0.0.0:5483") {
         Ok(bound_socket) => bound_socket,
@@ -121,22 +139,25 @@ pub fn seek_peers() -> Vec<SocketAddr> {
     }
     println!("Broadcasted on {:?}", socket.local_addr().unwrap());
 
-    let mut peers: Vec<SocketAddr> = Vec::new();
-//    loop {
-        let mut buffer = [0; 27];
-        match socket.recv_from(&mut buffer) {
-            Ok((received_length, source)) => {
-                assert_eq!(27, received_length);
-                match parse_address(&buffer) {
-                    None => println!("Failed to parse address."),
-                    Some(peer_address) => {
-                        peers.push(peer_address);
-                    },
-                };
+    let (tx, rx): (Sender<SocketAddr>, Receiver<SocketAddr>) = mpsc::channel();
+    thread::spawn(move || {
+        loop {
+            match handle_receive(&socket) {
+                Some(peer_address) => tx.send(peer_address).unwrap(),
+                _ => (),
             }
-            Err(e) => println!("Failed receiving a message: {}", e)
         }
-//    }
+    });
+
+    // Allow peers time to respond
+    thread::sleep(Duration::milliseconds(500));
+
+    let mut peers: Vec<SocketAddr> = Vec::new();
+    let mut result = rx.try_recv();
+    while let Ok(res) = result {
+        peers.push(res);
+        result = rx.try_recv();
+    }
 
     peers
 }
@@ -152,30 +173,22 @@ mod test {
 
 #[test]
     fn test_broadcast() {
+        // Start a normal socket and start listening for a broadcast
         thread::spawn(move || {
             let normal_socket = match UdpSocket::bind("::0:0") {
                 Ok(s) => s,
                 Err(e) => panic!("Couldn't bind socket: {}", e),
             };
             println!("Normal socket on {:?}\n", normal_socket.local_addr().unwrap());
-            // let sss = lookup_addr(&normal_socket.local_addr().unwrap().ip());
-            // println!("Lookup address: {:?}", sss);
-            // let aaa = lookup_host(&sss.unwrap());
-            // let mut bbb = aaa.unwrap();
-            // println!("Lookup host: {:?}", bbb.next());
-            // println!("Lookup host: {:?}", bbb.next());
-            // println!("Lookup host: {:?}", bbb.next());
-            // println!("Lookup host: {:?}", bbb.next());
-            // println!("Lookup host: {:?}", bbb.next());
-            // println!("Lookup host: {:?}", bbb.next());
-            // println!("Lookup host: {:?}", bbb.next());
             listen_for_broadcast(normal_socket.local_addr().unwrap());
         });
 
-        thread::sleep(Duration::milliseconds(200));
+        // Allow listener time to start
+        thread::sleep(Duration::milliseconds(300));
+
         for i in 0..3 {
             let peers = seek_peers();
-            thread::sleep(Duration::milliseconds(200));
+            assert!(peers.len() > 0);
         }
     }
 }

@@ -185,6 +185,7 @@ impl BootStrapHandler {
   }
 }
 
+#[cfg(test)]
 mod test {
   extern crate maidsafe_types;
   extern crate sodiumoxide;
