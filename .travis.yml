@@ -6,14 +6,11 @@ env:
     secure:secure: "jYb73sf4o6nUOOzCiyfRYeGcTHPM7pwl+wqEa7YhGHcIfR7uGkI8NQAb0BzizA/Iiy3+wFQzDbbw1ZtpHNgG49EI7cXFQ7WRk+Wz1H4gzkEh2J6XEgyTYoqTOdV4Ka3YtbELc69VLXJCePSvxGqGED0ncUg/kZmWK5f9ZR47zn8="
 language: rust
 before_install:
-    - sudo apt-get install -qq libsqlite3-dev 
+    - sudo apt-get install -qq libsqlite3-dev
 install:
     - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
     - tar xvfz libsodium-1.0.0.tar.gz
     - cd libsodium-1.0.0 && ./configure --prefix=/usr && make && sudo make install && cd ..
-    - wget https://www.sqlite.org/2015/sqlite-autoconf-3080803.tar.gz
-    - tar xvfz sqlite-autoconf-3080803.tar.gz
-    - cd sqlite-autoconf-3080803 && ./configure --prefix=/usr && make && sudo make install && cd ..
 script:
     - cargo build --verbose
     - cargo test --verbose
@@ -31,7 +28,7 @@ after_success: |
   tar xzf master.tar.gz &&
   mkdir kcov-master/build &&
   cd kcov-master/build &&
-  cmake .. &&;
+  cmake .. &&
   make &&
   sudo make install &&
   cd ../.. &&

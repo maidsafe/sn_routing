@@ -54,7 +54,7 @@ Steps to compile SQLite by,
   - [ ] Benchmark tx/rc Bytes per second
 - [ ] Allow node to create it's ID and store on network
 - [ ] zero state network
-- [ ] Network stanrs any number of nodes automatically (test)
+- [ ] Network starts any number of nodes automatically (test)
 - [x] Create sort and bucket index methods 
 - [x] Implement routing table
 - [ ] Test routing table 
@@ -64,6 +64,7 @@ Steps to compile SQLite by,
 - [ ] Allow tcp and then utp connections and wrap in connection object. [See here for tcp NAT traversal] (http://www.cmlab.csie.ntu.edu.tw/~franklai/NATBT.pdf) [and here fur ucp/dht NAT traversal
   ](http://maidsafe.net/Whitepapers/pdf/DHTbasedNATTraversal.pdf)
 - [x] Implement routing message types (Connect FindNode)
+- [ ] Test message types
 - [x] Implement Get Put Post messages
 - [ ] Implement routing node
 - [ ] Test basic facade (normal DHT Get Put with republish)
