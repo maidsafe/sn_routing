@@ -211,23 +211,23 @@ mod test {
 #[test]
 
     fn test_multiple_client_small_stream() {
+        const MSG_COUNT: usize = 5;
+        const CLIENT_COUNT: usize = 101;
+
         let (listener, u32) = listen().unwrap();
-        let client_count = 100;
-        let message_count = 5;
         let mut vector_senders = Vec::new();
         let mut vector_receiver = Vec::new();
-        for x in 0..client_count {
+        for _ in 0..CLIENT_COUNT {
             let (i, o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
-            let boxed_o: Box<OutTcpStream<u64>> = Box::new(o);
-            vector_senders.push(boxed_o);
-
-            let boxed_i: Box<InTcpStream<(u64, u64)>> = Box::new(i);
-            vector_receiver.push(boxed_i);
+            let boxed_output: Box<OutTcpStream<u64>> = Box::new(o);
+            vector_senders.push(boxed_output);
+            let boxed_input: Box<InTcpStream<(u64, u64)>> = Box::new(i);
+            vector_receiver.push(boxed_input);
         }
 
         //  send
         for mut v in &mut vector_senders {
-            for x in 0u64 .. message_count {
+            for x in 0u64 .. MSG_COUNT as u64 {
                 if v.send(&x).is_err() { break; }
             }
         }
@@ -270,7 +270,7 @@ mod test {
         }
 
         println!("Responses: {:?}", responses);
-        assert_eq!((message_count * client_count) as usize, responses.len());
+        assert_eq!((CLIENT_COUNT * MSG_COUNT), responses.len());
     }
 
 
