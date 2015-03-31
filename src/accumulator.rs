@@ -100,3 +100,74 @@ impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
   	self.storage.len()
   }
 }
+
+mod test {
+  extern crate cbor;
+  use super::*;
+  use std::rand;
+  use types;
+
+  pub fn generate_address() -> Vec<u8> {
+    let mut address: Vec<u8> = vec![];
+    for _ in (0..64) {
+      address.push(rand::random::<u8>());
+    }
+    address
+  }
+
+  #[test]
+  fn accumulator_add() {
+    let mut accumulator: Accumulator<i32, u32> = Accumulator::new(1);
+    let address1 : Vec<u8> = generate_address();
+    let address2 : Vec<u8> = generate_address();
+
+    assert!(accumulator.add(2, 3, address1.clone()).is_some());
+    assert_eq!(accumulator.have_name(&1), false);
+    assert_eq!(accumulator.have_name(&2), true);
+    assert_eq!(accumulator.is_quorum_reached(1), false);
+    assert_eq!(accumulator.is_quorum_reached(2), true);
+    assert!(accumulator.add(1, 3, address2.clone()).is_some());
+    assert_eq!(accumulator.have_name(&1), true);
+    assert_eq!(accumulator.is_quorum_reached(1), true);
+    assert!(accumulator.add(1, 3, address2.clone()).is_some());
+    assert_eq!(accumulator.have_name(&1), true);
+    assert_eq!(accumulator.is_quorum_reached(1), true);
+
+    let (key, responses) = accumulator.get(&1).unwrap();
+
+    assert_eq!(key, 1);
+    assert_eq!(responses.len(), 2);
+    assert_eq!(responses[0].value, 3);
+    assert_eq!(responses[0].address, address2.clone());
+    assert_eq!(responses[1].value, 3);
+    assert_eq!(responses[1].address, address2.clone());
+
+    let (key, responses) = accumulator.get(&2).unwrap();
+
+    assert_eq!(key, 2);
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].value, 3);
+    assert_eq!(responses[0].address, address1.clone());
+  }
+
+  #[test]
+  fn accumulator_fill() {
+    let mut accumulator: Accumulator<i32, u32> = Accumulator::new(1);
+    let address : Vec<u8> = generate_address();
+
+    for count in 0..1000 {
+      assert!(accumulator.add(count, 1, address.clone()).is_some());
+      assert_eq!(accumulator.have_name(&count), true);
+      assert_eq!(accumulator.is_quorum_reached(count), true);
+    }
+
+    for count in 0..1000 {
+      let (key, responses) = accumulator.get(&count).unwrap();
+
+      assert_eq!(key, count);
+      assert_eq!(responses.len(), 1);
+      assert_eq!(responses[0].value, 1);
+      assert_eq!(responses[0].address, address.clone());
+    }
+  }
+}
