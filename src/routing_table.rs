@@ -27,6 +27,7 @@ use std::usize;
 
 static BUCKET_SIZE: usize = 1;
 static GROUP_SIZE: usize = 23;
+static QUORUM_SIZE: usize = 19;
 static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
@@ -76,6 +77,10 @@ impl RoutingTable {
 
   pub fn get_group_size() -> usize {
     GROUP_SIZE
+  }
+
+  pub fn get_quorum_size() -> usize {
+      QUORUM_SIZE
   }
 
   /// Potentially adds a contact to the routing table.  If the contact is added, the first return arg
@@ -920,12 +925,11 @@ fn drop_node_test() {
     }
 }
 
-
 #[test]
 fn check_node_test() {
   let mut routing_table_utest = RoutingTableUnitTest::new();
 
-  // TODO EXPECT_THROW(table_.CheckNode(Address{}), common_error);
+  // TODO(Shankar) EXPECT_THROW(table_.CheckNode(Address{}), common_error);
 
   // Try with our ID
   assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.table.our_id), false);
@@ -1109,4 +1113,99 @@ fn target_nodes_test() {
       }
     }    
   }
+}
+
+#[test]
+fn churn_test() {
+    let network_size = 200usize;
+    let nodes_to_remove = 20usize;
+
+    let mut tables = create_random_routing_tables(network_size);
+    let mut addresses: Vec<Address> = Vec::with_capacity(network_size);
+
+    for i in 0..tables.len() {
+        addresses.push(tables[i].our_id.clone());
+        for j in 0..tables.len() {
+            let mut node_info = create_random_node_info();
+            node_info.fob.id = tables[j].our_id.clone();
+            tables[i].add_node(node_info);
+        }
+    }
+
+    // now remove nodes
+    let mut drop_vec: Vec<Address> = Vec::with_capacity(nodes_to_remove);
+    for i in 0..nodes_to_remove {
+        drop_vec.push(addresses[i].clone());
+    }
+
+    tables = tables.split_off(nodes_to_remove);
+
+    for i in 0..tables.len() {
+        for j in 0..drop_vec.len() {
+            tables[i].drop_node(&drop_vec[j]);
+        }
+    }
+    // remove ids too
+    addresses = addresses.split_off(nodes_to_remove);
+
+    for i in 0..tables.len() {
+        let size = if RoutingTable::get_group_size() < tables[i].size() { RoutingTable::get_group_size() } else { tables[i].size() };
+        let id = tables[i].our_id.clone();
+        addresses.sort_by(|a, b| if RoutingTable::closer_to_target(&id, &a, &b) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
+        let groups = tables[i].our_close_group();
+        assert_eq!(groups.len(), size);
+    }
+}
+
+#[test]
+fn target_nodes_group_test() {
+    let network_size = 100usize;
+
+    let mut tables = create_random_routing_tables(network_size);
+    let mut addresses: Vec<Address> = Vec::with_capacity(network_size);
+
+    for i in 0..tables.len() {
+        addresses.push(tables[i].our_id.clone());
+        for j in 0..tables.len() {
+            let mut node_info = create_random_node_info();
+            node_info.fob.id = tables[j].our_id.clone();
+            tables[i].add_node(node_info);
+        }
+    }
+
+    for i in 0..tables.len() {
+        addresses.sort_by(|a, b| if RoutingTable::closer_to_target(&tables[i].our_id, &a, &b) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
+        // if target is in close group return the whole close group excluding target
+        for j in 1..(RoutingTable::get_group_size() - RoutingTable::get_quorum_size()) {
+            let target_close_group = tables[i].target_nodes(addresses[j].clone());
+            assert_eq!(RoutingTable::get_group_size(), target_close_group.len());
+            // should contain our close group
+            for k in 0..target_close_group.len() {
+                assert!(target_close_group[k].fob.id == addresses[k + 1]);
+            }
+        }
+    }
+}
+
+#[test]
+fn our_close_group_test() {
+    let mut table_unit_test = RoutingTableUnitTest::new();
+    assert!(table_unit_test.table.our_close_group().is_empty());
+
+    table_unit_test.partially_fill_table();
+    assert_eq!(table_unit_test.initial_count, table_unit_test.table.our_close_group().len());
+
+    for i in 0..table_unit_test.initial_count {
+        assert!(table_unit_test.table.our_close_group().iter().filter(|&node| { node.fob.id == table_unit_test.buckets[i].mid_contact }).count() > 0);
+    }
+
+    table_unit_test.complete_filling_table();
+    assert_eq!(RoutingTable::get_group_size(), table_unit_test.table.our_close_group().len());
+
+    table_unit_test.table.our_close_group()
+    .sort_by(|a, b| if RoutingTable::closer_to_target(&table_unit_test.our_id, &a.fob.id, &b.fob.id) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
+
+    for close_node in table_unit_test.table.our_close_group().iter() {
+        assert!(table_unit_test.added_ids.iter().filter(|&node| { node == &close_node.fob.id }).count() > 0);
+    }
 }
