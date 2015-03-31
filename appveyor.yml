@@ -22,16 +22,16 @@ install:
           7z x -oC:\ mingw-w64-dgn-x86_64-20141001.7z;
           Start-FileDownload "https://gitlab.com/Fraser999/Dependencies/raw/master/bin/x86_64-pc-windows-gnu/libsodium.a";        
           Start-FileDownload "https://gitlab.com/Fraser999/Dependencies/raw/master/bin/x86_64-pc-windows-gnu/libsqlite3.a";        
-          mkdir .\bin\x86_64-pc-windows-gnu
-          move libsodium.a .\bin\x86_64-pc-windows-gnu
-          move .\libsqlite3.a .\bin\x86_64-pc-windows-gnu
+          mkdir .\bin\x86_64-pc-windows-gnu;
+          move libsodium.a .\bin\x86_64-pc-windows-gnu;
+          move .\libsqlite3.a .\bin\x86_64-pc-windows-gnu;
        }
   - ps: if($env:RUST_INSTALL_TRIPLE -eq 'i686-pc-windows-gnu') {
           Start-FileDownload "https://gitlab.com/Fraser999/Dependencies/raw/master/bin/i686-pc-windows-gnu/libsqlite3.a";
           Start-FileDownload "https://gitlab.com/Fraser999/Dependencies/raw/master/bin/i686-pc-windows-gnu/libsodium.a";
-          mkdir .\bin\i686-pc-windows-gnu
-          move libsodium.a .\bin\i686-pc-windows-gnu
-          move .\libsqlite3.a .\bin\i686-pc-windows-gnu\
+          mkdir .\bin\i686-pc-windows-gnu;
+          move libsodium.a .\bin\i686-pc-windows-gnu;
+          move .\libsqlite3.a .\bin\i686-pc-windows-gnu\;
         }
   - if "%RUST_INSTALL_TRIPLE%" == "i686-pc-windows-gnu" SET PATH=%PATH%;C:\MinGW\bin;
   - if "%RUST_INSTALL_TRIPLE%" == "x86_64-pc-windows-gnu" SET PATH=%PATH%;C:\mingw64\bin;
