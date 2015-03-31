@@ -39,7 +39,8 @@
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features)]
-#![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core, udp, thread_sleep, ip_addr, lookup_addr, lookup_host)]
+#![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core,
+           udp, thread_sleep, ip_addr)]
 
 extern crate sodiumoxide;
 extern crate lru_cache;
@@ -112,7 +113,7 @@ pub enum RoutingError {
   Success,  // vault will aslo return a Success to indicate a deadend
   NoData,
   InvalidRequest,
-  IncorrectData(Vec<u8>) 
+  IncorrectData(Vec<u8>)
 }
 
 pub trait Facade : Sync {
