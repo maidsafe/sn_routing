@@ -525,6 +525,26 @@ impl RoutingTableUnitTest {
         table
     }
 
+    fn partially_fill_table(&mut self) {
+        for i in 0..self.initial_count {
+            self.node_info.fob.id = self.buckets[i].mid_contact.clone();
+            self.added_ids.push(self.node_info.fob.id.clone());
+            assert!(self.table.add_node(self.node_info.clone()).0);
+        }
+
+        assert_eq!(self.initial_count, self.table.size());
+    }
+
+    fn complete_filling_table(&mut self) {
+        for i in self.initial_count..RoutingTable::get_optimal_size() {
+            self.node_info.fob.id = self.buckets[i].mid_contact.clone();
+            self.added_ids.push(self.node_info.fob.id.clone());
+            assert!(self.table.add_node(self.node_info.clone()).0);
+        }
+
+        assert_eq!(RoutingTable::get_optimal_size(), self.table.size());
+    }
+
     fn initialise_buckets(our_id: &maidsafe_types::NameType) -> [Bucket; 100] {
         let arr = [255u8; 64];
         let mut arr_res = [0u8; 64];
