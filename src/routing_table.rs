@@ -455,7 +455,21 @@ fn get_contact(farthest_from_tables_own_id: &maidsafe_types::NameType, index: us
         }
     }
 
-    create_random_id()
+    match contact_type {
+        ContactType::Mid => {
+            let bit_num = binary_id.len() - 1;
+            let bit = binary_id.get(bit_num).unwrap();
+            binary_id.set(bit_num, !bit);
+        },
+        ContactType::Close => {
+            let bit_num = binary_id.len() - 2;
+            let bit = binary_id.get(bit_num).unwrap();
+            binary_id.set(bit_num, !bit);
+        },
+        ContactType::Far => {},
+    };
+
+    maidsafe_types::NameType(binary_id.to_bytes())
 }
 
 struct Bucket {
