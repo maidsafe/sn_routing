@@ -850,11 +850,11 @@ fn add_node_test() {
         assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
     }
 
-    // TODO(Spandan) - Fails currently
-    // assert!(test.buckets[0].far_contact == dropped[0]);
-    // assert!(test.buckets[0].mid_contact == dropped[1]);
-    // assert!(test.buckets[1].far_contact == dropped[2]);
-    // assert!(test.buckets[1].mid_contact == dropped[3]);
+    // TODO(Spandan) - This bunch Fails currently
+    assert!(test.buckets[0].far_contact == dropped[0]);
+    assert!(test.buckets[0].mid_contact == dropped[1]);
+    assert!(test.buckets[1].far_contact == dropped[2]);
+    assert!(test.buckets[1].mid_contact == dropped[3]);
 
     // Try to add far contacts again (should fail)
     for far_contact in dropped {
