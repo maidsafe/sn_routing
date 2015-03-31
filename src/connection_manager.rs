@@ -13,68 +13,88 @@
 // use of the MaidSafe
 // Software.                                                                 
 
-
-use std::net::{SocketAddr};
-// use std::io::{stdout, stderr, Write, BufReader};
-// use std::io::Result as IoResult;
+//use std::net::{SocketAddr};
 use std::io::Error as IoError;
-// use std::io::{ ErrorKind };
-// use cbor::{ Encoder, CborError, Decoder }; 
-// use std::thread::spawn;
-// use std::marker::PhantomData;
-// use rustc_serialize::{ Decodable, Encodable };
-// use bchannel::channel;
-use routing_table;
-use bootstrap;
-pub use bchannel::Receiver;
+use messages::RoutingMessage;
+use std::thread::spawn;
+use bchannel::Receiver;
+use bchannel::Sender;
+use std::sync::{Arc, Mutex, Weak};
 
-type Address = Vec<u8>;
+pub type Address = Vec<u8>;
 
 // use net::ip::SocketAddr;
 
+pub type IoReceiver<T> = Receiver<T, IoError>;
+pub type IoSender<T>   = Sender<T, IoError>;
+
 /// Will hold tcp udt sentinel routing_table beacon boostrap_file
-struct Connections {
-  routing_table: routing_table::RoutingTable,
-  boostrap_list: bootstrap::BootStrapHandler,
+pub struct ConnectionManager {
+    //routing_table: routing_table::RoutingTable,
+    //boostrap_list: bootstrap::BootStrapHandler,
+    state: Arc<Mutex<State>>,
 }
 
-impl Connections {
+pub enum Event {
+    NewMessage(Address, RoutingMessage),
+    NewConnection(Address),
+    LostConnection(Address),
+    AcceptingOn(u16)
+}
+
+impl ConnectionManager {
 /// must be called prior to any other method 
 /// this function will spawn a thread and listen for messages 
 /// and either handle pass to handle_message() 
 /// or send via channel to the receiver
 /// USe ```match msg.decode(cbor_tag)``` to get message type
 /// Any new endpoints are checked for NAT traversal and bootstrap file inclusion
-pub fn start() -> Receiver<Vec<u8>, IoError> {
-  unimplemented!();
-  }
+pub fn new(our_id: Address, event_pipe: IoReceiver<Event>) -> ConnectionManager {
+    let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe }));
+    
+    let weak_state = state.downgrade();
+
+    spawn(move || {
+        start_accepting_connections(weak_state);
+    });
+
+    ConnectionManager { state: state }
+}
 
 /// we will send to this address, by getting targets from routing table.
 pub fn send(message: Vec<u8>, address : Address) {}
 
 
-/// We add connections the routing table tells us are nodes
-fn maintain_connection(socket: SocketAddr) {}
-/// will send a message to another node with our interested node included in message
-/// the other node will try and connect to the interested node and report back to 
-/// us if it can connect. If so its a good bootstrap node
-fn send_nat_traverse_message() {}
+///// We add connections the routing table tells us are nodes
+//fn maintain_connection(socket: SocketAddr) {}
+///// will send a message to another node with our interested node included in message
+///// the other node will try and connect to the interested node and report back to 
+///// us if it can connect. If so its a good bootstrap node
+//fn send_nat_traverse_message() {}
+//
+///// Acting as a rquest form another node, we will try and connect to the node they suggest
+///// and send back a response IF we can connect, drop otherwise
+//fn handle_nat_traverse_message() {}
+//
+///// A node we have asked about is actually able to be connected to as though direct
+//fn handle_nat_traverse_response() {}
+//
+//
+///// this is a routing message may be 
+///// connect connect response get_key etc. as well as JOIN LEAVE 
+///// Only nodes from connect response / connect will be added to 
+///// routing table
+//fn handle_message() {}
 
-/// Acting as a rquest form another node, we will try and connect to the node they suggest
-/// and send back a response IF we can connect, drop otherwise
-fn handle_nat_traverse_message() {}
+}
 
-/// A node we have asked about is actually able to be connected to as though direct
-fn handle_nat_traverse_response() {}
+struct State {
+    our_id: Address,
+    event_pipe: IoReceiver<Event>,
+}
 
-
-
-
-/// this is a routing message may be 
-/// connect connect response get_key etc. as well as JOIN LEAVE 
-/// Only nodes from connect response / connect will be added to 
-/// routing table
-fn handle_message() {}
-
+fn start_accepting_connections(state: Weak<Mutex<State>>) {
+    //unimplemented!();
+    //let state = state.upgrade();
 }
 
