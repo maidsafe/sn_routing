@@ -220,7 +220,7 @@ mod test {
             let boxed_o: Box<OutTcpStream<u64>> = Box::new(o);
             vector_senders.push(boxed_o);
 
-            let boxed_i: Box<InTcpStream<u64, u64>> = Box::new(i);
+            let boxed_i: Box<InTcpStream<(u64, u64)>> = Box::new(i);
             vector_receiver.push(boxed_i);
         }
 
