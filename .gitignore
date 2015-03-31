@@ -2,6 +2,7 @@
 *.lock
 *.swp
 tags*
+bootstrap.cache
 build/
 build-tests/
 target/
