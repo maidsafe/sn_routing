@@ -1042,3 +1042,8 @@ fn churn_test() {
         assert_eq!(groups.len(), size);
     }
 }
+
+#[test]
+fn target_nodes_group_test() {
+    ;
+}
