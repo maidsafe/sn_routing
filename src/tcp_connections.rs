@@ -245,7 +245,9 @@ mod test {
                 // Spawn a new thread for each connection that we get.
                 thread::spawn(move || {
                     let (i, mut o) = upgrade_tcp(connection).unwrap();
-                    for x in i.into_blocking_iter() {
+                    let i = i.blocking_iter(); 
+                    let vec : Vec<u64> = i.collect();
+                    for &x in vec.iter() {
                         if o.send(&(x, x + 1)).is_err() { break; }
                     }
                 });
