@@ -394,7 +394,7 @@ impl RoutingTable {
   fn get_pivot(low: usize, high: usize) -> usize {
     // TODO(Spandan) get a random value in the range [low, high] - rand is currently broken on my
     // Rust right now
-    (high - low) / 2
+    (high + low) / 2
   }
 
   fn partition(vec: &mut Vec<NodeInfo>, low: usize, high: usize, base: &maidsafe_types::NameType) -> usize {
