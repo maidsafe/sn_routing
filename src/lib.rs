@@ -60,7 +60,7 @@ pub mod tcp_connections;
 mod connection_manager;
 mod beacon;
 mod message_header;
-mod routing_table;
+pub mod routing_table;
 mod accumulator;
 mod common_bits;
 mod sentinel;
@@ -108,15 +108,19 @@ pub enum Action {
 
 
 pub enum RoutingError {
-NoData,
-InvalidRequest,
-IncorrectData(Vec<u8>) 
+  Success,  // vault will aslo return a Success to indicate a deadend
+  NoData,
+  InvalidRequest,
+  IncorrectData(Vec<u8>) 
 }
 
 pub trait Facade : Sync {
   /// if reply is data then we send back the response message (ie get_response )
-  fn handle_get(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>; 
+  fn handle_get(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
+
+  // TODO : datatype needs to be passed, or the type of data shall be Data (name + content) instead of serialised_data
   fn handle_put(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
+
   fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
   fn handle_get_response(&mut self, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
   fn handle_put_response(&mut self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
