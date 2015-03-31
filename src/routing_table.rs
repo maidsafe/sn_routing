@@ -438,7 +438,7 @@ impl RoutingTable {
 }
 
 ///////////////////////////////////////////////////
-use std::rand;
+extern crate rand;
 use std::collections::BitVec;
 use std::mem;
 
@@ -920,3 +920,83 @@ fn drop_node_test() {
 //   }
 }
 */
+
+#[test]
+fn routing_table_check_node() {
+  let mut routing_table_utest = RoutingTableUnitTest::new();
+
+  // TODO EXPECT_THROW(table_.CheckNode(Address{}), common_error);
+
+  // Try with our ID
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.table.our_id), false);
+
+  // Should return true for empty routing table
+  assert!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0].far_contact));
+
+  // Add the first contact, and check it doesn't allow duplicates
+  let mut new_node_0 = create_random_node_info();
+  new_node_0.fob.id = routing_table_utest.buckets[0].far_contact.clone();
+  assert!(routing_table_utest.table.add_node(new_node_0).0);
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0].far_contact.clone()), false);
+
+  // Add further 'OptimalSize()' - 1 contacts (should all succeed with no removals).  Set this up so
+  // that bucket 0 (furthest) and bucket 1 have 3 contacts each and all others have 0 or 1 contacts.
+
+  let mut new_node_1 = create_random_node_info();
+  new_node_1.fob.id =  routing_table_utest.buckets[0].mid_contact.clone();
+  assert!(routing_table_utest.table.check_node(&new_node_1.fob.id));  
+  assert!(routing_table_utest.table.add_node(new_node_1).0);
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0].mid_contact.clone()), false);
+
+  let mut new_node_2 = create_random_node_info();
+  new_node_2.fob.id =  routing_table_utest.buckets[0].close_contact.clone();
+  assert!(routing_table_utest.table.check_node(&new_node_2.fob.id));  
+  assert!(routing_table_utest.table.add_node(new_node_2).0);
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0].close_contact.clone()), false);
+
+  let mut new_node_3 = create_random_node_info();
+  new_node_3.fob.id = routing_table_utest.buckets[1].far_contact.clone();
+  assert!(routing_table_utest.table.check_node(&new_node_3.fob.id));
+  assert!(routing_table_utest.table.add_node(new_node_3).0);
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1].far_contact.clone()), false);
+
+  let mut new_node_4 = create_random_node_info();
+  new_node_4.fob.id =  routing_table_utest.buckets[1].mid_contact.clone();
+  assert!(routing_table_utest.table.check_node(&new_node_4.fob.id));  
+  assert!(routing_table_utest.table.add_node(new_node_4).0);
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1].mid_contact.clone()), false);
+
+  let mut new_node_5 = create_random_node_info();
+  new_node_5.fob.id =  routing_table_utest.buckets[1].close_contact.clone();
+  assert!(routing_table_utest.table.check_node(&new_node_5.fob.id));  
+  assert!(routing_table_utest.table.add_node(new_node_5).0);
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1].close_contact.clone()), false);
+
+  for i in 2..(RoutingTable::get_optimal_size() - 4) {
+    let mut new_node = create_random_node_info();
+    new_node.fob.id =  routing_table_utest.buckets[i].mid_contact.clone();
+    assert!(routing_table_utest.table.check_node(&new_node.fob.id));  
+    assert!(routing_table_utest.table.add_node(new_node).0);
+    assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[i].mid_contact.clone()), false);
+  }
+
+  assert_eq!(RoutingTable::get_optimal_size(), routing_table_utest.table.routing_table.len());
+
+  for i in (RoutingTable::get_optimal_size() - 4)..RoutingTable::get_optimal_size() {
+    let mut new_node = create_random_node_info();
+    new_node.fob.id =  routing_table_utest.buckets[i].mid_contact.clone();
+    assert!(routing_table_utest.table.check_node(&new_node.fob.id));  
+    assert!(routing_table_utest.table.add_node(new_node).0);
+    assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[i].mid_contact.clone()), false);
+    assert_eq!(RoutingTable::get_optimal_size(), routing_table_utest.table.routing_table.len());
+  }
+
+  // Check far contacts again which are now not in the table
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0].far_contact.clone()), false);
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0].mid_contact.clone()), false);
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1].far_contact.clone()), false);
+  assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1].mid_contact.clone()), false);
+
+  // Check final close contact which would push size of table_ above OptimalSize()
+  assert!(routing_table_utest.table.check_node(&routing_table_utest.buckets[RoutingTable::get_optimal_size()].mid_contact.clone()));      
+}
