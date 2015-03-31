@@ -5,7 +5,7 @@ tags*
 build/
 build-tests/
 target/
-
 /.idea
 /.project
 /bin
+*.sublime-*

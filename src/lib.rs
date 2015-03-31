@@ -18,19 +18,19 @@
 
 //! The main API for routing nodes (this is where you give the network it's rules)
 //! The network will report **From Authority your Authority** and validate cryptographically
-//! and via group consensus any message. This means any facade you implement will set out 
+//! and via group consensus any message. This means any facade you implement will set out
 //! what you deem to be a valid operation, routing will provide a valid message sender and authority
 //! that will allow you to set up many decentralised services
 //! See maidsafe.net to see what they are doing as an example
 //!
 //! The data types are encoded with Concise Binary Object Representation (CBOR)
-//! This allows us to demand certain tags are available to routing that allows 
+//! This allows us to demand certain tags are available to routing that allows
 //! it to confirm things like data.name() when calculating authority
 //! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
-//! Please define your own for this library. These tags are non optional and your data MUST meet 
+//! Please define your own for this library. These tags are non optional and your data MUST meet
 //! the requirements and implement the following tags
 //! tag: 5483_0 -> name [u8; 64] type
-//! tag: 5483_1 -> XXXXXXXXXXXXXX 
+//! tag: 5483_1 -> XXXXXXXXXXXXXX
 //! # Use
 
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
@@ -38,7 +38,7 @@
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features)]
-#![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core, udp)]
+#![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core, udp, thread_sleep, ip_addr, lookup_addr, lookup_host)]
 
 extern crate sodiumoxide;
 extern crate lru_cache;
@@ -58,7 +58,7 @@ use std::default::Default;
 pub mod types;
 pub mod tcp_connections;
 mod connection_manager;
-mod beacon;
+mod broadcast;
 mod message_header;
 pub mod routing_table;
 mod accumulator;
@@ -71,12 +71,12 @@ mod messages;
 struct SignedKey {
   sign_public_key: crypto::sign::PublicKey,
   encrypt_public_key: crypto::asymmetricbox::PublicKey,
-  signature: crypto::sign::Signature // detached signature  
+  signature: crypto::sign::Signature // detached signature
 }
 
 //#[derive(RustcEncodable, RustcDecodable, Default)]
 pub struct DhtIdentity {
-  pub id: [u8; 64]  
+  pub id: [u8; 64]
 }
 
 impl Default for DhtIdentity {
@@ -90,7 +90,7 @@ impl DhtIdentity {
   /* fn name(&self) { */
   /*  msgpack::Encoder::to_msgpack(&self.signed_key).ok().unwrap()  */
   /* }   */
-  
+
 }
 
 pub enum Authority {
@@ -98,7 +98,7 @@ pub enum Authority {
   Node,
   ClientManager,
   NaeManager,
-  NodeManager  
+  NodeManager
 }
 
 pub enum Action {
@@ -127,42 +127,42 @@ pub trait Facade : Sync {
   fn handle_post_response(&mut self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
   }
 
-/// DHT node 
+/// DHT node
 pub struct RoutingNode<'a> {
 facade: &'a (Facade + 'a),
 sign_public_key: crypto::sign::PublicKey,
 sign_secret_key: crypto::sign::SecretKey,
 encrypt_public_key: crypto::asymmetricbox::PublicKey,
 encrypt_secret_key: crypto::asymmetricbox::SecretKey,
-sender: Sender<TcpStream>, 
+sender: Sender<TcpStream>,
 receiver: Receiver<TcpStream>
 }
 
 impl<'a> RoutingNode<'a> {
   pub fn new(my_facade: &'a Facade) -> RoutingNode<'a> {
     sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
-    let key_pair = crypto::sign::gen_keypair(); 
-    let encrypt_key_pair = crypto::asymmetricbox::gen_keypair(); 
+    let key_pair = crypto::sign::gen_keypair();
+    let encrypt_key_pair = crypto::asymmetricbox::gen_keypair();
     let (tx, rx) : (Sender<TcpStream>, Receiver<TcpStream>) = mpsc::channel();
 
-    RoutingNode { facade: my_facade, 
+    RoutingNode { facade: my_facade,
                   sign_public_key: key_pair.0, sign_secret_key: key_pair.1,
                   encrypt_public_key: encrypt_key_pair.0, encrypt_secret_key: encrypt_key_pair.1, sender: tx, receiver: rx }
   }
 
-  /// Retreive something from the network (non mutating) - Direct call  
+  /// Retreive something from the network (non mutating) - Direct call
   pub fn get(&self, name: types::DhtAddress) { unimplemented!()}
 
-  /// Add something to the network, will always go via ClientManager group 
+  /// Add something to the network, will always go via ClientManager group
   pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
 
   /// Mutate something on the network (you must prove ownership) - Direct call
   pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
-  
+
   pub fn start() {
-    
+
   }
-  
+
   fn add_bootstrap(&self) {}
 
 
@@ -176,15 +176,15 @@ impl<'a> RoutingNode<'a> {
 fn facade_implementation() {
 
   struct MyFacade;
-  
+
   impl Facade for MyFacade {
     fn handle_get(&mut self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_get_response(&mut self, from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
     fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-    fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }  
-  } 
+    fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+  }
   let my_facade = MyFacade;
   let my_routing = RoutingNode::new(&my_facade);
   /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
