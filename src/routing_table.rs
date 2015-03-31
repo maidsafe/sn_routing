@@ -27,6 +27,7 @@ use std::usize;
 
 static BUCKET_SIZE: usize = 1;
 static GROUP_SIZE: usize = 23;
+static QUORUM_SIZE: usize = 19;
 static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
@@ -76,6 +77,10 @@ impl RoutingTable {
 
   pub fn get_group_size() -> usize {
     GROUP_SIZE
+  }
+
+  pub fn get_quorum_size() -> usize {
+      QUORUM_SIZE
   }
 
   /// Potentially adds a contact to the routing table.  If the contact is added, the first return arg
@@ -1045,5 +1050,30 @@ fn churn_test() {
 
 #[test]
 fn target_nodes_group_test() {
-    ;
+    let network_size = 100usize;
+
+    let mut tables = create_random_routing_tables(network_size);
+    let mut addresses: Vec<Address> = Vec::with_capacity(network_size);
+
+    for i in 0..tables.len() {
+        addresses.push(tables[i].our_id.clone());
+        for j in 0..tables.len() {
+            let mut node_info = create_random_node_info();
+            node_info.fob.id = tables[j].our_id.clone();
+            tables[i].add_node(node_info);
+        }
+    }
+
+    for i in 0..tables.len() {
+        addresses.sort_by(|a, b| if RoutingTable::closer_to_target(&tables[i].our_id, &a, &b) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
+        // if target is in close group return the whole close group excluding target
+        for j in 1..(RoutingTable::get_group_size() - RoutingTable::get_quorum_size()) {
+            let target_close_group = tables[i].target_nodes(addresses[j].clone());
+            assert_eq!(RoutingTable::get_group_size(), target_close_group.len());
+            // should contain our close group
+            for k in 0..target_close_group.len() {
+                assert!(target_close_group[k].fob.id == addresses[k + 1]);
+            }
+        }
+    }
 }
