@@ -16,23 +16,30 @@
 #![allow(dead_code)]
 
 extern crate routing;
+extern crate maidsafe_types;
 
 mod database;
 
 use self::routing::types;
 
+use cbor::{ Decoder};
+
 type CloseGroupDifference = self::routing::types::CloseGroupDifference;
 type Address = self::routing::types::Address;
 
 pub struct DataManager {
-  db_ : database::DataManagerDatabase
-  // close_group_ : CloseGroupDifference
+  db_ : database::DataManagerDatabase,
+  // TODO : 1, the population of close_nodes
+  //        2, currently defined as RoutingTable to utilise all the algorithm,
+  //           ideally shall be only a vector of nodes
+  close_nodes_ : routing::routing_table::RoutingTable
 }
 
 impl DataManager {
   pub fn new() -> DataManager {
-    DataManager { db_: database::DataManagerDatabase::new() }
-                  // close_group_: CloseGroupDifference(Vec::<Address>::new(), Vec::<Address>::new()) }
+    DataManager { db_: database::DataManagerDatabase::new(),
+                  // TODO : own_id of the RoutingTable
+                  close_nodes_: routing::routing_table::RoutingTable::new(maidsafe_types::NameType([3u8; 64])) }
   }
 
   pub fn handle_get(&mut self, name : &routing::types::Identity) ->Result<routing::Action, routing::RoutingError> {
@@ -46,5 +53,25 @@ impl DataManager {
         dest_pmids.push(routing::DhtIdentity { id: types::vector_as_u8_64_array(pmid.clone()) });
 	  }
 	  Ok(routing::Action::SendOn(dest_pmids))
+  }
+
+  pub fn handle_put(&mut self, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+    // TODO the data_type shall be passed down or data needs to be name + content
+    //      here assuming data is serialised_data of ImmutableData
+    let mut d = Decoder::from_bytes(&data[..]);
+    let immutable_data: maidsafe_types::ImmutableData = d.decode().next().unwrap().unwrap();
+    let data_name = self::routing::types::array_as_vector(&immutable_data.get_name().get_id());
+    if !self.db_.exist(&data_name) {
+      return Err(routing::RoutingError::Success);
+    }
+    let close_nodes = self.close_nodes_.target_nodes(immutable_data.get_name().clone());
+    let mut pmid_nodes : self::routing::types::PmidNodes = Vec::new();
+    let mut dest_pmids : Vec<routing::DhtIdentity> = Vec::new();
+    for node in close_nodes.iter() {
+      pmid_nodes.push(self::routing::types::array_as_vector(&node.fob.id.get_id()));
+      dest_pmids.push(routing::DhtIdentity { id: node.fob.id.get_id() });
+    }
+    self.db_.put_pmid_nodes(&data_name, pmid_nodes);
+    Ok(routing::Action::SendOn(dest_pmids))
   }
 }
