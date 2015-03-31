@@ -210,12 +210,13 @@ mod test {
 
 #[test]
 
-    fn cp_test() {
+    fn test_multiple_client_small_stream() {
         let (listener, u32) = listen().unwrap();
-
+        let client_count = 100;
+        let message_count = 5;
         let mut vector_senders = Vec::new();
         let mut vector_receiver = Vec::new();
-        for x in 0..2 {
+        for x in 0..client_count {
             let (i, o) = connect_tcp(SocketAddr::from_str("127.0.0.1:5483").unwrap()).unwrap();
             let boxed_o: Box<OutTcpStream<u64>> = Box::new(o);
             vector_senders.push(boxed_o);
@@ -226,7 +227,7 @@ mod test {
 
         //  send
         for mut v in &mut vector_senders {
-            for x in 0u64 .. 10u64 {
+            for x in 0u64 .. message_count {
                 if v.send(&x).is_err() { break; }
             }
         }
@@ -256,22 +257,20 @@ mod test {
         // Collect everything that we get back.
         let mut responses: Vec<(u64, u64)> = Vec::new();
 
-
-        for mut v in &mut vector_receiver {
-            for a in v.into_blocking_iter() {
-                responses.push(a);
-            }
+        loop {
+           let receiver = match vector_receiver.pop() {
+                None => break, // empty
+                Some(receiver) =>
+                {
+                    for a in (*receiver).into_blocking_iter() {
+                        responses.push(a);
+                    }
+                }
+            };
         }
 
-
-        // for a in i.into_blocking_iter() {
-        //     responses.push(a);
-        // }
-        // for a in i1.into_blocking_iter() {
-        //     responses.push(a);
-        // }
         println!("Responses: {:?}", responses);
-        assert_eq!(20, responses.len());
+        assert_eq!((message_count * client_count) as usize, responses.len());
     }
 
 
