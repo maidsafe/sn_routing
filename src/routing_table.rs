@@ -469,7 +469,7 @@ fn get_contact(farthest_from_tables_own_id: &maidsafe_types::NameType, index: us
         ContactType::Far => {},
     };
 
-    maidsafe_types::NameType(binary_id.to_bytes())
+    maidsafe_types::NameType(maidsafe_types::helper::vec_as_u8_64_array(binary_id.to_bytes()))
 }
 
 struct Bucket {
