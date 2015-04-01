@@ -102,9 +102,6 @@ impl RoutingTable {
   pub fn add_node(&mut self, their_info: NodeInfo)->(bool, Option<NodeInfo>) {
     //  Validate(their_info.id);
 
-    let maidsafe_types::NameType(their_info_id) = their_info.fob.id;
-    let maidsafe_types::NameType(our_id) = self.our_id;
-
     if self.our_id == their_info.fob.id {
       return (false, None);
     }
@@ -121,7 +118,7 @@ impl RoutingTable {
     if RoutingTable::closer_to_target(&self.our_id, &their_info.fob.id, &self.routing_table[RoutingTable::get_group_size()].fob.id) {
       self.push_back_then_sort(their_info);
       let removal_node_index = self.find_candidate_for_removal();
-      if removal_node_index == (self.routing_table.len() - 1) {
+      if removal_node_index == usize::MAX {
         return (true, None);
       } else {
         let removal_node = self.routing_table[removal_node_index].clone();
@@ -131,7 +128,7 @@ impl RoutingTable {
     }
 
     let removal_node_index = self.find_candidate_for_removal();
-    if self.new_node_is_better_than_existing(&their_info.fob.id, removal_node_index) {
+    if removal_node_index != usize::MAX && self.new_node_is_better_than_existing(&their_info.fob.id, removal_node_index) {
       let removal_node = self.routing_table[removal_node_index].clone();
       self.routing_table.remove(removal_node_index);
       self.push_back_then_sort(their_info);
@@ -293,7 +290,13 @@ impl RoutingTable {
 
       start -= 1;
     }
-    start
+
+    if start < finish {
+        usize::MAX
+    }
+    else {
+        start
+    }
   }
 
   fn bucket_index(&self, id: &maidsafe_types::NameType) -> usize {
@@ -675,7 +678,7 @@ fn add_check_close_group_test() {
     }
     for it in tables.iter() {
         let id = it.our_id.clone();
-        addresses.sort_by(|a, b| if RoutingTable::closer_to_target(&id, &a, &b) { cmp::Ordering::Greater } else { cmp::Ordering::Less });
+        addresses.sort_by(|a, b| if RoutingTable::closer_to_target(&id, &a, &b) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
         let mut groups = it.our_close_group();
         assert_eq!(groups.len(), RoutingTable::get_group_size());
 
@@ -696,7 +699,7 @@ fn add_check_close_group_test() {
         assert_eq!(groups.len(), RoutingTable::get_group_size());
 
         for i in 0..RoutingTable::get_group_size() {
-            assert!(groups[i].fob.id == addresses[i]);
+            assert!(groups[i].fob.id == addresses[i + 1]);
         }
     }
 }
@@ -840,6 +843,7 @@ fn add_node_test() {
         assert_eq!(i + 5, test.table.size());
     }
 
+    println!("-------------------------------------------------------------------------------------------");
     // Check next 4 closer additions return 'buckets_[0].far_contact', 'buckets_[0].mid_contact',
     // 'buckets_[1].far_contact', and 'buckets_[1].mid_contact' as dropped (in that order)
     let mut dropped: Vec<maidsafe_types::NameType> = Vec::new();
@@ -848,10 +852,9 @@ fn add_node_test() {
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(result_of_add.0);
         match result_of_add.1 {
-            Some(_) => {},
+            Some(dropped_info) => { dropped.push(dropped_info.fob.id) },
             None => panic!("Unexpected"),
         };
-        dropped.push(result_of_add.1.unwrap().fob.id);
         assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(!result_of_add.0);
@@ -863,6 +866,66 @@ fn add_node_test() {
     }
 
     // TODO(Spandan) - This bunch Fails currently
+    /*
+    println!("Entering");
+    for it in test.buckets.iter().enumerate() {
+        if it.1.far_contact == dropped[0] {
+            println!("For dropped[0] ====> Found far_contact in bucket {}", it.0);
+            break;
+        }
+        if it.1.mid_contact == dropped[0] {
+            println!("For dropped[0] ====> Found mid_contact in bucket {}", it.0);
+            break;
+        }
+        if it.1.close_contact == dropped[0] {
+            println!("For dropped[0] ====> Found close_contact in bucket {}", it.0);
+            break;
+        }
+    }
+    for it in test.buckets.iter().enumerate() {
+        if it.1.far_contact == dropped[1] {
+            println!("For dropped[1] ====> Found far_contact in bucket {}", it.0);
+            break;
+        }
+        if it.1.mid_contact == dropped[1] {
+            println!("For dropped[1] ====> Found mid_contact in bucket {}", it.0);
+            break;
+        }
+        if it.1.close_contact == dropped[1] {
+            println!("For dropped[1] ====> Found close_contact in bucket {}", it.0);
+            break;
+        }
+    }
+    for it in test.buckets.iter().enumerate() {
+        if it.1.far_contact == dropped[2] {
+            println!("For dropped[2] ====> Found far_contact in bucket {}", it.0);
+            break;
+        }
+        if it.1.mid_contact == dropped[2] {
+            println!("For dropped[2] ====> Found mid_contact in bucket {}", it.0);
+            break;
+        }
+        if it.1.close_contact == dropped[2] {
+            println!("For dropped[2] ====> Found close_contact in bucket {}", it.0);
+            break;
+        }
+    }
+    for it in test.buckets.iter().enumerate() {
+        if it.1.far_contact == dropped[3] {
+            println!("For dropped[3] ====> Found far_contact in bucket {}", it.0);
+            break;
+        }
+        if it.1.mid_contact == dropped[3] {
+            println!("For dropped[3] ====> Found mid_contact in bucket {}", it.0);
+            break;
+        }
+        if it.1.close_contact == dropped[3] {
+            println!("For dropped[3] ====> Found close_contact in bucket {}", it.0);
+            break;
+        }
+    }
+    println!("Exited");
+    */
     assert!(test.buckets[0].far_contact == dropped[0]);
     assert!(test.buckets[0].mid_contact == dropped[1]);
     assert!(test.buckets[1].far_contact == dropped[2]);
