@@ -7,13 +7,9 @@
 
 #![feature(convert)]
 extern crate sodiumoxide;
-extern crate lru_cache;
 extern crate rustc_serialize;
 extern crate cbor;
 extern crate time;
-extern crate bchannel;
-
-extern crate self_encryption;
 extern crate routing;
 
 pub mod chunk_store;

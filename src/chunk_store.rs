@@ -15,11 +15,8 @@
 
 #![allow(dead_code)]
 
-extern crate self_encryption;
 use std::convert::AsRef;
 
-static AES256_KEY_SIZE: usize = 32;
-static AES256_IV_SIZE: usize = 16;
 
 pub struct Entry {
   name: Vec<u8>,
@@ -42,27 +39,14 @@ impl ChunkStore {
   }
 
   pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
-    let mut iv: Vec<u8> = Vec::with_capacity(AES256_IV_SIZE);
-    let mut key: Vec<u8> = Vec::with_capacity(AES256_KEY_SIZE);
 
-    for it in name.iter().take(AES256_KEY_SIZE) {
-      key.push(*it);
-    }
-    for it in name.iter().skip(AES256_KEY_SIZE).take(AES256_IV_SIZE) {
-      iv.push(*it);
-    }
 
-    match self_encryption::encryption::encrypt(value.as_ref(), key.as_ref(), iv.as_ref()) {
-      Ok(content) => {
-        self.current_disk_usage += content.len();
+        self.current_disk_usage += value.len();
 
         self.entries.push(Entry {
           name: name,
-          data: content,
+          data: value,
         });
-      },
-      _ => panic!("Unable to encrypt")
-    };
   }
 
   pub fn delete(&mut self, name: Vec<u8>) {
@@ -81,29 +65,10 @@ impl ChunkStore {
 
   pub fn get(&self, name: Vec<u8>) -> Vec<u8> {
     let mut return_val: Vec<u8> = Vec::new();
+unimplemented!();
+// something like this should be used and return a result
+  //  self.entries.iter().take(|x| { x == name });
 
-    for it in self.entries.iter() {
-      if it.name == name {
-        let mut iv: Vec<u8> = Vec::with_capacity(AES256_IV_SIZE);
-        let mut key: Vec<u8> = Vec::with_capacity(AES256_KEY_SIZE);
-
-        for it in name.iter().take(AES256_KEY_SIZE) {
-          key.push(*it);
-        }
-        for it in name.iter().skip(AES256_KEY_SIZE).take(AES256_IV_SIZE) {
-          iv.push(*it);
-        }
-
-        match self_encryption::encryption::decrypt(it.data.as_ref(), key.as_ref(), iv.as_ref()) {
-          Ok(vec) => return_val = vec,
-          _ => panic!("Unable to decrypt"),
-        };
-        break;
-      }
-    }
-
-    assert!(!return_val.is_empty());
-    return_val
   }
 
   pub fn max_disk_usage(&self) -> usize {

@@ -17,20 +17,11 @@ time = "*"
 sodiumoxide = "*"
 rand = "*"
 
-[dependencies.bchannel]
-git="https://github.com/dirvine/bchannel"
-
 [dependencies.lru-cache]
 git="https://github.com/contain-rs/lru-cache.git"
 
 [dependencies.maidsafe_types]
 git = "https://github.com/dirvine/maidsafe_types"
-
-[dependencies.self_encryption]
-git = "https://github.com/dirvine/self_encryption"
-
-#[dependencies.utp]
-#git = "https://github.com/meqif/rust-utp"
 
 [dependencies.routing]
 git = "https://github.com/dirvine/routing"
