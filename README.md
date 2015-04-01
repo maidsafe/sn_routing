@@ -34,12 +34,12 @@ Steps to compile SQLite by,
 - [x] Set up facade design pattern
 - [x] Test facade pattern
 - [x] Set up accumulator
-- [ ] Accumulator tests
+- [x] Accumulator tests
 - [x] Message header 
 - [x] Message header tests
-- [ ] API version 0.0.6
+- [x] API version 0.0.6
 - [x] Bootstrap handler implementation
-- [ ] Bootstrap handler test
+- [x] Bootstrap handler test
 - [ ] Tcp Networking
   - [x] Tcp live port and backup random port selection 
   - [x] Create send/rcv channel from routing to connections object
