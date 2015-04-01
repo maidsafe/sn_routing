@@ -382,10 +382,7 @@ impl RoutingTable {
   		return false;
   	}
   	let removal_node = &self.routing_table[removal_node_index];
-    let last_node_fob_id = &self.routing_table[self.routing_table.len() -1 ].fob.id;    
-    
-    *last_node_fob_id != removal_node.fob.id && 
-      &self.bucket_index(new_node) > &self.bucket_index(&removal_node.fob.id)
+    self.bucket_index(new_node) > self.bucket_index(&removal_node.fob.id)
   }
 
   fn is_any_of(vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
