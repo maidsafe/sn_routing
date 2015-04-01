@@ -612,7 +612,11 @@ fn create_random_node_info() -> NodeInfo {
 }
 
 fn create_random_routing_tables(num_of_tables: usize) -> Vec<RoutingTable> {
-    vec![RoutingTable { routing_table: Vec::new(), our_id: create_random_id(), }; num_of_tables]
+    let mut vector: Vec<RoutingTable> = Vec::with_capacity(num_of_tables);
+    for i in 0..num_of_tables {
+      vector.push(RoutingTable { routing_table: Vec::new(), our_id: create_random_id(), });
+    }
+    vector
 }
 
 #[test]
@@ -666,13 +670,12 @@ fn add_check_close_group_test() {
         for j in 0..num_of_tables {
             let mut node_info = create_random_node_info();
             node_info.fob.id = tables[j].our_id.clone();
-            assert!(tables[i].add_node(node_info).0);
+            tables[i].add_node(node_info);
         }
     }
-
     for it in tables.iter() {
         let id = it.our_id.clone();
-        addresses.sort_by(|a, b| if RoutingTable::closer_to_target(&id, &a, &b) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
+        addresses.sort_by(|a, b| if RoutingTable::closer_to_target(&id, &a, &b) { cmp::Ordering::Greater } else { cmp::Ordering::Less });
         let mut groups = it.our_close_group();
         assert_eq!(groups.len(), RoutingTable::get_group_size());
 
@@ -693,7 +696,7 @@ fn add_check_close_group_test() {
         assert_eq!(groups.len(), RoutingTable::get_group_size());
 
         for i in 0..RoutingTable::get_group_size() {
-            assert!(groups[i].fob.id == addresses[i + 1]);
+            assert!(groups[i].fob.id == addresses[i]);
         }
     }
 }
