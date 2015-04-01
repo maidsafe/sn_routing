@@ -149,10 +149,10 @@ mod test {
     use std::str;
     use chunk_store::ChunkStore;
 
-    static OneKB: u64 = 1024u64;
-    static AesPadding: u64 = 16u64;
+    static ONE_KB: u64 = 1024u64;
+    static AES_PADDING: u64 = 16u64;
     // Allow 16 bytes extra per chunk since we're AES encrypting them
-    static kDefaultMaxDiskUsage: u64 = 4 * 1024u64 * 16u64; // 4 * (OneKB + AesPadding);
+    static K_DEFAULT_MAX_DISK_USAGE: u64 = 4 * 1024u64 * 16u64; // 4 * (OneKB + AesPadding);
 
     struct NameValueContainer(Vec<(maidsafe_types::NameType, String)>);
 
@@ -193,7 +193,7 @@ mod test {
         pub fn new() -> ChunkStoreTest {
             ChunkStoreTest {
                 chunk_store: ChunkStore::new(),
-                max_disk_storage: kDefaultMaxDiskUsage
+                max_disk_storage: K_DEFAULT_MAX_DISK_USAGE
             }
         }
     }
