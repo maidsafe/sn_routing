@@ -65,6 +65,7 @@ impl DataManagerDatabase {
   	  for i in 0..tmp.len() {
   	  	if tmp[i] == pmid_node {
   	  	  tmp.remove(i);
+          break;
   	  	}
   	  }
   	  self.storage.insert(name.clone(), tmp);
@@ -80,4 +81,118 @@ impl DataManagerDatabase {
   	}
   }
 
+}
+
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate rand;
+  extern crate routing;
+  use super::*;
+  use self::maidsafe_types::ImmutableData;
+  use self::routing::types::*;
+
+  pub fn generate_random_bytes(size : u32) -> Vec<u8> {
+    let mut random_bytes: Vec<u8> = vec![];
+    for _ in (0..size) {
+      random_bytes.push(rand::random::<u8>());
+    }
+    random_bytes
+  }
+
+  #[test]
+  fn exist() {
+    let mut db = DataManagerDatabase::new();
+    let name = maidsafe_types::NameType([3u8; 64]);
+    let value = generate_random_bytes(1024);
+    let data = ImmutableData::new(name, value);
+    let mut pmid_nodes : Vec<Address> = vec![];
+
+    for _ in 0..4 {
+      pmid_nodes.push(generate_random_bytes(64));
+    }
+
+    let data_name = array_as_vector(&data.get_name().get_id());
+    assert_eq!(db.exist(&data_name), false);
+    db.put_pmid_nodes(&data_name, pmid_nodes);
+    assert_eq!(db.exist(&data_name), true);
+  }
+
+  #[test]
+  fn put() {
+    let mut db = DataManagerDatabase::new();
+    let name = maidsafe_types::NameType([3u8; 64]);
+    let value = generate_random_bytes(1024);
+    let data = ImmutableData::new(name, value);
+    let data_name = array_as_vector(&data.get_name().get_id());
+    let mut pmid_nodes : Vec<Address> = vec![];
+
+    for _ in 0..4 {
+      pmid_nodes.push(generate_random_bytes(64));
+    }
+
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result.len(), 0);
+
+    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result.len(), pmid_nodes.len());
+  }
+
+  #[test]
+  fn remove_pmid() {
+    let mut db = DataManagerDatabase::new();
+    let name = maidsafe_types::NameType([3u8; 64]);
+    let value = generate_random_bytes(1024);
+    let data = ImmutableData::new(name, value);
+    let data_name = array_as_vector(&data.get_name().get_id());
+    let mut pmid_nodes : Vec<Address> = vec![];
+
+    for _ in 0..4 {
+      pmid_nodes.push(generate_random_bytes(64));
+    }
+
+    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result, pmid_nodes);
+
+    db.remove_pmid_node(&data_name, pmid_nodes[0].clone());
+
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result.len(), 3);
+    for index in 0..result.len() {
+      assert!(result[index] != pmid_nodes[0]);
+    }
+  }
+
+  #[test]
+  fn replace_pmids() {
+    let mut db = DataManagerDatabase::new();
+    let name = maidsafe_types::NameType([3u8; 64]);
+    let value = generate_random_bytes(1024);
+    let data = ImmutableData::new(name, value);
+    let data_name = array_as_vector(&data.get_name().get_id());
+    let mut pmid_nodes : Vec<Address> = vec![];
+    let mut new_pmid_nodes : Vec<Address> = vec![];
+
+    for _ in 0..4 {
+      pmid_nodes.push(generate_random_bytes(64));
+      new_pmid_nodes.push(generate_random_bytes(64));
+    }
+
+    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result, pmid_nodes);
+    assert!(result != new_pmid_nodes);
+
+    for index in 0..4 {
+      db.remove_pmid_node(&data_name, pmid_nodes[index].clone());
+      db.add_pmid_node(&data_name, new_pmid_nodes[index].clone());
+    }
+
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result, new_pmid_nodes);
+    assert!(result != pmid_nodes);
+  }
 }
