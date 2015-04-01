@@ -140,6 +140,31 @@ mod test {
     assert_eq!(result.len(), pmid_nodes.len());
   }
 
+  #[test]
+  fn remove_pmid() {
+    let mut db = DataManagerDatabase::new();
+    let name = maidsafe_types::NameType([3u8; 64]);
+    let value = generate_random_bytes(1024);
+    let data = ImmutableData::new(name, value);
+    let data_name = array_as_vector(&data.get_name().get_id());
+    let mut pmid_nodes : Vec<Address> = vec![];
+
+    for _ in 0..4 {
+      pmid_nodes.push(generate_random_bytes(64));
+    }
+
+    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result, pmid_nodes);
+
+    db.remove_pmid_node(&data_name, pmid_nodes[0].clone());
+
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result.len(), 3);
+    for index in 0..result.len() {
+      assert!(result[index] != pmid_nodes[0]);
+    }
+  }
 
   #[test]
   fn replace_pmids() {
@@ -168,6 +193,6 @@ mod test {
 
     let result = db.get_pmid_nodes(&data_name);
     assert_eq!(result, new_pmid_nodes);
-    assert!(result != new_pmid_nodes);
+    assert!(result != pmid_nodes);
   }
 }
