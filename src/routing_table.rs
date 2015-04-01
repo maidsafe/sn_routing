@@ -880,11 +880,11 @@ fn add_node_test() {
     // Add final close contact to push size of table_ above OptimalSize()
     test.node_info.fob.id = test.buckets[RoutingTable::get_optimal_size()].mid_contact.clone();
     result_of_add = test.table.add_node(test.node_info.clone());
-    // assert!(result_of_add.0);
-    // match result_of_add.1 {
-    //     Some(_) => {},
-    //     None => panic!("Unexpected"),
-    // };
+    assert!(result_of_add.0);
+    match result_of_add.1 {
+        Some(_) => {},
+        None => panic!("Unexpected"),
+    };
     assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
     result_of_add = test.table.add_node(test.node_info.clone());
     assert!(!result_of_add.0);
