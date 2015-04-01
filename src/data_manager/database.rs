@@ -65,6 +65,7 @@ impl DataManagerDatabase {
   	  for i in 0..tmp.len() {
   	  	if tmp[i] == pmid_node {
   	  	  tmp.remove(i);
+          break;
   	  	}
   	  }
   	  self.storage.insert(name.clone(), tmp);
@@ -115,5 +116,58 @@ mod test {
     assert_eq!(db.exist(&data_name), false);
     db.put_pmid_nodes(&data_name, pmid_nodes);
     assert_eq!(db.exist(&data_name), true);
+  }
+
+  #[test]
+  fn put() {
+    let mut db = DataManagerDatabase::new();
+    let name = maidsafe_types::NameType([3u8; 64]);
+    let value = generate_random_bytes(1024);
+    let data = ImmutableData::new(name, value);
+    let data_name = array_as_vector(&data.get_name().get_id());
+    let mut pmid_nodes : Vec<Address> = vec![];
+
+    for _ in 0..4 {
+      pmid_nodes.push(generate_random_bytes(64));
+    }
+
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result.len(), 0);
+
+    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result.len(), pmid_nodes.len());
+  }
+
+
+  #[test]
+  fn replace_pmids() {
+    let mut db = DataManagerDatabase::new();
+    let name = maidsafe_types::NameType([3u8; 64]);
+    let value = generate_random_bytes(1024);
+    let data = ImmutableData::new(name, value);
+    let data_name = array_as_vector(&data.get_name().get_id());
+    let mut pmid_nodes : Vec<Address> = vec![];
+    let mut new_pmid_nodes : Vec<Address> = vec![];
+
+    for _ in 0..4 {
+      pmid_nodes.push(generate_random_bytes(64));
+      new_pmid_nodes.push(generate_random_bytes(64));
+    }
+
+    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result, pmid_nodes);
+    assert!(result != new_pmid_nodes);
+
+    for index in 0..4 {
+      db.remove_pmid_node(&data_name, pmid_nodes[index].clone());
+      db.add_pmid_node(&data_name, new_pmid_nodes[index].clone());
+    }
+
+    let result = db.get_pmid_nodes(&data_name);
+    assert_eq!(result, new_pmid_nodes);
+    assert!(result != new_pmid_nodes);
   }
 }
