@@ -100,11 +100,12 @@ impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
   }
 }
 
+#[cfg(test)]
 mod test {
   extern crate cbor;
+
   use super::*;
   use std::num;
-  use types;
   use rand;
 
   pub fn generate_address() -> Vec<u8> {
