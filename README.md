@@ -17,7 +17,7 @@ Code Coverage
 [Documentation](http://dirvine.github.io/routing)
 
 ###Pre-requisite:
-libsodium is a native dependency for [sodiumxoide](https://github.com/dnaq/sodiumoxide). Thus, install sodium by following the instructions [here](http://doc.libsodium.org/installation/README.html).
+libsodium is a native dependency for [sodiumxoide](https://github.com/dnaq/sodiumoxide). Thus, install sodium by following the instructions [here](http://doc.libsodium.org/installation/index.html).
 
 For windows, download and use the [prebuilt mingw library](https://download.libsodium.org/libsodium/releases/libsodium-1.0.2-mingw.tar.gz).
 Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit System or "bin\i686-pc-windows-gnu" for a 32bit system.
@@ -34,12 +34,12 @@ Steps to compile SQLite by,
 - [x] Set up facade design pattern
 - [x] Test facade pattern
 - [x] Set up accumulator
-- [ ] Accumulator tests
+- [x] Accumulator tests
 - [x] Message header 
 - [x] Message header tests
-- [ ] API version 0.0.6
+- [x] API version 0.0.6
 - [x] Bootstrap handler implementation
-- [ ] Bootstrap handler test
+- [x] Bootstrap handler test
 - [ ] Tcp Networking
   - [x] Tcp live port and backup random port selection 
   - [x] Create send/rcv channel from routing to connections object

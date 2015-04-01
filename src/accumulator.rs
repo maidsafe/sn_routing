@@ -17,7 +17,6 @@
 // use of the MaidSafe Software.
 
 use std::hash::Hash;
-
 use lru_cache::LruCache;
 
 use types;
@@ -101,12 +100,13 @@ impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
   }
 }
 
+#[cfg(test)]
 mod test {
   extern crate cbor;
+
   use super::*;
-  use std::rand;
   use std::num;
-  use types;
+  use rand;
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];
