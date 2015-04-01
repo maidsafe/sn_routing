@@ -209,6 +209,50 @@ impl Decodable for PublicPmid {
   }
 }
 
+// #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+// TODO (ben 2015-04-01) : implement order based on name
+pub struct Pmid {
+  public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
+  secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
+  name: Vec<u8> // should really all be `DhtAddress`
+}
+
+impl RoutingTrait for Pmid {
+  fn get_name(&self) -> Vec<u8> { self.name.clone() }
+  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
+  fn refresh(&self)->bool { false } // TODO is this an account transfer type
+
+   // TODO how do we merge these
+  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+}
+
+impl Pmid {
+  pub fn new() -> Pmid {
+    let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
+    let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::asymmetricbox::gen_keypair();
+    
+    let sign_arr = &pub_sign_key.0;
+    let asym_arr = &pub_asym_key.0;
+    
+    let mut arr_combined = [0u8; 64 * 2];
+
+    for i in 0..sign_arr.len() {
+        arr_combined[i] = sign_arr[i];
+    }
+    for i in 0..asym_arr.len() {
+        arr_combined[64 + i] = asym_arr[i];
+    }
+
+    let digest = crypto::hash::sha512::hash(&arr_combined);
+
+    Pmid {
+      public_keys : (pub_sign_key, pub_asym_key),
+      secret_keys : (sec_sign_key, sec_asym_key),
+      name : digest.0.to_vec()
+    }
+  }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct EndPoint {
   pub ip_addr : Vec<u8>,
@@ -365,5 +409,32 @@ mod test {
     test_object(SourceAddress { from_node : generate_address(),
                                 from_group : generate_address(),
                                 reply_to: generate_address() });
+  }
+
+  #[test]
+  fn serialisation_mpid() {
+    let (pub_sign_key, sec_sign_key) = crypto::sign::gen_keypair();
+    let (pub_asym_key, sec_asym_key) = crypto::asymmetricbox::gen_keypair();
+
+                                                                                                                                             let obj_before = Mpid::new((pub_sign_key, pub_asym_key), (sec_sign_key, sec_asym_key), NameType([3u8; 64]));
+
+    let mut e = cbor::Encoder::from_memory();
+    e.encode(&[&obj_before]).unwrap();
+
+    let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+    let obj_after: Mpid = d.decode().next().unwrap().unwrap();
+
+    let &(crypto::sign::PublicKey(pub_sign_arr_before), crypto::asymmetricbox::PublicKey(pub_asym_arr_before)) = obj_before.get_public_keys();
+                                                                                                                                             let &(crypto::sign::PublicKey(pub_sign_arr_after), crypto::asymmetricbox::PublicKey(pub_asym_arr_after)) = obj_after.get_public_keys();
+    let &(crypto::sign::SecretKey(sec_sign_arr_before), crypto::asymmetricbox::SecretKey(sec_asym_arr_before)) = obj_before.get_secret_keys();
+    let &(crypto::sign::SecretKey(sec_sign_arr_after), crypto::asymmetricbox::SecretKey(sec_asym_arr_after)) = obj_after.get_secret_keys();
+    let &NameType(name_before) = obj_before.get_name();
+    let &NameType(name_after) = obj_after.get_name();
+
+                                                                                                                                             assert!(compare_u8_array(&name_before, &name_after));
+    assert_eq!(pub_sign_arr_before, pub_sign_arr_after);
+    assert_eq!(pub_asym_arr_before, pub_asym_arr_after);
+    assert!(compare_u8_array(&sec_sign_arr_before, &sec_sign_arr_after));
+    assert_eq!(sec_asym_arr_before, sec_asym_arr_after);
   }
 }
