@@ -326,30 +326,10 @@ impl RoutingTable {
     false
   }
 
-  fn push_back_then_sort(&mut self, node_info: NodeInfo) -> usize {
+  fn push_back_then_sort(&mut self, node_info: NodeInfo) {
     self.routing_table.push(node_info);
-    let mut index = self.routing_table.len() - 1;
-
-    for i in 1..self.routing_table.len() {
-      let mut j = i - 1;
-      let rhs_id = self.routing_table[i].clone();
-
-      while j != usize::MAX && RoutingTable::closer_to_target(&self.our_id, &self.routing_table[j].fob.id, &rhs_id.fob.id) {
-        self.routing_table[j + 1] = self.routing_table[j].clone();
-        if j != 0 { j -= 1; }
-        else      { j = usize::MAX; }
-      }
-
-      j = if j == usize::MAX { 0 } else { j + 1 };
-
-      if j != i {
-        self.routing_table[j] = rhs_id;
-        if i == self.routing_table.len() - 1 {
-          index = j;
-        }
-      }
-    }
-    index
+    let our_id = &self.our_id;
+    self.routing_table.sort_by(|a, b| if RoutingTable::closer_to_target(our_id, &a.fob.id, &b.fob.id) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
   }
 
   // lhs is closer to base than rhs
