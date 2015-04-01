@@ -19,27 +19,44 @@ extern crate routing;
 
 #[path="data_manager/data_manager.rs"]
 mod data_manager;
+#[path="pmid_node/pmid_node.rs"]
+mod pmid_node;
+#[path="pmid_manager/pmid_manager.rs"]
+mod pmid_manager;
 
 use self::routing::Authority;
+use self::routing::DestinationAddress;
 use self::routing::DhtIdentity;
 use self::routing::Action;
 use self::routing::RoutingError;
 
 use self::data_manager::DataManager;
+use self::pmid_node::PmidNode;
+use self::pmid_manager::PmidManager;
 
 pub struct VaultFacade {
-  data_manager : DataManager
+  data_manager : DataManager,
+  pmid_manager : PmidManager,
+  pmid_node : PmidNode
 }
 
 impl routing::Facade for VaultFacade {
   fn handle_get(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
-    // let from = self::routing::types::SourceAddress { from_node : self::routing::types::array_as_vector(&from_address.id),
-    //     from_group : Vec::<u8>::new(), reply_to : Vec::<u8>::new() };
-    self.data_manager.handle_get(&data)
+    match our_authority {
+      Authority::NaeManager => { return self.data_manager.handle_get(&data); }
+      Authority::Node => { return self.pmid_node.handle_get(data); }
+      _ => { return Err(RoutingError::InvalidRequest); }
+    }
   }
 
-  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
-    self.data_manager.handle_put(&data)
+  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                from_address: DhtIdentity, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
+    match our_authority {
+      Authority::NaeManager => { return self.data_manager.handle_put(&data); }
+      Authority::Node => { return self.pmid_node.handle_put(&data); }
+      Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
+      _ => { return Err(RoutingError::InvalidRequest); }
+    }
   }
 
   fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
@@ -63,6 +80,6 @@ impl routing::Facade for VaultFacade {
 
 impl VaultFacade {
   pub fn new() -> VaultFacade {
-    VaultFacade { data_manager: DataManager::new() }
+    VaultFacade { data_manager: DataManager::new(), pmid_manager: PmidManager::new(), pmid_node: PmidNode::new() }
   }
 }
