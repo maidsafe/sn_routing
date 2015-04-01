@@ -46,7 +46,7 @@ extern crate sodiumoxide;
 extern crate lru_cache;
 extern crate rustc_serialize;
 extern crate cbor;
-//extern crate utp;
+extern crate rand;
 extern crate time;
 extern crate bchannel;
 extern crate sqlite3;
