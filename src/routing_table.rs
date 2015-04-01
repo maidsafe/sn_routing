@@ -843,7 +843,6 @@ fn add_node_test() {
     }
 
     // TODO(Spandan) - This bunch Fails currently
-    /*
     println!("Entering");
     for it in test.buckets.iter().enumerate() {
         if it.1.far_contact == dropped[0] {
@@ -902,7 +901,6 @@ fn add_node_test() {
         }
     }
     println!("Exited");
-    */
     assert!(test.buckets[0].far_contact == dropped[0]);
     assert!(test.buckets[0].mid_contact == dropped[1]);
     assert!(test.buckets[1].far_contact == dropped[2]);
