@@ -13,17 +13,19 @@
 // use of the MaidSafe
 // Software.                                                                 
 
-//use std::net::{SocketAddr};
+use std::net::{SocketAddr};
 use std::io::Error as IoError;
 use messages::RoutingMessage;
 use std::thread::spawn;
 use bchannel::Receiver;
 use bchannel::Sender;
+use tcp_connections::listen;
 use std::sync::{Arc, Mutex, Weak};
 
 pub type Address = Vec<u8>;
 
 // use net::ip::SocketAddr;
+type IoResult<T> = Result<T, IoError>;
 
 pub type IoReceiver<T> = Receiver<T, IoError>;
 pub type IoSender<T>   = Sender<T, IoError>;
@@ -43,27 +45,30 @@ pub enum Event {
 }
 
 impl ConnectionManager {
-/// must be called prior to any other method 
-/// this function will spawn a thread and listen for messages 
-/// and either handle pass to handle_message() 
-/// or send via channel to the receiver
-/// USe ```match msg.decode(cbor_tag)``` to get message type
-/// Any new endpoints are checked for NAT traversal and bootstrap file inclusion
-pub fn new(our_id: Address, event_pipe: IoReceiver<Event>) -> ConnectionManager {
+pub fn new(our_id: Address, event_pipe: IoSender<Event>) -> ConnectionManager {
     let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe }));
     
     let weak_state = state.downgrade();
 
     spawn(move || {
-        start_accepting_connections(weak_state);
+        let _ = start_accepting_connections(weak_state);
     });
 
     ConnectionManager { state: state }
 }
 
-/// we will send to this address, by getting targets from routing table.
-pub fn send(message: Vec<u8>, address : Address) {}
+pub fn connect(endpoint: SocketAddr) {
+    unimplemented!();
+}
 
+/// We will send to this address, by getting targets from routing table.
+pub fn send(message: Vec<u8>, address : Address) {
+    unimplemented!();
+}
+
+pub fn drop_node(address: Address) {
+    unimplemented!();
+}
 
 ///// We add connections the routing table tells us are nodes
 //fn maintain_connection(socket: SocketAddr) {}
@@ -90,11 +95,25 @@ pub fn send(message: Vec<u8>, address : Address) {}
 
 struct State {
     our_id: Address,
-    event_pipe: IoReceiver<Event>,
+    event_pipe: IoSender<Event>,
 }
 
-fn start_accepting_connections(state: Weak<Mutex<State>>) {
+fn send_message_to_user(state: Weak<Mutex<State>>) -> Result<(), ()> {
+    let opt_arc_state = state.upgrade();
+    if opt_arc_state.is_none() { return Err(()) }
+    let arc_state = opt_arc_state.unwrap();
+    let state = arc_state.lock();
+    Ok(())
+}
+
+fn start_accepting_connections(state: Weak<Mutex<State>>) -> IoResult<()> {
     //unimplemented!();
-    //let state = state.upgrade();
+    //let state = try!(state.upgrade());
+    let (listener, port) = try!(listen());
+
+    for (connection, u32) in listener.into_blocking_iter() {
+    }
+
+    Ok(())
 }
 
