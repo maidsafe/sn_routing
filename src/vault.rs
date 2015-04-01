@@ -21,17 +21,22 @@ extern crate routing;
 mod data_manager;
 #[path="pmid_node/pmid_node.rs"]
 mod pmid_node;
+#[path="pmid_manager/pmid_manager.rs"]
+mod pmid_manager;
 
 use self::routing::Authority;
+use self::routing::DestinationAddress;
 use self::routing::DhtIdentity;
 use self::routing::Action;
 use self::routing::RoutingError;
 
 use self::data_manager::DataManager;
 use self::pmid_node::PmidNode;
+use self::pmid_manager::PmidManager;
 
 pub struct VaultFacade {
   data_manager : DataManager,
+  pmid_manager : PmidManager,
   pmid_node : PmidNode
 }
 
@@ -44,10 +49,12 @@ impl routing::Facade for VaultFacade {
     }
   }
 
-  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
+  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                from_address: DhtIdentity, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
     match our_authority {
       Authority::NaeManager => { return self.data_manager.handle_put(&data); }
       Authority::Node => { return self.pmid_node.handle_put(&data); }
+      Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
       _ => { return Err(RoutingError::InvalidRequest); }
     }
   }
@@ -73,6 +80,6 @@ impl routing::Facade for VaultFacade {
 
 impl VaultFacade {
   pub fn new() -> VaultFacade {
-    VaultFacade { data_manager: DataManager::new(), pmid_node: PmidNode::new() }
+    VaultFacade { data_manager: DataManager::new(), pmid_manager: PmidManager::new(), pmid_node: PmidNode::new() }
   }
 }
