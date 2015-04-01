@@ -74,7 +74,6 @@ impl DataManager {
     self.db_.put_pmid_nodes(&data_name, pmid_nodes);
     Ok(routing::Action::SendOn(dest_pmids))
   }
-
 }
 
 mod test {
@@ -109,6 +108,7 @@ mod test {
 
     let data_name = array_as_vector(&data.get_name().get_id());
     let result = data_manager.handle_get(&data_name);
+    // FIXME see TODO in DataManager struct
     // assert_eq!(result.is_err(), false); error no pmid nodes
   }
 }
