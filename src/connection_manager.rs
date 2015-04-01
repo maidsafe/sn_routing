@@ -15,82 +15,74 @@
 
 use std::net::{SocketAddr};
 use std::io::Error as IoError;
-use messages::RoutingMessage;
+use std::io;
+use messages::RoutingMessage as Msg;
 use std::thread::spawn;
 use bchannel::Receiver;
 use bchannel::Sender;
-use tcp_connections::listen;
+use tcp_connections::{listen, connect_tcp, TcpReader, TcpWriter, upgrade_tcp};
 use std::sync::{Arc, Mutex, Weak};
 
 pub type Address = Vec<u8>;
 
-// use net::ip::SocketAddr;
 type IoResult<T> = Result<T, IoError>;
 
 pub type IoReceiver<T> = Receiver<T, IoError>;
 pub type IoSender<T>   = Sender<T, IoError>;
 
-/// Will hold tcp udt sentinel routing_table beacon boostrap_file
+pub type SocketReader = TcpReader<Msg>;
+pub type SocketWriter = TcpWriter<Msg>;
+
+type WeakState = Weak<Mutex<State>>;
+
 pub struct ConnectionManager {
-    //routing_table: routing_table::RoutingTable,
-    //boostrap_list: bootstrap::BootStrapHandler,
     state: Arc<Mutex<State>>,
 }
 
 pub enum Event {
-    NewMessage(Address, RoutingMessage),
+    NewMessage(Address, Msg),
     NewConnection(Address),
     LostConnection(Address),
     AcceptingOn(u16)
 }
 
 impl ConnectionManager {
-pub fn new(our_id: Address, event_pipe: IoSender<Event>) -> ConnectionManager {
-    let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe }));
+
+    pub fn new(our_id: Address, event_pipe: IoSender<Event>) -> ConnectionManager {
+        let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe }));
+        
+        let weak_state = state.downgrade();
     
-    let weak_state = state.downgrade();
+        spawn(move || {
+            let _ = start_accepting_connections(weak_state);
+        });
+    
+        ConnectionManager { state: state }
+    }
+    
+    pub fn connect(&self, endpoint: SocketAddr) -> IoResult<()> {
+        let ws = self.state.downgrade();
 
-    spawn(move || {
-        let _ = start_accepting_connections(weak_state);
-    });
+        let (our_id, sink) = try!(with_state(ws, |s| (s.our_id.clone(),
+                                                      s.event_pipe.clone())));
 
-    ConnectionManager { state: state }
-}
+        spawn(move || {
+            let _ = connect_tcp(endpoint)
+                    .and_then(|(i, o)| { exchange(i, o, our_id) })
+                    .and_then(|(i, o, his_id)| { start_reading(i, his_id, sink.clone()) });
+        });
 
-pub fn connect(endpoint: SocketAddr) {
-    unimplemented!();
-}
-
-/// We will send to this address, by getting targets from routing table.
-pub fn send(message: Vec<u8>, address : Address) {
-    unimplemented!();
-}
-
-pub fn drop_node(address: Address) {
-    unimplemented!();
-}
-
-///// We add connections the routing table tells us are nodes
-//fn maintain_connection(socket: SocketAddr) {}
-///// will send a message to another node with our interested node included in message
-///// the other node will try and connect to the interested node and report back to 
-///// us if it can connect. If so its a good bootstrap node
-//fn send_nat_traverse_message() {}
-//
-///// Acting as a rquest form another node, we will try and connect to the node they suggest
-///// and send back a response IF we can connect, drop otherwise
-//fn handle_nat_traverse_message() {}
-//
-///// A node we have asked about is actually able to be connected to as though direct
-//fn handle_nat_traverse_response() {}
-//
-//
-///// this is a routing message may be 
-///// connect connect response get_key etc. as well as JOIN LEAVE 
-///// Only nodes from connect response / connect will be added to 
-///// routing table
-//fn handle_message() {}
-
+        Ok(())
+    }
+    
+    /// We will send to this address, by getting targets from routing table.
+    pub fn send(message: Vec<u8>, address : Address) {
+        unimplemented!();
+    }
+    
+    pub fn drop_node(address: Address) {
+        unimplemented!();
+    }
 }
 
 struct State {
@@ -98,22 +90,40 @@ struct State {
     event_pipe: IoSender<Event>,
 }
 
-fn send_message_to_user(state: Weak<Mutex<State>>) -> Result<(), ()> {
-    let opt_arc_state = state.upgrade();
-    if opt_arc_state.is_none() { return Err(()) }
-    let arc_state = opt_arc_state.unwrap();
-    let state = arc_state.lock();
-    Ok(())
+fn with_state<T, F: Fn(&State) -> T>(state: WeakState, f: F) -> IoResult<T> {
+    state.upgrade().ok_or(io::Error::new(io::ErrorKind::Interrupted,
+                                         "Can't dereference weak",
+                                         None))
+    .and_then(|arc_state| {
+        let opt_state = arc_state.lock();
+        match opt_state {
+            Ok(s)  => Ok(f(&s)),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Interrupted, "?", None))
+        }
+    })
 }
 
-fn start_accepting_connections(state: Weak<Mutex<State>>) -> IoResult<()> {
-    //unimplemented!();
-    //let state = try!(state.upgrade());
+fn start_accepting_connections(state: WeakState) -> IoResult<()> {
     let (listener, port) = try!(listen());
 
     for (connection, u32) in listener.into_blocking_iter() {
+        let _ = upgrade_tcp(connection)
+                .and_then(|(i, o)| { handle_new_connection(state.clone(), i, o) });
     }
 
     Ok(())
 }
 
+fn handle_new_connection(state: WeakState, i: SocketReader, o: SocketWriter) -> IoResult<()> {
+    unimplemented!()
+}
+
+fn start_reading(i: SocketReader, his_id: Address, sink: IoSender<Event>) -> IoResult<()> {
+    unimplemented!()
+}
+
+fn exchange(i: SocketReader, o: SocketWriter, our_id: Address)
+    -> IoResult<(SocketReader, SocketWriter, Address)> {
+    unimplemented!()
+    //Ok((i, o, his_id))
+}

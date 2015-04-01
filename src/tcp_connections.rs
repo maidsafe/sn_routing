@@ -29,6 +29,9 @@ use bchannel::channel;
 pub use bchannel::Receiver;
 pub type InTcpStream<T> = Receiver<T, CborError>;
 
+pub type TcpReader<T> = Receiver<T, CborError>;
+pub type TcpWriter<T> = OutTcpStream<T>;
+
 pub struct OutTcpStream<T> {
     tcp_stream: TcpStream,
     _phantom: PhantomData<T>
