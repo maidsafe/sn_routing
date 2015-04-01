@@ -63,13 +63,9 @@ impl ConnectionManager {
     pub fn connect(&self, endpoint: SocketAddr) -> IoResult<()> {
         let ws = self.state.downgrade();
 
-        let (our_id, sink) = try!(with_state(ws, |s| (s.our_id.clone(),
-                                                      s.event_pipe.clone())));
-
         spawn(move || {
             let _ = connect_tcp(endpoint)
-                    .and_then(|(i, o)| { exchange(i, o, our_id) })
-                    .and_then(|(i, o, his_id)| { start_reading(i, his_id, sink.clone()) });
+                    .and_then(|(i, o)| { handle_new_connection(ws, i, o) });
         });
 
         Ok(())
@@ -107,14 +103,24 @@ fn start_accepting_connections(state: WeakState) -> IoResult<()> {
     let (listener, port) = try!(listen());
 
     for (connection, u32) in listener.into_blocking_iter() {
-        let _ = upgrade_tcp(connection)
-                .and_then(|(i, o)| { handle_new_connection(state.clone(), i, o) });
+        let _ =
+            upgrade_tcp(connection)
+            .and_then(|(i, o)| { handle_new_connection(state.clone(), i, o) });
     }
 
     Ok(())
 }
 
 fn handle_new_connection(state: WeakState, i: SocketReader, o: SocketWriter) -> IoResult<()> {
+    let (our_id, sink) = try!(with_state(ws, |s| (s.our_id.clone(),
+                                                  s.event_pipe.clone())));
+
+    let (i, o, his_id) = try!(exchange(i, o, our_id));
+    register_new_writer(state, his_id, o);
+    start_reading(i, his_id, sink.clone());
+}
+
+fn (register_new_writer(state: WeakState, his_id: Address, o: SocketWriter) -> IoResult<()> {
     unimplemented!()
 }
 
@@ -126,4 +132,12 @@ fn exchange(i: SocketReader, o: SocketWriter, our_id: Address)
     -> IoResult<(SocketReader, SocketWriter, Address)> {
     unimplemented!()
     //Ok((i, o, his_id))
+}
+
+#[cfg(test)]
+mod test {
+
+#[test]
+    fn connection_manager() {
+    }
 }
