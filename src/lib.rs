@@ -76,6 +76,10 @@ struct SignedKey {
   signature: crypto::sign::Signature // detached signature
 }
 
+pub struct DestinationAddress {
+  pub dest: Vec<u8>
+}
+
 //#[derive(RustcEncodable, RustcDecodable, Default)]
 pub struct DhtIdentity {
   pub id: [u8; 64]
@@ -121,7 +125,8 @@ pub trait Facade : Sync {
   fn handle_get(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
 
   // TODO : datatype needs to be passed, or the type of data shall be Data (name + content) instead of serialised_data
-  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
+  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                from_address: DhtIdentity, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError>;
 
   fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
   fn handle_get_response(&mut self, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
@@ -181,8 +186,9 @@ fn facade_implementation() {
 
   impl Facade for MyFacade {
     fn handle_get(&mut self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                  from_address: DhtIdentity, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_get_response(&mut self, from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
     fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
     fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
