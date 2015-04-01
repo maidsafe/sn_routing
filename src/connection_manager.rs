@@ -112,15 +112,15 @@ fn start_accepting_connections(state: WeakState) -> IoResult<()> {
 }
 
 fn handle_new_connection(state: WeakState, i: SocketReader, o: SocketWriter) -> IoResult<()> {
-    let (our_id, sink) = try!(with_state(ws, |s| (s.our_id.clone(),
-                                                  s.event_pipe.clone())));
+    let (our_id, sink) = try!(with_state(state.clone(), |s| (s.our_id.clone(),
+                                                             s.event_pipe.clone())));
 
     let (i, o, his_id) = try!(exchange(i, o, our_id));
-    register_new_writer(state, his_id, o);
-    start_reading(i, his_id, sink.clone());
+    try!(register_new_writer(state.clone(), his_id.clone(), o));
+    start_reading(i, his_id, sink.clone())
 }
 
-fn (register_new_writer(state: WeakState, his_id: Address, o: SocketWriter) -> IoResult<()> {
+fn register_new_writer(state: WeakState, his_id: Address, o: SocketWriter) -> IoResult<()> {
     unimplemented!()
 }
 
