@@ -2,9 +2,7 @@ extern crate maidsafe_types;
 extern crate rand;
 
 use rand::{thread_rng, Rng};
-use std::str;
 use chunk_store::ChunkStore;
-use std::path::Path;
 use std::fs::{remove_dir_all};
 use self::maidsafe_types::helper;
 
@@ -49,27 +47,31 @@ struct ChunkStoreTest {
 impl ChunkStoreTest {
     pub fn new() -> ChunkStoreTest {
         ChunkStoreTest {
-            chunk_store: ChunkStore::new(),
+            chunk_store: ChunkStore::with_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE),
             max_disk_storage: K_DEFAULT_MAX_DISK_USAGE
         }
     }
 
-    fn delete_directory(dir_path: &str) -> bool {
-        match remove_dir_all(dir_path) {
-            Ok(_) => true,
-            Err(_) => false
-        }
+//    pub fn delete_directory(dir_path: &str) -> bool {
+//        match remove_dir_all(dir_path) {
+//            Ok(_) => true,
+//            Err(_) => false
+//        }
+//    }
+
+    pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
+        self.chunk_store.put(name, value);
     }
 
-    fn populate_chunk_store(&mut self, num_entries: usize, disk_entries: usize) -> NameValueContainer {
+    pub fn populate_chunk_store(&mut self, num_entries: usize, disk_entries: usize) -> NameValueContainer {
         let mut name_value_pairs = add_random_name_value_pairs(num_entries, ONE_KB);
         let disk_usage = disk_entries * ONE_KB;
-        self.chunk_store = ChunkStore::new();
-        self.chunk_store.set_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE);
+        self.chunk_store = ChunkStore::with_max_disk_usage(disk_usage);
+        self.max_disk_storage = disk_usage;
         for name_value in name_value_pairs.0.clone() {
             let data_as_bytes = name_value.1.into_bytes();
-            self.chunk_store.put(maidsafe_types::helper::array_as_vector(&name_value.0.clone().get_id()), data_as_bytes.clone());
-            let recovered = self.chunk_store.get(maidsafe_types::helper::array_as_vector(&name_value.0.clone().get_id()));
+            self.chunk_store.put(helper::array_as_vector(&name_value.0.clone().get_id()), data_as_bytes.clone());
+            let recovered = self.chunk_store.get(helper::array_as_vector(&name_value.0.clone().get_id()));
             assert!(data_as_bytes == recovered);
         }
         name_value_pairs
@@ -106,14 +108,12 @@ fn successful_store() {
 
 #[test]
 #[should_panic]
-fn un_successful_store() {
+fn should_fail_if_chunk_size_is_greater_than_max_disk_size() {
     let k_disk_size: usize = 116;
     let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
-
     let name: maidsafe_types::NameType = get_random_name_type();
-    // Passing data size greater than the max_disk_space
-    let data = get_random_non_empty_string(k_disk_size + 1);
 
+    let data = get_random_non_empty_string(k_disk_size + 1);
     chunk_store.put(helper::array_as_vector(&name.0), data.into_bytes());
 }
 
@@ -138,8 +138,31 @@ fn remove_from_disk_store() {
 }
 
 #[test]
-fn delete_on_disk_overfill() {
+#[should_panic]
+fn should_fail_on_disk_overfill() {
+    let num_entries = 4;
+    let num_disk_entries = 4;
+    let mut chunk_store_utest = ChunkStoreTest::new();
+    let name_value_container = chunk_store_utest.populate_chunk_store(num_entries, num_disk_entries).0;
+    let name = get_random_name_type();
+    let value = get_random_non_empty_string(2 * ONE_KB);
+    let first_name: maidsafe_types::NameType = name_value_container[0].0.clone();
+    let second_name: maidsafe_types::NameType = name_value_container[1].0.clone();
+    chunk_store_utest.put(helper::array_as_vector(&name.0), value.into_bytes());
+}
 
+#[test]
+fn put_and_get_value_should_be_same() {
+    let data_size = 50;
+    let k_disk_size: usize = 116;
+    let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
+
+    let name: maidsafe_types::NameType = get_random_name_type();
+    let data = get_random_non_empty_string(data_size).into_bytes();
+    chunk_store.put(helper::array_as_vector(&name.0), data.clone());
+    let recovered = chunk_store.get(helper::array_as_vector(&name.0));
+    assert_eq!(data, recovered);
+    assert_eq!(chunk_store.current_disk_usage(), data_size);
 }
 
 #[test]
@@ -161,9 +184,4 @@ fn repeatedly_storing_same_name() {
     put(name.clone(), 100usize);
     put(name.clone(), 10usize);
     assert_eq!(put(name.clone(), 5usize), 5);// last inserted data size
-}
-
-#[test]
-fn restart() {
-
 }

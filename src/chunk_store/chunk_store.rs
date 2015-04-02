@@ -88,7 +88,7 @@ impl ChunkStore {
 
     pub fn has_chunk(&self, name: Vec<u8>) -> bool {
         match self.entries.iter().find(|&x| { x.name == name }) {
-            Some(entry) => true,
+            Some(_) => true,
             _ => false
         }
     }
