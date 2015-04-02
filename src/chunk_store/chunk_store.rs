@@ -35,6 +35,14 @@ impl ChunkStore {
         }
     }
 
+    pub fn with_max_disk_usage(max_disk_usage: usize) -> ChunkStore {
+        ChunkStore {
+            entries: Vec::new(),
+            max_disk_usage: max_disk_usage,
+            current_disk_usage: 0,
+        }
+    }
+
     pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
           self.current_disk_usage += value.len();
 
@@ -59,7 +67,7 @@ impl ChunkStore {
     }
 
     pub fn get(&self, name: Vec<u8>) -> Vec<u8> {
-      match self.entries.iter().filter(|&x| { x.name == name }).next() {
+      match self.entries.iter().find(|&x| { x.name == name }) {
           Some(entry) => entry.data.clone(),
           _ => Vec::new()
       }
@@ -79,12 +87,10 @@ impl ChunkStore {
     }
 
     pub fn has_chunk(&self, name: Vec<u8>) -> bool {
-        for entry in self.entries.iter() {
-            if entry.name == name {
-               return true;
-            }
+        match self.entries.iter().find(|&x| { x.name == name }) {
+            Some(entry) => true,
+            _ => false
         }
-        false
     }
 
     pub fn names(&self) -> Vec<Vec<u8>> {

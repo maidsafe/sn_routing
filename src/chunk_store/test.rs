@@ -6,11 +6,11 @@ use std::str;
 use chunk_store::ChunkStore;
 use std::path::Path;
 use std::fs::{remove_dir_all};
+use self::maidsafe_types::helper;
 
-static ONE_KB: u64 = 1024;
+static ONE_KB: usize = 1024;
 
-// Allow 16 bytes extra per chunk since we're AES encrypting them
-static K_DEFAULT_MAX_DISK_USAGE: u64 = 4 * 1024u64;// * 16u64; // 4 * (OneKB + AesPadding);
+static K_DEFAULT_MAX_DISK_USAGE: usize = 4 * 1024;// // 4 * OneKB;
 
 struct NameValueContainer(Vec<(maidsafe_types::NameType, String)>);
 
@@ -33,7 +33,7 @@ fn add_random_name_value_pairs(number: usize, size: usize) -> NameValueContainer
     let mut container: Vec<(maidsafe_types::NameType, String)> = Vec::with_capacity(number);
     loop {
         container.push((get_random_name_type(), get_random_non_empty_string(size)));
-        i = i + 1; // i++; is not compiling
+        i += 1; // i++; is not compiling
         if i == number {
             break;
         }
@@ -43,7 +43,7 @@ fn add_random_name_value_pairs(number: usize, size: usize) -> NameValueContainer
 
 struct ChunkStoreTest {
     chunk_store: ChunkStore,
-    max_disk_storage: u64
+    max_disk_storage: usize
 }
 
 impl ChunkStoreTest {
@@ -61,11 +61,11 @@ impl ChunkStoreTest {
         }
     }
 
-    fn populate_chunk_store(&mut self, num_entries: u32, disk_entries: u32) -> NameValueContainer {
-        let mut name_value_pairs = add_random_name_value_pairs(num_entries as usize, ONE_KB as usize);
-        let disk_usage = (disk_entries as u64) * ONE_KB;
+    fn populate_chunk_store(&mut self, num_entries: usize, disk_entries: usize) -> NameValueContainer {
+        let mut name_value_pairs = add_random_name_value_pairs(num_entries, ONE_KB);
+        let disk_usage = disk_entries * ONE_KB;
         self.chunk_store = ChunkStore::new();
-        self.chunk_store.set_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE as usize);
+        self.chunk_store.set_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE);
         for name_value in name_value_pairs.0.clone() {
             let data_as_bytes = name_value.1.into_bytes();
             self.chunk_store.put(maidsafe_types::helper::array_as_vector(&name_value.0.clone().get_id()), data_as_bytes.clone());
@@ -74,4 +74,96 @@ impl ChunkStoreTest {
         }
         name_value_pairs
     }
+}
+
+#[test]
+fn constructor_initialization() {
+    let mut store_1 = ChunkStore::new();
+    let mut store_2 = ChunkStore::with_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE);
+    store_1.set_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE);
+    assert_eq!(store_1.max_disk_usage(), store_2.max_disk_usage());
+}
+
+#[test]
+fn successful_store() {
+    let k_disk_size: usize = 116;
+    let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
+
+    let mut put = |size| {
+        let name: maidsafe_types::NameType = get_random_name_type();
+        let data = get_random_non_empty_string(size);
+        let size_before_insert = chunk_store.current_disk_usage();
+        chunk_store.put(helper::array_as_vector(&name.0), data.into_bytes());
+        assert_eq!(chunk_store.current_disk_usage(), size + size_before_insert);
+        chunk_store.current_disk_usage()
+    };
+
+    put(1usize);
+    put(100usize);
+    put(10usize);
+    assert_eq!(put(5usize), k_disk_size);
+}
+
+#[test]
+#[should_panic]
+fn un_successful_store() {
+    let k_disk_size: usize = 116;
+    let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
+
+    let name: maidsafe_types::NameType = get_random_name_type();
+    // Passing data size greater than the max_disk_space
+    let data = get_random_non_empty_string(k_disk_size + 1);
+
+    chunk_store.put(helper::array_as_vector(&name.0), data.into_bytes());
+}
+
+#[test]
+fn remove_from_disk_store() {
+    let k_size: usize = 1;
+    let k_disk_size: usize = 116;
+    let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
+
+    let mut put_and_delete = |size| {
+        let name: maidsafe_types::NameType = get_random_name_type();
+        let data = get_random_non_empty_string(size);
+
+        chunk_store.put(helper::array_as_vector(&name.0), data.into_bytes());
+        assert_eq!(chunk_store.current_disk_usage(), size);
+        chunk_store.delete(helper::array_as_vector(&name.0));
+        assert_eq!(chunk_store.current_disk_usage(), 0);
+    };
+
+    put_and_delete(k_size);
+    put_and_delete(k_disk_size);
+}
+
+#[test]
+fn delete_on_disk_overfill() {
+
+}
+
+#[test]
+fn repeatedly_storing_same_name() {
+    let k_disk_size: usize = 116;
+    let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
+
+    let mut put = |name, size| {
+        let data = get_random_non_empty_string(size);
+        let size_before_insert = chunk_store.current_disk_usage();
+        chunk_store.put(name, data.into_bytes());
+        assert_eq!(chunk_store.current_disk_usage(), size + size_before_insert);
+        chunk_store.current_disk_usage()
+    };
+
+    let name_type: maidsafe_types::NameType = get_random_name_type();
+    let name = helper::array_as_vector(&name_type.0);
+    put(name.clone(), 1usize);
+    put(name.clone(), 100usize);
+    put(name.clone(), 10usize);
+    assert_eq!(put(name.clone(), 5usize), 5);// last inserted data size
+}
+
+#[test]
+fn restart() {
+
 }
