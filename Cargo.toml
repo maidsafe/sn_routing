@@ -25,9 +25,3 @@ git = "https://github.com/dirvine/maidsafe_types"
 
 [dependencies.routing]
 git = "https://github.com/dirvine/routing"
-
-[dependencies.self_encryption]
-git = "https://github.com/dirvine/self_encryption"
-
-[dependencies.bchannel]
-git = "https://github.com/dirvine/bchannel"
