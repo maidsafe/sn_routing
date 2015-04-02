@@ -26,11 +26,12 @@ use std::sync::{Arc, Mutex, Weak};
 use std::sync::mpsc;
 use cbor::{Encoder, CborError, Decoder};
 use rustc_serialize::{Decodable, Encodable};
+//use types::Address;
 
 pub type Address = Vec<u8>;
 pub type Bytes   = Vec<u8>;
 
-type IoResult<T> = Result<T, IoError>;
+pub type IoResult<T> = Result<T, IoError>;
 
 pub type IoReceiver<T> = Receiver<T, IoError>;
 pub type IoSender<T>   = Sender<T, IoError>;
@@ -54,8 +55,9 @@ pub enum Event {
 impl ConnectionManager {
 
     pub fn new(our_id: Address, event_pipe: IoSender<Event>) -> ConnectionManager {
-        let connections: HashMap<Address, SocketWriter> = HashMap::new();
-        let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe, connections : connections }));
+        let writer_channels: HashMap<Address, mpsc::Sender<Bytes>> = HashMap::new();
+        let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe,
+                                               writer_channels : writer_channels }));
         let weak_state = state.downgrade();
         spawn(move || {
             let _ = start_accepting_connections(weak_state);
@@ -78,13 +80,15 @@ impl ConnectionManager {
     /// Err if the address is not connected. Return value of Ok does not mean that the data will be
     /// received. It is possible for the corresponding connection to hang up immediately after this
     /// function returns Ok.
-    pub fn send(&self, message: Vec<u8>, address : Address)-> Result<(), IoError> {
+    pub fn send(&self, message: Bytes, address : Address)-> IoResult<()> {
     let ws = self.state.downgrade();
-    let (our_id, sink) = try!(with_state(ws, |s| (s.our_id.clone(), s.event_pipe.clone())));
-    //   match connections.get(address) {
-        // 	_ => { return Ok(())},
-        // 	Some(mut entry) => { entry.send(message); },
-    // }
+    let writer_channel = try!(with_state(ws, |s| {
+        match s.writer_channels.get_mut(&address) {
+            Some(x) =>  Ok(x.clone()),
+            None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
+        }
+    }));
+    // writer_channel.unwrap().send(message)  // TODO need to convert SendError to IoResult
         Ok(())
     }
 
@@ -96,7 +100,7 @@ impl ConnectionManager {
 struct State {
     our_id: Address,
     event_pipe: IoSender<Event>,
-    connections: HashMap<Address, SocketWriter>,
+    writer_channels: HashMap<Address, mpsc::Sender<Bytes>>,
 }
 
 fn with_state<T, F: Fn(&State) -> T>(state: WeakState, f: F) -> IoResult<T> {
