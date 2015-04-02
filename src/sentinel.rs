@@ -52,7 +52,7 @@ pub struct Sentinel<'a> {
 impl<'a> Sentinel<'a> {
   pub fn new(key_getter_traits_in: &'a mut types::KeyGetterTraits) -> Sentinel {
   	Sentinel {
-  		key_getter_traits_: key_getter_traits_in,
+  	  key_getter_traits_: key_getter_traits_in,
   	  node_accumulator_: NodeAccumulatorType::new(20),
   	  group_accumulator_: NodeAccumulatorType::new(20),
   	  group_key_accumulator_: KeyAccumulatorType::new(20),
@@ -264,13 +264,37 @@ impl<'a> Sentinel<'a> {
 	    let result = accounts[0].merge(&accounts);
 	    if result.is_some() {
 	      let mut tmp = verified_messages[0].clone();
-		    let mut e = cbor::Encoder::from_memory();
-		    e.encode(&[&result.unwrap()]).unwrap();
+		  let mut e = cbor::Encoder::from_memory();
+		  e.encode(&[&result.unwrap()]).unwrap();
 	      tmp.2 = types::array_as_vector(e.as_bytes());
 	      return Some(tmp);
 	    }
 	  }
 	  None
   }
+}
 
+#[cfg(test)]
+mod test {
+  
+  use super::*;
+
+  struct SignatureGroup {
+  	group_address : GroupAddress,
+  	group_size : usize,
+  	authority : Authority,
+  	nodes : Vec<pmid>
+  }
+
+  impl SignatureGroup {
+  	pub fn new(group_address : GroupAddress,
+  		       group_size : usize, ) -> SignatureGroup {
+
+  	}
+  }
+
+  #[test]
+  fn sentinel_simple_add() {
+    
+  }
 }
