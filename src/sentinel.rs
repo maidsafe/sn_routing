@@ -41,13 +41,13 @@ type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultTy
 
 // TODO (ben 2015-4-2): replace dynamic dispatching with static dispatching
 //          https://doc.rust-lang.org/book/static-and-dynamic-dispatch.html
-pub trait GetKeys {
+pub trait SendGetKeys {
   fn get_client_key(&mut self, address : types::Address);
   fn get_group_key(&mut self, group_address : types::GroupAddress);
 }
 
 pub struct Sentinel<'a> {
-  get_keys_ : &'a mut (GetKeys + 'a),
+  send_get_keys_ : &'a mut (SendGetKeys + 'a),
   node_accumulator_ : NodeAccumulatorType,
   group_accumulator_ : GroupAccumulatorType,
   group_key_accumulator_ : KeyAccumulatorType,
@@ -55,15 +55,17 @@ pub struct Sentinel<'a> {
 }
 
 impl<'a> Sentinel<'a> {
-  pub fn new(get_keys: &'a mut GetKeys) -> Sentinel<'a> {
+  pub fn new(send_get_keys: &'a mut SendGetKeys) -> Sentinel<'a> {
   	Sentinel {
-  	  get_keys_: get_keys,
+  	  send_get_keys_: send_get_keys,
   	  node_accumulator_: NodeAccumulatorType::new(20),
   	  group_accumulator_: NodeAccumulatorType::new(20),
   	  group_key_accumulator_: KeyAccumulatorType::new(20),
   	  node_key_accumulator_: KeyAccumulatorType::new(20)
   	}
   }
+
+  // pub fn get_send_get_keys(&'a mut self) -> &'a mut SendGetKeys { self.send_get_keys }
 
   pub fn add(&mut self, header : message_header::MessageHeader, type_tag : types::MessageTypeTag,
   	         message : types::SerialisedMessage) -> Option<ResultType> {
@@ -111,7 +113,7 @@ impl<'a> Sentinel<'a> {
 					let key = (header.from_group().unwrap(), header.message_id());
 					if !self.group_accumulator_.have_name(&key) {
 						//self.key_getter_traits_.get_group_key(header.from_group().unwrap());
-						self.get_keys_.get_group_key(header.from_group().unwrap());
+						self.send_get_keys_.get_group_key(header.from_group().unwrap());
 					} else {
 						let messages = self.group_accumulator_.add(key.clone(),
 							                                         (header.clone(), type_tag, message),
@@ -132,7 +134,7 @@ impl<'a> Sentinel<'a> {
 					let key = (header.from_node(), header.message_id());
 					if !self.node_accumulator_.have_name(&key) {
 						//self.key_getter_traits_.get_client_key(header.from_group().unwrap());
-						self.get_keys_.get_client_key(header.from_group().unwrap());
+						self.send_get_keys_.get_client_key(header.from_group().unwrap());
 					} else {
 						let messages = self.node_accumulator_.add(key.clone(),
 							                                        (header.clone(), type_tag, message),
@@ -293,6 +295,7 @@ mod test {
   use types;
   use types::RoutingTrait;
   use message_header;
+  use std::marker::PhantomData;
 
   pub fn generate_u8_64() -> Vec<u8> {
     let mut u8_64: Vec<u8> = vec![];
@@ -351,33 +354,33 @@ mod test {
   	}
   }
 
-  struct TraceGetKeys {
+  pub struct TraceGetKeys<'a> {
   	send_get_client_key_calls_ : Vec<types::Address>,
   	send_get_group_key_calls_ : Vec<types::GroupAddress>,
   }
 
-  impl TraceGetKeys {
-  	pub fn new()-> TraceGetKeys {
+  impl<'a> TraceGetKeys<'a> {
+  	pub fn new()-> TraceGetKeys<'a> {
   	  TraceGetKeys {
   	  	send_get_client_key_calls_ : Vec::new(),
   	  	send_get_group_key_calls_ : Vec::new()
   	  }
   	}
 
-  	pub fn CountGetClientKeyCalls(&self, address : &types::Address) -> usize {
+  	pub fn count_get_client_key_calls(&self, address : &types::Address) -> usize {
   	  self.send_get_client_key_calls_.iter()
   	  								 .filter(|&x| x == address)
   	  								 .count()
   	}
 
-  	pub fn CountGetGroupKeyCalls(&self, group_address : &types::GroupAddress) -> usize {
+  	pub fn count_get_group_key_calls(&self, group_address : &types::GroupAddress) -> usize {
   	  self.send_get_group_key_calls_.iter()
   	  						  		.filter(|&x| x == group_address)
   	  						   		.count()
   	}
   }
 
-  impl GetKeys for TraceGetKeys {
+  impl<'a> SendGetKeys for TraceGetKeys<'a> {
 	fn get_client_key(&mut self, address : types::Address) {
 	  self.send_get_client_key_calls_.push(address);
 	}
@@ -387,19 +390,22 @@ mod test {
   }
 
   struct SentinelTest<'a> {
+  	trace_get_keys_ : TraceGetKeys<'a>,
   	sentinel_ : Sentinel<'a>,
-  	our_destination : types::DestinationAddress,
+  	our_destination_ : types::DestinationAddress,
   	our_pmid_ : types::Pmid,
   	// store all Sentinel returns with MessageTracker
   	sentinel_returns_ : Vec<(u64, Option<ResultType>)>
   }
 
   impl<'a> SentinelTest<'a> {
-  	pub fn new(&mut trace_get_keys : &'a mut GetKeys) -> SentinelTest<'a> {
+  	pub fn new() -> SentinelTest<'a> {
+  	  let mut trace_get_keys = TraceGetKeys::new();
       let pmid = types::Pmid::new();
       SentinelTest {
+      	trace_get_keys_ : trace_get_keys,
       	sentinel_ : Sentinel::new(&mut trace_get_keys),
-      	our_destination : types::DestinationAddress {
+      	our_destination_ : types::DestinationAddress {
       						dest : pmid.get_name(),
       						reply_to : generate_u8_64()
       					  },
