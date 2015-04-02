@@ -39,10 +39,15 @@ type GroupAccumulatorType = accumulator::Accumulator<GroupKeyType, ResultType>;
 type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultType>;
 
 
+// TODO (ben 2015-4-2): replace dynamic dispatching with static dispatching
+//          https://doc.rust-lang.org/book/static-and-dynamic-dispatch.html
+pub trait GetKeys {
+  fn get_client_key(&mut self, types::Address);
+  fn get_group_key(&mut self, types::GroupAddress);
+}
+
 pub struct Sentinel<'a> {
-  // send_get_client_key_ : for <'a> Fn<(types::Address)>,
-  // send_get_group_key_ : Fn<(types::GroupAddress),>,
-  // key_getter_traits_: &'a mut (types::KeyGetterTraits + 'a),
+  get_keys_ : &'a mut (GetKeys + 'a),
   node_accumulator_ : NodeAccumulatorType,
   group_accumulator_ : GroupAccumulatorType,
   group_key_accumulator_ : KeyAccumulatorType,
@@ -50,10 +55,9 @@ pub struct Sentinel<'a> {
 }
 
 impl<'a> Sentinel<'a> {
-  //pub fn new(key_getter_traits_in: &'a mut types::KeyGetterTraits) -> Sentinel {
-  pub fn new() -> Sentinel<'a> {
+  pub fn new(get_keys: &'a mut GetKeys) -> Sentinel<'a> {
   	Sentinel {
-  	 //key_getter_traits_: key_getter_traits_in,
+  	  get_keys_: get_keys,
   	  node_accumulator_: NodeAccumulatorType::new(20),
   	  group_accumulator_: NodeAccumulatorType::new(20),
   	  group_key_accumulator_: KeyAccumulatorType::new(20),
@@ -107,7 +111,7 @@ impl<'a> Sentinel<'a> {
 					let key = (header.from_group().unwrap(), header.message_id());
 					if !self.group_accumulator_.have_name(&key) {
 						//self.key_getter_traits_.get_group_key(header.from_group().unwrap());
-						self.get_group_key(header.from_group().unwrap());
+						self.get_keys_.get_group_key(header.from_group().unwrap());
 					} else {
 						let messages = self.group_accumulator_.add(key.clone(),
 							                                         (header.clone(), type_tag, message),
@@ -128,7 +132,7 @@ impl<'a> Sentinel<'a> {
 					let key = (header.from_node(), header.message_id());
 					if !self.node_accumulator_.have_name(&key) {
 						//self.key_getter_traits_.get_client_key(header.from_group().unwrap());
-						self.get_client_key(header.from_group().unwrap());
+						self.get_keys_.get_client_key(header.from_group().unwrap());
 					} else {
 						let messages = self.node_accumulator_.add(key.clone(),
 							                                        (header.clone(), type_tag, message),
@@ -335,10 +339,9 @@ mod test {
 							  from_node : node.get_name(),
 							  from_group : self.group_address_.clone(),
 	  						  reply_to : generate_u8_64()
-							}, self.authority_.clone(),
+							},
+							self.authority_.clone(),
 						    types::Signature {
-							  // sign forwards to crypto/ed25519.rs 
-	                          // secret key is [u8; 64]
 							  signature : crypto::sign::sign(&serialised_message[..],
 							                                 &node.get_secret_sign_key())
   	  				        }
@@ -358,21 +361,11 @@ mod test {
   	sentinel_returns_ : Vec<(u64, Option<ResultType>)>
   }
 
-  impl<'a> SentinelTest<'a> {
-  	pub fn new() -> SentinelTest<'a> {
+  // impl SentinelTest {
+  // 	pub fn new() -> SentinelTest {
       
-  	}
-  }
-
-  impl<'a> types::KeyGetterTraits for Sentinel<'a> {
-  	fn get_client_key(&mut self, node_address : types::Address) {
-      self.send_get_client_key_calls_.push(node_address);
-  	}
-
-  	fn get_group_key(&mut self, group_address : types::GroupAddress) {
-  	  self.send_get_group_key_calls_.push(group_address);
-  	}
-  }
+  // 	}
+  // }
 
   #[test]
   fn simple_add() {

@@ -107,11 +107,6 @@ pub type CloseGroupDifference = (Vec<Address>, Vec<Address>);
 pub type PmidNode = Address;
 pub type PmidNodes = Vec<PmidNode>;
 
-pub trait KeyGetterTraits {
-  fn get_client_key(&mut self, Address);
-  fn get_group_key(&mut self, GroupAddress);
-}
-
 pub trait RoutingTrait {
   fn get_name(&self)->Vec<u8>;
   fn get_owner(&self)->Vec<u8>;
