@@ -3,7 +3,8 @@ os:
   - osx
 language: rust
 before_install:
-    - sudo apt-get install -qq kcov
+    - sudo apt-get install -qq libcurl4-openssl-dev libelf-dev libdw-dev
+
 env:
   global:
     secure: "Kh4TbgJ7jQdL+dPOuNmPIWZfQJL6zDzc0clGIVQP3oP5yDt0qcxUziSxTzRmwoGDRdWDTr+TjdzUaRprfkGpwHsNBKcL90G8GcoBEyevtrzCCtBDUJJrtABaDAJCqa7Rl29d9UNXu01Cnpfskhxv6miwHOuQfzfFKe2OW+RwTy0="
@@ -11,6 +12,14 @@ install:
 - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
 - tar xvfz libsodium-1.0.0.tar.gz
 - cd libsodium-1.0.0 && ./configure --prefix=/usr && make && sudo make install && cd ..
+- wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz
+- tar xzf master.tar.gz
+- mkdir kcov-master/build
+- cd kcov-master/build
+- cmake ..
+- make
+- sudo make install
+- cd ../..
 
 after_success: |
   [ $TRAVIS_BRANCH = master ] &&
@@ -20,4 +29,6 @@ after_success: |
   sudo pip install ghp-import &&
   ghp-import -n target/doc &&
   git push -fq https://${GH_TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git gh-pages;
+  cargo clean;
+  cargo test --no-run;
   kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/kcov target/debug/maidsafe_vault-*;

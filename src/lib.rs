@@ -7,7 +7,6 @@
 
 #![feature(convert)]
 extern crate sodiumoxide;
-extern crate lru_cache;
 extern crate rustc_serialize;
 extern crate cbor;
 extern crate time;

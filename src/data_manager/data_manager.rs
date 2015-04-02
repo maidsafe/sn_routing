@@ -22,7 +22,7 @@ mod database;
 
 use self::routing::types;
 
-use cbor::{ Decoder};
+use cbor::{ Decoder };
 
 type CloseGroupDifference = self::routing::types::CloseGroupDifference;
 type Address = self::routing::types::Address;
@@ -61,7 +61,7 @@ impl DataManager {
     let mut d = Decoder::from_bytes(&data[..]);
     let immutable_data: maidsafe_types::ImmutableData = d.decode().next().unwrap().unwrap();
     let data_name = self::routing::types::array_as_vector(&immutable_data.get_name().get_id());
-    if !self.db_.exist(&data_name) {
+    if self.db_.exist(&data_name) {
       return Err(routing::RoutingError::Success);
     }
     let close_nodes = self.close_nodes_.target_nodes(immutable_data.get_name().clone());
@@ -73,5 +73,42 @@ impl DataManager {
     }
     self.db_.put_pmid_nodes(&data_name, pmid_nodes);
     Ok(routing::Action::SendOn(dest_pmids))
+  }
+}
+
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate rand;
+  extern crate routing;
+  use super::*;
+  use self::maidsafe_types::*;
+  use self::routing::types::*;
+
+  pub fn generate_random_bytes(size : u32) -> Vec<u8> {
+    let mut random_bytes: Vec<u8> = vec![];
+    for _ in (0..size) {
+      random_bytes.push(rand::random::<u8>());
+    }
+    random_bytes
+  }
+
+  #[test]
+  fn handle_put_get() {
+    let mut data_manager = DataManager::new();
+    let name = NameType([3u8; 64]);
+    let value = generate_random_bytes(1024);
+    let data = ImmutableData::new(name, value);
+    let mut encoder = cbor::Encoder::from_memory();
+
+    encoder.encode(&[&data]);
+
+    let result = data_manager.handle_put(&array_as_vector(encoder.as_bytes()));
+    assert_eq!(result.is_err(), false);
+
+    let data_name = array_as_vector(&data.get_name().get_id());
+    let result = data_manager.handle_get(&data_name);
+    // FIXME see TODO in DataManager struct
+    // assert_eq!(result.is_err(), false); error no pmid nodes
   }
 }
