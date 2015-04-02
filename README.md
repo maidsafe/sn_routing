@@ -14,7 +14,7 @@ Code Coverage
 
 [![Coverage Status](https://coveralls.io/repos/dirvine/routing/badge.svg?branch=master)](https://coveralls.io/r/dirvine/routing?branch=master)
 
-[Documentation](http://dirvine.github.io/routing)
+[Documentation](http://dirvine.github.io/routing/routing/)
 
 ###Pre-requisite:
 libsodium is a native dependency for [sodiumxoide](https://github.com/dnaq/sodiumoxide). Thus, install sodium by following the instructions [here](http://doc.libsodium.org/installation/index.html).
