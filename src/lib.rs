@@ -11,6 +11,7 @@ extern crate rustc_serialize;
 extern crate cbor;
 extern crate time;
 extern crate routing;
+extern crate rand;
 
 pub mod chunk_store;
 pub mod pmid_manager;
