@@ -278,23 +278,33 @@ impl<'a> Sentinel<'a> {
 mod test {
   
   use super::*;
+  use types;
 
   struct SignatureGroup {
-  	group_address : GroupAddress,
+  	group_address : types::GroupAddress,
   	group_size : usize,
-  	authority : Authority,
-  	nodes : Vec<pmid>
+  	authority : types::Authority,
+  	nodes : Vec<types::Pmid>
   }
 
   impl SignatureGroup {
-  	pub fn new(group_address : GroupAddress,
-  		       group_size : usize, ) -> SignatureGroup {
-
+  	pub fn new(group_address : types::GroupAddress,
+  		       group_size : usize, authority : types::Authority) -> SignatureGroup {
+  	  let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
+  	  for _ in 0..group_size {
+  	  	nodes.push(types::Pmid::new());
+  	  }
+  	  SignatureGroup {
+  	  	group_address : group_address,
+  	  	group_size : group_size,
+  	  	authority : authority,
+  	  	nodes : nodes
+  	  }
   	}
   }
 
   #[test]
-  fn sentinel_simple_add() {
+  fn simple_add() {
     
   }
 }
