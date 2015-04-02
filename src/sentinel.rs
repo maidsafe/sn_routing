@@ -354,13 +354,13 @@ mod test {
   	}
   }
 
-  pub struct TraceGetKeys<'a> {
+  pub struct TraceGetKeys {
   	send_get_client_key_calls_ : Vec<types::Address>,
   	send_get_group_key_calls_ : Vec<types::GroupAddress>,
   }
 
-  impl<'a> TraceGetKeys<'a> {
-  	pub fn new()-> TraceGetKeys<'a> {
+  impl TraceGetKeys {
+  	pub fn new()-> TraceGetKeys {
   	  TraceGetKeys {
   	  	send_get_client_key_calls_ : Vec::new(),
   	  	send_get_group_key_calls_ : Vec::new()
@@ -380,7 +380,7 @@ mod test {
   	}
   }
 
-  impl<'a> SendGetKeys for TraceGetKeys<'a> {
+  impl SendGetKeys for TraceGetKeys {
 	fn get_client_key(&mut self, address : types::Address) {
 	  self.send_get_client_key_calls_.push(address);
 	}
@@ -389,34 +389,17 @@ mod test {
     }
   }
 
-  struct SentinelTest<'a> {
-  	trace_get_keys_ : TraceGetKeys<'a>,
-  	sentinel_ : Sentinel<'a>,
-  	our_destination_ : types::DestinationAddress,
-  	our_pmid_ : types::Pmid,
-  	// store all Sentinel returns with MessageTracker
-  	sentinel_returns_ : Vec<(u64, Option<ResultType>)>
-  }
-
-  impl<'a> SentinelTest<'a> {
-  	pub fn new() -> SentinelTest<'a> {
-  	  let mut trace_get_keys = TraceGetKeys::new();
-      let pmid = types::Pmid::new();
-      SentinelTest {
-      	trace_get_keys_ : trace_get_keys,
-      	sentinel_ : Sentinel::new(&mut trace_get_keys),
-      	our_destination_ : types::DestinationAddress {
-      						dest : pmid.get_name(),
-      						reply_to : generate_u8_64()
-      					  },
-        our_pmid_ : pmid,
-        sentinel_returns_ : vec![]
-      }
-  	}
-  }
-
   #[test]
   fn simple_add() {
-    
+  	let our_pmid = types::Pmid::new();
+    let our_destination = types::DestinationAddress {
+    	dest : our_pmid.get_name(),
+    	reply_to : generate_u8_64()
+    };
+    let mut trace_get_keys = TraceGetKeys::new();
+    let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
+    {
+      let mut sentinel = Sentinel::new(&mut trace_get_keys);
+    }
   }
 }
