@@ -141,7 +141,7 @@ impl Decodable for NameAndTypeId {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct Signature {
-  pub signature : Vec<u8> // Vec form of crypto::asymmetricbox::Signature which is an array
+  pub signature : Vec<u8> // Vec form of crypto::sign::Signature which is an array
 }
 
 impl Signature {
