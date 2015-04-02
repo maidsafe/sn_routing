@@ -11,11 +11,12 @@
 // OF ANY KIND, either express or implied.
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe
-// Software.                                                                 
+// Software.
 
 use std::net::{SocketAddr};
 use std::io::Error as IoError;
 use std::io;
+use std::collections::HashMap;
 use messages::RoutingMessage as Msg;
 use std::thread::spawn;
 use bchannel::Receiver;
@@ -53,17 +54,16 @@ pub enum Event {
 impl ConnectionManager {
 
     pub fn new(our_id: Address, event_pipe: IoSender<Event>) -> ConnectionManager {
-        let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe }));
-        
+        let connections: HashMap<Address, SocketWriter> = HashMap::new();
+        let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe, connections : connections }));
         let weak_state = state.downgrade();
-    
         spawn(move || {
             let _ = start_accepting_connections(weak_state);
         });
-    
+
         ConnectionManager { state: state }
     }
-    
+
     pub fn connect(&self, endpoint: SocketAddr) -> IoResult<()> {
         let ws = self.state.downgrade();
 
@@ -71,15 +71,23 @@ impl ConnectionManager {
             let _ = connect_tcp(endpoint)
                     .and_then(|(i, o)| { handle_new_connection(ws, i, o) });
         });
-
         Ok(())
     }
-    
-    /// We will send to this address, by getting targets from routing table.
-    pub fn send(message: Vec<u8>, address : Address) {
-        unimplemented!();
+
+    /// Sends a message to address. Returns Ok(()) if the sending might succeed, and returns an
+    /// Err if the address is not connected. Return value of Ok does not mean that the data will be
+    /// received. It is possible for the corresponding connection to hang up immediately after this
+    /// function returns Ok.
+    pub fn send(&self, message: Vec<u8>, address : Address)-> Result<(), IoError> {
+    let ws = self.state.downgrade();
+    let (our_id, sink) = try!(with_state(ws, |s| (s.our_id.clone(), s.event_pipe.clone())));
+    //   match connections.get(address) {
+        // 	_ => { return Ok(())},
+        // 	Some(mut entry) => { entry.send(message); },
+    // }
+        Ok(())
     }
-    
+
     pub fn drop_node(address: Address) {
         unimplemented!();
     }
@@ -88,6 +96,7 @@ impl ConnectionManager {
 struct State {
     our_id: Address,
     event_pipe: IoSender<Event>,
+    connections: HashMap<Address, SocketWriter>,
 }
 
 fn with_state<T, F: Fn(&State) -> T>(state: WeakState, f: F) -> IoResult<T> {
