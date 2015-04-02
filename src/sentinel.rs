@@ -364,16 +364,16 @@ mod test {
   	  }
   	}
 
-  	pub fn CountGetClientKeyCalls(address : types::Address) -> usize {
-  	  send_get_client_key_calls_.iter()
-  	  							.filter(|x| x == address)
-  	  							.count()
+  	pub fn CountGetClientKeyCalls(&self, address : &types::Address) -> usize {
+  	  self.send_get_client_key_calls_.iter()
+  	  								 .filter(|&x| x == address)
+  	  								 .count()
   	}
 
-  	pub fn CountGetGroupKeyCalls(group_address : types::GroupAddress) -> usize {
-  	  send_get_group_key_calls_.iter()
-  	  						   .filter(|x| x == group_address)
-  	  						   .count()
+  	pub fn CountGetGroupKeyCalls(&self, group_address : &types::GroupAddress) -> usize {
+  	  self.send_get_group_key_calls_.iter()
+  	  						  		.filter(|&x| x == group_address)
+  	  						   		.count()
   	}
   }
 
@@ -395,16 +395,16 @@ mod test {
   }
 
   impl<'a> SentinelTest<'a> {
-  	pub fn new(trace_get_keys : &mut GetKeys) -> SentinelTest<'a> {
+  	pub fn new(&mut trace_get_keys : &'a mut GetKeys) -> SentinelTest<'a> {
       let pmid = types::Pmid::new();
       SentinelTest {
-      	sentinel_ : Sentinel::new(&mut trace_get_keys as &mut GetKeys),
+      	sentinel_ : Sentinel::new(&mut trace_get_keys),
       	our_destination : types::DestinationAddress {
       						dest : pmid.get_name(),
       						reply_to : generate_u8_64()
       					  },
         our_pmid_ : pmid,
-        sentinel_returns_ : Vec![]
+        sentinel_returns_ : vec![]
       }
   	}
   }
