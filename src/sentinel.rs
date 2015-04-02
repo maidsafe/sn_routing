@@ -277,8 +277,22 @@ impl<'a> Sentinel<'a> {
 #[cfg(test)]
 mod test {
   
+  extern crate rand;
+  extern crate sodiumoxide;
+
   use super::*;
+  use sodiumoxide::crypto;
   use types;
+  use types::RoutingTrait;
+  use message_header;
+
+  pub fn generate_u8_64() -> Vec<u8> {
+    let mut u8_64: Vec<u8> = vec![];
+    for _ in (0..64) {
+      u8_64.push(rand::random::<u8>());
+    }
+    u8_64
+  }
 
   struct SignatureGroup {
   	group_address : types::GroupAddress,
@@ -300,6 +314,33 @@ mod test {
   	  	authority : authority,
   	  	nodes : nodes
   	  }
+  	}
+
+  	pub fn get_group_address(&self) -> types::GroupAddress { self.group_address.clone() }
+
+  	pub fn get_headers(&self, destination_address : types::DestinationAddress,
+  					   message_id : types::MessageId, serialised_message : Vec<u8> )
+  					  -> Vec<message_header::MessageHeader> {
+  	  let mut headers : Vec<message_header::MessageHeader> 
+  	  				  = Vec::with_capacity(self.group_size);
+  	  for node in &self.nodes {
+  	  	headers.push(message_header
+  	  		         ::MessageHeader::new(message_id.clone(),
+  	  		         		destination_address.clone(),
+							types::SourceAddress {
+							  from_node : node.get_name(),
+							  from_group : self.group_address.clone(),
+	  						  reply_to : generate_u8_64()
+							}, self.authority.clone(),
+						    types::Signature {
+							  // sign forwards to crypto/ed25519.rs 
+	                          // secret key is [u8; 64]
+							  signature : crypto::sign::sign(&serialised_message[..],
+							                                 &node.get_secret_sign_key())
+  	  				        }
+  	  				));
+  	  }
+  	  headers
   	}
   }
 
