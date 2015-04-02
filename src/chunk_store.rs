@@ -15,9 +15,6 @@
 
 #![allow(dead_code)]
 
-use std::convert::AsRef;
-
-
 pub struct Entry {
   name: Vec<u8>,
   data: Vec<u8>
@@ -64,7 +61,6 @@ impl ChunkStore {
   }
 
   pub fn get(&self, name: Vec<u8>) -> Vec<u8> {
-    let mut return_val: Vec<u8> = Vec::new();
 unimplemented!();
 // something like this should be used and return a result
   //  self.entries.iter().take(|x| { x == name });
