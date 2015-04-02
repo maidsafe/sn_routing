@@ -100,7 +100,7 @@ impl RoutingTable {
   ///     contacts, which is also not within our close group), and if the new contact will fit in a
   ///     bucket closer to our own bucket, then we add the new contact.
   pub fn add_node(&mut self, their_info: NodeInfo)->(bool, Option<NodeInfo>) {
-    //  Validate(their_info.id);
+    assert!(their_info.fob.id.is_valid());
 
     if self.our_id == their_info.fob.id {
       return (false, None);
@@ -164,17 +164,19 @@ impl RoutingTable {
   
   /// This unconditionally removes the contact from the table.
   pub fn drop_node(&mut self, node_to_drop: &Address) {
-    let mut index_of_removal = 0usize;
+    if node_to_drop.is_valid() {
+        let mut index_of_removal = usize::MAX;
 
-    for i in 0..self.routing_table.len() {
-      if self.routing_table[i].fob.id == *node_to_drop {
-        index_of_removal = i;
-        break;
-      }
-    }
+        for i in 0..self.routing_table.len() {
+          if self.routing_table[i].fob.id == *node_to_drop {
+            index_of_removal = i;
+            break;
+          }
+        }
 
-    if index_of_removal < self.routing_table.len() {
-      self.routing_table.remove(index_of_removal);
+        if index_of_removal < self.routing_table.len() {
+          self.routing_table.remove(index_of_removal);
+        }
     }
   }
 
@@ -350,7 +352,7 @@ impl RoutingTable {
   
   fn is_nodes_sorted(&self) -> bool {
   	for i in 1..self.routing_table.len() {
-      if RoutingTable::closer_to_target(&self.our_id, &self.routing_table[i - 1].fob.id, &self.routing_table[i].fob.id) {
+      if RoutingTable::closer_to_target(&self.our_id, &self.routing_table[i].fob.id, &self.routing_table[i - 1].fob.id) {
         return false;
       }
     }
@@ -948,7 +950,7 @@ fn drop_node_test() {
     test.complete_filling_table();
 
     // Try with invalid Address
-    test.table.drop_node(&create_random_id());
+    test.table.drop_node(&maidsafe_types::NameType([0u8;64]));
     assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
 
     // Try with our ID
@@ -1254,45 +1256,47 @@ fn target_nodes_test() {
 #[test]
 fn trivial_functions_test() {
     let mut table_unit_test = RoutingTableUnitTest::new();
-    let mut public_key = table_unit_test.table.get_public_key(table_unit_test.buckets[0].mid_contact.clone());
-    match public_key {
+    match table_unit_test.table.get_public_key(table_unit_test.buckets[0].mid_contact.clone()) {
       Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
-      None => assert!(true),
+      None => {},
     }
     assert!(table_unit_test.our_id == table_unit_test.table.our_id);
     assert_eq!(0, table_unit_test.table.routing_table.len());
 
+    // Check on partially filled the table
     table_unit_test.partially_fill_table();
-    let test_id = create_random_id();
-    let new_node_0 = create_random_node_info();
-    let new_node_0_clone = new_node_0.clone();
-    table_unit_test.table.add_node(new_node_0);
-    assert_eq!(0, table_unit_test.table.routing_table.len());
+    let test_node = create_random_node_info();
+    table_unit_test.node_info = test_node.clone();
+    assert!(table_unit_test.table.add_node(table_unit_test.node_info.clone()).0);
 
-    public_key = table_unit_test.table.get_public_key(new_node_0_clone.fob.id.clone());
-    match public_key {
-      Some(crypto::asymmetricbox::PublicKey(p)) => assert!(true),
+    match table_unit_test.table.get_public_key(table_unit_test.node_info.fob.id.clone()) {
+      Some(crypto::asymmetricbox::PublicKey(p)) => {},
       None => panic!("PublicKey None"),
     }
     // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(), *table_.GetPublicKey(info_.id)));
-    // EXPECT_FALSE(table_.GetPublicKey(buckets_.back().far_contact));
+    match table_unit_test.table.get_public_key(table_unit_test.buckets[table_unit_test.buckets.len() - 1].far_contact.clone()) {
+      Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
+      None => {}
+    }
     assert!(table_unit_test.our_id == table_unit_test.table.our_id);
     assert_eq!(table_unit_test.initial_count + 1, table_unit_test.table.routing_table.len());
 
-    table_unit_test.table.drop_node(&new_node_0_clone.fob.id);
+    // Check on fully filled the table
+    table_unit_test.table.drop_node(&test_node.fob.id.clone());
     table_unit_test.complete_filling_table();
     table_unit_test.table.drop_node(&table_unit_test.buckets[0].mid_contact.clone());
-    let new_node_1 = create_random_node_info();
-    let new_node_1_clone = new_node_1.clone();
-    table_unit_test.table.add_node(new_node_1);
+    table_unit_test.node_info = test_node.clone();
+    assert!(table_unit_test.table.add_node(table_unit_test.node_info.clone()).0);
 
-    public_key = table_unit_test.table.get_public_key(new_node_1_clone.fob.id);
-    match public_key {
-      Some(crypto::asymmetricbox::PublicKey(p)) => assert!(true),
+    match table_unit_test.table.get_public_key(table_unit_test.node_info.fob.id.clone()) {
+      Some(crypto::asymmetricbox::PublicKey(p)) => {},
       None => panic!("PublicKey None"),
     }
-    // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(), *table_.GetPublicKey(info_.id)));
-    // EXPECT_FALSE(table_.GetPublicKey(buckets_.back().far_contact));
+    match table_unit_test.table.get_public_key(table_unit_test.buckets[table_unit_test.buckets.len() - 1].far_contact.clone()) {
+      Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
+      None => {}
+    }
+    // // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(), *table_.GetPublicKey(info_.id)));
     assert!(table_unit_test.our_id == table_unit_test.table.our_id);
     assert_eq!(RoutingTable::get_optimal_size(), table_unit_test.table.routing_table.len());
 }
