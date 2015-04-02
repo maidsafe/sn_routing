@@ -44,12 +44,15 @@ impl ChunkStore {
     }
 
     pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
-          self.current_disk_usage += value.len();
-
-          self.entries.push(Entry {
-              name: name,
-              data: value,
-          });
+        if !self.has_disk_space(value.len()) {
+            panic!("Disk space unavailable. Not enough space");
+        }
+        self.delete(name.clone()); // To remove if the data is already present
+        self.current_disk_usage += value.len();
+        self.entries.push(Entry {
+          name: name,
+          data: value,
+        });
     }
 
     pub fn delete(&mut self, name: Vec<u8>) {
@@ -59,11 +62,10 @@ impl ChunkStore {
             if self.entries[i].name == name {
                 size_removed = self.entries[i].data.len();
                 self.entries.remove(i);
+                self.current_disk_usage -= size_removed;
                 break;
             }
         }
-
-        self.current_disk_usage -= size_removed;
     }
 
     pub fn get(&self, name: Vec<u8>) -> Vec<u8> {
@@ -101,8 +103,8 @@ impl ChunkStore {
 
         name_vec
     }
-  // FIXME: Unused
-//    fn has_disk_space(&self, required_space: usize) -> bool {
-//       self.current_disk_usage + required_space <= self.max_disk_usage
-//    }
+
+    fn has_disk_space(&self, required_space: usize) -> bool {
+       self.current_disk_usage + required_space <= self.max_disk_usage
+    }
 }

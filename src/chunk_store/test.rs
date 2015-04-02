@@ -172,9 +172,7 @@ fn repeatedly_storing_same_name() {
 
     let mut put = |name, size| {
         let data = get_random_non_empty_string(size);
-        let size_before_insert = chunk_store.current_disk_usage();
         chunk_store.put(name, data.into_bytes());
-        assert_eq!(chunk_store.current_disk_usage(), size + size_before_insert);
         chunk_store.current_disk_usage()
     };
 
