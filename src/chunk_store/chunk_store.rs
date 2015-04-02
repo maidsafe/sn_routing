@@ -16,89 +16,87 @@
 #![allow(dead_code)]
 
 pub struct Entry {
-  name: Vec<u8>,
-  data: Vec<u8>
+    name: Vec<u8>,
+    data: Vec<u8>
 }
 
 pub struct ChunkStore {
-  entries: Vec<Entry>,
-  max_disk_usage: usize,
-  current_disk_usage: usize,
+    entries: Vec<Entry>,
+    max_disk_usage: usize,
+    current_disk_usage: usize,
 }
 
 impl ChunkStore {
-  pub fn new() -> ChunkStore {
-    ChunkStore {
-      entries: Vec::new(),
-      max_disk_usage: 0,
-      current_disk_usage: 0,
+    pub fn new() -> ChunkStore {
+        ChunkStore {
+            entries: Vec::new(),
+            max_disk_usage: 0,
+            current_disk_usage: 0,
+        }
     }
-  }
 
-  pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
+    pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
+          self.current_disk_usage += value.len();
 
+          self.entries.push(Entry {
+              name: name,
+              data: value,
+          });
+    }
 
-        self.current_disk_usage += value.len();
+    pub fn delete(&mut self, name: Vec<u8>) {
+        let mut size_removed = 0usize;
 
-        self.entries.push(Entry {
-          name: name,
-          data: value,
-        });
-  }
+        for i in 0..self.entries.len() {
+            if self.entries[i].name == name {
+                size_removed = self.entries[i].data.len();
+                self.entries.remove(i);
+                break;
+            }
+        }
 
-  pub fn delete(&mut self, name: Vec<u8>) {
-    let mut size_removed = 0usize;
+        self.current_disk_usage -= size_removed;
+    }
 
-    for i in 0..self.entries.len() {
-      if self.entries[i].name == name {
-        size_removed = self.entries[i].data.len();
-        self.entries.remove(i);
-        break;
+    pub fn get(&self, name: Vec<u8>) -> Vec<u8> {
+      match self.entries.iter().filter(|&x| { x.name == name }).next() {
+          Some(entry) => entry.data.clone(),
+          _ => Vec::new()
       }
     }
 
-    self.current_disk_usage -= size_removed;
-  }
-
-  pub fn get(&self, name: Vec<u8>) -> Vec<u8> {
-      unimplemented!();
-  // something like this should be used and return a result
-  //  self.entries.iter().take(|x| { x == name });
-
-  }
-
-  pub fn max_disk_usage(&self) -> usize {
-    self.max_disk_usage
-  }
-
-  pub fn current_disk_usage(&self) -> usize {
-    self.current_disk_usage
-  }
-
-  pub fn set_max_disk_usage(&mut self, new_max: usize) {
-    assert!(self.current_disk_usage < new_max);
-    self.max_disk_usage = new_max;
-  }
-
-  pub fn has_chunk(&self, name: Vec<u8>) -> bool {
-    for entry in self.entries.iter() {
-      if entry.name == name {
-        return true;
-      }
-    }
-    false
-  }
-
-  pub fn names(&self) -> Vec<Vec<u8>> {
-    let mut name_vec: Vec<Vec<u8>> = Vec::new();
-    for it in self.entries.iter() {
-      name_vec.push(it.name.clone());
+    pub fn max_disk_usage(&self) -> usize {
+        self.max_disk_usage
     }
 
-    name_vec
-  }
-// FIXME: Unused
-  // fn has_disk_space(&self, required_space: usize) -> bool {
-  //   self.current_disk_usage + required_space <= self.max_disk_usage
-  // }
+    pub fn current_disk_usage(&self) -> usize {
+        self.current_disk_usage
+    }
+
+    pub fn set_max_disk_usage(&mut self, new_max: usize) {
+        assert!(self.current_disk_usage < new_max);
+        self.max_disk_usage = new_max;
+    }
+
+    pub fn has_chunk(&self, name: Vec<u8>) -> bool {
+        for entry in self.entries.iter() {
+            if entry.name == name {
+               return true;
+            }
+        }
+        false
+    }
+
+    pub fn names(&self) -> Vec<Vec<u8>> {
+        let mut name_vec: Vec<Vec<u8>> = Vec::new();
+        for it in self.entries.iter() {
+           name_vec.push(it.name.clone());
+        }
+
+        name_vec
+    }
+  // FIXME: Unused
+//    fn has_disk_space(&self, required_space: usize) -> bool {
+//       self.current_disk_usage + required_space <= self.max_disk_usage
+//    }
 }

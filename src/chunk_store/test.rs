@@ -63,7 +63,7 @@ impl ChunkStoreTest {
 
     fn populate_chunk_store(&mut self, num_entries: u32, disk_entries: u32) -> NameValueContainer {
         let mut name_value_pairs = add_random_name_value_pairs(num_entries as usize, ONE_KB as usize);
-        let disk_usage = (disk_entries as u64) * (ONE_KB + AES_PADDING);
+        let disk_usage = (disk_entries as u64) * ONE_KB;
         self.chunk_store = ChunkStore::new();
         self.chunk_store.set_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE as usize);
         for name_value in name_value_pairs.0.clone() {
