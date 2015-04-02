@@ -196,7 +196,6 @@ impl RoutingTable {
       self.routing_table.len()
     };
 
-    // let parallelism = cmp::min(RoutingTable::get_parallelism(), self.routing_table.len());
     for iter in self.routing_table.iter() {
       if iterations < RoutingTable::get_group_size() {
         our_close_group.push(iter.clone());
@@ -208,10 +207,6 @@ impl RoutingTable {
     if closest_to_target.is_empty() {
       return result;
     }
-
-    // Partial Sort:
-    // let high = closest_to_target.len() - 1;
-    // RoutingTable::partial_sort(&mut closest_to_target, 0, high, parallelism, &self.our_id);
 
     closest_to_target.sort_by(|a, b| if RoutingTable::closer_to_target(&target, &a.fob.id, &b.fob.id) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
 
@@ -376,57 +371,6 @@ impl RoutingTable {
     }
     false
   }
-
-  /*
-  fn get_pivot(low: usize, high: usize) -> usize {
-    // TODO(Spandan) get a random value in the range [low, high] - rand is currently broken on my
-    // Rust right now
-    (high + low) / 2
-  }
-
-  fn partition(vec: &mut Vec<NodeInfo>, low: usize, high: usize, base: &maidsafe_types::NameType) -> usize {
-    if low < high {
-      let pivot = RoutingTable::get_pivot(low, high);
-      let mut new_pivot = low;
-
-      let temp = vec[pivot].clone();
-      vec[pivot] = vec[high].clone();
-      vec[high] = temp.clone();
-
-      for i in low..high {
-        if RoutingTable::closer_to_target(&base, &vec[high].fob.id, &vec[i].fob.id) == cmp::Ordering::Greater {
-          if i != new_pivot {
-            let temp = vec[new_pivot].clone();
-            vec[new_pivot] = vec[i].clone();
-            vec[i] = temp.clone();
-          }
-          new_pivot += 1;
-        }
-      }
-
-      if new_pivot != high {
-        let temp = vec[new_pivot].clone();
-        vec[new_pivot] = vec[high].clone();
-        vec[high] = temp.clone();
-      }
-
-      new_pivot
-    } else {
-      low
-    }
-  }
-
-  fn partial_sort(vec: &mut Vec<NodeInfo>, low: usize, high: usize, parallelism: usize, base: &maidsafe_types::NameType) {
-    if low < high {
-      let new_pivot = RoutingTable::partition(vec, low, high, base);
-      RoutingTable::partial_sort(vec, low, new_pivot - 1, parallelism, base);
-
-      if new_pivot < parallelism {
-        RoutingTable::partial_sort(vec, new_pivot, high, parallelism, base);
-      }
-    }
-  }
-  */
 }
 
 ///////////////////////////////////////////////////
@@ -1195,12 +1139,13 @@ fn target_nodes_test() {
   let mut target = maidsafe_types::NameType([0u8; 64]);
   for count in 0..2 {
     for i in 0..(RoutingTable::get_optimal_size() - RoutingTable::get_group_size()) {
-      if count == 0 {
-        target = routing_table_utest.buckets[i].far_contact.clone();
+      target = if count == 0 {
+        routing_table_utest.buckets[i].far_contact.clone()
       } else {
-        target = routing_table_utest.buckets[i].mid_contact.clone();
-      }
-      // assert_eq!(RoutingTable::get_parallelism(), target_nodes_.len());
+        routing_table_utest.buckets[i].mid_contact.clone()
+      };
+      target_nodes_ = routing_table_utest.table.target_nodes(target);
+      assert_eq!(RoutingTable::get_parallelism(), target_nodes_.len());
       routing_table_utest.table.our_close_group()
       .sort_by(|a, b| if RoutingTable::closer_to_target(&routing_table_utest.our_id, &a.fob.id, &b.fob.id) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
 
@@ -1220,20 +1165,20 @@ fn target_nodes_test() {
   // Try with nodes close to us, first time *not* in table and second time *in* table (should return
   // GroupSize closest to target)
   for count in 0..2 {
-    for i in 0..(RoutingTable::get_optimal_size() - RoutingTable::get_group_size()) {
-      if count == 0 {
-        target = routing_table_utest.buckets[i].far_contact.clone();
+    for i in (RoutingTable::get_optimal_size() - RoutingTable::get_group_size())..RoutingTable::get_optimal_size() {
+      target = if count == 0 {
+        routing_table_utest.buckets[i].far_contact.clone()
       } else {
-        target = routing_table_utest.buckets[i].mid_contact.clone();
-      }
+        routing_table_utest.buckets[i].mid_contact.clone()
+      };
       target_nodes_ = routing_table_utest.table.target_nodes(target);
-      // assert_eq!(RoutingTable::get_group_size(), target_nodes_.len());
+      assert_eq!(RoutingTable::get_group_size(), target_nodes_.len());
       routing_table_utest.table.our_close_group()
       .sort_by(|a, b| if RoutingTable::closer_to_target(&routing_table_utest.our_id, &a.fob.id, &b.fob.id) { cmp::Ordering::Less } else { cmp::Ordering::Greater });
 
       for i in 0..target_nodes_.len() {
         let mut assert_checker = 0;
-        for j in 0..RoutingTable::get_group_size() {
+        for j in 0..routing_table_utest.added_ids.len() {
           if target_nodes_[i].fob.id == routing_table_utest.added_ids[j] {
             assert_checker = 1;
             continue;
