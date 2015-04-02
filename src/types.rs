@@ -252,7 +252,18 @@ impl Pmid {
     }
   }
 
-  pub fn get_public_key(&self) -> crypto::asymmetricbox::PublicKey { self.public_keys.1.clone() }
+  pub fn get_public_key(&self) -> crypto::asymmetricbox::PublicKey {
+    self.public_keys.1.clone()
+  }
+  pub fn get_secret_key(&self) -> crypto::asymmetricbox::SecretKey {
+    self.secret_keys.1.clone()
+  }
+  pub fn get_public_sign_key(&self) -> crypto::sign::PublicKey {
+    self.public_keys.0.clone()
+  }
+  pub fn get_secret_sign_key(&self) -> crypto::sign::SecretKey {
+    self.secret_keys.0.clone()
+  }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
