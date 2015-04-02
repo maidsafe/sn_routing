@@ -22,16 +22,20 @@ use bchannel::Receiver;
 use bchannel::Sender;
 use tcp_connections::{listen, connect_tcp, TcpReader, TcpWriter, upgrade_tcp};
 use std::sync::{Arc, Mutex, Weak};
+use std::sync::mpsc;
+use cbor::{Encoder, CborError, Decoder};
+use rustc_serialize::{Decodable, Encodable};
 
 pub type Address = Vec<u8>;
+pub type Bytes   = Vec<u8>;
 
 type IoResult<T> = Result<T, IoError>;
 
 pub type IoReceiver<T> = Receiver<T, IoError>;
 pub type IoSender<T>   = Sender<T, IoError>;
 
-pub type SocketReader = TcpReader<Msg>;
-pub type SocketWriter = TcpWriter<Msg>;
+pub type SocketReader = TcpReader<Bytes>;
+pub type SocketWriter = TcpWriter<Bytes>;
 
 type WeakState = Weak<Mutex<State>>;
 
@@ -40,7 +44,7 @@ pub struct ConnectionManager {
 }
 
 pub enum Event {
-    NewMessage(Address, Msg),
+    NewMessage(Address, Bytes),
     NewConnection(Address),
     LostConnection(Address),
     AcceptingOn(u16)
@@ -115,7 +119,8 @@ fn handle_new_connection(state: WeakState, i: SocketReader, o: SocketWriter) -> 
     let (our_id, sink) = try!(with_state(state.clone(), |s| (s.our_id.clone(),
                                                              s.event_pipe.clone())));
 
-    let (i, o, his_id) = try!(exchange(i, o, our_id));
+    let (i, o, his_data) = try!(exchange(i, o, encode(&our_id)));
+    let his_id: Address = decode(his_data);
     try!(register_new_writer(state.clone(), his_id.clone(), o));
     start_reading(i, his_id, sink.clone())
 }
@@ -135,12 +140,44 @@ fn start_reading(i: SocketReader, his_id: Address, sink: IoSender<Event>) -> IoR
     Ok(()) // FIXME
 }
 
+fn exchange(socket_input:  SocketReader, socket_output: SocketWriter, data: Bytes)
+            -> IoResult<(SocketReader, SocketWriter, Bytes)>
+{
+    let (output, input) = mpsc::channel();
 
+    spawn(move || {
+        let mut s = socket_output;
+        if s.send(&data).is_err() {
+            return;
+        }
+        output.send(s);
+    });
 
-fn exchange(i: SocketReader, o: SocketWriter, our_id: Address)
-    -> IoResult<(SocketReader, SocketWriter, Address)> {
-    unimplemented!()
-    //Ok((i, o, his_id))
+    let opt_result = socket_input.recv_block();
+    let opt_send_result = input.recv();
+
+    let cant_send = io::Error::new(io::ErrorKind::Other,
+                                   "Can't exchage (send error)", None);
+    let cant_recv = io::Error::new(io::ErrorKind::Other,
+                                   "Can't exchage (send error)", None);
+
+    let socket_output = try!(opt_send_result.map_err(|_|cant_send));
+    let result = try!(opt_result.ok_or(cant_recv));
+
+    Ok((socket_input, socket_output, result))
+}
+
+fn encode<T>(value: &T) -> Bytes where T: Encodable
+{
+    let mut enc = Encoder::from_memory();
+    enc.encode(&[value]);
+    enc.into_bytes()
+}
+
+// TODO(Peter): This should return Option<T>
+fn decode<T>(bytes: Bytes) -> T where T: Decodable {
+    let mut dec = Decoder::from_bytes(bytes.as_slice());
+    dec.decode().next().unwrap().unwrap()
 }
 
 #[cfg(test)]
