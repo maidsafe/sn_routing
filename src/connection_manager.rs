@@ -125,8 +125,17 @@ fn register_new_writer(state: WeakState, his_id: Address, o: SocketWriter) -> Io
 }
 
 fn start_reading(i: SocketReader, his_id: Address, sink: IoSender<Event>) -> IoResult<()> {
-    unimplemented!()
+    spawn(move || {
+        for msg in i.into_blocking_iter() {
+            sink.send(Event::NewMessage(his_id.clone(), msg));
+            // TODO: break on send failure
+        }
+        sink.send(Event::LostConnection(his_id.clone()));
+    });
+    Ok(()) // FIXME
 }
+
+
 
 fn exchange(i: SocketReader, o: SocketWriter, our_id: Address)
     -> IoResult<(SocketReader, SocketWriter, Address)> {
