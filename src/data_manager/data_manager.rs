@@ -76,6 +76,7 @@ impl DataManager {
   }
 }
 
+#[cfg(test)]
 mod test {
   extern crate cbor;
   extern crate maidsafe_types;
