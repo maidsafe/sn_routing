@@ -100,7 +100,7 @@ impl RoutingTable {
   ///     contacts, which is also not within our close group), and if the new contact will fit in a
   ///     bucket closer to our own bucket, then we add the new contact.
   pub fn add_node(&mut self, their_info: NodeInfo)->(bool, Option<NodeInfo>) {
-    //  Validate(their_info.id);
+    assert!(their_info.fob.id.is_valid());
 
     if self.our_id == their_info.fob.id {
       return (false, None);
@@ -164,17 +164,19 @@ impl RoutingTable {
   
   /// This unconditionally removes the contact from the table.
   pub fn drop_node(&mut self, node_to_drop: &Address) {
-    let mut index_of_removal = 0usize;
+    if node_to_drop.is_valid() {
+        let mut index_of_removal = usize::MAX;
 
-    for i in 0..self.routing_table.len() {
-      if self.routing_table[i].fob.id == *node_to_drop {
-        index_of_removal = i;
-        break;
-      }
-    }
+        for i in 0..self.routing_table.len() {
+          if self.routing_table[i].fob.id == *node_to_drop {
+            index_of_removal = i;
+            break;
+          }
+        }
 
-    if index_of_removal < self.routing_table.len() {
-      self.routing_table.remove(index_of_removal);
+        if index_of_removal < self.routing_table.len() {
+          self.routing_table.remove(index_of_removal);
+        }
     }
   }
 
@@ -948,7 +950,7 @@ fn drop_node_test() {
     test.complete_filling_table();
 
     // Try with invalid Address
-    test.table.drop_node(&create_random_id());
+    test.table.drop_node(&maidsafe_types::NameType([0u8;64]));
     assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
 
     // Try with our ID
