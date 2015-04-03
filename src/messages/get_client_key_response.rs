@@ -29,6 +29,15 @@ pub struct GetClientKeyResponse {
   pub public_key : Vec<u8>
 }
 
+impl GetClientKeyResponse {
+    pub fn generate_random() -> GetClientKeyResponse {
+        GetClientKeyResponse {
+            address: types::generate_random_vec_u8(64),
+            public_key: types::PublicKey::generate_random().public_key,
+        }
+    }
+}
+
 impl Encodable for GetClientKeyResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.address, &self.public_key)).encode(e)
@@ -41,4 +50,25 @@ impl Decodable for GetClientKeyResponse {
     let (address, public_key) = try!(Decodable::decode(d));
     Ok(GetClientKeyResponse { address: address , public_key: public_key})
   }
+}
+
+mod test {
+    extern crate cbor;
+
+    use types;
+    use super::*;
+    use cbor::CborTagEncode;
+
+    #[test]
+    fn get_client_key_response_serialisation() {
+        let obj_before = GetClientKeyResponse::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
+
+        assert_eq!(obj_before, obj_after);
+    }
 }

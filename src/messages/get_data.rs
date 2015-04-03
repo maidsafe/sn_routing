@@ -26,6 +26,15 @@ pub struct GetData {
   pub name_and_type_id : types::NameAndTypeId,
 }
 
+impl GetData {
+    pub fn generate_random() -> GetData {
+        GetData {
+            requester: types::SourceAddress::generate_random(),
+            name_and_type_id: types::NameAndTypeId::generate_random(),
+        }
+    }
+}
+
 impl Encodable for GetData {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.requester, &self.name_and_type_id)).encode(e)
@@ -38,4 +47,25 @@ impl Decodable for GetData {
     let (requester, name_and_type_id) = try!(Decodable::decode(d));
     Ok(GetData { requester: requester, name_and_type_id: name_and_type_id})
   }
+}
+
+mod test {
+    extern crate cbor;
+
+    use types;
+    use super::*;
+    use cbor::CborTagEncode;
+
+    #[test]
+    fn get_data_serialisation() {
+        let obj_before = GetData::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: GetData = d.decode().next().unwrap().unwrap();
+
+        assert_eq!(obj_before, obj_after);
+    }
 }
