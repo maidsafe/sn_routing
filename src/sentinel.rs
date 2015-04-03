@@ -438,6 +438,16 @@ mod test {
     collect_messages
   }
 
+  fn count_none_sentinel_returns(sentinel_returns : &Vec<(u64, Option<ResultType>)>)
+  								 -> usize {
+  	sentinel_returns.iter().filter(|&x| x.1.is_none()).count()
+  }
+
+  fn verify_exactly_one_response(sentinel_returns : &Vec<(u64, Option<ResultType>)>)
+  								 -> bool {
+    sentinel_returns.iter().filter(|&x| x.1.is_some()).count() == 1
+  }
+
   #[test]
   fn simple_add() {
   	let our_pmid = types::Pmid::new();
@@ -482,13 +492,25 @@ mod test {
       let mut collect_response_messages = generate_messages(headers_response, response_tag,
       										&serialised_message_response, &mut message_tracker);
 
-      for message in collect_messages {
-      	sentinel.add(message.header, message.tag, message.serialised_message);
-      }
-      for message in collect_response_messages {
-      	sentinel.add(message.header, message.tag, message.serialised_message);
-      }
+	  for message in collect_messages {
+	    sentinel_returns.push((message.index,
+	    	                   sentinel.add(message.header, 
+	      	              	                message.tag,
+	      	              	                message.serialised_message)));
+	  }
+	  assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
+	  assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
+	  assert_eq!(false, verify_exactly_one_response(&sentinel_returns));
 
+	  for message in collect_response_messages {
+	    sentinel_returns.push((message.index,
+	    	                   sentinel.add(message.header, 
+	      	                    	        message.tag,
+	      	              	                message.serialised_message)));
+	  }
     }
+    assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
+    // ERROR: Sentinel calls GetGroupKey for every message added !
+    assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address())); 
   }
 }
