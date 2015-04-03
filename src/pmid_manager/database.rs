@@ -31,7 +31,8 @@ pub struct PmidManagerAccount {
 
 impl PmidManagerAccount {
   pub fn new() -> PmidManagerAccount {
-    PmidManagerAccount { stored_total_size: 0, lost_total_size: 0, offered_space: 0 }
+    // FIXME : to bypass the AccountCreation process for simple network, capacity is assumed automatically
+    PmidManagerAccount { stored_total_size: 0, lost_total_size: 0, offered_space: 1073741824 }
   }
 
   pub fn put_data(&mut self, size : u64) -> bool {

@@ -30,7 +30,8 @@ pub struct MaidManagerAccount {
 
 impl MaidManagerAccount {
   pub fn new() -> MaidManagerAccount {
-    MaidManagerAccount { data_stored: 0, space_available: 0 }
+    // FIXME : to bypass the AccountCreation process for simple network allownance is granted automatically
+    MaidManagerAccount { data_stored: 0, space_available: 1073741824 }
   }
 
   pub fn put_data(&mut self, size : u64) -> bool {
