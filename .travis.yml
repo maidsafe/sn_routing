@@ -5,6 +5,7 @@ env:
   global:
     secure:secure: "jYb73sf4o6nUOOzCiyfRYeGcTHPM7pwl+wqEa7YhGHcIfR7uGkI8NQAb0BzizA/Iiy3+wFQzDbbw1ZtpHNgG49EI7cXFQ7WRk+Wz1H4gzkEh2J6XEgyTYoqTOdV4Ka3YtbELc69VLXJCePSvxGqGED0ncUg/kZmWK5f9ZR47zn8="
 language: rust
+rust: 1.0.0-nightly (d754722a0 2015-03-31) (built 2015-04-01)
 before_install:
     - sudo apt-get install -qq libsqlite3-dev
 install:
