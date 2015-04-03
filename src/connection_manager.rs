@@ -74,6 +74,7 @@ impl ConnectionManager {
             let _ = connect_tcp(endpoint)
                     .and_then(|(i, o)| { handle_new_connection(ws, i, o) });
         });
+
         Ok(())
     }
 
@@ -90,6 +91,7 @@ impl ConnectionManager {
                     None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
                 }
         }));
+
         let writer_channel = try!(writer_channel);
         let send_result = writer_channel.send(message);
         let cant_send = io::Error::new(io::ErrorKind::BrokenPipe, "?", None);
@@ -101,6 +103,7 @@ impl ConnectionManager {
         lock_mut_state(&mut ws, |s: &mut State| {
             let ch = &mut s.writer_channels;
             ch.remove(&address);
+            Ok(())
         })
     }
 }
@@ -124,14 +127,14 @@ fn lock_state<T, F: Fn(&State) -> T>(state: &WeakState, f: F) -> IoResult<T> {
     })
 }
 
-fn lock_mut_state<T, F: Fn(&mut State) -> T>(state: &mut WeakState, f: F) -> IoResult<T> {
+fn lock_mut_state<T, F: FnOnce(&mut State) -> IoResult<T>>(state: &WeakState, f: F) -> IoResult<T> {
     state.upgrade().ok_or(io::Error::new(io::ErrorKind::Interrupted,
                                          "Can't dereference weak",
                                          None))
-    .and_then(|arc_state| {
+    .and_then(move |arc_state| {
         let opt_state = arc_state.lock();
         match opt_state {
-            Ok(mut s)  => Ok(f(&mut s)),
+            Ok(mut s)  => f(&mut s),
             Err(e) => Err(io::Error::new(io::ErrorKind::Interrupted, "?", None))
         }
     })
@@ -157,25 +160,28 @@ fn start_accepting_connections(state: WeakState) -> IoResult<()> {
     Ok(())
 }
 
-fn handle_new_connection(state: WeakState, i: SocketReader, o: SocketWriter) -> IoResult<()> {
-    let (our_id, sink) = try!(lock_state(&state, |s| (s.our_id.clone(),
-                                                      s.event_pipe.clone())));
-
+fn handle_new_connection(mut state: WeakState, i: SocketReader, o: SocketWriter) -> IoResult<()> {
+    let our_id = try!(lock_state(&state, |s| s.our_id.clone()));
     let (i, o, his_data) = try!(exchange(i, o, encode(&our_id)));
     let his_id: Address = decode(his_data);
     println!("handle_new_connection our_id:{:?} his_id:{:?}", our_id, his_id);
-    try!(register_connection(state.clone(), his_id.clone(), o));
+    register_connection(&mut state, his_id, i, o)
 }
 
-fn register_connection(state: &mut WeakState, his_id: Address, mut o: SocketWriter) -> IoResult<()> {
-    try!(lock_mut_state(state, |s: &mut State| {
+fn register_connection( state: &mut WeakState
+                      , his_id: Address
+                      , i: SocketReader
+                      , o: SocketWriter
+                      ) -> IoResult<()> {
+
+    lock_mut_state(state, move |s: &mut State| {
         let channels = &mut s.writer_channels;
         let (tx, rx) = mpsc::channel();
-        start_writing_thread(o, his_id, rx);
-        start_reading_thread(i, his_id, sink.clone());
-        channels.insert(his_id.clone(), tx);
-    }));
-    Ok(())
+        start_writing_thread(o, his_id.clone(), rx);
+        start_reading_thread(i, his_id.clone(), s.event_pipe.clone());
+        channels.insert(his_id, tx);
+        Ok(())
+    })
 }
 
 fn unregister_connection(state: WeakState, his_id: Address) -> IoResult<()> {
@@ -189,21 +195,20 @@ fn unregister_connection(state: WeakState, his_id: Address) -> IoResult<()> {
 }
 
 // pushing events out to event_pipe
-fn start_reading_thread(i: SocketReader, his_id: Address, sink: IoSender<Event>) -> IoResult<()> {
+fn start_reading_thread(i: SocketReader, his_id: Address, sink: IoSender<Event>) {
     spawn(move || {
         for msg in i.into_blocking_iter() {
             if sink.send(Event::NewMessage(his_id.clone(), msg)).is_err() {
               return;  // exit thread if sink closed
             }
         }
-        sink.send(Event::LostConnection(his_id.clone()));
+        let _ = sink.send(Event::LostConnection(his_id.clone()));
     });
-    Ok(())
 }
 
 // pushing messges out to socket
-fn start_writing_thread(mut o: SocketWriter, his_id: Address, writer_channel: mpsc::Receiver<Bytes>) -> IoResult<()> {
-    spawn (move || {
+fn start_writing_thread(mut o: SocketWriter, his_id: Address, writer_channel: mpsc::Receiver<Bytes>) {
+    spawn(move || {
          loop {
             let mut writer_iter = writer_channel.iter();
             let msg = match writer_iter.next() {
@@ -217,7 +222,6 @@ fn start_writing_thread(mut o: SocketWriter, his_id: Address, writer_channel: mp
         }
         // FIXME remove entry from the map and send to sink
         });
-    Ok(())
 }
 
 fn exchange(socket_input:  SocketReader, socket_output: SocketWriter, data: Bytes)
@@ -277,7 +281,7 @@ mod test {
                 for i in o.into_blocking_iter() {
                     match i {
                         Event::AcceptingOn(port) => {
-                            if (port != 5483) {
+                            if port != 5483 {
                                 let addr = SocketAddr::from_str("127.0.0.1:5483").unwrap();
                                 cm.connect(addr);
                             }
@@ -291,7 +295,7 @@ mod test {
         let t1 = spawn_node(vec![1]);
         let t2 = spawn_node(vec![2]);
 
-        t1.join();
-        t2.join();
+        let _ = t1.join();
+        let _ = t2.join();
     }
 }
