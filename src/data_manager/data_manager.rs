@@ -61,16 +61,13 @@ impl DataManager {
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
-        let immutable_data: maidsafe_types::ImmutableData = payload.get_data();
-        name = immutable_data.get_name().clone();
+        name = payload.get_data::<maidsafe_types::ImmutableData>().get_name().clone();
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
-        let public_maid: maidsafe_types::PublicMaid = payload.get_data();
-        name = public_maid.get_name().clone();
+        name = payload.get_data::<maidsafe_types::PublicMaid>().get_name().clone();
       }
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        let public_anmaid: maidsafe_types::PublicMaid = payload.get_data();
-        name = public_anmaid.get_name().clone();
+        name = payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().clone();
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
     }

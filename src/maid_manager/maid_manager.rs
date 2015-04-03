@@ -37,6 +37,7 @@ impl MaidManager {
   pub fn handle_put(&mut self, from : &routing::types::Address, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+    let mut destinations : Vec<routing::DhtIdentity> = Vec::new();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
@@ -44,25 +45,21 @@ impl MaidManager {
         if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
           return Err(routing::RoutingError::InvalidRequest);
         }
-        let mut destinations : Vec<routing::DhtIdentity> = Vec::new();
         destinations.push(routing::DhtIdentity { id : immutable_data.get_name().get_id() });
-        return Ok(routing::Action::SendOn(destinations));
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         // PublicMaid doesn't use any allowance
-        let public_maid : maidsafe_types::PublicMaid = payload.get_data();
-        let mut destinations : Vec<routing::DhtIdentity> = Vec::new();
-        destinations.push(routing::DhtIdentity { id : public_maid.get_name().get_id() });
-        return Ok(routing::Action::SendOn(destinations));
+        destinations.push(routing::DhtIdentity {
+            id : payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id() });
       }
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
         // PublicAnMaid doesn't use any allowance
-        let public_anmaid : maidsafe_types::PublicAnMaid = payload.get_data();
-        let mut destinations : Vec<routing::DhtIdentity> = Vec::new();
-        destinations.push(routing::DhtIdentity { id : public_anmaid.get_name().get_id() });
-        return Ok(routing::Action::SendOn(destinations));
+        destinations.push(routing::DhtIdentity {
+            id : payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id() });
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
     }
+    Ok(routing::Action::SendOn(destinations))
   }
+
 }
