@@ -76,7 +76,6 @@ impl ConnectionManager {
         Ok(())
     }
 
-
     /// Sends a message to address. Returns Ok(()) if the sending might succeed, and returns an
     /// Err if the address is not connected. Return value of Ok does not mean that the data will be
     /// received. It is possible for the corresponding connection to hang up immediately after this
@@ -92,9 +91,8 @@ impl ConnectionManager {
         }));
         let writer_channel = try!(writer_channel);
         let send_result = writer_channel.send(message);
-        let cant_send = io::Error::new(io::ErrorKind::BrokenPipe, "?", None);  // FIXME (peter) error kind
-        let res = try!(send_result.map_err(|_|cant_send));
-        Ok(())
+        let cant_send = io::Error::new(io::ErrorKind::BrokenPipe, "?", None);
+        send_result.map_err(|_|cant_send)
     }
 
     pub fn drop_node(address: Address) {
