@@ -76,19 +76,24 @@ impl ConnectionManager {
         Ok(())
     }
 
+
     /// Sends a message to address. Returns Ok(()) if the sending might succeed, and returns an
     /// Err if the address is not connected. Return value of Ok does not mean that the data will be
     /// received. It is possible for the corresponding connection to hang up immediately after this
     /// function returns Ok.
     pub fn send(&self, message: Bytes, address : Address)-> IoResult<()> {
-    let ws = self.state.downgrade();
-    let writer_channel = try!(with_state(ws, |s| {
-        match s.writer_channels.get(&address) {
-            Some(x) =>  Ok(x.clone()),
-            None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
-        }
-    }));
-    // writer_channel.unwrap().send(message)  // TODO(team) need to convert SendError to IoResult
+        let ws = self.state.downgrade();
+
+        let writer_channel = try!(with_state(ws, |s| {
+                match s.writer_channels.get(&address) {
+                    Some(x) =>  Ok(x.clone()),
+                    None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
+                }
+        }));
+        let writer_channel = try!(writer_channel);
+        let send_result = writer_channel.send(message);
+        let cant_send = io::Error::new(io::ErrorKind::BrokenPipe, "?", None);  // FIXME (peter) error kind
+        let res = try!(send_result.map_err(|_|cant_send));
         Ok(())
     }
 
