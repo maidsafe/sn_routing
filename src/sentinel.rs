@@ -289,6 +289,7 @@ mod test {
   
   extern crate rand;
   extern crate sodiumoxide;
+  extern crate cbor;
 
   use super::*;
   use sodiumoxide::crypto;
@@ -297,10 +298,7 @@ mod test {
   use message_header;
   use messages;
   use std::marker::PhantomData;
-  use std::ops::Add;
-
-  // type AddSentinelMessage = (message_header::MessageHeader, &types::MessageTypeTag,
-  // 							 &types::SerialisedMessage, usize);
+  use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
   pub struct AddSentinelMessage {
   	header : message_header::MessageHeader,
@@ -372,6 +370,15 @@ mod test {
   	  }
   	  headers
   	}
+
+  	pub fn get_public_keys(&self) -> Vec<(types::Address, Vec<u8>)> {
+  	  let public_keys : Vec<(types::Address, Vec<u8>)> 
+  	    = Vec::with_capacity(self.nodes_.len());
+  	  for node in self.nodes_ {
+        public_keys.push((node.get_name(), node.get_public_key()));
+  	  }
+  	  public_keys
+  	}
   }
 
   pub struct TraceGetKeys {
@@ -409,7 +416,6 @@ mod test {
     }
   }
 
-  // requires lifetime specifier
   fn generate_messages(headers : Vec<message_header::MessageHeader>,
   					   tag : types::MessageTypeTag, message : &Vec<u8>,
   					   message_index : &mut u64)
@@ -420,7 +426,7 @@ mod test {
       											tag : tag.clone(),
       											serialised_message : message.clone(), 
       											index : message_index.clone()});
-      message_index.add(1);
+      *message_index += 1;
     }
     collect_messages
   }
@@ -440,23 +446,32 @@ mod test {
     let mut message_tracker : u64 = 0;
     {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
-      // // sentinel is currently agnostic to the serialised data
-      // let data : Vec<u8> = generate_data(100usize);
-      // let put_data = messages::put_data::PutData { 
-      // 	name_and_type_id : types::NameAndTypeId {
-      // 	  name : crypto::hash::sha512::hash(&data[..]).0.to_vec(),
-      // 	  type_id : 0u32  // TODO(ben 2015-04-02: how is type_id determined)
-      //   },
-      //   data : data
-      // };
-      let serialised_message = generate_data(100usize);
+      let data : Vec<u8> = generate_data(100usize);
+      let put_data = messages::put_data::PutData { 
+      	name_and_type_id : types::NameAndTypeId {
+      	  name : crypto::hash::sha512::hash(&data[..]).0.to_vec(),
+      	  type_id : 0u32  // TODO(ben 2015-04-02: how is type_id determined)
+        },
+        data : data
+      };
+	  let mut e = cbor::Encoder::from_memory();
+	  e.encode(&[&put_data]);
+	  let serialised_message = e.as_bytes().to_vec();
       let message_id = rand::random::<u32>() as types::MessageId;
       let tag = types::MessageTypeTag::PutData;
       let headers = signature_group.get_headers(our_destination, message_id, &serialised_message);
       let mut collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
+      
+      let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
+	   	target_id : group_address,
+	   	public_keys : signature_group.get_public_keys()
+	  };
+
+
       for message in collect_messages {
       	sentinel.add(message.header, message.tag, message.serialised_message);
       }
+
 
     }
   }

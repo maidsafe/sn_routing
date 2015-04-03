@@ -161,7 +161,7 @@ impl Decodable for Signature {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicKey {
-  pub public_key : Vec<u8> // Vec form of crypto::asymmetricbox::PublicKey which is an array
+  pub public_key : crypto::asymmetricbox::PublicKey
 }
 
 impl PublicKey {
