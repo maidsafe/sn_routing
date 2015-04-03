@@ -88,7 +88,7 @@ impl ConnectionManager {
             None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
         }
     }));
-    // writer_channel.unwrap().send(message)  // TODO need to convert SendError to IoResult
+    // writer_channel.unwrap().send(message)  // TODO(team) need to convert SendError to IoResult
         Ok(())
     }
 
@@ -142,16 +142,23 @@ fn register_new_writer(state: WeakState, his_id: Address, o: SocketWriter) -> Io
     unimplemented!()
 }
 
+// pushing events out to event_pipe
 fn start_reading(i: SocketReader, his_id: Address, sink: IoSender<Event>) -> IoResult<()> {
     spawn(move || {
         for msg in i.into_blocking_iter() {
-            sink.send(Event::NewMessage(his_id.clone(), msg));
-            // TODO: break on send failure
+            if sink.send(Event::NewMessage(his_id.clone(), msg)).is_err() {
+              return;  // exit thread if sink closed
+            }
         }
         sink.send(Event::LostConnection(his_id.clone()));
     });
-    Ok(()) // FIXME
+    Ok(())
 }
+
+// pushing messges out to socket
+// fn start_reading(i: SocketWriter, his_id: Address, writer_channel: mpsc::Sender<Bytes>) -> IoResult<()> {
+//     unimplemented!()
+// }
 
 fn exchange(socket_input:  SocketReader, socket_output: SocketWriter, data: Bytes)
             -> IoResult<(SocketReader, SocketWriter, Bytes)>
