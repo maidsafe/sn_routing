@@ -154,10 +154,12 @@ fn start_accepting_connections(state: WeakState) -> IoResult<()> {
     }));
 
     for (connection, u32) in event_receiver.into_blocking_iter() {
-        println!("start_accepting_connections accepted");
-        let _ =
-            upgrade_tcp(connection)
-            .and_then(|(i, o)| { handle_new_connection(state.clone(), i, o) });
+        let s = state.clone();
+        spawn(move|| {
+          let _ =
+              upgrade_tcp(connection)
+              .and_then(|(i, o)| { handle_new_connection(s, i, o) });
+        });
     }
 
     Ok(())
