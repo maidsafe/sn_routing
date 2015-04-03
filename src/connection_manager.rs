@@ -164,16 +164,32 @@ fn handle_new_connection(state: WeakState, i: SocketReader, o: SocketWriter) -> 
     let (i, o, his_data) = try!(exchange(i, o, encode(&our_id)));
     let his_id: Address = decode(his_data);
     println!("handle_new_connection our_id:{:?} his_id:{:?}", our_id, his_id);
-    try!(register_new_writer(state.clone(), his_id.clone(), o));
-    start_reading(i, his_id, sink.clone())
+    try!(register_connection(state.clone(), his_id.clone(), o));
 }
 
-fn register_new_writer(state: WeakState, his_id: Address, o: SocketWriter) -> IoResult<()> {
+fn register_connection(state: &mut WeakState, his_id: Address, mut o: SocketWriter) -> IoResult<()> {
+    try!(lock_mut_state(state, |s: &mut State| {
+        let channels = &mut s.writer_channels;
+        let (tx, rx) = mpsc::channel();
+        start_writing_thread(o, his_id, rx);
+        start_reading_thread(i, his_id, sink.clone());
+        channels.insert(his_id.clone(), tx);
+    }));
+    Ok(())
+}
+
+fn unregister_connection(state: WeakState, his_id: Address) -> IoResult<()> {
     unimplemented!()
+    // let mut ws = state.downgrade();
+    // lock_mut_state(&mut ws, |s: &mut State| {
+    //     let ch = &mut s.writer_channels;
+    //     ch.remove(&his_id);
+    // })
+
 }
 
 // pushing events out to event_pipe
-fn start_reading(i: SocketReader, his_id: Address, sink: IoSender<Event>) -> IoResult<()> {
+fn start_reading_thread(i: SocketReader, his_id: Address, sink: IoSender<Event>) -> IoResult<()> {
     spawn(move || {
         for msg in i.into_blocking_iter() {
             if sink.send(Event::NewMessage(his_id.clone(), msg)).is_err() {
