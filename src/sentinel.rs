@@ -297,9 +297,17 @@ mod test {
   use message_header;
   use messages;
   use std::marker::PhantomData;
+  use std::ops::Add;
 
   // type AddSentinelMessage = (message_header::MessageHeader, &types::MessageTypeTag,
   // 							 &types::SerialisedMessage, usize);
+
+  pub struct AddSentinelMessage {
+  	header : message_header::MessageHeader,
+  	tag : types::MessageTypeTag,
+  	serialised_message : Vec<u8>,
+  	index : u64
+  }
 
   pub fn generate_u8_64() -> Vec<u8> {
     let mut u8_64: Vec<u8> = vec![];
@@ -342,7 +350,7 @@ mod test {
   	pub fn get_group_address(&self) -> types::GroupAddress { self.group_address_.clone() }
 
   	pub fn get_headers(&self, destination_address : types::DestinationAddress,
-  					   message_id : types::MessageId, serialised_message : Vec<u8> )
+  					   message_id : types::MessageId, serialised_message : &Vec<u8> )
   					  -> Vec<message_header::MessageHeader> {
   	  let mut headers : Vec<message_header::MessageHeader> 
   	  				  = Vec::with_capacity(self.group_size_);
@@ -401,18 +409,21 @@ mod test {
     }
   }
 
-  // // requires lifetime specifier
-  // fn generate_messages(headers : &Vec<message_header::MessageHeader>,
-  // 					   tag : &types::MessageTypeTag, &message : types::SerialisedMessage,
-  // 					   &mut message_index : usize)
-  // 					   -> Vec<AddSentinelMessage> {
-  // 	let collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
-  //   for header in headers {
-  //     collect_messages.push((&header, &tag, &message, message_index));
-  //     message_index += 1;
-  //   }
-  // }
-  					   
+  // requires lifetime specifier
+  fn generate_messages(headers : Vec<message_header::MessageHeader>,
+  					   tag : types::MessageTypeTag, message : &Vec<u8>,
+  					   message_index : &mut u64)
+  					   -> Vec<AddSentinelMessage> {
+  	let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
+    for header in headers {
+      collect_messages.push(AddSentinelMessage{ header : header, 
+      											tag : tag.clone(),
+      											serialised_message : message.clone(), 
+      											index : message_index.clone()});
+      message_index.add(1);
+    }
+    collect_messages
+  }
 
   #[test]
   fn simple_add() {
@@ -426,7 +437,7 @@ mod test {
     											  types::Authority::NaeManager);
     let mut trace_get_keys = TraceGetKeys::new();
     let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
-    let mut message_tracker : usize = 0;
+    let mut message_tracker : u64 = 0;
     {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
       // // sentinel is currently agnostic to the serialised data
@@ -441,14 +452,10 @@ mod test {
       let serialised_message = generate_data(100usize);
       let message_id = rand::random::<u32>() as types::MessageId;
       let tag = types::MessageTypeTag::PutData;
-      let headers = signature_group.get_headers(our_destination, message_id, serialised_message);
-      // let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
-      // for header in headers {
-      //   collect_messages.push((header, &tag.clone(), &serialised_message.clone(), message_tracker));
-      //   message_tracker += 1;
-      // }
-      for header in headers {
-      	sentinel.add(header, tag, serialised_message);
+      let headers = signature_group.get_headers(our_destination, message_id, &serialised_message);
+      let mut collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
+      for message in collect_messages {
+      	sentinel.add(message.header, message.tag, message.serialised_message);
       }
 
     }
