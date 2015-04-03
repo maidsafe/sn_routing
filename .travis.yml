@@ -6,6 +6,8 @@ env:
     secure:secure: "jYb73sf4o6nUOOzCiyfRYeGcTHPM7pwl+wqEa7YhGHcIfR7uGkI8NQAb0BzizA/Iiy3+wFQzDbbw1ZtpHNgG49EI7cXFQ7WRk+Wz1H4gzkEh2J6XEgyTYoqTOdV4Ka3YtbELc69VLXJCePSvxGqGED0ncUg/kZmWK5f9ZR47zn8="
 language: rust
 before_install:
+    - wget https://static.rust-lang.org/rustup.sh
+    - sudo sh rustup.sh --date=2015-04-01
     - sudo apt-get install -qq libsqlite3-dev
 install:
     - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
