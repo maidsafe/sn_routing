@@ -83,7 +83,7 @@ impl ConnectionManager {
     pub fn send(&self, message: Bytes, address : Address)-> IoResult<()> {
     let ws = self.state.downgrade();
     let writer_channel = try!(with_state(ws, |s| {
-        match s.writer_channels.get_mut(&address) {
+        match s.writer_channels.get(&address) {
             Some(x) =>  Ok(x.clone()),
             None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
         }
