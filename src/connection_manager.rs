@@ -180,7 +180,7 @@ fn register_connection( state: &mut WeakState
         start_writing_thread(state2.clone(), o, his_id.clone(), rx);
         start_reading_thread(state2, i, his_id.clone(), s.event_pipe.clone());
         s.writer_channels.insert(his_id.clone(), tx);
-        s.event_pipe.send(Event::NewConnection(his_id));
+        let _ = s.event_pipe.send(Event::NewConnection(his_id));
         Ok(())
     })
 }
@@ -291,6 +291,7 @@ mod test {
                         },
                         Event::NewConnection(_) => {
                             println!("Connected");
+                            break;
                         },
                         _ => println!("unhandled"),
                     }
