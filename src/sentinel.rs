@@ -52,7 +52,7 @@ pub struct Sentinel<'a> {
 impl<'a> Sentinel<'a> {
   pub fn new(key_getter_traits_in: &'a mut types::KeyGetterTraits) -> Sentinel {
   	Sentinel {
-  		key_getter_traits_: key_getter_traits_in,
+  	  key_getter_traits_: key_getter_traits_in,
   	  node_accumulator_: NodeAccumulatorType::new(20),
   	  group_accumulator_: NodeAccumulatorType::new(20),
   	  group_key_accumulator_: KeyAccumulatorType::new(20),
@@ -264,13 +264,88 @@ impl<'a> Sentinel<'a> {
 	    let result = accounts[0].merge(&accounts);
 	    if result.is_some() {
 	      let mut tmp = verified_messages[0].clone();
-		    let mut e = cbor::Encoder::from_memory();
-		    e.encode(&[&result.unwrap()]).unwrap();
+		  let mut e = cbor::Encoder::from_memory();
+		  e.encode(&[&result.unwrap()]).unwrap();
 	      tmp.2 = types::array_as_vector(e.as_bytes());
 	      return Some(tmp);
 	    }
 	  }
 	  None
   }
+}
 
+#[cfg(test)]
+mod test {
+  
+  extern crate rand;
+  extern crate sodiumoxide;
+
+  use super::*;
+  use sodiumoxide::crypto;
+  use types;
+  use types::RoutingTrait;
+  use message_header;
+
+  pub fn generate_u8_64() -> Vec<u8> {
+    let mut u8_64: Vec<u8> = vec![];
+    for _ in (0..64) {
+      u8_64.push(rand::random::<u8>());
+    }
+    u8_64
+  }
+
+  struct SignatureGroup {
+  	group_address : types::GroupAddress,
+  	group_size : usize,
+  	authority : types::Authority,
+  	nodes : Vec<types::Pmid>
+  }
+
+  impl SignatureGroup {
+  	pub fn new(group_address : types::GroupAddress,
+  		       group_size : usize, authority : types::Authority) -> SignatureGroup {
+  	  let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
+  	  for _ in 0..group_size {
+  	  	nodes.push(types::Pmid::new());
+  	  }
+  	  SignatureGroup {
+  	  	group_address : group_address,
+  	  	group_size : group_size,
+  	  	authority : authority,
+  	  	nodes : nodes
+  	  }
+  	}
+
+  	pub fn get_group_address(&self) -> types::GroupAddress { self.group_address.clone() }
+
+  	pub fn get_headers(&self, destination_address : types::DestinationAddress,
+  					   message_id : types::MessageId, serialised_message : Vec<u8> )
+  					  -> Vec<message_header::MessageHeader> {
+  	  let mut headers : Vec<message_header::MessageHeader> 
+  	  				  = Vec::with_capacity(self.group_size);
+  	  for node in &self.nodes {
+  	  	headers.push(message_header
+  	  		         ::MessageHeader::new(message_id.clone(),
+  	  		         		destination_address.clone(),
+							types::SourceAddress {
+							  from_node : node.get_name(),
+							  from_group : self.group_address.clone(),
+	  						  reply_to : generate_u8_64()
+							}, self.authority.clone(),
+						    types::Signature {
+							  // sign forwards to crypto/ed25519.rs 
+	                          // secret key is [u8; 64]
+							  signature : crypto::sign::sign(&serialised_message[..],
+							                                 &node.get_secret_sign_key())
+  	  				        }
+  	  				));
+  	  }
+  	  headers
+  	}
+  }
+
+  #[test]
+  fn simple_add() {
+    
+  }
 }
