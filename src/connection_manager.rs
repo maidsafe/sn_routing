@@ -84,7 +84,7 @@ impl ConnectionManager {
     pub fn send(&self, message: Bytes, address : Address)-> IoResult<()> {
         let ws = self.state.downgrade();
 
-        let writer_channel = try!(with_state(&ws, |s| {
+        let writer_channel = try!(lock_state(&ws, |s| {
                 match s.writer_channels.get(&address) {
                     Some(x) =>  Ok(x.clone()),
                     None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
@@ -97,11 +97,11 @@ impl ConnectionManager {
     }
 
     pub fn drop_node(&self, address: Address) -> IoResult<()>{  // FIXME
-        // let ws = self.state.downgrade();
-        // try!(with_state(ws, |mut s| {
-        //     s.writer_channels.remove(&address)
-        // }));
-        Ok(())
+        let mut ws = self.state.downgrade();
+        lock_mut_state(&mut ws, |s: &mut State| {
+            let ch = &mut s.writer_channels;
+            ch.remove(&address);
+        })
     }
 }
 
@@ -111,7 +111,7 @@ struct State {
     writer_channels: HashMap<Address, mpsc::Sender<Bytes>>,
 }
 
-fn with_state<T, F: Fn(&State) -> T>(state: &WeakState, f: F) -> IoResult<T> {
+fn lock_state<T, F: Fn(&State) -> T>(state: &WeakState, f: F) -> IoResult<T> {
     state.upgrade().ok_or(io::Error::new(io::ErrorKind::Interrupted,
                                          "Can't dereference weak",
                                          None))
@@ -124,13 +124,26 @@ fn with_state<T, F: Fn(&State) -> T>(state: &WeakState, f: F) -> IoResult<T> {
     })
 }
 
+fn lock_mut_state<T, F: Fn(&mut State) -> T>(state: &mut WeakState, f: F) -> IoResult<T> {
+    state.upgrade().ok_or(io::Error::new(io::ErrorKind::Interrupted,
+                                         "Can't dereference weak",
+                                         None))
+    .and_then(|arc_state| {
+        let opt_state = arc_state.lock();
+        match opt_state {
+            Ok(mut s)  => Ok(f(&mut s)),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Interrupted, "?", None))
+        }
+    })
+}
+
 fn start_accepting_connections(state: WeakState) -> IoResult<()> {
     println!("start_accepting_connections");
     let (event_receiver, listener) = try!(listen());
 
     let local_port = try!(listener.local_addr()).port();
 
-    try!(with_state(&state, |s| {
+    try!(lock_state(&state, |s| {
         s.event_pipe.send(Event::AcceptingOn(local_port));
     }));
 
@@ -145,7 +158,7 @@ fn start_accepting_connections(state: WeakState) -> IoResult<()> {
 }
 
 fn handle_new_connection(state: WeakState, i: SocketReader, o: SocketWriter) -> IoResult<()> {
-    let (our_id, sink) = try!(with_state(&state, |s| (s.our_id.clone(),
+    let (our_id, sink) = try!(lock_state(&state, |s| (s.our_id.clone(),
                                                       s.event_pipe.clone())));
 
     let (i, o, his_data) = try!(exchange(i, o, encode(&our_id)));
