@@ -43,11 +43,25 @@ impl PmidNode {
   }
 
   pub fn handle_put(&mut self, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
-    // TODO the data_type shall be passed down or data needs to be name + content
-    //      here assuming data is serialised_data of ImmutableData
+    let mut data_name = Vec::<u8>::new();
     let mut d = Decoder::from_bytes(&data[..]);
-    let immutable_data: maidsafe_types::ImmutableData = d.decode().next().unwrap().unwrap();
-    let data_name = self::routing::types::array_as_vector(&immutable_data.get_name().get_id());
+    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+    match payload.get_type_tag() {
+      maidsafe_types::PayloadTypeTag::ImmutableData => {
+        data_name = self::routing::types::array_as_vector(
+            &payload.get_data::<maidsafe_types::ImmutableData>().get_name().get_id());
+      }
+      maidsafe_types::PayloadTypeTag::PublicMaid => {
+        data_name = self::routing::types::array_as_vector(
+            &payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id());
+      }
+      maidsafe_types::PayloadTypeTag::PublicAnMaid => {
+        data_name = self::routing::types::array_as_vector(
+            &payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id());
+      }
+      _ => return Err(routing::RoutingError::InvalidRequest)
+    }
+    // the type_tag needs to be stored as well
     self.chunk_store_.put(data_name, data.clone());
     return Err(routing::RoutingError::Success);
   }

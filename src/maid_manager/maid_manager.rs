@@ -35,19 +35,31 @@ impl MaidManager {
   }
 
   pub fn handle_put(&mut self, from : &routing::types::Address, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
-    // TODO the data_type shall be passed down or data needs to be name + content
-    //      here assuming data is serialised_data of ImmutableData
     let mut d = Decoder::from_bytes(&data[..]);
-    let immutable_data: maidsafe_types::ImmutableData = d.decode().next().unwrap().unwrap();
-    let data_name = self::routing::types::array_as_vector(&immutable_data.get_name().get_id());
-
-    if !self.db_.put_data(from, data.len() as u64) {
-      return Err(routing::RoutingError::InvalidRequest);
-    }
-
+    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     let mut destinations : Vec<routing::DhtIdentity> = Vec::new();
-    destinations.push(routing::DhtIdentity { id : immutable_data.get_name().get_id() });
-
+    match payload.get_type_tag() {
+      maidsafe_types::PayloadTypeTag::ImmutableData => {
+        let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
+        let data_name = self::routing::types::array_as_vector(&immutable_data.get_name().get_id());
+        if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
+          return Err(routing::RoutingError::InvalidRequest);
+        }
+        destinations.push(routing::DhtIdentity { id : immutable_data.get_name().get_id() });
+      }
+      maidsafe_types::PayloadTypeTag::PublicMaid => {
+        // PublicMaid doesn't use any allowance
+        destinations.push(routing::DhtIdentity {
+            id : payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id() });
+      }
+      maidsafe_types::PayloadTypeTag::PublicAnMaid => {
+        // PublicAnMaid doesn't use any allowance
+        destinations.push(routing::DhtIdentity {
+            id : payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id() });
+      }
+      _ => return Err(routing::RoutingError::InvalidRequest)
+    }
     Ok(routing::Action::SendOn(destinations))
   }
+
 }
