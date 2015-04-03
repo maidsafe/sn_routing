@@ -298,8 +298,8 @@ mod test {
   use messages;
   use std::marker::PhantomData;
 
-  type AddSentinelMessage = (&message_header::MessageHeader, &types::MessageTypeTag,
-  							 &types::SerialisedMessage, usize);
+  // type AddSentinelMessage = (message_header::MessageHeader, &types::MessageTypeTag,
+  // 							 &types::SerialisedMessage, usize);
 
   pub fn generate_u8_64() -> Vec<u8> {
     let mut u8_64: Vec<u8> = vec![];
@@ -401,7 +401,7 @@ mod test {
     }
   }
 
-  // requires lifetime specifier
+  // // requires lifetime specifier
   // fn generate_messages(headers : &Vec<message_header::MessageHeader>,
   // 					   tag : &types::MessageTypeTag, &message : types::SerialisedMessage,
   // 					   &mut message_index : usize)
@@ -442,10 +442,13 @@ mod test {
       let message_id = rand::random::<u32>() as types::MessageId;
       let tag = types::MessageTypeTag::PutData;
       let headers = signature_group.get_headers(our_destination, message_id, serialised_message);
-      let collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
+      // let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
+      // for header in headers {
+      //   collect_messages.push((header, &tag.clone(), &serialised_message.clone(), message_tracker));
+      //   message_tracker += 1;
+      // }
       for header in headers {
-        collect_messages.push((&header, &tag, &message, message_tracker));
-        message_index += 1;
+      	sentinel.add(header, tag, serialised_message);
       }
 
     }
