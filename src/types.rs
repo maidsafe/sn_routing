@@ -135,6 +135,15 @@ pub struct NameAndTypeId {
   pub type_id : u32
 }
 
+impl NameAndTypeId {
+    pub fn generate_random() -> NameAndTypeId {
+        NameAndTypeId {
+            name: generate_random_vec_u8(64),
+            type_id: rand::random::<u32>(),
+        }
+    }
+}
+
 impl Encodable for NameAndTypeId {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_000, &(&self.name, &self.type_id)).encode(e)
@@ -355,6 +364,16 @@ pub struct SourceAddress {
   pub from_node : Address,
   pub from_group : Address,
   pub reply_to : Address
+}
+
+impl SourceAddress {
+    pub fn generate_random() -> SourceAddress {
+        SourceAddress {
+            from_node: generate_random_vec_u8(64),
+            from_group: generate_random_vec_u8(64),
+            reply_to: generate_random_vec_u8(64),
+        }
+    }
 }
 
 impl Encodable for SourceAddress {
