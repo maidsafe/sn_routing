@@ -23,7 +23,7 @@ use bchannel::Sender;
 use tcp_connections::{listen, connect_tcp, TcpReader, TcpWriter, upgrade_tcp};
 use std::sync::{Arc, Mutex, Weak};
 use std::sync::mpsc;
-use cbor::{Encoder, CborError, Decoder};
+use cbor::{Encoder, Decoder};
 use rustc_serialize::{Decodable, Encodable};
 
 //use types::Address;
@@ -45,6 +45,7 @@ pub struct ConnectionManager {
     state: Arc<Mutex<State>>,
 }
 
+#[derive(Debug)]
 pub enum Event {
     NewMessage(Address, Bytes),
     NewConnection(Address),
@@ -82,7 +83,7 @@ impl ConnectionManager {
     /// function returns Ok.
     pub fn send(&self, message: Bytes, address : Address)-> IoResult<()> {
     let ws = self.state.downgrade();
-    let writer_channel = try!(with_state(ws, |s| {
+    let writer_channel = try!(with_state(&ws, |s| {
         match s.writer_channels.get(&address) {
             Some(x) =>  Ok(x.clone()),
             None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
@@ -103,7 +104,7 @@ struct State {
     writer_channels: HashMap<Address, mpsc::Sender<Bytes>>,
 }
 
-fn with_state<T, F: Fn(&State) -> T>(state: WeakState, f: F) -> IoResult<T> {
+fn with_state<T, F: Fn(&State) -> T>(state: &WeakState, f: F) -> IoResult<T> {
     state.upgrade().ok_or(io::Error::new(io::ErrorKind::Interrupted,
                                          "Can't dereference weak",
                                          None))
@@ -117,9 +118,17 @@ fn with_state<T, F: Fn(&State) -> T>(state: WeakState, f: F) -> IoResult<T> {
 }
 
 fn start_accepting_connections(state: WeakState) -> IoResult<()> {
-    let (listener, port) = try!(listen());
+    println!("start_accepting_connections");
+    let (event_receiver, listener) = try!(listen());
 
-    for (connection, u32) in listener.into_blocking_iter() {
+    let local_port = try!(listener.local_addr()).port();
+
+    try!(with_state(&state, |s| {
+        s.event_pipe.send(Event::AcceptingOn(local_port));
+    }));
+
+    for (connection, u32) in event_receiver.into_blocking_iter() {
+        println!("start_accepting_connections accepted");
         let _ =
             upgrade_tcp(connection)
             .and_then(|(i, o)| { handle_new_connection(state.clone(), i, o) });
@@ -129,11 +138,12 @@ fn start_accepting_connections(state: WeakState) -> IoResult<()> {
 }
 
 fn handle_new_connection(state: WeakState, i: SocketReader, o: SocketWriter) -> IoResult<()> {
-    let (our_id, sink) = try!(with_state(state.clone(), |s| (s.our_id.clone(),
-                                                             s.event_pipe.clone())));
+    let (our_id, sink) = try!(with_state(&state, |s| (s.our_id.clone(),
+                                                      s.event_pipe.clone())));
 
     let (i, o, his_data) = try!(exchange(i, o, encode(&our_id)));
     let his_id: Address = decode(his_data);
+    println!("handle_new_connection our_id:{:?} his_id:{:?}", our_id, his_id);
     try!(register_new_writer(state.clone(), his_id.clone(), o));
     start_reading(i, his_id, sink.clone())
 }
@@ -184,7 +194,7 @@ fn exchange(socket_input:  SocketReader, socket_output: SocketWriter, data: Byte
         if s.send(&data).is_err() {
             return;
         }
-        output.send(s);
+        let _ = output.send(s);
     });
 
     let opt_result = socket_input.recv_block();
@@ -204,7 +214,7 @@ fn exchange(socket_input:  SocketReader, socket_output: SocketWriter, data: Byte
 fn encode<T>(value: &T) -> Bytes where T: Encodable
 {
     let mut enc = Encoder::from_memory();
-    enc.encode(&[value]);
+    let _ = enc.encode(&[value]);
     enc.into_bytes()
 }
 
@@ -216,8 +226,36 @@ fn decode<T>(bytes: Bytes) -> T where T: Decodable {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use std::thread::spawn;
+    use bchannel;
+    use std::net::{SocketAddr};
+    use std::str::FromStr;
 
 #[test]
     fn connection_manager() {
+        let spawn_node = |id| {
+            spawn(||{
+                let (i, o) = bchannel::channel();
+                let cm = ConnectionManager::new(id, i);
+                for i in o.into_blocking_iter() {
+                    match i {
+                        Event::AcceptingOn(port) => {
+                            if (port != 5483) {
+                                let addr = SocketAddr::from_str("127.0.0.1:5483").unwrap();
+                                cm.connect(addr);
+                            }
+                        },
+                        _ => println!("unhandled"),
+                    }
+                }
+            })
+        };
+
+        let t1 = spawn_node(vec![1]);
+        let t2 = spawn_node(vec![2]);
+
+        t1.join();
+        t2.join();
     }
 }
