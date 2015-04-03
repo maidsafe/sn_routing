@@ -8,6 +8,8 @@ language: rust
 before_install:
     - sudo apt-get install -qq libsqlite3-dev
 install:
+    - wget http://static.rust-lang.org/rustup.sh
+    - sudo sh rustup.sh --date=2015-04-01
     - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
     - tar xvfz libsodium-1.0.0.tar.gz
     - cd libsodium-1.0.0 && ./configure --prefix=/usr && make && sudo make install && cd ..
