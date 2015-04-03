@@ -92,7 +92,6 @@ impl ConnectionManager {
                 }
         }));
 
-        let writer_channel = try!(writer_channel);
         let send_result = writer_channel.send(message);
         let cant_send = io::Error::new(io::ErrorKind::BrokenPipe, "?", None);
         send_result.map_err(|_|cant_send)
@@ -114,14 +113,14 @@ struct State {
     writer_channels: HashMap<Address, mpsc::Sender<Bytes>>,
 }
 
-fn lock_state<T, F: Fn(&State) -> T>(state: &WeakState, f: F) -> IoResult<T> {
+fn lock_state<T, F: Fn(&State) -> IoResult<T>>(state: &WeakState, f: F) -> IoResult<T> {
     state.upgrade().ok_or(io::Error::new(io::ErrorKind::Interrupted,
                                          "Can't dereference weak",
                                          None))
     .and_then(|arc_state| {
         let opt_state = arc_state.lock();
         match opt_state {
-            Ok(s)  => Ok(f(&s)),
+            Ok(s)  => f(&s),
             Err(e) => Err(io::Error::new(io::ErrorKind::Interrupted, "?", None))
         }
     })
@@ -147,7 +146,7 @@ fn start_accepting_connections(state: WeakState) -> IoResult<()> {
     let local_port = try!(listener.local_addr()).port();
 
     try!(lock_state(&state, |s| {
-        s.event_pipe.send(Event::AcceptingOn(local_port));
+        s.event_pipe.send(Event::AcceptingOn(local_port)).or(Ok(()))
     }));
 
     for (connection, u32) in event_receiver.into_blocking_iter() {
@@ -161,7 +160,7 @@ fn start_accepting_connections(state: WeakState) -> IoResult<()> {
 }
 
 fn handle_new_connection(mut state: WeakState, i: SocketReader, o: SocketWriter) -> IoResult<()> {
-    let our_id = try!(lock_state(&state, |s| s.our_id.clone()));
+    let our_id = try!(lock_state(&state, |s| Ok(s.our_id.clone())));
     let (i, o, his_data) = try!(exchange(i, o, encode(&our_id)));
     let his_id: Address = decode(his_data);
     println!("handle_new_connection our_id:{:?} his_id:{:?}", our_id, his_id);
@@ -260,7 +259,7 @@ fn encode<T>(value: &T) -> Bytes where T: Encodable
 
 // TODO(Peter): This should return Option<T>
 fn decode<T>(bytes: Bytes) -> T where T: Decodable {
-    let mut dec = Decoder::from_bytes(bytes.as_slice());
+    let mut dec = Decoder::from_bytes(&bytes[..]);
     dec.decode().next().unwrap().unwrap()
 }
 
@@ -279,11 +278,12 @@ mod test {
                 let (i, o) = bchannel::channel();
                 let cm = ConnectionManager::new(id, i);
                 for i in o.into_blocking_iter() {
+                    println!("Received event {:?}", i);
                     match i {
                         Event::AcceptingOn(port) => {
                             if port != 5483 {
                                 let addr = SocketAddr::from_str("127.0.0.1:5483").unwrap();
-                                cm.connect(addr);
+                                assert!(cm.connect(addr).is_ok());
                             }
                         },
                         _ => println!("unhandled"),
@@ -295,7 +295,7 @@ mod test {
         let t1 = spawn_node(vec![1]);
         let t2 = spawn_node(vec![2]);
 
-        let _ = t1.join();
-        let _ = t2.join();
+        assert!(t1.join().is_ok());
+        assert!(t2.join().is_ok());
     }
 }
