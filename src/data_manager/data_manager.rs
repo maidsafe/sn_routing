@@ -61,15 +61,15 @@ impl DataManager {
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
-        let immutable_data: maidsafe_types::ImmutableData = d.decode().next().unwrap().unwrap();
+        let immutable_data: maidsafe_types::ImmutableData = payload.get_data();
         name = immutable_data.get_name().clone();
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
-        let public_maid: maidsafe_types::PublicMaid = d.decode().next().unwrap().unwrap();
+        let public_maid: maidsafe_types::PublicMaid = payload.get_data();
         name = public_maid.get_name().clone();
       }
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        let public_anmaid: maidsafe_types::PublicMaid = d.decode().next().unwrap().unwrap();
+        let public_anmaid: maidsafe_types::PublicMaid = payload.get_data();
         name = public_anmaid.get_name().clone();
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
@@ -115,10 +115,9 @@ mod test {
     let name = NameType([3u8; 64]);
     let value = generate_random_bytes(1024);
     let data = ImmutableData::new(name, value);
+    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();
-
-    encoder.encode(&[&data]);
-
+    encoder.encode(&[&payload]);
     let result = data_manager.handle_put(&array_as_vector(encoder.as_bytes()));
     assert_eq!(result.is_err(), false);
 
