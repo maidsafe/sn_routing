@@ -29,6 +29,18 @@ pub struct ConnectRequest {
   pub requester_fob : types::PublicPmid
 }
 
+impl ConnectRequest {
+    pub fn generate_random() -> ConnectRequest {
+        ConnectRequest {
+            local: types::EndPoint::generate_random(),
+            external: types::EndPoint::generate_random(),
+            request_id: types::generate_random_vec_u8(64),
+            receiver_id: types::generate_random_vec_u8(64),
+            requester_fob: types::PublicPmid::generate_random(),
+        }
+    }
+}
+
 impl Encodable for ConnectRequest {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.local, &self.external, &self.request_id,
@@ -43,4 +55,25 @@ impl Decodable for ConnectRequest {
     Ok(ConnectRequest { local: local, external: external, request_id: request_id,
                         receiver_id: receiver_id, requester_fob: requester_fob})
   }
+}
+
+mod test {
+    extern crate cbor;
+
+    use types;
+    use super::*;
+    use cbor::CborTagEncode;
+
+    #[test]
+    fn connect_request_serialisation() {
+        let obj_before = ConnectRequest::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: ConnectRequest = d.decode().next().unwrap().unwrap();
+
+        assert_eq!(obj_before, obj_after);
+    }
 }

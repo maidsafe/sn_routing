@@ -18,6 +18,8 @@
 
 #![allow(unused_assignments)]
 extern crate sodiumoxide;
+extern crate rand;
+use std::mem;
 
 use sodiumoxide::crypto;
 
@@ -46,6 +48,14 @@ pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
     arr[i] = vector[i];
   }
   arr
+}
+
+pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
+    let mut vec: Vec<u8> = Vec::with_capacity(size);
+    for i in 0..size {
+        vec.push(rand::random::<u8>());
+    }
+    vec
 }
 
 static GROUP_SIZE: u32 = 23;
@@ -145,6 +155,10 @@ pub struct Signature {
 }
 
 impl Signature {
+  pub fn generate_random() -> Signature {
+      Signature { signature: generate_random_vec_u8(64), }
+  }
+
   pub fn get_signature(&self) -> crypto::sign::Signature {
     crypto::sign::Signature(vector_as_u8_64_array(self.signature.clone()))
   }
@@ -170,6 +184,12 @@ pub struct PublicKey {
 }
 
 impl PublicKey {
+  pub fn generate_random() -> PublicKey {
+      let mut vec: Vec<u8> = Vec::with_capacity(64);
+      vec.push_all(&(crypto::asymmetricbox::gen_keypair().0).0);
+      PublicKey { public_key: vec, }
+  }
+
   pub fn get_public_key(&self) -> crypto::sign::PublicKey {
     crypto::sign::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
   }
@@ -193,6 +213,15 @@ impl Decodable for PublicKey {
 pub struct PublicPmid {
   public_key: PublicKey,
   validation_token: Signature
+}
+
+impl PublicPmid {
+    pub fn generate_random() -> PublicPmid {
+        PublicPmid {
+            public_key: PublicKey::generate_random(),
+            validation_token: Signature::generate_random(),
+        }
+    }
 }
 
 impl Encodable for PublicPmid {
@@ -270,6 +299,12 @@ impl Pmid {
 pub struct EndPoint {
   pub ip_addr : Vec<u8>,
   pub socket : u32,
+}
+
+impl EndPoint {
+    pub fn generate_random() -> EndPoint {
+        EndPoint { ip_addr: generate_random_vec_u8(4), socket: rand::random::<u32>(), }
+    }
 }
 
 impl Encodable for EndPoint {

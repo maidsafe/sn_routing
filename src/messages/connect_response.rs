@@ -31,6 +31,20 @@ pub struct ConnectResponse {
   pub receiver_fob : types::PublicPmid
 }
 
+impl ConnectResponse {
+    pub fn generate_random() -> ConnectResponse {
+        ConnectResponse {
+            requester_local: types::EndPoint::generate_random(),
+            requester_external: types::EndPoint::generate_random(),
+            receiver_local: types::EndPoint::generate_random(),
+            receiver_external: types::EndPoint::generate_random(),
+            requester_id: types::generate_random_vec_u8(64),
+            receiver_id: types::generate_random_vec_u8(64),
+            receiver_fob: types::PublicPmid::generate_random(),
+        }
+    }
+}
+
 impl Encodable for ConnectResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.requester_local, &self.requester_external,
@@ -48,4 +62,25 @@ impl Decodable for ConnectResponse {
                          receiver_local: receiver_local, receiver_external: receiver_external,
                          requester_id: requester_id, receiver_id: receiver_id, receiver_fob: receiver_fob})
   }
+}
+
+mod test {
+    extern crate cbor;
+
+    use types;
+    use super::*;
+    use cbor::CborTagEncode;
+
+    #[test]
+    fn connect_response_serialisation() {
+        let obj_before = ConnectResponse::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: ConnectResponse = d.decode().next().unwrap().unwrap();
+
+        assert_eq!(obj_before, obj_after);
+    }
 }
