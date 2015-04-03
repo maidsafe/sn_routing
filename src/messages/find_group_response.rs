@@ -62,7 +62,7 @@ mod test {
     use cbor::CborTagEncode;
 
     #[test]
-    fn connect_request_serialisation() {
+    fn find_group_response_serialisation() {
         let obj_before = FindGroupResponse::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
