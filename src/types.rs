@@ -48,7 +48,7 @@ pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
   arr
 }
 
-static GROUP_SIZE: u32 = 23;
+pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
 
 pub struct DhtAddress([u8; 64]);

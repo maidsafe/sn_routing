@@ -295,7 +295,11 @@ mod test {
   use types;
   use types::RoutingTrait;
   use message_header;
+  use messages;
   use std::marker::PhantomData;
+
+  type AddSentinelMessage = (&message_header::MessageHeader, &types::MessageTypeTag,
+  							 &types::SerialisedMessage, usize);
 
   pub fn generate_u8_64() -> Vec<u8> {
     let mut u8_64: Vec<u8> = vec![];
@@ -303,6 +307,14 @@ mod test {
       u8_64.push(rand::random::<u8>());
     }
     u8_64
+  }
+
+  pub fn generate_data(length : usize) -> Vec<u8> {
+    let mut data: Vec<u8> = vec![];
+    for _ in (0..length) {
+      data.push(rand::random::<u8>());
+    }
+    data
   }
 
   struct SignatureGroup {
@@ -389,6 +401,19 @@ mod test {
     }
   }
 
+  // requires lifetime specifier
+  // fn generate_messages(headers : &Vec<message_header::MessageHeader>,
+  // 					   tag : &types::MessageTypeTag, &message : types::SerialisedMessage,
+  // 					   &mut message_index : usize)
+  // 					   -> Vec<AddSentinelMessage> {
+  // 	let collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
+  //   for header in headers {
+  //     collect_messages.push((&header, &tag, &message, message_index));
+  //     message_index += 1;
+  //   }
+  // }
+  					   
+
   #[test]
   fn simple_add() {
   	let our_pmid = types::Pmid::new();
@@ -396,10 +421,33 @@ mod test {
     	dest : our_pmid.get_name(),
     	reply_to : generate_u8_64()
     };
+    let group_address = generate_u8_64();
+    let mut signature_group = SignatureGroup::new(group_address, types::GROUP_SIZE as usize,
+    											  types::Authority::NaeManager);
     let mut trace_get_keys = TraceGetKeys::new();
     let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
+    let mut message_tracker : usize = 0;
     {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
+      // // sentinel is currently agnostic to the serialised data
+      // let data : Vec<u8> = generate_data(100usize);
+      // let put_data = messages::put_data::PutData { 
+      // 	name_and_type_id : types::NameAndTypeId {
+      // 	  name : crypto::hash::sha512::hash(&data[..]).0.to_vec(),
+      // 	  type_id : 0u32  // TODO(ben 2015-04-02: how is type_id determined)
+      //   },
+      //   data : data
+      // };
+      let serialised_message = generate_data(100usize);
+      let message_id = rand::random::<u32>() as types::MessageId;
+      let tag = types::MessageTypeTag::PutData;
+      let headers = signature_group.get_headers(our_destination, message_id, serialised_message);
+      let collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
+      for header in headers {
+        collect_messages.push((&header, &tag, &message, message_tracker));
+        message_index += 1;
+      }
+
     }
   }
 }
