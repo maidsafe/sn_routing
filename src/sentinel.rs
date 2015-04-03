@@ -372,10 +372,17 @@ mod test {
   	}
 
   	pub fn get_public_keys(&self) -> Vec<(types::Address, Vec<u8>)> {
-  	  let public_keys : Vec<(types::Address, Vec<u8>)> 
-  	    = Vec::with_capacity(self.nodes_.len());
-  	  for node in self.nodes_ {
-        public_keys.push((node.get_name(), node.get_public_key()));
+  	  let mut public_keys : Vec<(types::Address, Vec<u8>)> 
+  	  	= Vec::with_capacity(self.nodes_.len());
+  	  for node in &self.nodes_ {
+  	  	// TODO(ben 2015-4-3): replace with proper types for PublicKey
+  	  	//	       	  		   this is ridiculous:
+	  	  	let public_key = node.get_public_key().0;
+	  	  	let mut public_key_as_vec : Vec<u8> = Vec::with_capacity(public_key.len());
+	  	  	for i in public_key.iter() {
+	  	      public_key_as_vec.push(*i);
+	  	  	}
+        public_keys.push((node.get_name(), public_key_as_vec));
   	  }
   	  public_keys
   	}
@@ -463,7 +470,7 @@ mod test {
       let mut collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
       
       let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
-	   	target_id : group_address,
+	   	target_id : signature_group.get_group_address(),
 	   	public_keys : signature_group.get_public_keys()
 	  };
 
