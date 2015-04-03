@@ -56,7 +56,7 @@ impl DataManager {
   }
 
   pub fn handle_put(&mut self, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
-    let mut name = maidsafe_types::NameType([0u8; 64]);
+    let mut name : maidsafe_types::NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {

@@ -43,7 +43,7 @@ impl PmidNode {
   }
 
   pub fn handle_put(&mut self, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
-    let mut data_name = Vec::<u8>::new();
+    let mut data_name : Vec<u8>;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
