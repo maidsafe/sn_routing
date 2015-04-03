@@ -105,8 +105,8 @@ impl RoutingTable {
             return (true, None);
         }
 
-        if RoutingTable::closer_to_target(&self.our_id, &their_info.fob.id,
-                &self.routing_table[RoutingTable::get_group_size()].fob.id) {
+        if RoutingTable::closer_to_target(&their_info.fob.id,
+                &self.routing_table[RoutingTable::get_group_size()].fob.id, &self.our_id) {
             self.push_back_then_sort(their_info);
             let removal_node_index = self.find_candidate_for_removal();
             if removal_node_index == usize::MAX {
@@ -148,8 +148,8 @@ impl RoutingTable {
         }
         let group_size = RoutingTable::get_group_size() - 1;
         let thier_id_clone = their_id.clone();
-        if RoutingTable::closer_to_target(&self.our_id, &their_id,
-                                          &self.routing_table[group_size].fob.id) {
+        if RoutingTable::closer_to_target(&their_id, &self.routing_table[group_size].fob.id,
+                                          &self.our_id) {
             return true;
         }
         self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal())
@@ -202,7 +202,7 @@ impl RoutingTable {
         }
 
         closest_to_target.sort_by(
-            |a, b| if RoutingTable::closer_to_target(&target, &a.fob.id, &b.fob.id) {
+            |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id, &target) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
@@ -261,30 +261,39 @@ impl RoutingTable {
         assert!(self.routing_table.len() >= RoutingTable::get_optimal_size());
 
         let mut number_in_bucket = 0usize;
-        let mut bucket = 0usize;
+        let mut current_bucket = 0usize;
 
-        let mut start = self.routing_table.len() - 1;
+        // Start iterating from the end, i.e. the furthest from our ID.
+        let mut counter = self.routing_table.len() - 1;
+        let mut furthest_in_this_bucket = counter;
+
+        // Stop iterating at our furthest close group member since we won't remove any peer in our
+        // close group
         let finish = RoutingTable::get_group_size();
 
-        while start >= finish {
-            let index = self.bucket_index(&self.routing_table[start].fob.id);
-            if index != bucket {
-                bucket = index;
+        while counter >= finish {
+            let bucket_index = self.bucket_index(&self.routing_table[counter].fob.id);
+
+            // If we're entering a new bucket, reset details.
+            if bucket_index != current_bucket {
+                current_bucket = bucket_index;
                 number_in_bucket = 0;
+                furthest_in_this_bucket = counter;
             }
 
+            // Check for an excess of contacts in this bucket.
             number_in_bucket += 1;
             if number_in_bucket > RoutingTable::get_bucket_size() {
                 break;
             }
 
-            start -= 1;
+            counter -= 1;
         }
 
-        if start < finish {
+        if counter < finish {
             usize::MAX
         } else {
-            start
+            furthest_in_this_bucket
         }
     }
 
@@ -320,33 +329,32 @@ impl RoutingTable {
         self.routing_table.push(node_info);
         let our_id = &self.our_id;
         self.routing_table.sort_by(
-            |a, b| if RoutingTable::closer_to_target(our_id, &a.fob.id, &b.fob.id) {
+            |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id, our_id) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
             });
     }
 
-    // lhs is closer to base than rhs
-    fn closer_to_target(base: &maidsafe_types::NameType,
-                        lhs: &maidsafe_types::NameType,
-                        rhs: &maidsafe_types::NameType) -> bool {
+    // lhs is closer to target than rhs
+    fn closer_to_target(lhs: &maidsafe_types::NameType,
+                        rhs: &maidsafe_types::NameType,
+                        target: &maidsafe_types::NameType) -> bool {
         for i in 0..lhs.0.len() {
-            let res_0 = lhs.0[i] ^ base.0[i];
-            let res_1 = rhs.0[i] ^ base.0[i];
+            let res_0 = lhs.0[i] ^ target.0[i];
+            let res_1 = rhs.0[i] ^ target.0[i];
 
             if res_0 != res_1 {
-                return res_0 < res_1;
+                return res_0 < res_1
             }
         }
-
         false
     }
 
     fn is_nodes_sorted(&self) -> bool {
         for i in 1..self.routing_table.len() {
-            if RoutingTable::closer_to_target(&self.our_id, &self.routing_table[i].fob.id,
-                                              &self.routing_table[i - 1].fob.id) {
+            if RoutingTable::closer_to_target(&self.routing_table[i].fob.id,
+                                              &self.routing_table[i - 1].fob.id, &self.our_id) {
                 return false;
             }
         }
@@ -386,6 +394,7 @@ mod test {
     use std::collections::BitVec;
     use std::mem;
     use std::net::*;
+    use std::fmt;
 
     enum ContactType {
         Far,
@@ -463,20 +472,46 @@ mod test {
             };
 
             for i in 0..99 {
-                assert!(RoutingTable::closer_to_target(&table.our_id, &table.buckets[i].mid_contact,
-                    &table.buckets[i].far_contact));
-                assert!(RoutingTable::closer_to_target(&table.our_id,
-                    &table.buckets[i].close_contact, &table.buckets[i].mid_contact));
-                assert!(RoutingTable::closer_to_target(&table.our_id,
-                    &table.buckets[i + 1].far_contact, &table.buckets[i].close_contact));
+                // println!("{}\tFar: {}\tMid: {}\tClose: {}", i,
+                //     RoutingTableUnitTest::debug_id(&table.buckets[i].far_contact),
+                //     RoutingTableUnitTest::debug_id(&table.buckets[i].mid_contact),
+                //     RoutingTableUnitTest::debug_id(&table.buckets[i].close_contact));
+                assert!(RoutingTable::closer_to_target(&table.buckets[i].mid_contact,
+                    &table.buckets[i].far_contact, &table.our_id));
+                assert!(RoutingTable::closer_to_target(&table.buckets[i].close_contact,
+                    &table.buckets[i].mid_contact, &table.our_id));
+                assert!(RoutingTable::closer_to_target(&table.buckets[i + 1].far_contact,
+                    &table.buckets[i].close_contact, &table.our_id));
             }
 
-            assert!(RoutingTable::closer_to_target(&table.our_id, &table.buckets[99].mid_contact,
-                &table.buckets[99].far_contact));
-            assert!(RoutingTable::closer_to_target(&table.our_id, &table.buckets[99].close_contact,
-                &table.buckets[99].mid_contact));
+            assert!(RoutingTable::closer_to_target(&table.buckets[99].mid_contact,
+                &table.buckets[99].far_contact, &table.our_id));
+            assert!(RoutingTable::closer_to_target(&table.buckets[99].close_contact,
+                &table.buckets[99].mid_contact, &table.our_id));
 
             table
+        }
+
+        fn to_hex(char: u8) -> String {
+            let hex = fmt::format(format_args!("{:x}", char));
+            if hex.len() == 1 {
+                let mut s = String::from_str("0");
+                s.push_str(hex.as_str());
+                s
+            } else {
+                hex
+            }
+        }
+
+        fn debug_id(id: &maidsafe_types::NameType) -> String {
+            let id_as_bytes = id.get_id();
+            fmt::format(format_args!("{}{}{}..{}{}{}",
+                RoutingTableUnitTest::to_hex(id_as_bytes[0]),
+                RoutingTableUnitTest::to_hex(id_as_bytes[1]),
+                RoutingTableUnitTest::to_hex(id_as_bytes[2]),
+                RoutingTableUnitTest::to_hex(id_as_bytes[61]),
+                RoutingTableUnitTest::to_hex(id_as_bytes[62]),
+                RoutingTableUnitTest::to_hex(id_as_bytes[63])))
         }
 
         fn partially_fill_table(&mut self) {
@@ -621,7 +656,7 @@ mod test {
         for it in tables.iter() {
             let id = it.our_id.clone();
             addresses.sort_by(
-                |a, b| if RoutingTable::closer_to_target(&id, &a, &b) {
+                |a, b| if RoutingTable::closer_to_target(&a, &b, &id) {
                     cmp::Ordering::Less
                 } else {
                     cmp::Ordering::Greater
@@ -791,7 +826,6 @@ mod test {
             assert_eq!(i + 5, test.table.size());
         }
 
-        println!("-------------------------------------------------------------------------------------------");
         // Check next 4 closer additions return 'buckets_[0].far_contact', 'buckets_[0].mid_contact',
         // 'buckets_[1].far_contact', and 'buckets_[1].mid_contact' as dropped (in that order)
         let mut dropped: Vec<maidsafe_types::NameType> = Vec::new();
@@ -812,66 +846,6 @@ mod test {
             };
             assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
         }
-
-        // TODO(Spandan) - This bunch Fails currently
-        println!("Entering");
-        for it in test.buckets.iter().enumerate() {
-            if it.1.far_contact == dropped[0] {
-                println!("For dropped[0] ====> Found far_contact in bucket {}", it.0);
-                break;
-            }
-            if it.1.mid_contact == dropped[0] {
-                println!("For dropped[0] ====> Found mid_contact in bucket {}", it.0);
-                break;
-            }
-            if it.1.close_contact == dropped[0] {
-                println!("For dropped[0] ====> Found close_contact in bucket {}", it.0);
-                break;
-            }
-        }
-        for it in test.buckets.iter().enumerate() {
-            if it.1.far_contact == dropped[1] {
-                println!("For dropped[1] ====> Found far_contact in bucket {}", it.0);
-                break;
-            }
-            if it.1.mid_contact == dropped[1] {
-                println!("For dropped[1] ====> Found mid_contact in bucket {}", it.0);
-                break;
-            }
-            if it.1.close_contact == dropped[1] {
-                println!("For dropped[1] ====> Found close_contact in bucket {}", it.0);
-                break;
-            }
-        }
-        for it in test.buckets.iter().enumerate() {
-            if it.1.far_contact == dropped[2] {
-                println!("For dropped[2] ====> Found far_contact in bucket {}", it.0);
-                break;
-            }
-            if it.1.mid_contact == dropped[2] {
-                println!("For dropped[2] ====> Found mid_contact in bucket {}", it.0);
-                break;
-            }
-            if it.1.close_contact == dropped[2] {
-                println!("For dropped[2] ====> Found close_contact in bucket {}", it.0);
-                break;
-            }
-        }
-        for it in test.buckets.iter().enumerate() {
-            if it.1.far_contact == dropped[3] {
-                println!("For dropped[3] ====> Found far_contact in bucket {}", it.0);
-                break;
-            }
-            if it.1.mid_contact == dropped[3] {
-                println!("For dropped[3] ====> Found mid_contact in bucket {}", it.0);
-                break;
-            }
-            if it.1.close_contact == dropped[3] {
-                println!("For dropped[3] ====> Found close_contact in bucket {}", it.0);
-                break;
-            }
-        }
-        println!("Exited");
         assert!(test.buckets[0].far_contact == dropped[0]);
         assert!(test.buckets[0].mid_contact == dropped[1]);
         assert!(test.buckets[1].far_contact == dropped[2]);
@@ -894,17 +868,17 @@ mod test {
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(result_of_add.0);
         match result_of_add.1 {
-            Some(_) => {},
-            None => panic!("Unexpected"),
+            Some(_) => panic!("Unexpected"),
+            None => {},
         };
-        assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
+        assert_eq!(RoutingTable::get_optimal_size() + 1, test.table.size());
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(!result_of_add.0);
         match result_of_add.1 {
             Some(_) => panic!("Unexpected"),
             None => {},
         };
-        assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
+        assert_eq!(RoutingTable::get_optimal_size() + 1, test.table.size());
     }
 
     #[test]
@@ -1076,7 +1050,7 @@ mod test {
             };
             let id = tables[i].our_id.clone();
             addresses.sort_by(
-                |a, b| if RoutingTable::closer_to_target(&id, &a, &b) {
+                |a, b| if RoutingTable::closer_to_target(&a, &b, &id) {
                     cmp::Ordering::Less
                 } else {
                     cmp::Ordering::Greater
@@ -1104,7 +1078,7 @@ mod test {
 
         for i in 0..tables.len() {
             addresses.sort_by(
-                |a, b| if RoutingTable::closer_to_target(&tables[i].our_id, &a, &b) {
+                |a, b| if RoutingTable::closer_to_target(&a, &b, &tables[i].our_id) {
                     cmp::Ordering::Less
                 } else {
                     cmp::Ordering::Greater
@@ -1138,8 +1112,8 @@ mod test {
         assert_eq!(RoutingTable::get_group_size(), table_unit_test.table.our_close_group().len());
 
         table_unit_test.table.our_close_group().sort_by(
-            |a, b| if RoutingTable::closer_to_target(&table_unit_test.our_id, &a.fob.id,
-                                                     &b.fob.id) {
+            |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id,
+                                                     &table_unit_test.our_id) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
@@ -1210,8 +1184,8 @@ mod test {
                 target_nodes_ = routing_table_utest.table.target_nodes(target);
                 assert_eq!(RoutingTable::get_parallelism(), target_nodes_.len());
                 routing_table_utest.table.our_close_group().sort_by(
-                    |a, b| if RoutingTable::closer_to_target(&routing_table_utest.our_id, &a.fob.id,
-                                                             &b.fob.id) {
+                    |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id,
+                                                             &routing_table_utest.our_id) {
                         cmp::Ordering::Less
                     } else {
                         cmp::Ordering::Greater
@@ -1243,8 +1217,8 @@ mod test {
                 target_nodes_ = routing_table_utest.table.target_nodes(target);
                 assert_eq!(RoutingTable::get_group_size(), target_nodes_.len());
                 routing_table_utest.table.our_close_group().sort_by(
-                    |a, b| if RoutingTable::closer_to_target(&routing_table_utest.our_id, &a.fob.id,
-                                                             &b.fob.id) {
+                    |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id,
+                                                             &routing_table_utest.our_id) {
                         cmp::Ordering::Less
                     } else {
                         cmp::Ordering::Greater
