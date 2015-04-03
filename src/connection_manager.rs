@@ -53,12 +53,23 @@ pub enum Event {
     AcceptingOn(u16)
 }
 
+struct Connection {
+    writer_channel: mpsc::Sender<Bytes>
+}
+
+struct State {
+    our_id: Address,
+    event_pipe: IoSender<Event>,
+    connections: HashMap<Address, Connection>,
+}
+
 impl ConnectionManager {
 
     pub fn new(our_id: Address, event_pipe: IoSender<Event>) -> ConnectionManager {
-        let writer_channels: HashMap<Address, mpsc::Sender<Bytes>> = HashMap::new();
-        let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe,
-                                               writer_channels : writer_channels }));
+        let connections: HashMap<Address, Connection> = HashMap::new();
+        let state = Arc::new(Mutex::new(State{ our_id: our_id,
+                                               event_pipe: event_pipe,
+                                               connections : connections }));
         let weak_state = state.downgrade();
         spawn(move || {
             let _ = start_accepting_connections(weak_state);
@@ -86,8 +97,8 @@ impl ConnectionManager {
         let ws = self.state.downgrade();
 
         let writer_channel = try!(lock_state(&ws, |s| {
-                match s.writer_channels.get(&address) {
-                    Some(x) =>  Ok(x.clone()),
+                match s.connections.get(&address) {
+                    Some(c) =>  Ok(c.writer_channel.clone()),
                     None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
                 }
         }));
@@ -100,17 +111,10 @@ impl ConnectionManager {
     pub fn drop_node(&self, address: Address) -> IoResult<()>{  // FIXME
         let mut ws = self.state.downgrade();
         lock_mut_state(&mut ws, |s: &mut State| {
-            let ch = &mut s.writer_channels;
-            ch.remove(&address);
+            s.connections.remove(&address);
             Ok(())
         })
     }
-}
-
-struct State {
-    our_id: Address,
-    event_pipe: IoSender<Event>,
-    writer_channels: HashMap<Address, mpsc::Sender<Bytes>>,
 }
 
 fn lock_state<T, F: Fn(&State) -> IoResult<T>>(state: &WeakState, f: F) -> IoResult<T> {
@@ -179,7 +183,7 @@ fn register_connection( state: &mut WeakState
         let (tx, rx) = mpsc::channel();
         start_writing_thread(state2.clone(), o, his_id.clone(), rx);
         start_reading_thread(state2, i, his_id.clone(), s.event_pipe.clone());
-        s.writer_channels.insert(his_id.clone(), tx);
+        s.connections.insert(his_id.clone(), Connection{writer_channel: tx});
         let _ = s.event_pipe.send(Event::NewConnection(his_id));
         Ok(())
     })
@@ -187,7 +191,7 @@ fn register_connection( state: &mut WeakState
 
 fn unregister_connection(state: WeakState, his_id: Address) {
     let _ = lock_mut_state(&state, |s| {
-        if s.writer_channels.remove(&his_id).is_some() {
+        if s.connections.remove(&his_id).is_some() {
             // Only send the event if the connection was there
             // to avoid duplicate events.
             let _ = s.event_pipe.send(Event::LostConnection(his_id));
