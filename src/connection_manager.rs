@@ -95,8 +95,12 @@ impl ConnectionManager {
         send_result.map_err(|_|cant_send)
     }
 
-    pub fn drop_node(address: Address) {
-        unimplemented!();
+    pub fn drop_node(&self, address: Address) -> IoResult<()>{  // FIXME
+        // let ws = self.state.downgrade();
+        // try!(with_state(ws, |mut s| {
+        //     s.writer_channels.remove(&address)
+        // }));
+        Ok(())
     }
 }
 
