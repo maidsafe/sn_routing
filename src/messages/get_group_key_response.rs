@@ -29,6 +29,19 @@ pub struct GetGroupKeyResponse {
   pub public_keys : Vec<(types::Address, Vec<u8>)>
 }
 
+impl GetGroupKeyResponse {
+    pub fn generate_random() -> GetGroupKeyResponse {
+        let mut vec: Vec<(types::Address, Vec<u8>)> = Vec::with_capacity(30);
+        for i in 0..30 {
+            vec.push((types::generate_random_vec_u8(64), types::generate_random_vec_u8(99)));
+        }
+        GetGroupKeyResponse {
+            target_id: types::generate_random_vec_u8(64),
+            public_keys: vec,
+        }
+    }
+}
+
 impl Encodable for GetGroupKeyResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.target_id, &self.public_keys)).encode(e)
@@ -42,3 +55,24 @@ impl Decodable for GetGroupKeyResponse {
     Ok(GetGroupKeyResponse { target_id: target_id , public_keys: public_keys})
   }
 }
+mod test {
+    extern crate cbor;
+
+    use types;
+    use super::*;
+    use cbor::CborTagEncode;
+
+    #[test]
+    fn get_group_key_response_serialisation() {
+        let obj_before = GetGroupKeyResponse::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
+
+        assert_eq!(obj_before, obj_after);
+    }
+}
+
