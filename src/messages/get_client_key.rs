@@ -26,6 +26,15 @@ pub struct GetClientKey {
   pub target_id : types::Address,
 }
 
+impl GetClientKey {
+    pub fn generate_random() -> GetClientKey {
+        GetClientKey {
+            requester_id: types::generate_random_vec_u8(64),
+            target_id: types::generate_random_vec_u8(64),
+        }
+    }
+}
+
 impl Encodable for GetClientKey {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.requester_id, &self.target_id)).encode(e)
@@ -38,4 +47,25 @@ impl Decodable for GetClientKey {
     let (requester_id, target_id) = try!(Decodable::decode(d));
     Ok(GetClientKey { requester_id: requester_id, target_id: target_id})
   }
+}
+
+mod test {
+    extern crate cbor;
+
+    use types;
+    use super::*;
+    use cbor::CborTagEncode;
+
+    #[test]
+    fn get_client_serialisation() {
+        let obj_before = GetClientKey::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: GetClientKey = d.decode().next().unwrap().unwrap();
+
+        assert_eq!(obj_before, obj_after);
+    }
 }

@@ -26,6 +26,20 @@ pub struct FindGroupResponse {
   pub group : Vec<types::PublicPmid>
 }
 
+impl FindGroupResponse {
+    pub fn generate_random() -> FindGroupResponse {
+        let mut vec: Vec<types::PublicPmid> = Vec::with_capacity(99);
+        for i in 0..99 {
+            vec.push(types::PublicPmid::generate_random());
+        }
+
+        FindGroupResponse {
+            target_id: types::generate_random_vec_u8(64),
+            group: vec,
+        }
+    }
+}
+
 impl Encodable for FindGroupResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.target_id, &self.group)).encode(e)
@@ -38,4 +52,25 @@ impl Decodable for FindGroupResponse {
     let (target_id, group) = try!(Decodable::decode(d));
     Ok(FindGroupResponse { target_id: target_id, group: group})
   }
+}
+
+mod test {
+    extern crate cbor;
+
+    use types;
+    use super::*;
+    use cbor::CborTagEncode;
+
+    #[test]
+    fn find_group_response_serialisation() {
+        let obj_before = FindGroupResponse::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: FindGroupResponse = d.decode().next().unwrap().unwrap();
+
+        assert_eq!(obj_before, obj_after);
+    }
 }
