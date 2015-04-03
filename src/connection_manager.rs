@@ -17,7 +17,6 @@ use std::net::{SocketAddr};
 use std::io::Error as IoError;
 use std::io;
 use std::collections::HashMap;
-use messages::RoutingMessage as Msg;
 use std::thread::spawn;
 use bchannel::Receiver;
 use bchannel::Sender;
@@ -26,6 +25,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::sync::mpsc;
 use cbor::{Encoder, CborError, Decoder};
 use rustc_serialize::{Decodable, Encodable};
+
 //use types::Address;
 
 pub type Address = Vec<u8>;
@@ -156,9 +156,23 @@ fn start_reading(i: SocketReader, his_id: Address, sink: IoSender<Event>) -> IoR
 }
 
 // pushing messges out to socket
-// fn start_reading(i: SocketWriter, his_id: Address, writer_channel: mpsc::Sender<Bytes>) -> IoResult<()> {
-//     unimplemented!()
-// }
+fn start_writing_thread(mut o: SocketWriter, his_id: Address, writer_channel: mpsc::Receiver<Bytes>) -> IoResult<()> {
+    spawn (move || {
+         loop {
+            let mut writer_iter = writer_channel.iter();
+            let msg = match writer_iter.next() {
+                None => { break; }
+                Some(msg) => {
+                    if o.send(&msg).is_err() {
+                        break;
+                    }
+                }
+            };
+        }
+        // FIXME remove entry from the map and send to sink
+        });
+    Ok(())
+}
 
 fn exchange(socket_input:  SocketReader, socket_output: SocketWriter, data: Bytes)
             -> IoResult<(SocketReader, SocketWriter, Bytes)>
