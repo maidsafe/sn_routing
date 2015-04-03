@@ -56,15 +56,30 @@ impl DataManager {
   }
 
   pub fn handle_put(&mut self, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
-    // TODO the data_type shall be passed down or data needs to be name + content
-    //      here assuming data is serialised_data of ImmutableData
+    let mut name = maidsafe_types::NameType([0u8; 64]);
     let mut d = Decoder::from_bytes(&data[..]);
-    let immutable_data: maidsafe_types::ImmutableData = d.decode().next().unwrap().unwrap();
-    let data_name = self::routing::types::array_as_vector(&immutable_data.get_name().get_id());
+    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+    match payload.get_type_tag() {
+      maidsafe_types::PayloadTypeTag::ImmutableData => {
+        let immutable_data: maidsafe_types::ImmutableData = d.decode().next().unwrap().unwrap();
+        name = immutable_data.get_name().clone();
+      }
+      maidsafe_types::PayloadTypeTag::PublicMaid => {
+        let public_maid: maidsafe_types::PublicMaid = d.decode().next().unwrap().unwrap();
+        name = public_maid.get_name().clone();
+      }
+      maidsafe_types::PayloadTypeTag::PublicAnMaid => {
+        let public_anmaid: maidsafe_types::PublicMaid = d.decode().next().unwrap().unwrap();
+        name = public_anmaid.get_name().clone();
+      }
+      _ => return Err(routing::RoutingError::InvalidRequest)
+    }
+
+    let data_name = self::routing::types::array_as_vector(&name.get_id());
     if self.db_.exist(&data_name) {
       return Err(routing::RoutingError::Success);
     }
-    let close_nodes = self.close_nodes_.target_nodes(immutable_data.get_name().clone());
+    let close_nodes = self.close_nodes_.target_nodes(name);
     let mut pmid_nodes : self::routing::types::PmidNodes = Vec::new();
     let mut dest_pmids : Vec<routing::DhtIdentity> = Vec::new();
     for node in close_nodes.iter() {
