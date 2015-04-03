@@ -173,40 +173,43 @@ fn register_connection( state: &mut WeakState
                       , o: SocketWriter
                       ) -> IoResult<()> {
 
+    let state2 = state.clone();
+
     lock_mut_state(state, move |s: &mut State| {
-        let channels = &mut s.writer_channels;
         let (tx, rx) = mpsc::channel();
-        start_writing_thread(o, his_id.clone(), rx);
-        start_reading_thread(i, his_id.clone(), s.event_pipe.clone());
-        channels.insert(his_id, tx);
+        start_writing_thread(state2.clone(), o, his_id.clone(), rx);
+        start_reading_thread(state2, i, his_id.clone(), s.event_pipe.clone());
+        s.writer_channels.insert(his_id.clone(), tx);
+        s.event_pipe.send(Event::NewConnection(his_id));
         Ok(())
     })
 }
 
-fn unregister_connection(state: WeakState, his_id: Address) -> IoResult<()> {
-    unimplemented!()
-    // let mut ws = state.downgrade();
-    // lock_mut_state(&mut ws, |s: &mut State| {
-    //     let ch = &mut s.writer_channels;
-    //     ch.remove(&his_id);
-    // })
-
+fn unregister_connection(state: WeakState, his_id: Address) {
+    let _ = lock_mut_state(&state, |s| {
+        if s.writer_channels.remove(&his_id).is_some() {
+            // Only send the event if the connection was there
+            // to avoid duplicate events.
+            let _ = s.event_pipe.send(Event::LostConnection(his_id));
+        }
+        Ok(())
+    });
 }
 
 // pushing events out to event_pipe
-fn start_reading_thread(i: SocketReader, his_id: Address, sink: IoSender<Event>) {
+fn start_reading_thread(state: WeakState, i: SocketReader, his_id: Address, sink: IoSender<Event>) {
     spawn(move || {
         for msg in i.into_blocking_iter() {
             if sink.send(Event::NewMessage(his_id.clone(), msg)).is_err() {
               return;  // exit thread if sink closed
             }
         }
-        let _ = sink.send(Event::LostConnection(his_id.clone()));
+        unregister_connection(state, his_id);
     });
 }
 
 // pushing messges out to socket
-fn start_writing_thread(mut o: SocketWriter, his_id: Address, writer_channel: mpsc::Receiver<Bytes>) {
+fn start_writing_thread(state: WeakState, mut o: SocketWriter, his_id: Address, writer_channel: mpsc::Receiver<Bytes>) {
     spawn(move || {
          loop {
             let mut writer_iter = writer_channel.iter();
@@ -219,7 +222,7 @@ fn start_writing_thread(mut o: SocketWriter, his_id: Address, writer_channel: mp
                 }
             };
         }
-        // FIXME remove entry from the map and send to sink
+        unregister_connection(state, his_id);
         });
 }
 
@@ -285,6 +288,9 @@ mod test {
                                 let addr = SocketAddr::from_str("127.0.0.1:5483").unwrap();
                                 assert!(cm.connect(addr).is_ok());
                             }
+                        },
+                        Event::NewConnection(_) => {
+                            println!("Connected");
                         },
                         _ => println!("unhandled"),
                     }
