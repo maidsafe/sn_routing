@@ -11,12 +11,12 @@
 // OF ANY KIND, either express or implied.
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe
-// Software.                                                                 
+// Software.
 
 use std::net::{SocketAddr};
 use std::io::Error as IoError;
 use std::io;
-use messages::RoutingMessage as Msg;
+use std::collections::HashMap;
 use std::thread::spawn;
 use bchannel::Receiver;
 use bchannel::Sender;
@@ -26,10 +26,12 @@ use std::sync::mpsc;
 use cbor::{Encoder, CborError, Decoder};
 use rustc_serialize::{Decodable, Encodable};
 
+//use types::Address;
+
 pub type Address = Vec<u8>;
 pub type Bytes   = Vec<u8>;
 
-type IoResult<T> = Result<T, IoError>;
+pub type IoResult<T> = Result<T, IoError>;
 
 pub type IoReceiver<T> = Receiver<T, IoError>;
 pub type IoSender<T>   = Sender<T, IoError>;
@@ -53,17 +55,17 @@ pub enum Event {
 impl ConnectionManager {
 
     pub fn new(our_id: Address, event_pipe: IoSender<Event>) -> ConnectionManager {
-        let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe }));
-        
+        let writer_channels: HashMap<Address, mpsc::Sender<Bytes>> = HashMap::new();
+        let state = Arc::new(Mutex::new(State{ our_id: our_id, event_pipe: event_pipe,
+                                               writer_channels : writer_channels }));
         let weak_state = state.downgrade();
-    
         spawn(move || {
             let _ = start_accepting_connections(weak_state);
         });
-    
+
         ConnectionManager { state: state }
     }
-    
+
     pub fn connect(&self, endpoint: SocketAddr) -> IoResult<()> {
         let ws = self.state.downgrade();
 
@@ -71,15 +73,25 @@ impl ConnectionManager {
             let _ = connect_tcp(endpoint)
                     .and_then(|(i, o)| { handle_new_connection(ws, i, o) });
         });
-
         Ok(())
     }
-    
-    /// We will send to this address, by getting targets from routing table.
-    pub fn send(message: Vec<u8>, address : Address) {
-        unimplemented!();
+
+    /// Sends a message to address. Returns Ok(()) if the sending might succeed, and returns an
+    /// Err if the address is not connected. Return value of Ok does not mean that the data will be
+    /// received. It is possible for the corresponding connection to hang up immediately after this
+    /// function returns Ok.
+    pub fn send(&self, message: Bytes, address : Address)-> IoResult<()> {
+    let ws = self.state.downgrade();
+    let writer_channel = try!(with_state(ws, |s| {
+        match s.writer_channels.get(&address) {
+            Some(x) =>  Ok(x.clone()),
+            None => Err(io::Error::new(io::ErrorKind::NotConnected, "?", None))
+        }
+    }));
+    // writer_channel.unwrap().send(message)  // TODO(team) need to convert SendError to IoResult
+        Ok(())
     }
-    
+
     pub fn drop_node(address: Address) {
         unimplemented!();
     }
@@ -88,6 +100,7 @@ impl ConnectionManager {
 struct State {
     our_id: Address,
     event_pipe: IoSender<Event>,
+    writer_channels: HashMap<Address, mpsc::Sender<Bytes>>,
 }
 
 fn with_state<T, F: Fn(&State) -> T>(state: WeakState, f: F) -> IoResult<T> {
@@ -129,15 +142,36 @@ fn register_new_writer(state: WeakState, his_id: Address, o: SocketWriter) -> Io
     unimplemented!()
 }
 
+// pushing events out to event_pipe
 fn start_reading(i: SocketReader, his_id: Address, sink: IoSender<Event>) -> IoResult<()> {
     spawn(move || {
         for msg in i.into_blocking_iter() {
-            sink.send(Event::NewMessage(his_id.clone(), msg));
-            // TODO: break on send failure
+            if sink.send(Event::NewMessage(his_id.clone(), msg)).is_err() {
+              return;  // exit thread if sink closed
+            }
         }
         sink.send(Event::LostConnection(his_id.clone()));
     });
-    Ok(()) // FIXME
+    Ok(())
+}
+
+// pushing messges out to socket
+fn start_writing_thread(mut o: SocketWriter, his_id: Address, writer_channel: mpsc::Receiver<Bytes>) -> IoResult<()> {
+    spawn (move || {
+         loop {
+            let mut writer_iter = writer_channel.iter();
+            let msg = match writer_iter.next() {
+                None => { break; }
+                Some(msg) => {
+                    if o.send(&msg).is_err() {
+                        break;
+                    }
+                }
+            };
+        }
+        // FIXME remove entry from the map and send to sink
+        });
+    Ok(())
 }
 
 fn exchange(socket_input:  SocketReader, socket_output: SocketWriter, data: Bytes)
