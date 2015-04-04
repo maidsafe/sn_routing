@@ -2,6 +2,7 @@ os:
   - linux
   - osx
 language: rust
+rust: 1.0.0-beta
 before_install:
     - sudo apt-get install -qq libcurl4-openssl-dev libelf-dev libdw-dev
 
