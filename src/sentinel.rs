@@ -448,17 +448,27 @@ mod test {
     sentinel_returns.iter().filter(|&x| x.1.is_some()).count() == 1
   }
 
-  fn get_selected_sentinel_returns(sentinel_returns: &Vec<(u64, Option<ResultType>)>,
-  								   track_messages : &Vec<u64>)
-  								   ->Vec<(u64, Option<ResultType>)> {
-    if track_messages.is_empty() { return Vec::<(u64, Option<ResultType>)>::new(); }
-    let selected_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
-    track_messages.sort();
-    for track in track_messages {
-      
-    }
-    sentinel_returns.iter().filter(|&x| x.1.)
-  }
+  // TODO(ben 2015-04-04) : needs fixing, on iterators, and &mut
+  // fn get_selected_sentinel_returns(sentinel_returns: &mut Vec<(u64, Option<ResultType>)>,
+  // 								   track_messages : &mut Vec<u64>)
+  // 								   ->Vec<(u64, Option<ResultType>)> {
+  //   if track_messages.is_empty() { return Vec::<(u64, Option<ResultType>)>::new(); }
+  //   let selected_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
+  //   sentinel_returns.sort_by(|a, b| a.0.cmp(&b.0));
+  //   track_messages.sort();
+  //   let mut track_itr = track_messages.iter();
+  //   for sentinel_return in sentinel_returns {
+  //     if sentinel_return.1 == *track_itr {
+  //     	selected_returns.push(sentinel_return.clone());
+  //     }
+  //     if sentinel_return.1 >= *track_itr {
+  //     	if track_itr != track_messages.iter().last() {
+  //     	  track_itr.next();
+  //     	} else { break; }
+  //     } 
+  //   }
+  //   selected_returns
+  // }
 
   #[test]
   fn simple_add() {
@@ -521,6 +531,7 @@ mod test {
 	      	              	                message.serialised_message)));
 	  }
 	  assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
+	  // ERROR: returns all none results !
 	  assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
 	  assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
     }
