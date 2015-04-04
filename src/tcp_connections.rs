@@ -24,9 +24,8 @@ use cbor::{Encoder, CborError, Decoder};
 use std::thread::spawn;
 use std::marker::PhantomData;
 use rustc_serialize::{Decodable, Encodable};
-use bchannel::channel;
+use bchannel::{channel, Sender, Receiver};
 
-pub use bchannel::Receiver;
 pub type InTcpStream<T> = Receiver<T, CborError>;
 
 pub struct OutTcpStream<T> {
@@ -84,7 +83,7 @@ pub fn listen() -> IoResult<(Receiver<(TcpStream, SocketAddr), IoError>, TcpList
     let any_address = (("0.0.0.0"), 0);
     let tcp_listener = match TcpListener::bind(live_address) {
         Ok(x) => x,
-        Err(_) => TcpListener::bind(&any_address).unwrap()
+        Err(_) => try!(TcpListener::bind(&any_address))
     };
     //println!("Listening on {:?}", tcp_listener.local_addr().unwrap());
     let (tx, rx) = channel();
@@ -191,7 +190,7 @@ mod test {
                 // Spawn a new thread for each connection that we get.
                 thread::spawn(move || {
                     let (i, mut o) = upgrade_tcp(connection).unwrap();
-                    let i = i.blocking_iter(); 
+                    let i = i.into_blocking_iter();
                     let vec : Vec<u64> = i.collect();
                     for &x in vec.iter() {
                         if o.send(&(x, x + 1)).is_err() { break; }
