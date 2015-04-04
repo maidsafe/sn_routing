@@ -19,7 +19,7 @@ fn main() {
     o.close();
 
     // Print everything that we get back.
-    for a in i.blocking_iter() {
+    for a in i.into_blocking_iter() {
         let (x, fx): (u64, u64) = a;
         println!("{} -> {}", x, fx);
     }
