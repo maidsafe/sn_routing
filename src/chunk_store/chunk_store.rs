@@ -56,7 +56,7 @@ impl ChunkStore {
     }
 
     pub fn delete(&mut self, name: Vec<u8>) {
-        let mut size_removed = 0usize;
+        let mut size_removed : usize;
 
         for i in 0..self.entries.len() {
             if self.entries[i].name == name {
