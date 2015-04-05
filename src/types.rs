@@ -19,10 +19,8 @@
 #![allow(unused_assignments)]
 extern crate sodiumoxide;
 extern crate rand;
-use std::mem;
 
 use sodiumoxide::crypto;
-
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 

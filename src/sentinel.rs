@@ -280,7 +280,6 @@ mod test {
   extern crate rand;
   extern crate sodiumoxide;
 
-  use super::*;
   use sodiumoxide::crypto;
   use types;
   use types::RoutingTrait;

@@ -49,12 +49,11 @@ impl Decodable for GetClientKey {
   }
 }
 
+#[cfg(test)]
 mod test {
     extern crate cbor;
 
-    use types;
     use super::*;
-    use cbor::CborTagEncode;
 
     #[test]
     fn get_client_serialisation() {

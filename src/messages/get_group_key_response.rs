@@ -55,12 +55,12 @@ impl Decodable for GetGroupKeyResponse {
     Ok(GetGroupKeyResponse { target_id: target_id , public_keys: public_keys})
   }
 }
+
+#[cfg(test)]
 mod test {
     extern crate cbor;
 
-    use types;
     use super::*;
-    use cbor::CborTagEncode;
 
     #[test]
     fn get_group_key_response_serialisation() {
