@@ -7,7 +7,7 @@ env:
 language: rust
 rust: 
     - 1.0.0-beta
-        - nightly
+    - nightly
 sudo: true
 before_install:
     - sudo apt-get install -qq libsqlite3-dev
