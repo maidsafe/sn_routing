@@ -57,12 +57,11 @@ impl Decodable for ConnectRequest {
   }
 }
 
+#[cfg(test)]
 mod test {
     extern crate cbor;
 
-    use types;
     use super::*;
-    use cbor::CborTagEncode;
 
     #[test]
     fn connect_request_serialisation() {

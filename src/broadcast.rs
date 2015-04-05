@@ -20,7 +20,6 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSo
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
 
 fn serialise_address(our_listening_address: SocketAddr) -> [u8; 27] {
     let mut our_details = [0u8; 27];
@@ -150,7 +149,7 @@ pub fn seek_peers() -> Vec<SocketAddr> {
     });
 
     // Allow peers time to respond
-    thread::sleep(Duration::milliseconds(500));
+    thread::sleep_ms(500);
 
     let mut peers: Vec<SocketAddr> = Vec::new();
     let mut result = rx.try_recv();
@@ -169,7 +168,6 @@ mod test {
     use super::*;
     use std::net::{UdpSocket/*, lookup_addr, lookup_host*/};
     use std::thread;
-    use std::time::Duration;
 
 #[test]
     fn test_broadcast() {
@@ -184,7 +182,7 @@ mod test {
         });
 
         // Allow listener time to start
-        thread::sleep(Duration::milliseconds(300));
+        thread::sleep_ms(300);
 
         for i in 0..3 {
             let peers = seek_peers();

@@ -64,12 +64,11 @@ impl Decodable for ConnectResponse {
   }
 }
 
+#[cfg(test)]
 mod test {
     extern crate cbor;
 
-    use types;
     use super::*;
-    use cbor::CborTagEncode;
 
     #[test]
     fn connect_response_serialisation() {
