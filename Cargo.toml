@@ -18,7 +18,7 @@ sodiumoxide = "*"
 rand = "*"
 
 [dependencies.bchannel]
-git="https://github.com/tyoverby/bchannel"
+git="https://github.com/dirvine/bchannel"
 
 [dependencies.lru-cache]
 git="https://github.com/contain-rs/lru-cache.git"
