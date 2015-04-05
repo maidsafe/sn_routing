@@ -114,7 +114,8 @@ mod test {
     let data = ImmutableData::new(name, value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();
-    encoder.encode(&[&payload]);
+    let encode_result = encoder.encode(&[&payload]);
+    assert_eq!(encode_result.is_ok(), true);
     let result = data_manager.handle_put(&array_as_vector(encoder.as_bytes()));
     assert_eq!(result.is_err(), false);
 

@@ -5,7 +5,6 @@
               html_root_url = "http://dirvine.github.io/dirvine/maidsafe_vault/")]
 //! Placeholder
 
-#![feature(convert)]
 extern crate sodiumoxide;
 extern crate rustc_serialize;
 extern crate cbor;
