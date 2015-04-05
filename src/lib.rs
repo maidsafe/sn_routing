@@ -158,7 +158,7 @@ impl<'a> RoutingNode<'a> {
   }
 
   /// Retreive something from the network (non mutating) - Direct call
-  pub fn get(&self, name: types::DhtAddress) { unimplemented!()}
+  pub fn get(&self, type_id: u64, name: types::DhtAddress) { unimplemented!()}
 
   /// Add something to the network, will always go via ClientManager group
   pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
@@ -185,7 +185,7 @@ fn facade_implementation() {
   struct MyFacade;
 
   impl Facade for MyFacade {
-    fn handle_get(&mut self, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtIdentity , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                   from_address: DhtIdentity, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
