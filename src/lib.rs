@@ -51,11 +51,15 @@ extern crate time;
 extern crate bchannel;
 extern crate sqlite3;
 
+extern crate maidsafe_types;
+
 use std::net::{TcpStream};
 use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
+
+use maidsafe_types::NameType;
 
 pub mod types;
 pub mod tcp_connections;
@@ -124,7 +128,7 @@ pub trait Facade : Sync {
   /// if reply is data then we send back the response message (ie get_response )
   fn handle_get(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
 
-  // TODO : datatype needs to be passed, or the type of data shall be Data (name + content) instead of serialised_data
+  /// data: Vec<u8> is serialised maidsafe_types::Payload which holds typetag and content
   fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: DhtIdentity, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError>;
 
@@ -132,17 +136,20 @@ pub trait Facade : Sync {
   fn handle_get_response(&mut self, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
   fn handle_put_response(&mut self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
   fn handle_post_response(&mut self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>);
-  }
+
+  fn add_node(&mut self, node: NameType);
+  fn drop_node(&mut self, node: NameType);
+}
 
 /// DHT node
 pub struct RoutingNode<'a> {
-facade: &'a (Facade + 'a),
-sign_public_key: crypto::sign::PublicKey,
-sign_secret_key: crypto::sign::SecretKey,
-encrypt_public_key: crypto::asymmetricbox::PublicKey,
-encrypt_secret_key: crypto::asymmetricbox::SecretKey,
-sender: Sender<TcpStream>,
-receiver: Receiver<TcpStream>
+  facade: &'a (Facade + 'a),
+  sign_public_key: crypto::sign::PublicKey,
+  sign_secret_key: crypto::sign::SecretKey,
+  encrypt_public_key: crypto::asymmetricbox::PublicKey,
+  encrypt_secret_key: crypto::asymmetricbox::SecretKey,
+  sender: Sender<TcpStream>,
+  receiver: Receiver<TcpStream>
 }
 
 impl<'a> RoutingNode<'a> {
