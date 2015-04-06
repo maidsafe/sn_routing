@@ -13,8 +13,6 @@ extern crate routing;
 extern crate rand;
 
 pub mod chunk_store;
-pub mod pmid_manager;
-pub mod pmid_node;
 pub mod vault;
 
 use vault::VaultFacade;
