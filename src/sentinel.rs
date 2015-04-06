@@ -65,8 +65,6 @@ impl<'a> Sentinel<'a> {
     }
   }
 
-  // pub fn get_send_get_keys(&'a mut self) -> &'a mut SendGetKeys { self.send_get_keys }
-
   pub fn add(&mut self, header : message_header::MessageHeader, type_tag : types::MessageTypeTag,
              message : types::SerialisedMessage) -> Option<ResultType> {
     match type_tag {
@@ -119,13 +117,13 @@ impl<'a> Sentinel<'a> {
           if messages.is_some() {
             let keys = self.group_key_accumulator_.get(&header.from_group().unwrap());
             if keys.is_some() {
-                  let resolved = self.resolve(self.validate_group(messages.unwrap().1,
-                                                                keys.unwrap().1), true);
-                  if resolved.is_some() {
-                    self.group_accumulator_.delete(key);
-                    return resolved;
-                  }
-                }
+              let resolved = self.resolve(self.validate_group(messages.unwrap().1,
+                                                            keys.unwrap().1), true);
+              if resolved.is_some() {
+                self.group_accumulator_.delete(key);
+                return resolved;
+              }
+            }
           }
         } else {
           let key = (header.from_node(), header.message_id());
