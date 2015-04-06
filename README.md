@@ -30,8 +30,8 @@ Code Coverage
 - [x] Test DataManager
 - [ ] Test PmidManager
 - [ ] Test PmidNode
-- [x] Complete Put Flow
-- [x] Complete Get Flow
+- [ ] Complete Put Flow
+- [ ] Complete Get Flow
 - [ ] Complete Create Maid Account Flow  // may not be required for a simple implementation
 - [ ] Test Put Flow
 - [ ] Test Get Flow
