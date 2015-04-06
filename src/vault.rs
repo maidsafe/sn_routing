@@ -16,6 +16,7 @@
 #![allow(unused_variables)]
 
 extern crate routing;
+extern crate maidsafe_types;
 
 #[path="data_manager/data_manager.rs"]
 mod data_manager;
@@ -25,6 +26,8 @@ mod maid_manager;
 mod pmid_manager;
 #[path="pmid_node/pmid_node.rs"]
 mod pmid_node;
+
+use self::maidsafe_types::NameType;
 
 use self::routing::Authority;
 use self::routing::DestinationAddress;
@@ -41,7 +44,8 @@ pub struct VaultFacade {
   data_manager : DataManager,
   maid_manager : MaidManager,
   pmid_manager : PmidManager,
-  pmid_node : PmidNode
+  pmid_node : PmidNode,
+  nodes_in_table : Vec<NameType>
 }
 
 impl routing::Facade for VaultFacade {
@@ -57,7 +61,7 @@ impl routing::Facade for VaultFacade {
                 from_address: DhtIdentity, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
     match our_authority {
       Authority::ClientManager => { return self.maid_manager.handle_put(&routing::types::array_as_vector(&from_address.id), &data); }
-      Authority::NaeManager => { return self.data_manager.handle_put(&data); }
+      Authority::NaeManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
       Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
       Authority::Node => { return self.pmid_node.handle_put(&data); }
       _ => { return Err(RoutingError::InvalidRequest); }
@@ -81,11 +85,22 @@ impl routing::Facade for VaultFacade {
     ;
   }
 
+  fn add_node(&mut self, node: NameType) { self.nodes_in_table.push(node); }
+
+  fn drop_node(&mut self, node: NameType) {
+    for index in 0..self.nodes_in_table.len() {
+      if self.nodes_in_table[index] == node {
+        self.nodes_in_table.remove(index);
+        break;
+      }
+    }
+  }
 }
 
 impl VaultFacade {
   pub fn new() -> VaultFacade {
     VaultFacade { data_manager: DataManager::new(), maid_manager: MaidManager::new(),
-                  pmid_manager: PmidManager::new(), pmid_node: PmidNode::new() }
+                  pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
+                  nodes_in_table: Vec::new() }
   }
 }

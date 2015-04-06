@@ -20,7 +20,11 @@ extern crate maidsafe_types;
 
 mod database;
 
+use std::cmp;
+
 use self::routing::types;
+use self::routing::routing_table;
+use self::maidsafe_types::NameType;
 
 use cbor::{ Decoder };
 
@@ -28,19 +32,11 @@ type CloseGroupDifference = self::routing::types::CloseGroupDifference;
 type Address = self::routing::types::Address;
 
 pub struct DataManager {
-  db_ : database::DataManagerDatabase,
-  // TODO : 1, the population of close_nodes
-  //        2, currently defined as RoutingTable to utilise all the algorithm,
-  //           ideally shall be only a vector of nodes
-  close_nodes_ : routing::routing_table::RoutingTable
+  db_ : database::DataManagerDatabase
 }
 
 impl DataManager {
-  pub fn new() -> DataManager {
-    DataManager { db_: database::DataManagerDatabase::new(),
-                  // TODO : own_id of the RoutingTable
-                  close_nodes_: routing::routing_table::RoutingTable::new(maidsafe_types::NameType([3u8; 64])) }
-  }
+  pub fn new() -> DataManager { DataManager { db_: database::DataManagerDatabase::new() } }
 
   pub fn handle_get(&mut self, name : &routing::types::Identity) ->Result<routing::Action, routing::RoutingError> {
 	  let result = self.db_.get_pmid_nodes(name);
@@ -55,7 +51,7 @@ impl DataManager {
 	  Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn handle_put(&mut self, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<routing::Action, routing::RoutingError> {
     let mut name : maidsafe_types::NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -76,12 +72,19 @@ impl DataManager {
     if self.db_.exist(&data_name) {
       return Err(routing::RoutingError::Success);
     }
-    let close_nodes = self.close_nodes_.target_nodes(name);
+
+    nodes_in_table.sort_by(|a, b|
+        if routing_table::RoutingTable::closer_to_target(&a, &b, &name) {
+          cmp::Ordering::Less
+        } else {
+          cmp::Ordering::Greater
+        });
+    let pmid_nodes_num = cmp::min(nodes_in_table.len(), routing_table::PARALLELISM);
     let mut pmid_nodes : self::routing::types::PmidNodes = Vec::new();
     let mut dest_pmids : Vec<routing::DhtIdentity> = Vec::new();
-    for node in close_nodes.iter() {
-      pmid_nodes.push(self::routing::types::array_as_vector(&node.fob.id.get_id()));
-      dest_pmids.push(routing::DhtIdentity { id: node.fob.id.get_id() });
+    for index in 0..pmid_nodes_num {
+      pmid_nodes.push(nodes_in_table[index].get_id().to_vec());
+      dest_pmids.push(routing::DhtIdentity { id: nodes_in_table[index].get_id() });
     }
     self.db_.put_pmid_nodes(&data_name, pmid_nodes);
     Ok(routing::Action::SendOn(dest_pmids))
