@@ -95,26 +95,17 @@ impl DataManager {
 mod test {
   extern crate cbor;
   extern crate maidsafe_types;
-  extern crate rand;
   extern crate routing;
   use super::*;
   use self::maidsafe_types::*;
   use self::routing::types::*;
   use self::routing::routing_table;
 
-  pub fn generate_random_bytes(size : u32) -> Vec<u8> {
-    let mut random_bytes: Vec<u8> = vec![];
-    for _ in (0..size) {
-      random_bytes.push(rand::random::<u8>());
-    }
-    random_bytes
-  }
-
   #[test]
   fn handle_put_get() {
     let mut data_manager = DataManager::new();
     let name = NameType([3u8; 64]);
-    let value = generate_random_bytes(1024);
+    let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(name, value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();

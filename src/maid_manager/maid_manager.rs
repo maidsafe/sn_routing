@@ -63,3 +63,39 @@ impl MaidManager {
   }
 
 }
+
+
+#[cfg(test)]
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate routing;
+  use super::*;
+  use self::maidsafe_types::*;
+  use self::routing::types::*;
+
+  #[test]
+  fn handle_put() {
+    let mut maid_manager = MaidManager::new();
+    let from = routing::types::generate_random_vec_u8(64);
+    let name = NameType([3u8; 64]);
+    let value = routing::types::generate_random_vec_u8(1024);
+    let data = ImmutableData::new(name, value);
+    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+    let mut encoder = cbor::Encoder::from_memory();
+    let encode_result = encoder.encode(&[&payload]);
+    assert_eq!(encode_result.is_ok(), true);
+
+    let put_result = maid_manager.handle_put(&from, &array_as_vector(encoder.as_bytes()));
+    assert_eq!(put_result.is_err(), false);
+    match put_result.ok().unwrap() {
+      routing::Action::SendOn(ref x) => {
+        assert_eq!(x.len(), 1);
+        assert_eq!(x[0].id[0], 3u8);
+        assert_eq!(x[0].id[63], 3u8);
+      }
+      routing::Action::Reply(x) => panic!("Unexpected"),
+    }
+  }
+
+}
