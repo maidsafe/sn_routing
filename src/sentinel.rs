@@ -346,19 +346,19 @@ mod test {
                 = Vec::with_capacity(self.group_size_);
       for node in &self.nodes_ {
         headers.push(message_header
-                   ::MessageHeader::new(message_id.clone(),
-                       destination_address.clone(),
-              types::SourceAddress {
-                from_node : node.get_name(),
-                from_group : self.group_address_.clone(),
-                  reply_to : generate_u8_64()
-              },
-              self.authority_.clone(),
-                types::Signature {
-                signature : crypto::sign::sign(&serialised_message[..],
-                                               &node.get_secret_sign_key())
-                      }
-              ));
+                    ::MessageHeader::new(message_id.clone(),
+                        destination_address.clone(),
+				                types::SourceAddress {
+				                  from_node : node.get_name(),
+				                  from_group : self.group_address_.clone(),
+                          reply_to : generate_u8_64()
+                        },
+                        self.authority_.clone(),
+                        types::Signature {
+                        signature : crypto::sign::sign(&serialised_message[..],
+                                                       &node.get_secret_sign_key())
+                        }
+                      ));
       }
       headers
     }
