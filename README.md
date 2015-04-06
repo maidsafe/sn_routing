@@ -26,6 +26,8 @@ Code Coverage
 - [x] Implement DataManager
 - [x] Implement PmidManager
 - [x] Implement PmidNode
+- [ ] Implement VersionHandler
+- [ ] Test with client having file system feature
 - [ ] Test MaidManager
 - [x] Test DataManager
 - [ ] Test PmidManager
@@ -52,8 +54,6 @@ Code Coverage
 - [ ] Handle Churn
     - [ ] Implement Account Transfer
     - [ ] Churn Test
-- [ ] Implement VersionHandler
-- [ ] Test with client having file system feature
 - [ ] Implement MpidManager
     - [ ] Complete the put route (sending message)
     - [ ] Complete the get route (checking message)
