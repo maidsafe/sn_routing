@@ -291,6 +291,7 @@ mod test {
   extern crate sodiumoxide;
   extern crate cbor;
 
+  use super::*;
   use sodiumoxide::crypto;
   use types;
   use types::RoutingTrait;
