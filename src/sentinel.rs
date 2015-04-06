@@ -485,50 +485,50 @@ mod test {
         },
         data : data
       };
-    let mut e = cbor::Encoder::from_memory();
-    e.encode(&[&put_data]);
-    let serialised_message = e.as_bytes().to_vec();
+	    let mut e = cbor::Encoder::from_memory();
+	    e.encode(&[&put_data]);
+	    let serialised_message = e.as_bytes().to_vec();
       let message_id = rand::random::<u32>() as types::MessageId;
       let tag = types::MessageTypeTag::PutData;
       let headers = signature_group.get_headers(&our_destination, &message_id, &serialised_message);
       let mut collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
 
       let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
-       target_id : signature_group.get_group_address(),
-       public_keys : signature_group.get_public_keys()
-    };
-    let mut e = cbor::Encoder::from_memory();
-    e.encode(&[&get_group_key_response]);
-    let serialised_message_response = e.as_bytes().to_vec();
-    let headers_response = signature_group.get_headers(&our_destination, &message_id,
-                               &serialised_message_response);
+	       target_id : signature_group.get_group_address(),
+	       public_keys : signature_group.get_public_keys()
+	    };
+	    let mut e = cbor::Encoder::from_memory();
+	    e.encode(&[&get_group_key_response]);
+	    let serialised_message_response = e.as_bytes().to_vec();
+	    let headers_response = signature_group.get_headers(&our_destination, &message_id,
+	                               &serialised_message_response);
       let response_tag = types::MessageTypeTag::GetGroupKeyResponse;
       let mut collect_response_messages = generate_messages(headers_response, response_tag,
                           &serialised_message_response, &mut message_tracker);
 
-    for message in collect_messages {
-      sentinel_returns.push((message.index,
-                           sentinel.add(message.header,
-                                          message.tag,
-                                          message.serialised_message)));
-    }
-    assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
-    assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
-    assert_eq!(false, verify_exactly_one_response(&sentinel_returns));
+	    for message in collect_messages {
+	      sentinel_returns.push((message.index,
+	                           sentinel.add(message.header,
+	                                          message.tag,
+	                                          message.serialised_message)));
+	    }
+	    assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
+	    assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
+	    assert_eq!(false, verify_exactly_one_response(&sentinel_returns));
 
-    for message in collect_response_messages {
-      sentinel_returns.push((message.index,
-                           sentinel.add(message.header,
-                                        message.tag,
-                                          message.serialised_message)));
-    }
-    assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
-    // ERROR: returns all none results !
-    assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
-    assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
+	    for message in collect_response_messages {
+	      sentinel_returns.push((message.index,
+	                           sentinel.add(message.header,
+	                                        message.tag,
+	                                          message.serialised_message)));
+	    }
+	    assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
+	    // ERROR: returns all none results !
+	    assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
+	    assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
     }
     assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
-    // ERROR: Sentinel calls GetGroupKey for every message added !
+    // FIXED: Sentinel calls GetGroupKey for every message added !
     assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
   }
 }
