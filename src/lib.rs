@@ -199,6 +199,8 @@ fn facade_implementation() {
     fn handle_get_response(&mut self, from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
     fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
     fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtIdentity , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+    fn add_node(&mut self, node: NameType) { unimplemented!(); }
+    fn drop_node(&mut self, node: NameType) { unimplemented!(); }
   }
   let my_facade = MyFacade;
   let my_routing = RoutingNode::new(&my_facade);
