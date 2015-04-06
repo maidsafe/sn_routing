@@ -168,6 +168,6 @@ impl RoutingMessage {
   pub fn set_message_body<T>(&mut self, message: T) where T: for<'a> Encodable + Decodable {
     let mut e = cbor::Encoder::from_memory();
     e.encode(&[&message]).unwrap();
-    self.serialised_body = types::array_as_vector(e.as_bytes())
+    self.serialised_body = e.as_bytes().to_vec()
   }
 }

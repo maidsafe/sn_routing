@@ -56,7 +56,7 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-static GROUP_SIZE: u32 = 23;
+pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
 
 pub struct DhtAddress([u8; 64]);
@@ -115,11 +115,6 @@ pub type CloseGroupDifference = (Vec<Address>, Vec<Address>);
 pub type PmidNode = Address;
 pub type PmidNodes = Vec<PmidNode>;
 
-pub trait KeyGetterTraits {
-  fn get_client_key(&mut self, Address);
-  fn get_group_key(&mut self, GroupAddress);
-}
-
 pub trait RoutingTrait {
   fn get_name(&self)->Vec<u8>;
   fn get_owner(&self)->Vec<u8>;
@@ -158,7 +153,7 @@ impl Decodable for NameAndTypeId {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct Signature {
-  pub signature : Vec<u8> // Vec form of crypto::asymmetricbox::Signature which is an array
+  pub signature : Vec<u8> // Vec form of crypto::sign::Signature which is an array
 }
 
 impl Signature {
@@ -187,7 +182,7 @@ impl Decodable for Signature {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicKey {
-  pub public_key : Vec<u8> // Vec form of crypto::asymmetricbox::PublicKey which is an array
+  pub public_key : Vec<u8>
 }
 
 impl PublicKey {
