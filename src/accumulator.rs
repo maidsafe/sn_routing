@@ -152,6 +152,61 @@ mod test {
   }
 
   #[test]
+  fn add_single_value_quorum() {
+    let quorum_size : usize = 19;
+    let mut accumulator : Accumulator<i32, u32> = Accumulator::new(quorum_size);
+    let key = rand::random::<i32>();
+    let value = rand::random::<u32>();
+    for i in 0..quorum_size-1 {
+      assert!(accumulator.add(key, value, generate_address()).is_none());
+      let KeyValue = accumulator.get(&key).unwrap();
+      assert_eq!(KeyValue.0, key);
+      assert_eq!(KeyValue.1.len(), i + 1);
+      for response in KeyValue.1 { assert_eq!(response.value, value); };
+      assert_eq!(accumulator.is_quorum_reached(key), false);
+    }
+    assert!(accumulator.add(key, value, generate_address()).is_some());
+    assert_eq!(accumulator.is_quorum_reached(key), true);
+    let KeyValue = accumulator.get(&key).unwrap();
+    assert_eq!(KeyValue.0, key);
+    assert_eq!(KeyValue.1.len(), quorum_size);
+    for response in KeyValue.1 { assert_eq!(response.value, value); };
+  }
+
+  #[test]
+  fn add_multiple_values_quorum() {
+    let quorum_size : usize = 19;
+    let mut accumulator : Accumulator<i32, u32> = Accumulator::new(quorum_size);
+    let key = rand::random::<i32>();
+    for _ in 0..quorum_size-1 {
+      assert!(accumulator.add(key, rand::random::<u32>(), generate_address()).is_none());
+      assert_eq!(accumulator.is_quorum_reached(key), false);
+    }
+    assert!(accumulator.add(key, rand::random::<u32>(), generate_address()).is_some());
+    assert_eq!(accumulator.is_quorum_reached(key), true);
+  }
+
+  #[test]
+  fn add_multiple_keys_quorum() {
+    let quorum_size : usize = 19;
+    let mut accumulator : Accumulator<i32, u32> = Accumulator::new(quorum_size);
+    let key = rand::random::<i32>();
+    let mut noise_keys : Vec<i32> = Vec::with_capacity(5);
+    while noise_keys.len() < 5 {
+      let noise_key = rand::random::<i32>();
+      if noise_key != key { noise_keys.push(noise_key); }; };
+    for _ in 0..quorum_size-1 {
+        for noise_key in noise_keys.iter() {
+          accumulator.add(noise_key.clone(), rand::random::<u32>(), generate_address());
+        }
+      assert!(accumulator.add(key, rand::random::<u32>(), generate_address()).is_none());
+      assert_eq!(accumulator.is_quorum_reached(key), false);
+    }
+    assert!(accumulator.add(key, rand::random::<u32>(), generate_address()).is_some());
+    assert_eq!(accumulator.is_quorum_reached(key), true);
+  }
+
+  #[test]
   fn delete() {
     let mut accumulator : Accumulator<i32, u32> = Accumulator::new(2);
     let address : Vec<u8> = generate_address();
