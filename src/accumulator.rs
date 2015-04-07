@@ -159,18 +159,18 @@ mod test {
     let value = rand::random::<u32>();
     for i in 0..quorum_size-1 {
       assert!(accumulator.add(key, value, generate_address()).is_none());
-      let KeyValue = accumulator.get(&key).unwrap();
-      assert_eq!(KeyValue.0, key);
-      assert_eq!(KeyValue.1.len(), i + 1);
-      for response in KeyValue.1 { assert_eq!(response.value, value); };
+      let key_value = accumulator.get(&key).unwrap();
+      assert_eq!(key_value.0, key);
+      assert_eq!(key_value.1.len(), i + 1);
+      for response in key_value.1 { assert_eq!(response.value, value); };
       assert_eq!(accumulator.is_quorum_reached(key), false);
     }
     assert!(accumulator.add(key, value, generate_address()).is_some());
     assert_eq!(accumulator.is_quorum_reached(key), true);
-    let KeyValue = accumulator.get(&key).unwrap();
-    assert_eq!(KeyValue.0, key);
-    assert_eq!(KeyValue.1.len(), quorum_size);
-    for response in KeyValue.1 { assert_eq!(response.value, value); };
+    let key_value = accumulator.get(&key).unwrap();
+    assert_eq!(key_value.0, key);
+    assert_eq!(key_value.1.len(), quorum_size);
+    for response in key_value.1 { assert_eq!(response.value, value); };
   }
 
   #[test]
