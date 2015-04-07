@@ -36,8 +36,10 @@ impl RoutingClient {
     pub fn get(&self, type_id: u64, name: types::DhtAddress) { unimplemented!()}
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) {
-        //connection_manager.sen;
+    pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) -> crust::connection_manager::IoResult<()> {
+        let mut encoder = cbor::Encoder::from_memory();
+        let encode_result = encoder.encode(&[&content]);
+        self.connection_manager.send(encoder.into_bytes(), name.0.to_vec())
     }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
@@ -61,7 +63,7 @@ impl Random for RoutingClient {
             sign_secret_key: sign_pair.1,
             encrypt_public_key: asym_pair.0,
             encrypt_secret_key: asym_pair.1,
-            connection_manager: crust::connection_manager::ConnectionManager::new(types::generate_random_vec_u8(64), tx),
+            connection_manager: crust::connection_manager::ConnectionManager::new(types::generate_random_vec_u8(64), tx/*, rx*/), // TODO(Spandan) how will it rx without storing the receiver
         }
     }
 }
