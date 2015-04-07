@@ -42,6 +42,10 @@ Steps to compile SQLite by,
 - [x] Bootstrap handler test
 - [ ] Allow node to create it's ID and store on network
 - [ ] zero state network
+- [ ] Integrate with Sentinel
+- [ ] Test node network (process on single machine)
+- [ ] Test node network (local area network)
+- [ ] Test node network (across digital ocean images)
 - [ ] Network starts any number of nodes automatically (test)
 - [x] Create sort and bucket index methods 
 - [x] Implement routing table
