@@ -59,7 +59,7 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
 
-pub struct DhtAddress([u8; 64]);
+pub struct DhtAddress(pub [u8; 64]);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
