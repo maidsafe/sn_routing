@@ -58,10 +58,10 @@ impl<'a> Sentinel<'a> {
   pub fn new(send_get_keys: &'a mut SendGetKeys) -> Sentinel<'a> {
     Sentinel {
       send_get_keys_: send_get_keys,
-      node_accumulator_: NodeAccumulatorType::new(20),
-      group_accumulator_: NodeAccumulatorType::new(20),
-      group_key_accumulator_: KeyAccumulatorType::new(20),
-      node_key_accumulator_: KeyAccumulatorType::new(20)
+      node_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
+      group_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
+      group_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize),
+      node_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize)
     }
   }
 
@@ -112,42 +112,36 @@ impl<'a> Sentinel<'a> {
         if header.is_from_group() {
           let key = (header.from_group().unwrap(), header.message_id());
           if !self.group_accumulator_.have_name(&key) {
-            //self.key_getter_traits_.get_group_key(header.from_group().unwrap());
-            self.send_get_keys_.get_group_key(header.from_group().unwrap());
-          } else {
-            let messages = self.group_accumulator_.add(key.clone(),
-                                                       (header.clone(), type_tag, message),
-                                                       header.from_node());
-            if messages.is_some() {
-              let keys = self.group_key_accumulator_.get(&header.from_group().unwrap());
-              if keys.is_some() {
-                let resolved = self.resolve(self.validate_group(messages.unwrap().1,
-                                                                keys.unwrap().1), true);
-                if resolved.is_some() {
-                  self.group_accumulator_.delete(key);
-                  return resolved;
-                }
+            self.send_get_keys_.get_group_key(header.from_group().unwrap()); };
+          let messages = self.group_accumulator_.add(key.clone(),
+                                                     (header.clone(), type_tag, message),
+                                                     header.from_node());
+          if messages.is_some() {
+            let keys = self.group_key_accumulator_.get(&header.from_group().unwrap());
+            if keys.is_some() {
+              let resolved = self.resolve(self.validate_group(messages.unwrap().1,
+                                                              keys.unwrap().1), true);
+              if resolved.is_some() {
+                self.group_accumulator_.delete(key);
+                return resolved;
               }
             }
           }
         } else {
           let key = (header.from_node(), header.message_id());
           if !self.node_accumulator_.have_name(&key) {
-            //self.key_getter_traits_.get_client_key(header.from_group().unwrap());
-            self.send_get_keys_.get_client_key(header.from_group().unwrap());
-          } else {
-            let messages = self.node_accumulator_.add(key.clone(),
-                                                      (header.clone(), type_tag, message),
-                                                      header.from_node());
-            if messages.is_some() {
-              let keys = self.node_key_accumulator_.get(&header.from_group().unwrap());
-              if keys.is_some() {
-                let resolved = self.resolve(self.validate_node(messages.unwrap().1,
-                                                               keys.unwrap().1), false);
-                if resolved.is_some() {
-                  self.node_accumulator_.delete(key);
-                  return resolved;
-                }
+            self.send_get_keys_.get_client_key(header.from_group().unwrap()); };
+          let messages = self.node_accumulator_.add(key.clone(),
+                                                    (header.clone(), type_tag, message),
+                                                    header.from_node());
+          if messages.is_some() {
+            let keys = self.node_key_accumulator_.get(&header.from_group().unwrap());
+            if keys.is_some() {
+              let resolved = self.resolve(self.validate_node(messages.unwrap().1,
+                                                             keys.unwrap().1), false);
+              if resolved.is_some() {
+                self.node_accumulator_.delete(key);
+                return resolved;
               }
             }
           }
@@ -376,12 +370,12 @@ mod test {
       for node in &self.nodes_ {
         // TODO(ben 2015-4-3): replace with proper types for PublicKey
         //                   this is ridiculous:
-          let public_key = node.get_public_key().0;
-          let mut public_key_as_vec : Vec<u8> = Vec::with_capacity(public_key.len());
-          for i in public_key.iter() {
-            public_key_as_vec.push(*i);
+          let public_sign_key = node.get_public_sign_key().0;
+          let mut public_sign_key_as_vec : Vec<u8> = Vec::with_capacity(public_sign_key.len());
+          for i in public_sign_key.iter() {
+            public_sign_key_as_vec.push(*i);
           }
-        public_keys.push((node.get_name(), public_key_as_vec));
+        public_keys.push((node.get_name(), public_sign_key_as_vec));
       }
       public_keys
     }
@@ -534,8 +528,7 @@ mod test {
     assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
     assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
     }
-    assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
-    // ERROR: Sentinel calls GetGroupKey for every message added !
-    assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
+  assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
+  assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
   }
 }
