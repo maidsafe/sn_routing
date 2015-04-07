@@ -28,7 +28,7 @@ use std::usize;
 static BUCKET_SIZE: usize = 1;
 static GROUP_SIZE: usize = 23;
 static QUORUM_SIZE: usize = 19;
-static PARALLELISM: usize = 4;
+pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
 pub type Address = maidsafe_types::NameType;
@@ -337,9 +337,9 @@ impl RoutingTable {
     }
 
     // lhs is closer to target than rhs
-    fn closer_to_target(lhs: &maidsafe_types::NameType,
-                        rhs: &maidsafe_types::NameType,
-                        target: &maidsafe_types::NameType) -> bool {
+    pub fn closer_to_target(lhs: &maidsafe_types::NameType,
+                            rhs: &maidsafe_types::NameType,
+                            target: &maidsafe_types::NameType) -> bool {
         for i in 0..lhs.0.len() {
             let res_0 = lhs.0[i] ^ target.0[i];
             let res_1 = rhs.0[i] ^ target.0[i];
