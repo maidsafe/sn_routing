@@ -370,12 +370,12 @@ mod test {
       for node in &self.nodes_ {
         // TODO(ben 2015-4-3): replace with proper types for PublicKey
         //                   this is ridiculous:
-          let public_key = node.get_public_key().0;
-          let mut public_key_as_vec : Vec<u8> = Vec::with_capacity(public_key.len());
-          for i in public_key.iter() {
-            public_key_as_vec.push(*i);
+          let public_sign_key = node.get_public_sign_key().0;
+          let mut public_sign_key_as_vec : Vec<u8> = Vec::with_capacity(public_sign_key.len());
+          for i in public_sign_key.iter() {
+            public_sign_key_as_vec.push(*i);
           }
-        public_keys.push((node.get_name(), public_key_as_vec));
+        public_keys.push((node.get_name(), public_sign_key_as_vec));
       }
       public_keys
     }
