@@ -14,15 +14,14 @@
 // Software.
 
 use sodiumoxide;
-use crust::connection_manager;
+use crust;
 use std::sync::mpsc;
 use sodiumoxide::crypto;
 use std::sync::mpsc::{Receiver};
 use super::*;
 
-//type DhtId             = types::DhtId;
-type ConnectionManager = connection_manager::ConnectionManager<DhtId>;
-type Event             = connection_manager::Event<DhtId>;
+type ConnectionManager = crust::ConnectionManager<DhtId>;
+type Event             = crust::Event<DhtId>;
 
 /// DHT node
 pub struct RoutingNode<'a> {
@@ -48,7 +47,7 @@ impl<'a> RoutingNode<'a> {
                       encrypt_public_key: encrypt_key_pair.0,
                       encrypt_secret_key: encrypt_key_pair.1,
                       event_input: event_input,
-                      connections: connection_manager::ConnectionManager::<DhtId>::new(id, event_output)
+                      connections: crust::ConnectionManager::new(id, event_output)
                     }
     }
     

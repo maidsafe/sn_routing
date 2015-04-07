@@ -27,4 +27,6 @@ git="https://github.com/linuxfood/rustsqlite.git"
 git = "https://github.com/dirvine/maidsafe_types"
 
 [dependencies.crust]
-git = "https://github.com/dirvine/crust"
+#git = "https://github.com/dirvine/crust"
+git = "https://github.com/inetic/crust"
+#path = "/home/peter/work/crust"
