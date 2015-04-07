@@ -79,12 +79,12 @@ impl routing::Facade for VaultFacade {
         // meanwhile Put request to VersionHandler is from Node
         match from_authority {
           Authority::ClientManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
-          Authority::Node => { return self.version_handler.handle_put(&data); }
+          Authority::Node => { return self.version_handler.handle_put(data); }
           _ => { return Err(RoutingError::InvalidRequest); }
         }        
       }
       Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
-      Authority::Node => { return self.pmid_node.handle_put(&data); }
+      Authority::Node => { return self.pmid_node.handle_put(data); }
       _ => { return Err(RoutingError::InvalidRequest); }
     }
   }

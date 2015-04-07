@@ -42,7 +42,7 @@ impl PmidNode {
     Ok(routing::Action::Reply(data))
   }
 
-  pub fn handle_put(&mut self, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
     let mut data_name : Vec<u8>;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -62,7 +62,7 @@ impl PmidNode {
       _ => return Err(routing::RoutingError::InvalidRequest)
     }
     // the type_tag needs to be stored as well
-    self.chunk_store_.put(data_name, data.clone());
+    self.chunk_store_.put(data_name, data);
     return Err(routing::RoutingError::Success);
   }
 
