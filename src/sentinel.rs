@@ -443,27 +443,27 @@ mod test {
     sentinel_returns.iter().filter(|&x| x.1.is_some()).count() == 1
   }
 
-  // TODO(ben 2015-04-04) : needs fixing, on iterators, and &mut
-  // fn get_selected_sentinel_returns(sentinel_returns: &mut Vec<(u64, Option<ResultType>)>,
-  //                   track_messages : &mut Vec<u64>)
-  //                   ->Vec<(u64, Option<ResultType>)> {
-  //   if track_messages.is_empty() { return Vec::<(u64, Option<ResultType>)>::new(); }
-  //   let selected_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
-  //   sentinel_returns.sort_by(|a, b| a.0.cmp(&b.0));
-  //   track_messages.sort();
-  //   let mut track_itr = track_messages.iter();
-  //   for sentinel_return in sentinel_returns {
-  //     if sentinel_return.1 == *track_itr {
-  //      selected_returns.push(sentinel_return.clone());
-  //     }
-  //     if sentinel_return.1 >= *track_itr {
-  //      if track_itr != track_messages.iter().last() {
-  //        track_itr.next();
-  //      } else { break; }
-  //     }
-  //   }
-  //   selected_returns
-  // }
+  fn get_selected_sentinel_returns(sentinel_returns: &mut Vec<(u64, Option<ResultType>)>,
+                    track_messages : &mut Vec<u64>)
+                    ->Vec<(u64, Option<ResultType>)> {
+    if track_messages.is_empty() { return Vec::<(u64, Option<ResultType>)>::new(); }
+    let mut selected_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
+    sentinel_returns.sort_by(|a, b| a.0.cmp(&b.0));
+    track_messages.sort();
+    let mut track_index = 0;
+    for sentinel_return in sentinel_returns {
+      let track_message = track_messages[track_index];
+      if sentinel_return.0 == track_message {
+       selected_returns.push(sentinel_return.clone());
+      }
+      if sentinel_return.0 >= track_message {
+       if track_index != track_messages.len() - 1 {
+         track_index += 1;
+       } else { break; }
+      }
+    }
+    selected_returns
+  }
 
   #[test]
   fn simple_add() {
@@ -528,6 +528,8 @@ mod test {
     assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
     assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
     assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
+    assert_eq!(1, get_selected_sentinel_returns(&mut sentinel_returns,
+                    &mut vec![(types::GROUP_SIZE + types::QUORUM_SIZE) as u64]).len());
     }
   assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
   assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
