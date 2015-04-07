@@ -200,8 +200,10 @@ impl<'a> Sentinel<'a> {
     let mut verified_messages : Vec<ResultType> = Vec::new();
     let mut keys_map : HashMap<types::Address, Vec<types::PublicKey>> = HashMap::new();
     for group_key in keys.iter() {
+      // deserialise serialised message GetGroupKeyResponse
       let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
       let group_key_response: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
+      // public_key = (Address, Vec[u8])
       for public_key in group_key_response.public_keys.iter() {
         if !keys_map.contains_key(&public_key.0) {
           keys_map.insert(public_key.0.clone(), vec![types::PublicKey{ public_key : public_key.1.clone() }]);
@@ -486,23 +488,23 @@ mod test {
         },
         data : data
       };
-    let mut e = cbor::Encoder::from_memory();
-    let _ = e.encode(&[&put_data]);
-    let serialised_message = e.as_bytes().to_vec();
+      let mut e = cbor::Encoder::from_memory();
+      let _ = e.encode(&[&put_data]);
+      let serialised_message = e.as_bytes().to_vec();
       let message_id = rand::random::<u32>() as types::MessageId;
       let tag = types::MessageTypeTag::PutData;
       let headers = signature_group.get_headers(&our_destination, &message_id, &serialised_message);
       let collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
 
       let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
-      target_id : signature_group.get_group_address(),
-      public_keys : signature_group.get_public_keys()
-    };
-    let mut e = cbor::Encoder::from_memory();
-    let _ = e.encode(&[&get_group_key_response]);
-    let serialised_message_response = e.as_bytes().to_vec();
-    let headers_response = signature_group.get_headers(&our_destination, &message_id,
-                               &serialised_message_response);
+        target_id : signature_group.get_group_address(),
+        public_keys : signature_group.get_public_keys()
+      };
+      let mut e = cbor::Encoder::from_memory();
+      let _ = e.encode(&[&get_group_key_response]);
+      let serialised_message_response = e.as_bytes().to_vec();
+      let headers_response = signature_group.get_headers(&our_destination, &message_id,
+                                 &serialised_message_response);
       let response_tag = types::MessageTypeTag::GetGroupKeyResponse;
       let collect_response_messages = generate_messages(headers_response, response_tag,
           &serialised_message_response, &mut message_tracker);
@@ -524,7 +526,6 @@ mod test {
                                          message.serialised_message)));
     }
     assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
-    // ERROR: returns all none results !
     assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
     assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
     }
