@@ -58,10 +58,10 @@ impl<'a> Sentinel<'a> {
   pub fn new(send_get_keys: &'a mut SendGetKeys) -> Sentinel<'a> {
     Sentinel {
       send_get_keys_: send_get_keys,
-      node_accumulator_: NodeAccumulatorType::new(20),
-      group_accumulator_: NodeAccumulatorType::new(20),
-      group_key_accumulator_: KeyAccumulatorType::new(20),
-      node_key_accumulator_: KeyAccumulatorType::new(20)
+      node_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
+      group_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
+      group_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize),
+      node_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize)
     }
   }
 
@@ -528,7 +528,7 @@ mod test {
     assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
     assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
     }
-    assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
-    assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
+  assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
+  assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
   }
 }
