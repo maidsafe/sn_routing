@@ -40,13 +40,11 @@ Steps to compile SQLite by,
 - [x] API version 0.0.6
 - [x] Bootstrap handler implementation
 - [x] Bootstrap handler test
-- [ ] Allow node to create it's ID and store on network
 - [ ] zero state network
 - [ ] Integrate with Sentinel
 - [ ] Test node network (process on single machine)
 - [ ] Test node network (local area network)
 - [ ] Test node network (across digital ocean images)
-- [ ] Network starts any number of nodes automatically (test)
 - [x] Create sort and bucket index methods 
 - [x] Implement routing table
 - [x] Test routing table 
@@ -63,7 +61,7 @@ Steps to compile SQLite by,
 - [x] Test message types
 - [x] Implement Get Put Post messages
 - [ ] Implement routing node
-- [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Version 0.0.8
 - [ ] Implement NAT traversal (requires crust v0.1.0)
+- [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Version 0.1 (crates.io)
