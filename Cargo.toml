@@ -29,4 +29,5 @@ git = "https://github.com/dirvine/maidsafe_types"
 [dependencies.crust]
 #git = "https://github.com/dirvine/crust"
 git = "https://github.com/inetic/crust"
+rev = "6eb31762bf049839d77cc1d5eae850de3cc6d2c5"
 #path = "/home/peter/work/crust"
