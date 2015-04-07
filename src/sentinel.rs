@@ -177,7 +177,7 @@ impl<'a> Sentinel<'a> {
       	if !public_keys_holder.contains(&target_key) {
       		public_keys_holder.push(target_key);
       	}
-	    }      
+	    }
   	}
   	let mut pub_key_list : Vec<types::PublicKey> = Vec::new();
   	for (_, value) in keys_map.iter() {
@@ -286,7 +286,7 @@ impl<'a> Sentinel<'a> {
 
 #[cfg(test)]
 mod test {
-  
+
   extern crate rand;
   extern crate sodiumoxide;
   extern crate cbor;
@@ -297,8 +297,7 @@ mod test {
   use types::RoutingTrait;
   use message_header;
   use messages;
-  use std::marker::PhantomData;
-  use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+  use rustc_serialize::Encodable;
 
   pub struct AddSentinelMessage {
   	header : message_header::MessageHeader,
@@ -350,8 +349,8 @@ mod test {
   	pub fn get_headers(&self, destination_address : &types::DestinationAddress,
   					   message_id : &types::MessageId, serialised_message : &Vec<u8> )
   					  -> Vec<message_header::MessageHeader> {
-  	  let mut headers : Vec<message_header::MessageHeader> 
-  	  				  = Vec::with_capacity(self.group_size_);
+        let mut headers : Vec<message_header::MessageHeader>
+            = Vec::with_capacity(self.group_size_);
   	  for node in &self.nodes_ {
   	  	headers.push(message_header
   	  		         ::MessageHeader::new(message_id.clone(),
@@ -371,9 +370,9 @@ mod test {
   	  headers
   	}
 
-  	pub fn get_public_keys(&self) -> Vec<(types::Address, Vec<u8>)> {
-  	  let mut public_keys : Vec<(types::Address, Vec<u8>)> 
-  	  	= Vec::with_capacity(self.nodes_.len());
+    pub fn get_public_keys(&self) -> Vec<(types::Address, Vec<u8>)> {
+        let mut public_keys : Vec<(types::Address, Vec<u8>)>
+           = Vec::with_capacity(self.nodes_.len());
   	  for node in &self.nodes_ {
   	  	// TODO(ben 2015-4-3): replace with proper types for PublicKey
   	  	//	       	  		   this is ridiculous:
@@ -429,10 +428,10 @@ mod test {
   					   -> Vec<AddSentinelMessage> {
   	let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
     for header in headers {
-      collect_messages.push(AddSentinelMessage{ header : header, 
-      											tag : tag.clone(),
-      											serialised_message : message.clone(), 
-      											index : message_index.clone()});
+      collect_messages.push(AddSentinelMessage{ header : header,
+                            tag : tag.clone(),
+                            serialised_message : message.clone(),
+                            index : message_index.clone()});
       *message_index += 1;
     }
     collect_messages
@@ -465,7 +464,7 @@ mod test {
   //     	if track_itr != track_messages.iter().last() {
   //     	  track_itr.next();
   //     	} else { break; }
-  //     } 
+  //     }
   //   }
   //   selected_returns
   // }
@@ -478,15 +477,15 @@ mod test {
     	reply_to : generate_u8_64()
     };
     let group_address = generate_u8_64();
-    let mut signature_group = SignatureGroup::new(group_address, types::GROUP_SIZE as usize,
-    											  types::Authority::NaeManager);
+    let signature_group = SignatureGroup::new(group_address, types::GROUP_SIZE as usize,
+               types::Authority::NaeManager);
     let mut trace_get_keys = TraceGetKeys::new();
     let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
     let mut message_tracker : u64 = 0;
     {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
       let data : Vec<u8> = generate_data(100usize);
-      let put_data = messages::put_data::PutData { 
+      let put_data = messages::put_data::PutData {
       	name_and_type_id : types::NameAndTypeId {
       	  name : crypto::hash::sha512::hash(&data[..]).0.to_vec(),
       	  type_id : 0u32  // TODO(ben 2015-04-02: how is type_id determined)
@@ -494,31 +493,31 @@ mod test {
         data : data
       };
 	  let mut e = cbor::Encoder::from_memory();
-	  e.encode(&[&put_data]);
+	  let _ = e.encode(&[&put_data]);
 	  let serialised_message = e.as_bytes().to_vec();
       let message_id = rand::random::<u32>() as types::MessageId;
       let tag = types::MessageTypeTag::PutData;
       let headers = signature_group.get_headers(&our_destination, &message_id, &serialised_message);
-      let mut collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
-      
+      let collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
+
       let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
 	   	target_id : signature_group.get_group_address(),
 	   	public_keys : signature_group.get_public_keys()
 	  };
 	  let mut e = cbor::Encoder::from_memory();
-	  e.encode(&[&get_group_key_response]);
+	  let _ = e.encode(&[&get_group_key_response]);
 	  let serialised_message_response = e.as_bytes().to_vec();
 	  let headers_response = signature_group.get_headers(&our_destination, &message_id,
 	  													 &serialised_message_response);
       let response_tag = types::MessageTypeTag::GetGroupKeyResponse;
-      let mut collect_response_messages = generate_messages(headers_response, response_tag,
-      										&serialised_message_response, &mut message_tracker);
+      let collect_response_messages = generate_messages(headers_response, response_tag,
+          &serialised_message_response, &mut message_tracker);
 
-	  for message in collect_messages {
-	    sentinel_returns.push((message.index,
-	    	                   sentinel.add(message.header, 
-	      	              	                message.tag,
-	      	              	                message.serialised_message)));
+    for message in collect_messages {
+      sentinel_returns.push((message.index,
+                             sentinel.add(message.header,
+                                          message.tag,
+                                          message.serialised_message)));
 	  }
 	  assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
 	  assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
@@ -526,9 +525,9 @@ mod test {
 
 	  for message in collect_response_messages {
 	    sentinel_returns.push((message.index,
-	    	                   sentinel.add(message.header, 
-	      	                    	        message.tag,
-	      	              	                message.serialised_message)));
+                            sentinel.add(message.header,
+                                         message.tag,
+                                         message.serialised_message)));
 	  }
 	  assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
 	  // ERROR: returns all none results !
@@ -537,6 +536,6 @@ mod test {
     }
     assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
     // ERROR: Sentinel calls GetGroupKey for every message added !
-    assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address())); 
+    assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
   }
 }

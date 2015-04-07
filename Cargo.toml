@@ -17,9 +17,6 @@ time = "*"
 sodiumoxide = "*"
 rand = "*"
 
-[dependencies.bchannel]
-git="https://github.com/dirvine/bchannel"
-
 [dependencies.lru-cache]
 git="https://github.com/contain-rs/lru-cache.git"
 
@@ -28,3 +25,6 @@ git="https://github.com/linuxfood/rustsqlite.git"
 
 [dependencies.maidsafe_types]
 git = "https://github.com/dirvine/maidsafe_types"
+
+[dependencies.crust]
+git = "https://github.com/dirvine/crust"

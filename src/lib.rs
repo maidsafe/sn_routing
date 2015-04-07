@@ -48,22 +48,20 @@ extern crate rustc_serialize;
 extern crate cbor;
 extern crate rand;
 extern crate time;
-extern crate bchannel;
 extern crate sqlite3;
+extern crate crust;
 
 extern crate maidsafe_types;
 
-use std::net::{TcpStream};
 use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
+use std::net::{TcpStream};
 
 use maidsafe_types::NameType;
 
 pub mod types;
-pub mod tcp_connections;
-mod connection_manager;
 mod broadcast;
 mod message_header;
 pub mod routing_table;
@@ -126,7 +124,7 @@ pub enum RoutingError {
 
 pub trait Facade : Sync {
   /// if reply is data then we send back the response message (ie get_response )
-  fn handle_get(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
+  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError>;
 
   /// data: Vec<u8> is serialised maidsafe_types::Payload which holds typetag and content
   fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
