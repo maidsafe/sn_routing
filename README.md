@@ -48,6 +48,12 @@ Steps to compile SQLite by,
 - [x] Test routing table 
 - [x] Implement sentinel (initial)
 - [ ] Finalise sentinel in line with tests
+- [ ] Implement client node
+- [ ] Test client node
+- [ ] Implement client façade
+- [ ] Test client façade
+- [ ] Integrate connection manager (bootstrapping)
+- [ ] Implement routing node (handle messages , forwarding etc)
 - [x] Test sentinel 
 - [x] Implement routing message types (Connect FindNode)
 - [x] Test message types
