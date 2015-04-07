@@ -14,12 +14,15 @@
 // Software.
 
 use sodiumoxide;
-use crust::connection_manager::*;
+use crust::connection_manager;
 use std::sync::mpsc;
 use sodiumoxide::crypto;
 use std::sync::mpsc::{Receiver};
-use std::net::{TcpStream};
 use super::*;
+
+//type DhtId             = types::DhtId;
+type ConnectionManager = connection_manager::ConnectionManager<DhtId>;
+type Event             = connection_manager::Event<DhtId>;
 
 /// DHT node
 pub struct RoutingNode<'a> {
@@ -28,39 +31,35 @@ pub struct RoutingNode<'a> {
     sign_secret_key: crypto::sign::SecretKey,
     encrypt_public_key: crypto::asymmetricbox::PublicKey,
     encrypt_secret_key: crypto::asymmetricbox::SecretKey,
-    //sender: Sender<TcpStream>,
-    //receiver: Receiver<TcpStream>,
     event_input: Receiver<Event>,
-    //connections: ConnectionManager
+    connections: ConnectionManager
 }
 
 impl<'a> RoutingNode<'a> {
-    pub fn new(/*id: types::DhtAddress, */my_facade: &'a Facade) -> RoutingNode<'a> {
+    pub fn new(id: types::DhtId, my_facade: &'a Facade) -> RoutingNode<'a> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let key_pair = crypto::sign::gen_keypair();
         let encrypt_key_pair = crypto::asymmetricbox::gen_keypair();
         let (event_output, event_input) = mpsc::channel();
         
-        //let types::DhtAddress(id) = id;
-
         RoutingNode { facade: my_facade,
                       sign_public_key: key_pair.0,
                       sign_secret_key: key_pair.1,
                       encrypt_public_key: encrypt_key_pair.0,
                       encrypt_secret_key: encrypt_key_pair.1,
                       event_input: event_input,
-                      //connections: ConnectionManager::new(vec![0], event_output)
+                      connections: connection_manager::ConnectionManager::<DhtId>::new(id, event_output)
                     }
     }
     
     /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&self, type_id: u64, name: types::DhtAddress) { unimplemented!()}
+    pub fn get(&self, type_id: u64, name: types::DhtId) { unimplemented!()}
     
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
+    pub fn put(&self, name: types::DhtId, content: Vec<u8>) { unimplemented!() }
     
     /// Mutate something on the network (you must prove ownership) - Direct call
-    pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
+    pub fn post(&self, name: types::DhtId, content: Vec<u8>) { unimplemented!() }
     
     pub fn start() { }
     

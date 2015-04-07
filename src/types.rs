@@ -59,7 +59,18 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
 
-pub struct DhtAddress([u8; 64]);
+#[derive(PartialEq, Eq, Hash, Clone, RustcEncodable, RustcDecodable)]
+pub struct DhtId(Vec<u8>);
+
+impl DhtId {
+    pub fn new(slice: [u8; 64]) -> DhtId {
+        unimplemented!();
+    }
+
+    pub fn generate_random() -> DhtId {
+        DhtId(generate_random_vec_u8(64))
+    }
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
@@ -245,7 +256,7 @@ impl Decodable for PublicPmid {
 pub struct Pmid {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
-  name: Vec<u8> // should really all be `DhtAddress`
+  name: Vec<u8> // should really all be `DhtId`
 }
 
 impl RoutingTrait for Pmid {
