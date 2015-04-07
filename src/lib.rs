@@ -54,10 +54,7 @@ extern crate crust;
 extern crate maidsafe_types;
 
 use sodiumoxide::crypto;
-use std::sync::mpsc;
-use std::sync::mpsc::{Sender, Receiver};
 use std::default::Default;
-use std::net::{TcpStream};
 
 use maidsafe_types::NameType;
 
@@ -70,6 +67,7 @@ mod common_bits;
 mod sentinel;
 mod bootstrap;
 mod messages;
+mod routing_node;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
@@ -114,7 +112,6 @@ pub enum Action {
   SendOn(Vec<DhtIdentity>)
 }
 
-
 pub enum RoutingError {
   Success,  // vault will aslo return a Success to indicate a deadend
   NoData,
@@ -139,53 +136,10 @@ pub trait Facade : Sync {
   fn drop_node(&mut self, node: NameType);
 }
 
-/// DHT node
-pub struct RoutingNode<'a> {
-  facade: &'a (Facade + 'a),
-  sign_public_key: crypto::sign::PublicKey,
-  sign_secret_key: crypto::sign::SecretKey,
-  encrypt_public_key: crypto::asymmetricbox::PublicKey,
-  encrypt_secret_key: crypto::asymmetricbox::SecretKey,
-  sender: Sender<TcpStream>,
-  receiver: Receiver<TcpStream>
-}
-
-impl<'a> RoutingNode<'a> {
-  pub fn new(my_facade: &'a Facade) -> RoutingNode<'a> {
-    sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
-    let key_pair = crypto::sign::gen_keypair();
-    let encrypt_key_pair = crypto::asymmetricbox::gen_keypair();
-    let (tx, rx) : (Sender<TcpStream>, Receiver<TcpStream>) = mpsc::channel();
-
-    RoutingNode { facade: my_facade,
-                  sign_public_key: key_pair.0, sign_secret_key: key_pair.1,
-                  encrypt_public_key: encrypt_key_pair.0, encrypt_secret_key: encrypt_key_pair.1, sender: tx, receiver: rx }
-  }
-
-  /// Retreive something from the network (non mutating) - Direct call
-  pub fn get(&self, type_id: u64, name: types::DhtAddress) { unimplemented!()}
-
-  /// Add something to the network, will always go via ClientManager group
-  pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
-
-  /// Mutate something on the network (you must prove ownership) - Direct call
-  pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
-
-  pub fn start() {
-
-  }
-
-  fn add_bootstrap(&self) {}
-
-
-  fn get_facade(&'a mut self) -> &'a Facade {
-    self.facade
-  }
-}
-
-
 #[test]
 fn facade_implementation() {
+
+  mod routing_node;
 
   struct MyFacade;
 
@@ -201,6 +155,6 @@ fn facade_implementation() {
     fn drop_node(&mut self, node: NameType) { unimplemented!(); }
   }
   let my_facade = MyFacade;
-  let my_routing = RoutingNode::new(&my_facade);
+  let my_routing = routing_node::RoutingNode::new(&my_facade);
   /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
 }
