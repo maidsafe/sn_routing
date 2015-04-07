@@ -61,6 +61,7 @@ use std::net::{TcpStream};
 
 use maidsafe_types::NameType;
 
+mod routing_client;
 pub mod types;
 mod broadcast;
 mod message_header;
