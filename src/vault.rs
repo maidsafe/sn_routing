@@ -26,6 +26,8 @@ mod maid_manager;
 mod pmid_manager;
 #[path="pmid_node/pmid_node.rs"]
 mod pmid_node;
+#[path="version_handler/version_handler.rs"]
+mod version_handler;
 
 use self::maidsafe_types::NameType;
 
@@ -39,19 +41,29 @@ use self::data_manager::DataManager;
 use self::maid_manager::MaidManager;
 use self::pmid_manager::PmidManager;
 use self::pmid_node::PmidNode;
+use self::version_handler::VersionHandler;
 
 pub struct VaultFacade {
   data_manager : DataManager,
   maid_manager : MaidManager,
   pmid_manager : PmidManager,
   pmid_node : PmidNode,
+  version_handler : VersionHandler,
   nodes_in_table : Vec<NameType>
 }
 
 impl routing::Facade for VaultFacade {
   fn handle_get(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
     match our_authority {
-      Authority::NaeManager => { return self.data_manager.handle_get(&data); }
+      Authority::NaeManager => {
+        // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
+        // data input here is assumed as name only(no type info attached)
+        let data_manager_result = self.data_manager.handle_get(&data);
+        if data_manager_result.is_ok() {
+          return data_manager_result;
+        }
+        return self.version_handler.handle_get(data);
+      }
       Authority::Node => { return self.pmid_node.handle_get(data); }
       _ => { return Err(RoutingError::InvalidRequest); }
     }
@@ -61,7 +73,16 @@ impl routing::Facade for VaultFacade {
                 from_address: DhtIdentity, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
     match our_authority {
       Authority::ClientManager => { return self.maid_manager.handle_put(&routing::types::array_as_vector(&from_address.id), &data); }
-      Authority::NaeManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
+      Authority::NaeManager => {
+        // both DataManager and VersionHandler are NaeManagers
+        // However Put request to DataManager is from ClientManager (MaidManager)
+        // meanwhile Put request to VersionHandler is from Node
+        match from_authority {
+          Authority::ClientManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
+          Authority::Node => { return self.version_handler.handle_put(&data); }
+          _ => { return Err(RoutingError::InvalidRequest); }
+        }        
+      }
       Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
       Authority::Node => { return self.pmid_node.handle_put(&data); }
       _ => { return Err(RoutingError::InvalidRequest); }
@@ -101,6 +122,6 @@ impl VaultFacade {
   pub fn new() -> VaultFacade {
     VaultFacade { data_manager: DataManager::new(), maid_manager: MaidManager::new(),
                   pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
-                  nodes_in_table: Vec::new() }
+                  version_handler: VersionHandler::new(), nodes_in_table: Vec::new() }
   }
 }
