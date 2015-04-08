@@ -41,7 +41,6 @@ Steps to compile SQLite by,
 - [x] Bootstrap handler implementation
 - [x] Bootstrap handler test
 - [ ] zero state network
-- [ ] Integrate with Sentinel
 - [ ] Test node network (process on single machine)
 - [ ] Test node network (local area network)
 - [ ] Test node network (across digital ocean images)
@@ -62,6 +61,7 @@ Steps to compile SQLite by,
 - [x] Implement Get Put Post messages
 - [ ] Implement routing node
 - [ ] Version 0.0.8
+- [ ] Integrate with Sentinel
 - [ ] Implement NAT traversal (requires crust v0.1.0)
 - [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Version 0.1 (crates.io)
