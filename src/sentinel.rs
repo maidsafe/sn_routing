@@ -457,6 +457,8 @@ mod test {
         nodes_of_nodes_ : nodes_of_nodes
       }
     }
+
+    pub fn get_group_address(&self) -> types::GroupAddress { self.group_address_.clone() }
   }
 
   pub struct TraceGetKeys {
