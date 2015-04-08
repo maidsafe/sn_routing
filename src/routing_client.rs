@@ -27,6 +27,7 @@ use types;
 use Facade;
 use message_header;
 use messages;
+use maidsafe_types::traits::RoutingTrait;
 
 /// DHT node
 pub struct RoutingClient<'a> {
@@ -62,8 +63,8 @@ impl<'a> RoutingClient<'a> {
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
-                from_node: self.own_address.clone(), // Should be boost-strap node address ?
-                from_group: vec![0; 64], // Dont now what is this so making it invalid
+                from_node: self.own_address.clone(), // Should be boost-strap node address ? - will be given the bootstrap node
+                from_group: vec![0; 64], // Dont now what is this so making it invalid // - Option::None
                 reply_to: self.own_address.clone(),
             },
             name_and_type_id: types::NameAndTypeId {
@@ -81,11 +82,11 @@ impl<'a> RoutingClient<'a> {
             self.message_id,
             types::DestinationAddress {
                 dest: name.0.to_vec(),
-                reply_to: vec![0; 64], // None
+                reply_to: vec![0; 64], // None // - Option::None
             },
             get_data.requester.clone(),
             types::Authority::Client,
-            types::Signature::generate_random(), // What to do here?
+            types::Signature::generate_random(), // What to do here?  // Shouldn't be present in MessageHeader
         );
 
         self.message_id += 1;
@@ -106,12 +107,13 @@ impl<'a> RoutingClient<'a> {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) {
+    pub fn put<T>(&mut self, name: types::DhtAddress, content: Vec<u8>)
+    where T: maidsafe_types::traits::RoutingTrait {
         // Make PutData message
         let put_data = messages::put_data::PutData {
             name_and_type_id: types::NameAndTypeId {
                 name: name.0.to_vec(),
-                type_id: 0,
+                type_id: 0, // should be T::get_id() ??
             },
             data: content,
         };
@@ -122,23 +124,25 @@ impl<'a> RoutingClient<'a> {
 
         // Make MessageHeader
         let header = message_header::MessageHeader::new(
-            0, // type_id as u32,
+            self.message_id,
             types::DestinationAddress {
-                dest: types::generate_random_vec_u8(64),
-                reply_to: self.own_address.clone(),
+                dest: self.own_address.clone(), // Is this Ok? (as put is supposed to go to own MaidManagers, no?)
+                reply_to: vec![0; 64], // should be Option None
             },
             types::SourceAddress {
-                from_node: types::generate_random_vec_u8(64),
-                from_group: types::generate_random_vec_u8(64),
+                from_node: self.own_address.clone(), // should this be bootstrap address ?
+                from_group: vec![0, 64], // Option::None
                 reply_to: self.own_address.clone(),
             },
             types::Authority::Client,
-            types::Signature::generate_random(),
+            types::Signature::generate_random(), // should be removed
         );
+
+        self.message_id += 1;
 
         // Make RoutingMessage
         let routing_msg = messages::RoutingMessage::new(
-            messages::MessageTypeTag::GetData,
+            messages::MessageTypeTag::PutData,
             header,
             encoder.as_bytes().to_vec(),
         );
