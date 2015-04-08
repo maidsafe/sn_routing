@@ -7,7 +7,7 @@ rust:
     - nightly
 sudo: true
 before_install:
-    - sudo apt-get install -qq libcurl4-openssl-dev libelf-dev libdw-dev binutils-multiarch-dev
+    - sudo apt-get install -qq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev
 
 env:
   global:
