@@ -288,6 +288,7 @@ mod test {
   extern crate cbor;
 
   use super::*;
+  use std::cmp;
   use sodiumoxide::crypto;
   use types;
   use types::RoutingTrait;
@@ -320,7 +321,7 @@ mod test {
 
   // TODO(ben 2015-04-8): remove this copy from RoutingTabel::closer_to_target
   //                      copied to avoid conflict with
-  //                      simultanious type clean-up effort
+  //                      simultaneous type clean-up effort
   pub fn closer_to_target(lhs: &Vec<u8>,
                           rhs: &Vec<u8>,
                           target: &Vec<u8>) -> bool {
@@ -414,22 +415,46 @@ mod test {
     pub fn new(group_size : usize, authority : types::Authority)
               -> EmbeddedSignatureGroup {
       let network_size = 10 * group_size;
-      let mut all_nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
+      let mut all_nodes : Vec<types::Pmid> = Vec::with_capacity(network_size);
+      let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
+      let mut nodes_of_nodes : Vec<(Vec<u8>, Vec<types::Pmid>)>
+                                = Vec::with_capacity(group_size);
       for _ in 0..network_size {
         all_nodes.push(types::Pmid::new()); // generates two keys !
                                             // can be optimised for larger scaled
       }
       let group_address = generate_u8_64();
       // first sort all nodes to group_address
-      // all_nodes.sort_by(
-      //   |a, b| if closer_to_target(&a.get_name())
-      //   );
+      all_nodes.sort_by(
+        |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &group_address) {
+          cmp::Ordering::Less
+        } else {
+          cmp::Ordering::Greater
+        }
+      );
+      // select group_size closest nodes
+      for i in 0..group_size { nodes.push(all_nodes[i].clone()); };
+      for node in &nodes {
+        // sort all nodes
+        all_nodes.sort_by(
+          |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &node.get_name()) {
+            cmp::Ordering::Less
+          } else {
+            cmp::Ordering::Greater
+          }
+        );
+        // add ourselves (at 0) and group_size closest
+        assert_eq!(all_nodes[0].get_name(), node.get_name());
+        let mut nodes_of_node : Vec<types::Pmid> = Vec::with_capacity(group_size + 1);
+        for i in 0..group_size + 1 { nodes_of_node.push(all_nodes[i].clone()); };
+        nodes_of_nodes.push((node.get_name(), nodes_of_node));
+      };
       EmbeddedSignatureGroup {
         group_address_ : group_address,
         group_size_ : group_size,
         authority_ : authority,
-        nodes_ : vec![],
-        nodes_of_nodes_ : vec![]
+        nodes_ : nodes,
+        nodes_of_nodes_ : nodes_of_nodes
       }
     }
   }

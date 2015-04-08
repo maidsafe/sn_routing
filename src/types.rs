@@ -253,6 +253,7 @@ impl Decodable for PublicPmid {
 
 // #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 // TODO (ben 2015-04-01) : implement order based on name
+#[derive(Clone)]
 pub struct Pmid {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
