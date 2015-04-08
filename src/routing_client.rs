@@ -59,7 +59,7 @@ impl<'a> RoutingClient<'a> {
     }
 
     /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&mut self, type_id: u64, name: types::DhtAddress) {
+    pub fn get(&mut self, type_id: u64, name: types::DhtId) {
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
@@ -68,7 +68,7 @@ impl<'a> RoutingClient<'a> {
                 reply_to: self.own_address.clone(),
             },
             name_and_type_id: types::NameAndTypeId {
-                name: name.0.to_vec(),
+                name: name.0.clone(),
                 type_id: type_id as u32,
             },
         };
@@ -81,7 +81,7 @@ impl<'a> RoutingClient<'a> {
         let header = message_header::MessageHeader::new(
             self.message_id,
             types::DestinationAddress {
-                dest: name.0.to_vec(),
+                dest: name.0,
                 reply_to: vec![0; 64], // None // - Option::None
             },
             get_data.requester.clone(),
@@ -107,14 +107,11 @@ impl<'a> RoutingClient<'a> {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, name: types::DhtAddress, content: Vec<u8>)
+    pub fn put<T>(&mut self, name: types::DhtId, content: Vec<u8>)
     where T: maidsafe_types::traits::RoutingTrait {
         // Make PutData message
         let put_data = messages::put_data::PutData {
-            name_and_type_id: types::NameAndTypeId {
-                name: name.0.to_vec(),
-                type_id: 0, // should be T::get_id() ??
-            },
+            name: name.0,
             data: content,
         };
 
@@ -153,52 +150,6 @@ impl<'a> RoutingClient<'a> {
 
         // Give Serialised RoutingMessage to connection manager
         // connection_manager.send(...); // Prakash/Peter will implement this according to mail.
-    }
-
-    /// Mutate something on the network (you must prove ownership) - Direct call
-    pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) {
-        // Make PutData message
-        let post = messages::post::Post {
-            name_and_type_id: types::NameAndTypeId {
-                name: name.0.to_vec(),
-                type_id: 0,
-            },
-            data: content,
-        };
-
-        // Serialise PutData message
-        let mut encoder = cbor::Encoder::from_memory();
-        encoder.encode(&[&post]).unwrap();
-
-        // Make MessageHeader
-        let header = message_header::MessageHeader::new(
-            0, // type_id as u32,
-            types::DestinationAddress {
-                dest: types::generate_random_vec_u8(64),
-                reply_to: self.own_address.clone(),
-            },
-            types::SourceAddress {
-                from_node: types::generate_random_vec_u8(64),
-                from_group: types::generate_random_vec_u8(64),
-                reply_to: self.own_address.clone(),
-            },
-            types::Authority::Client,
-            types::Signature::generate_random(),
-        );
-
-        // Make RoutingMessage
-        let routing_msg = messages::RoutingMessage::new(
-            messages::MessageTypeTag::GetData,
-            header,
-            encoder.as_bytes().to_vec(),
-        );
-
-        // Serialise RoutingMessage
-        let mut encoder_routingmsg = cbor::Encoder::from_memory();
-        encoder_routingmsg.encode(&[&routing_msg]).unwrap();
-
-        // Give Serialised RoutingMessage to connection manager
-        // connection_manager.send(...);
     }
 
     pub fn start() {
