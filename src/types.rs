@@ -23,6 +23,7 @@ extern crate rand;
 use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use std::fmt;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -69,6 +70,13 @@ impl DhtId {
 
     pub fn generate_random() -> DhtId {
         DhtId(generate_random_vec_u8(64))
+    }
+}
+
+impl fmt::Debug for DhtId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let &DhtId(ref v) = self;
+        write!(f, "DhtId({:x}{:x})", v[0], v[1])
     }
 }
 
