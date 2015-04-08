@@ -89,3 +89,59 @@ impl MaidManagerDatabase {
   }
 
 }
+
+
+#[cfg(test)]
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate rand;
+  extern crate routing;
+  use super::*;
+  use self::routing::types::*;
+
+  #[test]
+  fn exist() {
+    let mut db = MaidManagerDatabase::new();
+    let name = routing::types::generate_random_vec_u8(64);
+    assert_eq!(db.exist(&name), false);
+    db.put_data(&name, 1024);
+    assert_eq!(db.exist(&name), true);
+  }
+
+  #[test]
+  fn put_data() {
+    let mut db = MaidManagerDatabase::new();
+    let name = routing::types::generate_random_vec_u8(64);
+    assert_eq!(db.put_data(&name, 0), true);
+    assert_eq!(db.put_data(&name, 1), true);
+    assert_eq!(db.put_data(&name, 1073741823), true);
+    assert_eq!(db.put_data(&name, 1), false);
+    assert_eq!(db.put_data(&name, 1), false);
+    assert_eq!(db.put_data(&name, 0), true);
+    assert_eq!(db.put_data(&name, 1), false);
+    assert_eq!(db.exist(&name), true);
+  }
+
+  #[test]
+  fn delete_data() {
+    let mut db = MaidManagerDatabase::new();
+    let name = routing::types::generate_random_vec_u8(64);
+    db.delete_data(&name, 0);
+    assert_eq!(db.exist(&name), false);
+    assert_eq!(db.put_data(&name, 0), true);
+    assert_eq!(db.exist(&name), true);
+    db.delete_data(&name, 1);
+    assert_eq!(db.exist(&name), true);
+    assert_eq!(db.put_data(&name, 1073741824), true);
+    assert_eq!(db.put_data(&name, 1), false);
+    db.delete_data(&name, 1);
+    assert_eq!(db.put_data(&name, 1), true);
+    assert_eq!(db.put_data(&name, 1), false);
+    db.delete_data(&name, 1073741825);
+    assert_eq!(db.exist(&name), true);
+    assert_eq!(db.put_data(&name, 1073741825), false);
+    assert_eq!(db.put_data(&name, 1073741824), true);
+  }
+
+}
