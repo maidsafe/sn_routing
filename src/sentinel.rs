@@ -269,8 +269,8 @@ impl<'a> Sentinel<'a> {
       let result = accounts[0].merge(&accounts);
       if result.is_some() {
         let mut tmp = verified_messages[0].clone();
-      let mut e = cbor::Encoder::from_memory();
-      e.encode(&[&result.unwrap()]).unwrap();
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&result.unwrap()]).unwrap();
         tmp.2 = types::array_as_vector(e.as_bytes());
         return Some(tmp);
       }
