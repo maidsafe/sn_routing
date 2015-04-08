@@ -39,6 +39,7 @@ pub struct RoutingClient<'a> {
     receiver: Receiver<TcpStream>,
     //connection_manager: crust::connection_manager::ConnectionManager,
     own_address: Vec<u8>,
+    message_id: u32,
 }
 
 impl<'a> RoutingClient<'a> {
@@ -52,16 +53,17 @@ impl<'a> RoutingClient<'a> {
                     sign_public_key: key_pair.0, sign_secret_key: key_pair.1,
                     encrypt_public_key: encrypt_key_pair.0, encrypt_secret_key: encrypt_key_pair.1, sender: tx, receiver: rx,
                     own_address: types::generate_random_vec_u8(64),
+                    message_id: 0,
       }
     }
 
     /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&self, type_id: u64, name: types::DhtAddress) {
+    pub fn get(&mut self, type_id: u64, name: types::DhtAddress) {
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
-                from_node: types::generate_random_vec_u8(64),
-                from_group: types::generate_random_vec_u8(64),
+                from_node: self.own_address.clone(), // Should be boost-strap node address ?
+                from_group: vec![0; 64], // Dont now what is this so making it invalid
                 reply_to: self.own_address.clone(),
             },
             name_and_type_id: types::NameAndTypeId {
@@ -76,15 +78,17 @@ impl<'a> RoutingClient<'a> {
 
         // Make MessageHeader
         let header = message_header::MessageHeader::new(
-            type_id as u32,
+            self.message_id,
             types::DestinationAddress {
-                dest: types::generate_random_vec_u8(64),
-                reply_to: self.own_address.clone(),
+                dest: name.0.to_vec(),
+                reply_to: vec![0; 64], // None
             },
             get_data.requester.clone(),
             types::Authority::Client,
-            types::Signature::generate_random(),
+            types::Signature::generate_random(), // What to do here?
         );
+
+        self.message_id += 1;
 
         // Make RoutingMessage
         let routing_msg = messages::RoutingMessage::new(
@@ -98,7 +102,7 @@ impl<'a> RoutingClient<'a> {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        // connection_manager.send(...);
+        // connection_manager.send(...); // Prakash/Peter will implement this according to mail.
     }
 
     /// Add something to the network, will always go via ClientManager group
@@ -144,7 +148,7 @@ impl<'a> RoutingClient<'a> {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        // connection_manager.send(...);
+        // connection_manager.send(...); // Prakash/Peter will implement this according to mail.
     }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
