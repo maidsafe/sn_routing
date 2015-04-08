@@ -18,6 +18,7 @@ use crust;
 use std::sync::mpsc;
 use sodiumoxide::crypto;
 use std::sync::mpsc::{Receiver};
+use facade::*;
 use super::*;
 
 type ConnectionManager = crust::ConnectionManager<DhtId>;
@@ -35,7 +36,7 @@ pub struct RoutingNode<'a> {
 }
 
 impl<'a> RoutingNode<'a> {
-    pub fn new(id: types::DhtId, my_facade: &'a Facade) -> RoutingNode<'a> {
+    pub fn new(id: DhtId, my_facade: &'a Facade) -> RoutingNode<'a> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let key_pair = crypto::sign::gen_keypair();
         let encrypt_key_pair = crypto::asymmetricbox::gen_keypair();
@@ -52,15 +53,17 @@ impl<'a> RoutingNode<'a> {
     }
     
     /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&self, type_id: u64, name: types::DhtId) { unimplemented!()}
+    pub fn get(&self, type_id: u64, name: DhtId) { unimplemented!() }
     
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&self, name: types::DhtId, content: Vec<u8>) { unimplemented!() }
+    pub fn put(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
     
     /// Mutate something on the network (you must prove ownership) - Direct call
-    pub fn post(&self, name: types::DhtId, content: Vec<u8>) { unimplemented!() }
+    pub fn post(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
     
-    pub fn start() { }
+    pub fn start(&self) {
+        self.connections.start_accepting();
+    }
     
     fn add_bootstrap(&self) {}
     
@@ -71,7 +74,30 @@ impl<'a> RoutingNode<'a> {
 
 #[cfg(test)]
 mod test {
+    //mod routing_node;
+    use routing_node::{RoutingNode};
+    use facade::{Facade};
+    use maidsafe_types::NameType;
+    use types::{Authority, DhtId, DestinationAddress};
+    use super::super::{Action, RoutingError};
+
+    struct MyFacade;
+
+    impl Facade for MyFacade {
+      fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+      fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                    from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+      fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+      fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
+      fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+      fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+      fn add_node(&mut self, node: NameType) { unimplemented!(); }
+      fn drop_node(&mut self, node: NameType) { unimplemented!(); }
+    }
+
     #[test]
     fn test_routing_node() {
+        let facade = MyFacade;
+        let n = RoutingNode::new(DhtId::generate_random(), &facade);
     }
 }

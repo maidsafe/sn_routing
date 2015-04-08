@@ -54,7 +54,6 @@ extern crate crust;
 extern crate maidsafe_types;
 
 use sodiumoxide::crypto;
-//use std::default::Default;
 
 use maidsafe_types::NameType;
 
@@ -68,6 +67,7 @@ mod sentinel;
 mod bootstrap;
 mod messages;
 mod routing_node;
+mod facade;
 
 pub type DhtId = types::DhtId;
 
@@ -82,47 +82,24 @@ pub struct DestinationAddress {
   pub dest: Vec<u8>
 }
 
-pub enum Authority {
-  Client,
-  Node,
-  ClientManager,
-  NaeManager,
-  NodeManager
-}
-
 pub enum Action {
   Reply(Vec<u8>),
   SendOn(Vec<DhtId>)
 }
 
 pub enum RoutingError {
-  Success,  // vault will aslo return a Success to indicate a deadend
+  Success,  // vault will also return a Success to indicate a dead end
   NoData,
   InvalidRequest,
   IncorrectData(Vec<u8>)
-}
-
-pub trait Facade : Sync {
-  /// if reply is data then we send back the response message (ie get_response )
-  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError>;
-
-  /// data: Vec<u8> is serialised maidsafe_types::Payload which holds typetag and content
-  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError>;
-
-  fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError>;
-  fn handle_get_response(&mut self, from_address: DhtId, response: Result<Vec<u8>, RoutingError>);
-  fn handle_put_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>);
-  fn handle_post_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>);
-
-  fn add_node(&mut self, node: NameType);
-  fn drop_node(&mut self, node: NameType);
 }
 
 #[test]
 fn facade_implementation() {
 
   mod routing_node;
+  use facade::{Facade};
+    use types::{Authority, DhtId, DestinationAddress};
 
   struct MyFacade;
 
@@ -137,6 +114,7 @@ fn facade_implementation() {
     fn add_node(&mut self, node: NameType) { unimplemented!(); }
     fn drop_node(&mut self, node: NameType) { unimplemented!(); }
   }
+
   let my_facade = MyFacade;
   let my_routing = routing_node::RoutingNode::new(DhtId::generate_random(), &my_facade);
   /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
