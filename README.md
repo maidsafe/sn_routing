@@ -27,7 +27,7 @@ Code Coverage
 - [x] Implement PmidManager
 - [x] Implement PmidNode
 - [x] Implement VersionHandler
-- [ ] Test MaidManager
+- [x] Test MaidManager
 - [x] Test DataManager
 - [x] Test PmidManager
 - [x] Test PmidNode
