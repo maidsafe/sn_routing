@@ -465,6 +465,24 @@ mod test {
     selected_returns
   }
 
+  fn verify_match_sentinel_return(sentinel_return : Option<ResultType>,
+                                  original_message_id : types::MessageId,
+                                  original_authority : types::Authority,
+                                  original_destination : types::DestinationAddress,
+                                  original_source_group : types::GroupAddress,
+                                  original_message_type_tag : types::MessageTypeTag,
+                                  original_message : types::SerialisedMessage)
+                                  -> bool {
+  // if sentinel_return.is_none() { return false; }
+  let return_message_header : message_header::MessageHeader
+                  = sentinel_return.unwrap().0.clone();
+  let return_message_tag : types::MessageTypeTag
+                  = sentinel_return.unwrap().1.clone();
+  let return_message : types::SerialisedMessage
+                  = sentinel_return.unwrap().2.clone();
+    false
+  }
+
   #[test]
   fn simple_add() {
     let our_pmid = types::Pmid::new();
