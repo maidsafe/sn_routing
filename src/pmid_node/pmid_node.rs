@@ -88,7 +88,7 @@ mod test {
     let encode_result = encoder.encode(&[&payload]);
     assert_eq!(encode_result.is_ok(), true);
 
-    let put_result = pmid_node.handle_put(&array_as_vector(encoder.as_bytes()));
+    let put_result = pmid_node.handle_put(array_as_vector(encoder.as_bytes()));
     assert_eq!(put_result.is_err(), true);
     match put_result.err().unwrap() {
       routing::RoutingError::Success => { }

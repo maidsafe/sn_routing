@@ -99,3 +99,40 @@ impl PmidManagerDatabase {
   }
 
 }
+
+
+#[cfg(test)]
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate rand;
+  extern crate routing;
+  use super::*;
+  use self::routing::types::*;
+
+  #[test]
+  fn exist() {
+    let mut db = PmidManagerDatabase::new();
+    let name = routing::types::generate_random_vec_u8(64);
+    assert_eq!(db.exist(&name), false);
+    db.put_data(&name, 1024);
+    assert_eq!(db.exist(&name), true);
+  }
+
+  #[test]
+  fn put_data() {
+    let mut db = PmidManagerDatabase::new();
+    let name = routing::types::generate_random_vec_u8(64);
+    assert_eq!(db.put_data(&name, 0), true);
+    assert_eq!(db.exist(&name), true);
+    assert_eq!(db.put_data(&name, 1), true);
+    assert_eq!(db.put_data(&name, 1073741823), true);
+    assert_eq!(db.put_data(&name, 1), false);
+    assert_eq!(db.put_data(&name, 1), false);
+    assert_eq!(db.put_data(&name, 0), true);
+    assert_eq!(db.put_data(&name, 1), false);
+    assert_eq!(db.exist(&name), true);
+  }
+
+
+}
