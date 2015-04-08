@@ -23,14 +23,14 @@ use types;
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetGroupKey {
   pub requester : types::SourceAddress,
-  pub target_id : types::Address,
+  pub target_id : types::DhtId,
 }
 
 impl GetGroupKey {
     pub fn generate_random() -> GetGroupKey {
         GetGroupKey {
             requester: types::SourceAddress::generate_random(),
-            target_id: types::generate_random_vec_u8(64),
+            target_id: types::DhtId::generate_random(),
         }
     }
 }

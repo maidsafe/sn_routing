@@ -22,15 +22,15 @@ use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetClientKey {
-  pub requester_id : types::Address,
-  pub target_id : types::Address,
+  pub requester_id : types::DhtId,
+  pub target_id : types::DhtId,
 }
 
 impl GetClientKey {
     pub fn generate_random() -> GetClientKey {
         GetClientKey {
-            requester_id: types::generate_random_vec_u8(64),
-            target_id: types::generate_random_vec_u8(64),
+            requester_id: types::DhtId::generate_random(),
+            target_id: types::DhtId::generate_random(),
         }
     }
 }
