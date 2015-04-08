@@ -13,8 +13,8 @@
 // use of the MaidSafe
 // Software.
 
-use types::{Authority, DhtId, DestinationAddress};
-use super::{Action, RoutingError};
+use types::{Authority, DhtId};
+use super::{Action, RoutingError, DestinationAddress};
 use maidsafe_types::NameType;
 
 pub trait Facade : Sync {

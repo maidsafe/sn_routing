@@ -55,8 +55,6 @@ extern crate maidsafe_types;
 
 use sodiumoxide::crypto;
 
-use maidsafe_types::NameType;
-
 pub mod types;
 mod broadcast;
 mod message_header;
@@ -99,7 +97,9 @@ fn facade_implementation() {
 
   mod routing_node;
   use facade::{Facade};
-    use types::{Authority, DhtId, DestinationAddress};
+  use types::{Authority, DhtId};
+  use maidsafe_types::NameType;
+
 
   struct MyFacade;
 

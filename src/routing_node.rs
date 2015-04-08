@@ -74,30 +74,29 @@ impl<'a> RoutingNode<'a> {
 
 #[cfg(test)]
 mod test {
-    //mod routing_node;
     use routing_node::{RoutingNode};
     use facade::{Facade};
     use maidsafe_types::NameType;
-    use types::{Authority, DhtId, DestinationAddress};
-    use super::super::{Action, RoutingError};
+    use types::{Authority, DhtId};
+    use super::super::{Action, RoutingError, DestinationAddress};
 
-    struct MyFacade;
+    struct NullFacade;
 
-    impl Facade for MyFacade {
-      fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    impl Facade for NullFacade {
+      fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
       fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                    from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-      fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-      fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
-      fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-      fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-      fn add_node(&mut self, node: NameType) { unimplemented!(); }
-      fn drop_node(&mut self, node: NameType) { unimplemented!(); }
+                    from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
+      fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
+      fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
+      fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
+      fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
+      fn add_node(&mut self, node: NameType) {}
+      fn drop_node(&mut self, node: NameType) {}
     }
 
     #[test]
     fn test_routing_node() {
-        let facade = MyFacade;
+        let facade = NullFacade;
         let n = RoutingNode::new(DhtId::generate_random(), &facade);
     }
 }
