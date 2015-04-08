@@ -137,13 +137,14 @@ mod test {
   use self::routing::Authority;
   use self::routing::DestinationAddress;
   use self::routing::DhtIdentity;
+  use self::routing::routing_table;
   use routing::Facade;
 
   #[test]
   fn put_get_flow() {
     let mut vault = VaultFacade::new();
 
-    let name = NameType([1u8; 64]);
+    let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(name, value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
@@ -161,12 +162,34 @@ mod test {
       match put_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
           assert_eq!(x.len(), 1);
-          assert_eq!(x[0].id.to_vec(), [1u8; 64].to_vec());
+          assert_eq!(x[0].id.to_vec(), [3u8; 64].to_vec());
         }
         routing::Action::Reply(x) => panic!("Unexpected"),
       }
     }
-
+    let nodes_in_table = vec![NameType([1u8; 64]), NameType([2u8; 64]), NameType([3u8; 64]), NameType([4u8; 64]),
+                              NameType([5u8; 64]), NameType([6u8; 64]), NameType([7u8; 64]), NameType([8u8; 64])];
+    for node in nodes_in_table.iter() {
+      vault.add_node(node.clone());
+    }
+    { // DataManager, shall SendOn to pmid_nodes
+      let from = DhtIdentity{ id : [1u8; 64] };
+      // TODO : in this stage, dest can be populated as anything ?
+      let dest = DestinationAddress{ dest : routing::types::generate_random_vec_u8(64)};
+      let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
+                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      assert_eq!(put_result.is_err(), false);
+      match put_result.ok().unwrap() {
+        routing::Action::SendOn(ref x) => {
+          assert_eq!(x.len(), routing_table::PARALLELISM);
+          assert_eq!(x[0].id.to_vec(), [3u8; 64].to_vec());
+          assert_eq!(x[1].id.to_vec(), [2u8; 64].to_vec());
+          assert_eq!(x[2].id.to_vec(), [1u8; 64].to_vec());
+          assert_eq!(x[3].id.to_vec(), [7u8; 64].to_vec());
+        }
+        routing::Action::Reply(x) => panic!("Unexpected"),
+      }
+    }
   }
 
 }
