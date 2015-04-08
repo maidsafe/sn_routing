@@ -132,6 +132,10 @@ impl MessageHeader {
     (self.source.from_node.clone(), self.message_id)
   }
 
+  pub fn from_authority(&self) -> types::Authority {
+    self.authority.clone()
+  }
+
   pub fn get_signature(&self) -> crypto::sign::Signature {
     self.signature.get_signature()
   }

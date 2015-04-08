@@ -465,7 +465,7 @@ mod test {
     selected_returns
   }
 
-  fn verify_match_sentinel_return(sentinel_return : Option<ResultType>,
+  fn verify_match_sentinel_return(sentinel_return : &ResultType,
                                   original_message_id : types::MessageId,
                                   original_authority : types::Authority,
                                   original_destination : types::DestinationAddress,
@@ -473,14 +473,14 @@ mod test {
                                   original_message_type_tag : types::MessageTypeTag,
                                   original_message : types::SerialisedMessage)
                                   -> bool {
-  // if sentinel_return.is_none() { return false; }
-  let return_message_header : message_header::MessageHeader
-                  = sentinel_return.unwrap().0.clone();
-  let return_message_tag : types::MessageTypeTag
-                  = sentinel_return.unwrap().1.clone();
-  let return_message : types::SerialisedMessage
-                  = sentinel_return.unwrap().2.clone();
-    false
+
+  if original_message != sentinel_return.2 { return false; };
+  if original_message_type_tag != sentinel_return.1 {return false; };
+  if original_message_id != sentinel_return.0.message_id() { return false; };
+  if original_authority != sentinel_return.0.from_authority() { return false; };
+  if original_destination != sentinel_return.0.send_to() { return false; };
+
+  true
   }
 
   #[test]
