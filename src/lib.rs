@@ -76,9 +76,8 @@ struct SignedKey {
   signature: crypto::sign::Signature // detached signature
 }
 
-pub struct DestinationAddress {
-  pub dest: Vec<u8>
-}
+pub type DestinationAddress = types::DestinationAddress;
+pub type Authority = types::Authority;
 
 pub enum Action {
   Reply(Vec<u8>),
@@ -97,7 +96,7 @@ fn facade_implementation() {
 
   mod routing_node;
   use facade::{Facade};
-  use types::{Authority, DhtId};
+  use types::{DhtId};
   use maidsafe_types::NameType;
 
 
