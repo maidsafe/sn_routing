@@ -318,6 +318,23 @@ mod test {
     data
   }
 
+  // TODO(ben 2015-04-8): remove this copy from RoutingTabel::closer_to_target
+  //                      copied to avoid conflict with
+  //                      simultanious type clean-up effort
+  pub fn closer_to_target(lhs: &Vec<u8>,
+                          rhs: &Vec<u8>,
+                          target: &Vec<u8>) -> bool {
+      for i in 0..lhs.0.len() {
+          let res_0 = lhs.0[i] ^ target.0[i];
+          let res_1 = rhs.0[i] ^ target.0[i];
+
+          if res_0 != res_1 {
+              return res_0 < res_1
+          }
+      }
+      false
+  }
+
   struct SignatureGroup {
     group_address_ : types::GroupAddress,
     group_size_ : usize,
@@ -380,6 +397,39 @@ mod test {
         public_keys.push((node.get_name(), public_sign_key_as_vec));
       }
       public_keys
+    }
+  }
+
+  struct EmbeddedSignatureGroup {
+    group_address_ : types::GroupAddress,
+    group_size_ : usize,
+    authority_ : types::Authority,
+    nodes_ : Vec<types::Pmid>,
+    // store the close nodes according
+    // to the close group of original group_address
+    nodes_of_nodes_ : Vec<(Vec<u8>, Vec<types::Pmid>)>
+  }
+
+  impl EmbeddedSignatureGroup {
+    pub fn new(group_size : usize, authority : types::Authority)
+              -> EmbeddedSignatureGroup {
+      let network_size = 10 * group_size;
+      let mut all_nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
+      for _ in 0..network_size {
+        all_nodes.push(types::Pmid::new()); // generates two keys !
+                                            // can be optimised for larger scaled
+      }
+      let group_address = generate_u8_64();
+      // first sort all nodes to group_address
+      // all_nodes.sort_by(
+      //   |a, b| if closer_to_target(&a.get_name())
+      //   );
+      EmbeddedSignatureGroup {
+        group_address_ : group_address,
+        group_size_ : group_size,
+        authority_ : authority,
+        nodes_ : nodes
+      }
     }
   }
 
@@ -485,6 +535,76 @@ mod test {
 
   #[test]
   fn simple_add() {
+    let our_pmid = types::Pmid::new();
+    let our_destination = types::DestinationAddress {
+      dest : our_pmid.get_name(),
+      reply_to : generate_u8_64()
+    };
+    let group_address = generate_u8_64();
+    let signature_group = SignatureGroup::new(group_address, types::GROUP_SIZE as usize,
+               types::Authority::NaeManager);
+    let mut trace_get_keys = TraceGetKeys::new();
+    let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
+    let mut message_tracker : u64 = 0;
+    {
+      let mut sentinel = Sentinel::new(&mut trace_get_keys);
+      let data : Vec<u8> = generate_data(100usize);
+      let put_data = messages::put_data::PutData {
+        name_and_type_id : types::NameAndTypeId {
+          name : crypto::hash::sha512::hash(&data[..]).0.to_vec(),
+          type_id : 0u32  // TODO(ben 2015-04-02: how is type_id determined)
+        },
+        data : data
+      };
+      let mut e = cbor::Encoder::from_memory();
+      let _ = e.encode(&[&put_data]);
+      let serialised_message = e.as_bytes().to_vec();
+      let message_id = rand::random::<u32>() as types::MessageId;
+      let tag = types::MessageTypeTag::PutData;
+      let headers = signature_group.get_headers(&our_destination, &message_id, &serialised_message);
+      let collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
+
+      let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
+        target_id : signature_group.get_group_address(),
+        public_keys : signature_group.get_public_keys()
+      };
+      let mut e = cbor::Encoder::from_memory();
+      let _ = e.encode(&[&get_group_key_response]);
+      let serialised_message_response = e.as_bytes().to_vec();
+      let headers_response = signature_group.get_headers(&our_destination, &message_id,
+                                 &serialised_message_response);
+      let response_tag = types::MessageTypeTag::GetGroupKeyResponse;
+      let collect_response_messages = generate_messages(headers_response, response_tag,
+          &serialised_message_response, &mut message_tracker);
+
+    for message in collect_messages {
+      sentinel_returns.push((message.index,
+                             sentinel.add(message.header,
+                                          message.tag,
+                                          message.serialised_message)));
+    }
+    assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
+    assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
+    assert_eq!(false, verify_exactly_one_response(&sentinel_returns));
+
+    for message in collect_response_messages {
+      sentinel_returns.push((message.index,
+                            sentinel.add(message.header,
+                                         message.tag,
+                                         message.serialised_message)));
+    }
+    assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
+    assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
+    assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
+    assert_eq!(1, get_selected_sentinel_returns(&mut sentinel_returns,
+                    &mut vec![(types::GROUP_SIZE + types::QUORUM_SIZE) as u64]).len());
+    }
+  assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
+  assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
+  }
+
+  #[test]
+  fn simple_add_find_group_response() {
     let our_pmid = types::Pmid::new();
     let our_destination = types::DestinationAddress {
       dest : our_pmid.get_name(),
