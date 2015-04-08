@@ -22,7 +22,7 @@ use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
-  pub target_id : types::Address,
+  pub target_id : types::DhtId,
   pub group : Vec<types::PublicPmid>
 }
 
@@ -34,7 +34,7 @@ impl FindGroupResponse {
         }
 
         FindGroupResponse {
-            target_id: types::generate_random_vec_u8(64),
+            target_id: types::DhtId::generate_random(),
             group: vec,
         }
     }
