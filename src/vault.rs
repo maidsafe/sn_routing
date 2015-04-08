@@ -125,3 +125,48 @@ impl VaultFacade {
                   version_handler: VersionHandler::new(), nodes_in_table: Vec::new() }
   }
 }
+
+
+#[cfg(test)]
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate routing;
+  use super::*;
+  use self::maidsafe_types::*;
+  use self::routing::Authority;
+  use self::routing::DestinationAddress;
+  use self::routing::DhtIdentity;
+  use routing::Facade;
+
+  #[test]
+  fn put_get_flow() {
+    let mut vault = VaultFacade::new();
+
+    let name = NameType([1u8; 64]);
+    let value = routing::types::generate_random_vec_u8(1024);
+    let data = ImmutableData::new(name, value);
+    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+    let mut encoder = cbor::Encoder::from_memory();
+    let encode_result = encoder.encode(&[&payload]);
+    assert_eq!(encode_result.is_ok(), true);
+
+    { // MaidManager, shall allowing the put and SendOn to DataManagers around name
+      let from = DhtIdentity{ id : [1u8; 64]};
+      // TODO : in this stage, dest can be populated as anything ?
+      let dest = DestinationAddress{ dest : routing::types::generate_random_vec_u8(64)};
+      let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
+                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      assert_eq!(put_result.is_err(), false);
+      match put_result.ok().unwrap() {
+        routing::Action::SendOn(ref x) => {
+          assert_eq!(x.len(), 1);
+          assert_eq!(x[0].id.to_vec(), [1u8; 64].to_vec());
+        }
+        routing::Action::Reply(x) => panic!("Unexpected"),
+      }
+    }
+
+  }
+
+}
