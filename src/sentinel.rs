@@ -324,9 +324,9 @@ mod test {
   pub fn closer_to_target(lhs: &Vec<u8>,
                           rhs: &Vec<u8>,
                           target: &Vec<u8>) -> bool {
-      for i in 0..lhs.0.len() {
-          let res_0 = lhs.0[i] ^ target.0[i];
-          let res_1 = rhs.0[i] ^ target.0[i];
+      for i in 0..lhs.len() {
+          let res_0 = lhs[i] ^ target[i];
+          let res_1 = rhs[i] ^ target[i];
 
           if res_0 != res_1 {
               return res_0 < res_1
@@ -428,7 +428,8 @@ mod test {
         group_address_ : group_address,
         group_size_ : group_size,
         authority_ : authority,
-        nodes_ : nodes
+        nodes_ : vec![],
+        nodes_of_nodes_ : vec![]
       }
     }
   }
