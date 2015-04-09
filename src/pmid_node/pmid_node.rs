@@ -19,11 +19,11 @@ extern crate routing;
 extern crate maidsafe_types;
 
 use chunk_store::ChunkStore;
+use self::routing::types::DhtId;
 
 use cbor::{ Decoder};
 
 type CloseGroupDifference = self::routing::types::CloseGroupDifference;
-type Address = self::routing::types::Address;
 
 pub struct PmidNode {
   chunk_store_ : ChunkStore
@@ -34,7 +34,7 @@ impl PmidNode {
     PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
   }
 
-  pub fn handle_get(&self, name: Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_get(&self, name: DhtId) ->Result<routing::Action, routing::RoutingError> {
     let data = self.chunk_store_.get(name);
     if data.len() == 0 {
       return Err(routing::RoutingError::NoData);
@@ -43,21 +43,18 @@ impl PmidNode {
   }
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
-    let mut data_name : Vec<u8>;
+    let mut data_name : DhtId;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
-        data_name = self::routing::types::array_as_vector(
-            &payload.get_data::<maidsafe_types::ImmutableData>().get_name().get_id());
+        data_name = DhtId::new(payload.get_data::<maidsafe_types::ImmutableData>().get_name().get_id());
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
-        data_name = self::routing::types::array_as_vector(
-            &payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id());
+        data_name = DhtId::new(payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id());
       }
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        data_name = self::routing::types::array_as_vector(
-            &payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id());
+        data_name = DhtId::new(payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id());
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
     }
@@ -75,6 +72,7 @@ mod test {
   extern crate routing;
   use super::*;
   use self::maidsafe_types::*;
+  use self::routing::types::DhtId;
   use self::routing::types::array_as_vector;
 
   #[test]
@@ -95,7 +93,7 @@ mod test {
       _ => panic!("Unexpected"),
     }
 
-    let get_result = pmid_node.handle_get(name.0.to_vec());
+    let get_result = pmid_node.handle_get(DhtId::new(name.0));
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
         routing::Action::Reply(ref x) => {

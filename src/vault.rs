@@ -29,13 +29,11 @@ mod pmid_node;
 #[path="version_handler/version_handler.rs"]
 mod version_handler;
 
-use self::maidsafe_types::NameType;
-
-use self::routing::Authority;
-use self::routing::DestinationAddress;
-use self::routing::DhtIdentity;
 use self::routing::Action;
 use self::routing::RoutingError;
+use self::routing::types::Authority;
+use self::routing::types::DestinationAddress;
+use self::routing::types::DhtId;
 
 use self::data_manager::DataManager;
 use self::maid_manager::MaidManager;
@@ -49,66 +47,67 @@ pub struct VaultFacade {
   pmid_manager : PmidManager,
   pmid_node : PmidNode,
   version_handler : VersionHandler,
-  nodes_in_table : Vec<NameType>
+  nodes_in_table : Vec<DhtId>
 }
 
 impl routing::Facade for VaultFacade {
-  fn handle_get(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
+  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
+                from_address: DhtId, name: DhtId)->Result<Action, RoutingError> {
     match our_authority {
       Authority::NaeManager => {
         // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
         // data input here is assumed as name only(no type info attached)
-        let data_manager_result = self.data_manager.handle_get(&data);
+        let data_manager_result = self.data_manager.handle_get(&name);
         if data_manager_result.is_ok() {
           return data_manager_result;
         }
-        return self.version_handler.handle_get(data);
+        return self.version_handler.handle_get(name);
       }
-      Authority::Node => { return self.pmid_node.handle_get(data); }
+      Authority::ManagedNode => { return self.pmid_node.handle_get(name); }
       _ => { return Err(RoutingError::InvalidRequest); }
     }
   }
 
   fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                from_address: DhtIdentity, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
+                from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
     match our_authority {
-      Authority::ClientManager => { return self.maid_manager.handle_put(&routing::types::array_as_vector(&from_address.id), &data); }
+      Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
       Authority::NaeManager => {
         // both DataManager and VersionHandler are NaeManagers
         // However Put request to DataManager is from ClientManager (MaidManager)
         // meanwhile Put request to VersionHandler is from Node
         match from_authority {
           Authority::ClientManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
-          Authority::Node => { return self.version_handler.handle_put(data); }
+          Authority::ManagedNode => { return self.version_handler.handle_put(data); }
           _ => { return Err(RoutingError::InvalidRequest); }
         }        
       }
       Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
-      Authority::Node => { return self.pmid_node.handle_put(data); }
+      Authority::ManagedNode => { return self.pmid_node.handle_put(data); }
       _ => { return Err(RoutingError::InvalidRequest); }
     }
   }
 
-  fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtIdentity, data: Vec<u8>)->Result<Action, RoutingError> {
+  fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> {
     ;
     Err(RoutingError::InvalidRequest)
   }
 
-  fn handle_get_response(&mut self, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>) {
+  fn handle_get_response(&mut self, from_address: DhtId, response: Result<Vec<u8>, RoutingError>) {
     ;
   }
 
-  fn handle_put_response(&mut self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>) {
+  fn handle_put_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>) {
     ;
   }
 
-  fn handle_post_response(&mut self, from_authority: Authority, from_address: DhtIdentity, response: Result<Vec<u8>, RoutingError>) {
+  fn handle_post_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>) {
     ;
   }
 
-  fn add_node(&mut self, node: NameType) { self.nodes_in_table.push(node); }
+  fn add_node(&mut self, node: DhtId) { self.nodes_in_table.push(node); }
 
-  fn drop_node(&mut self, node: NameType) {
+  fn drop_node(&mut self, node: DhtId) {
     for index in 0..self.nodes_in_table.len() {
       if self.nodes_in_table[index] == node {
         self.nodes_in_table.remove(index);
@@ -124,4 +123,72 @@ impl VaultFacade {
                   pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
                   version_handler: VersionHandler::new(), nodes_in_table: Vec::new() }
   }
+}
+
+
+#[cfg(test)]
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate routing;
+  use super::*;
+  use self::maidsafe_types::*;
+  use self::routing::types::Authority;
+  use self::routing::types::DestinationAddress;
+  use self::routing::types::DhtId;
+  use self::routing::routing_table;
+  use routing::Facade;
+
+  #[test]
+  fn put_get_flow() {
+    let mut vault = VaultFacade::new();
+
+    let name = NameType([3u8; 64]);
+    let value = routing::types::generate_random_vec_u8(1024);
+    let data = ImmutableData::new(name, value);
+    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+    let mut encoder = cbor::Encoder::from_memory();
+    let encode_result = encoder.encode(&[&payload]);
+    assert_eq!(encode_result.is_ok(), true);
+
+    { // MaidManager, shall allowing the put and SendOn to DataManagers around name
+      let from = DhtId::new([1u8; 64]);
+      // TODO : in this stage, dest can be populated as anything ?
+      let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
+      let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
+                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      assert_eq!(put_result.is_err(), false);
+      match put_result.ok().unwrap() {
+        routing::Action::SendOn(ref x) => {
+          assert_eq!(x.len(), 1);
+          assert_eq!(x[0].0, [3u8; 64].to_vec());
+        }
+        routing::Action::Reply(x) => panic!("Unexpected"),
+      }
+    }
+    let nodes_in_table = vec![DhtId::new([1u8; 64]), DhtId::new([2u8; 64]), DhtId::new([3u8; 64]), DhtId::new([4u8; 64]),
+                              DhtId::new([5u8; 64]), DhtId::new([6u8; 64]), DhtId::new([7u8; 64]), DhtId::new([8u8; 64])];
+    for node in nodes_in_table.iter() {
+      vault.add_node(node.clone());
+    }
+    { // DataManager, shall SendOn to pmid_nodes
+      let from = DhtId::new([1u8; 64]);
+      // TODO : in this stage, dest can be populated as anything ?
+      let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
+      let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
+                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      assert_eq!(put_result.is_err(), false);
+      match put_result.ok().unwrap() {
+        routing::Action::SendOn(ref x) => {
+          assert_eq!(x.len(), routing_table::PARALLELISM);
+          assert_eq!(x[0].0, [3u8; 64].to_vec());
+          assert_eq!(x[1].0, [2u8; 64].to_vec());
+          assert_eq!(x[2].0, [1u8; 64].to_vec());
+          assert_eq!(x[3].0, [7u8; 64].to_vec());
+        }
+        routing::Action::Reply(x) => panic!("Unexpected"),
+      }
+    }
+  }
+
 }

@@ -20,6 +20,9 @@ extern crate maidsafe_types;
 
 mod database;
 
+use self::routing::types::DhtId;
+use self::routing::types::DestinationAddress;
+
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
 }
@@ -29,10 +32,10 @@ impl PmidManager {
     PmidManager { db_: database::PmidManagerDatabase::new() }
   }
 
-  pub fn handle_put(&mut self, dest_address: &routing::DestinationAddress, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, dest_address: &DestinationAddress, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
     if self.db_.put_data(&dest_address.dest, data.len() as u64) {
-      let mut destinations : Vec<routing::DhtIdentity> = Vec::new();
-      destinations.push(routing::DhtIdentity { id: routing::types::vector_as_u8_64_array(dest_address.dest.clone()) });
+      let mut destinations : Vec<DhtId> = Vec::new();
+      destinations.push(dest_address.dest.clone());
       Ok(routing::Action::SendOn(destinations))
     } else {
       Err(routing::RoutingError::InvalidRequest)
@@ -52,7 +55,7 @@ mod test {
   #[test]
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
-    let dest = routing::DestinationAddress { dest: routing::types::generate_random_vec_u8(64), };
+    let dest = DestinationAddress { dest: DhtId::generate_random(), reply_to: None };
     let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(name, value);
@@ -66,7 +69,7 @@ mod test {
     match put_result.ok().unwrap() {
       routing::Action::SendOn(ref x) => {
         assert_eq!(x.len(), 1);
-        assert_eq!(x[0].id.to_vec(), dest.dest);
+        assert_eq!(x[0], dest.dest);
       }
       routing::Action::Reply(x) => panic!("Unexpected"),
     }

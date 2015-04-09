@@ -21,7 +21,7 @@ extern crate routing;
 
 use self::lru_cache::LruCache;
 
-type Identity = self::routing::types::Address; // pmidnode address
+type Identity = self::routing::types::DhtId; // pmidnode address
 
 pub struct PmidManagerAccount {
   stored_total_size : u64,
@@ -113,7 +113,7 @@ mod test {
   #[test]
   fn exist() {
     let mut db = PmidManagerDatabase::new();
-    let name = routing::types::generate_random_vec_u8(64);
+    let name = DhtId::generate_random();
     assert_eq!(db.exist(&name), false);
     db.put_data(&name, 1024);
     assert_eq!(db.exist(&name), true);
@@ -122,7 +122,7 @@ mod test {
   #[test]
   fn put_data() {
     let mut db = PmidManagerDatabase::new();
-    let name = routing::types::generate_random_vec_u8(64);
+    let name = DhtId::generate_random();
     assert_eq!(db.put_data(&name, 0), true);
     assert_eq!(db.exist(&name), true);
     assert_eq!(db.put_data(&name, 1), true);

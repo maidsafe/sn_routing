@@ -22,14 +22,13 @@ mod database;
 
 use std::cmp;
 
-use self::routing::types;
+use self::routing::types::DhtId;
 use self::routing::routing_table;
-use self::maidsafe_types::NameType;
 
 use cbor::{ Decoder };
 
 type CloseGroupDifference = self::routing::types::CloseGroupDifference;
-type Address = self::routing::types::Address;
+type Address = DhtId;
 
 pub struct DataManager {
   db_ : database::DataManagerDatabase
@@ -38,20 +37,20 @@ pub struct DataManager {
 impl DataManager {
   pub fn new() -> DataManager { DataManager { db_: database::DataManagerDatabase::new() } }
 
-  pub fn handle_get(&mut self, name : &routing::types::Identity) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_get(&mut self, name : &DhtId) ->Result<routing::Action, routing::RoutingError> {
 	  let result = self.db_.get_pmid_nodes(name);
 	  if result.len() == 0 {
 	    return Err(routing::RoutingError::NoData);
 	  }
       
-	  let mut dest_pmids : Vec<routing::DhtIdentity> = Vec::new();
+	  let mut dest_pmids : Vec<DhtId> = Vec::new();
 	  for pmid in result.iter() {
-        dest_pmids.push(routing::DhtIdentity { id: types::vector_as_u8_64_array(pmid.clone()) });
+        dest_pmids.push(pmid.clone());
 	  }
 	  Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<DhtId>) ->Result<routing::Action, routing::RoutingError> {
     let mut name : maidsafe_types::NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -68,25 +67,23 @@ impl DataManager {
       _ => return Err(routing::RoutingError::InvalidRequest)
     }
 
-    let data_name = self::routing::types::array_as_vector(&name.get_id());
+    let data_name = DhtId::new(name.get_id());
     if self.db_.exist(&data_name) {
       return Err(routing::RoutingError::Success);
     }
 
     nodes_in_table.sort_by(|a, b|
-        if routing_table::RoutingTable::closer_to_target(&a, &b, &name) {
+        if routing_table::RoutingTable::closer_to_target(&a, &b, &data_name) {
           cmp::Ordering::Less
         } else {
           cmp::Ordering::Greater
         });
     let pmid_nodes_num = cmp::min(nodes_in_table.len(), routing_table::PARALLELISM);
-    let mut pmid_nodes : self::routing::types::PmidNodes = Vec::new();
-    let mut dest_pmids : Vec<routing::DhtIdentity> = Vec::new();
+    let mut dest_pmids : Vec<DhtId> = Vec::new();
     for index in 0..pmid_nodes_num {
-      pmid_nodes.push(nodes_in_table[index].get_id().to_vec());
-      dest_pmids.push(routing::DhtIdentity { id: nodes_in_table[index].get_id() });
+      dest_pmids.push(nodes_in_table[index].clone());
     }
-    self.db_.put_pmid_nodes(&data_name, pmid_nodes);
+    self.db_.put_pmid_nodes(&data_name, dest_pmids.clone());
     Ok(routing::Action::SendOn(dest_pmids))
   }
 }
@@ -111,31 +108,31 @@ mod test {
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
     assert_eq!(encode_result.is_ok(), true);
-    let mut nodes_in_table = vec![NameType([1u8; 64]), NameType([2u8; 64]), NameType([3u8; 64]), NameType([4u8; 64]),
-                                  NameType([5u8; 64]), NameType([6u8; 64]), NameType([7u8; 64]), NameType([8u8; 64])];
+    let mut nodes_in_table = vec![DhtId::new([1u8; 64]), DhtId::new([2u8; 64]), DhtId::new([3u8; 64]), DhtId::new([4u8; 64]),
+                                  DhtId::new([5u8; 64]), DhtId::new([6u8; 64]), DhtId::new([7u8; 64]), DhtId::new([8u8; 64])];
     let put_result = data_manager.handle_put(&array_as_vector(encoder.as_bytes()), &mut nodes_in_table);
     assert_eq!(put_result.is_err(), false);
     match put_result.ok().unwrap() {
       routing::Action::SendOn(ref x) => {
         assert_eq!(x.len(), routing_table::PARALLELISM);
-        assert_eq!(x[0].id[0], 3u8);
-        assert_eq!(x[1].id[0], 2u8);
-        assert_eq!(x[2].id[0], 1u8);
-        assert_eq!(x[3].id[0], 7u8);
+        assert_eq!(x[0].0, [3u8; 64].to_vec());
+        assert_eq!(x[1].0, [2u8; 64].to_vec());
+        assert_eq!(x[2].0, [1u8; 64].to_vec());
+        assert_eq!(x[3].0, [7u8; 64].to_vec());
       }
       routing::Action::Reply(x) => panic!("Unexpected"),
     }
 
-    let data_name = array_as_vector(&data.get_name().get_id());
+    let data_name = DhtId::new(data.get_name().get_id());
     let get_result = data_manager.handle_get(&data_name);
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
       routing::Action::SendOn(ref x) => {
         assert_eq!(x.len(), routing_table::PARALLELISM);
-        assert_eq!(x[0].id[0], 3u8);
-        assert_eq!(x[1].id[0], 2u8);
-        assert_eq!(x[2].id[0], 1u8);
-        assert_eq!(x[3].id[0], 7u8);
+        assert_eq!(x[0].0, [3u8; 64].to_vec());
+        assert_eq!(x[1].0, [2u8; 64].to_vec());
+        assert_eq!(x[2].0, [1u8; 64].to_vec());
+        assert_eq!(x[3].0, [7u8; 64].to_vec());
       }
       routing::Action::Reply(x) => panic!("Unexpected"),
     }
