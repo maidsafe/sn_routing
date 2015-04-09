@@ -72,7 +72,7 @@ impl FindGroupResponse {
         if merged_group.len() < types::GROUP_SIZE as usize {
           // can also be done with map_in_place,
           // but explicit for-loop allows for asserts
-          assert!(public_pmid_count.1 >= types::QUORUM_SIZE as usize);
+          // assert!(public_pmid_count.1 >= types::QUORUM_SIZE as usize);
           assert!(public_pmid_count.1 <= types::GROUP_SIZE as usize);
           // TODO(ben 2015-04-09) return None once logic assured
           merged_group.push(public_pmid_count.0);

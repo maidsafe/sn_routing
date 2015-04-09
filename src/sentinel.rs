@@ -315,6 +315,7 @@ mod test {
   use std::cmp;
   use sodiumoxide::crypto;
   use types;
+  use routing_table::{RoutingTable};
   use types::RoutingTrait;
   use message_header;
   use messages;
@@ -343,23 +344,6 @@ mod test {
     data
   }
 
-  // TODO(ben 2015-04-8): remove this copy from RoutingTabel::closer_to_target
-  //                      copied to avoid conflict with
-  //                      simultaneous type clean-up effort
-  pub fn closer_to_target(lhs: &Vec<u8>,
-                          rhs: &Vec<u8>,
-                          target: &Vec<u8>) -> bool {
-      for i in 0..lhs.len() {
-          let res_0 = lhs[i] ^ target[i];
-          let res_1 = rhs[i] ^ target[i];
-
-          if res_0 != res_1 {
-              return res_0 < res_1
-          }
-      }
-      false
-  }
-
   struct SignatureGroup {
     group_address_ : types::GroupAddress,
     group_size_ : usize,
@@ -369,7 +353,7 @@ mod test {
 
   impl SignatureGroup {
     pub fn new(group_size : usize, authority : types::Authority) -> SignatureGroup {
-      let group_address = generate_u8_64();
+      let group_address = types::DhtId::generate_random();
       let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
       for _ in 0..group_size {
         nodes.push(types::Pmid::new());
@@ -393,15 +377,15 @@ mod test {
         headers.push(message_header::MessageHeader::new(message_id.clone(),
                     destination_address.clone(),
                     types::SourceAddress {
-                      from_node : types::DhtId::new(types::vector_as_u8_64_array(node.get_name())),
+                      from_node : node.get_name(),
                       from_group : Some(self.group_address_.clone()),
                       reply_to : None
                     },
                     self.authority_.clone(),
-                    types::Signature {
-                    signature : crypto::sign::sign(&serialised_message[..],
-                                               &node.get_secret_sign_key())
-                    }
+                    Some(types::Signature {
+                                signature : crypto::sign::sign(&serialised_message[..],
+                                              &node.get_secret_sign_key())
+                    })
         ));
       }
       headers
@@ -418,7 +402,7 @@ mod test {
           for i in public_sign_key.iter() {
             public_sign_key_as_vec.push(*i);
           }
-        public_keys.push((types::DhtId::new(types::vector_as_u8_64_array(node.get_name())), public_sign_key_as_vec));
+        public_keys.push((node.get_name(), public_sign_key_as_vec));
       }
       public_keys
     }
@@ -431,7 +415,7 @@ mod test {
     nodes_ : Vec<types::Pmid>,
     // store the close nodes according
     // to the close group of original group_address
-    nodes_of_nodes_ : Vec<(types::Address, Vec<types::Pmid>)>
+    nodes_of_nodes_ : Vec<(types::DhtId, Vec<types::Pmid>)>
   }
 
   impl EmbeddedSignatureGroup {
@@ -440,16 +424,16 @@ mod test {
       let network_size = 10 * group_size;
       let mut all_nodes : Vec<types::Pmid> = Vec::with_capacity(network_size);
       let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
-      let mut nodes_of_nodes : Vec<(types::Address, Vec<types::Pmid>)>
+      let mut nodes_of_nodes : Vec<(types::DhtId, Vec<types::Pmid>)>
                                 = Vec::with_capacity(group_size);
       for _ in 0..network_size {
         all_nodes.push(types::Pmid::new()); // generates two keys !
                                             // can be optimised for larger scaled
       }
-      let group_address = generate_u8_64();
+      let group_address = types::DhtId::generate_random();
       // first sort all nodes to group_address
       all_nodes.sort_by(
-        |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &group_address) {
+        |a, b| if RoutingTable::closer_to_target(&a.get_name(), &b.get_name(), &group_address) {
           cmp::Ordering::Less
         } else {
           cmp::Ordering::Greater
@@ -460,7 +444,7 @@ mod test {
       for node in &nodes {
         // sort all nodes
         all_nodes.sort_by(
-          |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &node.get_name()) {
+          |a, b| if RoutingTable::closer_to_target(&a.get_name(), &b.get_name(), &node.get_name()) {
             cmp::Ordering::Less
           } else {
             cmp::Ordering::Greater
@@ -493,22 +477,22 @@ mod test {
                     destination_address.clone(),
                     types::SourceAddress {
                       from_node : node.get_name(),
-                      from_group : self.group_address_.clone(),
-                      reply_to : generate_u8_64()
+                      from_group : Some(self.group_address_.clone()),
+                      reply_to : None
                     },
                     self.authority_.clone(),
-                    types::Signature {
-                    signature : crypto::sign::sign(&serialised_message[..],
-                                               &node.get_secret_sign_key())
-                    }
+                    Some(types::Signature {
+                                signature : crypto::sign::sign(&serialised_message[..],
+                                              &node.get_secret_sign_key())
+                    })
         ));
       }
       headers
     }
 
-    pub fn get_public_keys(&self, node_name : Vec<u8>) -> Vec<(types::Address, Vec<u8>)> {
+    pub fn get_public_keys(&self, node_name : types::DhtId) -> Vec<(types::DhtId, Vec<u8>)> {
       let nodes_of_node = &self.nodes_of_nodes_.iter().find(|x| x.0 == node_name).unwrap();
-      let mut public_keys : Vec<(types::Address, Vec<u8>)>
+      let mut public_keys : Vec<(types::DhtId, Vec<u8>)>
         = Vec::with_capacity(nodes_of_node.1.len());
       for node in &nodes_of_node.1 {
         let public_sign_key = node.get_public_sign_key().0;
@@ -521,7 +505,7 @@ mod test {
       public_keys
     }
 
-    pub fn get_public_pmids(&self, node_name : Vec<u8>) -> Vec<types::PublicPmid> {
+    pub fn get_public_pmids(&self, node_name : types::DhtId) -> Vec<types::PublicPmid> {
       let nodes_of_node = &self.nodes_of_nodes_.iter().find(|x| x.0 == node_name).unwrap();
       let mut public_pmids : Vec<types::PublicPmid>
         = Vec::with_capacity(nodes_of_node.1.len());
@@ -559,14 +543,14 @@ mod test {
                     destination_address.clone(),
                     types::SourceAddress {
                       from_node : node.get_name(),
-                      from_group : self.group_address_.clone(),
-                      reply_to : generate_u8_64()
+                      from_group : Some(self.group_address_.clone()),
+                      reply_to : None
                     },
                     self.authority_.clone(),
-                    types::Signature {
-                    signature : crypto::sign::sign(&serialised_message_response[..],
-                                               &node.get_secret_sign_key())
-                    });
+                    Some(types::Signature {
+                                signature : crypto::sign::sign(&serialised_message_response[..],
+                                              &node.get_secret_sign_key())
+                    }));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
                                 tag : types::MessageTypeTag::GetGroupKeyResponse,
@@ -595,14 +579,14 @@ mod test {
                     destination_address.clone(),
                     types::SourceAddress {
                       from_node : node.get_name(),
-                      from_group : self.group_address_.clone(),
-                      reply_to : generate_u8_64()
+                      from_group : Some(self.group_address_.clone()),
+                      reply_to : None
                     },
                     self.authority_.clone(),
-                    types::Signature {
-                    signature : crypto::sign::sign(&serialised_message_response[..],
-                                               &node.get_secret_sign_key())
-                    });
+                    Some(types::Signature {
+                                signature : crypto::sign::sign(&serialised_message_response[..],
+                                              &node.get_secret_sign_key())
+                    }));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
                                 tag : types::MessageTypeTag::FindGroupResponse,
@@ -719,7 +703,7 @@ mod test {
   fn simple_add_put_data() {
     let our_pmid = types::Pmid::new();
     let our_destination = types::DestinationAddress {
-      dest : types::DhtId::new(types::vector_as_u8_64_array(our_pmid.get_name())),
+      dest : our_pmid.get_name(),
       reply_to : None
     };
     let signature_group = SignatureGroup::new(types::GROUP_SIZE as usize,
@@ -789,7 +773,7 @@ mod test {
     let our_pmid = types::Pmid::new();
     let our_destination = types::DestinationAddress {
       dest : our_pmid.get_name(),
-      reply_to : generate_u8_64()
+      reply_to : None
     };
     let embedded_signature_group = EmbeddedSignatureGroup::new(types::GROUP_SIZE as usize,
                types::Authority::NaeManager);
@@ -850,7 +834,7 @@ mod test {
     let our_pmid = types::Pmid::new();
     let our_destination = types::DestinationAddress {
       dest : our_pmid.get_name(),
-      reply_to : generate_u8_64()
+      reply_to : None
     };
     let embedded_signature_group = EmbeddedSignatureGroup::new(types::GROUP_SIZE as usize,
                types::Authority::NaeManager);
