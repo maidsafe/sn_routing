@@ -63,8 +63,13 @@ pub static QUORUM_SIZE: u32 = 19;
 pub struct DhtId(pub Vec<u8>);
 
 impl DhtId {
-    pub fn new(slice: [u8; 64]) -> DhtId {
-        DhtId(slice.to_vec())
+    // pub fn new(vect : Vec<u8>) -> DhtId {
+    //   assert_eq!(vect.len(), 64);
+    //   DhtId(vect.clone())
+    // }
+
+    pub fn new(array : [u8; 64]) -> DhtId {
+        DhtId(array.to_vec())
     }
 
     pub fn generate_random() -> DhtId {
@@ -87,7 +92,7 @@ impl DhtId {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
   ClientManager,  // from a node in our range but not routing table
-  NaeManager,     // Target (name()) is in the group we are in 
+  NaeManager,     // Target (name()) is in the group we are in
   NodeManager,    // recieved from a node in our routing table (Handle refresh here)
   ManagedNode,    // in our group and routing table
   ManagedClient,  // in our group
@@ -137,7 +142,7 @@ pub type PmidNode = DhtId;
 pub type PmidNodes = Vec<PmidNode>;
 
 pub trait RoutingTrait {
-  fn get_name(&self)->Vec<u8>;
+  fn get_name(&self)->DhtId;
   fn get_owner(&self)->Vec<u8>;
   fn refresh(&self)->bool;
   fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
@@ -234,8 +239,8 @@ impl Decodable for PublicKey {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicPmid {
-  public_key: PublicKey,
-  validation_token: Signature
+  pub public_key: PublicKey,
+  pub validation_token: Signature
 }
 
 impl PublicPmid {
@@ -246,6 +251,16 @@ impl PublicPmid {
         }
     }
 }
+
+// impl RoutingTrait for PublicPmid {
+//   // TODO(ben 2015-04-09) Give CORRECT NAME !
+//   fn get_name(&self) -> DhtId { self.public_key.public_key.clone() }
+//   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
+//   fn refresh(&self)->bool { false } // TODO is this an account transfer type
+//
+//    // TODO how do we merge these
+//   fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+// }
 
 impl Encodable for PublicPmid {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
@@ -263,14 +278,15 @@ impl Decodable for PublicPmid {
 
 // #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 // TODO (ben 2015-04-01) : implement order based on name
+#[derive(Clone)]
 pub struct Pmid {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
-  name: Vec<u8> // should really all be `DhtId`
+  name: DhtId
 }
 
 impl RoutingTrait for Pmid {
-  fn get_name(&self) -> Vec<u8> { self.name.clone() }
+  fn get_name(&self) -> DhtId { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
 
@@ -282,10 +298,10 @@ impl Pmid {
   pub fn new() -> Pmid {
     let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
     let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::asymmetricbox::gen_keypair();
-    
+
     let sign_arr = &pub_sign_key.0;
     let asym_arr = &pub_asym_key.0;
-    
+
     let mut arr_combined = [0u8; 64 * 2];
 
     for i in 0..sign_arr.len() {
@@ -300,7 +316,7 @@ impl Pmid {
     Pmid {
       public_keys : (pub_sign_key, pub_asym_key),
       secret_keys : (sec_sign_key, sec_asym_key),
-      name : digest.0.to_vec()
+      name : DhtId(digest.0.to_vec())
     }
   }
 
@@ -346,7 +362,7 @@ impl Decodable for EndPoint {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct AccountTransferInfo {
-  pub name : Vec<u8>
+  pub name : DhtId
 }
 
 impl Encodable for AccountTransferInfo {
@@ -364,7 +380,7 @@ impl Decodable for AccountTransferInfo {
 }
 
 impl RoutingTrait for AccountTransferInfo {
-  fn get_name(&self)->Vec<u8> { self.name.clone() }
+  fn get_name(&self)->DhtId { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { true } // TODO is this an account transfer type
 
