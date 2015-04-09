@@ -39,7 +39,7 @@ pub struct RoutingClient<'a> {
     sender: Sender<TcpStream>,
     receiver: Receiver<TcpStream>,
     //connection_manager: crust::connection_manager::ConnectionManager,
-    own_address: Vec<u8>,
+    own_address: types::DhtId,
     message_id: u32,
 }
 
@@ -53,7 +53,7 @@ impl<'a> RoutingClient<'a> {
       RoutingClient { facade: my_facade,
                     sign_public_key: key_pair.0, sign_secret_key: key_pair.1,
                     encrypt_public_key: encrypt_key_pair.0, encrypt_secret_key: encrypt_key_pair.1, sender: tx, receiver: rx,
-                    own_address: types::generate_random_vec_u8(64),
+                    own_address: types::DhtId(types::generate_random_vec_u8(64)),
                     message_id: 0,
       }
     }
@@ -64,8 +64,8 @@ impl<'a> RoutingClient<'a> {
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
                 from_node: self.own_address.clone(), // Should be boost-strap node address ? - will be given the bootstrap node
-                from_group: vec![0; 64], // Dont now what is this so making it invalid // - Option::None
-                reply_to: self.own_address.clone(),
+                from_group: None,
+                reply_to: Some(self.own_address.clone()),
             },
             name_and_type_id: types::NameAndTypeId {
                 name: name.0.clone(),
@@ -81,8 +81,8 @@ impl<'a> RoutingClient<'a> {
         let header = message_header::MessageHeader::new(
             self.message_id,
             types::DestinationAddress {
-                dest: name.0,
-                reply_to: vec![0; 64], // None // - Option::None
+                dest: name,
+                reply_to: None
             },
             get_data.requester.clone(),
             types::Authority::Client,
@@ -124,12 +124,12 @@ impl<'a> RoutingClient<'a> {
             self.message_id,
             types::DestinationAddress {
                 dest: self.own_address.clone(), // Is this Ok? (as put is supposed to go to own MaidManagers, no?)
-                reply_to: vec![0; 64], // should be Option None
+                reply_to: None,
             },
             types::SourceAddress {
                 from_node: self.own_address.clone(), // should this be bootstrap address ?
-                from_group: vec![0, 64], // Option::None
-                reply_to: self.own_address.clone(),
+                from_group: None,
+                reply_to: Some(self.own_address.clone()),
             },
             types::Authority::Client,
             types::Signature::generate_random(), // should be removed
