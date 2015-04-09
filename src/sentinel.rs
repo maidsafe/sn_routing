@@ -546,7 +546,7 @@ mod test {
                     });
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
-                                tag : types::MessageTypeTag::FindGroupResponse,
+                                tag : types::MessageTypeTag::GetGroupKeyResponse,
                                 serialised_message : serialised_message_response,
                                 index : message_index.clone()
                               });
@@ -582,7 +582,7 @@ mod test {
                     });
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
-                                tag : types::MessageTypeTag::GetGroupKeyResponse,
+                                tag : types::MessageTypeTag::FindGroupResponse,
                                 serialised_message : serialised_message_response,
                                 index : message_index.clone()
                               });
