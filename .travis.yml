@@ -1,10 +1,6 @@
 os:
 - linux
 - osx
-env:
-  global:
-  - secure: jYb73sf4o6nUOOzCiyfRYeGcTHPM7pwl+wqEa7YhGHcIfR7uGkI8NQAb0BzizA/Iiy3+wFQzDbbw1ZtpHNgG49EI7cXFQ7WRk+Wz1H4gzkEh2J6XEgyTYoqTOdV4Ka3YtbELc69VLXJCePSvxGqGED0ncUg/kZmWK5f9ZR47zn8=
-  - secure: shBnAgtSdVRe+PqGfX88wSKiFPoxzHIbVHEDdmCtkRUT8SmZ1a8POPo27hyqNQaXNsWooneo1iauFJYco6t3qrG62HuP0XCwIULyQfJC46wOhzBLrTEtHDHingI3XVbJGvqUlolMJhGEZLTQF9DGU9HTsYobVUCfX5/tC3zCmV4=
 language: rust
 rust:
 - nightly
@@ -39,3 +35,6 @@ after_success: |
   sudo make install &&
   cd ../.. &&
   kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/kcov target/debug/routing-*;
+env:
+  global:
+    secure: cOLbJ7YgCw+SIfl0GZ+8dbhqKH12Fo0atTuOcOCUfULXDGx1T9uakFu+yEWUg05U+Tx/e9sKsvpOd7rFT67GB8nAMyNbtWwmpOMY5LUavg2QrF/yIqltNj4+J0MPAt+gde3IXNffnBG4hZNdIG3yjhr+rkfiXCL7S6TLyUzZhkE=
