@@ -781,10 +781,7 @@ mod test {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
       let data : Vec<u8> = generate_data(100usize);
       let put_data = messages::put_data::PutData {
-        name_and_type_id : types::NameAndTypeId {
-          name : crypto::hash::sha512::hash(&data[..]).0.to_vec(),
-          type_id : 0u32  // TODO(ben 2015-04-02: how is type_id determined)
-        },
+        name: crypto::hash::sha512::hash(&data[..]).0.to_vec(),
         data : data
       };
       let mut e = cbor::Encoder::from_memory();
