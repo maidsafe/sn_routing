@@ -90,7 +90,7 @@ impl Encodable for MessageTypeTag {
       MessageTypeTag::PutData => type_tag = "PutData",
       MessageTypeTag::PutDataResponse => type_tag = "PutDataResponse",
       MessageTypeTag::PutKey => type_tag = "PutKey",
-      MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",      
+      MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
       MessageTypeTag::Unknown => type_tag = "Unknown",
     };
     CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
@@ -118,7 +118,7 @@ impl Decodable for MessageTypeTag {
       "PutData" => Ok(MessageTypeTag::PutData),
       "PutDataResponse" => Ok(MessageTypeTag::PutDataResponse),
       "PutKey" => Ok(MessageTypeTag::PutKey),
-      "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),      
+      "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),
       _ => Ok(MessageTypeTag::Unknown)
     }
   }
@@ -126,9 +126,9 @@ impl Decodable for MessageTypeTag {
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct RoutingMessage {
-  message_type : MessageTypeTag,
-  message_header : message_header::MessageHeader,
-  serialised_body : Vec<u8>
+  pub message_type : MessageTypeTag,
+  pub message_header : message_header::MessageHeader,
+  pub serialised_body : Vec<u8>
 }
 
 impl Encodable for RoutingMessage {
