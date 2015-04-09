@@ -126,9 +126,9 @@ impl Decodable for MessageTypeTag {
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct RoutingMessage {
-  message_type : MessageTypeTag,
-  message_header : message_header::MessageHeader,
-  serialised_body : Vec<u8>
+  pub message_type : MessageTypeTag,
+  pub message_header : message_header::MessageHeader,
+  pub serialised_body : Vec<u8>
 }
 
 impl Encodable for RoutingMessage {

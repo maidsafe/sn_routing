@@ -22,14 +22,14 @@ use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct PutData {
-  pub name_and_type_id : types::NameAndTypeId,
+  pub name: Vec<u8>,
   pub data : Vec<u8>
 }
 
 impl PutData {
     pub fn generate_random() -> PutData {
         PutData {
-            name_and_type_id: types::NameAndTypeId::generate_random(),
+            name: types::generate_random_vec_u8(64),
             data: types::generate_random_vec_u8(99),
         }
     }
@@ -37,15 +37,15 @@ impl PutData {
 
 impl Encodable for PutData {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.name_and_type_id, &self.data)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.name, &self.data)).encode(e)
   }
 }
 
 impl Decodable for PutData {
   fn decode<D: Decoder>(d: &mut D)->Result<PutData, D::Error> {
     try!(d.read_u64());
-    let (name_and_type_id, data) = try!(Decodable::decode(d));
-    Ok(PutData { name_and_type_id: name_and_type_id, data: data })
+    let (name, data) = try!(Decodable::decode(d));
+    Ok(PutData { name: name, data: data })
   }
 }
 
