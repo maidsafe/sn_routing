@@ -17,53 +17,53 @@ extern crate crust;
 extern crate sodiumoxide;
 extern crate cbor;
 extern crate maidsafe_types;
+extern crate rand;
 
-use sodiumoxide::crypto;
 use maidsafe_types::Random;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::mpsc;
-use std::net::{TcpStream};
+use std::io::Error as IoError;
 use types;
 use Facade;
 use message_header;
 use messages;
 use maidsafe_types::traits::RoutingTrait;
 
-/// DHT node
+type ConnectionManager = crust::ConnectionManager<types::DhtId>;
+type Event             = crust::Event<types::DhtId>;
+
 pub struct RoutingClient<'a> {
     facade: &'a (Facade + 'a),
-    sign_public_key: crypto::sign::PublicKey,
-    sign_secret_key: crypto::sign::SecretKey,
-    encrypt_public_key: crypto::asymmetricbox::PublicKey,
-    encrypt_secret_key: crypto::asymmetricbox::SecretKey,
-    sender: Sender<TcpStream>,
-    receiver: Receiver<TcpStream>,
-    //connection_manager: crust::connection_manager::ConnectionManager,
+    maid_id: maidsafe_types::Maid,
+    event_input: mpsc::Receiver<Event>,
+    connection_manager: ConnectionManager,
     own_address: types::DhtId,
+    bootstrap_address: types::DhtId,
     message_id: u32,
 }
 
 impl<'a> RoutingClient<'a> {
-    pub fn new(my_facade: &'a Facade) -> RoutingClient<'a> {
-      sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
-      let key_pair = crypto::sign::gen_keypair();
-      let encrypt_key_pair = crypto::asymmetricbox::gen_keypair();
-      let (tx, rx) : (Sender<TcpStream>, Receiver<TcpStream>) = mpsc::channel();
+    pub fn new(my_facade: &'a Facade, maid_id: maidsafe_types::Maid, bootstrap_add: types::DhtId) -> RoutingClient<'a> {
+        sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
+        let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
+        let own_add = types::DhtId::generate_random(); // How do we get our own address ?
 
-      RoutingClient { facade: my_facade,
-                    sign_public_key: key_pair.0, sign_secret_key: key_pair.1,
-                    encrypt_public_key: encrypt_key_pair.0, encrypt_secret_key: encrypt_key_pair.1, sender: tx, receiver: rx,
-                    own_address: types::DhtId(types::generate_random_vec_u8(64)),
-                    message_id: 0,
-      }
+        RoutingClient {
+            facade: my_facade,
+            maid_id: maid_id,
+            event_input: rx,
+            connection_manager: crust::ConnectionManager::new(own_add.clone(), tx),
+            own_address: own_add,
+            bootstrap_address: bootstrap_add,
+            message_id: rand::random::<u32>(),
+        }
     }
 
     /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&mut self, type_id: u64, name: types::DhtId) {
+    pub fn get(&mut self, type_id: u64, name: types::DhtId) -> Result<(), IoError> {
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
-                from_node: self.own_address.clone(), // Should be boost-strap node address ? - will be given the bootstrap node
+                from_node: self.bootstrap_address.clone(),
                 from_group: None,
                 reply_to: Some(self.own_address.clone()),
             },
@@ -81,7 +81,7 @@ impl<'a> RoutingClient<'a> {
         let header = message_header::MessageHeader::new(
             self.message_id,
             types::DestinationAddress {
-                dest: name,
+                dest: name.clone(),
                 reply_to: None
             },
             get_data.requester.clone(),
@@ -103,15 +103,15 @@ impl<'a> RoutingClient<'a> {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        // connection_manager.send(...); // Prakash/Peter will implement this according to mail.
+        self.connection_manager.send(encoder_routingmsg.into_bytes(), name) // Is this fine ?
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, name: types::DhtId, content: Vec<u8>)
+    pub fn put<T>(&mut self, name: types::DhtId, content: Vec<u8>) -> Result<(), IoError>
     where T: maidsafe_types::traits::RoutingTrait {
         // Make PutData message
         let put_data = messages::put_data::PutData {
-            name: name.0,
+            name: name.0.clone(),
             data: content,
         };
 
@@ -123,11 +123,11 @@ impl<'a> RoutingClient<'a> {
         let header = message_header::MessageHeader::new(
             self.message_id,
             types::DestinationAddress {
-                dest: self.own_address.clone(), // Is this Ok? (as put is supposed to go to own MaidManagers, no?)
+                dest: self.own_address.clone(),
                 reply_to: None,
             },
             types::SourceAddress {
-                from_node: self.own_address.clone(), // should this be bootstrap address ?
+                from_node: self.bootstrap_address.clone(),
                 from_group: None,
                 reply_to: Some(self.own_address.clone()),
             },
@@ -149,7 +149,7 @@ impl<'a> RoutingClient<'a> {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        // connection_manager.send(...); // Prakash/Peter will implement this according to mail.
+        self.connection_manager.send(encoder_routingmsg.into_bytes(), name) // Is this fine?
     }
 
     pub fn start() {
@@ -163,48 +163,3 @@ impl<'a> RoutingClient<'a> {
       self.facade
     }
 }
-
-// pub struct RoutingClient {
-//     sign_public_key: crypto::sign::PublicKey,
-//     sign_secret_key: crypto::sign::SecretKey,
-//     encrypt_public_key: crypto::asymmetricbox::PublicKey,
-//     encrypt_secret_key: crypto::asymmetricbox::SecretKey,
-//     connection_manager: crust::connection_manager::ConnectionManager,
-// }
-// 
-// impl RoutingClient {
-//     /// Retreive something from the network (non mutating) - Direct call
-//     pub fn get(&self, type_id: u64, name: types::DhtAddress) { unimplemented!()}
-// 
-//     /// Add something to the network, will always go via ClientManager group
-//     pub fn put(&self, name: types::DhtAddress, content: Vec<u8>) -> crust::connection_manager::IoResult<()> {
-//         let mut encoder = cbor::Encoder::from_memory();
-//         let encode_result = encoder.encode(&[&content]);
-//         self.connection_manager.send(encoder.into_bytes(), name.0.to_vec())
-//     }
-// 
-//     /// Mutate something on the network (you must prove ownership) - Direct call
-//     pub fn post(&self, name: types::DhtAddress, content: Vec<u8>) { unimplemented!() }
-// 
-//     pub fn start() {
-// 
-//     }
-// 
-//     fn add_bootstrap(&self) {}
-// }
-// 
-// impl Random for RoutingClient {
-//     fn generate_random() -> RoutingClient {
-//         let (tx, rx) = channel::<crust::connection_manager::Event>();
-//         let sign_pair = crypto::sign::gen_keypair();
-//         let asym_pair = crypto::asymmetricbox::gen_keypair();
-// 
-//         RoutingClient {
-//             sign_public_key: sign_pair.0,
-//             sign_secret_key: sign_pair.1,
-//             encrypt_public_key: asym_pair.0,
-//             encrypt_secret_key: asym_pair.1,
-//             connection_manager: crust::connection_manager::ConnectionManager::new(types::generate_random_vec_u8(64), tx/*, rx*/), // TODO(Spandan) how will it rx without storing the receiver
-//         }
-//     }
-// }
