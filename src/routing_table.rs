@@ -22,7 +22,6 @@ extern crate sodiumoxide;
 use common_bits::*;
 use sodiumoxide::crypto;
 use std::cmp;
-use std::net::*;
 use std::usize;
 
 use types::DhtId;

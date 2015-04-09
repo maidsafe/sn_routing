@@ -96,7 +96,7 @@ impl<F> RoutingNode<F> where F: Facade {
     pub fn add_bootstrap(&self, endpoint: SocketAddr) {
         let _ = self.connections.connect(endpoint);
     }
-    
+
     pub fn run(&mut self) {
         loop {
             let event = self.event_input.recv();
@@ -116,7 +116,7 @@ impl<F> RoutingNode<F> where F: Facade {
             }
         }
     }
-    
+
     fn next_endpoint_pair(&self)->(types::EndPoint, types::EndPoint) {
       unimplemented!();  // FIXME (Peter)
     }
