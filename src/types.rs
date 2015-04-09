@@ -64,11 +64,23 @@ pub struct DhtId(pub Vec<u8>);
 
 impl DhtId {
     pub fn new(slice: [u8; 64]) -> DhtId {
-        unimplemented!();
+        DhtId(slice.to_vec())
     }
 
     pub fn generate_random() -> DhtId {
         DhtId(generate_random_vec_u8(64))
+    }
+
+    pub fn is_valid(&self) -> bool {
+        if self.0.len() != 64 {
+          return false;
+        }
+        for it in self.0.iter() {
+            if *it != 0 {
+                return true;
+            }
+        }
+        false
     }
 }
 
