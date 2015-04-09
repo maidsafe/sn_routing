@@ -212,6 +212,7 @@ impl<'a> Sentinel<'a> {
           let mut public_keys_holder = public_keys.unwrap();
           let target_key = types::PublicKey{ public_key : public_key.1.clone() };
           if !public_keys_holder.contains(&target_key) {
+            // flatten, unless different key found for already encountered Address.
             public_keys_holder.push(target_key);
           }
         }
@@ -220,7 +221,7 @@ impl<'a> Sentinel<'a> {
     // TODO(mmoadeli): For the time being, we assume that no invalid public is received
     for (_, pub_key_list) in keys_map.iter() {
       if pub_key_list.len() != 1 {
-        return Vec::<ResultType>::new();
+        panic!("Different keys returned for a single address.");
       }
     }
     for message in messages.iter() {
@@ -344,8 +345,8 @@ mod test {
   }
 
   impl SignatureGroup {
-    pub fn new(group_address : types::GroupAddress,
-             group_size : usize, authority : types::Authority) -> SignatureGroup {
+    pub fn new(group_size : usize, authority : types::Authority) -> SignatureGroup {
+      let group_address = generate_u8_64();
       let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
       for _ in 0..group_size {
         nodes.push(types::Pmid::new());
@@ -366,27 +367,26 @@ mod test {
         let mut headers : Vec<message_header::MessageHeader>
             = Vec::with_capacity(self.group_size_);
       for node in &self.nodes_ {
-        headers.push(message_header
-                   ::MessageHeader::new(message_id.clone(),
-                      destination_address.clone(),
-              types::SourceAddress {
-                from_node : node.get_name(),
-                from_group : self.group_address_.clone(),
-                  reply_to : generate_u8_64()
-              },
-              self.authority_.clone(),
-                types::Signature {
-                signature : crypto::sign::sign(&serialised_message[..],
+        headers.push(message_header::MessageHeader::new(message_id.clone(),
+                    destination_address.clone(),
+                    types::SourceAddress {
+                      from_node : node.get_name(),
+                      from_group : self.group_address_.clone(),
+                      reply_to : generate_u8_64()
+                    },
+                    self.authority_.clone(),
+                    types::Signature {
+                    signature : crypto::sign::sign(&serialised_message[..],
                                                &node.get_secret_sign_key())
-                      }
-              ));
+                    }
+        ));
       }
       headers
     }
 
     pub fn get_public_keys(&self) -> Vec<(types::Address, Vec<u8>)> {
-        let mut public_keys : Vec<(types::Address, Vec<u8>)>
-           = Vec::with_capacity(self.nodes_.len());
+      let mut public_keys : Vec<(types::Address, Vec<u8>)>
+         = Vec::with_capacity(self.nodes_.len());
       for node in &self.nodes_ {
         // TODO(ben 2015-4-3): replace with proper types for PublicKey
         //                   this is ridiculous:
@@ -408,7 +408,7 @@ mod test {
     nodes_ : Vec<types::Pmid>,
     // store the close nodes according
     // to the close group of original group_address
-    nodes_of_nodes_ : Vec<(Vec<u8>, Vec<types::Pmid>)>
+    nodes_of_nodes_ : Vec<(types::Address, Vec<types::Pmid>)>
   }
 
   impl EmbeddedSignatureGroup {
@@ -417,7 +417,7 @@ mod test {
       let network_size = 10 * group_size;
       let mut all_nodes : Vec<types::Pmid> = Vec::with_capacity(network_size);
       let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
-      let mut nodes_of_nodes : Vec<(Vec<u8>, Vec<types::Pmid>)>
+      let mut nodes_of_nodes : Vec<(types::Address, Vec<types::Pmid>)>
                                 = Vec::with_capacity(group_size);
       for _ in 0..network_size {
         all_nodes.push(types::Pmid::new()); // generates two keys !
@@ -459,6 +459,80 @@ mod test {
     }
 
     pub fn get_group_address(&self) -> types::GroupAddress { self.group_address_.clone() }
+
+    pub fn get_headers(&self, destination_address : &types::DestinationAddress,
+               message_id : &types::MessageId, serialised_message : &Vec<u8> )
+              -> Vec<message_header::MessageHeader> {
+      let mut headers : Vec<message_header::MessageHeader>
+          = Vec::with_capacity(self.group_size_);
+      for node in &self.nodes_ {
+        headers.push(message_header::MessageHeader::new(message_id.clone(),
+                    destination_address.clone(),
+                    types::SourceAddress {
+                      from_node : node.get_name(),
+                      from_group : self.group_address_.clone(),
+                      reply_to : generate_u8_64()
+                    },
+                    self.authority_.clone(),
+                    types::Signature {
+                    signature : crypto::sign::sign(&serialised_message[..],
+                                               &node.get_secret_sign_key())
+                    }
+        ));
+      }
+      headers
+    }
+
+    pub fn get_public_keys(&self, node_name : Vec<u8>) -> Vec<(types::Address, Vec<u8>)> {
+      let nodes_of_node = &self.nodes_of_nodes_.iter().find(|x| x.0 == node_name).unwrap();
+      let mut public_keys : Vec<(types::Address, Vec<u8>)>
+        = Vec::with_capacity(nodes_of_node.1.len());
+      for node in &nodes_of_node.1 {
+        let public_sign_key = node.get_public_sign_key().0;
+        let mut public_sign_key_as_vec : Vec<u8> = Vec::with_capacity(public_sign_key.len());
+        for i in public_sign_key.iter() {
+          public_sign_key_as_vec.push(*i);
+        }
+        public_keys.push((node.get_name(), public_sign_key_as_vec));
+      }
+      public_keys
+    }
+
+    pub fn generate_get_group_key_response_messages(&self,
+                destination_address : &types::DestinationAddress,
+                message_id : &types::MessageId, message_index : &mut u64)
+                -> Vec<AddSentinelMessage> {
+      let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(self.group_size_);
+      for node in &self.nodes_ {
+        let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
+          target_id : self.group_address_.clone(),
+          public_keys : self.get_public_keys( node.get_name())
+        };
+        let mut e = cbor::Encoder::from_memory();
+        let _ = e.encode(&[&get_group_key_response]);
+        let serialised_message_response = e.as_bytes().to_vec();
+        let header = message_header::MessageHeader::new(message_id.clone(),
+                    destination_address.clone(),
+                    types::SourceAddress {
+                      from_node : node.get_name(),
+                      from_group : self.group_address_.clone(),
+                      reply_to : generate_u8_64()
+                    },
+                    self.authority_.clone(),
+                    types::Signature {
+                    signature : crypto::sign::sign(&serialised_message_response[..],
+                                               &node.get_secret_sign_key())
+                    });
+        collect_messages.push(AddSentinelMessage{
+                                header : header.clone(),
+                                tag : types::MessageTypeTag::GetGroupKeyResponse,
+                                serialised_message : serialised_message_response,
+                                index : message_index.clone()
+                              });
+        *message_index += 1;
+      }
+      collect_messages
+    }
   }
 
   pub struct TraceGetKeys {
@@ -562,14 +636,13 @@ mod test {
   }
 
   #[test]
-  fn simple_add() {
+  fn simple_add_put_data() {
     let our_pmid = types::Pmid::new();
     let our_destination = types::DestinationAddress {
       dest : our_pmid.get_name(),
       reply_to : generate_u8_64()
     };
-    let group_address = generate_u8_64();
-    let signature_group = SignatureGroup::new(group_address, types::GROUP_SIZE as usize,
+    let signature_group = SignatureGroup::new(types::GROUP_SIZE as usize,
                types::Authority::NaeManager);
     let mut trace_get_keys = TraceGetKeys::new();
     let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
@@ -632,14 +705,14 @@ mod test {
   }
 
   #[test]
-  fn simple_add_find_group_response() {
+  fn embedded_add_put_data() {
     let our_pmid = types::Pmid::new();
     let our_destination = types::DestinationAddress {
       dest : our_pmid.get_name(),
       reply_to : generate_u8_64()
     };
     let group_address = generate_u8_64();
-    let signature_group = SignatureGroup::new(group_address, types::GROUP_SIZE as usize,
+    let embedded_signature_group = EmbeddedSignatureGroup::new(types::GROUP_SIZE as usize,
                types::Authority::NaeManager);
     let mut trace_get_keys = TraceGetKeys::new();
     let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
@@ -659,22 +732,13 @@ mod test {
       let serialised_message = e.as_bytes().to_vec();
       let message_id = rand::random::<u32>() as types::MessageId;
       let tag = types::MessageTypeTag::PutData;
-      let headers = signature_group.get_headers(&our_destination, &message_id, &serialised_message);
+      let headers = embedded_signature_group.get_headers(&our_destination, &message_id, &serialised_message);
       let collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
 
-      let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
-        target_id : signature_group.get_group_address(),
-        public_keys : signature_group.get_public_keys()
-      };
-      let mut e = cbor::Encoder::from_memory();
-      let _ = e.encode(&[&get_group_key_response]);
-      let serialised_message_response = e.as_bytes().to_vec();
-      let headers_response = signature_group.get_headers(&our_destination, &message_id,
-                                 &serialised_message_response);
-      let response_tag = types::MessageTypeTag::GetGroupKeyResponse;
-      let collect_response_messages = generate_messages(headers_response, response_tag,
-          &serialised_message_response, &mut message_tracker);
-
+      let collect_response_messages = embedded_signature_group
+                .generate_get_group_key_response_messages(&our_destination,
+                                                          &message_id,
+                                                          &mut message_tracker);
     for message in collect_messages {
       sentinel_returns.push((message.index,
                              sentinel.add(message.header,
@@ -697,7 +761,7 @@ mod test {
     assert_eq!(1, get_selected_sentinel_returns(&mut sentinel_returns,
                     &mut vec![(types::GROUP_SIZE + types::QUORUM_SIZE) as u64]).len());
     }
-  assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
-  assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
+  assert_eq!(0, trace_get_keys.count_get_client_key_calls(&embedded_signature_group.get_group_address()));
+  assert_eq!(1, trace_get_keys.count_get_group_key_calls(&embedded_signature_group.get_group_address()));
   }
 }
