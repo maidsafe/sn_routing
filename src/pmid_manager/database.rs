@@ -21,7 +21,7 @@ extern crate routing;
 
 use self::lru_cache::LruCache;
 
-type Identity = self::routing::types::Address; // pmidnode address
+type Identity = self::routing::types::DhtId; // pmidnode address
 
 pub struct PmidManagerAccount {
   stored_total_size : u64,

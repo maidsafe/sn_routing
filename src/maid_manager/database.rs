@@ -20,8 +20,9 @@ extern crate lru_cache;
 extern crate routing;
 
 use self::lru_cache::LruCache;
+use self::routing::types::DhtId;
 
-type Identity = self::routing::types::Address; // maid node address
+type Identity = DhtId; // maid node address
 
 pub struct MaidManagerAccount {
   data_stored : u64,

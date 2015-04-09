@@ -21,9 +21,10 @@ extern crate maidsafe_types;
 mod database;
 
 use cbor::{ Decoder };
+use self::routing::types::DhtId;
 
 type CloseGroupDifference = self::routing::types::CloseGroupDifference;
-type Address = self::routing::types::Address;
+type Address = DhtId;
 
 pub struct MaidManager {
   db_ : database::MaidManagerDatabase
@@ -34,10 +35,10 @@ impl MaidManager {
     MaidManager { db_: database::MaidManagerDatabase::new() }
   }
 
-  pub fn handle_put(&mut self, from : &routing::types::Address, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, from : &DhtId, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
-    let mut destinations : Vec<routing::DhtIdentity> = Vec::new();
+    let mut destinations : Vec<DhtId> = Vec::new();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
@@ -45,17 +46,15 @@ impl MaidManager {
         if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
           return Err(routing::RoutingError::InvalidRequest);
         }
-        destinations.push(routing::DhtIdentity { id : immutable_data.get_name().get_id() });
+        destinations.push(DhtId::new(immutable_data.get_name().get_id()));
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         // PublicMaid doesn't use any allowance
-        destinations.push(routing::DhtIdentity {
-            id : payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id() });
+        destinations.push(DhtId::new(payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id()));
       }
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
         // PublicAnMaid doesn't use any allowance
-        destinations.push(routing::DhtIdentity {
-            id : payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id() });
+        destinations.push(DhtId::new(payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id()));
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
     }

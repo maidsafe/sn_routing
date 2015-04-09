@@ -18,12 +18,12 @@
 extern crate routing;
 extern crate maidsafe_types;
 
+use self::routing::types::DhtId;
 use chunk_store::ChunkStore;
 
 use cbor::{ Decoder};
 
 type CloseGroupDifference = self::routing::types::CloseGroupDifference;
-type Address = self::routing::types::Address;
 
 pub struct VersionHandler {
   // This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
@@ -37,7 +37,7 @@ impl VersionHandler {
     VersionHandler { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
   }
 
-  pub fn handle_get(&self, name: Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_get(&self, name: DhtId) ->Result<routing::Action, routing::RoutingError> {
     let data = self.chunk_store_.get(name);
     if data.len() == 0 {
       return Err(routing::RoutingError::NoData);
@@ -46,13 +46,12 @@ impl VersionHandler {
   }
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
-    let mut data_name : Vec<u8>;
+    let mut data_name : DhtId;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::StructuredData => {
-        data_name = self::routing::types::array_as_vector(
-            &payload.get_data::<maidsafe_types::StructuredData>().get_name().0.get_id());
+        data_name = DhtId::new(payload.get_data::<maidsafe_types::StructuredData>().get_name().0.get_id());
       }
        _ => return Err(routing::RoutingError::InvalidRequest)
     }

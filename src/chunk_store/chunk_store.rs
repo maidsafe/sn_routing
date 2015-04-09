@@ -15,8 +15,12 @@
 
 #![allow(dead_code)]
 
+extern crate routing;
+
+use self::routing::types::DhtId;
+
 pub struct Entry {
-    name: Vec<u8>,
+    name: DhtId,
     data: Vec<u8>
 }
 
@@ -43,7 +47,7 @@ impl ChunkStore {
         }
     }
 
-    pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
+    pub fn put(&mut self, name: DhtId, value: Vec<u8>) {
         if !self.has_disk_space(value.len()) {
             panic!("Disk space unavailable. Not enough space");
         }
@@ -55,7 +59,7 @@ impl ChunkStore {
         });
     }
 
-    pub fn delete(&mut self, name: Vec<u8>) {
+    pub fn delete(&mut self, name: DhtId) {
         let mut size_removed : usize;
 
         for i in 0..self.entries.len() {
@@ -68,7 +72,7 @@ impl ChunkStore {
         }
     }
 
-    pub fn get(&self, name: Vec<u8>) -> Vec<u8> {
+    pub fn get(&self, name: DhtId) -> Vec<u8> {
       match self.entries.iter().find(|&x| { x.name == name }) {
           Some(entry) => entry.data.clone(),
           _ => Vec::new()
@@ -88,15 +92,15 @@ impl ChunkStore {
         self.max_disk_usage = new_max;
     }
 
-    pub fn has_chunk(&self, name: Vec<u8>) -> bool {
+    pub fn has_chunk(&self, name: DhtId) -> bool {
         match self.entries.iter().find(|&x| { x.name == name }) {
             Some(_) => true,
             _ => false
         }
     }
 
-    pub fn names(&self) -> Vec<Vec<u8>> {
-        let mut name_vec: Vec<Vec<u8>> = Vec::new();
+    pub fn names(&self) -> Vec<DhtId> {
+        let mut name_vec: Vec<DhtId> = Vec::new();
         for it in self.entries.iter() {
            name_vec.push(it.name.clone());
         }
