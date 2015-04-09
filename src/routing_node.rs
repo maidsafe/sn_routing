@@ -97,15 +97,22 @@ impl<F> RoutingNode<F> where F: Facade {
         let _ = self.connections.connect(endpoint);
     }
     
-    pub fn run(&self) {
-        for e in self.event_input.iter() {
-            println!("Received event {:?}", e);
-            match e {
-                crust::Event::NewConnection(_) => {
+    pub fn run(&mut self) {
+        loop {
+            let event = self.event_input.recv();
+
+            if event.is_err() { return; }
+
+            match event.unwrap() {
+                crust::Event::NewMessage(id, bytes) => {
+                    self.message_received(id, bytes);
                 },
-                crust::Event::NewMessage(x, y) => {
+                crust::Event::NewConnection(id) => {
+                    self.handle_new_connection(id);
+                },
+                crust::Event::LostConnection(id) => {
+                    self.handle_lost_connection(id);
                 }
-                _ => println!("unhandled"),
             }
         }
     }
@@ -114,7 +121,7 @@ impl<F> RoutingNode<F> where F: Facade {
       unimplemented!();  // FIXME (Peter)
     }
 
-    fn handle_new_connection(&self, peer_id: types::DhtId) {
+    fn handle_new_connection(&mut self, peer_id: types::DhtId) {
         if false {  // if unexpected connection, its likely
             //add to non_routing_list;
         } else {
@@ -132,7 +139,7 @@ impl<F> RoutingNode<F> where F: Facade {
         // handle_curn
     }
 
-    fn message_received(peer_id: types::DhtId, serialised_message: Bytes) {
+    fn message_received(&mut self, peer_id: types::DhtId, serialised_message: Bytes) {
       // Parse
       // filter check
       // add to filter
@@ -247,6 +254,7 @@ mod test {
             -> thread::JoinHandle
         {
             thread::spawn(move || {
+                let mut n = n;
                 if my_ep.port() < his_ep.port() {
                     n.add_bootstrap(his_ep);
                 }
