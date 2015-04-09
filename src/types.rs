@@ -64,7 +64,7 @@ pub struct DhtId(Vec<u8>);
 
 impl DhtId {
     pub fn new(slice: [u8; 64]) -> DhtId {
-        unimplemented!();
+        DhtId(slice.to_vec())
     }
 
     pub fn generate_random() -> DhtId {
