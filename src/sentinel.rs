@@ -158,23 +158,23 @@ impl<'a> Sentinel<'a> {
       return Vec::<ResultType>::new();
     }
     let mut verified_messages : Vec<ResultType> = Vec::new();
-    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicKey>> = HashMap::new();
+    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
     for node_key in keys.iter() {
       let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
       let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
       if !keys_map.contains_key(&key_response.address) {
         keys_map.insert(key_response.address,
-                        vec![types::PublicKey{ public_key : key_response.public_key }]);
+                        vec![key_response.public_sign_key]);
       } else {
         let public_keys = keys_map.get_mut(&key_response.address);
         let mut public_keys_holder = public_keys.unwrap();
-        let target_key = types::PublicKey{ public_key : key_response.public_key };
+        let target_key = key_response.public_sign_key;
         if !public_keys_holder.contains(&target_key) {
           public_keys_holder.push(target_key);
         }
       }
     }
-    let mut pub_key_list : Vec<types::PublicKey> = Vec::new();
+    let mut pub_key_list : Vec<types::PublicSignKey> = Vec::new();
     for (_, value) in keys_map.iter() {
       pub_key_list = value.clone();
       break;
@@ -182,12 +182,12 @@ impl<'a> Sentinel<'a> {
     if keys_map.len() != 1 || pub_key_list.len() != 1 {
       return Vec::<ResultType>::new();
     }
-    let public_key = pub_key_list[0].public_sign_key();
+    let public_sign_key = pub_key_list[0];
     for message in messages.iter() {
       let signature = message.value.0.get_signature();
       let ref msg = message.value.2;
       if crypto::sign::verify_detached(&signature.unwrap().get_crypto_signature(),
-                                       &msg[..], &public_key.get_crypto_public_sign_key()) {
+                                       &msg[..], &public_sign_key.get_crypto_public_sign_key()) {
         verified_messages.push(message.value.clone());
       }
     }

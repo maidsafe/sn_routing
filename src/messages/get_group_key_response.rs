@@ -26,7 +26,7 @@ use types;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetGroupKeyResponse {
   pub target_id : types::GroupAddress,
-  pub public_keys : Vec<(types::DhtId, Vec<u8>)>
+  pub public_sign_keys : Vec<(types::DhtId, types::PublicSignKeys)>
 }
 
 impl GetGroupKeyResponse {
@@ -75,4 +75,3 @@ mod test {
         assert_eq!(obj_before, obj_after);
     }
 }
-
