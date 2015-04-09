@@ -26,33 +26,33 @@ use types;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetGroupKeyResponse {
   pub target_id : types::GroupAddress,
-  pub public_keys : Vec<(types::DhtId, Vec<u8>)>
+  pub public_sign_keys : Vec<(types::DhtId, types::PublicSignKey)>
 }
 
 impl GetGroupKeyResponse {
     pub fn generate_random() -> GetGroupKeyResponse {
-        let mut vec: Vec<(types::DhtId, Vec<u8>)> = Vec::with_capacity(30);
+        let mut vec: Vec<(types::DhtId, types::PublicSignKey)> = Vec::with_capacity(30);
         for i in 0..30 {
-            vec.push((types::DhtId::generate_random(), types::generate_random_vec_u8(99)));
+            vec.push((types::DhtId::generate_random(), types::PublicSignKey::generate_random()));
         }
         GetGroupKeyResponse {
             target_id: types::DhtId::generate_random(),
-            public_keys: vec,
+            public_sign_keys: vec,
         }
     }
 }
 
 impl Encodable for GetGroupKeyResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.target_id, &self.public_keys)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.target_id, &self.public_sign_keys)).encode(e)
   }
 }
 
 impl Decodable for GetGroupKeyResponse {
   fn decode<D: Decoder>(d: &mut D)->Result<GetGroupKeyResponse, D::Error> {
     try!(d.read_u64());
-    let (target_id, public_keys) = try!(Decodable::decode(d));
-    Ok(GetGroupKeyResponse { target_id: target_id , public_keys: public_keys})
+    let (target_id, public_sign_keys) = try!(Decodable::decode(d));
+    Ok(GetGroupKeyResponse { target_id: target_id , public_sign_keys: public_sign_keys})
   }
 }
 
@@ -75,4 +75,3 @@ mod test {
         assert_eq!(obj_before, obj_after);
     }
 }
-
