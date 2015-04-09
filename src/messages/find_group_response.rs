@@ -17,7 +17,6 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-
 use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -41,12 +40,53 @@ impl FindGroupResponse {
 
     // TODO(ben 2015-04-09) to be replaced with a proper merge trait
     //                      for every message type
-    // pub fn merge(&self, others : &Vec<FindGroupReponse>) -> Option<FindGroupResponse> {
-    //   for other in others {
-    //     if other.target_id != self.target_id { return None; }
-    //
-    //   }
-    // }
+    pub fn merge(&self, others : &Vec<FindGroupResponse>) -> Option<FindGroupResponse> {
+      let mut frequency_count : Vec<(types::PublicPmid, usize)>
+        = Vec::with_capacity(2 * types::GROUP_SIZE as usize);
+      for public_pmid in &self.group {
+        let mut new_public_pmid : bool = false;
+        match frequency_count.iter_mut()
+              .find(|ref mut count| count.0.public_key == public_pmid.public_key) {
+          Some(count) => count.1 += 1,
+          None => new_public_pmid = true
+        };
+        if new_public_pmid { frequency_count.push((public_pmid.clone(), 1)); };
+      }
+      for other in others {
+        if other.target_id != self.target_id { return None; }
+        for public_pmid in &other.group {
+          let mut new_public_pmid : bool = false;
+          match frequency_count.iter_mut()
+                .find(|ref mut count| count.0.public_key == public_pmid.public_key) {
+            Some(count) => count.1 += 1,
+            None => new_public_pmid = true
+          };
+          if new_public_pmid { frequency_count.push((public_pmid.clone(), 1)); };
+        }
+      }
+      // sort from highest mention_count to lowest
+      frequency_count.sort_by(|a, b| b.1.cmp(&a.1));
+      let mut merged_group : Vec<types::PublicPmid>
+        = Vec::with_capacity(types::GROUP_SIZE as usize);
+      for public_pmid_count in frequency_count {
+        if merged_group.len() < types::GROUP_SIZE as usize {
+          // can also be done with map_in_place,
+          // but explicit for-loop allows for asserts
+          assert!(public_pmid_count.1 >= types::QUORUM_SIZE as usize);
+          assert!(public_pmid_count.1 <= types::GROUP_SIZE as usize);
+          merged_group.push(public_pmid_count.0);
+        } else {
+          break; //  NOTE(ben 2015-04-15): here we can measure the fuzzy
+                 //  boundary of groups
+        }
+      }
+      assert_eq!(merged_group.len(), types::GROUP_SIZE as usize);
+      // TODO(ben 2015-04-09) : curtosy call to sort to target,
+      //                        but requires correct name on PublicPmid
+      // merged_group.sort_by(...)
+      Some(FindGroupResponse{target_id : self.target_id.clone(),
+                             group : merged_group})
+    }
 }
 
 impl Encodable for FindGroupResponse {
