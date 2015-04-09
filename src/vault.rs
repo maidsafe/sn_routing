@@ -29,8 +29,6 @@ mod pmid_node;
 #[path="version_handler/version_handler.rs"]
 mod version_handler;
 
-use self::maidsafe_types::NameType;
-
 use self::routing::Action;
 use self::routing::RoutingError;
 use self::routing::types::Authority;
@@ -135,9 +133,9 @@ mod test {
   extern crate routing;
   use super::*;
   use self::maidsafe_types::*;
-  use self::routing::Authority;
-  use self::routing::DestinationAddress;
-  use self::routing::DhtId;
+  use self::routing::types::Authority;
+  use self::routing::types::DestinationAddress;
+  use self::routing::types::DhtId;
   use self::routing::routing_table;
   use routing::Facade;
 
@@ -156,37 +154,37 @@ mod test {
     { // MaidManager, shall allowing the put and SendOn to DataManagers around name
       let from = DhtId::new([1u8; 64]);
       // TODO : in this stage, dest can be populated as anything ?
-      let dest = DestinationAddress{ dest : routing::types::generate_random_vec_u8(64)};
+      let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
       let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
                                         self::routing::types::array_as_vector(encoder.as_bytes()));
       assert_eq!(put_result.is_err(), false);
       match put_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
           assert_eq!(x.len(), 1);
-          assert_eq!(x[0].id.to_vec(), [3u8; 64].to_vec());
+          assert_eq!(x[0].0, [3u8; 64].to_vec());
         }
         routing::Action::Reply(x) => panic!("Unexpected"),
       }
     }
-    let nodes_in_table = vec![NameType([1u8; 64]), NameType([2u8; 64]), NameType([3u8; 64]), NameType([4u8; 64]),
-                              NameType([5u8; 64]), NameType([6u8; 64]), NameType([7u8; 64]), NameType([8u8; 64])];
+    let nodes_in_table = vec![DhtId::new([1u8; 64]), DhtId::new([2u8; 64]), DhtId::new([3u8; 64]), DhtId::new([4u8; 64]),
+                              DhtId::new([5u8; 64]), DhtId::new([6u8; 64]), DhtId::new([7u8; 64]), DhtId::new([8u8; 64])];
     for node in nodes_in_table.iter() {
       vault.add_node(node.clone());
     }
     { // DataManager, shall SendOn to pmid_nodes
       let from = DhtId::new([1u8; 64]);
       // TODO : in this stage, dest can be populated as anything ?
-      let dest = DestinationAddress{ dest : routing::types::generate_random_vec_u8(64)};
+      let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
       let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
                                         self::routing::types::array_as_vector(encoder.as_bytes()));
       assert_eq!(put_result.is_err(), false);
       match put_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
           assert_eq!(x.len(), routing_table::PARALLELISM);
-          assert_eq!(x[0].id.to_vec(), [3u8; 64].to_vec());
-          assert_eq!(x[1].id.to_vec(), [2u8; 64].to_vec());
-          assert_eq!(x[2].id.to_vec(), [1u8; 64].to_vec());
-          assert_eq!(x[3].id.to_vec(), [7u8; 64].to_vec());
+          assert_eq!(x[0].0, [3u8; 64].to_vec());
+          assert_eq!(x[1].0, [2u8; 64].to_vec());
+          assert_eq!(x[2].0, [1u8; 64].to_vec());
+          assert_eq!(x[3].0, [7u8; 64].to_vec());
         }
         routing::Action::Reply(x) => panic!("Unexpected"),
       }

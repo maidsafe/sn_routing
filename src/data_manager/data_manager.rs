@@ -108,31 +108,31 @@ mod test {
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
     assert_eq!(encode_result.is_ok(), true);
-    let mut nodes_in_table = vec![NameType([1u8; 64]), NameType([2u8; 64]), NameType([3u8; 64]), NameType([4u8; 64]),
-                                  NameType([5u8; 64]), NameType([6u8; 64]), NameType([7u8; 64]), NameType([8u8; 64])];
+    let mut nodes_in_table = vec![DhtId::new([1u8; 64]), DhtId::new([2u8; 64]), DhtId::new([3u8; 64]), DhtId::new([4u8; 64]),
+                                  DhtId::new([5u8; 64]), DhtId::new([6u8; 64]), DhtId::new([7u8; 64]), DhtId::new([8u8; 64])];
     let put_result = data_manager.handle_put(&array_as_vector(encoder.as_bytes()), &mut nodes_in_table);
     assert_eq!(put_result.is_err(), false);
     match put_result.ok().unwrap() {
       routing::Action::SendOn(ref x) => {
         assert_eq!(x.len(), routing_table::PARALLELISM);
-        assert_eq!(x[0].id[0], 3u8);
-        assert_eq!(x[1].id[0], 2u8);
-        assert_eq!(x[2].id[0], 1u8);
-        assert_eq!(x[3].id[0], 7u8);
+        assert_eq!(x[0].0, [3u8; 64].to_vec());
+        assert_eq!(x[1].0, [2u8; 64].to_vec());
+        assert_eq!(x[2].0, [1u8; 64].to_vec());
+        assert_eq!(x[3].0, [7u8; 64].to_vec());
       }
       routing::Action::Reply(x) => panic!("Unexpected"),
     }
 
-    let data_name = array_as_vector(&data.get_name().get_id());
+    let data_name = DhtId::new(data.get_name().get_id());
     let get_result = data_manager.handle_get(&data_name);
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
       routing::Action::SendOn(ref x) => {
         assert_eq!(x.len(), routing_table::PARALLELISM);
-        assert_eq!(x[0].id[0], 3u8);
-        assert_eq!(x[1].id[0], 2u8);
-        assert_eq!(x[2].id[0], 1u8);
-        assert_eq!(x[3].id[0], 7u8);
+        assert_eq!(x[0].0, [3u8; 64].to_vec());
+        assert_eq!(x[1].0, [2u8; 64].to_vec());
+        assert_eq!(x[2].0, [1u8; 64].to_vec());
+        assert_eq!(x[3].0, [7u8; 64].to_vec());
       }
       routing::Action::Reply(x) => panic!("Unexpected"),
     }

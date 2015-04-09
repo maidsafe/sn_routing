@@ -72,6 +72,7 @@ mod test {
   extern crate routing;
   use super::*;
   use self::maidsafe_types::*;
+  use self::routing::types::DhtId;
   use self::routing::types::array_as_vector;
 
   #[test]
@@ -92,7 +93,7 @@ mod test {
       _ => panic!("Unexpected"),
     }
 
-    let get_result = pmid_node.handle_get(name.0.to_vec());
+    let get_result = pmid_node.handle_get(DhtId::new(name.0));
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
         routing::Action::Reply(ref x) => {

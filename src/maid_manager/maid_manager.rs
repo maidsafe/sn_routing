@@ -76,7 +76,7 @@ mod test {
   #[test]
   fn handle_put() {
     let mut maid_manager = MaidManager::new();
-    let from = routing::types::generate_random_vec_u8(64);
+    let from = DhtId::generate_random();
     let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(name, value);
@@ -90,8 +90,7 @@ mod test {
     match put_result.ok().unwrap() {
       routing::Action::SendOn(ref x) => {
         assert_eq!(x.len(), 1);
-        assert_eq!(x[0].id[0], 3u8);
-        assert_eq!(x[0].id[63], 3u8);
+        assert_eq!(x[0].0, [3u8; 64].to_vec());
       }
       routing::Action::Reply(x) => panic!("Unexpected"),
     }

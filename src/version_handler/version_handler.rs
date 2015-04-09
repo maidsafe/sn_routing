@@ -90,7 +90,7 @@ mod test {
       _ => assert_eq!(true, false),
     }
 
-    let data_name = array_as_vector(&sdv.get_name().0.get_id());
+    let data_name = DhtId::new(sdv.get_name().0.get_id());
     let get_result = version_handler.handle_get(data_name);
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {

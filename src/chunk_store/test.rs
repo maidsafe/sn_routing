@@ -1,11 +1,13 @@
 #[cfg(test)]
 mod test {
-  extern crate maidsafe_types;
   extern crate rand;
+  extern crate maidsafe_types;
+  extern crate routing;
+
 
   use rand::{thread_rng, Rng};
   use chunk_store::ChunkStore;
-  use self::maidsafe_types::helper;
+  use self::routing::types::DhtId;
 
   static ONE_KB: usize = 1024;
 
@@ -60,7 +62,7 @@ mod test {
   //        }
   //    }
 
-      pub fn put(&mut self, name: Vec<u8>, value: Vec<u8>) {
+      pub fn put(&mut self, name: DhtId, value: Vec<u8>) {
           self.chunk_store.put(name, value);
       }
 
@@ -71,8 +73,8 @@ mod test {
           self.max_disk_storage = disk_usage;
           for name_value in name_value_pairs.0.clone() {
               let data_as_bytes = name_value.1.into_bytes();
-              self.chunk_store.put(helper::array_as_vector(&name_value.0.clone().get_id()), data_as_bytes.clone());
-              let recovered = self.chunk_store.get(helper::array_as_vector(&name_value.0.clone().get_id()));
+              self.chunk_store.put(DhtId::new(name_value.0.clone().get_id()), data_as_bytes.clone());
+              let recovered = self.chunk_store.get(DhtId::new(name_value.0.clone().get_id()));
               assert!(data_as_bytes == recovered);
           }
           name_value_pairs
@@ -93,10 +95,10 @@ mod test {
       let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
 
       let mut put = |size| {
-          let name: maidsafe_types::NameType = get_random_name_type();
+          let name = DhtId::generate_random();
           let data = get_random_non_empty_string(size);
           let size_before_insert = chunk_store.current_disk_usage();
-          chunk_store.put(helper::array_as_vector(&name.0), data.into_bytes());
+          chunk_store.put(name, data.into_bytes());
           assert_eq!(chunk_store.current_disk_usage(), size + size_before_insert);
           chunk_store.current_disk_usage()
       };
@@ -112,10 +114,9 @@ mod test {
   fn should_fail_if_chunk_size_is_greater_than_max_disk_size() {
       let k_disk_size: usize = 116;
       let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
-      let name: maidsafe_types::NameType = get_random_name_type();
-
+      let name = DhtId::generate_random();
       let data = get_random_non_empty_string(k_disk_size + 1);
-      chunk_store.put(helper::array_as_vector(&name.0), data.into_bytes());
+      chunk_store.put(name, data.into_bytes());
   }
 
   #[test]
@@ -125,12 +126,12 @@ mod test {
       let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
 
       let mut put_and_delete = |size| {
-          let name: maidsafe_types::NameType = get_random_name_type();
+          let name = DhtId::generate_random();
           let data = get_random_non_empty_string(size);
 
-          chunk_store.put(helper::array_as_vector(&name.0), data.into_bytes());
+          chunk_store.put(name.clone(), data.into_bytes());
           assert_eq!(chunk_store.current_disk_usage(), size);
-          chunk_store.delete(helper::array_as_vector(&name.0));
+          chunk_store.delete(name);
           assert_eq!(chunk_store.current_disk_usage(), 0);
       };
 
@@ -145,13 +146,13 @@ mod test {
       let num_disk_entries = 4;
       let mut chunk_store_utest = ChunkStoreTest::new();
       let name_value_container = chunk_store_utest.populate_chunk_store(num_entries, num_disk_entries).0;
-      let name = get_random_name_type();
+      let name = DhtId::generate_random();
       let value = get_random_non_empty_string(2 * ONE_KB);
       // let first_name: maidsafe_types::NameType = name_value_container[0].0.clone();
       name_value_container[0].0.clone();
       // let second_name: maidsafe_types::NameType = name_value_container[1].0.clone();
       name_value_container[1].0.clone();
-      chunk_store_utest.put(helper::array_as_vector(&name.0), value.into_bytes());
+      chunk_store_utest.put(name, value.into_bytes());
   }
 
   #[test]
@@ -160,10 +161,10 @@ mod test {
       let k_disk_size: usize = 116;
       let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
 
-      let name: maidsafe_types::NameType = get_random_name_type();
+      let name = DhtId::generate_random();
       let data = get_random_non_empty_string(data_size).into_bytes();
-      chunk_store.put(helper::array_as_vector(&name.0), data.clone());
-      let recovered = chunk_store.get(helper::array_as_vector(&name.0));
+      chunk_store.put(name.clone(), data.clone());
+      let recovered = chunk_store.get(name);
       assert_eq!(data, recovered);
       assert_eq!(chunk_store.current_disk_usage(), data_size);
   }
@@ -179,8 +180,7 @@ mod test {
           chunk_store.current_disk_usage()
       };
 
-      let name_type: maidsafe_types::NameType = get_random_name_type();
-      let name = helper::array_as_vector(&name_type.0);
+      let name = DhtId::generate_random();
       put(name.clone(), 1usize);
       put(name.clone(), 100usize);
       put(name.clone(), 10usize);

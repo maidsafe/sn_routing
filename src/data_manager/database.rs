@@ -91,21 +91,22 @@ mod test {
   extern crate routing;
   use super::*;
   use self::maidsafe_types::ImmutableData;
+  use self::maidsafe_types::NameType;
   use self::routing::types::*;
 
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();
-    let name = maidsafe_types::NameType([3u8; 64]);
+    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(name, value);
-    let mut pmid_nodes : Vec<Address> = vec![];
+    let mut pmid_nodes : Vec<DhtId> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(generate_random_vec_u8(64));
+      pmid_nodes.push(DhtId::generate_random());
     }
 
-    let data_name = array_as_vector(&data.get_name().get_id());
+    let data_name = DhtId::new(data.get_name().get_id());
     assert_eq!(db.exist(&data_name), false);
     db.put_pmid_nodes(&data_name, pmid_nodes);
     assert_eq!(db.exist(&data_name), true);
@@ -114,14 +115,14 @@ mod test {
   #[test]
   fn put() {
     let mut db = DataManagerDatabase::new();
-    let name = maidsafe_types::NameType([3u8; 64]);
+    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(name, value);
-    let data_name = array_as_vector(&data.get_name().get_id());
-    let mut pmid_nodes : Vec<Address> = vec![];
+    let data_name = DhtId::new(data.get_name().get_id());
+    let mut pmid_nodes : Vec<DhtId> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(generate_random_vec_u8(64));
+      pmid_nodes.push(DhtId::generate_random());
     }
 
     let result = db.get_pmid_nodes(&data_name);
@@ -136,14 +137,14 @@ mod test {
   #[test]
   fn remove_pmid() {
     let mut db = DataManagerDatabase::new();
-    let name = maidsafe_types::NameType([3u8; 64]);
+    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(name, value);
-    let data_name = array_as_vector(&data.get_name().get_id());
-    let mut pmid_nodes : Vec<Address> = vec![];
+    let data_name = DhtId::new(data.get_name().get_id());
+    let mut pmid_nodes : Vec<DhtId> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(generate_random_vec_u8(64));
+      pmid_nodes.push(DhtId::generate_random());
     }
 
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());
@@ -162,16 +163,16 @@ mod test {
   #[test]
   fn replace_pmids() {
     let mut db = DataManagerDatabase::new();
-    let name = maidsafe_types::NameType([3u8; 64]);
+    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(name, value);
-    let data_name = array_as_vector(&data.get_name().get_id());
-    let mut pmid_nodes : Vec<Address> = vec![];
-    let mut new_pmid_nodes : Vec<Address> = vec![];
+    let data_name = DhtId::new(data.get_name().get_id());
+    let mut pmid_nodes : Vec<DhtId> = vec![];
+    let mut new_pmid_nodes : Vec<DhtId> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(generate_random_vec_u8(64));
-      new_pmid_nodes.push(generate_random_vec_u8(64));
+      pmid_nodes.push(DhtId::generate_random());
+      new_pmid_nodes.push(DhtId::generate_random());
     }
 
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());
