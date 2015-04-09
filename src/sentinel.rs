@@ -200,19 +200,19 @@ impl<'a> Sentinel<'a> {
       return Vec::<ResultType>::new();
     }
     let mut verified_messages : Vec<ResultType> = Vec::new();
-    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicKey>> = HashMap::new();
+    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
     for group_key in keys.iter() {
       // deserialise serialised message GetGroupKeyResponse
       let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
       let group_key_response: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
-      // public_key = (DhtId, Vec[u8])
-      for public_key in group_key_response.public_keys.iter() {
-        if !keys_map.contains_key(&public_key.0) {
-          keys_map.insert(public_key.0.clone(), vec![types::PublicKey{ public_key : public_key.1.clone() }]);
+      // public_key = (DhtId, PublicSignKey)
+      for public_sign_key in group_key_response.public_sign_keys.iter() {
+        if !keys_map.contains_key(&public_sign_key.0) {
+          keys_map.insert(public_sign_key.0.clone(), vec![public_sign_key.1.clone()]);
         } else {
-          let public_keys = keys_map.get_mut(&public_key.0);
-          let mut public_keys_holder = public_keys.unwrap();
-          let target_key = types::PublicKey{ public_key : public_key.1.clone() };
+          let public_sign_keys = keys_map.get_mut(&public_sign_key.0);
+          let mut public_keys_holder = public_sign_keys.unwrap();
+          let target_key = public_sign_key.1.clone();
           if !public_keys_holder.contains(&target_key) {
             // flatten, unless different key found for already encountered Address.
             public_keys_holder.push(target_key);
@@ -229,10 +229,10 @@ impl<'a> Sentinel<'a> {
     for message in messages.iter() {
       let key_map_iter = keys_map.get_mut(&message.value.0.from_node());
       if key_map_iter.is_some() {
-        let public_key = key_map_iter.unwrap()[0].get_public_key();
+        let public_sign_key = key_map_iter.unwrap()[0].get_crypto_public_sign_key();
         let signature = message.value.0.get_signature();
         let ref msg = message.value.2;
-        if crypto::sign::verify_detached(&signature.unwrap().get_crypto, &msg[..], &public_key) {
+        if crypto::sign::verify_detached(&signature.unwrap().get_crypto_signature(), &msg[..], &public_sign_key) {
           verified_messages.push(message.value.clone());
         }
       }

@@ -26,7 +26,7 @@ use types;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetGroupKeyResponse {
   pub target_id : types::GroupAddress,
-  pub public_sign_keys : Vec<(types::DhtId, types::PublicSignKeys)>
+  pub public_sign_keys : Vec<(types::DhtId, types::PublicSignKey)>
 }
 
 impl GetGroupKeyResponse {
