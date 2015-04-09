@@ -75,7 +75,7 @@ impl DhtId {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
   ClientManager,  // from a node in our range but not routing table
-  NaeManager,     // Target (name()) is in the group we are in 
+  NaeManager,     // Target (name()) is in the group we are in
   NodeManager,    // recieved from a node in our routing table (Handle refresh here)
   ManagedNode,    // in our group and routing table
   ManagedClient,  // in our group
@@ -224,8 +224,8 @@ impl Decodable for PublicKey {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicPmid {
-  public_key: PublicKey,
-  validation_token: Signature
+  pub public_key: PublicKey,
+  pub validation_token: Signature
 }
 
 impl PublicPmid {
@@ -273,10 +273,10 @@ impl Pmid {
   pub fn new() -> Pmid {
     let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
     let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::asymmetricbox::gen_keypair();
-    
+
     let sign_arr = &pub_sign_key.0;
     let asym_arr = &pub_asym_key.0;
-    
+
     let mut arr_combined = [0u8; 64 * 2];
 
     for i in 0..sign_arr.len() {
