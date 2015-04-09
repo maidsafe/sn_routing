@@ -248,10 +248,26 @@ impl<'a> Sentinel<'a> {
       return None;
     }
     if verified_messages[0].1 == types::MessageTypeTag::FindGroupResponse {
-      for message in verified_messages.iter() {
+      let mut decoded_responses : Vec<FindGroupResponse>
+        = Vec::with_capacity(verified_messages.len());
+      let mut d = cbor::Decoder::from_bytes(verified_messages[0].2.clone());
+      let first_find_group_response_message : FindGroupResponse = d.decode().next().unwrap().unwrap();
+      // skip first messages, as we will merge into it
+      for message in verified_messages.iter().skip(1) {
         let mut d = cbor::Decoder::from_bytes(message.2.clone());
         let find_group_response_message : FindGroupResponse = d.decode().next().unwrap().unwrap();
+        decoded_responses.push(find_group_response_message);
       }
+      let merged_responses = match first_find_group_response_message.merge(&decoded_responses) {
+        Some(merged_responses) => merged_responses,
+        None => panic!("No merged group confirmed.") // return None;
+      };
+      let mut e = cbor::Encoder::from_memory();
+      let _ = e.encode(&[&merged_responses]);
+      let serialised_merged_message_response = e.as_bytes().to_vec();
+      return Some((verified_messages[0].0.clone(),
+                  verified_messages[0].1.clone(),
+                  serialised_merged_message_response));
     // if part addresses non-account transfer message types, where an exact match is required
     } else if verified_messages[0].1 != types::MessageTypeTag::AccountTransfer {
       for index in 0..verified_messages.len() {
