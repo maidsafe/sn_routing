@@ -32,30 +32,31 @@ use std::thread;
 type ConnectionManager = crust::ConnectionManager<types::DhtId>;
 type Event             = crust::Event<types::DhtId>;
 
-pub struct RoutingClient<'a> {
-    //facade: &'a (Facade + 'a),
+pub struct RoutingClient<'a, F: Facade + 'a> {
+    facade: Arc<Mutex<F>>,
     maid_id: maidsafe_types::Maid,
     connection_manager: ConnectionManager,
     own_address: types::DhtId,
     bootstrap_address: types::DhtId,
     message_id: u32,
-    join_guard: thread::JoinGuard<'a()>,
+    join_guard: thread::JoinGuard<'a, ()>,
 }
 
-impl<'a> Drop for RoutingClient<'a> {
+impl<'a, F> Drop for RoutingClient<'a, F> where F: Facade {
     fn drop(&mut self) {
-        // self.connection_manager.stop(); // This should be coded in ConnectionManager
+        // self.connection_manager.stop(); // TODO This should be coded in ConnectionManager once Peter
+        // implements it.
     }
 }
 
-impl<'a> RoutingClient<'a> {
-    pub fn new(my_facade: Arc<Mutex<Facade>>/*&'a mut Facade*/, maid_id: maidsafe_types::Maid, bootstrap_add: types::DhtId) -> RoutingClient<'a> {
+impl<'a, F> RoutingClient<'a, F> where F: Facade {
+    pub fn new(my_facade: Arc<Mutex<F>>, maid_id: maidsafe_types::Maid, bootstrap_add: types::DhtId) -> RoutingClient<'a, F> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
         let own_add = types::DhtId(maid_id.get_name().0.to_vec());
 
         RoutingClient {
-            //facade: my_facade,
+            facade: my_facade.clone(),
             maid_id: maid_id,
             connection_manager: crust::ConnectionManager::new(own_add.clone(), tx),
             own_address: own_add.clone(),
@@ -157,33 +158,29 @@ impl<'a> RoutingClient<'a> {
         }
     }
 
-    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: types::DhtId, own_address: types::DhtId, my_facade: Arc<Mutex<Facade>>/*&'a mut Facade*/) {
+    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: types::DhtId, own_address: types::DhtId, my_facade: Arc<Mutex<F>>) {
         for it in rx.iter() {
             match it {
-                // Event::NewMessage(id, bytes) => {
-                //     let mut decode_routing_msg = cbor::Decoder::from_bytes(&bytes[..]);
-                //     let routing_msg: messages::RoutingMessage = decode_routing_msg.decode().next().unwrap().unwrap();
+                crust::connection_manager::Event::NewMessage(id, bytes) => {
+                    let mut decode_routing_msg = cbor::Decoder::from_bytes(&bytes[..]);
+                    let routing_msg: messages::RoutingMessage = decode_routing_msg.decode().next().unwrap().unwrap();
 
-                //     if routing_msg.message_header.destination.dest == bootstrap_add &&
-                //        routing_msg.message_header.destination.reply_to.is_some() &&
-                //        routing_msg.message_header.destination.reply_to.unwrap() == own_address {
-                //         match routing_msg.message_type {
-                //             messages::MessageTypeTag::GetDataResponse => {
-                //                 // my_facade.handle_get_response(id, Ok(routing_msg.serialised_body));
-                //             }
-                //             _ => unimplemented!(),
-                //         }
-                //     }
-                // },
+                    if routing_msg.message_header.destination.dest == bootstrap_add &&
+                       routing_msg.message_header.destination.reply_to.is_some() &&
+                       routing_msg.message_header.destination.reply_to.unwrap() == own_address {
+                        match routing_msg.message_type {
+                            messages::MessageTypeTag::GetDataResponse => {
+                                let mut facade = my_facade.lock().unwrap();
+                                facade.handle_get_response(id, Ok(routing_msg.serialised_body));
+                            }
+                            _ => unimplemented!(),
+                        }
+                    }
+                },
                 _ => unimplemented!(),
             };
         }
     }
 
-    fn add_bootstrap(&self) {}
-
-
-    // fn get_facade(&'a mut self) -> &'a Facade {
-    //   self.facade
-    // }
+    fn add_bootstrap(&self) { unimplemented!() }
 }

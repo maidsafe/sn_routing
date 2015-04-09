@@ -90,7 +90,7 @@ pub enum RoutingError {
   IncorrectData(Vec<u8>)
 }
 
-pub trait Facade : Sync {
+pub trait Facade : Sync + Send {
   /// if reply is data then we send back the response message (ie get_response )
   fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: DhtId)->Result<Action, RoutingError>;
 
