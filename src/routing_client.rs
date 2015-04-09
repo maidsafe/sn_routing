@@ -86,7 +86,7 @@ impl<'a> RoutingClient<'a> {
             },
             get_data.requester.clone(),
             types::Authority::Client,
-            types::Signature::generate_random(), // What to do here?  // Shouldn't be present in MessageHeader
+            None,
         );
 
         self.message_id += 1;
@@ -132,7 +132,7 @@ impl<'a> RoutingClient<'a> {
                 reply_to: Some(self.own_address.clone()),
             },
             types::Authority::Client,
-            types::Signature::generate_random(), // should be removed
+            Some(types::Signature::generate_random()), // What is the signautre
         );
 
         self.message_id += 1;

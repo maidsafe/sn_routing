@@ -31,7 +31,7 @@ pub struct MessageHeader {
   destination : types::DestinationAddress,
   source : types::SourceAddress,
   authority : types::Authority,
-  signature : types::Signature
+  signature : Option<types::Signature>
 }
 
 impl Encodable for MessageHeader {
@@ -56,7 +56,7 @@ impl MessageHeader {
              destination : types::DestinationAddress,
              source : types::SourceAddress,
              authority : types::Authority,
-             signature : types::Signature) -> MessageHeader {
+             signature : Option<types::Signature>) -> MessageHeader {
     MessageHeader {
       message_id : message_id, destination : destination,
       source : source, authority : authority, signature : signature
@@ -128,8 +128,12 @@ impl MessageHeader {
     (self.source.from_node.clone(), self.message_id)
   }
 
-  pub fn get_signature(&self) -> crypto::sign::Signature {
-    self.signature.get_signature()
+  pub fn get_signature(&self) -> Option<crypto::sign::Signature> {
+      if self.signature.is_some() {
+          Some(self.signature.clone().unwrap().get_signature())
+      } else {
+          None
+      }
   }
 }
 
@@ -167,7 +171,7 @@ mod test {
                                       from_group : None,
                                       reply_to: None },
       authority : types::Authority::ManagedNode,
-      signature : types::Signature{ signature: generate_u8_64() } });
+      signature : Some(types::Signature{ signature: generate_u8_64() }) });
   }
 
 }
