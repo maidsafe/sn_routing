@@ -25,14 +25,14 @@ use types;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetClientKeyResponse {
-  pub address : types::Address,
+  pub address : types::DhtId,
   pub public_key : Vec<u8>
 }
 
 impl GetClientKeyResponse {
     pub fn generate_random() -> GetClientKeyResponse {
         GetClientKeyResponse {
-            address: types::generate_random_vec_u8(64),
+            address: types::DhtId::generate_random(),
             public_key: types::PublicKey::generate_random().public_key,
         }
     }
