@@ -26,7 +26,7 @@ use types;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetClientKeyResponse {
   pub address : types::DhtId,
-  pub public_key : Vec<u8>
+  pub public_sign_key : types::PublicSignKey
 }
 
 impl GetClientKeyResponse {

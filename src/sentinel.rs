@@ -182,11 +182,12 @@ impl<'a> Sentinel<'a> {
     if keys_map.len() != 1 || pub_key_list.len() != 1 {
       return Vec::<ResultType>::new();
     }
-    let public_key = pub_key_list[0].get_public_key();
+    let public_key = pub_key_list[0].public_sign_key();
     for message in messages.iter() {
       let signature = message.value.0.get_signature();
       let ref msg = message.value.2;
-      if crypto::sign::verify_detached(&signature.unwrap(), &msg[..], &public_key) {
+      if crypto::sign::verify_detached(&signature.unwrap().get_crypto_signature(),
+                                       &msg[..], &public_key.get_crypto_public_sign_key()) {
         verified_messages.push(message.value.clone());
       }
     }
@@ -231,7 +232,7 @@ impl<'a> Sentinel<'a> {
         let public_key = key_map_iter.unwrap()[0].get_public_key();
         let signature = message.value.0.get_signature();
         let ref msg = message.value.2;
-        if crypto::sign::verify_detached(&signature.unwrap(), &msg[..], &public_key) {
+        if crypto::sign::verify_detached(&signature.unwrap().get_crypto, &msg[..], &public_key) {
           verified_messages.push(message.value.clone());
         }
       }
@@ -384,7 +385,7 @@ mod test {
                     self.authority_.clone(),
                     Some(types::Signature {
                                 signature : crypto::sign::sign(&serialised_message[..],
-                                              &node.get_secret_sign_key())
+                                              &node.get_crypto_secret_sign_key())
                     })
         ));
       }
@@ -483,7 +484,7 @@ mod test {
                     self.authority_.clone(),
                     Some(types::Signature {
                                 signature : crypto::sign::sign(&serialised_message[..],
-                                              &node.get_secret_sign_key())
+                                              &node.get_crypto_secret_sign_key())
                     })
         ));
       }
@@ -549,7 +550,7 @@ mod test {
                     self.authority_.clone(),
                     Some(types::Signature {
                                 signature : crypto::sign::sign(&serialised_message_response[..],
-                                              &node.get_secret_sign_key())
+                                              &node.get_crypto_secret_sign_key())
                     }));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
@@ -585,7 +586,7 @@ mod test {
                     self.authority_.clone(),
                     Some(types::Signature {
                                 signature : crypto::sign::sign(&serialised_message_response[..],
-                                              &node.get_secret_sign_key())
+                                              &node.get_crypto_secret_sign_key())
                     }));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),

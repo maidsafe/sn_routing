@@ -132,12 +132,8 @@ impl MessageHeader {
     self.authority.clone()
   }
 
-  pub fn get_signature(&self) -> Option<crypto::sign::Signature> {
-    if self.signature.is_some() {
-        Some(self.signature.clone().unwrap().get_signature())
-    } else {
-        None
-    }
+  pub fn get_signature(&self) -> Option<types::Signature> {
+    self.signature.clone()
   }
 }
 

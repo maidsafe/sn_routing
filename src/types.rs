@@ -177,19 +177,25 @@ impl Decodable for NameAndTypeId {
   }
 }
 
-// #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-#[derive(Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct Signature {
-  pub signature : crypto::sign::Signature
+  pub signature : Vec<u8>
 }
 
 impl Signature {
-  pub fn generate_random() -> Signature {
-      Signature { signature: crypto::sign::Signature(vector_as_u8_64_array(generate_random_vec_u8(64))) }
+  pub fn new(signature : crypto::sign::Signature) -> Signature {
+    assert_eq!(signature.0.len(), 64);
+    Signature{
+      signature : signature.0.to_vec()
+    }
   }
 
-  pub fn get_signature(&self) -> crypto::sign::Signature {
-    self.signature.clone()
+  pub fn generate_random() -> Signature {
+      Signature { signature: generate_random_vec_u8(64) }
+  }
+
+  pub fn get_crypto_signature(&self) -> crypto::sign::Signature {
+    crypto::sign::Signature(vector_as_u8_64_array(self.signature))
   }
 }
 
@@ -207,18 +213,59 @@ impl Decodable for Signature {
   }
 }
 
-// #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-#[derive(Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct PublicSignKey {
+  pub public_sign_key : Vec<u8>
+}
+
+impl PublicSignKey {
+  pub fn new(public_sign_key : crypto::sign::PublicKey) -> PublicSignKey {
+    assert_eq!(public_sign_key.0.len(), 32);
+    PublicSignKey{
+      public_sign_key : public_sign_key.0.to_vec()
+    }
+  }
+
+  pub fn generate_random() -> PublicSignKey {
+      PublicSignKey { public_sign_key: generate_random_vec_u8(32) }
+  }
+
+  pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
+    crypto::sign::PublicKey(vector_as_u8_32_array(self.public_sign_key))
+  }
+}
+
+impl Encodable for PublicSignKey {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_000, &(&self.public_sign_key)).encode(e)
+  }
+}
+
+impl Decodable for PublicSignKey {
+  fn decode<D: Decoder>(d: &mut D)->Result<PublicSignKey, D::Error> {
+    try!(d.read_u64());
+    let public_sign_key = try!(Decodable::decode(d));
+    Ok(PublicSignKey { public_sign_key: public_sign_key })
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicKey {
-  pub public_key : crypto::asymmetricbox::PublicKey
+  pub public_key : Vec<u8>
 }
 
 impl PublicKey {
-  pub fn generate_random() -> PublicKey {
-      PublicKey { public_key: crypto::asymmetricbox::PublicKey(generate_random_vec_u8(64)) }
+  pub fn new(public_key : crypto::asymmetricbox::PublicKey) -> PublicKey {
+    PublicKey{
+      public_key : public_key.0.to_vec()
+    }
   }
 
-  pub fn get_public_key(&self) -> crypto::asymmetricbox::PublicKey {
+  pub fn generate_random() -> PublicKey {
+      PublicKey { public_key: generate_random_vec_u8(64) }
+  }
+
+  pub fn get_crypto_public_key(&self) -> Vec<u8> {
     self.public_key.clone()
   }
 }
@@ -281,8 +328,8 @@ impl Encodable for PublicPmid {
 impl Decodable for PublicPmid {
   fn decode<D: Decoder>(d: &mut D)->Result<PublicPmid, D::Error> {
     try!(d.read_u64());
-    let (public_key, validation_token) = try!(Decodable::decode(d));
-    Ok(PublicPmid { public_key: public_key, validation_token: validation_token })
+    let (public_key, validation_token, name) = try!(Decodable::decode(d));
+    Ok(PublicPmid { public_key: public_key, validation_token: validation_token, name : name })
   }
 }
 
@@ -323,7 +370,7 @@ impl Pmid {
     }
 
     let validation_token = Signature{signature :
-      crypto::sign::sign(&arr_combined, &sec_sign_key.0)};
+      crypto::sign::sign(&arr_combined, &sec_sign_key)};
     let digest = crypto::hash::sha512::hash(&arr_combined);
 
     Pmid {
@@ -334,16 +381,19 @@ impl Pmid {
     }
   }
 
-  pub fn get_public_key(&self) -> crypto::asymmetricbox::PublicKey {
+  pub fn get_public_key(&self) -> PublicKey {
+    PublicKey::new(self.public_keys.1.clone())
+  }
+  pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
     self.public_keys.1.clone()
   }
-  pub fn get_secret_key(&self) -> crypto::asymmetricbox::SecretKey {
+  pub fn get_crypto_secret_key(&self) -> crypto::asymmetricbox::SecretKey {
     self.secret_keys.1.clone()
   }
-  pub fn get_public_sign_key(&self) -> crypto::sign::PublicKey {
+  pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
     self.public_keys.0.clone()
   }
-  pub fn get_secret_sign_key(&self) -> crypto::sign::SecretKey {
+  pub fn get_crypto_secret_sign_key(&self) -> crypto::sign::SecretKey {
     self.secret_keys.0.clone()
   }
   pub fn get_validation_token(&self) -> Signature {
