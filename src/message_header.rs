@@ -128,12 +128,16 @@ impl MessageHeader {
     (self.source.from_node.clone(), self.message_id)
   }
 
+  pub fn from_authority(&self) -> types::Authority {
+    self.authority.clone()
+  }
+
   pub fn get_signature(&self) -> Option<crypto::sign::Signature> {
-      if self.signature.is_some() {
-          Some(self.signature.clone().unwrap().get_signature())
-      } else {
-          None
-      }
+    if self.signature.is_some() {
+        Some(self.signature.clone().unwrap().get_signature())
+    } else {
+        None
+    }
   }
 }
 
