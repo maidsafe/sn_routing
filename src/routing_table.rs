@@ -451,7 +451,7 @@ mod test {
     struct RoutingTableUnitTest {
         our_id: DhtId,
         table: RoutingTable,
-        buckets: [Bucket; 100],
+        buckets: Vec<Bucket>,
         node_info: NodeInfo,
         initial_count: usize,
         added_ids: Vec<DhtId>,
@@ -465,7 +465,7 @@ mod test {
                 table: RoutingTable {
                     our_id: node_info.fob.id.clone(), routing_table: Vec::new(),
                 },
-                buckets: RoutingTableUnitTest::initialise_buckets(&node_info.fob.id),
+                buckets: initialise_buckets(&node_info.fob.id),
                 node_info: node_info,
                 initial_count: (rand::random::<usize>() % (RoutingTable::get_group_size() - 1)) + 1,
                 added_ids: Vec::new(),
@@ -492,28 +492,6 @@ mod test {
             table
         }
 
-        fn to_hex(char: u8) -> String {
-            let hex = fmt::format(format_args!("{:x}", char));
-            if hex.len() == 1 {
-                let mut s = String::from_str("0");
-                s.push_str(hex.as_str());
-                s
-            } else {
-                hex
-            }
-        }
-
-        fn debug_id(id: &DhtId) -> String {
-            let id_as_bytes = id.0.clone();
-            fmt::format(format_args!("{}{}{}..{}{}{}",
-                RoutingTableUnitTest::to_hex(id_as_bytes[0]),
-                RoutingTableUnitTest::to_hex(id_as_bytes[1]),
-                RoutingTableUnitTest::to_hex(id_as_bytes[2]),
-                RoutingTableUnitTest::to_hex(id_as_bytes[61]),
-                RoutingTableUnitTest::to_hex(id_as_bytes[62]),
-                RoutingTableUnitTest::to_hex(id_as_bytes[63])))
-        }
-
         fn partially_fill_table(&mut self) {
             for i in 0..self.initial_count {
                 self.node_info.fob.id = self.buckets[i].mid_contact.clone();
@@ -534,22 +512,45 @@ mod test {
             assert_eq!(RoutingTable::get_optimal_size(), self.table.size());
         }
 
-        fn initialise_buckets(our_id: &DhtId) -> [Bucket; 100] {
-            let arr = [255u8; 64];
-            let mut arr_res = [0u8; 64];
-            for i in 0..64 {
-                arr_res[i] = arr[i] ^ our_id.0[i];
-            }
+    }
 
-            let farthest_from_tables_own_id = DhtId::new(arr_res);
-
-            let mut buckets: [Bucket; 100] = unsafe{mem::uninitialized()};
-            for i in 0..buckets.len() {
-                buckets[i] = Bucket::new(farthest_from_tables_own_id.clone(), i);
-            }
-
-            buckets
+    fn to_hex(char: u8) -> String {
+        let hex = fmt::format(format_args!("{:x}", char));
+        if hex.len() == 1 {
+            let mut s = String::from_str("0");
+            s.push_str(hex.as_str());
+            s
+        } else {
+            hex
         }
+    }
+
+    fn debug_id(id: &DhtId) -> String {
+        let id_as_bytes = id.0.clone();
+        fmt::format(format_args!("{}{}{}..{}{}{}",
+            to_hex(id_as_bytes[0]),
+            to_hex(id_as_bytes[1]),
+            to_hex(id_as_bytes[2]),
+            to_hex(id_as_bytes[61]),
+            to_hex(id_as_bytes[62]),
+            to_hex(id_as_bytes[63])))
+    }
+
+    fn initialise_buckets(our_id: &DhtId) -> Vec<Bucket> {
+        let arr = [255u8; 64];
+        let mut arr_res = [0u8; 64];
+        for i in 0..64 {
+            arr_res[i] = arr[i] ^ our_id.0[i];
+        }
+
+        let farthest_from_tables_own_id = DhtId::new(arr_res);
+
+        let mut buckets = Vec::new();
+        for i in 0..100 {
+            buckets.push(Bucket::new(farthest_from_tables_own_id.clone(), i));
+        }
+
+        buckets
     }
 
     fn create_random_socket_address() -> SocketAddr {
