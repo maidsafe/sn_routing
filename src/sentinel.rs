@@ -43,7 +43,7 @@ type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultTy
 // TODO (ben 2015-4-2): replace dynamic dispatching with static dispatching
 //          https://doc.rust-lang.org/book/static-and-dynamic-dispatch.html
 pub trait SendGetKeys {
-  fn get_client_key(&mut self, address : types::Address);
+  fn get_client_key(&mut self, address : types::DhtId);
   fn get_group_key(&mut self, group_address : types::GroupAddress);
 }
 
@@ -158,7 +158,7 @@ impl<'a> Sentinel<'a> {
       return Vec::<ResultType>::new();
     }
     let mut verified_messages : Vec<ResultType> = Vec::new();
-    let mut keys_map : HashMap<types::Address, Vec<types::PublicKey>> = HashMap::new();
+    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicKey>> = HashMap::new();
     for node_key in keys.iter() {
       let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
       let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
@@ -186,7 +186,7 @@ impl<'a> Sentinel<'a> {
     for message in messages.iter() {
       let signature = message.value.0.get_signature();
       let ref msg = message.value.2;
-      if crypto::sign::verify_detached(&signature, &msg[..], &public_key) {
+      if crypto::sign::verify_detached(&signature.unwrap(), &msg[..], &public_key) {
         verified_messages.push(message.value.clone());
       }
     }
@@ -199,12 +199,12 @@ impl<'a> Sentinel<'a> {
       return Vec::<ResultType>::new();
     }
     let mut verified_messages : Vec<ResultType> = Vec::new();
-    let mut keys_map : HashMap<types::Address, Vec<types::PublicKey>> = HashMap::new();
+    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicKey>> = HashMap::new();
     for group_key in keys.iter() {
       // deserialise serialised message GetGroupKeyResponse
       let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
       let group_key_response: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
-      // public_key = (Address, Vec[u8])
+      // public_key = (DhtId, Vec[u8])
       for public_key in group_key_response.public_keys.iter() {
         if !keys_map.contains_key(&public_key.0) {
           keys_map.insert(public_key.0.clone(), vec![types::PublicKey{ public_key : public_key.1.clone() }]);
@@ -231,7 +231,7 @@ impl<'a> Sentinel<'a> {
         let public_key = key_map_iter.unwrap()[0].get_public_key();
         let signature = message.value.0.get_signature();
         let ref msg = message.value.2;
-        if crypto::sign::verify_detached(&signature, &msg[..], &public_key) {
+        if crypto::sign::verify_detached(&signature.unwrap(), &msg[..], &public_key) {
           verified_messages.push(message.value.clone());
         }
       }
@@ -393,9 +393,9 @@ mod test {
         headers.push(message_header::MessageHeader::new(message_id.clone(),
                     destination_address.clone(),
                     types::SourceAddress {
-                      from_node : node.get_name(),
-                      from_group : self.group_address_.clone(),
-                      reply_to : generate_u8_64()
+                      from_node : types::DhtId::new(types::vector_as_u8_64_array(node.get_name())),
+                      from_group : Some(self.group_address_.clone()),
+                      reply_to : None
                     },
                     self.authority_.clone(),
                     types::Signature {
@@ -407,9 +407,9 @@ mod test {
       headers
     }
 
-    pub fn get_public_keys(&self) -> Vec<(types::Address, Vec<u8>)> {
-      let mut public_keys : Vec<(types::Address, Vec<u8>)>
-         = Vec::with_capacity(self.nodes_.len());
+    pub fn get_public_keys(&self) -> Vec<(types::DhtId, Vec<u8>)> {
+        let mut public_keys : Vec<(types::DhtId, Vec<u8>)>
+           = Vec::with_capacity(self.nodes_.len());
       for node in &self.nodes_ {
         // TODO(ben 2015-4-3): replace with proper types for PublicKey
         //                   this is ridiculous:
@@ -418,7 +418,7 @@ mod test {
           for i in public_sign_key.iter() {
             public_sign_key_as_vec.push(*i);
           }
-        public_keys.push((node.get_name(), public_sign_key_as_vec));
+        public_keys.push((types::DhtId::new(types::vector_as_u8_64_array(node.get_name())), public_sign_key_as_vec));
       }
       public_keys
     }
@@ -616,7 +616,7 @@ mod test {
   }
 
   pub struct TraceGetKeys {
-    send_get_client_key_calls_ : Vec<types::Address>,
+    send_get_client_key_calls_ : Vec<types::DhtId>,
     send_get_group_key_calls_ : Vec<types::GroupAddress>,
   }
 
@@ -628,7 +628,7 @@ mod test {
       }
     }
 
-    pub fn count_get_client_key_calls(&self, address : &types::Address) -> usize {
+    pub fn count_get_client_key_calls(&self, address : &types::DhtId) -> usize {
       self.send_get_client_key_calls_.iter()
                        .filter(|&x| x == address)
                        .count()
@@ -642,7 +642,7 @@ mod test {
   }
 
   impl SendGetKeys for TraceGetKeys {
-  fn get_client_key(&mut self, address : types::Address) {
+  fn get_client_key(&mut self, address : types::DhtId) {
     self.send_get_client_key_calls_.push(address);
   }
     fn get_group_key(&mut self, group_address : types::GroupAddress) {
@@ -719,8 +719,8 @@ mod test {
   fn simple_add_put_data() {
     let our_pmid = types::Pmid::new();
     let our_destination = types::DestinationAddress {
-      dest : our_pmid.get_name(),
-      reply_to : generate_u8_64()
+      dest : types::DhtId::new(types::vector_as_u8_64_array(our_pmid.get_name())),
+      reply_to : None
     };
     let signature_group = SignatureGroup::new(types::GROUP_SIZE as usize,
                types::Authority::NaeManager);

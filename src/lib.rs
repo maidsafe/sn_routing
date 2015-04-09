@@ -54,9 +54,6 @@ extern crate crust;
 extern crate maidsafe_types;
 
 use sodiumoxide::crypto;
-//use std::default::Default;
-
-use maidsafe_types::NameType;
 
 pub mod types;
 mod broadcast;
@@ -69,25 +66,15 @@ mod bootstrap;
 mod messages;
 mod routing_node;
 
-pub type DhtId = types::DhtId;
+use types::Authority;
+use types::DestinationAddress;
+use types::DhtId;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
   sign_public_key: crypto::sign::PublicKey,
   encrypt_public_key: crypto::asymmetricbox::PublicKey,
   signature: crypto::sign::Signature // detached signature
-}
-
-pub struct DestinationAddress {
-  pub dest: Vec<u8>
-}
-
-pub enum Authority {
-  Client,
-  Node,
-  ClientManager,
-  NaeManager,
-  NodeManager
 }
 
 pub enum Action {
@@ -104,7 +91,7 @@ pub enum RoutingError {
 
 pub trait Facade : Sync {
   /// if reply is data then we send back the response message (ie get_response )
-  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError>;
+  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: DhtId)->Result<Action, RoutingError>;
 
   /// data: Vec<u8> is serialised maidsafe_types::Payload which holds typetag and content
   fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
@@ -115,8 +102,8 @@ pub trait Facade : Sync {
   fn handle_put_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>);
   fn handle_post_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>);
 
-  fn add_node(&mut self, node: NameType);
-  fn drop_node(&mut self, node: NameType);
+  fn add_node(&mut self, node: DhtId);
+  fn drop_node(&mut self, node: DhtId);
 }
 
 #[test]
@@ -127,15 +114,15 @@ fn facade_implementation() {
   struct MyFacade;
 
   impl Facade for MyFacade {
-    fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: DhtId)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                   from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
     fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
     fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-    fn add_node(&mut self, node: NameType) { unimplemented!(); }
-    fn drop_node(&mut self, node: NameType) { unimplemented!(); }
+    fn add_node(&mut self, node: DhtId) { unimplemented!(); }
+    fn drop_node(&mut self, node: DhtId) { unimplemented!(); }
   }
   let my_facade = MyFacade;
   let my_routing = routing_node::RoutingNode::new(DhtId::generate_random(), &my_facade);

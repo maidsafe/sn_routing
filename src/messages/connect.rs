@@ -24,8 +24,8 @@ use types;
 pub struct ConnectRequest {
   pub local : types::EndPoint,
   pub external : types::EndPoint,
-  pub request_id : types::Address,
-  pub receiver_id : types::Address,
+  pub request_id : types::DhtId,
+  pub receiver_id : types::DhtId,
   pub requester_fob : types::PublicPmid
 }
 
@@ -34,8 +34,8 @@ impl ConnectRequest {
         ConnectRequest {
             local: types::EndPoint::generate_random(),
             external: types::EndPoint::generate_random(),
-            request_id: types::generate_random_vec_u8(64),
-            receiver_id: types::generate_random_vec_u8(64),
+            request_id: types::DhtId::generate_random(),
+            receiver_id: types::DhtId::generate_random(),
             requester_fob: types::PublicPmid::generate_random(),
         }
     }

@@ -59,16 +59,28 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
 
-#[derive(PartialEq, Eq, Hash, Clone, RustcEncodable, RustcDecodable)]
-pub struct DhtId(Vec<u8>);
+#[derive(PartialEq, Eq, Hash, Clone, RustcEncodable, RustcDecodable, PartialOrd, Ord, Debug)]
+pub struct DhtId(pub Vec<u8>);
 
 impl DhtId {
     pub fn new(slice: [u8; 64]) -> DhtId {
-        unimplemented!();
+        DhtId(slice.to_vec())
     }
 
     pub fn generate_random() -> DhtId {
         DhtId(generate_random_vec_u8(64))
+    }
+
+    pub fn is_valid(&self) -> bool {
+        if self.0.len() != 64 {
+          return false;
+        }
+        for it in self.0.iter() {
+            if *it != 0 {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -116,14 +128,12 @@ impl Decodable for Authority {
   }
 }
 
-pub type Address = Vec<u8>; // [u8;64] using Vec allowing compare and clone
-pub type Identity = Vec<u8>; // chunk_name or node_id
 pub type MessageId = u32;
-pub type NodeAddress = Address; // (Address, NodeTag)
-pub type GroupAddress = Address; // (Address, GroupTag)
+pub type NodeAddress = DhtId; // (Address, NodeTag)
+pub type GroupAddress = DhtId; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
-pub type CloseGroupDifference = (Vec<Address>, Vec<Address>);
-pub type PmidNode = Address;
+pub type CloseGroupDifference = (Vec<DhtId>, Vec<DhtId>);
+pub type PmidNode = DhtId;
 pub type PmidNodes = Vec<PmidNode>;
 
 pub trait RoutingTrait {
@@ -376,17 +386,17 @@ impl RoutingTrait for AccountTransferInfo {
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {
-  pub from_node : Address,
-  pub from_group : Address,
-  pub reply_to : Address
+  pub from_node : DhtId,
+  pub from_group : Option<DhtId>,
+  pub reply_to : Option<DhtId>
 }
 
 impl SourceAddress {
     pub fn generate_random() -> SourceAddress {
         SourceAddress {
-            from_node: generate_random_vec_u8(64),
-            from_group: generate_random_vec_u8(64),
-            reply_to: generate_random_vec_u8(64),
+            from_node: DhtId::generate_random(),
+            from_group: None,
+            reply_to: None,
         }
     }
 }
@@ -408,8 +418,8 @@ impl Decodable for SourceAddress {
 /// Address of the destination of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct DestinationAddress {
-  pub dest : Address,
-  pub reply_to : Address
+  pub dest : DhtId,
+  pub reply_to : Option<DhtId>
 }
 
 impl Encodable for DestinationAddress {
@@ -483,14 +493,14 @@ mod test {
 
   #[test]
   fn test_destination_address() {
-    test_object(DestinationAddress { dest: generate_address(), reply_to: generate_address() });
+    test_object(DestinationAddress { dest: DhtId::generate_random(), reply_to: None });
   }
 
   #[test]
   fn test_source_address() {
-    test_object(SourceAddress { from_node : generate_address(),
-                                from_group : generate_address(),
-                                reply_to: generate_address() });
+    test_object(SourceAddress { from_node : DhtId::generate_random(),
+                                from_group : None,
+                                reply_to: None });
   }
 
 }
