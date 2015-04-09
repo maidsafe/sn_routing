@@ -16,17 +16,17 @@
 use sodiumoxide;
 use crust;
 use std::sync::{Arc, mpsc, Mutex};
-//use sodiumoxide::crypto;
 use std::sync::mpsc::{Receiver};
 use facade::*;
 use super::*;
 use std::net::{SocketAddr};
 use std::str::FromStr;
-
+use std::collections::HashSet;
 
 use routing_table::RoutingTable;
 use types::DhtId;
 use message_header::MessageHeader;
+use messages;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
@@ -35,6 +35,9 @@ use messages::connect::ConnectRequest;
 use messages::connect_response::ConnectResponse;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
+use messages::{RoutingMessage};
+use rustc_serialize::{Decodable, Encodable};
+use cbor::{Encoder, Decoder};
 
 
 type ConnectionManager = crust::ConnectionManager<DhtId>;
@@ -44,9 +47,10 @@ type Bytes             = Vec<u8>;
 pub struct RoutingNode<F: Facade> {
     facade: Arc<Mutex<F>>,
     pmid: types::Pmid,
-    own_id: types::DhtId,
+    own_id: DhtId,
     event_input: Receiver<Event>,
-    connections: ConnectionManager,
+    connection_manager: ConnectionManager,
+    all_connections: HashSet<DhtId>,
     routing_table: RoutingTable,
     accepting_on: Option<u16>
 }
@@ -68,7 +72,8 @@ impl<F> RoutingNode<F> where F: Facade {
                       pmid : pmid,
                       own_id : own_id.clone(),
                       event_input: event_input,
-                      connections: cm,
+                      connection_manager: cm,
+                      all_connections: HashSet::new(),
                       routing_table : RoutingTable::new(own_id),
                       accepting_on: accepting_on
                     }
@@ -81,20 +86,20 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&self, type_id: u64, name: types::DhtId) { unimplemented!()}
+    pub fn get(&self, type_id: u64, name: DhtId) { unimplemented!()}
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&self, name: types::DhtId, content: Vec<u8>) { unimplemented!() }
+    pub fn put(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
-    pub fn post(&self, name: types::DhtId, content: Vec<u8>) { unimplemented!() }
+    pub fn post(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
 
     //fn get_facade(&'a mut self) -> &'a Facade {
     //    self.facade
     //}
 
     pub fn add_bootstrap(&self, endpoint: SocketAddr) {
-        let _ = self.connections.connect(endpoint);
+        let _ = self.connection_manager.connect(endpoint, Bytes::new());
     }
 
     pub fn run(&mut self) {
@@ -105,10 +110,18 @@ impl<F> RoutingNode<F> where F: Facade {
 
             match event.unwrap() {
                 crust::Event::NewMessage(id, bytes) => {
-                    self.message_received(id, bytes);
+                    if self.message_received(&id, bytes).is_none() {
+                        let _ = self.connection_manager.drop_node(id);
+                    }
                 },
-                crust::Event::NewConnection(id) => {
+                crust::Event::Connect(id) => {
                     self.handle_new_connection(id);
+                },
+                crust::Event::Accept(id, bytes) => {
+                    self.handle_new_connection(id.clone());
+                    if self.message_received(&id, bytes).is_none() {
+                        let _ = self.connection_manager.drop_node(id);
+                    }
                 },
                 crust::Event::LostConnection(id) => {
                     self.handle_lost_connection(id);
@@ -121,7 +134,9 @@ impl<F> RoutingNode<F> where F: Facade {
       unimplemented!();  // FIXME (Peter)
     }
 
-    fn handle_new_connection(&mut self, peer_id: types::DhtId) {
+    fn handle_new_connection(&mut self, peer_id: DhtId) {
+        self.all_connections.insert(peer_id);
+
         if false {  // if unexpected connection, its likely
             //add to non_routing_list;
         } else {
@@ -133,27 +148,68 @@ impl<F> RoutingNode<F> where F: Facade {
         // handle_curn
     }
 
-    fn handle_lost_connection(&mut self, peer_id: types::DhtId) {
+    fn handle_lost_connection(&mut self, peer_id: DhtId) {
         self.routing_table.drop_node(&peer_id);
+        self.all_connections.remove(&peer_id);
         // remove from the non routing list
         // handle_curn
     }
 
-    fn message_received(&mut self, peer_id: types::DhtId, serialised_message: Bytes) {
-      // Parse
-      // filter check
-      // add to filter
-      // add to cache
-      // cache check / response
-      // SendSwarmOrParallel
-      // handle relay request/response
-      // switch message type
-      unimplemented!();
+    fn message_received(&mut self, peer_id: &DhtId, serialised_message: Bytes) -> Option<()> {
+        let msg = self.decode::<RoutingMessage>(&serialised_message);
+
+        if msg.is_none() {
+            println!("Problem parsing message of size {} from {:?}",
+                     serialised_message.len(), peer_id);
+            return None;
+        }
+
+        let msg    = msg.unwrap();
+        let header = msg.message_header;
+        let body   = msg.serialised_body;
+
+        match msg.message_type {
+            messages::MessageTypeTag::Connect => self.handle_connect(header, body),
+            _ => None
+            //ConnectResponse,
+            //FindGroup,
+            //FindGroupResponse,
+            //GetData,
+            //GetDataResponse,
+            //GetClientKey,
+            //GetClientKeyResponse,
+            //GetGroupKey,
+            //GetGroupKeyResponse,
+            //Post,
+            //PostResponse,
+            //PutData,
+            //PutDataResponse,
+            //PutKey,
+            //AccountTransfer
+        }
+
+        // Parse
+        // filter check
+        // add to filter
+        // add to cache
+        // cache check / response
+        // SendSwarmOrParallel
+        // handle relay request/response
+        // switch message type
     }
 
-    fn handle_connect(&self, connect_request: ConnectRequest, original_header: MessageHeader) {
+    //fn handle_connect(&self, connect_request: ConnectRequest, original_header: MessageHeader) -> Option<()> {
+    fn handle_connect(&self, original_header: MessageHeader, body: Bytes) -> Option<()> {
+        let connect_request = self.decode::<ConnectRequest>(&body);
+        
+        if connect_request.is_none() {
+            return None;
+        }
+
+        let connect_request = connect_request.unwrap();
+
         if !(self.routing_table.check_node(&connect_request.requester_id)) {
-           return;
+           return None;
         }
         let (receiver_local, receiver_external) = self.next_endpoint_pair();
         let own_public_pmid = types::PublicPmid::generate_random();  // FIXME (Ben)
@@ -164,8 +220,10 @@ impl<F> RoutingNode<F> where F: Facade {
                                 receiver_external: receiver_external,
                                 requester_id: connect_request.requester_id,
                                 receiver_id: self.own_id.clone(),
-                                receiver_fob: own_public_pmid};
+                                receiver_fob: own_public_pmid };
+
         debug_assert!(connect_request.receiver_id == self.own_id);
+        Some(())
         // Serialise message
 
         // if (bootstrap_node_) {
@@ -185,7 +243,7 @@ impl<F> RoutingNode<F> where F: Facade {
            return;
         }
         // AddNode
-        // self.connections.connect();
+        // self.connection_manager.connect();
     }
 
     fn handle_find_group(find_group: FindGroup, original_header: MessageHeader) {
@@ -214,6 +272,19 @@ impl<F> RoutingNode<F> where F: Facade {
     fn handle_put_data_response(put_data_response: PutDataResponse, original_header: MessageHeader) {
         // need to call facade handle_put_response
         unimplemented!();
+    }
+
+    fn decode<T>(&self, bytes: &Bytes) -> Option<T> where T: Decodable {
+        let mut dec = Decoder::from_bytes(&bytes[..]);
+        //dec.decode().next().unwrap().unwrap()
+        dec.decode().next().and_then(|result| result.ok())
+    }
+
+    fn encode<T>(self, value: &T) -> Bytes where T: Encodable
+    {
+        let mut enc = Encoder::from_memory();
+        let _ = enc.encode(&[value]);
+        enc.into_bytes()
     }
 }
 
