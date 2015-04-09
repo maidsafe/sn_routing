@@ -115,6 +115,6 @@ fn facade_implementation() {
   }
 
   let my_facade = MyFacade;
-  let my_routing = routing_node::RoutingNode::new(DhtId::generate_random(), &my_facade);
+  let my_routing = routing_node::RoutingNode::new(DhtId::generate_random(), my_facade);
   /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
 }
