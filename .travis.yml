@@ -5,6 +5,10 @@ language: rust
 rust:
 - nightly
 sudo: true
+branches:
+  only:
+      - master
+      - gh-pages
 before_install:
 - sudo apt-get update -qq
 - sudo apt-get install -qq libsqlite3-dev
