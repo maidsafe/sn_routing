@@ -20,6 +20,8 @@ use sodiumoxide::crypto;
 use std::sync::mpsc::{Receiver};
 use super::*;
 
+use types::DhtId;
+
 type ConnectionManager = crust::ConnectionManager<DhtId>;
 type Event             = crust::Event<DhtId>;
 
@@ -40,7 +42,7 @@ impl<'a> RoutingNode<'a> {
         let key_pair = crypto::sign::gen_keypair();
         let encrypt_key_pair = crypto::asymmetricbox::gen_keypair();
         let (event_output, event_input) = mpsc::channel();
-        
+
         RoutingNode { facade: my_facade,
                       sign_public_key: key_pair.0,
                       sign_secret_key: key_pair.1,
@@ -50,20 +52,20 @@ impl<'a> RoutingNode<'a> {
                       connections: crust::ConnectionManager::new(id, event_output)
                     }
     }
-    
+
     /// Retreive something from the network (non mutating) - Direct call
     pub fn get(&self, type_id: u64, name: types::DhtId) { unimplemented!()}
-    
+
     /// Add something to the network, will always go via ClientManager group
     pub fn put(&self, name: types::DhtId, content: Vec<u8>) { unimplemented!() }
-    
+
     /// Mutate something on the network (you must prove ownership) - Direct call
     pub fn post(&self, name: types::DhtId, content: Vec<u8>) { unimplemented!() }
-    
+
     pub fn start() { }
-    
+
     fn add_bootstrap(&self) {}
-    
+
     fn get_facade(&'a mut self) -> &'a Facade {
         self.facade
     }
