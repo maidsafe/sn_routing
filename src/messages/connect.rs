@@ -24,7 +24,7 @@ use types;
 pub struct ConnectRequest {
   pub local : types::EndPoint,
   pub external : types::EndPoint,
-  pub request_id : types::DhtId,
+  pub requester_id : types::DhtId,
   pub receiver_id : types::DhtId,
   pub requester_fob : types::PublicPmid
 }
@@ -34,7 +34,7 @@ impl ConnectRequest {
         ConnectRequest {
             local: types::EndPoint::generate_random(),
             external: types::EndPoint::generate_random(),
-            request_id: types::DhtId::generate_random(),
+            requester_id: types::DhtId::generate_random(),
             receiver_id: types::DhtId::generate_random(),
             requester_fob: types::PublicPmid::generate_random(),
         }
@@ -43,7 +43,7 @@ impl ConnectRequest {
 
 impl Encodable for ConnectRequest {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.local, &self.external, &self.request_id,
+    CborTagEncode::new(5483_001, &(&self.local, &self.external, &self.requester_id,
                                    &self.receiver_id, &self.requester_fob)).encode(e)
   }
 }
@@ -51,8 +51,8 @@ impl Encodable for ConnectRequest {
 impl Decodable for ConnectRequest {
   fn decode<D: Decoder>(d: &mut D)->Result<ConnectRequest, D::Error> {
     try!(d.read_u64());
-    let (local, external, request_id, receiver_id, requester_fob) = try!(Decodable::decode(d));
-    Ok(ConnectRequest { local: local, external: external, request_id: request_id,
+    let (local, external, requester_id, receiver_id, requester_fob) = try!(Decodable::decode(d));
+    Ok(ConnectRequest { local: local, external: external, requester_id: requester_id,
                         receiver_id: receiver_id, requester_fob: requester_fob})
   }
 }

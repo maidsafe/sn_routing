@@ -43,7 +43,6 @@ pub struct KeyFob {
 #[derive(Clone)]
 pub struct NodeInfo {
     pub fob: KeyFob,
-    endpoint: SocketAddr,
     connected: bool,
 }
 
@@ -583,7 +582,6 @@ mod test {
     fn create_random_node_info() -> NodeInfo {
         NodeInfo {
             fob: create_random_fob(),
-            endpoint: create_random_socket_address(),
             connected: false,
         }
     }
