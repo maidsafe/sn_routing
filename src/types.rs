@@ -237,6 +237,16 @@ impl PublicPmid {
     }
 }
 
+impl RoutingTrait for PublicPmid {
+  // TODO(ben 2015-04-09) Give CORRECT NAME !
+  fn get_name(&self) -> Vec<u8> { self.public_key.public_key.clone() }
+  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
+  fn refresh(&self)->bool { false } // TODO is this an account transfer type
+
+   // TODO how do we merge these
+  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+}
+
 impl Encodable for PublicPmid {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.public_key, &self.validation_token)).encode(e)

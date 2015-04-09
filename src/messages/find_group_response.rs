@@ -38,6 +38,15 @@ impl FindGroupResponse {
             group: vec,
         }
     }
+
+    // TODO(ben 2015-04-09) to be replaced with a proper merge trait
+    //                      for every message type
+    // pub fn merge(&self, others : &Vec<FindGroupReponse>) -> Option<FindGroupResponse> {
+    //   for other in others {
+    //     if other.target_id != self.target_id { return None; }
+    //
+    //   }
+    // }
 }
 
 impl Encodable for FindGroupResponse {

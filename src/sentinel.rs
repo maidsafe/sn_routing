@@ -26,6 +26,7 @@ use accumulator;
 use message_header;
 use types;
 use types::RoutingTrait;
+use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
 
@@ -246,13 +247,19 @@ impl<'a> Sentinel<'a> {
     if verified_messages.len() < types::QUORUM_SIZE as usize {
       return None;
     }
+    if verified_messages[0].1 == types::MessageTypeTag::FindGroupResponse {
+      for message in verified_messages.iter() {
+        let mut d = cbor::Decoder::from_bytes(message.2.clone());
+        let find_group_response_message : FindGroupResponse = d.decode().next().unwrap().unwrap();
+      }
     // if part addresses non-account transfer message types, where an exact match is required
-    if verified_messages[0].1 != types::MessageTypeTag::AccountTransfer {
+    } else if verified_messages[0].1 != types::MessageTypeTag::AccountTransfer {
       for index in 0..verified_messages.len() {
         let serialised_message = verified_messages[index].2.clone();
         let mut count = 0;
         for message in verified_messages.iter() {
           if message.2 == serialised_message {
+            // TODO(ben 2015-04-9) FIX ERROR: overcounts, currently not a problem
             count = count + 1;
           }
         }
