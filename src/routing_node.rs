@@ -27,8 +27,8 @@ type ConnectionManager = crust::ConnectionManager<DhtId>;
 type Event             = crust::Event<DhtId>;
 
 /// DHT node
-pub struct RoutingNode/*<'a>*/ {
-    //facade: &'a (Facade + 'a),
+pub struct RoutingNode<'a> {
+    facade: &'a (Facade + 'a),
     sign_public_key: crypto::sign::PublicKey,
     sign_secret_key: crypto::sign::SecretKey,
     encrypt_public_key: crypto::asymmetricbox::PublicKey,
@@ -38,8 +38,8 @@ pub struct RoutingNode/*<'a>*/ {
     connections: ConnectionManager,
 }
 
-impl/*<'a>*/ RoutingNode/*<'a>*/ {
-    pub fn new(id: DhtId/*, my_facade: &'a Facade*/) -> RoutingNode/*<'a>*/ {
+impl<'a> RoutingNode<'a> {
+    pub fn new(id: DhtId, my_facade: &'a Facade) -> RoutingNode<'a> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let key_pair = crypto::sign::gen_keypair();
         let encrypt_key_pair = crypto::asymmetricbox::gen_keypair();
@@ -49,7 +49,7 @@ impl/*<'a>*/ RoutingNode/*<'a>*/ {
 
         let accepting_on = cm.start_accepting().ok();
 
-        let this = RoutingNode { //facade: my_facade,
+        let this = RoutingNode { facade: my_facade,
                                  sign_public_key: key_pair.0,
                                  sign_secret_key: key_pair.1,
                                  encrypt_public_key: encrypt_key_pair.0,
@@ -84,12 +84,12 @@ impl/*<'a>*/ RoutingNode/*<'a>*/ {
     }
     
     pub fn add_bootstrap(&self, endpoint: SocketAddr) {
-        self.connections.connect(endpoint);
+        let _ = self.connections.connect(endpoint);
     }
     
-    //fn get_facade(&'a mut self) -> &'a Facade {
-    //    self.facade
-    //}
+    fn get_facade(&'a mut self) -> &'a Facade {
+        self.facade
+    }
 
     pub fn accepting_on(&self) -> Option<SocketAddr> {
         self.accepting_on.and_then(|port| {
@@ -110,30 +110,32 @@ mod test {
 
     struct NullFacade;
 
-    //impl Facade for NullFacade {
-    //  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-    //  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-    //                from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-    //  fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-    //  fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
-    //  fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
-    //  fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
-    //  fn add_node(&mut self, node: NameType) {}
-    //  fn drop_node(&mut self, node: NameType) {}
-    //}
+    impl Facade for NullFacade {
+      fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
+      fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                    from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
+      fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
+      fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
+      fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
+      fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
+      fn add_node(&mut self, node: NameType) {}
+      fn drop_node(&mut self, node: NameType) {}
+    }
 
     #[test]
     fn test_routing_node() {
-        let n1 = RoutingNode::new(DhtId::generate_random());
-        let n2 = RoutingNode::new(DhtId::generate_random());
+        let f1 = NullFacade;
+        let f2 = NullFacade;
+        let n1 = RoutingNode::new(DhtId::generate_random(), &f1);
+        let n2 = RoutingNode::new(DhtId::generate_random(), &f2);
 
         let n1_ep = n1.accepting_on().unwrap();
         let n2_ep = n2.accepting_on().unwrap();
 
         fn run_node(n: RoutingNode, my_ep: SocketAddr, his_ep: SocketAddr)
-            -> thread::JoinHandle
+            -> thread::JoinGuard<()>
         {
-            thread::spawn(move || {
+            thread::scoped(move || {
                 if my_ep.port() < his_ep.port() {
                     n.add_bootstrap(his_ep);
                 }
@@ -144,7 +146,7 @@ mod test {
         let t1 = run_node(n1, n1_ep.clone(), n2_ep.clone());
         let t2 = run_node(n2, n2_ep.clone(), n1_ep.clone());
 
-        assert!(t1.join().is_ok());
-        assert!(t2.join().is_ok());
+        t1.join();
+        t2.join();
     }
 }

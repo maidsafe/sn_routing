@@ -95,26 +95,26 @@ pub enum RoutingError {
 fn facade_implementation() {
 
   mod routing_node;
-  //use facade::{Facade};
+  use facade::{Facade};
   use types::{DhtId};
   use maidsafe_types::NameType;
 
 
-  //struct MyFacade;
+  struct MyFacade;
 
-  //impl Facade for MyFacade {
-  //  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-  //  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-  //                from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-  //  fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-  //  fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
-  //  fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-  //  fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-  //  fn add_node(&mut self, node: NameType) { unimplemented!(); }
-  //  fn drop_node(&mut self, node: NameType) { unimplemented!(); }
-  //}
+  impl Facade for MyFacade {
+    fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                  from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
+    fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+    fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+    fn add_node(&mut self, node: NameType) { unimplemented!(); }
+    fn drop_node(&mut self, node: NameType) { unimplemented!(); }
+  }
 
-  //let my_facade = MyFacade;
-  let my_routing = routing_node::RoutingNode::new(DhtId::generate_random()/*, &my_facade*/);
+  let my_facade = MyFacade;
+  let my_routing = routing_node::RoutingNode::new(DhtId::generate_random(), &my_facade);
   /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
 }
