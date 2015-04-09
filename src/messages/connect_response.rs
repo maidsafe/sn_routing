@@ -26,8 +26,8 @@ pub struct ConnectResponse {
   pub requester_external : types::EndPoint,
   pub receiver_local : types::EndPoint,
   pub receiver_external : types::EndPoint,
-  pub requester_id : types::Address,
-  pub receiver_id : types::Address,
+  pub requester_id : types::DhtId,
+  pub receiver_id : types::DhtId,
   pub receiver_fob : types::PublicPmid
 }
 
@@ -38,8 +38,8 @@ impl ConnectResponse {
             requester_external: types::EndPoint::generate_random(),
             receiver_local: types::EndPoint::generate_random(),
             receiver_external: types::EndPoint::generate_random(),
-            requester_id: types::generate_random_vec_u8(64),
-            receiver_id: types::generate_random_vec_u8(64),
+            requester_id: types::DhtId::generate_random(),
+            receiver_id: types::DhtId::generate_random(),
             receiver_fob: types::PublicPmid::generate_random(),
         }
     }

@@ -31,7 +31,7 @@ pub struct MessageHeader {
   destination : types::DestinationAddress,
   source : types::SourceAddress,
   authority : types::Authority,
-  signature : types::Signature
+  signature : Option<types::Signature>
 }
 
 impl Encodable for MessageHeader {
@@ -56,14 +56,10 @@ impl MessageHeader {
              destination : types::DestinationAddress,
              source : types::SourceAddress,
              authority : types::Authority,
-             signature : types::Signature) -> MessageHeader {
-    if source.from_node.len() == 64 {
-      MessageHeader {
-        message_id : message_id, destination : destination,
-        source : source, authority : authority, signature : signature
-      }
-    } else {
-      panic!("incorrect input for MessageHeader")
+             signature : Option<types::Signature>) -> MessageHeader {
+    MessageHeader {
+      message_id : message_id, destination : destination,
+      source : source, authority : authority, signature : signature
     }
   }
 
@@ -71,20 +67,20 @@ impl MessageHeader {
     self.message_id
   }
 
-  pub fn from_node(&self) -> types::Address {
+  pub fn from_node(&self) -> types::DhtId {
     self.source.from_node.clone()
   }
 
-  pub fn from_group(&self) -> Option<types::Address> {
-    if self.source.from_group.len() == 64 {
-      Some(self.source.from_group.clone())
+  pub fn from_group(&self) -> Option<types::DhtId> {
+    if self.source.from_group.is_some() {
+      self.source.from_group.clone()
     } else {
       None
     }
   }
 
   pub fn is_from_group(&self) -> bool {
-    if self.source.from_group.len() == 64 {
+    if self.source.from_group.is_some() {
       true
     } else {
       false
@@ -92,22 +88,22 @@ impl MessageHeader {
   }
 
   pub fn is_relayed(&self) -> bool {
-    if self.source.reply_to.len() != 64 {
+    if !self.source.reply_to.is_some() {
       true
     } else {
       false
     }
   }
 
-  pub fn reply_to(&self) -> Option<types::Address> {
-    if self.source.reply_to.len() == 64 {
-      Some(self.source.reply_to.clone())
+  pub fn reply_to(&self) -> Option<types::DhtId> {
+    if self.source.reply_to.is_some() {
+      self.source.reply_to.clone()
     } else {
       None
     }
   }
 
-  pub fn from(&self) -> types::Address {
+  pub fn from(&self) -> types::DhtId {
     match self.from_group() {
       Some(address) => address,
       None => self.from_node()
@@ -123,17 +119,21 @@ impl MessageHeader {
     } else {
       types::DestinationAddress{
         dest : self.source.from_node.clone(),
-        reply_to : types::Address::new()
+        reply_to : None
       }
     }
   }
 
-  pub fn get_filter(&self) -> (types::Address, types::MessageId) {
+  pub fn get_filter(&self) -> (types::DhtId, types::MessageId) {
     (self.source.from_node.clone(), self.message_id)
   }
 
-  pub fn get_signature(&self) -> crypto::sign::Signature {
-    self.signature.get_signature()
+  pub fn get_signature(&self) -> Option<crypto::sign::Signature> {
+      if self.signature.is_some() {
+          Some(self.signature.clone().unwrap().get_signature())
+      } else {
+          None
+      }
   }
 }
 
@@ -166,12 +166,12 @@ mod test {
   fn test_message_header() {
     test_object(MessageHeader {
       message_id : rand::random::<u32>(),
-      destination : types::DestinationAddress{dest: generate_u8_64(), reply_to: generate_u8_64()},
-      source : types::SourceAddress { from_node : generate_u8_64(),
-                                      from_group : generate_u8_64(),
-                                      reply_to: generate_u8_64() },
+      destination : types::DestinationAddress{dest: types::DhtId::generate_random(), reply_to: None },
+      source : types::SourceAddress { from_node : types::DhtId::generate_random(),
+                                      from_group : None,
+                                      reply_to: None },
       authority : types::Authority::ManagedNode,
-      signature : types::Signature{ signature: generate_u8_64() } });
+      signature : Some(types::Signature{ signature: generate_u8_64() }) });
   }
 
 }

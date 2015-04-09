@@ -6,10 +6,11 @@ env:
     secure: "jYb73sf4o6nUOOzCiyfRYeGcTHPM7pwl+wqEa7YhGHcIfR7uGkI8NQAb0BzizA/Iiy3+wFQzDbbw1ZtpHNgG49EI7cXFQ7WRk+Wz1H4gzkEh2J6XEgyTYoqTOdV4Ka3YtbELc69VLXJCePSvxGqGED0ncUg/kZmWK5f9ZR47zn8="
 language: rust
 rust: 
-    - 1.0.0-beta
+   # - 1.0.0-beta
     - nightly
 sudo: true
 before_install:
+    - sudo apt-get update -qq
     - sudo apt-get install -qq libsqlite3-dev
 install:
     - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
@@ -27,7 +28,7 @@ after_success: |
   sudo pip install ghp-import &&
   ghp-import -n target/doc &&
   git push -f https://${TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git gh-pages;
-  sudo apt-get install libcurl4-openssl-dev libelf-dev libdw-dev &&
+  sudo apt-get install libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev &&
   wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz &&
   tar xzf master.tar.gz &&
   mkdir kcov-master/build &&

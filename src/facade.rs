@@ -13,9 +13,8 @@
 // use of the MaidSafe
 // Software.
 
-use types::{Authority, DhtId};
-use super::{Action, RoutingError, DestinationAddress};
-use maidsafe_types::NameType;
+use types::{Authority, DhtId, DestinationAddress};
+use super::{Action, RoutingError};
 
 pub trait Facade : Sync {
   /// if reply is data then we send back the response message (ie get_response )
@@ -60,7 +59,7 @@ pub trait Facade : Sync {
                           response: Result<Vec<u8>,
                           RoutingError>);
 
-  fn add_node(&mut self, node: NameType);
-  fn drop_node(&mut self, node: NameType);
+  fn add_node(&mut self, node: DhtId);
+  fn drop_node(&mut self, node: DhtId);
 }
 

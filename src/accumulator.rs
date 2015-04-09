@@ -25,7 +25,7 @@ use types;
 #[derive(Clone)]
 pub struct Response<V> {
   /// address where the response come from
-  pub address : types::Address,
+  pub address : types::DhtId,
   /// content of the response
   pub value : V
 }
@@ -62,7 +62,7 @@ impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
   	}
   }
 
-  pub fn add(&mut self, name : K, value : V, sender : types::Address)-> Option<(K, Vec<Response<V>>)> {
+  pub fn add(&mut self, name : K, value : V, sender : types::DhtId)-> Option<(K, Vec<Response<V>>)> {
   	let entry = self.storage.remove(&name);
   	if entry.is_none() {
   	  let entry_in = Entry { received_response : vec![Response{ address : sender, value : value }] };
@@ -107,6 +107,7 @@ mod test {
   use super::*;
   use std::num;
   use rand;
+  use types::*;
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];
@@ -119,8 +120,8 @@ mod test {
   #[test]
   fn add() {
     let mut accumulator : Accumulator<i32, u32> = Accumulator::new(1);
-    let address1 : Vec<u8> = generate_address();
-    let address2 : Vec<u8> = generate_address();
+    let address1 : DhtId = DhtId::generate_random();
+    let address2 : DhtId = DhtId::generate_random();
 
     assert!(accumulator.add(2, 3, address1.clone()).is_some());
     assert_eq!(accumulator.have_name(&1), false);
@@ -152,9 +153,64 @@ mod test {
   }
 
   #[test]
+  fn add_single_value_quorum() {
+    let quorum_size : usize = 19;
+    let mut accumulator : Accumulator<i32, u32> = Accumulator::new(quorum_size);
+    let key = rand::random::<i32>();
+    let value = rand::random::<u32>();
+    for i in 0..quorum_size-1 {
+      assert!(accumulator.add(key, value, DhtId::generate_random()).is_none());
+      let key_value = accumulator.get(&key).unwrap();
+      assert_eq!(key_value.0, key);
+      assert_eq!(key_value.1.len(), i + 1);
+      for response in key_value.1 { assert_eq!(response.value, value); };
+      assert_eq!(accumulator.is_quorum_reached(key), false);
+    }
+    assert!(accumulator.add(key, value, DhtId::generate_random()).is_some());
+    assert_eq!(accumulator.is_quorum_reached(key), true);
+    let key_value = accumulator.get(&key).unwrap();
+    assert_eq!(key_value.0, key);
+    assert_eq!(key_value.1.len(), quorum_size);
+    for response in key_value.1 { assert_eq!(response.value, value); };
+  }
+
+  #[test]
+  fn add_multiple_values_quorum() {
+    let quorum_size : usize = 19;
+    let mut accumulator : Accumulator<i32, u32> = Accumulator::new(quorum_size);
+    let key = rand::random::<i32>();
+    for _ in 0..quorum_size-1 {
+      assert!(accumulator.add(key, rand::random::<u32>(), DhtId::generate_random()).is_none());
+      assert_eq!(accumulator.is_quorum_reached(key), false);
+    }
+    assert!(accumulator.add(key, rand::random::<u32>(), DhtId::generate_random()).is_some());
+    assert_eq!(accumulator.is_quorum_reached(key), true);
+  }
+
+  #[test]
+  fn add_multiple_keys_quorum() {
+    let quorum_size : usize = 19;
+    let mut accumulator : Accumulator<i32, u32> = Accumulator::new(quorum_size);
+    let key = rand::random::<i32>();
+    let mut noise_keys : Vec<i32> = Vec::with_capacity(5);
+    while noise_keys.len() < 5 {
+      let noise_key = rand::random::<i32>();
+      if noise_key != key { noise_keys.push(noise_key); }; };
+    for _ in 0..quorum_size-1 {
+        for noise_key in noise_keys.iter() {
+          accumulator.add(noise_key.clone(), rand::random::<u32>(), DhtId::generate_random());
+        }
+      assert!(accumulator.add(key, rand::random::<u32>(), DhtId::generate_random()).is_none());
+      assert_eq!(accumulator.is_quorum_reached(key), false);
+    }
+    assert!(accumulator.add(key, rand::random::<u32>(), DhtId::generate_random()).is_some());
+    assert_eq!(accumulator.is_quorum_reached(key), true);
+  }
+
+  #[test]
   fn delete() {
     let mut accumulator : Accumulator<i32, u32> = Accumulator::new(2);
-    let address : Vec<u8> = generate_address();
+    let address : DhtId = DhtId::generate_random();
 
     assert!(accumulator.add(1, 1, address.clone()).is_none());
     assert_eq!(accumulator.have_name(&1), true);
@@ -199,7 +255,7 @@ mod test {
   #[test]
   fn fill() {
     let mut accumulator : Accumulator<i32, u32> = Accumulator::new(1);
-    let address : Vec<u8> = generate_address();
+    let address : DhtId = DhtId::generate_random();
 
     for count in 0..1000 {
       assert!(accumulator.add(count, 1, address.clone()).is_some());
@@ -220,7 +276,7 @@ mod test {
   #[test]
   fn cache_removals() {
     let mut accumulator : Accumulator<i32, u32> = Accumulator::new(2);
-    let address : Vec<u8> = generate_address();
+    let address : DhtId = DhtId::generate_random();
 
     for count in 0..1000 {
       assert!(accumulator.add(count, 1, address.clone()).is_none());

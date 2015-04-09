@@ -67,7 +67,7 @@ mod messages;
 mod routing_node;
 mod facade;
 
-pub type DhtId = types::DhtId;
+use types::DhtId;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
@@ -75,9 +75,6 @@ struct SignedKey {
   encrypt_public_key: crypto::asymmetricbox::PublicKey,
   signature: crypto::sign::Signature // detached signature
 }
-
-pub type DestinationAddress = types::DestinationAddress;
-pub type Authority = types::Authority;
 
 pub enum Action {
   Reply(Vec<u8>),
@@ -96,9 +93,7 @@ fn facade_implementation() {
 
   mod routing_node;
   use facade::{Facade};
-  use types::{DhtId};
-  use maidsafe_types::NameType;
-
+  use types::{DhtId, DestinationAddress, Authority};
 
   struct MyFacade;
 
@@ -110,8 +105,8 @@ fn facade_implementation() {
     fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
     fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
     fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-    fn add_node(&mut self, node: NameType) { unimplemented!(); }
-    fn drop_node(&mut self, node: NameType) { unimplemented!(); }
+    fn add_node(&mut self, node: DhtId) { unimplemented!(); }
+    fn drop_node(&mut self, node: DhtId) { unimplemented!(); }
   }
 
   let my_facade = MyFacade;

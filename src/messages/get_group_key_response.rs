@@ -26,17 +26,17 @@ use types;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetGroupKeyResponse {
   pub target_id : types::GroupAddress,
-  pub public_keys : Vec<(types::Address, Vec<u8>)>
+  pub public_keys : Vec<(types::DhtId, Vec<u8>)>
 }
 
 impl GetGroupKeyResponse {
     pub fn generate_random() -> GetGroupKeyResponse {
-        let mut vec: Vec<(types::Address, Vec<u8>)> = Vec::with_capacity(30);
+        let mut vec: Vec<(types::DhtId, Vec<u8>)> = Vec::with_capacity(30);
         for i in 0..30 {
-            vec.push((types::generate_random_vec_u8(64), types::generate_random_vec_u8(99)));
+            vec.push((types::DhtId::generate_random(), types::generate_random_vec_u8(99)));
         }
         GetGroupKeyResponse {
-            target_id: types::generate_random_vec_u8(64),
+            target_id: types::DhtId::generate_random(),
             public_keys: vec,
         }
     }
