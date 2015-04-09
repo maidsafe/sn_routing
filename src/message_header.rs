@@ -27,11 +27,11 @@ use types;
 /// Header of various message types used on routing level
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct MessageHeader {
-  message_id : types::MessageId,
-  destination : types::DestinationAddress,
-  source : types::SourceAddress,
-  authority : types::Authority,
-  signature : Option<types::Signature>
+  pub message_id : types::MessageId,
+  pub destination : types::DestinationAddress,
+  pub source : types::SourceAddress,
+  pub authority : types::Authority,
+  pub signature : Option<types::Signature>
 }
 
 impl Encodable for MessageHeader {
