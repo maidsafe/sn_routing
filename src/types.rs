@@ -195,7 +195,7 @@ impl Signature {
   }
 
   pub fn get_crypto_signature(&self) -> crypto::sign::Signature {
-    crypto::sign::Signature(vector_as_u8_64_array(self.signature))
+    crypto::sign::Signature(vector_as_u8_64_array(self.signature.clone()))
   }
 }
 
@@ -231,7 +231,7 @@ impl PublicSignKey {
   }
 
   pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
-    crypto::sign::PublicKey(vector_as_u8_32_array(self.public_sign_key))
+    crypto::sign::PublicKey(vector_as_u8_32_array(self.public_sign_key.clone()))
   }
 }
 
@@ -321,7 +321,7 @@ impl PublicPmid {
 
 impl Encodable for PublicPmid {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.public_key, &self.validation_token)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.public_key, &self.validation_token, &self.name)).encode(e)
   }
 }
 
