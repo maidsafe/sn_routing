@@ -54,9 +54,6 @@ extern crate crust;
 extern crate maidsafe_types;
 
 use sodiumoxide::crypto;
-//use std::default::Default;
-
-use maidsafe_types::NameType;
 
 pub mod types;
 mod broadcast;
