@@ -20,46 +20,53 @@ extern crate maidsafe_types;
 extern crate rand;
 
 use maidsafe_types::Random;
-use std::sync::mpsc;
+use std::sync::{Mutex, Arc, mpsc};
 use std::io::Error as IoError;
 use types;
 use Facade;
 use message_header;
 use messages;
 use maidsafe_types::traits::RoutingTrait;
+use std::thread;
 
 type ConnectionManager = crust::ConnectionManager<types::DhtId>;
 type Event             = crust::Event<types::DhtId>;
 
 pub struct RoutingClient<'a> {
-    facade: &'a (Facade + 'a),
+    //facade: &'a (Facade + 'a),
     maid_id: maidsafe_types::Maid,
-    event_input: mpsc::Receiver<Event>,
     connection_manager: ConnectionManager,
     own_address: types::DhtId,
     bootstrap_address: types::DhtId,
     message_id: u32,
+    join_guard: thread::JoinGuard<'a()>,
+}
+
+impl<'a> Drop for RoutingClient<'a> {
+    fn drop(&mut self) {
+        // self.connection_manager.stop(); // This should be coded in ConnectionManager
+    }
 }
 
 impl<'a> RoutingClient<'a> {
-    pub fn new(my_facade: &'a Facade, maid_id: maidsafe_types::Maid, bootstrap_add: types::DhtId) -> RoutingClient<'a> {
+    pub fn new(my_facade: Arc<Mutex<Facade>>/*&'a mut Facade*/, maid_id: maidsafe_types::Maid, bootstrap_add: types::DhtId) -> RoutingClient<'a> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
-        let own_add = types::DhtId::generate_random(); // How do we get our own address ?
+        let own_add = types::DhtId(maid_id.get_name().0.to_vec());
 
         RoutingClient {
-            facade: my_facade,
+            //facade: my_facade,
             maid_id: maid_id,
-            event_input: rx,
             connection_manager: crust::ConnectionManager::new(own_add.clone(), tx),
-            own_address: own_add,
-            bootstrap_address: bootstrap_add,
+            own_address: own_add.clone(),
+            bootstrap_address: bootstrap_add.clone(),
             message_id: rand::random::<u32>(),
+            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add, own_add, my_facade)),
         }
     }
 
     /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&mut self, type_id: u64, name: types::DhtId) -> Result<(), IoError> {
+    pub fn get(&mut self, type_id: u64, name: types::DhtId) -> Result<u32, IoError> {
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
@@ -72,10 +79,6 @@ impl<'a> RoutingClient<'a> {
                 type_id: type_id as u32,
             },
         };
-
-        // Serialise GetData message
-        let mut encoder = cbor::Encoder::from_memory();
-        encoder.encode(&[&get_data]).unwrap();
 
         // Make MessageHeader
         let header = message_header::MessageHeader::new(
@@ -95,7 +98,7 @@ impl<'a> RoutingClient<'a> {
         let routing_msg = messages::RoutingMessage::new(
             messages::MessageTypeTag::GetData,
             header,
-            encoder.as_bytes().to_vec(),
+            get_data,
         );
 
         // Serialise RoutingMessage
@@ -103,21 +106,20 @@ impl<'a> RoutingClient<'a> {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        self.connection_manager.send(encoder_routingmsg.into_bytes(), name) // Is this fine ?
+        match self.connection_manager.send(encoder_routingmsg.into_bytes(), self.bootstrap_address.clone()) {
+            Ok(_) => Ok(self.message_id - 1),
+            Err(error) => Err(error),
+        }
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, name: types::DhtId, content: Vec<u8>) -> Result<(), IoError>
+    pub fn put<T>(&mut self, name: types::DhtId, content: Vec<u8>) -> Result<(u32), IoError>
     where T: maidsafe_types::traits::RoutingTrait {
         // Make PutData message
         let put_data = messages::put_data::PutData {
             name: name.0.clone(),
             data: content,
         };
-
-        // Serialise PutData message
-        let mut encoder = cbor::Encoder::from_memory();
-        encoder.encode(&[&put_data]).unwrap();
 
         // Make MessageHeader
         let header = message_header::MessageHeader::new(
@@ -132,7 +134,7 @@ impl<'a> RoutingClient<'a> {
                 reply_to: Some(self.own_address.clone()),
             },
             types::Authority::Client,
-            Some(types::Signature::generate_random()), // What is the signautre
+            Some(types::Signature::generate_random()), // What is the signautre -- see in c++ Secret - signing key
         );
 
         self.message_id += 1;
@@ -141,7 +143,7 @@ impl<'a> RoutingClient<'a> {
         let routing_msg = messages::RoutingMessage::new(
             messages::MessageTypeTag::PutData,
             header,
-            encoder.as_bytes().to_vec(),
+            put_data,
         );
 
         // Serialise RoutingMessage
@@ -149,17 +151,39 @@ impl<'a> RoutingClient<'a> {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        self.connection_manager.send(encoder_routingmsg.into_bytes(), name) // Is this fine?
+        match self.connection_manager.send(encoder_routingmsg.into_bytes(), self.bootstrap_address.clone()) {
+            Ok(_) => Ok(self.message_id - 1),
+            Err(error) => Err(error),
+        }
     }
 
-    pub fn start() {
+    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: types::DhtId, own_address: types::DhtId, my_facade: Arc<Mutex<Facade>>/*&'a mut Facade*/) {
+        for it in rx.iter() {
+            match it {
+                // Event::NewMessage(id, bytes) => {
+                //     let mut decode_routing_msg = cbor::Decoder::from_bytes(&bytes[..]);
+                //     let routing_msg: messages::RoutingMessage = decode_routing_msg.decode().next().unwrap().unwrap();
 
+                //     if routing_msg.message_header.destination.dest == bootstrap_add &&
+                //        routing_msg.message_header.destination.reply_to.is_some() &&
+                //        routing_msg.message_header.destination.reply_to.unwrap() == own_address {
+                //         match routing_msg.message_type {
+                //             messages::MessageTypeTag::GetDataResponse => {
+                //                 // my_facade.handle_get_response(id, Ok(routing_msg.serialised_body));
+                //             }
+                //             _ => unimplemented!(),
+                //         }
+                //     }
+                // },
+                _ => unimplemented!(),
+            };
+        }
     }
 
     fn add_bootstrap(&self) {}
 
 
-    fn get_facade(&'a mut self) -> &'a Facade {
-      self.facade
-    }
+    // fn get_facade(&'a mut self) -> &'a Facade {
+    //   self.facade
+    // }
 }
