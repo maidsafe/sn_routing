@@ -177,18 +177,19 @@ impl Decodable for NameAndTypeId {
   }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+// #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(Clone)]
 pub struct Signature {
-  pub signature : Vec<u8> // Vec form of crypto::sign::Signature which is an array
+  pub signature : crypto::sign::Signature
 }
 
 impl Signature {
   pub fn generate_random() -> Signature {
-      Signature { signature: generate_random_vec_u8(64), }
+      Signature { signature: crypto::sign::Signature(vector_as_u8_64_array(generate_random_vec_u8(64))) }
   }
 
   pub fn get_signature(&self) -> crypto::sign::Signature {
-    crypto::sign::Signature(vector_as_u8_64_array(self.signature.clone()))
+    self.signature.clone()
   }
 }
 
@@ -206,20 +207,19 @@ impl Decodable for Signature {
   }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+// #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(Clone)]
 pub struct PublicKey {
-  pub public_key : Vec<u8>
+  pub public_key : crypto::asymmetricbox::PublicKey
 }
 
 impl PublicKey {
   pub fn generate_random() -> PublicKey {
-      let mut vec: Vec<u8> = Vec::with_capacity(64);
-      vec.push_all(&(crypto::asymmetricbox::gen_keypair().0).0);
-      PublicKey { public_key: vec, }
+      PublicKey { public_key: crypto::asymmetricbox::PublicKey(generate_random_vec_u8(64)) }
   }
 
-  pub fn get_public_key(&self) -> crypto::sign::PublicKey {
-    crypto::sign::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
+  pub fn get_public_key(&self) -> crypto::asymmetricbox::PublicKey {
+    self.public_key.clone()
   }
 }
 
@@ -240,14 +240,24 @@ impl Decodable for PublicKey {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicPmid {
   pub public_key: PublicKey,
-  pub validation_token: Signature
+  pub validation_token: Signature,
+  name: DhtId
 }
 
 impl PublicPmid {
+
+    pub fn new(pmid : &Pmid) -> PublicPmid {
+      PublicPmid {
+        public_key : pmid.get_public_key(),
+        validation_token : pmid.get_validation_token(),
+        name : pmid.get_name()
+      }
+    }
     pub fn generate_random() -> PublicPmid {
         PublicPmid {
             public_key: PublicKey::generate_random(),
             validation_token: Signature::generate_random(),
+            name : DhtId::generate_random()
         }
     }
 }
@@ -282,6 +292,7 @@ impl Decodable for PublicPmid {
 pub struct Pmid {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
+  validation_token: Signature,
   name: DhtId
 }
 
@@ -311,11 +322,14 @@ impl Pmid {
         arr_combined[64 + i] = asym_arr[i];
     }
 
+    let validation_token = Signature{signature :
+      crypto::sign::sign(&arr_combined, &sec_sign_key.0)};
     let digest = crypto::hash::sha512::hash(&arr_combined);
 
     Pmid {
       public_keys : (pub_sign_key, pub_asym_key),
       secret_keys : (sec_sign_key, sec_asym_key),
+      validation_token : validation_token,
       name : DhtId(digest.0.to_vec())
     }
   }
@@ -331,6 +345,9 @@ impl Pmid {
   }
   pub fn get_secret_sign_key(&self) -> crypto::sign::SecretKey {
     self.secret_keys.0.clone()
+  }
+  pub fn get_validation_token(&self) -> Signature {
+    self.validation_token.clone()
   }
 }
 
