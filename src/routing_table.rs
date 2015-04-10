@@ -394,7 +394,7 @@ mod test {
     use std::collections::BitVec;
     use std::net::*;
     use std::fmt;
-    use types::DhtId;
+    use types::{DhtId, PublicPmid, RoutingTrait};
     use types;
 
     enum ContactType {
@@ -461,11 +461,11 @@ mod test {
         fn new() -> RoutingTableUnitTest {
             let node_info = create_random_node_info();
             let table = RoutingTableUnitTest {
-                our_id: node_info.fob.id.clone(),
+                our_id: node_info.fob.get_name(),
                 table: RoutingTable {
-                    our_id: node_info.fob.id.clone(), routing_table: Vec::new(),
+                    our_id: node_info.fob.get_name(), routing_table: Vec::new(),
                 },
-                buckets: initialise_buckets(&node_info.fob.id),
+                buckets: initialise_buckets(&node_info.fob.get_name()),
                 node_info: node_info,
                 initial_count: (rand::random::<usize>() % (RoutingTable::get_group_size() - 1)) + 1,
                 added_ids: Vec::new(),
@@ -494,8 +494,8 @@ mod test {
 
         fn partially_fill_table(&mut self) {
             for i in 0..self.initial_count {
-                self.node_info.fob.id = self.buckets[i].mid_contact.clone();
-                self.added_ids.push(self.node_info.fob.id.clone());
+                self.node_info.fob.get_name() = self.buckets[i].mid_contact.clone();
+                self.added_ids.push(self.node_info.fob.get_name());
                 assert!(self.table.add_node(self.node_info.clone()).0);
             }
 
@@ -504,8 +504,11 @@ mod test {
 
         fn complete_filling_table(&mut self) {
             for i in self.initial_count..RoutingTable::get_optimal_size() {
+                // self.node_info.fob.get_name() = self.buckets[i].mid_contact.clone();
+                // we can't write the id; it's determined by the hash of the public keys
+                // any suggestions on resolving the test?
                 self.node_info.fob.id = self.buckets[i].mid_contact.clone();
-                self.added_ids.push(self.node_info.fob.id.clone());
+                self.added_ids.push(self.node_info.fob.get_name().clone());
                 assert!(self.table.add_node(self.node_info.clone()).0);
             }
 
