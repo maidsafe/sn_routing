@@ -272,7 +272,7 @@ impl RoutingTable {
         let finish = RoutingTable::get_group_size();
 
         while counter >= finish {
-            let bucket_index = self.bucket_index(&self.routing_table[counter].fob.id);
+            let bucket_index = self.bucket_index(&self.routing_table[counter].fob.get_name());
 
             // If we're entering a new bucket, reset details.
             if bucket_index != current_bucket {
@@ -318,7 +318,7 @@ impl RoutingTable {
 
     fn has_node(&self, node_id: &DhtId) -> bool {
         for node_info in &self.routing_table {
-            if node_info.fob.id == *node_id {
+            if node_info.fob.get_name() == *node_id {
                 return true;
             }
         }
@@ -329,7 +329,8 @@ impl RoutingTable {
         self.routing_table.push(node_info);
         let our_id = &self.our_id;
         self.routing_table.sort_by(
-            |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id, our_id) {
+            |a, b| if RoutingTable::closer_to_target(&a.fob.get_name(),
+                                                     &b.fob.get_name(), our_id) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
@@ -351,8 +352,9 @@ impl RoutingTable {
 
     fn is_nodes_sorted(&self) -> bool {
         for i in 1..self.routing_table.len() {
-            if RoutingTable::closer_to_target(&self.routing_table[i].fob.id,
-                                              &self.routing_table[i - 1].fob.id, &self.our_id) {
+            if RoutingTable::closer_to_target(&self.routing_table[i].fob.get_name(),
+                                              &self.routing_table[i - 1].fob.get_name(),
+                                              &self.our_id) {
                 return false;
             }
         }
@@ -365,12 +367,12 @@ impl RoutingTable {
             return false;
         }
         let removal_node = &self.routing_table[removal_node_index];
-        self.bucket_index(new_node) > self.bucket_index(&removal_node.fob.id)
+        self.bucket_index(new_node) > self.bucket_index(&removal_node.fob.get_name())
     }
 
     fn is_any_of(vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
         for iter in vec_close_group.iter() {
-            if iter.fob.id == vec_closest_to_target[0].fob.id {
+            if iter.fob.get_name() == vec_closest_to_target[0].fob.get_name() {
                 return true;
             }
         }

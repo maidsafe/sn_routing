@@ -180,14 +180,14 @@ pub struct Signature {
 
 impl Signature {
   pub fn new(signature : crypto::sign::Signature) -> Signature {
-    assert_eq!(signature.0.len(), 64);
+    assert_eq!(signature.0.len(), 32);
     Signature{
       signature : signature.0.to_vec()
     }
   }
 
   pub fn generate_random() -> Signature {
-      Signature { signature: generate_random_vec_u8(64) }
+      Signature { signature: generate_random_vec_u8(32) }
   }
 
   pub fn get_crypto_signature(&self) -> crypto::sign::Signature {
@@ -262,7 +262,7 @@ impl PublicKey {
   }
 
   pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
-    crypto::asymmetricbox::PublicKey(vector_as_u8_32_array(self.public_key.clone()));
+    crypto::asymmetricbox::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
   }
 }
 
@@ -299,11 +299,12 @@ impl PublicPmid {
       }
     }
     pub fn generate_random() -> PublicPmid {
-        PublicPmid {
-            public_key: PublicKey::generate_random(),
-            validation_token: Signature::generate_random(),
-            name : DhtId::generate_random()
-        }
+      PublicPmid {
+        public_key : PublicKey::generate_random(),
+        public_sign_key : PublicSignKey::generate_random(),
+        validation_token : Signature::generate_random(),
+        name : DhtId::generate_random()
+      }
     }
 }
 
@@ -318,15 +319,20 @@ impl RoutingTrait for PublicPmid {
 
 impl Encodable for PublicPmid {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.public_key, &self.validation_token, &self.name)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.public_key,
+                                   &self.public_sign_key,
+                                   &self.validation_token, &self.name)).encode(e)
   }
 }
 
 impl Decodable for PublicPmid {
   fn decode<D: Decoder>(d: &mut D)->Result<PublicPmid, D::Error> {
     try!(d.read_u64());
-    let (public_key, validation_token, name) = try!(Decodable::decode(d));
-    Ok(PublicPmid { public_key: public_key, validation_token: validation_token, name : name })
+    let (public_key, public_sign_key,
+         validation_token, name) = try!(Decodable::decode(d));
+    Ok(PublicPmid { public_key: public_key,
+                    public_sign_key : public_sign_key,
+                    validation_token: validation_token, name : name })
   }
 }
 
