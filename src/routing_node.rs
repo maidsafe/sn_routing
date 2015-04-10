@@ -215,7 +215,6 @@ impl<F> RoutingNode<F> where F: Facade {
            return None;
         }
         let (receiver_local, receiver_external) = self.next_endpoint_pair();
-        let own_public_pmid = types::PublicPmid::generate_random();  // FIXME (Ben)
         let connect_response = ConnectResponse {
                                 requester_local: connect_request.local,
                                 requester_external: connect_request.external,
@@ -223,7 +222,7 @@ impl<F> RoutingNode<F> where F: Facade {
                                 receiver_external: receiver_external,
                                 requester_id: connect_request.requester_id,
                                 receiver_id: self.own_id.clone(),
-                                receiver_fob: own_public_pmid };
+                                receiver_fob: types::PublicPmid::new(&self.pmid) };
 
         debug_assert!(connect_request.receiver_id == self.own_id);
         Some(())
@@ -256,7 +255,7 @@ impl<F> RoutingNode<F> where F: Facade {
             // group.push(x.fob);  // FIXME need toeither use fob or publicpmid
         }
         // add ourselves
-        group.push(types::PublicPmid::generate_random());  // FIXME (Ben)
+        group.push(types::PublicPmid::new(&self.pmid));
 
         let find_group_response = FindGroupResponse { target_id: find_group.target_id,
                                                       group: group };
