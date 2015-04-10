@@ -130,8 +130,10 @@ impl<F> RoutingNode<F> where F: Facade {
         }
     }
 
-    fn next_endpoint_pair(&self)->(SocketAddr, SocketAddr) {
-      unimplemented!();  // FIXME (Peter)
+    fn next_endpoint_pair(&self) -> Option<(SocketAddr, SocketAddr)> {
+        // FIXME: Set the second argument to 'external' address
+        // when known.
+        self.accepting_on().and_then(|addr| Some((addr, addr)))
     }
 
     fn handle_connect(&mut self, peer_id: DhtId) {
@@ -209,7 +211,8 @@ impl<F> RoutingNode<F> where F: Facade {
         if !(self.routing_table.check_node(&connect_request.requester_id)) {
            return Err(());
         }
-        let (receiver_local, receiver_external) = self.next_endpoint_pair();
+        let (receiver_local, receiver_external) = try!(self.next_endpoint_pair().ok_or(()));
+
         let connect_response = ConnectResponse {
                                 requester_local: connect_request.local,
                                 requester_external: connect_request.external,
@@ -307,8 +310,7 @@ impl<F> RoutingNode<F> where F: Facade {
             let routing_msg = self.construct_connect_request_msg(&peer.name);
             if self.bootstrap_node_id.is_some() {
                 let bootstrap_node = self.bootstrap_node_id.clone();
-                let _ = self.connection_manager.send(self.encode(&routing_msg),
-                                                                 bootstrap_node.unwrap());
+                let _ = self.connection_manager.send(self.encode(&routing_msg), bootstrap_node.unwrap());
             }
             // SendSwarmOrParallel  // FIXME
         }
@@ -403,7 +405,13 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn construct_connect_request_msg(&mut self, peer_id: &DhtId) -> RoutingMessage {
-        let (requester_local, requester_external) = self.next_endpoint_pair();
+        use std::net::{SocketAddrV4, Ipv4Addr};
+
+        let invalid_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0));
+
+        let (requester_local, requester_external)
+            = self.next_endpoint_pair().unwrap_or((invalid_addr, invalid_addr));
+
         let connect_request = ConnectRequest {
                                                 local: requester_local,
                                                 external: requester_external,
