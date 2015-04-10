@@ -114,8 +114,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, name: types::DhtId, content: Vec<u8>) -> Result<(u32), IoError>
-    where T: maidsafe_types::traits::RoutingTrait {
+    pub fn put(&mut self, name: types::DhtId, content: Vec<u8>) -> Result<(u32), IoError> {
         // Make PutData message
         let put_data = messages::put_data::PutData {
             name: name.0.clone(),
