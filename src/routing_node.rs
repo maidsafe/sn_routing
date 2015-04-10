@@ -300,7 +300,23 @@ impl<F> RoutingNode<F> where F: Facade {
         Ok(())
     }
 
-    fn handle_find_group_response(find_group_response: FindGroupResponse, original_header: MessageHeader) {
+    fn handle_find_group_response(&self, original_header: MessageHeader, body: Bytes) -> RecvResult {
+        println!("{:?} received FindGroupResponse", self.own_id);
+        let find_group_response = try!(self.decode::<FindGroupResponse>(&body).ok_or(()));
+
+  //   for (const auto node_pmid : find_group_response.group()) {
+  //   Address node_id(node_pmid.Name());
+  //   if (!connection_manager_.SuggestNodeToAdd(node_id))
+  //     continue;
+  //   Connect connect_message(NextEndpointPair(), OurId(), node_id, passport::PublicPmid(our_fob_));
+  //   if (bootstrap_node_) {  // TODO(Team) cleanup
+  //     SendToBootstrapNode(std::make_pair(Destination(node_id), boost::none), OurSourceAddress(),
+  //                         connect_message, Authority::nae_manager);
+  //   } else {
+  //     SendSwarmOrParallel(std::make_pair(Destination(node_id), boost::none), OurSourceAddress(),
+  //                         connect_message, Authority::nae_manager);
+  //   }
+  // }
         unimplemented!();
     }
 
