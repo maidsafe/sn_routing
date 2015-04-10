@@ -28,7 +28,6 @@ Steps to compile SQLite by,
 2. On Linux, Run `./configure --prefix=/usr && make && sudo make install` to build the SQLite source. While on Windows Users can build using (mingw + msys) and run './configure && make' 
 3. On Windows, Copy the `libsqlite3.a` file from the .libs folder to the "bin\{TARGET-TRIPLE}" in the project root folder.
  
- 
 ##Todo Items
 
 - [x] Set up facade design pattern
