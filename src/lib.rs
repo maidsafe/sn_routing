@@ -16,6 +16,8 @@ pub mod chunk_store;
 pub mod vault;
 
 use vault::VaultFacade;
+use routing::types::DhtId;
+// use routing::routing_node::RoutingNode;
 
 /// Placeholder doc test
 pub fn always_true() -> bool { true }
@@ -30,7 +32,7 @@ impl Vault {
   }
 
   pub fn start_vault(&self) {
-    let my_routing = routing::RoutingNode::new(&self.my_facade);
+    // let my_routing = RoutingNode::new(DhtId::generate_random(), &self.my_facade);
     loop {
       always_true();
     }

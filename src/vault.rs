@@ -188,6 +188,60 @@ mod test {
         }
         routing::Action::Reply(x) => panic!("Unexpected"),
       }
+      let from = DhtId::new([1u8; 64]);
+      let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::NaeManager,
+                                        Authority::Client, from, DhtId::new(data.get_name().get_id()));
+      assert_eq!(get_result.is_err(), false);
+      match get_result.ok().unwrap() {
+        routing::Action::SendOn(ref x) => {
+          assert_eq!(x.len(), routing_table::PARALLELISM);
+          assert_eq!(x[0].0, [3u8; 64].to_vec());
+          assert_eq!(x[1].0, [2u8; 64].to_vec());
+          assert_eq!(x[2].0, [1u8; 64].to_vec());
+          assert_eq!(x[3].0, [7u8; 64].to_vec());
+        }
+        routing::Action::Reply(x) => panic!("Unexpected"),
+      }
+    }
+    { // PmidManager, shall put to pmid_nodes
+      let from = DhtId::new([3u8; 64]);
+      let dest = DestinationAddress{ dest : DhtId::new([7u8; 64]), reply_to: None };
+      let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager, from, dest,
+                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      assert_eq!(put_result.is_err(), false);
+      match put_result.ok().unwrap() {
+        routing::Action::SendOn(ref x) => {
+          assert_eq!(x.len(), 1);
+          assert_eq!(x[0].0, [7u8; 64].to_vec());
+        }
+        routing::Action::Reply(x) => panic!("Unexpected"),
+      }
+    }
+    { // PmidNode stores/retrieves data
+      let from = DhtId::new([7u8; 64]);
+      let dest = DestinationAddress{ dest : DhtId::new([6u8; 64]), reply_to: None };
+      let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager, from, dest,
+                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      assert_eq!(put_result.is_err(), true);
+      match put_result.err().unwrap() {
+        routing::RoutingError::Success => { }
+        _ => panic!("Unexpected"),
+      }
+      let from = DhtId::new([7u8; 64]);
+      let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::ManagedNode,
+                                        Authority::NodeManager, from, DhtId::new([3u8; 64]));
+      assert_eq!(get_result.is_err(), false);
+      match get_result.ok().unwrap() {
+          routing::Action::Reply(ref x) => {
+              let mut d = cbor::Decoder::from_bytes(&x[..]);
+              let payload_retrieved: Payload = d.decode().next().unwrap().unwrap();
+              assert_eq!(payload_retrieved.get_type_tag(), PayloadTypeTag::ImmutableData);
+              let data_retrieved = payload_retrieved.get_data::<maidsafe_types::ImmutableData>();
+              assert_eq!(data.get_name().0.to_vec(), data_retrieved.get_name().0.to_vec());
+              assert_eq!(data.get_value(), data_retrieved.get_value());
+          },
+          _ => panic!("Unexpected"),
+      }
     }
   }
 
