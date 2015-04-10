@@ -61,7 +61,7 @@ pub struct RoutingNode<F: Facade> {
     routing_table: RoutingTable,
     accepting_on: Option<u16>,
     next_message_id: MessageId,
-    bootstrap_node_id: Option<types::DhtId>,
+    bootstrap_node_id: Option<DhtId>,
 }
 
 impl<F> RoutingNode<F> where F: Facade {
@@ -119,6 +119,9 @@ impl<F> RoutingNode<F> where F: Facade {
                     }
                 },
                 crust::Event::Connect(id) => {
+                    if self.all_connections.is_empty() {
+                        self.bootstrap_node_id = Some(id.clone());
+                    }
                     self.handle_new_connection(id);
                 },
                 crust::Event::Accept(id, bytes) => {
