@@ -34,8 +34,8 @@ Code Coverage
 - [x] Complete Put Flow
 - [x] Complete Get Flow
 - [x] Complete Create Maid Account Flow  // may not be required for a simple implementation
-- [ ] Test Put Flow
-- [ ] Test Get Flow
+- [x] Test Put Flow
+- [x] Test Get Flow
 - [ ] Test with client having simple put and get ability
 - [ ] Integration Test
 - [ ] Installers
