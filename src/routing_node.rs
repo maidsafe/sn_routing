@@ -46,6 +46,7 @@ use types::RoutingTrait;
 type ConnectionManager = crust::ConnectionManager<DhtId>;
 type Event             = crust::Event<DhtId>;
 type Bytes             = Vec<u8>;
+type MessageId         = u32;
 
 type RecvResult = Result<(),()>;
 
@@ -59,8 +60,8 @@ pub struct RoutingNode<F: Facade> {
     all_connections: HashSet<DhtId>,
     routing_table: RoutingTable,
     accepting_on: Option<u16>,
-    message_id: u32,
-    bootstrap_node_id: Option<types::DhtId>,
+    next_message_id: MessageId,
+    bootstrap_node_id: Option<DhtId>,
 }
 
 impl<F> RoutingNode<F> where F: Facade {
@@ -80,7 +81,7 @@ impl<F> RoutingNode<F> where F: Facade {
                       all_connections: HashSet::new(),
                       routing_table : RoutingTable::new(own_id),
                       accepting_on: accepting_on,
-                      message_id: rand::random::<u32>(),
+                      next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
                     }
     }
@@ -100,14 +101,8 @@ impl<F> RoutingNode<F> where F: Facade {
     /// Mutate something on the network (you must prove ownership) - Direct call
     pub fn post(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
 
-    //fn get_facade(&'a mut self) -> &'a Facade {
-    //    self.facade
-    //}
-
-    pub fn add_bootstrap(&self, endpoint: SocketAddr) {
-        let _ = self.connection_manager.connect(
-            endpoint,
-            self.encode(&self.construct_find_group_msg()));
+    pub fn add_bootstrap(&mut self, endpoint: SocketAddr) {
+        let _ = self.connection_manager.connect(endpoint);
     }
 
     pub fn run(&mut self) {
@@ -123,13 +118,10 @@ impl<F> RoutingNode<F> where F: Facade {
                     }
                 },
                 crust::Event::Connect(id) => {
-                    self.handle_new_connection(id);
+                    self.handle_connect(id);
                 },
-                crust::Event::Accept(id, bytes) => {
-                    self.handle_new_connection(id.clone());
-                    if self.message_received(&id, bytes).is_err() {
-                        let _ = self.connection_manager.drop_node(id);
-                    }
+                crust::Event::Accept(id) => {
+                    self.handle_accept(id.clone());
                 },
                 crust::Event::LostConnection(id) => {
                     self.handle_lost_connection(id);
@@ -142,18 +134,19 @@ impl<F> RoutingNode<F> where F: Facade {
       unimplemented!();  // FIXME (Peter)
     }
 
-    fn handle_new_connection(&mut self, peer_id: DhtId) {
-        self.all_connections.insert(peer_id);
-
-        if false {  // if unexpected connection, its likely
-            //add to non_routing_list;
-        } else {
-            // let peer_node_info = NodeInfo {};
-            // if !(self.routing_table.add_node(&peer_id)) {
-            //     self.connection.drop_node(peer_id);
-            // }
+    fn handle_connect(&mut self, peer_id: DhtId) {
+        if self.all_connections.is_empty() {
+            self.bootstrap_node_id = Some(peer_id.clone());
         }
-        // handle_curn
+        self.all_connections.insert(peer_id.clone());
+
+        let msg = self.construct_find_group_msg();
+        let msg = self.encode(&msg);
+        self.connection_manager.send(msg, peer_id);
+    }
+
+    fn handle_accept(&mut self, peer_id: DhtId) {
+        self.all_connections.insert(peer_id);
     }
 
     fn handle_lost_connection(&mut self, peer_id: DhtId) {
@@ -186,7 +179,7 @@ impl<F> RoutingNode<F> where F: Facade {
         // switch message type
 
         match msg.message_type {
-            MessageTypeTag::Connect => self.handle_connect(header, body),
+            MessageTypeTag::Connect => self.handle_connect_request(header, body),
             //ConnectResponse,
             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
             //FindGroupResponse,
@@ -209,7 +202,7 @@ impl<F> RoutingNode<F> where F: Facade {
         }
     }
 
-    fn handle_connect(&self, original_header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectRequest", self.own_id);
         let connect_request = try!(self.decode::<ConnectRequest>(&body).ok_or(()));
 
@@ -230,7 +223,7 @@ impl<F> RoutingNode<F> where F: Facade {
 
         // Make MessageHeader
         let header = MessageHeader::new(
-            self.message_id,
+            self.get_next_message_id(),
             original_header.send_to(),
             self.our_source_address(),
             types::Authority::ManagedNode,
@@ -261,7 +254,7 @@ impl<F> RoutingNode<F> where F: Facade {
         // self.connection_manager.connect();
     }
 
-    fn handle_find_group(&self, original_header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received FindGroup", self.own_id);
         let find_group = try!(self.decode::<FindGroup>(&body).ok_or(()));
         let close_group = self.routing_table.our_close_group();
@@ -276,7 +269,7 @@ impl<F> RoutingNode<F> where F: Facade {
 
         // Make MessageHeader
         let header = MessageHeader::new(
-            self.message_id,
+            self.get_next_message_id(),
             original_header.send_to(),
             self.our_group_address(find_group.target_id.clone()),
             types::Authority::NaeManager,
@@ -297,6 +290,7 @@ impl<F> RoutingNode<F> where F: Facade {
             let _ = self.connection_manager.send(self.encode(&routing_msg),
                                                     reply_to_address.unwrap());
         }
+
         Ok(())
     }
 
@@ -354,12 +348,13 @@ impl<F> RoutingNode<F> where F: Facade {
 
     fn our_source_address(&self) -> types::SourceAddress {
         if self.bootstrap_node_id.is_some() {
-            let bootstrap_node_id = self.bootstrap_node_id.clone();
-            return types::SourceAddress{ from_node: bootstrap_node_id.unwrap(), from_group: None,
-                                reply_to: Some(self.own_id.clone()) }
+            return types::SourceAddress{ from_node: self.bootstrap_node_id.clone().unwrap(),
+                                         from_group: None,
+                                         reply_to: Some(self.own_id.clone()) }
         } else {
-            return types::SourceAddress{ from_node: self.own_id.clone(), from_group: None,
-                                reply_to: None }
+            return types::SourceAddress{ from_node: self.own_id.clone(),
+                                         from_group: None,
+                                         reply_to: None }
         }
     }
 
@@ -368,9 +363,9 @@ impl<F> RoutingNode<F> where F: Facade {
                                 reply_to: None }
     }
 
-    fn construct_header(&self) -> MessageHeader {
+    fn construct_header(&mut self) -> MessageHeader {
         // TODO: Replace with sane values.
-        MessageHeader{ message_id: 0 /* TODO */,
+        MessageHeader{ message_id: self.get_next_message_id(),
                        destination: types::DestinationAddress{
                            dest:     DhtId::generate_random(),
                            reply_to: None
@@ -385,8 +380,18 @@ impl<F> RoutingNode<F> where F: Facade {
         }
     }
 
-    fn construct_find_group_msg(&self) -> RoutingMessage {
-        // TODO: Replace with sane values.
+    fn construct_find_group_msg(&mut self) -> RoutingMessage {
+        let header = MessageHeader {
+            message_id:  self.get_next_message_id(),
+            destination: types::DestinationAddress {
+                             dest:     self.own_id.clone(),
+                             reply_to: None
+                         },
+            source:      self.our_source_address(),
+            authority:   types::Authority::ManagedNode,
+            signature:   None
+        };
+
         RoutingMessage{
             message_type:    messages::MessageTypeTag::FindGroup,
             message_header:  self.construct_header(),
@@ -394,6 +399,12 @@ impl<F> RoutingNode<F> where F: Facade {
                                                      target_id:    self.own_id.clone()
                                                    })
         }
+    }
+
+    fn get_next_message_id(&mut self) -> MessageId {
+        let current = self.next_message_id;
+        self.next_message_id += 1;
+        current
     }
 }
 
