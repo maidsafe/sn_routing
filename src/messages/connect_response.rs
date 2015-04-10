@@ -33,29 +33,39 @@ pub struct ConnectResponse {
   pub receiver_fob       : types::PublicPmid
 }
 
-// FIXME: Had to disable this because we don't have generate_random
-// function for std::net::SocketAddr
-//impl ConnectResponse {
-//    pub fn generate_random() -> ConnectResponse {
-//        ConnectResponse {
-//            requester_local: types::EndPoint::generate_random(),
-//            requester_external: types::EndPoint::generate_random(),
-//            receiver_local: types::EndPoint::generate_random(),
-//            receiver_external: types::EndPoint::generate_random(),
-//            requester_id: types::DhtId::generate_random(),
-//            receiver_id: types::DhtId::generate_random(),
-//            receiver_fob: types::PublicPmid::generate_random(),
-//        }
-//    }
-//}
+impl ConnectResponse {
+    pub fn generate_random() -> ConnectResponse {
+        use std::net::{Ipv4Addr, SocketAddrV4};
+        use rand::random;
+
+        // TODO: IPv6
+        let random_addr = || -> SocketAddr {
+            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
+                                                           random::<u8>(),
+                                                           random::<u8>(),
+                                                           random::<u8>()),
+                                             random::<u16>()))
+        };
+
+        ConnectResponse {
+            requester_local: random_addr(),
+            requester_external: random_addr(),
+            receiver_local: random_addr(),
+            receiver_external: random_addr(),
+            requester_id: types::DhtId::generate_random(),
+            receiver_id: types::DhtId::generate_random(),
+            receiver_fob: types::PublicPmid::generate_random(),
+        }
+    }
+}
 
 impl Encodable for ConnectResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     // FIXME: Implement Encodable/Decodable for SocketAddr
     let requester_local    = format!("{}", self.requester_local);
     let requester_external = format!("{}", self.requester_external);
-    let receiver_local     = format!("{}", self.requester_local);
-    let receiver_external  = format!("{}", self.requester_external);
+    let receiver_local     = format!("{}", self.receiver_local);
+    let receiver_external  = format!("{}", self.receiver_external);
 
     CborTagEncode::new(5483_001, &(&requester_local, &requester_external,
                                    &receiver_local, &receiver_external,
@@ -85,20 +95,20 @@ impl Decodable for ConnectResponse {
 
 #[cfg(test)]
 mod test {
-    //extern crate cbor;
+    extern crate cbor;
 
-    //use super::*;
+    use super::*;
 
-    //#[test]
-    //fn connect_response_serialisation() {
-    //    let obj_before = ConnectResponse::generate_random();
+    #[test]
+    fn connect_response_serialisation() {
+        let obj_before = ConnectResponse::generate_random();
 
-    //    let mut e = cbor::Encoder::from_memory();
-    //    e.encode(&[&obj_before]).unwrap();
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
 
-    //    let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-    //    let obj_after: ConnectResponse = d.decode().next().unwrap().unwrap();
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: ConnectResponse = d.decode().next().unwrap().unwrap();
 
-    //    assert_eq!(obj_before, obj_after);
-    //}
+        assert_eq!(obj_before, obj_after);
+    }
 }
