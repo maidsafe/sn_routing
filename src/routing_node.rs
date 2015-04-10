@@ -297,8 +297,21 @@ impl<F> RoutingNode<F> where F: Facade {
         Ok(())
     }
 
-    fn handle_find_group_response(find_group_response: FindGroupResponse, original_header: MessageHeader) {
-        unimplemented!();
+    fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
+        println!("{:?} received FindGroupResponse", self.own_id);
+        let find_group_response = try!(self.decode::<FindGroupResponse>(&body).ok_or(()));
+        for peer in find_group_response.group {
+            if !self.routing_table.check_node(&peer.name) {
+                continue;
+            }
+            let routing_msg = self.construct_connect_request_msg(&peer.name);
+            if self.bootstrap_node_id.is_some() {
+                let bootstrap_node = self.bootstrap_node_id.clone();
+                self.connection_manager.send(self.encode(&routing_msg), bootstrap_node.unwrap());
+            }
+            // SendSwarmOrParallel  // FIXME
+        }
+        Ok(())
     }
 
     fn handle_get_data(get_data: GetData, original_header: MessageHeader) {
@@ -386,6 +399,32 @@ impl<F> RoutingNode<F> where F: Facade {
                                                      target_id:    self.own_id.clone()
                                                    })
         }
+    }
+
+    fn construct_connect_request_msg(&mut self, peer_id: &DhtId) -> RoutingMessage {
+        let (requester_local, requester_external) = self.next_endpoint_pair();
+        let connect_request = ConnectRequest {
+                                                local: requester_local,
+                                                external: requester_external,
+                                                requester_id: self.own_id.clone(),
+                                                receiver_id: peer_id.clone(),
+                                                requester_fob: types::PublicPmid::new(&self.pmid),
+                                              };
+        // Make MessageHeader
+        let destination = types::DestinationAddress {dest: peer_id.clone(), reply_to: None };
+        let header = MessageHeader::new(
+            self.get_next_message_id(),
+            destination,
+            self.our_source_address(),
+            types::Authority::ManagedNode,
+            None,
+        );
+        // Make RoutingMessage
+        let routing_msg = messages::RoutingMessage::new(
+            messages::MessageTypeTag::Connect,
+            header,
+            self.encode(&connect_request));
+        return routing_msg
     }
 
     fn get_next_message_id(&mut self) -> MessageId {

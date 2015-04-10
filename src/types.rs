@@ -296,7 +296,7 @@ impl Decodable for PublicKey {
 pub struct PublicPmid {
   pub public_key: PublicKey,
   pub validation_token: Signature,
-  name: DhtId
+  pub name: DhtId
 }
 
 impl PublicPmid {
