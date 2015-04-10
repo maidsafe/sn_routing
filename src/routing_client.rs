@@ -184,3 +184,55 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
 
     fn add_bootstrap(&self) { unimplemented!() }
 }
+
+#[cfg(test)]
+mod test {
+  extern crate cbor;
+  extern crate rand;
+
+  use super::*;
+  use std::sync::{Mutex, Arc, mpsc};
+  use types::*;
+  use Facade;
+  use Action;
+  use RoutingError;
+  use routing_node::RoutingNode;
+  use maidsafe_types::Random;
+  use maidsafe_types::Maid;
+  use maidsafe_types::ImmutableData;
+
+  struct TestFacade;
+
+  impl Facade for TestFacade {
+    fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: DhtId)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                  from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
+    fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+    fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+    fn add_node(&mut self, node: DhtId) { unimplemented!(); }
+    fn drop_node(&mut self, node: DhtId) { unimplemented!(); }
+  }
+
+  pub fn generate_random(size : usize) -> Vec<u8> {
+    let mut content: Vec<u8> = vec![];
+    for _ in (0..size) {
+      content.push(rand::random::<u8>());
+    }
+    content
+  }
+
+  #[test]
+  fn routing_client_put() {
+    let facade = Arc::new(Mutex::new(TestFacade));
+    let maid = Maid::generate_random();
+    let dht_id = DhtId::generate_random();
+    let mut routing_client = RoutingClient::new(facade, maid, dht_id);
+    let name = DhtId::generate_random();
+    let content = generate_random(1024);
+
+    let put_result = routing_client.put::<ImmutableData>(name, content);
+    // assert_eq!(put_result.is_err(), false);
+  }
+}

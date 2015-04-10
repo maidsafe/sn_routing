@@ -40,7 +40,7 @@
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features)]
 #![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core,
-           udp, thread_sleep, ip_addr, convert)]
+           thread_sleep, ip_addr, convert)]
 
 extern crate sodiumoxide;
 extern crate lru_cache;
@@ -57,7 +57,6 @@ use sodiumoxide::crypto;
 
 mod routing_client;
 pub mod types;
-mod broadcast;
 mod message_header;
 pub mod routing_table;
 mod accumulator;
