@@ -57,6 +57,7 @@ pub struct RoutingNode<F: Facade> {
     routing_table: RoutingTable,
     accepting_on: Option<u16>,
     message_id: u32,
+    bootstrap_node_id: Option<types::DhtId>,
 }
 
 impl<F> RoutingNode<F> where F: Facade {
@@ -77,6 +78,7 @@ impl<F> RoutingNode<F> where F: Facade {
                       routing_table : RoutingTable::new(own_id),
                       accepting_on: accepting_on,
                       message_id: rand::random::<u32>(),
+                      bootstrap_node_id: None,
                     }
     }
 
@@ -252,7 +254,7 @@ impl<F> RoutingNode<F> where F: Facade {
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> =  vec![];;
         for x in close_group {
-            // group.push(x.fob);  // FIXME need toeither use fob or publicpmid
+            // group.push(x.fob);  // FIXME (Ben)
         }
         // add ourselves
         group.push(types::PublicPmid::new(&self.pmid));
@@ -309,6 +311,28 @@ impl<F> RoutingNode<F> where F: Facade {
         let _ = enc.encode(&[value]);
         enc.into_bytes()
     }
+
+    fn our_source_address() -> types::SourceAddress {
+        unimplemented!();
+    }
+
+    fn our_group_address(group_id: DhtId) -> types::SourceAddress {
+        unimplemented!();
+    }
+
+// template <typename Child>
+// SourceAddress RoutingNode<Child>::OurSourceAddress() const {
+//   if (bootstrap_node_)
+//     return SourceAddress(NodeAddress(*bootstrap_node_), boost::none, ReplyToAddress(OurId()));
+//   else
+//     return SourceAddress(NodeAddress(OurId()), boost::none, boost::none);
+// }
+
+// template <typename Child>
+// SourceAddress RoutingNode<Child>::OurSourceAddress(GroupAddress group) const {
+//   return SourceAddress(NodeAddress(OurId()), group, boost::none);
+// }
+
 }
 
 #[cfg(test)]
