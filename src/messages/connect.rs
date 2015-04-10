@@ -15,25 +15,39 @@
 
 #![allow(unused_assignments)]
 
+extern crate rand;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use std::net::{SocketAddr};
 
 use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectRequest {
-  pub local : types::EndPoint,
-  pub external : types::EndPoint,
-  pub requester_id : types::DhtId,
-  pub receiver_id : types::DhtId,
+  pub local         : SocketAddr,
+  pub external      : SocketAddr,
+  pub requester_id  : types::DhtId,
+  pub receiver_id   : types::DhtId,
   pub requester_fob : types::PublicPmid
 }
 
 impl ConnectRequest {
     pub fn generate_random() -> ConnectRequest {
+        use std::net::{Ipv4Addr, SocketAddrV4};
+        use rand::random;
+
+        // TODO: IPv6
+        let random_addr = || -> SocketAddr {
+            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
+                                                           random::<u8>(),
+                                                           random::<u8>(),
+                                                           random::<u8>()),
+                                             random::<u16>()))
+        };
+
         ConnectRequest {
-            local: types::EndPoint::generate_random(),
-            external: types::EndPoint::generate_random(),
+            local: random_addr(),
+            external: random_addr(),
             requester_id: types::DhtId::generate_random(),
             receiver_id: types::DhtId::generate_random(),
             requester_fob: types::PublicPmid::generate_random(),
@@ -43,17 +57,34 @@ impl ConnectRequest {
 
 impl Encodable for ConnectRequest {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.local, &self.external, &self.requester_id,
-                                   &self.receiver_id, &self.requester_fob)).encode(e)
+      // FIXME: Implement Encodable/Decodable for SocketAddr
+      let local_str    = format!("{}", self.local);
+      let external_str = format!("{}", self.external);
+      CborTagEncode::new(5483_001, &(&local_str,
+                                     &external_str,
+                                     &self.requester_id,
+                                     &self.receiver_id,
+                                     &self.requester_fob)).encode(e)
   }
 }
 
 impl Decodable for ConnectRequest {
   fn decode<D: Decoder>(d: &mut D)->Result<ConnectRequest, D::Error> {
+      use types::DhtId;
+
     try!(d.read_u64());
-    let (local, external, requester_id, receiver_id, requester_fob) = try!(Decodable::decode(d));
-    Ok(ConnectRequest { local: local, external: external, requester_id: requester_id,
-                        receiver_id: receiver_id, requester_fob: requester_fob})
+
+    let (local_str, external_str, requester_id, receiver_id, requester_fob):
+        (String, String, DhtId, DhtId, types::PublicPmid) = try!(Decodable::decode(d));
+
+    let local    = try!(local_str   .parse().or(Err(d.error("can't parse local addr"))));
+    let external = try!(external_str.parse().or(Err(d.error("can't parse external addr"))));
+
+    Ok(ConnectRequest { local: local,
+                        external: external,
+                        requester_id: requester_id,
+                        receiver_id: receiver_id,
+                        requester_fob: requester_fob})
   }
 }
 

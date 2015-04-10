@@ -410,32 +410,6 @@ impl Pmid {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct EndPoint {
-  pub ip_addr : Vec<u8>,
-  pub socket : u32,
-}
-
-impl EndPoint {
-    pub fn generate_random() -> EndPoint {
-        EndPoint { ip_addr: generate_random_vec_u8(4), socket: rand::random::<u32>(), }
-    }
-}
-
-impl Encodable for EndPoint {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.ip_addr, &self.socket)).encode(e)
-  }
-}
-
-impl Decodable for EndPoint {
-  fn decode<D: Decoder>(d: &mut D)->Result<EndPoint, D::Error> {
-    try!(d.read_u64());
-    let (ip_addr, socket) = try!(Decodable::decode(d));
-    Ok(EndPoint { ip_addr: ip_addr, socket: socket })
-  }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct AccountTransferInfo {
   pub name : DhtId
 }

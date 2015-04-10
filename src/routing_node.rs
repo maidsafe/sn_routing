@@ -130,7 +130,7 @@ impl<F> RoutingNode<F> where F: Facade {
         }
     }
 
-    fn next_endpoint_pair(&self)->(types::EndPoint, types::EndPoint) {
+    fn next_endpoint_pair(&self)->(SocketAddr, SocketAddr) {
       unimplemented!();  // FIXME (Peter)
     }
 
@@ -142,7 +142,7 @@ impl<F> RoutingNode<F> where F: Facade {
 
         let msg = self.construct_find_group_msg();
         let msg = self.encode(&msg);
-        self.connection_manager.send(msg, peer_id);
+        let _ = self.connection_manager.send(msg, peer_id);
     }
 
     fn handle_accept(&mut self, peer_id: DhtId) {
