@@ -24,8 +24,7 @@ use sodiumoxide::crypto;
 use std::cmp;
 use std::net::*;
 use std::usize;
-
-use types::DhtId;
+use types::{DhtId, PublicPmid, RoutingTrait};
 
 static BUCKET_SIZE: usize = 1;
 static GROUP_SIZE: usize = 23;
@@ -42,7 +41,7 @@ pub struct KeyFob {
 
 #[derive(Clone)]
 pub struct NodeInfo {
-    pub fob: KeyFob,
+    pub fob: PublicPmid,
     endpoint: SocketAddr,
     connected: bool,
 }
@@ -91,13 +90,13 @@ impl RoutingTable {
     ///     contacts, which is also not within our close group), and if the new contact will fit in a
     ///     bucket closer to our own bucket, then we add the new contact.
     pub fn add_node(&mut self, their_info: NodeInfo)->(bool, Option<NodeInfo>) {
-        assert!(their_info.fob.id.is_valid());
+        assert!(their_info.fob.get_name().is_valid());
 
-        if self.our_id == their_info.fob.id {
+        if self.our_id == their_info.fob.get_name() {
             return (false, None);
         }
 
-        if self.has_node(&their_info.fob.id) {
+        if self.has_node(&their_info.fob.get_name()) {
             return (false, None);
         }
 
@@ -106,8 +105,8 @@ impl RoutingTable {
             return (true, None);
         }
 
-        if RoutingTable::closer_to_target(&their_info.fob.id,
-                &self.routing_table[RoutingTable::get_group_size()].fob.id, &self.our_id) {
+        if RoutingTable::closer_to_target(&their_info.fob.get_name(),
+                &self.routing_table[RoutingTable::get_group_size()].fob.get_name(), &self.our_id) {
             self.push_back_then_sort(their_info);
             let removal_node_index = self.find_candidate_for_removal();
             if removal_node_index == usize::MAX {
@@ -121,7 +120,7 @@ impl RoutingTable {
 
         let removal_node_index = self.find_candidate_for_removal();
         if removal_node_index != usize::MAX &&
-                self.new_node_is_better_than_existing(&their_info.fob.id, removal_node_index) {
+                self.new_node_is_better_than_existing(&their_info.fob.get_name(), removal_node_index) {
             let removal_node = self.routing_table[removal_node_index].clone();
             self.routing_table.remove(removal_node_index);
             self.push_back_then_sort(their_info);
@@ -149,7 +148,7 @@ impl RoutingTable {
         }
         let group_size = RoutingTable::get_group_size() - 1;
         let thier_id_clone = their_id.clone();
-        if RoutingTable::closer_to_target(&their_id, &self.routing_table[group_size].fob.id,
+        if RoutingTable::closer_to_target(&their_id, &self.routing_table[group_size].fob.get_name(),
                                           &self.our_id) {
             return true;
         }
@@ -162,7 +161,7 @@ impl RoutingTable {
             let mut index_of_removal = usize::MAX;
 
             for i in 0..self.routing_table.len() {
-                if self.routing_table[i].fob.id == *node_to_drop {
+                if self.routing_table[i].fob.get_name() == *node_to_drop {
                     index_of_removal = i;
                     break;
                 }
@@ -203,7 +202,7 @@ impl RoutingTable {
         }
 
         closest_to_target.sort_by(
-            |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id, &target) {
+            |a, b| if RoutingTable::closer_to_target(&a.fob.get_name(), &b.fob.get_name(), &target) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
@@ -245,10 +244,10 @@ impl RoutingTable {
         }
         let found_node_option = self.routing_table.iter().find(
             |&node_info| {
-                node_info.fob.id == their_id
+                node_info.fob.get_name() == their_id
             });
         match found_node_option {
-            Some(node) => { Some(node.fob.keys.1) }
+            Some(node) => { Some(node.fob.public_key.get_crypto_public_key()) }
             None => {None}
         }
     }

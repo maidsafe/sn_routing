@@ -63,10 +63,6 @@ pub static QUORUM_SIZE: u32 = 19;
 pub struct DhtId(pub Vec<u8>);
 
 impl DhtId {
-    // pub fn new(vect : Vec<u8>) -> DhtId {
-    //   assert_eq!(vect.len(), 64);
-    //   DhtId(vect.clone())
-    // }
 
     pub fn new(array : [u8; 64]) -> DhtId {
         DhtId(array.to_vec())
@@ -262,11 +258,11 @@ impl PublicKey {
   }
 
   pub fn generate_random() -> PublicKey {
-      PublicKey { public_key: generate_random_vec_u8(64) }
+    PublicKey { public_key: generate_random_vec_u8(32) }
   }
 
-  pub fn get_crypto_public_key(&self) -> Vec<u8> {
-    self.public_key.clone()
+  pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
+    crypto::asymmetricbox::PublicKey(vector_as_u8_32_array(self.public_key.clone()));
   }
 }
 
@@ -287,6 +283,7 @@ impl Decodable for PublicKey {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicPmid {
   pub public_key: PublicKey,
+  pub public_sign_key: PublicSignKey,
   pub validation_token: Signature,
   name: DhtId
 }
@@ -296,6 +293,7 @@ impl PublicPmid {
     pub fn new(pmid : &Pmid) -> PublicPmid {
       PublicPmid {
         public_key : pmid.get_public_key(),
+        public_sign_key : pmid.get_public_sign_key(),
         validation_token : pmid.get_validation_token(),
         name : pmid.get_name()
       }
@@ -309,15 +307,14 @@ impl PublicPmid {
     }
 }
 
-// impl RoutingTrait for PublicPmid {
-//   // TODO(ben 2015-04-09) Give CORRECT NAME !
-//   fn get_name(&self) -> DhtId { self.public_key.public_key.clone() }
-//   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-//   fn refresh(&self)->bool { false } // TODO is this an account transfer type
-//
-//    // TODO how do we merge these
-//   fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
-// }
+impl RoutingTrait for PublicPmid {
+  fn get_name(&self) -> DhtId { self.name.clone() }
+  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
+  fn refresh(&self)->bool { false } // TODO is this an account transfer type
+
+   // TODO how do we merge these
+  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+}
 
 impl Encodable for PublicPmid {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
@@ -383,6 +380,9 @@ impl Pmid {
 
   pub fn get_public_key(&self) -> PublicKey {
     PublicKey::new(self.public_keys.1.clone())
+  }
+  pub fn get_public_sign_key(&self) -> PublicSignKey {
+    PublicSignKey::new(self.public_keys.0.clone())
   }
   pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
     self.public_keys.1.clone()
