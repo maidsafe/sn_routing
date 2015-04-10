@@ -102,8 +102,7 @@ impl<F> RoutingNode<F> where F: Facade {
     pub fn post(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
 
     pub fn add_bootstrap(&mut self, endpoint: SocketAddr) {
-        let msg = &self.construct_find_group_msg();
-        let _ = self.connection_manager.connect(endpoint, self.encode(msg));
+        let _ = self.connection_manager.connect(endpoint);
     }
 
     pub fn run(&mut self) {
@@ -119,16 +118,10 @@ impl<F> RoutingNode<F> where F: Facade {
                     }
                 },
                 crust::Event::Connect(id) => {
-                    if self.all_connections.is_empty() {
-                        self.bootstrap_node_id = Some(id.clone());
-                    }
-                    self.handle_new_connection(id);
+                    self.handle_connect(id);
                 },
-                crust::Event::Accept(id, bytes) => {
-                    self.handle_new_connection(id.clone());
-                    if self.message_received(&id, bytes).is_err() {
-                        let _ = self.connection_manager.drop_node(id);
-                    }
+                crust::Event::Accept(id) => {
+                    self.handle_accept(id.clone());
                 },
                 crust::Event::LostConnection(id) => {
                     self.handle_lost_connection(id);
@@ -141,18 +134,19 @@ impl<F> RoutingNode<F> where F: Facade {
       unimplemented!();  // FIXME (Peter)
     }
 
-    fn handle_new_connection(&mut self, peer_id: DhtId) {
-        self.all_connections.insert(peer_id);
-
-        if false {  // if unexpected connection, its likely
-            //add to non_routing_list;
-        } else {
-            // let peer_node_info = NodeInfo {};
-            // if !(self.routing_table.add_node(&peer_id)) {
-            //     self.connection.drop_node(peer_id);
-            // }
+    fn handle_connect(&mut self, peer_id: DhtId) {
+        if self.all_connections.is_empty() {
+            self.bootstrap_node_id = Some(peer_id.clone());
         }
-        // handle_curn
+        self.all_connections.insert(peer_id.clone());
+
+        let msg = self.construct_find_group_msg();
+        let msg = self.encode(&msg);
+        self.connection_manager.send(msg, peer_id);
+    }
+
+    fn handle_accept(&mut self, peer_id: DhtId) {
+        self.all_connections.insert(peer_id);
     }
 
     fn handle_lost_connection(&mut self, peer_id: DhtId) {
@@ -185,7 +179,7 @@ impl<F> RoutingNode<F> where F: Facade {
         // switch message type
 
         match msg.message_type {
-            MessageTypeTag::Connect => self.handle_connect(header, body),
+            MessageTypeTag::Connect => self.handle_connect_request(header, body),
             //ConnectResponse,
             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
             //FindGroupResponse,
@@ -208,7 +202,7 @@ impl<F> RoutingNode<F> where F: Facade {
         }
     }
 
-    fn handle_connect(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectRequest", self.own_id);
         let connect_request = try!(self.decode::<ConnectRequest>(&body).ok_or(()));
 
@@ -371,7 +365,17 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn construct_find_group_msg(&mut self) -> RoutingMessage {
-        // TODO: Replace with sane values.
+        let header = MessageHeader {
+            message_id:  self.get_next_message_id(),
+            destination: types::DestinationAddress {
+                             dest:     self.own_id.clone(),
+                             reply_to: None
+                         },
+            source:      self.our_source_address(),
+            authority:   types::Authority::ManagedNode,
+            signature:   None
+        };
+
         RoutingMessage{
             message_type:    messages::MessageTypeTag::FindGroup,
             message_header:  self.construct_header(),
