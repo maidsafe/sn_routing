@@ -55,7 +55,7 @@ extern crate maidsafe_types;
 
 use sodiumoxide::crypto;
 
-pub mod routing_client;
+mod routing_client;
 pub mod types;
 mod message_header;
 pub mod routing_table;
