@@ -13,6 +13,8 @@
 // use of the MaidSafe
 // Software.
 
+extern crate rand;
+
 use sodiumoxide;
 use crust;
 use std::sync::{Arc, mpsc, Mutex};
@@ -26,6 +28,7 @@ use std::collections::HashSet;
 use routing_table::RoutingTable;
 use types::DhtId;
 use message_header::MessageHeader;
+use message_header;
 use messages;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
@@ -52,7 +55,8 @@ pub struct RoutingNode<F: Facade> {
     connection_manager: ConnectionManager,
     all_connections: HashSet<DhtId>,
     routing_table: RoutingTable,
-    accepting_on: Option<u16>
+    accepting_on: Option<u16>,
+    message_id: u32,
 }
 
 impl<F> RoutingNode<F> where F: Facade {
@@ -75,7 +79,8 @@ impl<F> RoutingNode<F> where F: Facade {
                       connection_manager: cm,
                       all_connections: HashSet::new(),
                       routing_table : RoutingTable::new(own_id),
-                      accepting_on: accepting_on
+                      accepting_on: accepting_on,
+                      message_id: rand::random::<u32>(),
                     }
     }
 
@@ -201,7 +206,7 @@ impl<F> RoutingNode<F> where F: Facade {
     //fn handle_connect(&self, connect_request: ConnectRequest, original_header: MessageHeader) -> Option<()> {
     fn handle_connect(&self, original_header: MessageHeader, body: Bytes) -> Option<()> {
         let connect_request = self.decode::<ConnectRequest>(&body);
-        
+
         if connect_request.is_none() {
             return None;
         }
@@ -246,7 +251,28 @@ impl<F> RoutingNode<F> where F: Facade {
         // self.connection_manager.connect();
     }
 
-    fn handle_find_group(find_group: FindGroup, original_header: MessageHeader) {
+    fn handle_find_group(&self, find_group: FindGroup, original_header: MessageHeader) {
+        let close_group = self.routing_table.our_close_group();
+        let mut group: Vec<types::PublicPmid> =  vec![];;
+        for x in close_group {
+            // group.push(x.fob);  // FIXME need toeither use fob or publicpmid
+        }
+        // add ourselves
+        group.push(types::PublicPmid::generate_random());  // FIXME (Ben)
+
+        let find_group_response = FindGroupResponse { target_id: find_group.target_id,
+                                                      group: group };
+
+        // Make MessageHeader
+        // let header = message_header::MessageHeader::new(
+        //     self.message_id,
+        //     original_header.send_to(),
+        //     types::SourceAddress{ from_node: self.own_id.clone(), from_group: Some(find_group.target_id.clone()),
+        //                           reply_to: None},  // FIXME implement OurSourceAddress
+        //     types::Authority::NaeManager,
+        //     None,
+        // );
+
         unimplemented!();
     }
 
