@@ -258,19 +258,17 @@ impl<F> RoutingNode<F> where F: Facade {
         }
         // add ourselves
         group.push(types::PublicPmid::new(&self.pmid));
-
-        let find_group_response = FindGroupResponse { target_id: find_group.target_id,
+        let find_group_response = FindGroupResponse { target_id: find_group.target_id.clone(),
                                                       group: group };
 
         // Make MessageHeader
-        // let header = message_header::MessageHeader::new(
-        //     self.message_id,
-        //     original_header.send_to(),
-        //     types::SourceAddress{ from_node: self.own_id.clone(), from_group: Some(find_group.target_id.clone()),
-        //                           reply_to: None},  // FIXME implement OurSourceAddress
-        //     types::Authority::NaeManager,
-        //     None,
-        // );
+        let header = MessageHeader::new(
+            self.message_id,
+            original_header.send_to(),
+            self.our_group_address(find_group.target_id.clone()),
+            types::Authority::NaeManager,
+            None,
+        );
 
         unimplemented!();
     }
@@ -312,12 +310,20 @@ impl<F> RoutingNode<F> where F: Facade {
         enc.into_bytes()
     }
 
-    fn our_source_address() -> types::SourceAddress {
-        unimplemented!();
+    fn our_source_address(&self) -> types::SourceAddress {
+        if self.bootstrap_node_id.is_some() {
+            let bootstrap_node_id = self.bootstrap_node_id.clone();
+            return types::SourceAddress{ from_node: bootstrap_node_id.unwrap(), from_group: None,
+                                reply_to: Some(self.own_id.clone()) }
+        } else {
+            return types::SourceAddress{ from_node: self.own_id.clone(), from_group: None,
+                                reply_to: None }
+        }
     }
 
-    fn our_group_address(group_id: DhtId) -> types::SourceAddress {
-        unimplemented!();
+    fn our_group_address(&self, group_id: DhtId) -> types::SourceAddress {
+        types::SourceAddress{ from_node: self.own_id.clone(), from_group: Some(group_id.clone()),
+                                reply_to: None }
     }
 
 // template <typename Child>
