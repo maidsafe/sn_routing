@@ -102,7 +102,9 @@ impl<F> RoutingNode<F> where F: Facade {
     pub fn post(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
 
     pub fn add_bootstrap(&mut self, endpoint: SocketAddr) {
-        let _ = self.connection_manager.connect(endpoint);
+        let msg = self.construct_find_group_msg();
+        let msg = self.encode(&msg);
+        let _ = self.connection_manager.connect(endpoint, msg);
     }
 
     pub fn run(&mut self) {
@@ -120,8 +122,8 @@ impl<F> RoutingNode<F> where F: Facade {
                 crust::Event::Connect(id) => {
                     self.handle_connect(id);
                 },
-                crust::Event::Accept(id) => {
-                    self.handle_accept(id.clone());
+                crust::Event::Accept(id, bytes) => {
+                    self.handle_accept(id.clone(), bytes);
                 },
                 crust::Event::LostConnection(id) => {
                     self.handle_lost_connection(id);
@@ -141,14 +143,13 @@ impl<F> RoutingNode<F> where F: Facade {
             self.bootstrap_node_id = Some(peer_id.clone());
         }
         self.all_connections.insert(peer_id.clone());
-
-        let msg = self.construct_find_group_msg();
-        let msg = self.encode(&msg);
-        let _ = self.connection_manager.send(msg, peer_id);
     }
 
-    fn handle_accept(&mut self, peer_id: DhtId) {
-        self.all_connections.insert(peer_id);
+    fn handle_accept(&mut self, peer_id: DhtId, bytes: Bytes) {
+        self.all_connections.insert(peer_id.clone());
+        if self.message_received(&peer_id, bytes).is_err() {
+            let _ = self.connection_manager.drop_node(peer_id);
+        }
     }
 
     fn handle_lost_connection(&mut self, peer_id: DhtId) {
@@ -440,6 +441,10 @@ impl<F> RoutingNode<F> where F: Facade {
         let current = self.next_message_id;
         self.next_message_id += 1;
         current
+    }
+
+    fn send_swarm_or_parallel(&self, message: RoutingMessage) {
+        unimplemented!()
     }
 }
 
