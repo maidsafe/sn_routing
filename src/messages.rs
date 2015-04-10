@@ -42,8 +42,8 @@ pub mod put_data;
 #[path="messages/put_data_response.rs"]
 pub mod put_data_response;
 
-extern crate cbor;
 
+use cbor;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 

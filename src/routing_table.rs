@@ -16,9 +16,6 @@
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe Software.
 
-extern crate maidsafe_types;
-extern crate sodiumoxide;
-
 use common_bits::*;
 use sodiumoxide::crypto;
 use std::cmp;
@@ -398,10 +395,6 @@ impl RoutingTable {
 
 #[cfg(test)]
 mod test {
-    extern crate maidsafe_types;
-    extern crate rand;
-    extern crate sodiumoxide;
-
     use super::*;
     use sodiumoxide::crypto;
     use std::cmp;

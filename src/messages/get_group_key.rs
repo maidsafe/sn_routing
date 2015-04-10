@@ -51,8 +51,6 @@ impl Decodable for GetGroupKey {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
 
     #[test]

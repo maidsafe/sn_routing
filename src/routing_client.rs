@@ -13,12 +13,6 @@
 // use of the MaidSafe
 // Software.                                                                 
 
-extern crate crust;
-extern crate sodiumoxide;
-extern crate cbor;
-extern crate maidsafe_types;
-extern crate rand;
-
 use maidsafe_types::Random;
 use std::sync::{Mutex, Arc, mpsc};
 use std::io::Error as IoError;
@@ -26,8 +20,13 @@ use types;
 use Facade;
 use message_header;
 use messages;
+use maidsafe_types;
 use maidsafe_types::traits::RoutingTrait;
 use std::thread;
+use cbor;
+use crust;
+use rand;
+use sodiumoxide;
 
 type ConnectionManager = crust::ConnectionManager<types::DhtId>;
 type Event             = crust::Event<types::DhtId>;

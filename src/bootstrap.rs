@@ -16,17 +16,14 @@
     See the Licences for the specific language governing permissions and limitations relating to
     use of the MaidSafe Software.                                                                 */
 
-extern crate maidsafe_types;
-extern crate sodiumoxide;
-extern crate time;
-extern crate sqlite3;
-extern crate cbor;
-
+use time;
+use cbor;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto;
 use std::net;
 use sqlite3::*;
+use maidsafe_types;
 
 type BootStrapContacts = Vec<Contact>;
 
@@ -182,13 +179,6 @@ impl BootStrapHandler {
 
 #[cfg(test)]
 mod test {
-    extern crate maidsafe_types;
-    extern crate sodiumoxide;
-    extern crate time;
-    extern crate sqlite3;
-    extern crate cbor;
-    extern crate rand;
-
     use bootstrap::{Contact, BootStrapHandler};
     use std::net;
 

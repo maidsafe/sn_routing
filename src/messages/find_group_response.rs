@@ -106,8 +106,6 @@ impl Decodable for FindGroupResponse {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
 
     #[test]

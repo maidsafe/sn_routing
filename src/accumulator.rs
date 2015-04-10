@@ -103,8 +103,6 @@ impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
     use std::num;
     use rand;

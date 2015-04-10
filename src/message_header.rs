@@ -16,8 +16,6 @@
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe Software.
 
-extern crate sodiumoxide;
-
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
@@ -139,7 +137,6 @@ impl MessageHeader {
 #[cfg(test)]
 #[allow(deprecated)]
 mod test {
-    extern crate cbor;
     use super::*;
     use std::rand;
     use rustc_serialize::{Decodable, Encodable};

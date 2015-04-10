@@ -16,11 +16,9 @@
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe Software.
 
-extern crate cbor;
-extern crate sodiumoxide;
-
 use std::collections::HashMap;
 use sodiumoxide::crypto;
+use cbor;
 
 use accumulator;
 use message_header;
@@ -307,10 +305,6 @@ impl<'a> Sentinel<'a> {
 
 #[cfg(test)]
 mod test {
-
-  extern crate rand;
-  extern crate sodiumoxide;
-  extern crate cbor;
 
   use super::*;
   use std::cmp;

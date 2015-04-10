@@ -66,8 +66,6 @@ impl Decodable for ConnectResponse {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
 
     #[test]
