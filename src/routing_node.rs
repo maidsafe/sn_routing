@@ -180,7 +180,7 @@ impl<F> RoutingNode<F> where F: Facade {
 
         match msg.message_type {
             MessageTypeTag::Connect => self.handle_connect_request(header, body),
-            //ConnectResponse,
+            MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
             //FindGroupResponse,
             //GetData,
@@ -246,12 +246,15 @@ impl<F> RoutingNode<F> where F: Facade {
         Ok(())
     }
 
-    fn handle_connect_response(&self, connect_response: ConnectResponse) {
+    fn handle_connect_response(&self, body: Bytes) -> RecvResult {
+        println!("{:?} received ConnectResponse", self.own_id);
+        let connect_response = try!(self.decode::<ConnectResponse>(&body).ok_or(()));
         if !(self.routing_table.check_node(&connect_response.receiver_id)) {
-           return;
+           return Ok(())
         }
         // AddNode
         // self.connection_manager.connect();
+        Ok(())
     }
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
@@ -304,7 +307,8 @@ impl<F> RoutingNode<F> where F: Facade {
             let routing_msg = self.construct_connect_request_msg(&peer.name);
             if self.bootstrap_node_id.is_some() {
                 let bootstrap_node = self.bootstrap_node_id.clone();
-                self.connection_manager.send(self.encode(&routing_msg), bootstrap_node.unwrap());
+                let _ = self.connection_manager.send(self.encode(&routing_msg),
+                                                                 bootstrap_node.unwrap());
             }
             // SendSwarmOrParallel  // FIXME
         }
