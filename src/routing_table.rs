@@ -50,7 +50,7 @@ pub struct NodeInfo {
 }
 
 impl NodeInfo {
-  pub fn new(fob : PublicPmid, endpoint : SocketAddr, connected: bool)
+  pub fn new(fob: PublicPmid, endpoint: SocketAddr, connected: bool)
          -> NodeInfo {
     NodeInfo {
       id : fob.get_name(),
