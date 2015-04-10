@@ -37,7 +37,7 @@ use messages::connect::ConnectRequest;
 use messages::connect_response::ConnectResponse;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
-use messages::{RoutingMessage};
+use messages::{RoutingMessage, MessageTypeTag};
 use rustc_serialize::{Decodable, Encodable};
 use cbor::{Encoder, Decoder};
 
@@ -46,6 +46,8 @@ use types::RoutingTrait;
 type ConnectionManager = crust::ConnectionManager<DhtId>;
 type Event             = crust::Event<DhtId>;
 type Bytes             = Vec<u8>;
+
+type RecvResult = Result<(),()>;
 
 /// DHT node
 pub struct RoutingNode<F: Facade> {
@@ -116,7 +118,7 @@ impl<F> RoutingNode<F> where F: Facade {
 
             match event.unwrap() {
                 crust::Event::NewMessage(id, bytes) => {
-                    if self.message_received(&id, bytes).is_none() {
+                    if self.message_received(&id, bytes).is_err() {
                         let _ = self.connection_manager.drop_node(id);
                     }
                 },
@@ -125,7 +127,7 @@ impl<F> RoutingNode<F> where F: Facade {
                 },
                 crust::Event::Accept(id, bytes) => {
                     self.handle_new_connection(id.clone());
-                    if self.message_received(&id, bytes).is_none() {
+                    if self.message_received(&id, bytes).is_err() {
                         let _ = self.connection_manager.drop_node(id);
                     }
                 },
@@ -161,14 +163,14 @@ impl<F> RoutingNode<F> where F: Facade {
         // handle_curn
     }
 
-    fn message_received(&mut self, peer_id: &DhtId, serialised_message: Bytes) -> Option<()> {
+    fn message_received(&mut self, peer_id: &DhtId, serialised_message: Bytes) -> RecvResult {
         // Parse
         let msg = self.decode::<RoutingMessage>(&serialised_message);
 
         if msg.is_none() {
             println!("Problem parsing message of size {} from {:?}",
                      serialised_message.len(), peer_id);
-            return None;
+            return Err(());
         }
 
         let msg    = msg.unwrap();
@@ -184,9 +186,9 @@ impl<F> RoutingNode<F> where F: Facade {
         // switch message type
 
         match msg.message_type {
-            messages::MessageTypeTag::Connect => self.handle_connect(header, body),
+            MessageTypeTag::Connect => self.handle_connect(header, body),
             //ConnectResponse,
-            messages::MessageTypeTag::FindGroup => self.handle_find_group(header, body),
+            MessageTypeTag::FindGroup => self.handle_find_group(header, body),
             //FindGroupResponse,
             //GetData,
             //GetDataResponse,
@@ -202,22 +204,17 @@ impl<F> RoutingNode<F> where F: Facade {
             //AccountTransfer
             _ => {
                 println!("unhandled message from {:?}", peer_id);
-                None
+                Err(())
             }
         }
     }
 
-    fn handle_connect(&self, original_header: MessageHeader, body: Bytes) -> Option<()> {
-        let connect_request = self.decode::<ConnectRequest>(&body);
-
-        if connect_request.is_none() {
-            return None;
-        }
-
-        let connect_request = connect_request.unwrap();
+    fn handle_connect(&self, original_header: MessageHeader, body: Bytes) -> RecvResult {
+        println!("{:?} received ConnectRequest", self.own_id);
+        let connect_request = try!(self.decode::<ConnectRequest>(&body).ok_or(()));
 
         if !(self.routing_table.check_node(&connect_request.requester_id)) {
-           return None;
+           return Err(());
         }
         let (receiver_local, receiver_external) = self.next_endpoint_pair();
         let connect_response = ConnectResponse {
@@ -230,7 +227,7 @@ impl<F> RoutingNode<F> where F: Facade {
                                 receiver_fob: types::PublicPmid::new(&self.pmid) };
 
         debug_assert!(connect_request.receiver_id == self.own_id);
-        Some(())
+        Ok(())
         // Serialise message
 
         // if (bootstrap_node_) {
@@ -253,14 +250,9 @@ impl<F> RoutingNode<F> where F: Facade {
         // self.connection_manager.connect();
     }
 
-    fn handle_find_group(&self, original_header: MessageHeader, body: Bytes) -> Option<()> {
+    fn handle_find_group(&self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received FindGroup", self.own_id);
-        let find_group = self.decode::<FindGroup>(&body);
-
-        if find_group.is_none() {
-            return None;
-        }
-        let find_group = find_group.unwrap();
+        let find_group = try!(self.decode::<FindGroup>(&body).ok_or(()));
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> =  vec![];;
         for x in close_group {
@@ -279,7 +271,7 @@ impl<F> RoutingNode<F> where F: Facade {
             types::Authority::NaeManager,
             None,
         );
-        Some(())
+        Ok(())
     }
 
     fn handle_find_group_response(find_group_response: FindGroupResponse, original_header: MessageHeader) {
@@ -308,7 +300,6 @@ impl<F> RoutingNode<F> where F: Facade {
 
     fn decode<T>(&self, bytes: &Bytes) -> Option<T> where T: Decodable {
         let mut dec = Decoder::from_bytes(&bytes[..]);
-        //dec.decode().next().unwrap().unwrap()
         dec.decode().next().and_then(|result| result.ok())
     }
 
