@@ -18,7 +18,6 @@
 
 extern crate sodiumoxide;
 
-use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 

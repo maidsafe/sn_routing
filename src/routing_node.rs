@@ -73,7 +73,5 @@ impl<'a> RoutingNode<'a> {
 
 #[cfg(test)]
 mod test {
-    #[test]
-    fn test_routing_node() {
-    }
+
 }
