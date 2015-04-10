@@ -307,7 +307,7 @@ impl<F> RoutingNode<F> where F: Facade {
             let routing_msg = self.construct_connect_request_msg(&peer.name);
             if self.bootstrap_node_id.is_some() {
                 let bootstrap_node = self.bootstrap_node_id.clone();
-                self.connection_manager.send(self.encode(&routing_msg), bootstrap_node.unwrap());
+                let _ = self.connection_manager.send(self.encode(&routing_msg), bootstrap_node.unwrap());
             }
             // SendSwarmOrParallel  // FIXME
         }
@@ -402,7 +402,13 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn construct_connect_request_msg(&mut self, peer_id: &DhtId) -> RoutingMessage {
-        let (requester_local, requester_external) = self.next_endpoint_pair();
+        use std::net::{SocketAddrV4, Ipv4Addr};
+
+        let invalid_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0));
+
+        let (requester_local, requester_external)
+            = self.next_endpoint_pair().unwrap_or((invalid_addr, invalid_addr));
+
         let connect_request = ConnectRequest {
                                                 local: requester_local,
                                                 external: requester_external,
