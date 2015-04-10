@@ -46,6 +46,7 @@ use types::RoutingTrait;
 type ConnectionManager = crust::ConnectionManager<DhtId>;
 type Event             = crust::Event<DhtId>;
 type Bytes             = Vec<u8>;
+
 /// DHT node
 pub struct RoutingNode<F: Facade> {
     facade: Arc<Mutex<F>>,
@@ -102,7 +103,9 @@ impl<F> RoutingNode<F> where F: Facade {
     //}
 
     pub fn add_bootstrap(&self, endpoint: SocketAddr) {
-        let _ = self.connection_manager.connect(endpoint, Bytes::new());
+        let _ = self.connection_manager.connect(
+            endpoint,
+            self.encode(&self.construct_find_group_msg()));
     }
 
     pub fn run(&mut self) {
@@ -182,9 +185,8 @@ impl<F> RoutingNode<F> where F: Facade {
 
         match msg.message_type {
             messages::MessageTypeTag::Connect => self.handle_connect(header, body),
-            _ => None
             //ConnectResponse,
-            //FindGroup,
+            messages::MessageTypeTag::FindGroup => self.handle_find_group(header, body),
             //FindGroupResponse,
             //GetData,
             //GetDataResponse,
@@ -198,12 +200,13 @@ impl<F> RoutingNode<F> where F: Facade {
             //PutDataResponse,
             //PutKey,
             //AccountTransfer
+            _ => {
+                println!("unhandled message from {:?}", peer_id);
+                None
+            }
         }
-
-
     }
 
-    //fn handle_connect(&self, connect_request: ConnectRequest, original_header: MessageHeader) -> Option<()> {
     fn handle_connect(&self, original_header: MessageHeader, body: Bytes) -> Option<()> {
         let connect_request = self.decode::<ConnectRequest>(&body);
 
@@ -250,7 +253,14 @@ impl<F> RoutingNode<F> where F: Facade {
         // self.connection_manager.connect();
     }
 
-    fn handle_find_group(&self, find_group: FindGroup, original_header: MessageHeader) {
+    fn handle_find_group(&self, original_header: MessageHeader, body: Bytes) -> Option<()> {
+        println!("{:?} received FindGroup", self.own_id);
+        let find_group = self.decode::<FindGroup>(&body);
+
+        if find_group.is_none() {
+            return None;
+        }
+        let find_group = find_group.unwrap();
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> =  vec![];;
         for x in close_group {
@@ -269,8 +279,7 @@ impl<F> RoutingNode<F> where F: Facade {
             types::Authority::NaeManager,
             None,
         );
-
-        unimplemented!();
+        Some(())
     }
 
     fn handle_find_group_response(find_group_response: FindGroupResponse, original_header: MessageHeader) {
@@ -303,7 +312,7 @@ impl<F> RoutingNode<F> where F: Facade {
         dec.decode().next().and_then(|result| result.ok())
     }
 
-    fn encode<T>(self, value: &T) -> Bytes where T: Encodable
+    fn encode<T>(&self, value: &T) -> Bytes where T: Encodable
     {
         let mut enc = Encoder::from_memory();
         let _ = enc.encode(&[value]);
@@ -326,6 +335,33 @@ impl<F> RoutingNode<F> where F: Facade {
                                 reply_to: None }
     }
 
+    fn construct_header(&self) -> MessageHeader {
+        // TODO: Replace with sane values.
+        MessageHeader{ message_id: 0 /* TODO */,
+                       destination: types::DestinationAddress{
+                           dest:     DhtId::generate_random(),
+                           reply_to: None
+                       },
+                       source: types::SourceAddress{
+                           from_node:  self.own_id.clone(),
+                           from_group: None,
+                           reply_to:   None
+                       },
+                       authority: types::Authority::Unknown,
+                       signature: None
+        }
+    }
+
+    fn construct_find_group_msg(&self) -> RoutingMessage {
+        // TODO: Replace with sane values.
+        RoutingMessage{
+            message_type:    messages::MessageTypeTag::FindGroup,
+            message_header:  self.construct_header(),
+            serialised_body: self.encode(&FindGroup{ requester_id: self.own_id.clone(),
+                                                     target_id:    self.own_id.clone()
+                                                   })
+        }
+    }
 // template <typename Child>
 // SourceAddress RoutingNode<Child>::OurSourceAddress() const {
 //   if (bootstrap_node_)
