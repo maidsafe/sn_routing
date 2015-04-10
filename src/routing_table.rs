@@ -389,7 +389,6 @@ mod test {
     use sodiumoxide::crypto;
     use std::cmp;
     use std::collections::BitVec;
-    use std::mem;
     use std::net::*;
     use std::fmt;
     use types::DhtId;

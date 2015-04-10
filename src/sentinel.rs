@@ -158,23 +158,23 @@ impl<'a> Sentinel<'a> {
       return Vec::<ResultType>::new();
     }
     let mut verified_messages : Vec<ResultType> = Vec::new();
-    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicKey>> = HashMap::new();
+    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
     for node_key in keys.iter() {
       let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
       let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
       if !keys_map.contains_key(&key_response.address) {
         keys_map.insert(key_response.address,
-                        vec![types::PublicKey{ public_key : key_response.public_key }]);
+                        vec![key_response.public_sign_key]);
       } else {
         let public_keys = keys_map.get_mut(&key_response.address);
         let mut public_keys_holder = public_keys.unwrap();
-        let target_key = types::PublicKey{ public_key : key_response.public_key };
+        let target_key = key_response.public_sign_key;
         if !public_keys_holder.contains(&target_key) {
           public_keys_holder.push(target_key);
         }
       }
     }
-    let mut pub_key_list : Vec<types::PublicKey> = Vec::new();
+    let mut pub_key_list : Vec<types::PublicSignKey> = Vec::new();
     for (_, value) in keys_map.iter() {
       pub_key_list = value.clone();
       break;
@@ -182,11 +182,12 @@ impl<'a> Sentinel<'a> {
     if keys_map.len() != 1 || pub_key_list.len() != 1 {
       return Vec::<ResultType>::new();
     }
-    let public_key = pub_key_list[0].get_public_key();
+    // let public_sign_key = pub_key_list[0];
     for message in messages.iter() {
       let signature = message.value.0.get_signature();
       let ref msg = message.value.2;
-      if crypto::sign::verify_detached(&signature.unwrap(), &msg[..], &public_key) {
+      if crypto::sign::verify_detached(&signature.unwrap().get_crypto_signature(),
+                                       &msg[..], &pub_key_list[0].get_crypto_public_sign_key()) {
         verified_messages.push(message.value.clone());
       }
     }
@@ -199,19 +200,19 @@ impl<'a> Sentinel<'a> {
       return Vec::<ResultType>::new();
     }
     let mut verified_messages : Vec<ResultType> = Vec::new();
-    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicKey>> = HashMap::new();
+    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
     for group_key in keys.iter() {
       // deserialise serialised message GetGroupKeyResponse
       let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
       let group_key_response: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
-      // public_key = (DhtId, Vec[u8])
-      for public_key in group_key_response.public_keys.iter() {
-        if !keys_map.contains_key(&public_key.0) {
-          keys_map.insert(public_key.0.clone(), vec![types::PublicKey{ public_key : public_key.1.clone() }]);
+      // public_key = (DhtId, PublicSignKey)
+      for public_sign_key in group_key_response.public_sign_keys.iter() {
+        if !keys_map.contains_key(&public_sign_key.0) {
+          keys_map.insert(public_sign_key.0.clone(), vec![public_sign_key.1.clone()]);
         } else {
-          let public_keys = keys_map.get_mut(&public_key.0);
-          let mut public_keys_holder = public_keys.unwrap();
-          let target_key = types::PublicKey{ public_key : public_key.1.clone() };
+          let public_sign_keys = keys_map.get_mut(&public_sign_key.0);
+          let mut public_keys_holder = public_sign_keys.unwrap();
+          let target_key = public_sign_key.1.clone();
           if !public_keys_holder.contains(&target_key) {
             // flatten, unless different key found for already encountered Address.
             public_keys_holder.push(target_key);
@@ -228,10 +229,10 @@ impl<'a> Sentinel<'a> {
     for message in messages.iter() {
       let key_map_iter = keys_map.get_mut(&message.value.0.from_node());
       if key_map_iter.is_some() {
-        let public_key = key_map_iter.unwrap()[0].get_public_key();
+        let public_sign_key = key_map_iter.unwrap()[0].get_crypto_public_sign_key();
         let signature = message.value.0.get_signature();
         let ref msg = message.value.2;
-        if crypto::sign::verify_detached(&signature.unwrap(), &msg[..], &public_key) {
+        if crypto::sign::verify_detached(&signature.unwrap().get_crypto_signature(), &msg[..], &public_sign_key) {
           verified_messages.push(message.value.clone());
         }
       }
@@ -384,25 +385,19 @@ mod test {
                     self.authority_.clone(),
                     Some(types::Signature {
                                 signature : crypto::sign::sign(&serialised_message[..],
-                                              &node.get_secret_sign_key())
+                                              &node.get_crypto_secret_sign_key())
                     })
         ));
       }
       headers
     }
 
-    pub fn get_public_keys(&self) -> Vec<(types::DhtId, Vec<u8>)> {
-        let mut public_keys : Vec<(types::DhtId, Vec<u8>)>
+    pub fn get_public_keys(&self) -> Vec<(types::DhtId, types::PublicSignKey)> {
+        let mut public_keys : Vec<(types::DhtId, types::PublicSignKey)>
            = Vec::with_capacity(self.nodes_.len());
       for node in &self.nodes_ {
-        // TODO(ben 2015-4-3): replace with proper types for PublicKey
-        //                   this is ridiculous:
-          let public_sign_key = node.get_public_sign_key().0;
-          let mut public_sign_key_as_vec : Vec<u8> = Vec::with_capacity(public_sign_key.len());
-          for i in public_sign_key.iter() {
-            public_sign_key_as_vec.push(*i);
-          }
-        public_keys.push((node.get_name(), public_sign_key_as_vec));
+        public_keys.push((node.get_name(),
+          types::PublicSignKey::new(node.get_crypto_public_sign_key())));
       }
       public_keys
     }
@@ -483,24 +478,22 @@ mod test {
                     self.authority_.clone(),
                     Some(types::Signature {
                                 signature : crypto::sign::sign(&serialised_message[..],
-                                              &node.get_secret_sign_key())
+                                              &node.get_crypto_secret_sign_key())
                     })
         ));
       }
       headers
     }
 
-    pub fn get_public_keys(&self, node_name : types::DhtId) -> Vec<(types::DhtId, Vec<u8>)> {
+    pub fn get_public_keys(&self, node_name : types::DhtId)
+          -> Vec<(types::DhtId, types::PublicSignKey)> {
       let nodes_of_node = &self.nodes_of_nodes_.iter().find(|x| x.0 == node_name).unwrap();
-      let mut public_keys : Vec<(types::DhtId, Vec<u8>)>
+      let mut public_keys : Vec<(types::DhtId, types::PublicSignKey)>
         = Vec::with_capacity(nodes_of_node.1.len());
       for node in &nodes_of_node.1 {
-        let public_sign_key = node.get_public_sign_key().0;
-        let mut public_sign_key_as_vec : Vec<u8> = Vec::with_capacity(public_sign_key.len());
-        for i in public_sign_key.iter() {
-          public_sign_key_as_vec.push(*i);
-        }
-        public_keys.push((node.get_name(), public_sign_key_as_vec));
+        let public_sign_key =
+          types::PublicSignKey::new(node.get_crypto_public_sign_key());
+        public_keys.push((node.get_name(), public_sign_key));
       }
       public_keys
     }
@@ -510,18 +503,7 @@ mod test {
       let mut public_pmids : Vec<types::PublicPmid>
         = Vec::with_capacity(nodes_of_node.1.len());
       for node in &nodes_of_node.1 {
-        let public_encrypt_key = types::PublicKey{public_key : node.get_public_key().0.to_vec()};
-        // let mut public_encrypt_key_as_vec :  = Vec::with_capacity(public_encrypt_key.len());
-        // for i in public_encrypt_key.iter() {
-        //   public_encrypt_key_as_vec.push(*i);
-        // }
-        let public_sign_key = types::Signature{signature : node.get_public_sign_key().0.to_vec()};
-        // let mut public_sign_key_as_vec : types::Signature = Vec::with_capacity(public_sign_key.len());
-        // for i in public_sign_key.iter() {
-        //   public_sign_key_as_vec.push(*i);
-        // }
-        public_pmids.push(types::PublicPmid{ public_key : public_encrypt_key,
-                                             validation_token : public_sign_key});
+        public_pmids.push(types::PublicPmid::new(&node));
       }
       public_pmids
     }
@@ -534,7 +516,7 @@ mod test {
       for node in &self.nodes_ {
         let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
           target_id : self.group_address_.clone(),
-          public_keys : self.get_public_keys(node.get_name())
+          public_sign_keys : self.get_public_keys(node.get_name())
         };
         let mut e = cbor::Encoder::from_memory();
         let _ = e.encode(&[&get_group_key_response]);
@@ -549,7 +531,7 @@ mod test {
                     self.authority_.clone(),
                     Some(types::Signature {
                                 signature : crypto::sign::sign(&serialised_message_response[..],
-                                              &node.get_secret_sign_key())
+                                              &node.get_crypto_secret_sign_key())
                     }));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
@@ -585,7 +567,7 @@ mod test {
                     self.authority_.clone(),
                     Some(types::Signature {
                                 signature : crypto::sign::sign(&serialised_message_response[..],
-                                              &node.get_secret_sign_key())
+                                              &node.get_crypto_secret_sign_key())
                     }));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
@@ -728,7 +710,7 @@ mod test {
 
       let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
         target_id : signature_group.get_group_address(),
-        public_keys : signature_group.get_public_keys()
+        public_sign_keys : signature_group.get_public_keys()
       };
       let mut e = cbor::Encoder::from_memory();
       let _ = e.encode(&[&get_group_key_response]);

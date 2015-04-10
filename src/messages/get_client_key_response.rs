@@ -26,29 +26,29 @@ use types;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetClientKeyResponse {
   pub address : types::DhtId,
-  pub public_key : Vec<u8>
+  pub public_sign_key : types::PublicSignKey
 }
 
 impl GetClientKeyResponse {
     pub fn generate_random() -> GetClientKeyResponse {
         GetClientKeyResponse {
             address: types::DhtId::generate_random(),
-            public_key: types::PublicKey::generate_random().public_key,
+            public_sign_key: types::PublicSignKey::generate_random(),
         }
     }
 }
 
 impl Encodable for GetClientKeyResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.address, &self.public_key)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.address, &self.public_sign_key)).encode(e)
   }
 }
 
 impl Decodable for GetClientKeyResponse {
   fn decode<D: Decoder>(d: &mut D)->Result<GetClientKeyResponse, D::Error> {
     try!(d.read_u64());
-    let (address, public_key) = try!(Decodable::decode(d));
-    Ok(GetClientKeyResponse { address: address , public_key: public_key})
+    let (address, public_sign_key) = try!(Decodable::decode(d));
+    Ok(GetClientKeyResponse { address: address , public_sign_key: public_sign_key})
   }
 }
 

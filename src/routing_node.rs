@@ -28,7 +28,6 @@ use std::collections::HashSet;
 use routing_table::RoutingTable;
 use types::DhtId;
 use message_header::MessageHeader;
-use message_header;
 use messages;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
@@ -42,6 +41,7 @@ use messages::{RoutingMessage};
 use rustc_serialize::{Decodable, Encodable};
 use cbor::{Encoder, Decoder};
 
+use types::RoutingTrait;
 
 type ConnectionManager = crust::ConnectionManager<DhtId>;
 type Event             = crust::Event<DhtId>;
@@ -62,14 +62,10 @@ pub struct RoutingNode<F: Facade> {
 impl<F> RoutingNode<F> where F: Facade {
     pub fn new(id: DhtId, my_facade: F) -> RoutingNode<F> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
-        // let key_pair = crypto::sign::gen_keypair();
-        // let encrypt_key_pair = crypto::asymmetricbox::gen_keypair();
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
-        let own_id = id; //DhtId(pmid.get_name());  FIXME (prakash) ?????
-
+        let own_id = pmid.get_name();
         let cm = crust::ConnectionManager::new(own_id.clone(), event_output);
-
         let accepting_on = cm.start_accepting().ok();
 
         RoutingNode { facade: Arc::new(Mutex::new(my_facade)),
@@ -161,6 +157,7 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn message_received(&mut self, peer_id: &DhtId, serialised_message: Bytes) -> Option<()> {
+        // Parse
         let msg = self.decode::<RoutingMessage>(&serialised_message);
 
         if msg.is_none() {
@@ -172,6 +169,14 @@ impl<F> RoutingNode<F> where F: Facade {
         let msg    = msg.unwrap();
         let header = msg.message_header;
         let body   = msg.serialised_body;
+
+        // filter check
+        // add to filter
+        // add to cache
+        // cache check / response
+        // SendSwarmOrParallel
+        // handle relay request/response
+        // switch message type
 
         match msg.message_type {
             messages::MessageTypeTag::Connect => self.handle_connect(header, body),
@@ -193,14 +198,7 @@ impl<F> RoutingNode<F> where F: Facade {
             //AccountTransfer
         }
 
-        // Parse
-        // filter check
-        // add to filter
-        // add to cache
-        // cache check / response
-        // SendSwarmOrParallel
-        // handle relay request/response
-        // switch message type
+
     }
 
     //fn handle_connect(&self, connect_request: ConnectRequest, original_header: MessageHeader) -> Option<()> {
