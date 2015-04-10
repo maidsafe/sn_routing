@@ -227,19 +227,30 @@ impl<F> RoutingNode<F> where F: Facade {
                                 receiver_fob: types::PublicPmid::new(&self.pmid) };
 
         debug_assert!(connect_request.receiver_id == self.own_id);
+
+        // Make MessageHeader
+        let header = MessageHeader::new(
+            self.message_id,
+            original_header.send_to(),
+            self.our_source_address(),
+            types::Authority::ManagedNode,
+            None,
+        );
+        // Make RoutingMessage
+        let routing_msg = messages::RoutingMessage::new(
+            messages::MessageTypeTag::ConnectResponse,
+            header,
+            self.encode(&connect_response));
+
+        // FIXME(Peter) below method is needed
+        // send_swarm_or_parallel();
+
+        if original_header.source.reply_to.is_some() {
+            let reply_to_address = original_header.source.reply_to.clone();
+            let _ = self.connection_manager.send(self.encode(&routing_msg),
+                                                 reply_to_address.unwrap());
+        }
         Ok(())
-        // Serialise message
-
-        // if (bootstrap_node_) {
-        // SendToBootstrapNode(message);
-        // }
-        // SendSwarmOrParallel();
-        // if (original_header.ReplyToAddress())
-        // SendToNonRoutingNode((*original_header.ReplyToAddress()).data, message);
-
-
-        // Add connection
-        // AddNodeAccept
     }
 
     fn handle_connect_response(&self, connect_response: ConnectResponse) {
@@ -271,6 +282,21 @@ impl<F> RoutingNode<F> where F: Facade {
             types::Authority::NaeManager,
             None,
         );
+        // Make RoutingMessage
+        let routing_msg = messages::RoutingMessage::new(
+            messages::MessageTypeTag::FindGroupResponse,
+            header,
+            self.encode(&find_group_response));
+
+         // FIXME(Peter) below method is needed
+        // send_swarm_or_parallel();
+
+        // if node in my group && in non routing list send it to non_routnig list as well
+        if original_header.source.reply_to.is_some() {
+            let reply_to_address = original_header.source.reply_to.clone();
+            let _ = self.connection_manager.send(self.encode(&routing_msg),
+                                                    reply_to_address.unwrap());
+        }
         Ok(())
     }
 
@@ -353,19 +379,6 @@ impl<F> RoutingNode<F> where F: Facade {
                                                    })
         }
     }
-// template <typename Child>
-// SourceAddress RoutingNode<Child>::OurSourceAddress() const {
-//   if (bootstrap_node_)
-//     return SourceAddress(NodeAddress(*bootstrap_node_), boost::none, ReplyToAddress(OurId()));
-//   else
-//     return SourceAddress(NodeAddress(OurId()), boost::none, boost::none);
-// }
-
-// template <typename Child>
-// SourceAddress RoutingNode<Child>::OurSourceAddress(GroupAddress group) const {
-//   return SourceAddress(NodeAddress(OurId()), group, boost::none);
-// }
-
 }
 
 #[cfg(test)]
