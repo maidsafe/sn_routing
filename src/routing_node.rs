@@ -130,8 +130,10 @@ impl<F> RoutingNode<F> where F: Facade {
         }
     }
 
-    fn next_endpoint_pair(&self)->(SocketAddr, SocketAddr) {
-      unimplemented!();  // FIXME (Peter)
+    fn next_endpoint_pair(&self) -> Option<(SocketAddr, SocketAddr)> {
+        // FIXME: Set the second argument to 'external' address
+        // when known.
+        self.accepting_on().and_then(|addr| Some((addr, addr)))
     }
 
     fn handle_connect(&mut self, peer_id: DhtId) {
@@ -209,7 +211,8 @@ impl<F> RoutingNode<F> where F: Facade {
         if !(self.routing_table.check_node(&connect_request.requester_id)) {
            return Err(());
         }
-        let (receiver_local, receiver_external) = self.next_endpoint_pair();
+        let (receiver_local, receiver_external) = try!(self.next_endpoint_pair().ok_or(()));
+
         let connect_response = ConnectResponse {
                                 requester_local: connect_request.local,
                                 requester_external: connect_request.external,
