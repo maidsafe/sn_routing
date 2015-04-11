@@ -87,7 +87,7 @@ impl MessageHeader {
   }
 
   pub fn is_relayed(&self) -> bool {
-    if !self.source.reply_to.is_some() {
+    if self.source.reply_to.is_some() {
       true
     } else {
       false

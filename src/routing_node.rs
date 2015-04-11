@@ -182,7 +182,7 @@ impl<F> RoutingNode<F> where F: Facade {
         let msg    = msg.unwrap();
         let header = msg.message_header;
         let body   = msg.serialised_body;
-
+        println!("{:?} Rxd from {:?} =>  {:?}", self.own_id, peer_id, msg.message_type);
         // filter check
         // add to filter
         // add to cache
@@ -276,7 +276,6 @@ impl<F> RoutingNode<F> where F: Facade {
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received FindGroup", self.own_id);
-        // debug_assert!(original_header.source.reply_to.is_some());  // first message hould have reply_to
         let find_group = try!(self.decode::<FindGroup>(&body).ok_or(()));
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> =  vec![];;
@@ -304,13 +303,11 @@ impl<F> RoutingNode<F> where F: Facade {
 
          // FIXME(Peter) below method is needed
         // send_swarm_or_parallel();
-
         // if node in my group && in non routing list send it to non_routnig list as well
-        if header.source.reply_to.is_some() {
+        if header.destination.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.clone();
             let _ = self.connection_manager.send(self.encode(&routing_msg),
                                                     reply_to_address.unwrap());
-            println!("sent back !!");
         }
         Ok(())
     }
@@ -381,23 +378,6 @@ impl<F> RoutingNode<F> where F: Facade {
                                 reply_to: None }
     }
 
-    fn construct_header(&mut self) -> MessageHeader {
-        // TODO: Replace with sane values.
-        MessageHeader{ message_id: self.get_next_message_id(),
-                       destination: types::DestinationAddress{
-                           dest:     DhtId::generate_random(),
-                           reply_to: None
-                       },
-                       source: types::SourceAddress{
-                           from_node:  self.own_id.clone(),
-                           from_group: None,
-                           reply_to:   None
-                       },
-                       authority: types::Authority::Unknown,
-                       signature: None
-        }
-    }
-
     fn construct_find_group_msg(&mut self) -> RoutingMessage {
         let header = MessageHeader {
             message_id:  self.get_next_message_id(),
@@ -409,10 +389,9 @@ impl<F> RoutingNode<F> where F: Facade {
             authority:   types::Authority::ManagedNode,
             signature:   None
         };
-        // debug_assert!(header.source.reply_to.is_some());
         RoutingMessage{
             message_type:    messages::MessageTypeTag::FindGroup,
-            message_header:  self.construct_header(),
+            message_header:  header,
             serialised_body: self.encode(&FindGroup{ requester_id: self.own_id.clone(),
                                                      target_id:    self.own_id.clone()
                                                    })
