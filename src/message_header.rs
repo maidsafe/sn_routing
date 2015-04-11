@@ -168,7 +168,7 @@ mod test {
       destination : types::DestinationAddress{dest: types::DhtId::generate_random(), reply_to: None },
       source : types::SourceAddress { from_node : types::DhtId::generate_random(),
                                       from_group : None,
-                                      reply_to: None },
+                                      reply_to: Some(types::DhtId::generate_random()) },
       authority : types::Authority::ManagedNode,
       signature : Some(types::Signature{ signature: generate_u8_64() }) });
   }

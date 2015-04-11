@@ -19,6 +19,8 @@
 pub mod connect;
 #[path="messages/connect_response.rs"]
 pub mod connect_response;
+#[path="messages/connect_success.rs"]
+pub mod connect_success;
 #[path="messages/find_group.rs"]
 pub mod find_group;
 #[path="messages/find_group_response.rs"]

@@ -35,6 +35,7 @@ use messages::put_data::PutData;
 use messages::put_data_response::PutDataResponse;
 use messages::connect::ConnectRequest;
 use messages::connect_response::ConnectResponse;
+use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::{RoutingMessage, MessageTypeTag};
@@ -102,9 +103,9 @@ impl<F> RoutingNode<F> where F: Facade {
     pub fn post(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
 
     pub fn add_bootstrap(&mut self, endpoint: SocketAddr) {
-        let msg = self.construct_find_group_msg();
-        let msg = self.encode(&msg);
-        let _ = self.connection_manager.connect(endpoint, msg);
+        // let msg = self.construct_find_group_msg();
+        // let msg = self.encode(&msg);
+        let _ = self.connection_manager.connect(endpoint, vec![0]);
     }
 
     pub fn run(&mut self) {
@@ -116,7 +117,7 @@ impl<F> RoutingNode<F> where F: Facade {
             match event.unwrap() {
                 crust::Event::NewMessage(id, bytes) => {
                     if self.message_received(&id, bytes).is_err() {
-                        let _ = self.connection_manager.drop_node(id);
+                        // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
                     }
                 },
                 crust::Event::Connect(id) => {
@@ -141,6 +142,12 @@ impl<F> RoutingNode<F> where F: Facade {
     fn handle_connect(&mut self, peer_id: DhtId) {
         if self.all_connections.is_empty() {
             self.bootstrap_node_id = Some(peer_id.clone());
+            println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_id);
+            // send find group
+            let msg = self.construct_find_group_msg();
+            let msg = self.encode(&msg);
+            debug_assert!(self.bootstrap_node_id.is_some());
+            let _ = self.connection_manager.send(msg, peer_id.clone());
         }
         self.all_connections.insert(peer_id.clone());
     }
@@ -148,7 +155,10 @@ impl<F> RoutingNode<F> where F: Facade {
     fn handle_accept(&mut self, peer_id: DhtId, bytes: Bytes) {
         self.all_connections.insert(peer_id.clone());
         if self.message_received(&peer_id, bytes).is_err() {
-            let _ = self.connection_manager.drop_node(peer_id);
+            if self.bootstrap_node_id.is_none() && (self.all_connections.len() == 1) {
+                self.bootstrap_node_id = Some(peer_id.clone());
+                println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_id);
+            }
         }
     }
 
@@ -250,19 +260,23 @@ impl<F> RoutingNode<F> where F: Facade {
         Ok(())
     }
 
-    fn handle_connect_response(&self, body: Bytes) -> RecvResult {
+    fn handle_connect_response(&mut self, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectResponse", self.own_id);
         let connect_response = try!(self.decode::<ConnectResponse>(&body).ok_or(()));
         if !(self.routing_table.check_node(&connect_response.receiver_id)) {
            return Ok(())
         }
         // AddNode
-        // self.connection_manager.connect();
+        let success_msg = self.construct_success_msg();
+        let msg = self.encode(&success_msg);
+        let _ = self.connection_manager.connect(connect_response.requester_external,
+                                                msg);
         Ok(())
     }
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received FindGroup", self.own_id);
+        // debug_assert!(original_header.source.reply_to.is_some());  // first message hould have reply_to
         let find_group = try!(self.decode::<FindGroup>(&body).ok_or(()));
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> =  vec![];;
@@ -285,19 +299,19 @@ impl<F> RoutingNode<F> where F: Facade {
         // Make RoutingMessage
         let routing_msg = messages::RoutingMessage::new(
             messages::MessageTypeTag::FindGroupResponse,
-            header,
+            header.clone(),
             self.encode(&find_group_response));
 
          // FIXME(Peter) below method is needed
         // send_swarm_or_parallel();
 
         // if node in my group && in non routing list send it to non_routnig list as well
-        if original_header.source.reply_to.is_some() {
+        if header.source.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.clone();
             let _ = self.connection_manager.send(self.encode(&routing_msg),
                                                     reply_to_address.unwrap());
+            println!("sent back !!");
         }
-
         Ok(())
     }
 
@@ -395,7 +409,7 @@ impl<F> RoutingNode<F> where F: Facade {
             authority:   types::Authority::ManagedNode,
             signature:   None
         };
-
+        // debug_assert!(header.source.reply_to.is_some());
         RoutingMessage{
             message_type:    messages::MessageTypeTag::FindGroup,
             message_header:  self.construct_header(),
@@ -403,6 +417,14 @@ impl<F> RoutingNode<F> where F: Facade {
                                                      target_id:    self.own_id.clone()
                                                    })
         }
+    }
+
+    fn construct_success_msg(&mut self) -> ConnectSuccess {
+        let connect_success = ConnectSuccess {
+                                                peer_id: self.own_id.clone(),
+                                                peer_fob: types::PublicPmid::new(&self.pmid),
+                                              };
+        return connect_success
     }
 
     fn construct_connect_request_msg(&mut self, peer_id: &DhtId) -> RoutingMessage {
