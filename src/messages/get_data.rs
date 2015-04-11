@@ -51,10 +51,9 @@ impl Decodable for GetData {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
-
+    use cbor;
+    
     #[test]
     fn get_data_serialisation() {
         let obj_before = GetData::generate_random();

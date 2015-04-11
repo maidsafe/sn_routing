@@ -15,8 +15,7 @@
 
 #![allow(unused_assignments)]
 
-extern crate rand;
-
+use rand;
 use types;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
@@ -54,8 +53,7 @@ impl Decodable for PutDataResponse {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
+    use cbor;
     use super::*;
 
     #[test]

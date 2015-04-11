@@ -54,10 +54,9 @@ impl Decodable for GetClientKeyResponse {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
-
+    use cbor; 
+    
     #[test]
     fn get_client_key_response_serialisation() {
         let obj_before = GetClientKeyResponse::generate_random();

@@ -51,10 +51,9 @@ impl Decodable for GetClientKey {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
-
+    use cbor;
+    
     #[test]
     fn get_client_serialisation() {
         let obj_before = GetClientKey::generate_random();

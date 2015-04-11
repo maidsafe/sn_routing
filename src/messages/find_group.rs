@@ -51,10 +51,9 @@ impl Decodable for FindGroup {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
-
+    use cbor;
+    
     #[test]
     fn find_group_serialisation() {
         let obj_before = FindGroup::generate_random();

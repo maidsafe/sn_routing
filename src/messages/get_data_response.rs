@@ -53,10 +53,9 @@ impl Decodable for GetDataResponse {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
-
+    use cbor;
+    
     #[test]
     fn get_data_response_serialisation() {
         let obj_before = GetDataResponse::generate_random();
