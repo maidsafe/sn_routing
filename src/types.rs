@@ -17,12 +17,12 @@
 // use of the MaidSafe Software.
 
 #![allow(unused_assignments)]
-extern crate sodiumoxide;
-extern crate rand;
 
 use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rand;
+use sodiumoxide;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();

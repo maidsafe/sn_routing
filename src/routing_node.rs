@@ -33,7 +33,7 @@ pub struct RoutingNode<'a> {
     encrypt_public_key: crypto::asymmetricbox::PublicKey,
     encrypt_secret_key: crypto::asymmetricbox::SecretKey,
     event_input: Receiver<Event>,
-    connections: ConnectionManager
+    connections: ConnectionManager,
 }
 
 impl<'a> RoutingNode<'a> {
