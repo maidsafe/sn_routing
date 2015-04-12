@@ -155,11 +155,11 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn handle_accept(&mut self, peer_id: DhtId, bytes: Bytes) {
-        println!("In handle accept of {:?}", self.own_id);
+        // println!("In handle accept of {:?}", self.own_id);
         self.all_connections.insert(peer_id.clone());
         let connect_succcess_msg = self.decode::<ConnectSuccess>(&bytes);
 
-        if connect_succcess_msg.is_none() {
+        if connect_succcess_msg.is_none() {  // TODO handle non routing connection here
             if self.bootstrap_node_id.is_none() &&
              (self.all_connections.len() == 1) && (self.all_connections.contains(&peer_id)) { // zero state only`
                 self.bootstrap_node_id = Some(peer_id.clone());
@@ -167,14 +167,14 @@ impl<F> RoutingNode<F> where F: Facade {
             }
             return;
         }
-        // let peer_node_info = routing_table::NodeInfo {
-        //     fob: routing_table::create_random_fob(),
-        //     connected: true,
-        // };
-        // let result = self.routing_table.add_node(peer_node_info);
-        // if result.is_ok {
-        //   println!("{:?} added {:?}", self.own_id, connect_succcess_msg);
-        // }
+        let connect_succcess_msg = connect_succcess_msg.unwrap();
+        let peer_node_info = routing_table::NodeInfo::new(connect_succcess_msg.peer_fob, true);
+        let result = self.routing_table.add_node(peer_node_info);
+        if result.0 {
+          println!("{:?} added {:?}", self.own_id, connect_succcess_msg.peer_id);
+        } else {
+           println!("{:?} failed to add {:?}", self.own_id, connect_succcess_msg.peer_id);
+        }
     }
 
     fn handle_lost_connection(&mut self, peer_id: DhtId) {
@@ -263,7 +263,13 @@ impl<F> RoutingNode<F> where F: Facade {
                                                 msg);
         // workaround for zero state
         if (self.all_connections.len() == 1) && (self.all_connections.contains(&connect_response.receiver_id)) {
-            println!("add to rt own id : {:?}  peer {:?}", self.own_id, connect_response.receiver_id);;
+            let peer_node_info = routing_table::NodeInfo::new(connect_response.receiver_fob, true);
+            let result = self.routing_table.add_node(peer_node_info);
+            if result.0 {
+                println!("{:?} added {:?}", self.own_id, connect_response.receiver_id);
+            } else {
+                println!("{:?} failed to add {:?}", self.own_id, connect_response.receiver_id);
+            }
         }
         Ok(())
     }
