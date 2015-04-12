@@ -67,3 +67,4 @@ Steps to compile SQLite by,
 - [ ] Implement NAT traversal (requires crust v0.1.0)
 - [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Version 0.1 (crates.io)
+- [ ] Address re-location (security essential)
