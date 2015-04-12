@@ -2,17 +2,9 @@
 
 Routing - specialised storage DHT
 
-Travis build and test status
-
-[![Build Status](https://travis-ci.org/dirvine/routing.svg?branch=master)](https://travis-ci.org/dirvine/routing)
-
-Appveyor build status
-
-[![Build status](https://ci.appveyor.com/api/projects/status/ni7c20e9aux3g01i?svg=true)](https://ci.appveyor.com/project/dirvine/routing)
-
-Code Coverage
-
-[![Coverage Status](https://coveralls.io/repos/dirvine/routing/badge.svg?branch=master)](https://coveralls.io/r/dirvine/routing?branch=master)
+| Travis build and test status | Appveyor build status | Code Coverage |
+|:----------------------------:|:---------------------:|:--------------:|
+|[![Build Status](https://travis-ci.org/dirvine/routing.svg?branch=master)](https://travis-ci.org/dirvine/routing)|[![Build status](https://ci.appveyor.com/api/projects/status/ni7c20e9aux3g01i?svg=true)](https://ci.appveyor.com/project/dirvine/routing)|[![Coverage Status](https://coveralls.io/repos/dirvine/routing/badge.svg?branch=master)](https://coveralls.io/r/dirvine/routing?branch=master)|
 
 [Documentation](http://dirvine.github.io/routing/routing/)
 
@@ -27,7 +19,6 @@ Steps to compile SQLite by,
 1. Download SQLite Source code which includes a "configure" script from [SQLite download page](https://www.sqlite.org/download.html) 
 2. On Linux, Run `./configure --prefix=/usr && make && sudo make install` to build the SQLite source. While on Windows Users can build using (mingw + msys) and run './configure && make' 
 3. On Windows, Copy the `libsqlite3.a` file from the .libs folder to the "bin\{TARGET-TRIPLE}" in the project root folder.
- 
  
 ##Todo Items
 

@@ -16,11 +16,9 @@
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe Software.
 
-extern crate cbor;
-extern crate sodiumoxide;
-
 use std::collections::HashMap;
 use sodiumoxide::crypto;
+use cbor;
 
 use accumulator;
 use message_header;
@@ -31,7 +29,7 @@ use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
 
 pub type ResultType = (message_header::MessageHeader,
-                     types::MessageTypeTag, types::SerialisedMessage);
+                       types::MessageTypeTag, types::SerialisedMessage);
 
 type NodeKeyType = (types::NodeAddress, types::MessageId);
 type GroupKeyType = (types::GroupAddress, types::MessageId);
@@ -48,11 +46,11 @@ pub trait SendGetKeys {
 }
 
 pub struct Sentinel<'a> {
-  send_get_keys_ : &'a mut (SendGetKeys + 'a),
-  node_accumulator_ : NodeAccumulatorType,
-  group_accumulator_ : GroupAccumulatorType,
-  group_key_accumulator_ : KeyAccumulatorType,
-  node_key_accumulator_ : KeyAccumulatorType
+  send_get_keys_: &'a mut (SendGetKeys + 'a),
+  node_accumulator_: NodeAccumulatorType,
+  group_accumulator_: GroupAccumulatorType,
+  group_key_accumulator_: KeyAccumulatorType,
+  node_key_accumulator_: KeyAccumulatorType,
 }
 
 impl<'a> Sentinel<'a> {
@@ -68,7 +66,7 @@ impl<'a> Sentinel<'a> {
 
   // pub fn get_send_get_keys(&'a mut self) -> &'a mut SendGetKeys { self.send_get_keys }
 
-  pub fn add(&mut self, header : message_header::MessageHeader, type_tag : types::MessageTypeTag,
+  pub fn add(&mut self, header: message_header::MessageHeader, type_tag: types::MessageTypeTag,
              message : types::SerialisedMessage) -> Option<ResultType> {
     match type_tag {
       types::MessageTypeTag::GetClientKeyResponse => {
@@ -152,8 +150,8 @@ impl<'a> Sentinel<'a> {
     None
   }
 
-  fn validate_node(&self, messages : Vec<accumulator::Response<ResultType>>,
-                   keys : Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+  fn validate_node(&self, messages: Vec<accumulator::Response<ResultType>>,
+                   keys: Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
     if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
       return Vec::<ResultType>::new();
     }
@@ -194,13 +192,13 @@ impl<'a> Sentinel<'a> {
     verified_messages
   }
 
-  fn validate_group(&self, messages : Vec<accumulator::Response<ResultType>>,
-                    keys : Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+  fn validate_group(&self, messages:  Vec<accumulator::Response<ResultType>>,
+                    keys: Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
     if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
       return Vec::<ResultType>::new();
     }
-    let mut verified_messages : Vec<ResultType> = Vec::new();
-    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
+    let mut verified_messages: Vec<ResultType> = Vec::new();
+    let mut keys_map: HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
     for group_key in keys.iter() {
       // deserialise serialised message GetGroupKeyResponse
       let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
@@ -308,10 +306,6 @@ impl<'a> Sentinel<'a> {
 #[cfg(test)]
 mod test {
 
-  extern crate rand;
-  extern crate sodiumoxide;
-  extern crate cbor;
-
   use super::*;
   use std::cmp;
   use sodiumoxide::crypto;
@@ -321,6 +315,8 @@ mod test {
   use message_header;
   use messages;
   use rustc_serialize::Encodable;
+  use rand;
+  use cbor;
 
   pub struct AddSentinelMessage {
     header : message_header::MessageHeader,

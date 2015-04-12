@@ -106,10 +106,9 @@ impl Decodable for FindGroupResponse {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
-
+    use cbor; 
+    
     #[test]
     fn find_group_response_serialisation() {
         let obj_before = FindGroupResponse::generate_random();

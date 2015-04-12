@@ -51,10 +51,9 @@ impl Decodable for GetGroupKey {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
-
+    use cbor;
+    
     #[test]
     fn get_group_key_serialisation() {
         let obj_before = GetGroupKey::generate_random();

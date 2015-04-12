@@ -16,15 +16,11 @@
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe Software.
 
-extern crate maidsafe_types;
-extern crate sodiumoxide;
-
 use common_bits::*;
 use sodiumoxide::crypto;
 use std::cmp;
 use std::usize;
-
-use types::DhtId;
+use types::{DhtId, PublicPmid, RoutingTrait};
 
 static BUCKET_SIZE: usize = 1;
 static GROUP_SIZE: usize = 23;
@@ -41,10 +37,23 @@ pub struct KeyFob {
 
 #[derive(Clone)]
 pub struct NodeInfo {
-    pub fob: KeyFob,
+    pub id: DhtId, // TODO(Ben 2015-04-10) only mutable for tests!
+                   // should be immutable and can be read from
+                   // public_pmid.get_name();
+    pub fob: PublicPmid,
     connected: bool,
 }
 
+impl NodeInfo {
+  pub fn new(fob: PublicPmid, connected: bool)
+         -> NodeInfo {
+    NodeInfo {
+      id : fob.get_name(),
+      fob : fob,
+      connected : connected
+    }
+  }
+}
 
 /// The RoutingTable class is used to maintain a list of contacts to which we are connected.
 pub struct RoutingTable {
@@ -89,13 +98,13 @@ impl RoutingTable {
     ///     contacts, which is also not within our close group), and if the new contact will fit in a
     ///     bucket closer to our own bucket, then we add the new contact.
     pub fn add_node(&mut self, their_info: NodeInfo)->(bool, Option<NodeInfo>) {
-        assert!(their_info.fob.id.is_valid());
+        assert!(their_info.id.is_valid());
 
-        if self.our_id == their_info.fob.id {
+        if self.our_id == their_info.id {
             return (false, None);
         }
 
-        if self.has_node(&their_info.fob.id) {
+        if self.has_node(&their_info.id) {
             return (false, None);
         }
 
@@ -104,8 +113,8 @@ impl RoutingTable {
             return (true, None);
         }
 
-        if RoutingTable::closer_to_target(&their_info.fob.id,
-                &self.routing_table[RoutingTable::get_group_size()].fob.id, &self.our_id) {
+        if RoutingTable::closer_to_target(&their_info.id,
+                &self.routing_table[RoutingTable::get_group_size()].id, &self.our_id) {
             self.push_back_then_sort(their_info);
             let removal_node_index = self.find_candidate_for_removal();
             if removal_node_index == usize::MAX {
@@ -119,7 +128,7 @@ impl RoutingTable {
 
         let removal_node_index = self.find_candidate_for_removal();
         if removal_node_index != usize::MAX &&
-                self.new_node_is_better_than_existing(&their_info.fob.id, removal_node_index) {
+                self.new_node_is_better_than_existing(&their_info.id, removal_node_index) {
             let removal_node = self.routing_table[removal_node_index].clone();
             self.routing_table.remove(removal_node_index);
             self.push_back_then_sort(their_info);
@@ -147,7 +156,7 @@ impl RoutingTable {
         }
         let group_size = RoutingTable::get_group_size() - 1;
         let thier_id_clone = their_id.clone();
-        if RoutingTable::closer_to_target(&their_id, &self.routing_table[group_size].fob.id,
+        if RoutingTable::closer_to_target(&their_id, &self.routing_table[group_size].id,
                                           &self.our_id) {
             return true;
         }
@@ -160,7 +169,7 @@ impl RoutingTable {
             let mut index_of_removal = usize::MAX;
 
             for i in 0..self.routing_table.len() {
-                if self.routing_table[i].fob.id == *node_to_drop {
+                if self.routing_table[i].id == *node_to_drop {
                     index_of_removal = i;
                     break;
                 }
@@ -201,7 +210,7 @@ impl RoutingTable {
         }
 
         closest_to_target.sort_by(
-            |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id, &target) {
+            |a, b| if RoutingTable::closer_to_target(&a.id, &b.id, &target) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
@@ -243,10 +252,10 @@ impl RoutingTable {
         }
         let found_node_option = self.routing_table.iter().find(
             |&node_info| {
-                node_info.fob.id == their_id
+                node_info.id == their_id
             });
         match found_node_option {
-            Some(node) => { Some(node.fob.keys.1) }
+            Some(node) => { Some(node.fob.public_key.get_crypto_public_key()) }
             None => {None}
         }
     }
@@ -271,7 +280,7 @@ impl RoutingTable {
         let finish = RoutingTable::get_group_size();
 
         while counter >= finish {
-            let bucket_index = self.bucket_index(&self.routing_table[counter].fob.id);
+            let bucket_index = self.bucket_index(&self.routing_table[counter].id);
 
             // If we're entering a new bucket, reset details.
             if bucket_index != current_bucket {
@@ -317,7 +326,7 @@ impl RoutingTable {
 
     fn has_node(&self, node_id: &DhtId) -> bool {
         for node_info in &self.routing_table {
-            if node_info.fob.id == *node_id {
+            if node_info.id == *node_id {
                 return true;
             }
         }
@@ -328,7 +337,8 @@ impl RoutingTable {
         self.routing_table.push(node_info);
         let our_id = &self.our_id;
         self.routing_table.sort_by(
-            |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id, our_id) {
+            |a, b| if RoutingTable::closer_to_target(&a.id,
+                                                     &b.id, our_id) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
@@ -350,8 +360,9 @@ impl RoutingTable {
 
     fn is_nodes_sorted(&self) -> bool {
         for i in 1..self.routing_table.len() {
-            if RoutingTable::closer_to_target(&self.routing_table[i].fob.id,
-                                              &self.routing_table[i - 1].fob.id, &self.our_id) {
+            if RoutingTable::closer_to_target(&self.routing_table[i].id,
+                                              &self.routing_table[i - 1].id,
+                                              &self.our_id) {
                 return false;
             }
         }
@@ -364,12 +375,12 @@ impl RoutingTable {
             return false;
         }
         let removal_node = &self.routing_table[removal_node_index];
-        self.bucket_index(new_node) > self.bucket_index(&removal_node.fob.id)
+        self.bucket_index(new_node) > self.bucket_index(&removal_node.id)
     }
 
     fn is_any_of(vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
         for iter in vec_close_group.iter() {
-            if iter.fob.id == vec_closest_to_target[0].fob.id {
+            if iter.id == vec_closest_to_target[0].id {
                 return true;
             }
         }
@@ -381,18 +392,15 @@ impl RoutingTable {
 
 #[cfg(test)]
 mod test {
-    extern crate maidsafe_types;
-    extern crate rand;
-    extern crate sodiumoxide;
-
     use super::*;
     use sodiumoxide::crypto;
     use std::cmp;
     use std::collections::BitVec;
     use std::net::*;
     use std::fmt;
-    use types::DhtId;
+    use types::{DhtId, PublicPmid, RoutingTrait};
     use types;
+    use rand;
 
     enum ContactType {
         Far,
@@ -458,11 +466,11 @@ mod test {
         fn new() -> RoutingTableUnitTest {
             let node_info = create_random_node_info();
             let table = RoutingTableUnitTest {
-                our_id: node_info.fob.id.clone(),
+                our_id: node_info.id.clone(),
                 table: RoutingTable {
-                    our_id: node_info.fob.id.clone(), routing_table: Vec::new(),
+                    our_id: node_info.id.clone(), routing_table: Vec::new(),
                 },
-                buckets: initialise_buckets(&node_info.fob.id),
+                buckets: initialise_buckets(&node_info.id),
                 node_info: node_info,
                 initial_count: (rand::random::<usize>() % (RoutingTable::get_group_size() - 1)) + 1,
                 added_ids: Vec::new(),
@@ -491,8 +499,8 @@ mod test {
 
         fn partially_fill_table(&mut self) {
             for i in 0..self.initial_count {
-                self.node_info.fob.id = self.buckets[i].mid_contact.clone();
-                self.added_ids.push(self.node_info.fob.id.clone());
+                self.node_info.id = self.buckets[i].mid_contact.clone();
+                self.added_ids.push(self.node_info.id.clone());
                 assert!(self.table.add_node(self.node_info.clone()).0);
             }
 
@@ -501,8 +509,8 @@ mod test {
 
         fn complete_filling_table(&mut self) {
             for i in self.initial_count..RoutingTable::get_optimal_size() {
-                self.node_info.fob.id = self.buckets[i].mid_contact.clone();
-                self.added_ids.push(self.node_info.fob.id.clone());
+                self.node_info.id = self.buckets[i].mid_contact.clone();
+                self.added_ids.push(self.node_info.id.clone());
                 assert!(self.table.add_node(self.node_info.clone()).0);
             }
 
@@ -567,19 +575,21 @@ mod test {
         arr
     }
 
-    fn create_random_fob() -> KeyFob {
-        let id = DhtId::generate_random();
-        let sig = crypto::sign::Signature(types::vector_as_u8_64_array(id.0.clone()));
-        KeyFob {
-            id: id,
-            keys: (crypto::sign::gen_keypair().0, crypto::asymmetricbox::gen_keypair().0),
-            signature: sig,
-        }
-    }
+    // fn create_random_fob() -> KeyFob {
+    //     let id = DhtId::generate_random();
+    //     let sig = crypto::sign::Signature(types::vector_as_u8_64_array(id.0.clone()));
+    //     KeyFob {
+    //         id: id,
+    //         keys: (crypto::sign::gen_keypair().0, crypto::asymmetricbox::gen_keypair().0),
+    //         signature: sig,
+    //     }
+    // }
 
     fn create_random_node_info() -> NodeInfo {
+        let public_pmid = types::PublicPmid::new(&types::Pmid::new());
         NodeInfo {
-            fob: create_random_fob(),
+            id : public_pmid.get_name(),
+            fob: public_pmid,
             connected: false,
         }
     }
@@ -600,9 +610,9 @@ mod test {
         for i in 0..num_of_tables {
             for j in 0..num_of_tables {
                 let mut node_info = create_random_node_info();
-                node_info.fob.id = tables[j].our_id.clone();
+                node_info.id = tables[j].our_id.clone();
 
-                if tables[i].check_node(&node_info.fob.id) {
+                if tables[i].check_node(&node_info.id) {
                     let removed_node = tables[i].add_node(node_info);
                     assert!(removed_node.0);
                 }
@@ -642,7 +652,7 @@ mod test {
             addresses.push(tables[i].our_id.clone());
             for j in 0..num_of_tables {
                 let mut node_info = create_random_node_info();
-                node_info.fob.id = tables[j].our_id.clone();
+                node_info.id = tables[j].our_id.clone();
                 tables[i].add_node(node_info);
             }
         }
@@ -661,7 +671,7 @@ mod test {
             if groups.len() > 1 {
                 let mut new_end = 1usize;
                 for i in 1..groups.len() {
-                    if groups[new_end - 1].fob.id != groups[i].fob.id {
+                    if groups[new_end - 1].id != groups[i].id {
                         if new_end != i {
                             groups[new_end] = groups[i].clone();
                         }
@@ -674,7 +684,7 @@ mod test {
             assert_eq!(groups.len(), RoutingTable::get_group_size());
 
             for i in 0..RoutingTable::get_group_size() {
-                assert!(groups[i].fob.id == addresses[i + 1]);
+                assert!(groups[i].id == addresses[i + 1]);
             }
         }
     }
@@ -686,7 +696,7 @@ mod test {
         assert_eq!(test.table.size(), 0);
 
         // try with our id - should fail
-        test.node_info.fob.id = test.table.our_id.clone();
+        test.node_info.id = test.table.our_id.clone();
         let mut result_of_add = test.table.add_node(test.node_info.clone());
         assert!(!result_of_add.0);
         match result_of_add.1 {
@@ -696,7 +706,7 @@ mod test {
         assert_eq!(test.table.size(), 0);
 
         // add first contact
-        test.node_info.fob.id = test.buckets[0].far_contact.clone();
+        test.node_info.id = test.buckets[0].far_contact.clone();
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(result_of_add.0);
         match result_of_add.1 {
@@ -719,7 +729,7 @@ mod test {
         // 1 contacts.
 
         // Bucket 0
-        test.node_info.fob.id = test.buckets[0].mid_contact.clone();
+        test.node_info.id = test.buckets[0].mid_contact.clone();
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(result_of_add.0);
         match result_of_add.1 {
@@ -735,7 +745,7 @@ mod test {
         };
         assert_eq!(2, test.table.size());
 
-        test.node_info.fob.id = test.buckets[0].close_contact.clone();
+        test.node_info.id = test.buckets[0].close_contact.clone();
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(result_of_add.0);
         match result_of_add.1 {
@@ -752,7 +762,7 @@ mod test {
         assert_eq!(3, test.table.size());
 
         // Bucket 1
-        test.node_info.fob.id = test.buckets[1].far_contact.clone();
+        test.node_info.id = test.buckets[1].far_contact.clone();
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(result_of_add.0);
         match result_of_add.1 {
@@ -768,7 +778,7 @@ mod test {
         };
         assert_eq!(4, test.table.size());
 
-        test.node_info.fob.id = test.buckets[1].mid_contact.clone();
+        test.node_info.id = test.buckets[1].mid_contact.clone();
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(result_of_add.0);
         match result_of_add.1 {
@@ -784,7 +794,7 @@ mod test {
         };
         assert_eq!(5, test.table.size());
 
-        test.node_info.fob.id = test.buckets[1].close_contact.clone();
+        test.node_info.id = test.buckets[1].close_contact.clone();
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(result_of_add.0);
         match result_of_add.1 {
@@ -802,7 +812,7 @@ mod test {
 
         // Add remaining contacts
         for i in 2..(RoutingTable::get_optimal_size() - 4) {
-            test.node_info.fob.id = test.buckets[i].mid_contact.clone();
+            test.node_info.id = test.buckets[i].mid_contact.clone();
             result_of_add = test.table.add_node(test.node_info.clone());
             assert!(result_of_add.0);
             match result_of_add.1 {
@@ -823,11 +833,11 @@ mod test {
         // 'buckets_[1].far_contact', and 'buckets_[1].mid_contact' as dropped (in that order)
         let mut dropped: Vec<DhtId> = Vec::new();
         for i in (RoutingTable::get_optimal_size() - 4)..RoutingTable::get_optimal_size() {
-            test.node_info.fob.id = test.buckets[i].mid_contact.clone();
+            test.node_info.id = test.buckets[i].mid_contact.clone();
             result_of_add = test.table.add_node(test.node_info.clone());
             assert!(result_of_add.0);
             match result_of_add.1 {
-                Some(dropped_info) => { dropped.push(dropped_info.fob.id) },
+                Some(dropped_info) => { dropped.push(dropped_info.id) },
                 None => panic!("Unexpected"),
             };
             assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
@@ -846,7 +856,7 @@ mod test {
 
         // Try to add far contacts again (should fail)
         for far_contact in dropped {
-            test.node_info.fob.id = far_contact.clone();
+            test.node_info.id = far_contact.clone();
             result_of_add = test.table.add_node(test.node_info.clone());
             assert!(!result_of_add.0);
             match result_of_add.1 {
@@ -857,7 +867,7 @@ mod test {
         }
 
         // Add final close contact to push size of table_ above OptimalSize()
-        test.node_info.fob.id = test.buckets[RoutingTable::get_optimal_size()].mid_contact.clone();
+        test.node_info.id = test.buckets[RoutingTable::get_optimal_size()].mid_contact.clone();
         result_of_add = test.table.add_node(test.node_info.clone());
         assert!(result_of_add.0);
         match result_of_add.1 {
@@ -920,7 +930,7 @@ mod test {
 
       // Add the first contact, and check it doesn't allow duplicates
       let mut new_node_0 = create_random_node_info();
-      new_node_0.fob.id = routing_table_utest.buckets[0].far_contact.clone();
+      new_node_0.id = routing_table_utest.buckets[0].far_contact.clone();
       assert!(routing_table_utest.table.add_node(new_node_0).0);
       assert_eq!(
           routing_table_utest.table.check_node(&routing_table_utest.buckets[0].far_contact.clone()),
@@ -931,44 +941,44 @@ mod test {
       // contacts.
 
       let mut new_node_1 = create_random_node_info();
-      new_node_1.fob.id =  routing_table_utest.buckets[0].mid_contact.clone();
-      assert!(routing_table_utest.table.check_node(&new_node_1.fob.id));
+      new_node_1.id =  routing_table_utest.buckets[0].mid_contact.clone();
+      assert!(routing_table_utest.table.check_node(&new_node_1.id));
       assert!(routing_table_utest.table.add_node(new_node_1).0);
       assert_eq!(routing_table_utest.table.check_node(
           &routing_table_utest.buckets[0].mid_contact.clone()), false);
 
       let mut new_node_2 = create_random_node_info();
-      new_node_2.fob.id =  routing_table_utest.buckets[0].close_contact.clone();
-      assert!(routing_table_utest.table.check_node(&new_node_2.fob.id));
+      new_node_2.id =  routing_table_utest.buckets[0].close_contact.clone();
+      assert!(routing_table_utest.table.check_node(&new_node_2.id));
       assert!(routing_table_utest.table.add_node(new_node_2).0);
       assert_eq!(routing_table_utest.table.check_node(
           &routing_table_utest.buckets[0].close_contact.clone()), false);
 
       let mut new_node_3 = create_random_node_info();
-      new_node_3.fob.id = routing_table_utest.buckets[1].far_contact.clone();
-      assert!(routing_table_utest.table.check_node(&new_node_3.fob.id));
+      new_node_3.id = routing_table_utest.buckets[1].far_contact.clone();
+      assert!(routing_table_utest.table.check_node(&new_node_3.id));
       assert!(routing_table_utest.table.add_node(new_node_3).0);
       assert_eq!(routing_table_utest.table.check_node(
           &routing_table_utest.buckets[1].far_contact.clone()), false);
 
       let mut new_node_4 = create_random_node_info();
-      new_node_4.fob.id =  routing_table_utest.buckets[1].mid_contact.clone();
-      assert!(routing_table_utest.table.check_node(&new_node_4.fob.id));
+      new_node_4.id =  routing_table_utest.buckets[1].mid_contact.clone();
+      assert!(routing_table_utest.table.check_node(&new_node_4.id));
       assert!(routing_table_utest.table.add_node(new_node_4).0);
       assert_eq!(routing_table_utest.table.check_node(
           &routing_table_utest.buckets[1].mid_contact.clone()), false);
 
       let mut new_node_5 = create_random_node_info();
-      new_node_5.fob.id =  routing_table_utest.buckets[1].close_contact.clone();
-      assert!(routing_table_utest.table.check_node(&new_node_5.fob.id));
+      new_node_5.id =  routing_table_utest.buckets[1].close_contact.clone();
+      assert!(routing_table_utest.table.check_node(&new_node_5.id));
       assert!(routing_table_utest.table.add_node(new_node_5).0);
       assert_eq!(routing_table_utest.table.check_node(
           &routing_table_utest.buckets[1].close_contact.clone()), false);
 
       for i in 2..(RoutingTable::get_optimal_size() - 4) {
           let mut new_node = create_random_node_info();
-          new_node.fob.id =  routing_table_utest.buckets[i].mid_contact.clone();
-          assert!(routing_table_utest.table.check_node(&new_node.fob.id));
+          new_node.id =  routing_table_utest.buckets[i].mid_contact.clone();
+          assert!(routing_table_utest.table.check_node(&new_node.id));
           assert!(routing_table_utest.table.add_node(new_node).0);
           assert_eq!(routing_table_utest.table.check_node(
               &routing_table_utest.buckets[i].mid_contact.clone()), false);
@@ -978,8 +988,8 @@ mod test {
 
       for i in (RoutingTable::get_optimal_size() - 4)..RoutingTable::get_optimal_size() {
           let mut new_node = create_random_node_info();
-          new_node.fob.id =  routing_table_utest.buckets[i].mid_contact.clone();
-          assert!(routing_table_utest.table.check_node(&new_node.fob.id));
+          new_node.id =  routing_table_utest.buckets[i].mid_contact.clone();
+          assert!(routing_table_utest.table.check_node(&new_node.id));
           assert!(routing_table_utest.table.add_node(new_node).0);
           assert_eq!(routing_table_utest.table.check_node(
               &routing_table_utest.buckets[i].mid_contact.clone()), false);
@@ -1014,7 +1024,7 @@ mod test {
             addresses.push(tables[i].our_id.clone());
             for j in 0..tables.len() {
                 let mut node_info = create_random_node_info();
-                node_info.fob.id = tables[j].our_id.clone();
+                node_info.id = tables[j].our_id.clone();
                 tables[i].add_node(node_info);
             }
         }
@@ -1064,7 +1074,7 @@ mod test {
             addresses.push(tables[i].our_id.clone());
             for j in 0..tables.len() {
                 let mut node_info = create_random_node_info();
-                node_info.fob.id = tables[j].our_id.clone();
+                node_info.id = tables[j].our_id.clone();
                 tables[i].add_node(node_info);
             }
         }
@@ -1082,7 +1092,7 @@ mod test {
                 assert_eq!(RoutingTable::get_group_size(), target_close_group.len());
                 // should contain our close group
                 for k in 0..target_close_group.len() {
-                    assert!(target_close_group[k].fob.id == addresses[k + 1]);
+                    assert!(target_close_group[k].id == addresses[k + 1]);
                 }
             }
         }
@@ -1098,14 +1108,14 @@ mod test {
 
         for i in 0..table_unit_test.initial_count {
             assert!(table_unit_test.table.our_close_group().iter().filter(
-                |&node| { node.fob.id == table_unit_test.buckets[i].mid_contact }).count() > 0);
+                |&node| { node.id == table_unit_test.buckets[i].mid_contact }).count() > 0);
         }
 
         table_unit_test.complete_filling_table();
         assert_eq!(RoutingTable::get_group_size(), table_unit_test.table.our_close_group().len());
 
         table_unit_test.table.our_close_group().sort_by(
-            |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id,
+            |a, b| if RoutingTable::closer_to_target(&a.id, &b.id,
                                                      &table_unit_test.our_id) {
                 cmp::Ordering::Less
             } else {
@@ -1114,7 +1124,7 @@ mod test {
 
         for close_node in table_unit_test.table.our_close_group().iter() {
             assert!(table_unit_test.added_ids.iter().filter(
-                |&node| { node == &close_node.fob.id }).count() > 0);
+                |&node| { node == &close_node.id }).count() > 0);
         }
     }
 
@@ -1136,7 +1146,7 @@ mod test {
         for i in 0..routing_table_utest.initial_count {
             let mut assert_checker = 0;
             for j in 0..target_nodes_.len() {
-                if target_nodes_[j].fob.id == routing_table_utest.buckets[i].mid_contact {
+                if target_nodes_[j].id == routing_table_utest.buckets[i].mid_contact {
                     assert_checker = 1;
                     break;
                 }
@@ -1156,7 +1166,7 @@ mod test {
                    RoutingTable::get_optimal_size() - 1).rev() {
             let mut assert_checker = 0;
             for j in 0..target_nodes_.len() {
-                if target_nodes_[j].fob.id == routing_table_utest.buckets[i].mid_contact {
+                if target_nodes_[j].id == routing_table_utest.buckets[i].mid_contact {
                     assert_checker = 1;
                     break;
                 }
@@ -1177,7 +1187,7 @@ mod test {
                 target_nodes_ = routing_table_utest.table.target_nodes(target);
                 assert_eq!(RoutingTable::get_parallelism(), target_nodes_.len());
                 routing_table_utest.table.our_close_group().sort_by(
-                    |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id,
+                    |a, b| if RoutingTable::closer_to_target(&a.id, &b.id,
                                                              &routing_table_utest.our_id) {
                         cmp::Ordering::Less
                     } else {
@@ -1187,7 +1197,7 @@ mod test {
                 for i in 0..target_nodes_.len() {
                     let mut assert_checker = 0;
                     for j in 0..routing_table_utest.added_ids.len() {
-                        if target_nodes_[i].fob.id == routing_table_utest.added_ids[j] {
+                        if target_nodes_[i].id == routing_table_utest.added_ids[j] {
                             assert_checker = 1;
                             continue;
                         }
@@ -1210,7 +1220,7 @@ mod test {
                 target_nodes_ = routing_table_utest.table.target_nodes(target);
                 assert_eq!(RoutingTable::get_group_size(), target_nodes_.len());
                 routing_table_utest.table.our_close_group().sort_by(
-                    |a, b| if RoutingTable::closer_to_target(&a.fob.id, &b.fob.id,
+                    |a, b| if RoutingTable::closer_to_target(&a.id, &b.id,
                                                              &routing_table_utest.our_id) {
                         cmp::Ordering::Less
                     } else {
@@ -1220,7 +1230,7 @@ mod test {
                 for i in 0..target_nodes_.len() {
                     let mut assert_checker = 0;
                     for j in 0..routing_table_utest.added_ids.len() {
-                        if target_nodes_[i].fob.id == routing_table_utest.added_ids[j] {
+                        if target_nodes_[i].id == routing_table_utest.added_ids[j] {
                             assert_checker = 1;
                             continue;
                         }
@@ -1247,7 +1257,7 @@ mod test {
         table_unit_test.node_info = test_node.clone();
         assert!(table_unit_test.table.add_node(table_unit_test.node_info.clone()).0);
 
-        match table_unit_test.table.get_public_key(table_unit_test.node_info.fob.id.clone()) {
+        match table_unit_test.table.get_public_key(table_unit_test.node_info.id.clone()) {
             Some(crypto::asymmetricbox::PublicKey(p)) => {},
             None => panic!("PublicKey None"),
         }
@@ -1262,13 +1272,13 @@ mod test {
         assert_eq!(table_unit_test.initial_count + 1, table_unit_test.table.routing_table.len());
 
         // Check on fully filled the table
-        table_unit_test.table.drop_node(&test_node.fob.id.clone());
+        table_unit_test.table.drop_node(&test_node.id.clone());
         table_unit_test.complete_filling_table();
         table_unit_test.table.drop_node(&table_unit_test.buckets[0].mid_contact.clone());
         table_unit_test.node_info = test_node.clone();
         assert!(table_unit_test.table.add_node(table_unit_test.node_info.clone()).0);
 
-        match table_unit_test.table.get_public_key(table_unit_test.node_info.fob.id.clone()) {
+        match table_unit_test.table.get_public_key(table_unit_test.node_info.id.clone()) {
             Some(crypto::asymmetricbox::PublicKey(p)) => {},
             None => panic!("PublicKey None"),
         }

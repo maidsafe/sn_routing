@@ -90,9 +90,8 @@ impl Decodable for ConnectRequest {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
+    use cbor;
 
     #[test]
     fn connect_request_serialisation() {

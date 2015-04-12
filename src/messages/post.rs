@@ -51,10 +51,9 @@ impl Decodable for Post {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
-
+    use cbor; 
+    
     #[test]
     fn post_serialisation() {
         let obj_before = Post::generate_random();

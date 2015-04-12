@@ -17,21 +17,28 @@
 // use of the MaidSafe Software.
 
 //! The main API for routing nodes (this is where you give the network it's rules)
-//! The network will report **From Authority your Authority** and validate cryptographically
-//! and via group consensus any message. This means any facade you implement will set out
-//! what you deem to be a valid operation, routing will provide a valid message sender and authority
-//! that will allow you to set up many decentralised services
+//!
+//! The network will report **From Authority your Authority** and validate cryptographically and
+//! via group consensus any message. This means any facade you implement will set out what you deem
+//! to be a valid operation, routing will provide a valid message sender and authority that will
+//! allow you to set up many decentralised services
+//!
 //! See maidsafe.net to see what they are doing as an example
 //!
-//! The data types are encoded with Concise Binary Object Representation (CBOR)
-//! This allows us to demand certain tags are available to routing that allows
-//! it to confirm things like data.name() when calculating authority
+//! The data types are encoded with Concise Binary Object Representation (CBOR).
+//!
+//! This allows us to demand certain tags are available to routing that allows it to confirm things
+//! like data.name() when calculating authority.
+//!
 //! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
+//!
 //! Please define your own for this library. These tags are non optional and your data MUST meet
-//! the requirements and implement the following tags
+//! the requirements and implement the following tags:
+//!
+//! ```text
 //! tag: 5483_0 -> name [u8; 64] type
 //! tag: 5483_1 -> XXXXXXXXXXXXXX
-//! # Use
+//! ```
 
 #![feature(collections)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
@@ -40,7 +47,7 @@
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features, unused_attributes)]
 #![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core,
-           udp, thread_sleep, ip_addr, convert)]
+           thread_sleep, ip_addr, convert)]
 
 extern crate sodiumoxide;
 extern crate lru_cache;
@@ -55,9 +62,8 @@ extern crate maidsafe_types;
 
 use sodiumoxide::crypto;
 
-mod routing_client;
+pub mod routing_client;
 pub mod types;
-mod broadcast;
 mod message_header;
 pub mod routing_table;
 mod accumulator;
@@ -74,19 +80,19 @@ use types::DhtId;
 struct SignedKey {
   sign_public_key: crypto::sign::PublicKey,
   encrypt_public_key: crypto::asymmetricbox::PublicKey,
-  signature: crypto::sign::Signature // detached signature
+  signature: crypto::sign::Signature, // detached signature
 }
 
 pub enum Action {
   Reply(Vec<u8>),
-  SendOn(Vec<DhtId>)
+  SendOn(Vec<DhtId>),
 }
 
 pub enum RoutingError {
   Success,  // vault will also return a Success to indicate a dead end
   NoData,
   InvalidRequest,
-  IncorrectData(Vec<u8>)
+  IncorrectData(Vec<u8>),
 }
 
 #[test]

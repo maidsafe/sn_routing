@@ -95,10 +95,8 @@ impl Decodable for ConnectResponse {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
-
+    use cbor;
     #[test]
     fn connect_response_serialisation() {
         let obj_before = ConnectResponse::generate_random();
