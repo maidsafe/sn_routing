@@ -17,7 +17,7 @@ time = "*"
 sodiumoxide = "*"
 rand = "*"
 lru_cache = "*"
-rust-sqlite3 = "*"
+rust-sqlite = "*"
 maidsafe_types = "*"
 crust = "*"
 
