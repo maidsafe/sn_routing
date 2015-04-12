@@ -171,7 +171,7 @@ impl<F> RoutingNode<F> where F: Facade {
         let peer_node_info = routing_table::NodeInfo::new(connect_succcess_msg.peer_fob, true);
         let result = self.routing_table.add_node(peer_node_info);
         if result.0 {
-          println!("{:?} added {:?}", self.own_id, connect_succcess_msg.peer_id);
+          println!("{:?} added {:?} <RT>", self.own_id, connect_succcess_msg.peer_id);
         } else {
            println!("{:?} failed to add {:?}", self.own_id, connect_succcess_msg.peer_id);
         }
@@ -202,10 +202,25 @@ impl<F> RoutingNode<F> where F: Facade {
         // add to filter
         // add to cache
         // cache check / response
-        // SendSwarmOrParallel
+//        self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);
         // handle relay request/response
-        // switch message type
 
+        // let relay_response = header.destination.reply_to.is_some() &&
+        //                      header.destination.dest == self.own_id;
+        // if relay_response {
+        //     println!("{:?} relay response sent to nrt {:?}", self.own_id, header.destination.reply_to);
+        //     self.connection_manager.send(serialised_message, header.destination.reply_to.unwrap());
+        //     return Ok(());
+        // }
+
+        // TODO(prakash)
+
+        // if !self.address_in_close_group_range(&header.destination.dest) {
+        //     println!("{:?} not for us ", self.own_id);
+        //     return Ok(());
+        // }
+
+        // switch message type
         match msg.message_type {
             MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
             MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
@@ -266,7 +281,7 @@ impl<F> RoutingNode<F> where F: Facade {
             let peer_node_info = routing_table::NodeInfo::new(connect_response.receiver_fob, true);
             let result = self.routing_table.add_node(peer_node_info);
             if result.0 {
-                println!("{:?} added {:?}", self.own_id, connect_response.receiver_id);
+                println!("{:?} added {:?} <RT>", self.own_id, connect_response.receiver_id);
             } else {
                 println!("{:?} failed to add {:?}", self.own_id, connect_response.receiver_id);
             }
@@ -280,7 +295,7 @@ impl<F> RoutingNode<F> where F: Facade {
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> =  vec![];;
         for x in close_group {
-            // group.push(x.fob);  // FIXME (Ben)
+            group.push(x.fob);
         }
         // add ourselves
         group.push(types::PublicPmid::new(&self.pmid));
@@ -477,8 +492,30 @@ impl<F> RoutingNode<F> where F: Facade {
         current
     }
 
-    fn send_swarm_or_parallel(&self, message: RoutingMessage) {
-        unimplemented!()
+    fn send_swarm_or_parallel(&self, target: &DhtId, serialised_message: &Bytes) {
+        for peer in self.get_connected_target(target) {
+            let res = self.connection_manager.send(serialised_message.clone(), peer.id.clone());
+            if res.is_err() {
+                println!("{:?} failed to send to {:?}", self.own_id, peer.id);
+            }
+        }
+    }
+
+    fn get_connected_target(&self, target: &DhtId) -> Vec<routing_table::NodeInfo> {
+        let mut nodes = self.routing_table.target_nodes(target.clone());
+        nodes.retain(|x| { x.connected });
+        nodes
+    }
+
+    fn address_in_close_group_range(&self, address: &DhtId) -> bool {
+        if self.routing_table.size() < RoutingTable::get_group_size() {
+            return true;
+        }
+
+        let mut close_group = self.routing_table.our_close_group();
+        RoutingTable::closer_to_target(&address,
+                                       &self.routing_table.our_close_group().pop().unwrap().id,
+                                       &self.own_id)
     }
 }
 
@@ -490,6 +527,7 @@ mod test {
     use super::super::{Action, RoutingError};
     use std::thread;
     use std::net::{SocketAddr};
+    use std::str::FromStr;
 
     struct NullFacade;
 
@@ -509,19 +547,23 @@ mod test {
     fn test_routing_node() {
         let f1 = NullFacade;
         let f2 = NullFacade;
+        let f3 = NullFacade;
         let n1 = RoutingNode::new(DhtId::generate_random(), f1);
         let n2 = RoutingNode::new(DhtId::generate_random(), f2);
+        let n3 = RoutingNode::new(DhtId::generate_random(), f3);
 
         let n1_ep = n1.accepting_on().unwrap();
         let n2_ep = n2.accepting_on().unwrap();
+        let n3_ep = n3.accepting_on().unwrap();
 
         fn run_node(n: RoutingNode<NullFacade>, my_ep: SocketAddr, his_ep: SocketAddr)
             -> thread::JoinHandle
         {
             thread::spawn(move || {
                 let mut n = n;
-                if my_ep.port() < his_ep.port() {
-                    n.add_bootstrap(his_ep);
+                let bootstrap_ep = SocketAddr::from_str(&format!("127.0.0.1:{}", 5483u16)).unwrap();
+                if my_ep.port() != bootstrap_ep.port() {
+                    n.add_bootstrap(bootstrap_ep);
                 }
                 n.run();
             })
@@ -529,8 +571,11 @@ mod test {
 
         let t1 = run_node(n1, n1_ep.clone(), n2_ep.clone());
         let t2 = run_node(n2, n2_ep.clone(), n1_ep.clone());
-
+        thread::sleep_ms(1000);
+        println!("Starting node 3 ... ");
+        let t3 = run_node(n3, n3_ep.clone(), n1_ep.clone());
         assert!(t1.join().is_ok());
         assert!(t2.join().is_ok());
+        assert!(t3.join().is_ok());
     }
 }

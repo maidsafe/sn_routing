@@ -41,7 +41,7 @@ pub struct NodeInfo {
                    // should be immutable and can be read from
                    // public_pmid.get_name();
     pub fob: PublicPmid,
-    connected: bool,
+    pub connected: bool,
 }
 
 impl NodeInfo {
