@@ -10,14 +10,22 @@ readme = "README.md"
 license = "GPL-3.0"
 homepage = "http://www.maidsafe.net"
 
+
 [dependencies]
 rustc-serialize = "*"
 cbor = "*"
 time = "*"
 sodiumoxide = "*"
 rand = "*"
-lru_cache = "*"
-rust-sqlite = "*"
-maidsafe_types = "*"
-crust = "*"
 
+[dependencies.lru-cache]
+git="https://github.com/contain-rs/lru-cache.git"
+
+[dependencies.sqlite3]
+git="https://github.com/linuxfood/rustsqlite.git"
+
+[dependencies.maidsafe_types]
+git = "https://github.com/dirvine/maidsafe_types"
+
+[dependencies.crust]
+git = "https://github.com/dirvine/crust"
