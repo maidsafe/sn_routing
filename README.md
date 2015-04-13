@@ -10,9 +10,9 @@ Routing - specialised storage DHT
 
 #Overview
 
-A secured [DHT](http://en.wikipedia.org/wiki/Distributed_hash_table), based on a [kademlia](http://en.wikipedia.org/wiki/Kademlia) like implementation, but with some very stark differences. Thsi is a recursive as opposed to iterative network, this allows easier NAT traversal and makes more efficient use of routers and larger networks. This also allows very fast reconfiguration of network changes and aleviates the requirement of a refresh algorithm. A recursive solution based on a network protocol layer that is 'connection oriented' also allows a close group to be aligned with security protocols.
+A secured [DHT](http://en.wikipedia.org/wiki/Distributed_hash_table), based on a [kademlia](http://en.wikipedia.org/wiki/Kademlia) like implementation, but with some very stark differences. This is a recursive as opposed to iterative network, this allows easier NAT traversal and makes more efficient use of routers and larger networks. This also allows very fast reconfiguration of network changes and aleviates the requirement of a refresh algorithm. A recursive solution based on a network protocol layer that is 'connection oriented' also allows a close group to be aligned with security protocols.
 
-This library makes use of [Public-key cryptography](http://en.wikipedia.org/wiki/Public-key_cryptography) to allow a mechanism to ensure nodes are well recodnised and cryptographically secured. This pattern allows the creation of a DHT based PKI and this in turn allows us to make use of groups as fixed in relation to any address, in a continually fluid network as described [here](http://maidsafe.net/Whitepapers/pdf/MaidSafeDistributedHashTable.pdf) and create serverless networks that can provide fully [autonomous networks](http://maidsafe.net/docs/SAFEnetwork.pdf). 
+This library makes use of [Public-key cryptography](http://en.wikipedia.org/wiki/Public-key_cryptography) to allow a mechanism to ensure nodes are well recognised and cryptographically secured. This pattern allows the creation of a DHT based PKI and this in turn allows us to make use of groups as fixed in relation to any address, in a continually fluid network as described [here](http://maidsafe.net/Whitepapers/pdf/MaidSafeDistributedHashTable.pdf) and create serverless networks that can provide fully [autonomous networks](http://maidsafe.net/docs/SAFEnetwork.pdf). 
 
 This is a very under-researched area and is currently being investigated with papers such as [{Erick Lavoie} XOR Distance Metric and Basic Routing". McLab Seminars. McGill University, Montreal, October 2014.](http://ericklavoie.com/talks/safenetwork/1-xor-routing.pdf), with videos to also help the curious which can be found [here](https://forum.safenetwork.io/t/lecture-2-the-safe-network-from-first-principles-crowdfunding/2566)
 
@@ -67,3 +67,4 @@ Steps to compile SQLite by,
 - [ ] Implement NAT traversal (requires crust v0.1.0)
 - [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Version 0.1 (crates.io)
+- [ ] Address re-location (security essential)
