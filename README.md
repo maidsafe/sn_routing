@@ -53,8 +53,6 @@ Steps to compile SQLite by,
 - [x] Finalise sentinel in line with tests
 - [x] Implement client node
 - [ ] Test client node
-- [ ] Implement client façade
-- [ ] Test client façade
 - [ ] Integrate connection manager (bootstrapping)
 - [ ] Implement routing node (handle messages , forwarding etc)
 - [x] Test sentinel 
