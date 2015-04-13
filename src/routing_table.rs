@@ -29,12 +29,12 @@ static QUORUM_SIZE: usize = 19;
 pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
-#[derive(Clone)]
-pub struct KeyFob {
-    pub id: DhtId,
-    keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-    signature: crypto::sign::Signature,
-}
+// #[derive(Clone)]
+// pub struct KeyFob {
+//     pub id: DhtId,
+//     keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
+//     signature: crypto::sign::Signature,
+// }
 
 #[derive(Clone)]
 pub struct NodeInfo {
@@ -42,19 +42,35 @@ pub struct NodeInfo {
                    // should be immutable and can be read from
                    // public_pmid.get_name();
     pub fob: PublicPmid,
-    endpoint: SocketAddr,
-    connected: bool,
+    endpoint: Option<SocketAddr>,
+    connected: bool,  // TODO: can we remove this state-flag ? instead base it on Option<endpoint>
 }
 
 impl NodeInfo {
-  pub fn new(fob: PublicPmid, endpoint: SocketAddr, connected: bool)
-         -> NodeInfo {
+  pub fn new(fob: PublicPmid, connected: bool) -> NodeInfo {
     NodeInfo {
       id : fob.get_name(),
       fob : fob,
-      endpoint : endpoint,
+      endpoint : None,
       connected : connected
     }
+  }
+
+  pub fn new_with_endpoint(fob: PublicPmid, endpoint: SocketAddr, connected: bool) -> NodeInfo {
+    NodeInfo {
+      id: fob.get_name(),
+      fob: fob,
+      endpoint: Some(endpoint),
+      connected: connected
+    }
+  }
+
+  pub fn get_endpoint(&self) -> Option<SocketAddr> {
+    self.endpoint
+  }
+
+  pub fn set_endpoint(&mut self, new_endpoint: SocketAddr) {
+    self.endpoint = Some(new_endpoint);
   }
 }
 
@@ -578,22 +594,12 @@ mod test {
         arr
     }
 
-    // fn create_random_fob() -> KeyFob {
-    //     let id = DhtId::generate_random();
-    //     let sig = crypto::sign::Signature(types::vector_as_u8_64_array(id.0.clone()));
-    //     KeyFob {
-    //         id: id,
-    //         keys: (crypto::sign::gen_keypair().0, crypto::asymmetricbox::gen_keypair().0),
-    //         signature: sig,
-    //     }
-    // }
-
     fn create_random_node_info() -> NodeInfo {
         let public_pmid = types::PublicPmid::new(&types::Pmid::new());
         NodeInfo {
             id : public_pmid.get_name(),
             fob: public_pmid,
-            endpoint: create_random_socket_address(),
+            endpoint: Some(create_random_socket_address()),
             connected: false,
         }
     }
