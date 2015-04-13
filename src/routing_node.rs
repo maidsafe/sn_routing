@@ -202,23 +202,23 @@ impl<F> RoutingNode<F> where F: Facade {
         // add to filter
         // add to cache
         // cache check / response
-//        self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);
+        self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);
         // handle relay request/response
 
-        // let relay_response = header.destination.reply_to.is_some() &&
-        //                      header.destination.dest == self.own_id;
-        // if relay_response {
-        //     println!("{:?} relay response sent to nrt {:?}", self.own_id, header.destination.reply_to);
-        //     self.connection_manager.send(serialised_message, header.destination.reply_to.unwrap());
-        //     return Ok(());
-        // }
+        let relay_response = header.destination.reply_to.is_some() &&
+                             header.destination.dest == self.own_id;
+        if relay_response {
+            println!("{:?} relay response sent to nrt {:?}", self.own_id, header.destination.reply_to);
+            let _ = self.connection_manager.send(serialised_message, header.destination.reply_to.unwrap());
+            return Ok(());
+        }
 
         // TODO(prakash)
 
-        // if !self.address_in_close_group_range(&header.destination.dest) {
-        //     println!("{:?} not for us ", self.own_id);
-        //     return Ok(());
-        // }
+        if !self.address_in_close_group_range(&header.destination.dest) {
+            println!("{:?} not for us ", self.own_id);
+            return Ok(());
+        }
 
         // switch message type
         match msg.message_type {
@@ -512,7 +512,7 @@ impl<F> RoutingNode<F> where F: Facade {
             return true;
         }
 
-        let mut close_group = self.routing_table.our_close_group();
+        let close_group = self.routing_table.our_close_group();
         RoutingTable::closer_to_target(&address,
                                        &self.routing_table.our_close_group().pop().unwrap().id,
                                        &self.own_id)
