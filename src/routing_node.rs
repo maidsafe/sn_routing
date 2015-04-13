@@ -203,7 +203,12 @@ impl<F> RoutingNode<F> where F: Facade {
         let body   = msg.serialised_body;
         println!("{:?} Rxd from {:?} =>  {:?}", self.own_id, peer_id, msg.message_type);
         // filter check
+        if self.filter.check(&header.get_filter()) {
+          // should just return quietly
+          return Err(());
+        }
         // add to filter
+        self.filter.add(header.get_filter(), ());
         // add to cache
         // cache check / response
 //        self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);

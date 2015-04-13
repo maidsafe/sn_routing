@@ -121,7 +121,7 @@ impl MessageHeader {
         }
     }
 
-    pub fn get_filter(&self) -> (types::DhtId, types::MessageId) {
+    pub fn get_filter(&self) -> types::FilterType {
         (self.source.from_node.clone(), self.message_id)
     }
 
