@@ -14,9 +14,11 @@
 // Software.
 
 extern crate rand;
+extern crate chrono;
 
 use sodiumoxide;
 use crust;
+use lru_time_cache::LruCache;
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::{Receiver};
 use facade::*;
@@ -27,7 +29,7 @@ use std::collections::HashSet;
 use std::net::{SocketAddrV4, Ipv4Addr};
 
 use routing_table::RoutingTable;
-use types::DhtId;
+use types::{DhtId, MessageId};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -48,7 +50,6 @@ use types::RoutingTrait;
 type ConnectionManager = crust::ConnectionManager<DhtId>;
 type Event             = crust::Event<DhtId>;
 type Bytes             = Vec<u8>;
-type MessageId         = u32;
 
 type RecvResult = Result<(),()>;
 
@@ -64,6 +65,7 @@ pub struct RoutingNode<F: Facade> {
     accepting_on: Option<u16>,
     next_message_id: MessageId,
     bootstrap_node_id: Option<DhtId>,
+    filter: LruCache<types::FilterType, ()>,
 }
 
 impl<F> RoutingNode<F> where F: Facade {
@@ -85,6 +87,8 @@ impl<F> RoutingNode<F> where F: Facade {
                       accepting_on: accepting_on,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
+                      filter: LruCache::with_expiry_duration(
+                        chrono::duration::Duration::minutes(20))
                     }
     }
 
