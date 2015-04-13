@@ -69,7 +69,7 @@ impl NodeInfo {
     self.endpoint
   }
 
-  pub fn set_endpoint(&self, new_endpoint: SocketAddr) {
+  pub fn set_endpoint(&mut self, new_endpoint: SocketAddr) {
     self.endpoint = Some(new_endpoint);
   }
 }
