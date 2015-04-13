@@ -34,7 +34,7 @@ use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
 use messages::put_data_response::PutDataResponse;
-use messages::connect::ConnectRequest;
+use messages::connect_request::ConnectRequest;
 use messages::connect_response::ConnectResponse;
 use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;

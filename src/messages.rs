@@ -15,8 +15,8 @@
 
 #![allow(unused_assignments)]
 
-#[path="messages/connect.rs"]
-pub mod connect;
+#[path="messages/connect_request.rs"]
+pub mod connect_request;
 #[path="messages/connect_response.rs"]
 pub mod connect_response;
 #[path="messages/connect_success.rs"]
