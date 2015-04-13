@@ -16,8 +16,7 @@
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe Software.
 
-use std::hash::Hash;
-use lru_cache::LruCache;
+use lru_time_cache::LruCache;
 
 use types;
 
@@ -38,23 +37,23 @@ pub struct Entry<V> {
 }
 
 /// Accumulator for various message type
-pub struct Accumulator<K, V> where K: Eq + Hash + Clone, V: Clone {
+pub struct Accumulator<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
     /// Expected threshold for resolve
     quorum: usize,
     storage: LruCache<K, Entry<V>>
 }
 
-impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
+impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
     pub fn new(quorum: usize) -> Accumulator<K, V> {
-        Accumulator { quorum: quorum, storage: LruCache::new(1000) }
+        Accumulator { quorum: quorum, storage: LruCache::<K, Entry<V>>::with_capacity(1000) }
     }
 
-    pub fn have_name(&mut self, name: &K) -> bool {
+    pub fn have_name(&mut self, name: K) -> bool {
         self.storage.get(name).is_some()
     }
 
     pub fn is_quorum_reached(&mut self, name: K) -> bool {
-        let entry = self.storage.get(&name);
+        let entry = self.storage.get(name);
 
         if entry.is_none() {
             false
@@ -64,10 +63,10 @@ impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
     }
 
     pub fn add(&mut self, name: K, value: V, sender: types::DhtId)-> Option<(K, Vec<Response<V>>)> {
-        let entry = self.storage.remove(&name);
+        let entry = self.storage.remove(name.clone());
         if entry.is_none() {
             let entry_in = Entry { received_response : vec![Response { address: sender, value: value }]};
-            self.storage.insert(name.clone(), entry_in.clone());
+            self.storage.add(name.clone(), entry_in.clone());
             if self.quorum == 1 {
                 let result = (name, entry_in.received_response);
                 return Some(result);
@@ -75,7 +74,7 @@ impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
         } else {
             let mut tmp = entry.unwrap();
             tmp.received_response.push(Response{ address : sender, value : value });
-            self.storage.insert(name.clone(), tmp.clone());
+            self.storage.add(name.clone(), tmp.clone());
             if tmp.received_response.len() >= self.quorum {
                 return Some((name, tmp.received_response));
             }
@@ -83,8 +82,8 @@ impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
         None
     }
 
-    pub fn get(&mut self, name: &K) -> Option<(K, Vec<Response<V>>)>{
-        let entry = self.storage.get(name);
+    pub fn get(&mut self, name: K) -> Option<(K, Vec<Response<V>>)>{
+        let entry = self.storage.get(name.clone());
         if entry.is_none() {
             None
         } else {
@@ -93,7 +92,7 @@ impl<K: Eq + Hash + Clone, V: Clone> Accumulator<K, V> {
     }
 
     pub fn delete(&mut self, name: K) {
-        self.storage.remove(&name);
+        self.storage.remove(name);
     }
 
     pub fn cache_size(&mut self) -> usize {
@@ -123,18 +122,18 @@ mod test {
         let address2 : DhtId = DhtId::generate_random();
 
         assert!(accumulator.add(2, 3, address1.clone()).is_some());
-        assert_eq!(accumulator.have_name(&1), false);
-        assert_eq!(accumulator.have_name(&2), true);
+        assert_eq!(accumulator.have_name(1), false);
+        assert_eq!(accumulator.have_name(2), true);
         assert_eq!(accumulator.is_quorum_reached(1), false);
         assert_eq!(accumulator.is_quorum_reached(2), true);
         assert!(accumulator.add(1, 3, address2.clone()).is_some());
-        assert_eq!(accumulator.have_name(&1), true);
+        assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), true);
         assert!(accumulator.add(1, 3, address2.clone()).is_some());
-        assert_eq!(accumulator.have_name(&1), true);
+        assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), true);
 
-        let (key, responses) = accumulator.get(&1).unwrap();
+        let (key, responses) = accumulator.get(1).unwrap();
 
         assert_eq!(key, 1);
         assert_eq!(responses.len(), 2);
@@ -143,7 +142,7 @@ mod test {
         assert_eq!(responses[1].value, 3);
         assert_eq!(responses[1].address, address2.clone());
 
-        let (key, responses) = accumulator.get(&2).unwrap();
+        let (key, responses) = accumulator.get(2).unwrap();
 
         assert_eq!(key, 2);
         assert_eq!(responses.len(), 1);
@@ -159,7 +158,7 @@ mod test {
         let value = rand::random::<u32>();
         for i in 0..quorum_size-1 {
             assert!(accumulator.add(key, value, DhtId::generate_random()).is_none());
-            let key_value = accumulator.get(&key).unwrap();
+            let key_value = accumulator.get(key).unwrap();
             assert_eq!(key_value.0, key);
             assert_eq!(key_value.1.len(), i + 1);
             for response in key_value.1 { assert_eq!(response.value, value); };
@@ -167,7 +166,7 @@ mod test {
         }
         assert!(accumulator.add(key, value, DhtId::generate_random()).is_some());
         assert_eq!(accumulator.is_quorum_reached(key), true);
-        let key_value = accumulator.get(&key).unwrap();
+        let key_value = accumulator.get(key).unwrap();
         assert_eq!(key_value.0, key);
         assert_eq!(key_value.1.len(), quorum_size);
         for response in key_value.1 { assert_eq!(response.value, value); };
@@ -212,10 +211,10 @@ mod test {
         let address : DhtId = DhtId::generate_random();
 
         assert!(accumulator.add(1, 1, address.clone()).is_none());
-        assert_eq!(accumulator.have_name(&1), true);
+        assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), false);
 
-        let (key, responses) = accumulator.get(&1).unwrap();
+        let (key, responses) = accumulator.get(1).unwrap();
 
         assert_eq!(key, 1);
         assert_eq!(responses.len(), 1);
@@ -224,18 +223,18 @@ mod test {
 
         accumulator.delete(1);
 
-        let option = accumulator.get(&1);
+        let option = accumulator.get(1);
 
         assert!(option.is_none());
 
         assert!(accumulator.add(1, 1, address.clone()).is_none());
-        assert_eq!(accumulator.have_name(&1), true);
+        assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), false);
         assert!(accumulator.add(1, 1, address.clone()).is_some());
-        assert_eq!(accumulator.have_name(&1), true);
+        assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), true);
 
-        let (key, responses) = accumulator.get(&1).unwrap();
+        let (key, responses) = accumulator.get(1).unwrap();
 
         assert_eq!(key, 1);
         assert_eq!(responses.len(), 2);
@@ -246,7 +245,7 @@ mod test {
 
         accumulator.delete(1);
 
-        let option = accumulator.get(&1);
+        let option = accumulator.get(1);
 
         assert!(option.is_none());
     }
@@ -258,12 +257,12 @@ mod test {
 
         for count in 0..1000 {
             assert!(accumulator.add(count, 1, address.clone()).is_some());
-            assert_eq!(accumulator.have_name(&count), true);
+            assert_eq!(accumulator.have_name(count), true);
             assert_eq!(accumulator.is_quorum_reached(count), true);
         }
 
         for count in 0..1000 {
-            let (key, responses) = accumulator.get(&count).unwrap();
+            let (key, responses) = accumulator.get(count).unwrap();
 
             assert_eq!(key, count);
             assert_eq!(responses.len(), 1);
@@ -279,10 +278,10 @@ mod test {
 
         for count in 0..1000 {
             assert!(accumulator.add(count, 1, address.clone()).is_none());
-            assert_eq!(accumulator.have_name(&count), true);
+            assert_eq!(accumulator.have_name(count), true);
             assert_eq!(accumulator.is_quorum_reached(count), false);
 
-            let (key, responses) = accumulator.get(&count).unwrap();
+            let (key, responses) = accumulator.get(count).unwrap();
 
             assert_eq!(key, count);
             assert_eq!(responses.len(), 1);
@@ -292,18 +291,18 @@ mod test {
         }
 
         assert!(accumulator.add(1000, 1, address.clone()).is_none());
-        assert_eq!(accumulator.have_name(&1000), true);
+        assert_eq!(accumulator.have_name(1000), true);
         assert_eq!(accumulator.is_quorum_reached(1000), false);
         assert_eq!(accumulator.cache_size(), 1000);
 
         for count in 0..1000 {
-            let option = accumulator.get(&count);
+            let option = accumulator.get(count);
 
             assert!(option.is_none());
 
             assert!(accumulator.add(count + 1001, 1, address.clone()).is_none());
-            assert_eq!(accumulator.have_name(&(count + 1001)), true);
-            assert_eq!(accumulator.is_quorum_reached(count), false);
+            assert_eq!(accumulator.have_name(count + 1001), true);
+            assert_eq!(accumulator.is_quorum_reached(count + 1001), false);
             assert_eq!(accumulator.cache_size(), 1000);
         }
     }
