@@ -220,6 +220,12 @@ impl<F> RoutingNode<F> where F: Facade {
             return Ok(());
         }
 
+        // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
+        // and this node is in the group but the message destination is another group member node.
+        // "not for me"
+
+        // Sentinel check
+
         // switch message type
         match msg.message_type {
             MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
