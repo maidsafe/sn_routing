@@ -18,8 +18,8 @@ time = "*"
 sodiumoxide = "*"
 rand = "*"
 
-[dependencies.lru-cache]
-git="https://github.com/contain-rs/lru-cache.git"
+[dependencies.lru_time_cache]
+git = "https://github.com/dirvine/lru_time_cache"
 
 [dependencies.sqlite3]
 git="https://github.com/linuxfood/rustsqlite.git"
