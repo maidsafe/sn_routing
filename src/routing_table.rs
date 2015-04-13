@@ -19,7 +19,6 @@
 use common_bits::*;
 use sodiumoxide::crypto;
 use std::cmp;
-use std::net::*;
 use std::usize;
 use types::{DhtId, PublicPmid, RoutingTrait};
 
@@ -42,17 +41,15 @@ pub struct NodeInfo {
                    // should be immutable and can be read from
                    // public_pmid.get_name();
     pub fob: PublicPmid,
-    endpoint: SocketAddr,
-    connected: bool,
+    pub connected: bool,
 }
 
 impl NodeInfo {
-  pub fn new(fob: PublicPmid, endpoint: SocketAddr, connected: bool)
+  pub fn new(fob: PublicPmid, connected: bool)
          -> NodeInfo {
     NodeInfo {
       id : fob.get_name(),
       fob : fob,
-      endpoint : endpoint,
       connected : connected
     }
   }
@@ -593,7 +590,6 @@ mod test {
         NodeInfo {
             id : public_pmid.get_name(),
             fob: public_pmid,
-            endpoint: create_random_socket_address(),
             connected: false,
         }
     }
