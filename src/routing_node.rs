@@ -521,13 +521,13 @@ impl<F> RoutingNode<F> where F: Facade {
 
 #[cfg(test)]
 mod test {
-    use routing_node::{RoutingNode};
+    // use routing_node::{RoutingNode};
     use facade::{Facade};
     use types::{Authority, DhtId, DestinationAddress};
     use super::super::{Action, RoutingError};
-    use std::thread;
-    use std::net::{SocketAddr};
-    use std::str::FromStr;
+    // use std::thread;
+    // use std::net::{SocketAddr};
+    // use std::str::FromStr;
 
     struct NullFacade;
 
@@ -543,39 +543,40 @@ mod test {
       fn drop_node(&mut self, node: DhtId) {}
     }
 
-    #[test]
-    fn test_routing_node() {
-        let f1 = NullFacade;
-        let f2 = NullFacade;
-        let f3 = NullFacade;
-        let n1 = RoutingNode::new(DhtId::generate_random(), f1);
-        let n2 = RoutingNode::new(DhtId::generate_random(), f2);
-        let n3 = RoutingNode::new(DhtId::generate_random(), f3);
+//FIXME(Peter)
+    // #[test]
+    // fn test_routing_node() {
+    //     let f1 = NullFacade;
+    //     let f2 = NullFacade;
+    //     let f3 = NullFacade;
+    //     let n1 = RoutingNode::new(DhtId::generate_random(), f1);
+    //     let n2 = RoutingNode::new(DhtId::generate_random(), f2);
+    //     let n3 = RoutingNode::new(DhtId::generate_random(), f3);
 
-        let n1_ep = n1.accepting_on().unwrap();
-        let n2_ep = n2.accepting_on().unwrap();
-        let n3_ep = n3.accepting_on().unwrap();
+    //     let n1_ep = n1.accepting_on().unwrap();
+    //     let n2_ep = n2.accepting_on().unwrap();
+    //     let n3_ep = n3.accepting_on().unwrap();
 
-        fn run_node(n: RoutingNode<NullFacade>, my_ep: SocketAddr, his_ep: SocketAddr)
-            -> thread::JoinHandle
-        {
-            thread::spawn(move || {
-                let mut n = n;
-                let bootstrap_ep = SocketAddr::from_str(&format!("127.0.0.1:{}", 5483u16)).unwrap();
-                if my_ep.port() != bootstrap_ep.port() {
-                    n.add_bootstrap(bootstrap_ep);
-                }
-                n.run();
-            })
-        }
+    //     fn run_node(n: RoutingNode<NullFacade>, my_ep: SocketAddr, his_ep: SocketAddr)
+    //         -> thread::JoinHandle
+    //     {
+    //         thread::spawn(move || {
+    //             let mut n = n;
+    //             let bootstrap_ep = SocketAddr::from_str(&format!("127.0.0.1:{}", 5483u16)).unwrap();
+    //             if my_ep.port() != bootstrap_ep.port() {
+    //                 n.add_bootstrap(bootstrap_ep);
+    //             }
+    //             n.run();
+    //         })
+    //     }
 
-        let t1 = run_node(n1, n1_ep.clone(), n2_ep.clone());
-        let t2 = run_node(n2, n2_ep.clone(), n1_ep.clone());
-        thread::sleep_ms(1000);
-        println!("Starting node 3 ... ");
-        let t3 = run_node(n3, n3_ep.clone(), n1_ep.clone());
-        assert!(t1.join().is_ok());
-        assert!(t2.join().is_ok());
-        assert!(t3.join().is_ok());
-    }
+    //     let t1 = run_node(n1, n1_ep.clone(), n2_ep.clone());
+    //     let t2 = run_node(n2, n2_ep.clone(), n1_ep.clone());
+    //     thread::sleep_ms(1000);
+    //     println!("Starting node 3 ... ");
+    //     let t3 = run_node(n3, n3_ep.clone(), n1_ep.clone());
+    //     assert!(t1.join().is_ok());
+    //     assert!(t2.join().is_ok());
+    //     assert!(t3.join().is_ok());
+    // }
 }
