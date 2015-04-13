@@ -11,13 +11,13 @@
 // OF ANY KIND, either express or implied.
 // See the Licences for the specific language governing permissions and limitations relating to
 // use of the MaidSafe
-// Software.                                                                 
+// Software.
 
 use maidsafe_types::Random;
 use std::sync::{Mutex, Arc, mpsc};
 use std::io::Error as IoError;
 use types;
-use Facade;
+use facade::{Facade};
 use message_header;
 use messages;
 use maidsafe_types;
@@ -191,7 +191,7 @@ mod test {
     use super::*;
     use std::sync::{Mutex, Arc};
     use types::*;
-    use Facade;
+    use facade::Facade;
     use Action;
     use RoutingError;
     use maidsafe_types::Random;
@@ -200,7 +200,7 @@ mod test {
     struct TestFacade;
 
     impl Facade for TestFacade {
-        fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: DhtId)->Result<Action, RoutingError> { unimplemented!(); }
+        fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
         fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                       from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }

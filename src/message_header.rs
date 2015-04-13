@@ -85,7 +85,7 @@ impl MessageHeader {
     }
 
     pub fn is_relayed(&self) -> bool {
-        if !self.source.reply_to.is_some() {
+        if self.source.reply_to.is_some() {
             true
         } else {
             false
@@ -170,5 +170,4 @@ mod test {
             authority : types::Authority::ManagedNode,
             signature : Some(types::Signature{ signature: generate_u8_64() }) });
     }
-
 }
