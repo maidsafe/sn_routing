@@ -6,7 +6,7 @@ Routing - specialised storage DHT
 |:----------------------------:|:---------------------:|:--------------:|
 |[![Build Status](https://travis-ci.org/dirvine/routing.svg?branch=master)](https://travis-ci.org/dirvine/routing)|[![Build status](https://ci.appveyor.com/api/projects/status/ni7c20e9aux3g01i?svg=true)](https://ci.appveyor.com/project/dirvine/routing)|[![Coverage Status](https://coveralls.io/repos/dirvine/routing/badge.svg?branch=master)](https://coveralls.io/r/dirvine/routing?branch=master)|
 
-| [API Documentation](http://dirvine.github.io/routing/routing/)| [MaidSafe System Documention](http://systemdocs.maidsafe.net/) | [MaidSafe web site](http:://www.maidsafe.net) | [Safe Community site](http:://www.maidsafe.org) |
+| [API Documentation](http://dirvine.github.io/routing/routing/)| [MaidSafe System Documention](http://systemdocs.maidsafe.net/) | [MaidSafe web site](http://www.maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
 
 #Overview
 
@@ -53,8 +53,6 @@ Steps to compile SQLite by,
 - [x] Finalise sentinel in line with tests
 - [x] Implement client node
 - [ ] Test client node
-- [ ] Implement client façade
-- [ ] Test client façade
 - [ ] Integrate connection manager (bootstrapping)
 - [ ] Implement routing node (handle messages , forwarding etc)
 - [x] Test sentinel 
