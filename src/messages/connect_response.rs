@@ -17,27 +17,41 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use std::net::{SocketAddr};
+use types::DhtId;
 
 use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectResponse {
-  pub requester_local : types::EndPoint,
-  pub requester_external : types::EndPoint,
-  pub receiver_local : types::EndPoint,
-  pub receiver_external : types::EndPoint,
-  pub requester_id : types::DhtId,
-  pub receiver_id : types::DhtId,
-  pub receiver_fob : types::PublicPmid
+  pub requester_local    : SocketAddr,
+  pub requester_external : SocketAddr,
+  pub receiver_local     : SocketAddr,
+  pub receiver_external  : SocketAddr,
+  pub requester_id       : DhtId,
+  pub receiver_id        : DhtId,
+  pub receiver_fob       : types::PublicPmid
 }
 
 impl ConnectResponse {
     pub fn generate_random() -> ConnectResponse {
+        use std::net::{Ipv4Addr, SocketAddrV4};
+        use rand::random;
+
+        // TODO: IPv6
+        let random_addr = || -> SocketAddr {
+            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
+                                                           random::<u8>(),
+                                                           random::<u8>(),
+                                                           random::<u8>()),
+                                             random::<u16>()))
+        };
+
         ConnectResponse {
-            requester_local: types::EndPoint::generate_random(),
-            requester_external: types::EndPoint::generate_random(),
-            receiver_local: types::EndPoint::generate_random(),
-            receiver_external: types::EndPoint::generate_random(),
+            requester_local: random_addr(),
+            requester_external: random_addr(),
+            receiver_local: random_addr(),
+            receiver_external: random_addr(),
             requester_id: types::DhtId::generate_random(),
             receiver_id: types::DhtId::generate_random(),
             receiver_fob: types::PublicPmid::generate_random(),
@@ -47,9 +61,16 @@ impl ConnectResponse {
 
 impl Encodable for ConnectResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.requester_local, &self.requester_external,
-                                   &self.receiver_local, &self.receiver_external,
-                                   &self.requester_id, &self.receiver_id, &self.receiver_fob)).encode(e)
+    // FIXME: Implement Encodable/Decodable for SocketAddr
+    let requester_local    = format!("{}", self.requester_local);
+    let requester_external = format!("{}", self.requester_external);
+    let receiver_local     = format!("{}", self.receiver_local);
+    let receiver_external  = format!("{}", self.receiver_external);
+
+    CborTagEncode::new(5483_001, &(&requester_local, &requester_external,
+                                   &receiver_local, &receiver_external,
+                                   &self.requester_id, &self.receiver_id,
+                                   &self.receiver_fob)).encode(e)
   }
 }
 
@@ -57,9 +78,17 @@ impl Decodable for ConnectResponse {
   fn decode<D: Decoder>(d: &mut D)->Result<ConnectResponse, D::Error> {
     try!(d.read_u64());
     let (requester_local, requester_external, receiver_local, receiver_external,
-         requester_id, receiver_id, receiver_fob) = try!(Decodable::decode(d));
-    Ok(ConnectResponse { requester_local: requester_local, requester_external: requester_external,
-                         receiver_local: receiver_local, receiver_external: receiver_external,
+         requester_id, receiver_id, receiver_fob):
+        (String, String, String, String, DhtId, DhtId, types::PublicPmid)
+        = try!(Decodable::decode(d));
+
+    let req_local    = try!(requester_local   .parse().or(Err(d.error("can't parse req_local addr"))));
+    let req_external = try!(requester_external.parse().or(Err(d.error("can't parse req_external addr"))));
+    let rec_local    = try!(receiver_local    .parse().or(Err(d.error("can't parse rec_local addr"))));
+    let rec_external = try!(receiver_external .parse().or(Err(d.error("can't parse rec_external addr"))));
+
+    Ok(ConnectResponse { requester_local: req_local, requester_external: req_external,
+                         receiver_local: rec_local, receiver_external: rec_external,
                          requester_id: requester_id, receiver_id: receiver_id, receiver_fob: receiver_fob})
   }
 }

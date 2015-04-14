@@ -17,9 +17,13 @@ cbor = "*"
 time = "*"
 sodiumoxide = "*"
 rand = "*"
+chrono="*"
 
 [dependencies.lru_time_cache]
 git = "https://github.com/dirvine/lru_time_cache"
+
+[dependencies.message_filter]
+git="https://github.com/dirvine/message_filter.git"
 
 [dependencies.sqlite3]
 git="https://github.com/linuxfood/rustsqlite.git"

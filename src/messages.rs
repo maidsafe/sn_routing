@@ -15,10 +15,12 @@
 
 #![allow(unused_assignments)]
 
-#[path="messages/connect.rs"]
-pub mod connect;
+#[path="messages/connect_request.rs"]
+pub mod connect_request;
 #[path="messages/connect_response.rs"]
 pub mod connect_response;
+#[path="messages/connect_success.rs"]
+pub mod connect_success;
 #[path="messages/find_group.rs"]
 pub mod find_group;
 #[path="messages/find_group_response.rs"]
@@ -52,7 +54,7 @@ use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum MessageTypeTag {
-    Connect,
+    ConnectRequest,
     ConnectResponse,
     FindGroup,
     FindGroupResponse,
@@ -75,7 +77,7 @@ impl Encodable for MessageTypeTag {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let mut type_tag = "";
         match *self {
-            MessageTypeTag::Connect => type_tag = "Connect",
+            MessageTypeTag::ConnectRequest => type_tag = "ConnectRequest",
             MessageTypeTag::ConnectResponse => type_tag = "ConnectResponse",
             MessageTypeTag::FindGroup => type_tag = "FindGroup",
             MessageTypeTag::FindGroupResponse => type_tag = "FindGroupResponse",
@@ -90,7 +92,7 @@ impl Encodable for MessageTypeTag {
             MessageTypeTag::PutData => type_tag = "PutData",
             MessageTypeTag::PutDataResponse => type_tag = "PutDataResponse",
             MessageTypeTag::PutKey => type_tag = "PutKey",
-            MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",      
+            MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
                 MessageTypeTag::Unknown => type_tag = "Unknown",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
@@ -103,7 +105,7 @@ impl Decodable for MessageTypeTag {
         let mut type_tag : String = String::new();
         type_tag = try!(Decodable::decode(d));
         match &type_tag[..] {
-            "Connect" => Ok(MessageTypeTag::Connect),
+            "ConnectRequest" => Ok(MessageTypeTag::ConnectRequest),
             "ConnectResponse" => Ok(MessageTypeTag::ConnectResponse),
             "FindGroup" => Ok(MessageTypeTag::FindGroup),
             "FindGroupResponse" => Ok(MessageTypeTag::FindGroupResponse),
@@ -118,7 +120,7 @@ impl Decodable for MessageTypeTag {
             "PutData" => Ok(MessageTypeTag::PutData),
             "PutDataResponse" => Ok(MessageTypeTag::PutDataResponse),
             "PutKey" => Ok(MessageTypeTag::PutKey),
-            "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),      
+            "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),
                 _ => Ok(MessageTypeTag::Unknown)
         }
     }

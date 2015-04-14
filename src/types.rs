@@ -21,6 +21,7 @@
 use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use std::fmt;
 use rand;
 use sodiumoxide;
 
@@ -59,7 +60,7 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
 
-#[derive(PartialEq, Eq, Hash, Clone, RustcEncodable, RustcDecodable, PartialOrd, Ord, Debug)]
+#[derive(PartialEq, Eq, Hash, Clone, RustcEncodable, RustcDecodable, PartialOrd, Ord)]
 pub struct DhtId(pub Vec<u8>);
 
 impl DhtId {
@@ -82,6 +83,13 @@ impl DhtId {
             }
         }
         false
+    }
+}
+
+impl fmt::Debug for DhtId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let &DhtId(ref v) = self;
+        write!(f, "DhtId({:x}{:x})", v[0], v[1])
     }
 }
 
@@ -136,6 +144,7 @@ pub type SerialisedMessage = Vec<u8>;
 pub type CloseGroupDifference = (Vec<DhtId>, Vec<DhtId>);
 pub type PmidNode = DhtId;
 pub type PmidNodes = Vec<PmidNode>;
+pub type FilterType = (DhtId, MessageId);
 
 pub trait RoutingTrait {
   fn get_name(&self)->DhtId;
@@ -285,7 +294,7 @@ pub struct PublicPmid {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
   pub validation_token: Signature,
-  name: DhtId
+  pub name: DhtId
 }
 
 impl PublicPmid {
@@ -404,32 +413,6 @@ impl Pmid {
   }
   pub fn get_validation_token(&self) -> Signature {
     self.validation_token.clone()
-  }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct EndPoint {
-  pub ip_addr : Vec<u8>,
-  pub socket : u32,
-}
-
-impl EndPoint {
-    pub fn generate_random() -> EndPoint {
-        EndPoint { ip_addr: generate_random_vec_u8(4), socket: rand::random::<u32>(), }
-    }
-}
-
-impl Encodable for EndPoint {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.ip_addr, &self.socket)).encode(e)
-  }
-}
-
-impl Decodable for EndPoint {
-  fn decode<D: Decoder>(d: &mut D)->Result<EndPoint, D::Error> {
-    try!(d.read_u64());
-    let (ip_addr, socket) = try!(Decodable::decode(d));
-    Ok(EndPoint { ip_addr: ip_addr, socket: socket })
   }
 }
 

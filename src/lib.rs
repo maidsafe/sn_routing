@@ -45,15 +45,17 @@
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://dirvine.github.io/routing")]
 // #![warn(missing_docs)]
-#![allow(dead_code, unused_variables, unused_features)]
+#![allow(dead_code, unused_variables, unused_features, unused_attributes)]
 #![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core,
            thread_sleep, ip_addr, convert)]
 
 extern crate sodiumoxide;
 extern crate lru_time_cache;
+extern crate message_filter;
 extern crate rustc_serialize;
 extern crate cbor;
 extern crate rand;
+extern crate chrono;
 extern crate time;
 extern crate sqlite3;
 extern crate crust;
@@ -72,9 +74,8 @@ mod sentinel;
 mod bootstrap;
 mod messages;
 mod routing_node;
+mod facade;
 
-use types::Authority;
-use types::DestinationAddress;
 use types::DhtId;
 
 //#[derive(RustcEncodable, RustcDecodable)]
@@ -90,38 +91,23 @@ pub enum Action {
 }
 
 pub enum RoutingError {
-  Success,  // vault will aslo return a Success to indicate a deadend
+  Success,  // vault will also return a Success to indicate a dead end
   NoData,
   InvalidRequest,
   IncorrectData(Vec<u8>),
-}
-
-pub trait Facade : Sync + Send {
-  /// if reply is data then we send back the response message (ie get_response )
-  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: DhtId)->Result<Action, RoutingError>;
-
-  /// data: Vec<u8> is serialised maidsafe_types::Payload which holds typetag and content
-  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError>;
-
-  fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError>;
-  fn handle_get_response(&mut self, from_address: DhtId, response: Result<Vec<u8>, RoutingError>);
-  fn handle_put_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>);
-  fn handle_post_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>);
-
-  fn add_node(&mut self, node: DhtId);
-  fn drop_node(&mut self, node: DhtId);
 }
 
 #[test]
 fn facade_implementation() {
 
   mod routing_node;
+  use facade::{Facade};
+  use types::{DhtId, DestinationAddress, Authority};
 
   struct MyFacade;
 
   impl Facade for MyFacade {
-    fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: DhtId)->Result<Action, RoutingError> { unimplemented!(); }
+    fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                   from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
@@ -131,7 +117,8 @@ fn facade_implementation() {
     fn add_node(&mut self, node: DhtId) { unimplemented!(); }
     fn drop_node(&mut self, node: DhtId) { unimplemented!(); }
   }
+
   let my_facade = MyFacade;
-  let my_routing = routing_node::RoutingNode::new(DhtId::generate_random(), &my_facade);
+  let my_routing = routing_node::RoutingNode::new(DhtId::generate_random(), my_facade);
   /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
 }
