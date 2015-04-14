@@ -15,11 +15,11 @@
 
 #![allow(dead_code)]
 
-extern crate lru_cache;
+extern crate lru_time_cache;
 
 extern crate routing;
 
-use self::lru_cache::LruCache;
+use self::lru_time_cache::LruCache;
 
 type Identity = self::routing::types::DhtId; // pmidnode address
 
@@ -80,21 +80,21 @@ pub struct PmidManagerDatabase {
 
 impl PmidManagerDatabase {
   pub fn new () -> PmidManagerDatabase {
-    PmidManagerDatabase { storage: LruCache::new(10000) }
+    PmidManagerDatabase { storage: LruCache::with_capacity(10000) }
   }
 
   pub fn exist(&mut self, name : &Identity) -> bool {
-    self.storage.get(name).is_some()
+    self.storage.get(name.clone()).is_some()
   }
 
   pub fn put_data(&mut self, name : &Identity, size: u64) -> bool {
     let mut tmp = PmidManagerAccount::new();
-  	let entry = self.storage.remove(&name);
+    let entry = self.storage.remove(name.clone());
   	if entry.is_some() {
   	  tmp = entry.unwrap();
   	} 
     let result = tmp.put_data(size);
-    self.storage.insert(name.clone(), tmp);
+    self.storage.add(name.clone(), tmp);
     result
   }
 
