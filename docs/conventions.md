@@ -96,8 +96,6 @@ Retrieve message:
 
 where the last flow deviates from the existing implementation, but would notify MPM_B that the message has been retrieved and the header can be dropped.
 
-As an aside, Qi's proposal to optimize the message for multiple destinations does work: encrypt the message with a symmetric key; encrypt this symmetric key with the public keys of each recepient.
-
 ### Remaining conventions:
 
     D      data
