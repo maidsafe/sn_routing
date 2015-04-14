@@ -73,8 +73,8 @@ mod common_bits;
 mod sentinel;
 mod bootstrap;
 mod messages;
-mod routing_node;
-mod facade;
+pub mod routing_node;
+pub mod facade;
 
 use types::DhtId;
 
