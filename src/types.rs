@@ -65,8 +65,12 @@ pub struct DhtId(pub Vec<u8>);
 
 impl DhtId {
 
-    pub fn new(array : [u8; 64]) -> DhtId {
+    pub fn new(array : &[u8; 64]) -> DhtId {
         DhtId(array.to_vec())
+    }
+
+    pub fn from_data(data : &[u8]) -> DhtId {
+        DhtId::new(&crypto::hash::sha512::hash(data).0)
     }
 
     pub fn generate_random() -> DhtId {
@@ -540,6 +544,16 @@ mod test {
     let mut d = cbor::Decoder::from_bytes(e.as_bytes());
     let obj_after: T = d.decode().next().unwrap().unwrap();
     assert_eq!(obj_after == obj_before, true)
+  }
+
+  #[test]
+  fn dhtid_from_data() {
+    use rustc_serialize::hex::ToHex;
+    let data = "this is a known string".to_string().into_bytes();
+    let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
+                         e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
+                         ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
+    assert_eq!(&expected_name, &DhtId::from_data(&data).0.to_hex());
   }
 
   #[test]

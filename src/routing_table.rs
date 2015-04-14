@@ -548,7 +548,7 @@ mod test {
             arr_res[i] = arr[i] ^ our_id.0[i];
         }
 
-        let farthest_from_tables_own_id = DhtId::new(arr_res);
+        let farthest_from_tables_own_id = DhtId::new(&arr_res);
 
         let mut buckets = Vec::new();
         for i in 0..100 {
@@ -896,7 +896,7 @@ mod test {
         test.complete_filling_table();
 
         // Try with invalid Address
-        test.table.drop_node(&DhtId::new([0u8;64]));
+        test.table.drop_node(&DhtId::new(&[0u8;64]));
         assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
 
         // Try with our ID
