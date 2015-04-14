@@ -144,6 +144,7 @@ pub type SerialisedMessage = Vec<u8>;
 pub type CloseGroupDifference = (Vec<DhtId>, Vec<DhtId>);
 pub type PmidNode = DhtId;
 pub type PmidNodes = Vec<PmidNode>;
+pub type FilterType = (DhtId, MessageId);
 
 pub trait RoutingTrait {
   fn get_name(&self)->DhtId;

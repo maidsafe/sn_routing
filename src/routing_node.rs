@@ -13,21 +13,22 @@
 // use of the MaidSafe
 // Software.
 
-extern crate rand;
-
 use sodiumoxide;
 use crust;
+use message_filter::MessageFilter;
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::{Receiver};
 use facade::*;
 use super::*;
+use rand;
+use chrono;
 use std::net::{SocketAddr};
 use std::str::FromStr;
 use std::collections::HashSet;
 use std::net::{SocketAddrV4, Ipv4Addr};
 
 use routing_table::RoutingTable;
-use types::DhtId;
+use types::{DhtId, MessageId};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -48,7 +49,6 @@ use types::RoutingTrait;
 type ConnectionManager = crust::ConnectionManager<DhtId>;
 type Event             = crust::Event<DhtId>;
 type Bytes             = Vec<u8>;
-type MessageId         = u32;
 
 type RecvResult = Result<(),()>;
 
@@ -64,6 +64,7 @@ pub struct RoutingNode<F: Facade> {
     accepting_on: Option<u16>,
     next_message_id: MessageId,
     bootstrap_node_id: Option<DhtId>,
+    filter: MessageFilter<types::FilterType>,
 }
 
 impl<F> RoutingNode<F> where F: Facade {
@@ -85,6 +86,8 @@ impl<F> RoutingNode<F> where F: Facade {
                       accepting_on: accepting_on,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
+                      filter: MessageFilter::with_expiry_duration(
+                        chrono::duration::Duration::minutes(20))
                     }
     }
 
@@ -199,7 +202,12 @@ impl<F> RoutingNode<F> where F: Facade {
         let body   = msg.serialised_body;
         println!("{:?} Rxd from {:?} =>  {:?}", self.own_id, peer_id, msg.message_type);
         // filter check
+        if self.filter.check(&header.get_filter()) {
+          // should just return quietly
+          return Err(());
+        }
         // add to filter
+        self.filter.add(header.get_filter());
         // add to cache
         // cache check / response
         self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);
