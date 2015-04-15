@@ -174,13 +174,14 @@ impl<F> RoutingNode<F> where F: Facade {
         let peer_node_info = routing_table::NodeInfo::new(connect_succcess_msg.peer_fob, true);
         let result = self.routing_table.add_node(peer_node_info);
         if result.0 {
-          println!("{:?} added {:?} <RT>", self.own_id, connect_succcess_msg.peer_id);
+          println!("{:?} added {:?} <RT size:{}>", self.own_id, connect_succcess_msg.peer_id, self.routing_table.size());
         } else {
            println!("{:?} failed to add {:?}", self.own_id, connect_succcess_msg.peer_id);
         }
     }
 
     fn handle_lost_connection(&mut self, peer_id: DhtId) {
+        println!("{:?} handle_lost_connection peer_id:{:?}", self.own_id, peer_id);
         self.routing_table.drop_node(&peer_id);
         self.all_connections.remove(&peer_id);
         // remove from the non routing list
@@ -200,7 +201,7 @@ impl<F> RoutingNode<F> where F: Facade {
         let msg    = msg.unwrap();
         let header = msg.message_header;
         let body   = msg.serialised_body;
-        println!("{:?} Rxd from {:?} =>  {:?}", self.own_id, peer_id, msg.message_type);
+        println!("{:?} <= {:?}: {:?} {:?}", self.own_id, peer_id, msg.message_type, header.destination);
         // filter check
         if self.filter.check(&header.get_filter()) {
           // should just return quietly
@@ -260,7 +261,7 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
-        println!("{:?} received ConnectRequest", self.own_id);
+        println!("{:?} received ConnectRequest ", self.own_id);
         let connect_request = try!(self.decode::<ConnectRequest>(&body).ok_or(()));
         if !(self.routing_table.check_node(&connect_request.requester_id)) {
            return Err(());
@@ -295,7 +296,7 @@ impl<F> RoutingNode<F> where F: Facade {
             let peer_node_info = routing_table::NodeInfo::new(connect_response.receiver_fob, true);
             let result = self.routing_table.add_node(peer_node_info);
             if result.0 {
-                println!("{:?} added {:?} <RT>", self.own_id, connect_response.receiver_id);
+                println!("{:?} added {:?} <RT size:{}>", self.own_id, connect_response.receiver_id, self.routing_table.size());
             } else {
                 println!("{:?} failed to add {:?}", self.own_id, connect_response.receiver_id);
             }
@@ -304,7 +305,7 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
-        println!("{:?} received FindGroup", self.own_id);
+        //println!("{:?} received FindGroup", self.own_id);
         let find_group = try!(self.decode::<FindGroup>(&body).ok_or(()));
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> =  vec![];;
@@ -327,7 +328,7 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
-        println!("{:?} received FindGroupResponse", self.own_id);
+        //println!("{:?} received FindGroupResponse", self.own_id);
         let find_group_response = try!(self.decode::<FindGroupResponse>(&body).ok_or(()));
         for peer in find_group_response.group {
             if !self.routing_table.check_node(&peer.name) {
@@ -469,8 +470,11 @@ impl<F> RoutingNode<F> where F: Facade {
         }
     }
 
-    fn construct_connect_response_msg (&mut self, original_header : &MessageHeader,
-                                         connect_request: &ConnectRequest) -> RoutingMessage {
+    fn construct_connect_response_msg(&mut self, original_header : &MessageHeader,
+                                      connect_request: &ConnectRequest) -> RoutingMessage {
+        println!("{:?} construct_connect_response_msg ", self.own_id);
+        debug_assert!(connect_request.receiver_id == self.own_id, format!("{:?} == {:?} failed", self.own_id, connect_request.receiver_id));
+
         let header = MessageHeader {
             message_id:  self.get_next_message_id(),
             destination: original_header.send_to(),
@@ -491,8 +495,6 @@ impl<F> RoutingNode<F> where F: Facade {
             receiver_id:        self.own_id.clone(),
             receiver_fob:       types::PublicPmid::new(&self.pmid) };
 
-        debug_assert!(connect_request.receiver_id == self.own_id);
-
         RoutingMessage{
             message_type:    MessageTypeTag::ConnectResponse,
             message_header:  header,
@@ -507,7 +509,10 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn send_swarm_or_parallel(&self, target: &DhtId, serialised_message: &Bytes) {
-        for peer in self.get_connected_target(target) {
+        let targets = self.get_connected_target(target); 
+        println!("{:?} send_swarm_or_parallel target:{:?} -> {:?}", self.own_id, target, targets.iter().map(|info| info.id.clone()).collect::<Vec<_>>());
+
+        for peer in targets {
             let res = self.connection_manager.send(serialised_message.clone(), peer.id.clone());
             if res.is_err() {
                 println!("{:?} failed to send to {:?}", self.own_id, peer.id);
@@ -517,6 +522,7 @@ impl<F> RoutingNode<F> where F: Facade {
 
     fn get_connected_target(&self, target: &DhtId) -> Vec<routing_table::NodeInfo> {
         let mut nodes = self.routing_table.target_nodes(target.clone());
+        //println!("{:?} get_connected_target routing_table.size:{} target:{:?} -> {:?}", self.own_id, self.routing_table.size(), target, nodes);
         nodes.retain(|x| { x.connected });
         nodes
     }
@@ -531,17 +537,19 @@ impl<F> RoutingNode<F> where F: Facade {
                                        &self.routing_table.our_close_group().pop().unwrap().id,
                                        &self.own_id)
     }
+
+    pub fn id(&self) -> DhtId { self.own_id.clone() }
 }
 
 #[cfg(test)]
 mod test {
-    // use routing_node::{RoutingNode};
+    use routing_node::{RoutingNode};
     use facade::{Facade};
     use types::{Authority, DhtId, DestinationAddress};
     use super::super::{Action, RoutingError};
-    // use std::thread;
-    // use std::net::{SocketAddr};
-    // use std::str::FromStr;
+    use std::thread;
+    use std::net::{SocketAddr};
+    use std::str::FromStr;
 
     struct NullFacade;
 
@@ -557,40 +565,42 @@ mod test {
       fn drop_node(&mut self, node: DhtId) {}
     }
 
-//FIXME(Peter)
-    // #[test]
-    // fn test_routing_node() {
-    //     let f1 = NullFacade;
-    //     let f2 = NullFacade;
-    //     let f3 = NullFacade;
-    //     let n1 = RoutingNode::new(DhtId::generate_random(), f1);
-    //     let n2 = RoutingNode::new(DhtId::generate_random(), f2);
-    //     let n3 = RoutingNode::new(DhtId::generate_random(), f3);
+    #[test]
+    fn test_routing_node() {
+        let f1 = NullFacade;
+        let f2 = NullFacade;
+        let f3 = NullFacade;
+        let n1 = RoutingNode::new(DhtId::generate_random(), f1);
+        let n2 = RoutingNode::new(DhtId::generate_random(), f2);
+        let n3 = RoutingNode::new(DhtId::generate_random(), f3);
 
-    //     let n1_ep = n1.accepting_on().unwrap();
-    //     let n2_ep = n2.accepting_on().unwrap();
-    //     let n3_ep = n3.accepting_on().unwrap();
+        println!("{:?}->Alice", n1.id());
+        println!("{:?}->Betty", n2.id());
+        println!("{:?}->Casey", n3.id());
+        let n1_ep = n1.accepting_on().unwrap();
+        let n2_ep = n2.accepting_on().unwrap();
+        let n3_ep = n3.accepting_on().unwrap();
 
-    //     fn run_node(n: RoutingNode<NullFacade>, my_ep: SocketAddr, his_ep: SocketAddr)
-    //         -> thread::JoinHandle
-    //     {
-    //         thread::spawn(move || {
-    //             let mut n = n;
-    //             let bootstrap_ep = SocketAddr::from_str(&format!("127.0.0.1:{}", 5483u16)).unwrap();
-    //             if my_ep.port() != bootstrap_ep.port() {
-    //                 n.add_bootstrap(bootstrap_ep);
-    //             }
-    //             n.run();
-    //         })
-    //     }
+        fn run_node(n: RoutingNode<NullFacade>, my_ep: SocketAddr, his_ep: SocketAddr)
+            -> thread::JoinHandle
+        {
+            thread::spawn(move || {
+                let mut n = n;
+                let bootstrap_ep = SocketAddr::from_str(&format!("127.0.0.1:{}", 5483u16)).unwrap();
+                if my_ep.port() != bootstrap_ep.port() {
+                    n.add_bootstrap(bootstrap_ep);
+                }
+                n.run();
+            })
+        }
 
-    //     let t1 = run_node(n1, n1_ep.clone(), n2_ep.clone());
-    //     let t2 = run_node(n2, n2_ep.clone(), n1_ep.clone());
-    //     thread::sleep_ms(1000);
-    //     println!("Starting node 3 ... ");
-    //     let t3 = run_node(n3, n3_ep.clone(), n1_ep.clone());
-    //     assert!(t1.join().is_ok());
-    //     assert!(t2.join().is_ok());
-    //     assert!(t3.join().is_ok());
-    // }
+        let t1 = run_node(n1, n1_ep.clone(), n2_ep.clone());
+        let t2 = run_node(n2, n2_ep.clone(), n1_ep.clone());
+        thread::sleep_ms(1000);
+        println!("Starting node 3 ... ");
+        let t3 = run_node(n3, n3_ep.clone(), n1_ep.clone());
+        assert!(t1.join().is_ok());
+        assert!(t2.join().is_ok());
+        assert!(t3.join().is_ok());
+    }
 }
