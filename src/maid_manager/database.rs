@@ -15,11 +15,11 @@
 
 #![allow(dead_code)]
 
-extern crate lru_cache;
+extern crate lru_time_cache;
 
 extern crate routing;
 
-use self::lru_cache::LruCache;
+use self::lru_time_cache::LruCache;
 use self::routing::types::DhtId;
 
 type Identity = DhtId; // maid node address
@@ -62,30 +62,30 @@ pub struct MaidManagerDatabase {
 
 impl MaidManagerDatabase {
   pub fn new () -> MaidManagerDatabase {
-    MaidManagerDatabase { storage: LruCache::new(10000) }
+    MaidManagerDatabase { storage: LruCache::with_capacity(10000) }
   }
 
   pub fn exist(&mut self, name : &Identity) -> bool {
-    self.storage.get(name).is_some()
+    self.storage.get(name.clone()).is_some()
   }
 
   pub fn put_data(&mut self, name : &Identity, size: u64) -> bool {
     let mut tmp = MaidManagerAccount::new();
-  	let entry = self.storage.remove(&name);
+    let entry = self.storage.remove(name.clone());
   	if entry.is_some() {
   	  tmp = entry.unwrap();
   	} 
     let result = tmp.put_data(size);
-    self.storage.insert(name.clone(), tmp);
+    self.storage.add(name.clone(), tmp);
     result
   }
 
   pub fn delete_data(&mut self, name : &Identity, size: u64) {
-    let entry = self.storage.remove(&name);
+    let entry = self.storage.remove(name.clone());
     if entry.is_some() {
       let mut tmp = entry.unwrap();
       tmp.delete_data(size);
-      self.storage.insert(name.clone(), tmp);
+      self.storage.add(name.clone(), tmp);
     }
   }
 
