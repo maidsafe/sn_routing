@@ -13,6 +13,8 @@
 // use of the MaidSafe
 // Software.
 
+extern crate time;
+
 use sodiumoxide;
 use crust;
 use message_filter::MessageFilter;
@@ -21,7 +23,6 @@ use std::sync::mpsc::{Receiver};
 use facade::*;
 use super::*;
 use rand;
-use chrono;
 use std::net::{SocketAddr};
 use std::str::FromStr;
 use std::collections::HashSet;
@@ -86,8 +87,7 @@ impl<F> RoutingNode<F> where F: Facade {
                       accepting_on: accepting_on,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
-                      filter: MessageFilter::with_expiry_duration(
-                        chrono::duration::Duration::minutes(20))
+                      filter: MessageFilter::with_expiry_duration(time::Duration::minutes(20))
                     }
     }
 
