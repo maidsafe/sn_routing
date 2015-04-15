@@ -21,6 +21,7 @@ extern crate maidsafe_types;
 mod database;
 
 use cbor::{ Decoder };
+use self::maidsafe_types::traits::RoutingTrait;
 use self::routing::types::DhtId;
 
 type CloseGroupDifference = self::routing::types::CloseGroupDifference;
@@ -46,15 +47,15 @@ impl MaidManager {
         if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
           return Err(routing::RoutingError::InvalidRequest);
         }
-        destinations.push(DhtId::new(immutable_data.get_name().get_id()));
+        destinations.push(DhtId::new(&immutable_data.get_name().get_id()));
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         // PublicMaid doesn't use any allowance
-        destinations.push(DhtId::new(payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id()));
+        destinations.push(DhtId::new(&payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id()));
       }
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
         // PublicAnMaid doesn't use any allowance
-        destinations.push(DhtId::new(payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id()));
+        destinations.push(DhtId::new(&payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id()));
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
     }
@@ -79,7 +80,7 @@ mod test {
     let from = DhtId::generate_random();
     let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
-    let data = ImmutableData::new(name, value);
+    let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);

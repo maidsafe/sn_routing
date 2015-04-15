@@ -21,7 +21,7 @@ rand = "*"
 git="https://github.com/contain-rs/lru-cache.git"
 
 [dependencies.maidsafe_types]
-git = "https://github.com/dirvine/maidsafe_types"
+path = "../maidsafe_types"
 
 [dependencies.routing]
-git = "https://github.com/dirvine/routing"
+path = "../routing"

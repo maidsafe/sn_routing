@@ -19,6 +19,7 @@ extern crate routing;
 extern crate maidsafe_types;
 
 use chunk_store::ChunkStore;
+use self::maidsafe_types::traits::RoutingTrait;
 use self::routing::types::DhtId;
 
 use cbor::{ Decoder};
@@ -48,13 +49,13 @@ impl PmidNode {
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
-        data_name = DhtId::new(payload.get_data::<maidsafe_types::ImmutableData>().get_name().get_id());
+        data_name = DhtId::new(&payload.get_data::<maidsafe_types::ImmutableData>().get_name().get_id());
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
-        data_name = DhtId::new(payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id());
+        data_name = DhtId::new(&payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id());
       }
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        data_name = DhtId::new(payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id());
+        data_name = DhtId::new(&payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id());
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
     }
@@ -72,6 +73,7 @@ mod test {
   extern crate routing;
   use super::*;
   use self::maidsafe_types::*;
+  use self::maidsafe_types::traits::RoutingTrait;
   use self::routing::types::DhtId;
   use self::routing::types::array_as_vector;
 
@@ -80,7 +82,7 @@ mod test {
     let mut pmid_node = super::PmidNode::new();
     let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
-    let data = ImmutableData::new(name.clone(), value);
+    let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
@@ -93,7 +95,7 @@ mod test {
       _ => panic!("Unexpected"),
     }
 
-    let get_result = pmid_node.handle_get(DhtId::new(name.0));
+    let get_result = pmid_node.handle_get(DhtId::new(&name.0));
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
         routing::Action::Reply(ref x) => {
