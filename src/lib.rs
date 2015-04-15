@@ -55,7 +55,6 @@ extern crate message_filter;
 extern crate rustc_serialize;
 extern crate cbor;
 extern crate rand;
-extern crate chrono;
 extern crate time;
 extern crate sqlite3;
 extern crate crust;

@@ -17,7 +17,6 @@ cbor = "*"
 time = "*"
 sodiumoxide = "*"
 rand = "*"
-chrono="*"
 
 [dependencies.lru-cache]
 git="https://github.com/contain-rs/lru-cache.git"
