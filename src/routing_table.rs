@@ -20,7 +20,7 @@ use common_bits::*;
 use sodiumoxide::crypto;
 use std::cmp;
 use std::usize;
-use types::{DhtId, PublicPmid, RoutingTrait};
+use types::{DhtId, PublicPmid, RoutingTrait, closer_to_target};
 
 static BUCKET_SIZE: usize = 1;
 static GROUP_SIZE: usize = 23;
@@ -113,8 +113,7 @@ impl RoutingTable {
             return (true, None);
         }
 
-        if RoutingTable::closer_to_target(&their_info.id,
-                &self.routing_table[RoutingTable::get_group_size()].id, &self.our_id) {
+        if closer_to_target(&their_info.id, &self.routing_table[RoutingTable::get_group_size()].id, &self.our_id) {
             self.push_back_then_sort(their_info);
             let removal_node_index = self.find_candidate_for_removal();
             if removal_node_index == usize::MAX {
@@ -156,8 +155,7 @@ impl RoutingTable {
         }
         let group_size = RoutingTable::get_group_size() - 1;
         let thier_id_clone = their_id.clone();
-        if RoutingTable::closer_to_target(&their_id, &self.routing_table[group_size].id,
-                                          &self.our_id) {
+        if closer_to_target(&their_id, &self.routing_table[group_size].id, &self.our_id) {
             return true;
         }
         self.new_node_is_better_than_existing(&their_id, self.find_candidate_for_removal())
@@ -210,7 +208,7 @@ impl RoutingTable {
         }
 
         closest_to_target.sort_by(
-            |a, b| if RoutingTable::closer_to_target(&a.id, &b.id, &target) {
+            |a, b| if closer_to_target(&a.id, &b.id, &target) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
@@ -337,32 +335,16 @@ impl RoutingTable {
         self.routing_table.push(node_info);
         let our_id = &self.our_id;
         self.routing_table.sort_by(
-            |a, b| if RoutingTable::closer_to_target(&a.id,
-                                                     &b.id, our_id) {
+            |a, b| if closer_to_target(&a.id, &b.id, our_id) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
             });
     }
 
-    // lhs is closer to target than rhs
-    pub fn closer_to_target(lhs: &DhtId, rhs: &DhtId, target: &DhtId) -> bool {
-        for i in 0..lhs.0.len() {
-            let res_0 = lhs.0[i] ^ target.0[i];
-            let res_1 = rhs.0[i] ^ target.0[i];
-
-            if res_0 != res_1 {
-                return res_0 < res_1
-            }
-        }
-        false
-    }
-
     fn is_nodes_sorted(&self) -> bool {
         for i in 1..self.routing_table.len() {
-            if RoutingTable::closer_to_target(&self.routing_table[i].id,
-                                              &self.routing_table[i - 1].id,
-                                              &self.our_id) {
+            if closer_to_target(&self.routing_table[i].id, &self.routing_table[i - 1].id, &self.our_id) {
                 return false;
             }
         }
@@ -398,7 +380,7 @@ mod test {
     use std::collections::BitVec;
     use std::net::*;
     use std::fmt;
-    use types::{DhtId, PublicPmid, RoutingTrait};
+    use types::{DhtId, PublicPmid, RoutingTrait, closer_to_target};
     use types;
     use rand;
 
@@ -481,17 +463,17 @@ mod test {
                 //     RoutingTableUnitTest::debug_id(&table.buckets[i].far_contact),
                 //     RoutingTableUnitTest::debug_id(&table.buckets[i].mid_contact),
                 //     RoutingTableUnitTest::debug_id(&table.buckets[i].close_contact));
-                assert!(RoutingTable::closer_to_target(&table.buckets[i].mid_contact,
+                assert!(closer_to_target(&table.buckets[i].mid_contact,
                     &table.buckets[i].far_contact, &table.our_id));
-                assert!(RoutingTable::closer_to_target(&table.buckets[i].close_contact,
+                assert!(closer_to_target(&table.buckets[i].close_contact,
                     &table.buckets[i].mid_contact, &table.our_id));
-                assert!(RoutingTable::closer_to_target(&table.buckets[i + 1].far_contact,
+                assert!(closer_to_target(&table.buckets[i + 1].far_contact,
                     &table.buckets[i].close_contact, &table.our_id));
             }
 
-            assert!(RoutingTable::closer_to_target(&table.buckets[99].mid_contact,
+            assert!(closer_to_target(&table.buckets[99].mid_contact,
                 &table.buckets[99].far_contact, &table.our_id));
-            assert!(RoutingTable::closer_to_target(&table.buckets[99].close_contact,
+            assert!(closer_to_target(&table.buckets[99].close_contact,
                 &table.buckets[99].mid_contact, &table.our_id));
 
             table
@@ -659,7 +641,7 @@ mod test {
         for it in tables.iter() {
             let id = it.our_id.clone();
             addresses.sort_by(
-                |a, b| if RoutingTable::closer_to_target(&a, &b, &id) {
+                |a, b| if closer_to_target(&a, &b, &id) {
                     cmp::Ordering::Less
                 } else {
                     cmp::Ordering::Greater
@@ -1053,7 +1035,7 @@ mod test {
             };
             let id = tables[i].our_id.clone();
             addresses.sort_by(
-                |a, b| if RoutingTable::closer_to_target(&a, &b, &id) {
+                |a, b| if closer_to_target(&a, &b, &id) {
                     cmp::Ordering::Less
                 } else {
                     cmp::Ordering::Greater
@@ -1081,7 +1063,7 @@ mod test {
 
         for i in 0..tables.len() {
             addresses.sort_by(
-                |a, b| if RoutingTable::closer_to_target(&a, &b, &tables[i].our_id) {
+                |a, b| if closer_to_target(&a, &b, &tables[i].our_id) {
                     cmp::Ordering::Less
                 } else {
                     cmp::Ordering::Greater
@@ -1115,8 +1097,7 @@ mod test {
         assert_eq!(RoutingTable::get_group_size(), table_unit_test.table.our_close_group().len());
 
         table_unit_test.table.our_close_group().sort_by(
-            |a, b| if RoutingTable::closer_to_target(&a.id, &b.id,
-                                                     &table_unit_test.our_id) {
+            |a, b| if closer_to_target(&a.id, &b.id, &table_unit_test.our_id) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
@@ -1187,8 +1168,7 @@ mod test {
                 target_nodes_ = routing_table_utest.table.target_nodes(target);
                 assert_eq!(RoutingTable::get_parallelism(), target_nodes_.len());
                 routing_table_utest.table.our_close_group().sort_by(
-                    |a, b| if RoutingTable::closer_to_target(&a.id, &b.id,
-                                                             &routing_table_utest.our_id) {
+                    |a, b| if closer_to_target(&a.id, &b.id, &routing_table_utest.our_id) {
                         cmp::Ordering::Less
                     } else {
                         cmp::Ordering::Greater
@@ -1220,8 +1200,7 @@ mod test {
                 target_nodes_ = routing_table_utest.table.target_nodes(target);
                 assert_eq!(RoutingTable::get_group_size(), target_nodes_.len());
                 routing_table_utest.table.our_close_group().sort_by(
-                    |a, b| if RoutingTable::closer_to_target(&a.id, &b.id,
-                                                             &routing_table_utest.our_id) {
+                    |a, b| if closer_to_target(&a.id, &b.id, &routing_table_utest.our_id) {
                         cmp::Ordering::Less
                     } else {
                         cmp::Ordering::Greater
