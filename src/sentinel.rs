@@ -310,8 +310,7 @@ mod test {
   use std::cmp;
   use sodiumoxide::crypto;
   use types;
-  use routing_table::{RoutingTable};
-  use types::RoutingTrait;
+  use types::{RoutingTrait, closer_to_target};
   use message_header;
   use messages;
   use rustc_serialize::Encodable;
@@ -424,7 +423,7 @@ mod test {
       let group_address = types::DhtId::generate_random();
       // first sort all nodes to group_address
       all_nodes.sort_by(
-        |a, b| if RoutingTable::closer_to_target(&a.get_name(), &b.get_name(), &group_address) {
+        |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &group_address) {
           cmp::Ordering::Less
         } else {
           cmp::Ordering::Greater
@@ -435,7 +434,7 @@ mod test {
       for node in &nodes {
         // sort all nodes
         all_nodes.sort_by(
-          |a, b| if RoutingTable::closer_to_target(&a.get_name(), &b.get_name(), &node.get_name()) {
+          |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &node.get_name()) {
             cmp::Ordering::Less
           } else {
             cmp::Ordering::Greater

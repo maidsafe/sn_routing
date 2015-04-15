@@ -380,7 +380,7 @@ mod test {
     use std::collections::BitVec;
     use std::net::*;
     use std::fmt;
-    use types::{DhtId, PublicPmid, RoutingTrait};
+    use types::{DhtId, PublicPmid, RoutingTrait, closer_to_target};
     use types;
     use rand;
 
