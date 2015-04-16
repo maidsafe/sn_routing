@@ -26,7 +26,9 @@ use rand;
 use std::net::{SocketAddr};
 use std::str::FromStr;
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::net::{SocketAddrV4, Ipv4Addr};
+use std::time::duration::Duration;
 
 use routing_table::{RoutingTable, NodeInfo};
 use types::{DhtId, MessageId, closer_to_target};
@@ -47,8 +49,11 @@ use cbor::{Encoder, Decoder};
 
 use types::RoutingTrait;
 
-type ConnectionManager = crust::ConnectionManager<DhtId>;
-type Event             = crust::Event<DhtId>;
+use crust::connection_manager::Endpoint::Tcp;
+type ConnectionManager = crust::ConnectionManager;
+type Event             = crust::Event;
+type Endpoint          = crust::connection_manager::Endpoint;
+type PortAndProtocol   = crust::connection_manager::PortAndProtocol;
 type Bytes             = Vec<u8>;
 
 type RecvResult = Result<(),()>;
@@ -60,11 +65,12 @@ pub struct RoutingNode<F: Facade> {
     own_id: DhtId,
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
-    all_connections: HashSet<DhtId>,
+    pending_connections: HashSet<Endpoint>,
+    all_connections: (HashMap<Endpoint, DhtId>, HashMap<DhtId, Endpoint>),
     routing_table: RoutingTable,
-    accepting_on: Option<u16>,
+    accepting_on: Option<Vec<Endpoint>>,
     next_message_id: MessageId,
-    bootstrap_node_id: Option<DhtId>,
+    bootstrap_node_id: Option<Endpoint>,
     filter: MessageFilter<types::FilterType>,
 }
 
@@ -74,26 +80,29 @@ impl<F> RoutingNode<F> where F: Facade {
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
-        let cm = crust::ConnectionManager::new(own_id.clone(), event_output);
-        let accepting_on = cm.start_accepting().ok();
+        let cm = crust::ConnectionManager::new(event_output);
+        // TODO : Default Protocol and Port need to be passed down
+        let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
+        let accepting_on = cm.start_listening(ports_and_protocols).ok();
 
         RoutingNode { facade: Arc::new(Mutex::new(my_facade)),
                       pmid : pmid,
                       own_id : own_id.clone(),
                       event_input: event_input,
                       connection_manager: cm,
-                      all_connections: HashSet::new(),
+                      pending_connections : HashSet::new(),
+                      all_connections: (HashMap::new(), HashMap::new()),
                       routing_table : RoutingTable::new(own_id),
                       accepting_on: accepting_on,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
-                      filter: MessageFilter::with_expiry_duration(time::Duration::minutes(20))
+                      filter: MessageFilter::with_expiry_duration(Duration::minutes(20))
                     }
     }
 
-    pub fn accepting_on(&self) -> Option<SocketAddr> {
-        self.accepting_on.and_then(|port| {
-            SocketAddr::from_str(&format!("127.0.0.1:{}", port)).ok()
+    pub fn accepting_on(&self) -> Option<Vec<crust::connection_manager::Endpoint>> {
+        self.accepting_on.clone().and_then(|endpoints| {
+            Some(endpoints)
         })
     }
 
@@ -106,10 +115,10 @@ impl<F> RoutingNode<F> where F: Facade {
     /// Mutate something on the network (you must prove ownership) - Direct call
     pub fn post(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
 
-    pub fn add_bootstrap(&mut self, endpoint: SocketAddr) {
-        // let msg = self.construct_find_group_msg();
-        // let msg = self.encode(&msg);
-        let _ = self.connection_manager.connect(endpoint, vec![0]);
+    pub fn add_bootstrap(&mut self, endpoint: crust::connection_manager::Endpoint) {
+        self.pending_connections.insert(endpoint.clone());
+        let endpoints = vec![endpoint];
+        let _ = self.connection_manager.connect(endpoints);
     }
 
     pub fn run(&mut self) {
@@ -119,54 +128,73 @@ impl<F> RoutingNode<F> where F: Facade {
             if event.is_err() { return; }
 
             match event.unwrap() {
-                crust::Event::NewMessage(id, bytes) => {
-                    if self.message_received(&id, bytes).is_err() {
-                      println!("failed to Parse message !!! check  from - {:?} ", id);
-                        // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
+                crust::Event::NewMessage(endpoint, bytes) => {
+                    if self.all_connections.0.contains_key(&endpoint) {
+                        let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
+                        if self.message_received(&peer_id, bytes).is_err() {
+                            println!("failed to Parse message !!! check  from - {:?} ", peer_id);
+                            // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
+                        }
                     }
                 },
-                crust::Event::Connect(id) => {
-                    self.handle_connect(id);
+                crust::Event::NewConnection(endpoint) => {
+                    self.handle_connect(endpoint);
                 },
-                crust::Event::Accept(id, bytes) => {
-                    self.handle_accept(id.clone(), bytes);
+                // crust::Event::Accept(id, bytes) => {
+                //     self.handle_accept(id.clone(), bytes);
+                // },
+                crust::Event::LostConnection(endpoint) => {
+                    self.handle_lost_connection(endpoint);
                 },
-                crust::Event::LostConnection(id) => {
-                    self.handle_lost_connection(id);
+                crust::Event::FailedToConnect(endpoints) => {
+                    for endpoint in endpoints.iter() {
+                        self.handle_lost_connection(endpoint.clone());
+                    }
                 }
             }
         }
     }
 
-    fn next_endpoint_pair(&self) -> Option<(SocketAddr, SocketAddr)> {
+    fn next_endpoint_pair(&self) -> Option<(Vec<Endpoint>, Vec<Endpoint>)> {
         // FIXME: Set the second argument to 'external' address
         // when known.
-        self.accepting_on().and_then(|addr| Some((addr, addr)))
+        self.accepting_on().and_then(|addr| Some((addr.clone(), addr)))
     }
 
-    fn handle_connect(&mut self, peer_id: DhtId) {
-        if self.all_connections.is_empty() {
-            self.bootstrap_node_id = Some(peer_id.clone());
-            println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_id);
-            // send find group
-            let msg = self.construct_find_group_msg();
-            let msg = self.encode(&msg);
-            debug_assert!(self.bootstrap_node_id.is_some());
-            let _ = self.connection_manager.send(msg, peer_id.clone());
+    fn handle_connect(&mut self, peer_endpoint: Endpoint) {
+        if self.all_connections.0.contains_key(&peer_endpoint) || 
+           self.pending_connections.contains(&peer_endpoint) {
+            // ignore further request once received request or has added
+            return;
         }
-        self.all_connections.insert(peer_id.clone());
+        self.pending_connections.insert(peer_endpoint.clone());
+        self.bootstrap_node_id = Some(peer_endpoint.clone());
+        // println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_id);
+        // send find group
+        let msg = self.construct_find_group_msg();
+        let msg = self.encode(&msg);
+        debug_assert!(self.bootstrap_node_id.is_some());
+        let _ = self.connection_manager.send(peer_endpoint, msg);
     }
 
-    fn handle_accept(&mut self, peer_id: DhtId, bytes: Bytes) {
+    fn handle_accept(&mut self, peer_endpoint: Endpoint, peer_id: DhtId, bytes: Bytes) {
         // println!("In handle accept of {:?}", self.own_id);
-        self.all_connections.insert(peer_id.clone());
+        if self.all_connections.0.contains_key(&peer_endpoint) || 
+           !self.pending_connections.contains(&peer_endpoint) {
+            // ignore further request once added or not in sequence (not recorded as pending)
+            return;
+        }
+        self.pending_connections.remove(&peer_endpoint);
+        self.all_connections.0.insert(peer_endpoint.clone(), peer_id.clone());
+        self.all_connections.1.insert(peer_id.clone(), peer_endpoint.clone());
+
         let connect_succcess_msg = self.decode::<ConnectSuccess>(&bytes);
 
         if connect_succcess_msg.is_none() {  // TODO handle non routing connection here
             if self.bootstrap_node_id.is_none() &&
-             (self.all_connections.len() == 1) && (self.all_connections.contains(&peer_id)) { // zero state only`
-                self.bootstrap_node_id = Some(peer_id.clone());
-                println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_id);
+             (self.all_connections.0.len() == 1) && (self.all_connections.0.contains_key(&peer_endpoint)) { // zero state only`
+                self.bootstrap_node_id = Some(peer_endpoint.clone());
+                // println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_endpoint);
             }
             return;
         }
@@ -180,11 +208,16 @@ impl<F> RoutingNode<F> where F: Facade {
         }
     }
 
-    fn handle_lost_connection(&mut self, peer_id: DhtId) {
-        self.routing_table.drop_node(&peer_id);
-        self.all_connections.remove(&peer_id);
-        // remove from the non routing list
-        // handle_curn
+    fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
+        self.pending_connections.remove(&peer_endpoint);
+        let removed_entry = self.all_connections.0.remove(&peer_endpoint);
+        if removed_entry.is_some() {
+            let peer_id = removed_entry.unwrap();
+            self.routing_table.drop_node(&peer_id);
+            self.all_connections.1.remove(&peer_id);
+          // TODO : remove from the non routing list
+          // handle_churn
+        }
     }
 
     fn message_received(&mut self, peer_id: &DhtId, serialised_message: Bytes) -> RecvResult {
@@ -217,8 +250,11 @@ impl<F> RoutingNode<F> where F: Facade {
                              header.destination.dest == self.own_id;
         if relay_response {
             println!("{:?} relay response sent to nrt {:?}", self.own_id, header.destination.reply_to);
-            let _ = self.connection_manager.send(serialised_message, header.destination.reply_to.unwrap());
-            return Ok(());
+            // TODO : what shall happen to relaying message ? routing_node choosing a closest node ?
+            for key in self.all_connections.0.keys() {
+                let _ = self.connection_manager.send(key.clone(), serialised_message);
+                return Ok(());
+            }
         }
 
         // TODO(prakash)
@@ -272,9 +308,13 @@ impl<F> RoutingNode<F> where F: Facade {
         // send_swarm_or_parallel();
 
         if original_header.source.reply_to.is_some() {
-            let reply_to_address = original_header.source.reply_to.clone();
-            let _ = self.connection_manager.send(self.encode(&routing_msg),
-                                                 reply_to_address.unwrap());
+            let reply_to_address = original_header.source.reply_to.unwrap();
+            if self.all_connections.1.contains_key(&reply_to_address) {
+                let _ = self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(),
+                                                     self.encode(&routing_msg));
+            } else {
+                return Err(());
+            }
         }
         Ok(())
     }
@@ -285,13 +325,14 @@ impl<F> RoutingNode<F> where F: Facade {
         if !(self.routing_table.check_node(&connect_response.receiver_id)) {
            return Ok(())
         }
-        // AddNode
-        let success_msg = self.construct_success_msg();
-        let msg = self.encode(&success_msg);
-        let _ = self.connection_manager.connect(connect_response.receiver_external,
-                                                msg);
+
+        // The following code block is no longer required due to the changes in crust 
+        // let success_msg = self.construct_success_msg();
+        // let msg = self.encode(&success_msg);
+        // let _ = self.connection_manager.connect(msg);
+
         // workaround for zero state
-        if (self.all_connections.len() == 1) && (self.all_connections.contains(&connect_response.receiver_id)) {
+        if (self.all_connections.0.len() == 1) && (self.all_connections.1.contains_key(&connect_response.receiver_id)) {
             let peer_node_info = NodeInfo::new(connect_response.receiver_fob, true);
             let result = self.routing_table.add_node(peer_node_info);
             if result.0 {
@@ -319,9 +360,13 @@ impl<F> RoutingNode<F> where F: Facade {
         // send_swarm_or_parallel();
         // if node in my group && in non routing list send it to non_routnig list as well
         if original_header.source.reply_to.is_some() {
-            let reply_to_address = original_header.source.reply_to.clone();
-            let _ = self.connection_manager.send(self.encode(&routing_msg),
-                                                    reply_to_address.unwrap());
+            let reply_to_address = original_header.source.reply_to.unwrap();
+            if self.all_connections.1.contains_key(&reply_to_address) {
+                let _ = self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(),
+                                                     self.encode(&routing_msg));
+            } else {
+                return Err(());
+            }
         }
         Ok(())
     }
@@ -336,7 +381,7 @@ impl<F> RoutingNode<F> where F: Facade {
             let routing_msg = self.construct_connect_request_msg(&peer.name);
             if self.bootstrap_node_id.is_some() {
                 let bootstrap_node = self.bootstrap_node_id.clone();
-                let _ = self.connection_manager.send(self.encode(&routing_msg), bootstrap_node.unwrap());
+                let _ = self.connection_manager.send(bootstrap_node.unwrap(), self.encode(&routing_msg));
             }
             // SendSwarmOrParallel  // FIXME
         }
@@ -377,7 +422,7 @@ impl<F> RoutingNode<F> where F: Facade {
 
     fn our_source_address(&self) -> types::SourceAddress {
         if self.bootstrap_node_id.is_some() {
-            return types::SourceAddress{ from_node: self.bootstrap_node_id.clone().unwrap(),
+            return types::SourceAddress{ from_node: self.all_connections.0.get(&self.bootstrap_node_id.clone().unwrap()).unwrap().clone(),
                                          from_group: None,
                                          reply_to: Some(self.own_id.clone()) }
         } else {
@@ -449,14 +494,14 @@ impl<F> RoutingNode<F> where F: Facade {
             signature:   None
         };
 
-        let invalid_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0));
+        let invalid_addr = vec![Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0)))];
         let (requester_local, requester_external)
-            = self.next_endpoint_pair().unwrap_or((invalid_addr, invalid_addr));  // FIXME
+            = self.next_endpoint_pair().unwrap_or((invalid_addr.clone(), invalid_addr));  // FIXME
 
 
         let connect_request = ConnectRequest {
-            local:          requester_local,
-            external:       requester_external,
+            local:          match requester_local[0] { Tcp(local) => local },
+            external:       match requester_external[0] { Tcp(local) => local },
             requester_id:   self.own_id.clone(),
             receiver_id:    peer_id.clone(),
             requester_fob:  types::PublicPmid::new(&self.pmid),
@@ -478,15 +523,15 @@ impl<F> RoutingNode<F> where F: Facade {
             authority:   types::Authority::ManagedNode,
             signature:   None  // FIXME
         };
-        let invalid_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0));
+        let invalid_addr = vec![Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0)))];
         let (receiver_local, receiver_external)
-            = self.next_endpoint_pair().unwrap_or((invalid_addr, invalid_addr));  // FIXME
+            = self.next_endpoint_pair().unwrap_or((invalid_addr.clone(), invalid_addr));  // FIXME
 
         let connect_response = ConnectResponse {
             requester_local:    connect_request.local,
             requester_external: connect_request.external,
-            receiver_local:     receiver_local,
-            receiver_external:  receiver_external,
+            receiver_local:     match receiver_local[0] { Tcp(local) => local },
+            receiver_external:  match receiver_external[0] { Tcp(local) => local },
             requester_id:       connect_request.requester_id.clone(),
             receiver_id:        self.own_id.clone(),
             receiver_fob:       types::PublicPmid::new(&self.pmid) };
@@ -508,9 +553,12 @@ impl<F> RoutingNode<F> where F: Facade {
 
     fn send_swarm_or_parallel(&self, target: &DhtId, serialised_message: &Bytes) {
         for peer in self.get_connected_target(target) {
-            let res = self.connection_manager.send(serialised_message.clone(), peer.id.clone());
-            if res.is_err() {
-                println!("{:?} failed to send to {:?}", self.own_id, peer.id);
+            if self.all_connections.1.contains_key(&peer.id) {
+                let res = self.connection_manager.send(self.all_connections.1.get(&peer.id).unwrap().clone(),
+                                                       serialised_message.clone());
+                if res.is_err() {
+                    println!("{:?} failed to send to {:?}", self.own_id, peer.id);
+                }
             }
         }
     }

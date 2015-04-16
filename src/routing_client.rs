@@ -28,15 +28,16 @@ use crust;
 use rand;
 use sodiumoxide;
 
-type ConnectionManager = crust::ConnectionManager<types::DhtId>;
-type Event             = crust::Event<types::DhtId>;
+type ConnectionManager = crust::ConnectionManager;
+type Event             = crust::Event;
+type Endpoint          = crust::connection_manager::Endpoint;
 
 pub struct RoutingClient<'a, F: Facade + 'a> {
     facade: Arc<Mutex<F>>,
     maid_id: maidsafe_types::Maid,
     connection_manager: ConnectionManager,
     own_address: types::DhtId,
-    bootstrap_address: types::DhtId,
+    bootstrap_address: (types::DhtId, Endpoint),
     message_id: u32,
     join_guard: thread::JoinGuard<'a, ()>,
 }
@@ -49,7 +50,8 @@ impl<'a, F> Drop for RoutingClient<'a, F> where F: Facade {
 }
 
 impl<'a, F> RoutingClient<'a, F> where F: Facade {
-    pub fn new(my_facade: Arc<Mutex<F>>, maid_id: maidsafe_types::Maid, bootstrap_add: types::DhtId) -> RoutingClient<'a, F> {
+    pub fn new(my_facade: Arc<Mutex<F>>, maid_id: maidsafe_types::Maid,
+               bootstrap_add: (types::DhtId, crust::connection_manager::Endpoint)) -> RoutingClient<'a, F> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
         let own_add = types::DhtId(maid_id.get_name().0.to_vec());
@@ -57,11 +59,11 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
         RoutingClient {
             facade: my_facade.clone(),
             maid_id: maid_id,
-            connection_manager: crust::ConnectionManager::new(own_add.clone(), tx),
+            connection_manager: crust::ConnectionManager::new(tx),
             own_address: own_add.clone(),
             bootstrap_address: bootstrap_add.clone(),
             message_id: rand::random::<u32>(),
-            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add, own_add, my_facade)),
+            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add.0, own_add, my_facade)),
         }
     }
 
@@ -70,7 +72,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
-                from_node: self.bootstrap_address.clone(),
+                from_node: self.bootstrap_address.0.clone(),
                 from_group: None,
                 reply_to: Some(self.own_address.clone()),
             },
@@ -106,7 +108,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        match self.connection_manager.send(encoder_routingmsg.into_bytes(), self.bootstrap_address.clone()) {
+        match self.connection_manager.send(self.bootstrap_address.1.clone(), encoder_routingmsg.into_bytes()) {
             Ok(_) => Ok(self.message_id - 1),
             Err(error) => Err(error),
         }
@@ -128,7 +130,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
                 reply_to: None,
             },
             types::SourceAddress {
-                from_node: self.bootstrap_address.clone(),
+                from_node: self.bootstrap_address.0.clone(),
                 from_group: None,
                 reply_to: Some(self.own_address.clone()),
             },
@@ -150,7 +152,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        match self.connection_manager.send(encoder_routingmsg.into_bytes(), self.bootstrap_address.clone()) {
+        match self.connection_manager.send(self.bootstrap_address.1.clone(), encoder_routingmsg.into_bytes()) {
             Ok(_) => Ok(self.message_id - 1),
             Err(error) => Err(error),
         }
@@ -160,6 +162,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
         for it in rx.iter() {
             match it {
                 crust::connection_manager::Event::NewMessage(id, bytes) => {
+                    // The received id is Endpoint(i.e. ip + socket) which is no use to upper layer
                     let mut decode_routing_msg = cbor::Decoder::from_bytes(&bytes[..]);
                     let routing_msg: messages::RoutingMessage = decode_routing_msg.decode().next().unwrap().unwrap();
 
@@ -169,7 +172,8 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
                         match routing_msg.message_type {
                             messages::MessageTypeTag::GetDataResponse => {
                                 let mut facade = my_facade.lock().unwrap();
-                                facade.handle_get_response(id, Ok(routing_msg.serialised_body));
+                                facade.handle_get_response(routing_msg.message_header.source.from_node.clone(),
+                                                           Ok(routing_msg.serialised_body));
                             }
                             _ => unimplemented!(),
                         }
