@@ -73,8 +73,8 @@ mod test {
           self.max_disk_storage = disk_usage;
           for name_value in name_value_pairs.0.clone() {
               let data_as_bytes = name_value.1.into_bytes();
-              self.chunk_store.put(DhtId::new(name_value.0.clone().get_id()), data_as_bytes.clone());
-              let recovered = self.chunk_store.get(DhtId::new(name_value.0.clone().get_id()));
+              self.chunk_store.put(DhtId::new(&name_value.0.clone().get_id()), data_as_bytes.clone());
+              let recovered = self.chunk_store.get(DhtId::new(&name_value.0.clone().get_id()));
               assert!(data_as_bytes == recovered);
           }
           name_value_pairs

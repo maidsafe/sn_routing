@@ -50,9 +50,10 @@ pub struct VaultFacade {
   nodes_in_table : Vec<DhtId>
 }
 
-impl routing::Facade for VaultFacade {
+impl routing::facade::Facade for VaultFacade {
   fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
-                from_address: DhtId, name: DhtId)->Result<Action, RoutingError> {
+                from_address: DhtId, data_name: Vec<u8>)->Result<Action, RoutingError> {
+    let name = DhtId(data_name);
     match our_authority {
       Authority::NaeManager => {
         // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
@@ -133,11 +134,11 @@ mod test {
   extern crate routing;
   use super::*;
   use self::maidsafe_types::*;
+  use self::maidsafe_types::traits::RoutingTrait;
   use self::routing::types::Authority;
   use self::routing::types::DestinationAddress;
   use self::routing::types::DhtId;
-  use self::routing::routing_table;
-  use routing::Facade;
+  use routing::facade::Facade;
 
   #[test]
   fn put_get_flow() {
@@ -145,14 +146,14 @@ mod test {
 
     let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
-    let data = ImmutableData::new(name, value);
+    let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
     assert_eq!(encode_result.is_ok(), true);
 
     { // MaidManager, shall allowing the put and SendOn to DataManagers around name
-      let from = DhtId::new([1u8; 64]);
+      let from = DhtId::new(&[1u8; 64]);
       // TODO : in this stage, dest can be populated as anything ?
       let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
       let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
@@ -166,13 +167,13 @@ mod test {
         routing::Action::Reply(x) => panic!("Unexpected"),
       }
     }
-    let nodes_in_table = vec![DhtId::new([1u8; 64]), DhtId::new([2u8; 64]), DhtId::new([3u8; 64]), DhtId::new([4u8; 64]),
-                              DhtId::new([5u8; 64]), DhtId::new([6u8; 64]), DhtId::new([7u8; 64]), DhtId::new([8u8; 64])];
+    let nodes_in_table = vec![DhtId::new(&[1u8; 64]), DhtId::new(&[2u8; 64]), DhtId::new(&[3u8; 64]), DhtId::new(&[4u8; 64]),
+                              DhtId::new(&[5u8; 64]), DhtId::new(&[6u8; 64]), DhtId::new(&[7u8; 64]), DhtId::new(&[8u8; 64])];
     for node in nodes_in_table.iter() {
       vault.add_node(node.clone());
     }
     { // DataManager, shall SendOn to pmid_nodes
-      let from = DhtId::new([1u8; 64]);
+      let from = DhtId::new(&[1u8; 64]);
       // TODO : in this stage, dest can be populated as anything ?
       let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
       let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
@@ -180,7 +181,7 @@ mod test {
       assert_eq!(put_result.is_err(), false);
       match put_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
-          assert_eq!(x.len(), routing_table::PARALLELISM);
+          assert_eq!(x.len(), super::data_manager::PARALLELISM);
           assert_eq!(x[0].0, [3u8; 64].to_vec());
           assert_eq!(x[1].0, [2u8; 64].to_vec());
           assert_eq!(x[2].0, [1u8; 64].to_vec());
@@ -188,13 +189,13 @@ mod test {
         }
         routing::Action::Reply(x) => panic!("Unexpected"),
       }
-      let from = DhtId::new([1u8; 64]);
+      let from = DhtId::new(&[1u8; 64]);
       let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::NaeManager,
-                                        Authority::Client, from, DhtId::new(data.get_name().get_id()));
+                                        Authority::Client, from, data.get_name().0.to_vec());
       assert_eq!(get_result.is_err(), false);
       match get_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
-          assert_eq!(x.len(), routing_table::PARALLELISM);
+          assert_eq!(x.len(), super::data_manager::PARALLELISM);
           assert_eq!(x[0].0, [3u8; 64].to_vec());
           assert_eq!(x[1].0, [2u8; 64].to_vec());
           assert_eq!(x[2].0, [1u8; 64].to_vec());
@@ -204,8 +205,8 @@ mod test {
       }
     }
     { // PmidManager, shall put to pmid_nodes
-      let from = DhtId::new([3u8; 64]);
-      let dest = DestinationAddress{ dest : DhtId::new([7u8; 64]), reply_to: None };
+      let from = DhtId::new(&[3u8; 64]);
+      let dest = DestinationAddress{ dest : DhtId::new(&[7u8; 64]), reply_to: None };
       let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager, from, dest,
                                         self::routing::types::array_as_vector(encoder.as_bytes()));
       assert_eq!(put_result.is_err(), false);
@@ -218,8 +219,8 @@ mod test {
       }
     }
     { // PmidNode stores/retrieves data
-      let from = DhtId::new([7u8; 64]);
-      let dest = DestinationAddress{ dest : DhtId::new([6u8; 64]), reply_to: None };
+      let from = DhtId::new(&[7u8; 64]);
+      let dest = DestinationAddress{ dest : DhtId::new(&[6u8; 64]), reply_to: None };
       let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager, from, dest,
                                         self::routing::types::array_as_vector(encoder.as_bytes()));
       assert_eq!(put_result.is_err(), true);
@@ -227,9 +228,9 @@ mod test {
         routing::RoutingError::Success => { }
         _ => panic!("Unexpected"),
       }
-      let from = DhtId::new([7u8; 64]);
+      let from = DhtId::new(&[7u8; 64]);
       let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::ManagedNode,
-                                        Authority::NodeManager, from, DhtId::new([3u8; 64]));
+                                        Authority::NodeManager, from, [3u8; 64].to_vec());
       assert_eq!(get_result.is_err(), false);
       match get_result.ok().unwrap() {
           routing::Action::Reply(ref x) => {

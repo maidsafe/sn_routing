@@ -91,21 +91,22 @@ mod test {
   use super::*;
   use self::maidsafe_types::ImmutableData;
   use self::maidsafe_types::NameType;
-  use self::routing::types::*;
+  use self::maidsafe_types::traits::RoutingTrait;
+  use self::routing::types::{DhtId, generate_random_vec_u8};
 
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();
     let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(name, value);
+    let data = ImmutableData::new(value);
     let mut pmid_nodes : Vec<DhtId> = vec![];
 
     for _ in 0..4 {
       pmid_nodes.push(DhtId::generate_random());
     }
 
-    let data_name = DhtId::new(data.get_name().get_id());
+    let data_name = DhtId::new(&data.get_name().get_id());
     assert_eq!(db.exist(&data_name), false);
     db.put_pmid_nodes(&data_name, pmid_nodes);
     assert_eq!(db.exist(&data_name), true);
@@ -116,8 +117,8 @@ mod test {
     let mut db = DataManagerDatabase::new();
     let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(name, value);
-    let data_name = DhtId::new(data.get_name().get_id());
+    let data = ImmutableData::new(value);
+    let data_name = DhtId::new(&data.get_name().get_id());
     let mut pmid_nodes : Vec<DhtId> = vec![];
 
     for _ in 0..4 {
@@ -138,8 +139,8 @@ mod test {
     let mut db = DataManagerDatabase::new();
     let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(name, value);
-    let data_name = DhtId::new(data.get_name().get_id());
+    let data = ImmutableData::new(value);
+    let data_name = DhtId::new(&data.get_name().get_id());
     let mut pmid_nodes : Vec<DhtId> = vec![];
 
     for _ in 0..4 {
@@ -164,8 +165,8 @@ mod test {
     let mut db = DataManagerDatabase::new();
     let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(name, value);
-    let data_name = DhtId::new(data.get_name().get_id());
+    let data = ImmutableData::new(value);
+    let data_name = DhtId::new(&data.get_name().get_id());
     let mut pmid_nodes : Vec<DhtId> = vec![];
     let mut new_pmid_nodes : Vec<DhtId> = vec![];
 

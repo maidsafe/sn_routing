@@ -51,7 +51,7 @@ impl VersionHandler {
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::StructuredData => {
-        data_name = DhtId::new(payload.get_data::<maidsafe_types::StructuredData>().get_name().0.get_id());
+        data_name = DhtId::new(&payload.get_data::<maidsafe_types::StructuredData>().get_name().0.get_id());
       }
        _ => return Err(routing::RoutingError::InvalidRequest)
     }
@@ -90,7 +90,7 @@ mod test {
       _ => assert_eq!(true, false),
     }
 
-    let data_name = DhtId::new(sdv.get_name().0.get_id());
+    let data_name = DhtId::new(&sdv.get_name().0.get_id());
     let get_result = version_handler.handle_get(data_name);
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {

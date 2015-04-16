@@ -16,7 +16,7 @@ pub mod chunk_store;
 pub mod vault;
 
 use vault::VaultFacade;
-use routing::types::DhtId;
+// use routing::types::DhtId;
 // use routing::routing_node::RoutingNode;
 
 /// Placeholder doc test
