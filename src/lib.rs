@@ -58,8 +58,6 @@ extern crate time;
 extern crate sqlite3;
 extern crate crust;
 
-extern crate maidsafe_types;
-
 use sodiumoxide::crypto;
 
 pub mod routing_client;
