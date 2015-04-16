@@ -44,20 +44,17 @@ pub trait Facade : Sync + Send {
 
   fn handle_get_response(&mut self,
                          from_address: DhtId,
-                         response: Result<Vec<u8>,
-                         RoutingError>);
+                         response: Result<Vec<u8>, RoutingError>);
 
   fn handle_put_response(&mut self,
                          from_authority: Authority,
                          from_address: DhtId,
-                         response: Result<Vec<u8>,
-                         RoutingError>);
+                         response: Result<Vec<u8>, RoutingError>);
 
   fn handle_post_response(&mut self,
                           from_authority: Authority,
                           from_address: DhtId,
-                          response: Result<Vec<u8>,
-                          RoutingError>);
+                          response: Result<Vec<u8>, RoutingError>);
 
   fn add_node(&mut self, node: DhtId);
   fn drop_node(&mut self, node: DhtId);
