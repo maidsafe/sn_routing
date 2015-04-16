@@ -97,6 +97,19 @@ impl fmt::Debug for DhtId {
     }
 }
 
+// lhs is closer to target than rhs
+pub fn closer_to_target(lhs: &DhtId, rhs: &DhtId, target: &DhtId) -> bool {
+    for i in 0..lhs.0.len() {
+        let res_0 = lhs.0[i] ^ target.0[i];
+        let res_1 = rhs.0[i] ^ target.0[i];
+
+        if res_0 != res_1 {
+            return res_0 < res_1
+        }
+    }
+    false
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
   ClientManager,  // from a node in our range but not routing table

@@ -66,7 +66,7 @@ use sodiumoxide::crypto;
 pub mod routing_client;
 pub mod types;
 mod message_header;
-pub mod routing_table;
+mod routing_table;
 mod accumulator;
 mod common_bits;
 mod sentinel;

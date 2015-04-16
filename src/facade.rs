@@ -62,4 +62,6 @@ pub trait Facade : Sync + Send {
   fn add_node(&mut self, node: DhtId);
   fn drop_node(&mut self, node: DhtId);
 }
-
+#[test]
+fn dummy()  {
+}

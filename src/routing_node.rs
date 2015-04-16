@@ -28,8 +28,8 @@ use std::str::FromStr;
 use std::collections::HashSet;
 use std::net::{SocketAddrV4, Ipv4Addr};
 
-use routing_table::RoutingTable;
-use types::{DhtId, MessageId};
+use routing_table::{RoutingTable, NodeInfo};
+use types::{DhtId, MessageId, closer_to_target};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -171,7 +171,7 @@ impl<F> RoutingNode<F> where F: Facade {
             return;
         }
         let connect_succcess_msg = connect_succcess_msg.unwrap();
-        let peer_node_info = routing_table::NodeInfo::new(connect_succcess_msg.peer_fob, true);
+        let peer_node_info = NodeInfo::new(connect_succcess_msg.peer_fob, true);
         let result = self.routing_table.add_node(peer_node_info);
         if result.0 {
           println!("{:?} added {:?} <RT size:{}>", self.own_id, connect_succcess_msg.peer_id, self.routing_table.size());
@@ -293,7 +293,7 @@ impl<F> RoutingNode<F> where F: Facade {
                                                 msg);
         // workaround for zero state
         if (self.all_connections.len() == 1) && (self.all_connections.contains(&connect_response.receiver_id)) {
-            let peer_node_info = routing_table::NodeInfo::new(connect_response.receiver_fob, true);
+            let peer_node_info = NodeInfo::new(connect_response.receiver_fob, true);
             let result = self.routing_table.add_node(peer_node_info);
             if result.0 {
                 println!("{:?} added {:?} <RT size:{}>", self.own_id, connect_response.receiver_id, self.routing_table.size());
@@ -520,7 +520,7 @@ impl<F> RoutingNode<F> where F: Facade {
         }
     }
 
-    fn get_connected_target(&self, target: &DhtId) -> Vec<routing_table::NodeInfo> {
+    fn get_connected_target(&self, target: &DhtId) -> Vec<NodeInfo> {
         let mut nodes = self.routing_table.target_nodes(target.clone());
         //println!("{:?} get_connected_target routing_table.size:{} target:{:?} -> {:?}", self.own_id, self.routing_table.size(), target, nodes);
         nodes.retain(|x| { x.connected });
@@ -533,9 +533,7 @@ impl<F> RoutingNode<F> where F: Facade {
         }
 
         let close_group = self.routing_table.our_close_group();
-        RoutingTable::closer_to_target(&address,
-                                       &self.routing_table.our_close_group().pop().unwrap().id,
-                                       &self.own_id)
+        closer_to_target(&address, &self.routing_table.our_close_group().pop().unwrap().id, &self.own_id)
     }
 
     pub fn id(&self) -> DhtId { self.own_id.clone() }
@@ -603,4 +601,7 @@ mod test {
         assert!(t2.join().is_ok());
         assert!(t3.join().is_ok());
     }
+}
+#[test]
+fn dummy()  {
 }
