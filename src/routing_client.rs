@@ -223,16 +223,16 @@ mod test {
         content
     }
 
-    #[test]
-    fn routing_client_put() {
-        let facade = Arc::new(Mutex::new(TestFacade));
-        let maid = Maid::generate_random();
-        let dht_id = DhtId::generate_random();
-        let mut routing_client = RoutingClient::new(facade, maid, dht_id);
-        let name = DhtId::generate_random();
-        let content = generate_random(1024);
-
-        let put_result = routing_client.put(name, content);
-        // assert_eq!(put_result.is_err(), false);
-    }
+    // #[test]
+    // fn routing_client_put() {
+    //     let facade = Arc::new(Mutex::new(TestFacade));
+    //     let maid = Maid::generate_random();
+    //     let dht_id = DhtId::generate_random();
+    //     let mut routing_client = RoutingClient::new(facade, maid, dht_id);
+    //     let name = DhtId::generate_random();
+    //     let content = generate_random(1024);
+    //
+    //     let put_result = routing_client.put(name, content);
+    //     // assert_eq!(put_result.is_err(), false);
+    // }
 }

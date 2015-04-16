@@ -24,7 +24,6 @@ use facade::*;
 use super::*;
 use rand;
 use std::net::{SocketAddr};
-use std::str::FromStr;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::net::{SocketAddrV4, Ipv4Addr};
@@ -641,5 +640,5 @@ mod test {
     // }
 }
 #[test]
-fn dummy()  {
+fn dummy_routing()  {
 }

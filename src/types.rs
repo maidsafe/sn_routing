@@ -22,7 +22,7 @@ use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::fmt;
-use rand;
+use rand::random;
 use sodiumoxide;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
@@ -52,7 +52,7 @@ pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
     for i in 0..size {
-        vec.push(rand::random::<u8>());
+        vec.push(random::<u8>());
     }
     vec
 }
@@ -180,7 +180,7 @@ impl NameAndTypeId {
     pub fn generate_random() -> NameAndTypeId {
         NameAndTypeId {
             name: generate_random_vec_u8(64),
-            type_id: rand::random::<u32>(),
+            type_id: random::<u32>(),
         }
     }
 }
@@ -540,13 +540,13 @@ pub enum MessageTypeTag {
 mod test {
   extern crate cbor;
   use super::*;
-  use std::rand;
+  use rand::random;
   use rustc_serialize::{Decodable, Encodable};
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];
     for _ in (0..64) {
-      address.push(rand::random::<u8>());
+      address.push(random::<u8>());
     }
     address
   }
