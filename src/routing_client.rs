@@ -50,7 +50,8 @@ impl<'a, F> Drop for RoutingClient<'a, F> where F: Facade {
 }
 
 impl<'a, F> RoutingClient<'a, F> where F: Facade {
-    pub fn new(my_facade: Arc<Mutex<F>>, maid_id: maidsafe_types::Maid, bootstrap_add: (types::DhtId, Endpoint)) -> RoutingClient<'a, F> {
+    pub fn new(my_facade: Arc<Mutex<F>>, maid_id: maidsafe_types::Maid,
+               bootstrap_add: (types::DhtId, crust::connection_manager::Endpoint)) -> RoutingClient<'a, F> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
         let own_add = types::DhtId(maid_id.get_name().0.to_vec());
