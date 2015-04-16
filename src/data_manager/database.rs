@@ -15,11 +15,10 @@
 
 #![allow(dead_code)]
 
-extern crate lru_cache;
-
+extern crate lru_time_cache;
 extern crate routing;
 
-use self::lru_cache::LruCache;
+use self::lru_time_cache::LruCache;
 
 type Identity = self::routing::types::DhtId; // name of the chunk
 type PmidNode = self::routing::types::PmidNode;
@@ -31,19 +30,19 @@ pub struct DataManagerDatabase {
 
 impl DataManagerDatabase {
   pub fn new () -> DataManagerDatabase {
-    DataManagerDatabase { storage: LruCache::new(10000) }
+    DataManagerDatabase { storage: LruCache::with_capacity(10000) }
   }
 
   pub fn exist(&mut self, name : &Identity) -> bool {
-    self.storage.get(name).is_some()
+    self.storage.get(name.clone()).is_some()
   }
 
   pub fn put_pmid_nodes(&mut self, name : &Identity, pmid_nodes: PmidNodes) {
-  	self.storage.insert(name.clone(), pmid_nodes.clone());
+    self.storage.add(name.clone(), pmid_nodes.clone());
   }
 
   pub fn add_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
-  	let entry = self.storage.remove(&name);
+    let entry = self.storage.remove(name.clone());
   	if entry.is_some() {
   	  let mut tmp = entry.unwrap();
   	  for i in 0..tmp.len() {
@@ -52,14 +51,14 @@ impl DataManagerDatabase {
   	  	}
   	  }
   	  tmp.push(pmid_node);
-  	  self.storage.insert(name.clone(), tmp);
+      self.storage.add(name.clone(), tmp);
   	} else {
-  	  self.storage.insert(name.clone(), vec![pmid_node]);
+      self.storage.add(name.clone(), vec![pmid_node]);
   	}
   }
 
   pub fn remove_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
-  	let entry = self.storage.remove(&name);
+    let entry = self.storage.remove(name.clone());
   	if entry.is_some() {
   	  let mut tmp = entry.unwrap();
   	  for i in 0..tmp.len() {
@@ -68,12 +67,12 @@ impl DataManagerDatabase {
           break;
   	  	}
   	  }
-  	  self.storage.insert(name.clone(), tmp);
+      self.storage.add(name.clone(), tmp);
   	}
   }
 
   pub fn get_pmid_nodes(&mut self, name : &Identity) -> PmidNodes {
-  	let entry = self.storage.get(&name);
+    let entry = self.storage.get(name.clone());
   	if entry.is_some() {
   	  entry.unwrap().clone()
   	} else {

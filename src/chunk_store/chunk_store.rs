@@ -112,3 +112,6 @@ impl ChunkStore {
        self.current_disk_usage + required_space <= self.max_disk_usage
     }
 }
+#[test]
+fn dummy()  {
+}
