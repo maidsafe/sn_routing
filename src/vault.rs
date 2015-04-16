@@ -135,18 +135,16 @@ mod test {
   use super::*;
   use self::maidsafe_types::*;
   use self::maidsafe_types::traits::RoutingTrait;
-  use self::routing::types::Authority;
-  use self::routing::types::DestinationAddress;
-  use self::routing::types::DhtId;
+  use self::routing::types::{Authority, DestinationAddress, DhtId, generate_random_vec_u8};
   use routing::facade::Facade;
 
   #[test]
   fn put_get_flow() {
     let mut vault = VaultFacade::new();
 
-    let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
+    let data_name = data.get_name();
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
@@ -156,13 +154,13 @@ mod test {
       let from = DhtId::new(&[1u8; 64]);
       // TODO : in this stage, dest can be populated as anything ?
       let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
-      let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
-                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      let put_result = vault.handle_put(Authority::ClientManager, Authority::Client,
+                                        from, dest, encoder.as_bytes().to_vec());
       assert_eq!(put_result.is_err(), false);
       match put_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
           assert_eq!(x.len(), 1);
-          assert_eq!(x[0].0, [3u8; 64].to_vec());
+          assert_eq!(x[0].0, data_name.get_id().to_vec());
         }
         routing::Action::Reply(x) => panic!("Unexpected"),
       }
@@ -176,16 +174,16 @@ mod test {
       let from = DhtId::new(&[1u8; 64]);
       // TODO : in this stage, dest can be populated as anything ?
       let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
-      let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
-                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager,
+                                        from, dest, encoder.as_bytes().to_vec());
       assert_eq!(put_result.is_err(), false);
       match put_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
           assert_eq!(x.len(), super::data_manager::PARALLELISM);
-          assert_eq!(x[0].0, [3u8; 64].to_vec());
-          assert_eq!(x[1].0, [2u8; 64].to_vec());
-          assert_eq!(x[2].0, [1u8; 64].to_vec());
-          assert_eq!(x[3].0, [7u8; 64].to_vec());
+          assert_eq!(x[0], vault.nodes_in_table[0]);
+          assert_eq!(x[1], vault.nodes_in_table[1]);
+          assert_eq!(x[2], vault.nodes_in_table[2]);
+          assert_eq!(x[3], vault.nodes_in_table[3]);
         }
         routing::Action::Reply(x) => panic!("Unexpected"),
       }
@@ -196,10 +194,10 @@ mod test {
       match get_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
           assert_eq!(x.len(), super::data_manager::PARALLELISM);
-          assert_eq!(x[0].0, [3u8; 64].to_vec());
-          assert_eq!(x[1].0, [2u8; 64].to_vec());
-          assert_eq!(x[2].0, [1u8; 64].to_vec());
-          assert_eq!(x[3].0, [7u8; 64].to_vec());
+          assert_eq!(x[0], vault.nodes_in_table[0]);
+          assert_eq!(x[1], vault.nodes_in_table[1]);
+          assert_eq!(x[2], vault.nodes_in_table[2]);
+          assert_eq!(x[3], vault.nodes_in_table[3]);
         }
         routing::Action::Reply(x) => panic!("Unexpected"),
       }
@@ -207,8 +205,8 @@ mod test {
     { // PmidManager, shall put to pmid_nodes
       let from = DhtId::new(&[3u8; 64]);
       let dest = DestinationAddress{ dest : DhtId::new(&[7u8; 64]), reply_to: None };
-      let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager, from, dest,
-                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager,
+                                        from, dest, encoder.as_bytes().to_vec());
       assert_eq!(put_result.is_err(), false);
       match put_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
@@ -221,8 +219,8 @@ mod test {
     { // PmidNode stores/retrieves data
       let from = DhtId::new(&[7u8; 64]);
       let dest = DestinationAddress{ dest : DhtId::new(&[6u8; 64]), reply_to: None };
-      let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager, from, dest,
-                                        self::routing::types::array_as_vector(encoder.as_bytes()));
+      let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager,
+                                        from, dest, encoder.as_bytes().to_vec());
       assert_eq!(put_result.is_err(), true);
       match put_result.err().unwrap() {
         routing::RoutingError::Success => { }
@@ -230,7 +228,7 @@ mod test {
       }
       let from = DhtId::new(&[7u8; 64]);
       let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::ManagedNode,
-                                        Authority::NodeManager, from, [3u8; 64].to_vec());
+                                        Authority::NodeManager, from, data_name.get_id().to_vec());
       assert_eq!(get_result.is_err(), false);
       match get_result.ok().unwrap() {
           routing::Action::Reply(ref x) => {

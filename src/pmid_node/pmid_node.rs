@@ -80,7 +80,6 @@ mod test {
   #[test]
   fn handle_put_get() {
     let mut pmid_node = super::PmidNode::new();
-    let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
@@ -95,7 +94,7 @@ mod test {
       _ => panic!("Unexpected"),
     }
 
-    let get_result = pmid_node.handle_get(DhtId::new(&name.0));
+    let get_result = pmid_node.handle_get(DhtId::new(&data.get_name().get_id()));
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
         routing::Action::Reply(ref x) => {

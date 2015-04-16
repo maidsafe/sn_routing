@@ -95,17 +95,19 @@ mod test {
   extern crate cbor;
   extern crate maidsafe_types;
   extern crate routing;
+  // extern crate rustc_serialize;
   use super::*;
   use self::maidsafe_types::traits::RoutingTrait;
-  use self::maidsafe_types::{NameType, ImmutableData, PayloadTypeTag, Payload};
+  use self::maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
   use self::routing::types::{DhtId, array_as_vector};
+  // use self::rustc_serialize::hex::ToHex;
 
   #[test]
   fn handle_put_get() {
     let mut data_manager = DataManager::new();
-    let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
+    // println!("data_name is {}", &data.get_name().0.as_ref().to_hex());
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
@@ -117,10 +119,10 @@ mod test {
     match put_result.ok().unwrap() {
       routing::Action::SendOn(ref x) => {
         assert_eq!(x.len(), super::PARALLELISM);
-        assert_eq!(x[0].0, [3u8; 64].to_vec());
-        assert_eq!(x[1].0, [2u8; 64].to_vec());
-        assert_eq!(x[2].0, [1u8; 64].to_vec());
-        assert_eq!(x[3].0, [7u8; 64].to_vec());
+        assert_eq!(x[0], nodes_in_table[0]);
+        assert_eq!(x[1], nodes_in_table[1]);
+        assert_eq!(x[2], nodes_in_table[2]);
+        assert_eq!(x[3], nodes_in_table[3]);
       }
       routing::Action::Reply(x) => panic!("Unexpected"),
     }
@@ -131,10 +133,10 @@ mod test {
     match get_result.ok().unwrap() {
       routing::Action::SendOn(ref x) => {
         assert_eq!(x.len(), super::PARALLELISM);
-        assert_eq!(x[0].0, [3u8; 64].to_vec());
-        assert_eq!(x[1].0, [2u8; 64].to_vec());
-        assert_eq!(x[2].0, [1u8; 64].to_vec());
-        assert_eq!(x[3].0, [7u8; 64].to_vec());
+        assert_eq!(x[0], nodes_in_table[0]);
+        assert_eq!(x[1], nodes_in_table[1]);
+        assert_eq!(x[2], nodes_in_table[2]);
+        assert_eq!(x[3], nodes_in_table[3]);
       }
       routing::Action::Reply(x) => panic!("Unexpected"),
     }
