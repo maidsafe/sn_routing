@@ -76,7 +76,7 @@ impl<'a> Sentinel<'a> {
                                                     header.from_node());
           if keys.is_some() {
             let key = (header.from_group().unwrap(), header.message_id());
-            let messages = self.node_accumulator_.get(&key);
+            let messages = self.node_accumulator_.get(key.clone());
             if messages.is_some() {
               let resolved = self.resolve(self.validate_node(messages.unwrap().1,
                                                              keys.unwrap().1), false);
@@ -95,7 +95,7 @@ impl<'a> Sentinel<'a> {
                                                      header.from_node());
           if keys.is_some() {
             let key = (header.from_group().unwrap(), header.message_id());
-            let messages = self.group_accumulator_.get(&key);
+            let messages = self.group_accumulator_.get(key.clone());
             if messages.is_some() {
               let resolved = self.resolve(self.validate_group(messages.unwrap().1,
                                                               keys.unwrap().1), true);
@@ -110,13 +110,13 @@ impl<'a> Sentinel<'a> {
       _ => {
         if header.is_from_group() {
           let key = (header.from_group().unwrap(), header.message_id());
-          if !self.group_accumulator_.have_name(&key) {
+          if !self.group_accumulator_.have_name(key.clone()) {
             self.send_get_keys_.get_group_key(header.from_group().unwrap()); };
           let messages = self.group_accumulator_.add(key.clone(),
                                                      (header.clone(), type_tag, message),
                                                      header.from_node());
           if messages.is_some() {
-            let keys = self.group_key_accumulator_.get(&header.from_group().unwrap());
+            let keys = self.group_key_accumulator_.get(header.from_group().unwrap());
             if keys.is_some() {
               let resolved = self.resolve(self.validate_group(messages.unwrap().1,
                                                               keys.unwrap().1), true);
@@ -128,13 +128,13 @@ impl<'a> Sentinel<'a> {
           }
         } else {
           let key = (header.from_node(), header.message_id());
-          if !self.node_accumulator_.have_name(&key) {
+          if !self.node_accumulator_.have_name(key.clone()) {
             self.send_get_keys_.get_client_key(header.from_group().unwrap()); };
           let messages = self.node_accumulator_.add(key.clone(),
                                                     (header.clone(), type_tag, message),
                                                     header.from_node());
           if messages.is_some() {
-            let keys = self.node_key_accumulator_.get(&header.from_group().unwrap());
+            let keys = self.node_key_accumulator_.get(header.from_group().unwrap());
             if keys.is_some() {
               let resolved = self.resolve(self.validate_node(messages.unwrap().1,
                                                              keys.unwrap().1), false);

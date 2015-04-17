@@ -14,9 +14,7 @@ A secured [DHT](http://en.wikipedia.org/wiki/Distributed_hash_table), based on a
 
 This library makes use of [Public-key cryptography](http://en.wikipedia.org/wiki/Public-key_cryptography) to allow a mechanism to ensure nodes are well recognised and cryptographically secured. This pattern allows the creation of a DHT based PKI and this in turn allows us to make use of groups as fixed in relation to any address, in a continually fluid network as described [here](http://maidsafe.net/Whitepapers/pdf/MaidSafeDistributedHashTable.pdf) and create serverless networks that can provide fully [autonomous networks](http://maidsafe.net/docs/SAFEnetwork.pdf). 
 
-This is a very under-researched area and is currently being investigated with papers such as [{Erick Lavoie} XOR Distance Metric and Basic Routing". McLab Seminars. McGill University, Montreal, October 2014.](http://ericklavoie.com/talks/safenetwork/1-xor-routing.pdf), with videos to also help the curious which can be found [here](https://forum.safenetwork.io/t/lecture-2-the-safe-network-from-first-principles-crowdfunding/2566)
-
-This video will help provide a quick overview of this particular [design](https://www.youtube.com/watch?v=YFV908uoLPY) 
+This is a very under-researched area. For a general introduction to some of the ideas behind the design related to XOR Space, please see the videos in [The SAFE Network from First Principles series](https://www.youtube.com/watch?v=Lr9FJRDcNzk&list=PLiYqQVdgdw_sSDkdIZzDRQR9xZlsukIxD). The slides for XOR Distance Metric and Basic Routing lecture are also [available here](http://ericklavoie.com/talks/safenetwork/1-xor-routing.pdf). The last video from the series on how the same ideas were applied to decentralized the Bittorrent trackers is available [here](https://www.youtube.com/watch?v=YFV908uoLPY). A proper formalization of the Routing algorithm is in progress.
 
 
 ###Pre-requisite:

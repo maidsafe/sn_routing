@@ -47,10 +47,9 @@
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features, unused_attributes)]
 #![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core,
-           thread_sleep, ip_addr, convert)]
-
+           thread_sleep, ip_addr, convert, scoped)]
 extern crate sodiumoxide;
-extern crate lru_cache;
+extern crate lru_time_cache;
 extern crate message_filter;
 extern crate rustc_serialize;
 extern crate cbor;
@@ -58,8 +57,6 @@ extern crate rand;
 extern crate time;
 extern crate sqlite3;
 extern crate crust;
-
-extern crate maidsafe_types;
 
 use sodiumoxide::crypto;
 

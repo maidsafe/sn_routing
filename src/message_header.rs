@@ -138,7 +138,7 @@ impl MessageHeader {
 #[allow(deprecated)]
 mod test {
     use super::*;
-    use std::rand;
+    use rand::random;
     use rustc_serialize::{Decodable, Encodable};
     use types;
     use cbor;
@@ -146,7 +146,7 @@ mod test {
     pub fn generate_u8_64() -> Vec<u8> {
         let mut u8_64: Vec<u8> = vec![];
         for _ in (0..64) {
-            u8_64.push(rand::random::<u8>());
+            u8_64.push(random::<u8>());
         }
         u8_64
     }
@@ -162,7 +162,7 @@ mod test {
     #[test]
     fn test_message_header() {
         test_object(MessageHeader {
-            message_id : rand::random::<u32>(),
+            message_id : random::<u32>(),
             destination : types::DestinationAddress{dest: types::DhtId::generate_random(), reply_to: None },
             source : types::SourceAddress { from_node : types::DhtId::generate_random(),
             from_group : None,
