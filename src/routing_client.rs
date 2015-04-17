@@ -29,7 +29,7 @@ use sodiumoxide::crypto;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event             = crust::Event;
-type Endpoint          = crust::connection_manager::Endpoint;
+type Endpoint          = crust::Endpoint;
 
 pub enum CryptoError {
     Unknown
@@ -94,7 +94,7 @@ impl<'a, F> Drop for RoutingClient<'a, F> where F: Facade {
 impl<'a, F> RoutingClient<'a, F> where F: Facade {
     pub fn new(my_facade: Arc<Mutex<F>>,
                id_packet: ClientIdPacket,
-               bootstrap_add: (types::DhtId, crust::connection_manager::Endpoint)) -> RoutingClient<'a, F> {
+               bootstrap_add: (types::DhtId, crust::Endpoint)) -> RoutingClient<'a, F> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
 
