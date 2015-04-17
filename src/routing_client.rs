@@ -104,8 +104,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
             id_packet: id_packet.clone(),
             bootstrap_address: bootstrap_add.clone(),
             message_id: rand::random::<u32>(),
-            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add.0,
-                                                                    id_packet.get_id().clone(), my_facade)),
+            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add.0, id_packet.get_id(), my_facade)),
         }
     }
 
@@ -116,7 +115,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
             requester: types::SourceAddress {
                 from_node: self.bootstrap_address.0.clone(),
                 from_group: None,
-                reply_to: Some(self.id_packet.get_id().clone()),
+                reply_to: Some(self.id_packet.get_id()),
             },
             name_and_type_id: types::NameAndTypeId {
                 name: name.0.clone(),
@@ -168,13 +167,13 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
         let header = message_header::MessageHeader::new(
             self.message_id,
             types::DestinationAddress {
-                dest: self.id_packet.get_id().clone(),
+                dest: self.id_packet.get_id(),
                 reply_to: None,
             },
             types::SourceAddress {
                 from_node: self.bootstrap_address.0.clone(),
                 from_group: None,
-                reply_to: Some(self.id_packet.get_id().clone()),
+                reply_to: Some(self.id_packet.get_id()),
             },
             types::Authority::Client,
             Some(types::Signature::generate_random()), // What is the signautre -- see in c++ Secret - signing key
