@@ -35,7 +35,7 @@ pub struct KeyFob {
     signature: crypto::sign::Signature,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub id: DhtId, // TODO(Ben 2015-04-10) only mutable for tests!
                    // should be immutable and can be read from
