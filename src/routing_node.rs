@@ -48,11 +48,11 @@ use cbor::{Encoder, Decoder};
 
 use types::RoutingTrait;
 
-use crust::connection_manager::Endpoint::Tcp;
+use crust::Endpoint::Tcp;
 type ConnectionManager = crust::ConnectionManager;
 type Event             = crust::Event;
-type Endpoint          = crust::connection_manager::Endpoint;
-type PortAndProtocol   = crust::connection_manager::PortAndProtocol;
+type Endpoint          = crust::Endpoint;
+type PortAndProtocol   = crust::Port;
 type Bytes             = Vec<u8>;
 
 type RecvResult = Result<(),()>;
@@ -99,7 +99,7 @@ impl<F> RoutingNode<F> where F: Facade {
                     }
     }
 
-    pub fn accepting_on(&self) -> Option<Vec<crust::connection_manager::Endpoint>> {
+    pub fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
         self.accepting_on.clone().and_then(|endpoints| {
             Some(endpoints)
         })
@@ -114,7 +114,7 @@ impl<F> RoutingNode<F> where F: Facade {
     /// Mutate something on the network (you must prove ownership) - Direct call
     pub fn post(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
 
-    pub fn add_bootstrap(&mut self, endpoint: crust::connection_manager::Endpoint) {
+    pub fn add_bootstrap(&mut self, endpoint: crust::Endpoint) {
         self.pending_connections.insert(endpoint.clone());
         let endpoints = vec![endpoint];
         let _ = self.connection_manager.connect(endpoints);
@@ -584,13 +584,13 @@ impl<F> RoutingNode<F> where F: Facade {
 
 #[cfg(test)]
 mod test {
-    use routing_node::{RoutingNode};
+    //use routing_node::{RoutingNode};
     use facade::{Facade};
     use types::{Authority, DhtId, DestinationAddress};
     use super::super::{Action, RoutingError};
-    use std::thread;
-    use std::net::{SocketAddr};
-    use std::str::FromStr;
+    //use std::thread;
+    //use std::net::{SocketAddr};
+    //use std::str::FromStr;
 
     struct NullFacade;
 
