@@ -37,24 +37,21 @@ pub enum CryptoError {
 
 #[derive(Clone)]
 pub struct ClientIdPacket {
-    id: types::DhtId,
     public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
     secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey)
 }
 
 impl ClientIdPacket {
     pub fn new(public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-               secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
-               id: types::DhtId) -> ClientIdPacket {
+               secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey)) -> ClientIdPacket {
         ClientIdPacket {
-            id: id,
             public_keys: public_keys,
             secret_keys: secret_keys
         }
     }
 
-    pub fn get_id(&self) -> &types::DhtId {
-        &self.id
+    pub fn get_id(&self) -> types::DhtId {
+        types::DhtId(self.public_keys.0 .0.to_vec())
     }
 
     pub fn get_public_keys(&self) -> &(crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey){
