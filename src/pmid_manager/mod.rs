@@ -15,13 +15,10 @@
 
 #![allow(dead_code)]
 
-extern crate routing;
-extern crate maidsafe_types;
-
 mod database;
-
-use self::routing::types::DhtId;
-use self::routing::types::DestinationAddress;
+use routing;
+use routing::types::DhtId;
+use routing::types::DestinationAddress;
 
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
@@ -49,8 +46,8 @@ mod test {
   extern crate maidsafe_types;
   extern crate routing;
   use super::*;
-  use self::maidsafe_types::*;
-  use self::routing::types::*;
+  use maidsafe_types::*;
+  use routing::types::*;
 
   #[test]
   fn handle_put() {

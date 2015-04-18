@@ -15,12 +15,9 @@
 
 #![allow(dead_code)]
 
-extern crate lru_time_cache;
 
-extern crate routing;
-
-use self::lru_time_cache::LruCache;
-use self::routing::types::DhtId;
+use lru_time_cache::LruCache;
+use routing::types::DhtId;
 
 type Identity = DhtId; // maid node address
 

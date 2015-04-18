@@ -10,10 +10,17 @@ extern crate rustc_serialize;
 extern crate cbor;
 extern crate time;
 extern crate routing;
+extern crate maidsafe_types;
 extern crate rand;
+extern crate lru_time_cache;
 
-pub mod chunk_store;
-pub mod vault;
+mod data_manager;
+mod maid_manager;
+mod pmid_manager;
+mod version_handler;
+mod chunk_store;
+mod pmid_node;
+mod vault;
 
 use vault::VaultFacade;
 // use routing::types::DhtId;
