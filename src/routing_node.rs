@@ -27,7 +27,7 @@ use std::net::{SocketAddr};
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::net::{SocketAddrV4, Ipv4Addr};
-use std::time::duration::Duration;
+use time::Duration;
 
 use routing_table::{RoutingTable, NodeInfo};
 use types::{DhtId, MessageId, closer_to_target};
