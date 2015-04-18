@@ -60,7 +60,7 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
 
-#[derive(PartialEq, Eq, Hash, Clone, RustcEncodable, RustcDecodable, PartialOrd, Ord)]
+#[derive(Default, PartialEq, Eq, Hash, Clone, RustcEncodable, RustcDecodable, PartialOrd, Ord)]
 pub struct DhtId(pub Vec<u8>);
 
 impl DhtId {
