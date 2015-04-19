@@ -40,10 +40,6 @@ Steps to compile SQLite by,
 - [x] API version 0.0.6
 - [x] Bootstrap handler implementation
 - [x] Bootstrap handler test
-- [ ] zero state network
-- [ ] Test node network (process on single machine)
-- [ ] Test node network (local area network)
-- [ ] Test node network (across digital ocean images)
 - [x] Create sort and bucket index methods 
 - [x] Implement routing table
 - [x] Test routing table 
@@ -51,21 +47,17 @@ Steps to compile SQLite by,
 - [x] Finalise sentinel in line with tests
 - [x] Implement client node
 - [ ] Test client node
-- [ ] Integrate connection manager (bootstrapping)
-- [ ] Implement routing node (handle messages , forwarding etc)
 - [x] Test sentinel 
 - [x] Implement routing message types (Connect FindNode)
 - [x] Test message types
 - [x] Implement Get Put Post messages
 - [x] Version 0.0.8
-- [ ] Implement routing node
-- [ ] Integrate with Sentinel
-- [ ] Implement NAT traversal (requires crust v0.1.0)
 - [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Move bootstrap out of routing
 - [ ] Complete Client Interface (Facade)
 - [ ] Complete Routing Node Interface to accomodate churn
 - [ ] Add caching to node interface
+- [ ] Implement routing node (100%)
 - [ ] Implement PUT in routing
 - [ ] Handle PMID Caching
 - [ ] Split Message handling
@@ -82,5 +74,10 @@ Steps to compile SQLite by,
   - [ ] Routing Client accepting key, value as string for GET/PUT
   - [ ] Local Network Test. 12 Linux, 2 OSX, 2 WIN
   - [ ] 101 Droplet test
+- [ ] zero state network
+- [ ] Test node network (process on single machine)
+- [ ] Test node network (local area network (12 linux 2 OSX 2 Win)
+- [ ] Test node network (across digital ocean images (256 nodes)
 - [ ] Version 0.1 (crates.io)
 - [ ] Address re-location (security essential)
+- [ ] Implement NAT traversal (requires crust v0.1.0)
