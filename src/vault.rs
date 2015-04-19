@@ -16,11 +16,8 @@
 #![allow(unused_variables)]
 
 use routing;
-use routing::Action;
-use routing::RoutingError;
-use routing::types::Authority;
-use routing::types::DestinationAddress;
-use routing::types::DhtId;
+use routing::{Action, RoutingError};
+use routing::types::{Authority, DestinationAddress, DhtId};
 
 use data_manager::DataManager;
 use maid_manager::MaidManager;
@@ -37,7 +34,7 @@ pub struct VaultFacade {
   nodes_in_table : Vec<DhtId>
 }
 
-impl routing::facade::Facade for VaultFacade {
+impl routing::interface::Interface for VaultFacade {
   fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
                 from_address: DhtId, data_name: Vec<u8>)->Result<Action, RoutingError> {
     let name = DhtId(data_name);

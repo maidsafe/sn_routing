@@ -20,8 +20,9 @@ mod database;
 use cbor::{ Decoder };
 use routing;
 use maidsafe_types;
-use maidsafe_types::traits::RoutingTrait;
+use routing::interface::Interface;
 use routing::types::{DhtId, CloseGroupDifference};
+use routing::message_interface::MessageInterface;
 
 type Address = DhtId;
 

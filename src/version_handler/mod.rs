@@ -14,12 +14,13 @@
 // Software.
 
 #![allow(dead_code)]
-use maidsafe_types::traits::routing_trait::RoutingTrait;
+use routing::interface::Interface;
 use routing;
 use maidsafe_types;
 
 use routing::types::{DhtId, CloseGroupDifference};
 use chunk_store::ChunkStore;
+use routing::message_interface::MessageInterface;
 
 use cbor::{ Decoder};
 
