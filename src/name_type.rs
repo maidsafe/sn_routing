@@ -95,7 +95,7 @@ impl NameType {
         false
     }
      
-    fn generate_random() -> NameType {
+    pub fn generate_random() -> NameType {
         let mut arr: [u8; NAME_TYPE_LEN] = unsafe { mem::uninitialized() };
         for i in 0..NAME_TYPE_LEN {
             arr[i] = rand::random::<u8>();
