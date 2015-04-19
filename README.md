@@ -50,8 +50,8 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [ ] Handle Churn
     - [ ] Implement Account Transfer
     - [ ] Churn Test
-- [ ] Test with client having file system feature
 - [ ] API version 0.0.9
+- [ ] Test with client having file system feature
 - [ ] Implement MpidManager
     - [ ] Complete the put route (sending message)
     - [ ] Complete the get route (checking message)
