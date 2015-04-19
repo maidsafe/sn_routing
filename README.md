@@ -46,12 +46,12 @@ Steps to compile SQLite by,
 - [x] Implement sentinel (initial)
 - [x] Finalise sentinel in line with tests
 - [x] Implement client node
-- [ ] Test client node
 - [x] Test sentinel 
 - [x] Implement routing message types (Connect FindNode)
 - [x] Test message types
 - [x] Implement Get Put Post messages
 - [x] Version 0.0.8
+- [ ] Test client node
 - [ ] Test basic facade (normal DHT Get Put with republish)
 - [ ] Move bootstrap out of routing
 - [ ] Complete Client Interface (Facade)
