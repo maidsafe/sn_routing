@@ -55,7 +55,7 @@ extern crate rustc_serialize;
 extern crate cbor;
 extern crate rand;
 extern crate time;
-extern crate sqlite3;
+extern crate rusqlite;
 extern crate crust;
 
 use sodiumoxide::crypto;

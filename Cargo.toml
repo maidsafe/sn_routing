@@ -20,7 +20,5 @@ rand = "*"
 message_filter = "*"
 lru_time_cache = "0.1.0"
 crust = "0.0.3"
-
-[dependencies.sqlite3]
-git="https://github.com/linuxfood/rustsqlite.git"
+rusqlite = "*"
 
