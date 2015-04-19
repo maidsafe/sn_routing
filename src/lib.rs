@@ -69,8 +69,10 @@ mod common_bits;
 mod sentinel;
 mod bootstrap;
 mod messages;
+pub mod name_type;
+pub mod message_interface;
 pub mod routing_node;
-pub mod facade;
+pub mod interface;
 
 use types::DhtId;
 
@@ -97,12 +99,12 @@ pub enum RoutingError {
 fn facade_implementation() {
 
   mod routing_node;
-  use facade::{Facade};
+  use interface::Interface;
   use types::{DhtId, DestinationAddress, Authority};
 
   struct MyFacade;
 
-  impl Facade for MyFacade {
+  impl Interface for MyFacade {
     fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                   from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }

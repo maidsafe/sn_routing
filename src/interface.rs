@@ -16,7 +16,7 @@
 use types::{Authority, DhtId, DestinationAddress};
 use super::{Action, RoutingError};
 
-pub trait Facade : Sync + Send {
+pub trait Interface : Sync + Send {
   /// if reply is data then we send back the response message (ie get_response )
   fn handle_get(&mut self,
                 type_id: u64,
@@ -58,7 +58,4 @@ pub trait Facade : Sync + Send {
 
   fn add_node(&mut self, node: DhtId);
   fn drop_node(&mut self, node: DhtId);
-}
-#[test]
-fn dummy()  {
 }

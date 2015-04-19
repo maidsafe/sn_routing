@@ -18,7 +18,7 @@ extern crate sodiumoxide;
 use std::sync::{Mutex, Arc, mpsc};
 use std::io::Error as IoError;
 use types;
-use facade::{Facade};
+use interface::Interface;
 use message_header;
 use messages;
 use std::thread;
@@ -75,8 +75,8 @@ impl ClientIdPacket {
 
 }
 
-pub struct RoutingClient<'a, F: Facade + 'a> {
-    facade: Arc<Mutex<F>>,
+pub struct RoutingClient<'a, F: Interface + 'a> {
+    interface: Arc<Mutex<F>>,
     connection_manager: ConnectionManager,
     id_packet: ClientIdPacket,
     bootstrap_address: (types::DhtId, Endpoint),
@@ -84,27 +84,27 @@ pub struct RoutingClient<'a, F: Facade + 'a> {
     join_guard: thread::JoinGuard<'a, ()>,
 }
 
-impl<'a, F> Drop for RoutingClient<'a, F> where F: Facade {
+impl<'a, F> Drop for RoutingClient<'a, F> where F: Interface {
     fn drop(&mut self) {
         // self.connection_manager.stop(); // TODO This should be coded in ConnectionManager once Peter
         // implements it.
     }
 }
 
-impl<'a, F> RoutingClient<'a, F> where F: Facade {
-    pub fn new(my_facade: Arc<Mutex<F>>,
+impl<'a, F> RoutingClient<'a, F> where F: Interface {
+    pub fn new(my_interface: Arc<Mutex<F>>,
                id_packet: ClientIdPacket,
                bootstrap_add: (types::DhtId, crust::Endpoint)) -> RoutingClient<'a, F> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
 
         RoutingClient {
-            facade: my_facade.clone(),
+            interface: my_interface.clone(),
             connection_manager: crust::ConnectionManager::new(tx),
             id_packet: id_packet.clone(),
             bootstrap_address: bootstrap_add.clone(),
             message_id: rand::random::<u32>(),
-            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add.0, id_packet.get_id(), my_facade)),
+            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add.0, id_packet.get_id(), my_interface)),
         }
     }
 
@@ -199,7 +199,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
         }
     }
 
-    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: types::DhtId, own_address: types::DhtId, my_facade: Arc<Mutex<F>>) {
+    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: types::DhtId, own_address: types::DhtId, my_interface: Arc<Mutex<F>>) {
         for it in rx.iter() {
             match it {
                 crust::connection_manager::Event::NewMessage(id, bytes) => {
@@ -212,8 +212,8 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
                        routing_msg.message_header.destination.reply_to.unwrap() == own_address {
                         match routing_msg.message_type {
                             messages::MessageTypeTag::GetDataResponse => {
-                                let mut facade = my_facade.lock().unwrap();
-                                facade.handle_get_response(routing_msg.message_header.source.from_node.clone(),
+                                let mut interface = my_interface.lock().unwrap();
+                                interface.handle_get_response(routing_msg.message_header.source.from_node.clone(),
                                                            Ok(routing_msg.serialised_body));
                             }
                             _ => unimplemented!(),
@@ -236,15 +236,15 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
 //     use super::*;
 //     use std::sync::{Mutex, Arc};
 //     use types::*;
-//     use facade::Facade;
+//     use interface::Interface;
 //     use Action;
 //     use RoutingError;
 //     use maidsafe_types::Random;
 //     use maidsafe_types::Maid;
 //
-//     struct TestFacade;
+//     struct TestInterface;
 //
-//     impl Facade for TestFacade {
+//     impl Interface for TestInterface {
 //         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
 //         fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
 //                       from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
@@ -266,10 +266,10 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
 //
 //     // #[test]
 //     // fn routing_client_put() {
-//     //     let facade = Arc::new(Mutex::new(TestFacade));
+//     //     let interface = Arc::new(Mutex::new(TestInterface));
 //     //     let maid = Maid::generate_random();
 //     //     let dht_id = DhtId::generate_random();
-//     //     let mut routing_client = RoutingClient::new(facade, maid, dht_id);
+//     //     let mut routing_client = RoutingClient::new(interface, maid, dht_id);
 //     //     let name = DhtId::generate_random();
 //     //     let content = generate_random(1024);
 //     //

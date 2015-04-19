@@ -20,8 +20,7 @@ use crust;
 use message_filter::MessageFilter;
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::{Receiver};
-use facade::*;
-use super::*;
+use interface::Interface;
 use rand;
 use std::net::{SocketAddr};
 use std::collections::HashSet;
@@ -31,6 +30,7 @@ use time::Duration;
 
 use routing_table::{RoutingTable, NodeInfo};
 use types::{DhtId, MessageId, closer_to_target};
+use types;
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -58,8 +58,8 @@ type Bytes             = Vec<u8>;
 type RecvResult = Result<(),()>;
 
 /// DHT node
-pub struct RoutingNode<F: Facade> {
-    facade: Arc<Mutex<F>>,
+pub struct RoutingNode<F: Interface> {
+    interface: Arc<Mutex<F>>,
     pmid: types::Pmid,
     own_id: DhtId,
     event_input: Receiver<Event>,
@@ -73,8 +73,8 @@ pub struct RoutingNode<F: Facade> {
     filter: MessageFilter<types::FilterType>,
 }
 
-impl<F> RoutingNode<F> where F: Facade {
-    pub fn new(id: DhtId, my_facade: F) -> RoutingNode<F> {
+impl<F> RoutingNode<F> where F: Interface {
+    pub fn new(id: DhtId, my_interface: F) -> RoutingNode<F> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
@@ -84,7 +84,7 @@ impl<F> RoutingNode<F> where F: Facade {
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
         let accepting_on = cm.start_listening(ports_and_protocols).ok();
 
-        RoutingNode { facade: Arc::new(Mutex::new(my_facade)),
+        RoutingNode { interface: Arc::new(Mutex::new(my_interface)),
                       pmid : pmid,
                       own_id : own_id.clone(),
                       event_input: event_input,
@@ -392,18 +392,18 @@ impl<F> RoutingNode<F> where F: Facade {
     }
 
     fn handle_get_data_response(get_data_response: GetDataResponse, original_header: MessageHeader) {
-        // need to call facade handle_get_response
+        // need to call interface handle_get_response
         unimplemented!();
     }
 
     // // for clients, below methods are required
     fn handle_put_data(put_data: PutData, original_header: MessageHeader) {
-        // need to call facade handle_get_response
+        // need to call interface handle_get_response
         unimplemented!();
     }
 
     fn handle_put_data_response(put_data_response: PutDataResponse, original_header: MessageHeader) {
-        // need to call facade handle_put_response
+        // need to call interface handle_put_response
         unimplemented!();
     }
 
@@ -585,16 +585,16 @@ impl<F> RoutingNode<F> where F: Facade {
 #[cfg(test)]
 mod test {
     //use routing_node::{RoutingNode};
-    use facade::{Facade};
+    use interface::*;
     use types::{Authority, DhtId, DestinationAddress};
     use super::super::{Action, RoutingError};
     //use std::thread;
     //use std::net::{SocketAddr};
     //use std::str::FromStr;
 
-    struct NullFacade;
+    struct NullInterface;
 
-    impl Facade for NullFacade {
+    impl Interface for NullInterface {
       fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
       fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                     from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
@@ -608,9 +608,9 @@ mod test {
 
     //#[test]
     //fn test_routing_node() {
-    //    let f1 = NullFacade;
-    //    let f2 = NullFacade;
-    //    let f3 = NullFacade;
+    //    let f1 = NullInterface;
+    //    let f2 = NullInterface;
+    //    let f3 = NullInterface;
     //    let n1 = RoutingNode::new(DhtId::generate_random(), f1);
     //    let n2 = RoutingNode::new(DhtId::generate_random(), f2);
     //    let n3 = RoutingNode::new(DhtId::generate_random(), f3);
@@ -622,7 +622,7 @@ mod test {
     //    let n2_ep = n2.accepting_on().unwrap();
     //    let n3_ep = n3.accepting_on().unwrap();
 
-    //    fn run_node(n: RoutingNode<NullFacade>, my_ep: SocketAddr, his_ep: SocketAddr)
+    //    fn run_node(n: RoutingNode<NullInterface>, my_ep: SocketAddr, his_ep: SocketAddr)
     //        -> thread::JoinHandle
     //    {
     //        thread::spawn(move || {
