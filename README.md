@@ -57,10 +57,30 @@ Steps to compile SQLite by,
 - [x] Implement routing message types (Connect FindNode)
 - [x] Test message types
 - [x] Implement Get Put Post messages
+- [x] Version 0.0.8
 - [ ] Implement routing node
-- [ ] Version 0.0.8
 - [ ] Integrate with Sentinel
 - [ ] Implement NAT traversal (requires crust v0.1.0)
 - [ ] Test basic facade (normal DHT Get Put with republish)
+- [ ] Move bootstrap out of routing
+- [ ] Complete Client Interface (Facade)
+- [ ] Complete Routing Node Interface to accomodate churn
+- [ ] Add caching to node interface
+- [ ] Implement PUT in routing
+- [ ] Handle PMID Caching
+- [ ] Split Message handling
+- [ ] Check Authority (see Jira 954)
+- [ ] Implement routing connections management
+- [ ] Sentinel:
+  - [ ] Handover existing implementation
+  - [ ] Account transfer merge
+  - [ ] Group response merge
+  - [ ] Signature checks
+  - [ ] QA Sentinel including code review from system design perspective
+- [ ] Examples:
+  - [ ] Routing Node with type erased cache
+  - [ ] Routing Client accepting key, value as string for GET/PUT
+  - [ ] Local Network Test. 12 Linux, 2 OSX, 2 WIN
+  - [ ] 101 Droplet test
 - [ ] Version 0.1 (crates.io)
 - [ ] Address re-location (security essential)
