@@ -46,6 +46,15 @@ impl Vault {
   }
 }
 
+fn main () {
+    
+let vault = Vault::new();
+vault.start_vault();
+    
+}
+
+
+
 #[test]
 fn it_works() {
  assert_eq!(always_true(), true);
