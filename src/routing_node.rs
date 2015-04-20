@@ -145,11 +145,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 crust::Event::LostConnection(endpoint) => {
                     self.handle_lost_connection(endpoint);
                 },
-                crust::Event::FailedToConnect(endpoints) => {
-                    for endpoint in endpoints.iter() {
-                        self.handle_lost_connection(endpoint.clone());
-                    }
-                }
             }
         }
     }
@@ -161,7 +156,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
-        if self.all_connections.0.contains_key(&peer_endpoint) || 
+        if self.all_connections.0.contains_key(&peer_endpoint) ||
            self.pending_connections.contains(&peer_endpoint) {
             // ignore further request once received request or has added
             return;
@@ -178,7 +173,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn handle_accept(&mut self, peer_endpoint: Endpoint, peer_id: DhtId, bytes: Bytes) {
         // println!("In handle accept of {:?}", self.own_id);
-        if self.all_connections.0.contains_key(&peer_endpoint) || 
+        if self.all_connections.0.contains_key(&peer_endpoint) ||
            !self.pending_connections.contains(&peer_endpoint) {
             // ignore further request once added or not in sequence (not recorded as pending)
             return;
@@ -325,7 +320,7 @@ impl<F> RoutingNode<F> where F: Interface {
            return Ok(())
         }
 
-        // The following code block is no longer required due to the changes in crust 
+        // The following code block is no longer required due to the changes in crust
         // let success_msg = self.construct_success_msg();
         // let msg = self.encode(&success_msg);
         // let _ = self.connection_manager.connect(msg);
