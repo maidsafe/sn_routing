@@ -44,6 +44,7 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
 /// assert!(convert_to_array(data, 3).is_none());
 /// ```
 macro_rules! convert_to_array {
+// see http://www.reddit.com/r/rust/comments/2o4v5c/method_visibility_and_macros/
     ($container:ident, $size:expr) => {{
         if $container.len() != $size {
             None
