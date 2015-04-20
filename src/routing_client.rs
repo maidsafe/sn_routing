@@ -31,7 +31,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 type ConnectionManager = crust::ConnectionManager;
 type Event             = crust::Event;
-type Endpoint          = crust::Endpoint;
+pub use crust::Endpoint;
 
 pub enum CryptoError {
     Unknown
