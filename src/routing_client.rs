@@ -22,10 +22,12 @@ use interface::Interface;
 use message_header;
 use messages;
 use std::thread;
+use cbor::CborTagEncode;
 use cbor;
 use crust;
 use rand;
 use sodiumoxide::crypto;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 type ConnectionManager = crust::ConnectionManager;
 type Event             = crust::Event;
@@ -73,6 +75,68 @@ impl ClientIdPacket {
         return crypto::asymmetricbox::open(&data, &nonce, &from, &self.secret_keys.1).ok_or(CryptoError::Unknown);
     }
 
+}
+
+impl Encodable for ClientIdPacket {
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        let (crypto::sign::PublicKey(pub_sign_vec), crypto::asymmetricbox::PublicKey(pub_asym_vec)) = self.public_keys;
+        let (crypto::sign::SecretKey(sec_sign_vec), crypto::asymmetricbox::SecretKey(sec_asym_vec)) = self.secret_keys;
+
+        CborTagEncode::new(5483_001, &(
+            pub_sign_vec.as_ref(),
+            pub_asym_vec.as_ref(),
+            sec_sign_vec.as_ref(),
+            sec_asym_vec.as_ref())).encode(e)
+    }
+}
+
+///
+/// Convert a container to an array. If the container is not the exact size specified, None is
+/// returned. Otherwise, all of the elements are moved into the array.
+///
+/// ```
+/// let mut data = Vec::<usize>::new();
+/// data.push(1);
+/// data.push(2);
+/// assert!(convert_to_array(data, 2).is_some());
+/// assert!(convert_to_array(data, 3).is_none());
+/// ```
+macro_rules! convert_to_array {
+    ($container:ident, $size:expr) => {{
+        if $container.len() != $size {
+            None
+        } else {
+            use std::mem;
+            let mut arr : [_; $size] = unsafe { mem::uninitialized() };
+            for element in $container.into_iter().enumerate() {
+                let old_val = mem::replace(&mut arr[element.0], element.1);
+                unsafe { mem::forget(old_val) };
+            }
+            Some(arr)
+        }
+    }};
+}
+
+impl Decodable for ClientIdPacket {
+    fn decode<D: Decoder>(d: &mut D)-> Result<ClientIdPacket, D::Error> {
+        try!(d.read_u64());
+        let (pub_sign_vec, pub_asym_vec, sec_sign_vec, sec_asym_vec) : (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) = try!(Decodable::decode(d));
+
+        let pub_sign_arr = convert_to_array!(pub_sign_vec, crypto::sign::PUBLICKEYBYTES);
+        let pub_asym_arr = convert_to_array!(pub_asym_vec, crypto::asymmetricbox::PUBLICKEYBYTES);
+        let sec_sign_arr = convert_to_array!(sec_sign_vec, crypto::sign::SECRETKEYBYTES);
+        let sec_asym_arr = convert_to_array!(sec_asym_vec, crypto::asymmetricbox::SECRETKEYBYTES);
+
+        if pub_sign_arr.is_none() || pub_asym_arr.is_none() || sec_sign_arr.is_none() || sec_asym_arr.is_none() {
+            return Err(d.error("Bad Maid size"));
+        }
+
+        let pub_keys = (crypto::sign::PublicKey(pub_sign_arr.unwrap()),
+                        crypto::asymmetricbox::PublicKey(pub_asym_arr.unwrap()));
+        let sec_keys = (crypto::sign::SecretKey(sec_sign_arr.unwrap()),
+                        crypto::asymmetricbox::SecretKey(sec_asym_arr.unwrap()));
+        Ok(ClientIdPacket{ public_keys: pub_keys, secret_keys: sec_keys })
+    }
 }
 
 pub struct RoutingClient<'a, F: Interface + 'a> {
