@@ -55,7 +55,6 @@ extern crate rustc_serialize;
 extern crate cbor;
 extern crate rand;
 extern crate time;
-extern crate rusqlite;
 extern crate crust;
 
 use sodiumoxide::crypto;
@@ -67,7 +66,6 @@ mod routing_table;
 mod accumulator;
 mod common_bits;
 mod sentinel;
-mod bootstrap;
 mod messages;
 pub mod name_type;
 pub mod message_interface;
