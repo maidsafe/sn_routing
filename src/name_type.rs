@@ -44,7 +44,6 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
 /// assert!(convert_to_array(data, 3).is_none());
 /// ```
 macro_rules! convert_to_array {
-// see http://www.reddit.com/r/rust/comments/2o4v5c/method_visibility_and_macros/
     ($container:ident, $size:expr) => {{
         if $container.len() != $size {
             None
@@ -52,7 +51,8 @@ macro_rules! convert_to_array {
             use std::mem;
             let mut arr : [_; $size] = unsafe { mem::uninitialized() };
             for element in $container.into_iter().enumerate() {
-                let _ = mem::replace(&mut arr[element.0], element.1);
+                let old_val = mem::replace(&mut arr[element.0], element.1);
+                unsafe { mem::forget(old_val) };
             }
             Some(arr)
         }
