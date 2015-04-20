@@ -1,3 +1,5 @@
 Version 0.0.9
 Added encodable/decodable for ClientIdPacket
 Version 0.1.0
+Re-expose crust::Endpoint as routing::routing_client::Endpoint
+Version 0.1.1
