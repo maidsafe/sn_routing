@@ -27,6 +27,7 @@ use types::RoutingTrait;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
+use types::{DhtId, PublicSignKey};
 
 pub type ResultType = (message_header::MessageHeader,
                        types::MessageTypeTag, types::SerialisedMessage);
@@ -150,6 +151,18 @@ impl<'a> Sentinel<'a> {
     None
   }
 
+  fn update_key_map(key_map: &mut HashMap<DhtId, Vec<PublicSignKey>>, addr: DhtId, key: PublicSignKey) {
+      if !key_map.contains_key(&addr) {
+          key_map.insert(addr, vec![key]);
+      }
+      else {
+          let mut public_keys = key_map.get_mut(&addr).unwrap();
+          if !public_keys.contains(&key) {
+              public_keys.push(key);
+          }
+      }
+  }
+
   fn validate_node(&self, messages: Vec<accumulator::Response<ResultType>>,
                    keys: Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
     if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
@@ -160,17 +173,7 @@ impl<'a> Sentinel<'a> {
     for node_key in keys.iter() {
       let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
       let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
-      if !keys_map.contains_key(&key_response.address) {
-        keys_map.insert(key_response.address,
-                        vec![key_response.public_sign_key]);
-      } else {
-        let public_keys = keys_map.get_mut(&key_response.address);
-        let mut public_keys_holder = public_keys.unwrap();
-        let target_key = key_response.public_sign_key;
-        if !public_keys_holder.contains(&target_key) {
-          public_keys_holder.push(target_key);
-        }
-      }
+      Sentinel::update_key_map(&mut keys_map, key_response.address, key_response.public_sign_key);
     }
     let mut pub_key_list : Vec<types::PublicSignKey> = Vec::new();
     for (_, value) in keys_map.iter() {
@@ -203,19 +206,8 @@ impl<'a> Sentinel<'a> {
       // deserialise serialised message GetGroupKeyResponse
       let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
       let group_key_response: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
-      // public_key = (DhtId, PublicSignKey)
       for public_sign_key in group_key_response.public_sign_keys.iter() {
-        if !keys_map.contains_key(&public_sign_key.0) {
-          keys_map.insert(public_sign_key.0.clone(), vec![public_sign_key.1.clone()]);
-        } else {
-          let public_sign_keys = keys_map.get_mut(&public_sign_key.0);
-          let mut public_keys_holder = public_sign_keys.unwrap();
-          let target_key = public_sign_key.1.clone();
-          if !public_keys_holder.contains(&target_key) {
-            // flatten, unless different key found for already encountered Address.
-            public_keys_holder.push(target_key);
-          }
-        }
+          Sentinel::update_key_map(&mut keys_map, public_sign_key.0.clone(), public_sign_key.1.clone());
       }
     }
     // TODO(mmoadeli): For the time being, we assume that no invalid public is received
