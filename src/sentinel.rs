@@ -165,16 +165,15 @@ impl<'a> Sentinel<'a> {
   }
 
   fn verify_result(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
-      let signature = response.0.get_signature();
+      response.0.get_signature().and_then(|signature| {
+        let is_correct = crypto::sign::verify_detached(
+                           &signature.get_crypto_signature(),
+                           &response.2[..],
+                           &pub_key.get_crypto_public_sign_key());
 
-      // FIXME: Dangerous unwrap.
-      let is_correct = crypto::sign::verify_detached(
-                         &signature.unwrap().get_crypto_signature(),
-                         &response.2[..],
-                         &pub_key.get_crypto_public_sign_key());
-
-      if !is_correct { return None; }
-      Some(response.clone())
+        if !is_correct { return None; }
+        Some(response.clone())
+      })
   }
 
   fn validate_node(&self,
