@@ -177,28 +177,31 @@ impl<'a> Sentinel<'a> {
       Some(response.clone())
   }
 
-  fn validate_node(&self, messages: Vec<accumulator::Response<ResultType>>,
-                   keys: Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
-    if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
-      return Vec::new();
-    }
+  fn validate_node(&self,
+                   messages: Vec<accumulator::Response<ResultType>>,
+                   keys:     Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+      if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
+        return Vec::new();
+      }
 
-    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
-    for node_key in keys.iter() {
-      let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
-      let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
-      Sentinel::update_key_map(&mut keys_map, key_response.address, key_response.public_sign_key);
-    }
+      let mut keys_map = HashMap::<DhtId, Vec<PublicSignKey>>::new();
 
-    // FIXME: We should take the majority of same keys and
-    // if there is QUORUM_SIZE of them, use that.
-    if !has_single_entry(&keys_map) { return Vec::new(); }
-    let pub_key = &keys_map.iter().next().unwrap().1[0];
+      for node_key in keys.iter() {
+        Sentinel::decode(&node_key.value.2)
+            .map(|GetClientKeyResponse{address:addr, public_sign_key:key}| {
+                Sentinel::update_key_map(&mut keys_map, addr, key)
+            });
+      }
 
-    messages.iter().filter_map(
-        |&accumulator::Response{address:ref addr, value:ref result}|
-            Sentinel::verify_result(result, pub_key))
-        .collect()
+      // FIXME: We should take the majority of same keys and
+      // if there is QUORUM_SIZE of them, use that.
+      if !has_single_entry(&keys_map) { return Vec::new(); }
+      let pub_key = &keys_map.iter().next().unwrap().1[0];
+
+      messages.iter().filter_map(
+          |&accumulator::Response{address:ref addr, value:ref result}|
+              Sentinel::verify_result(result, pub_key))
+          .collect()
   }
 
   fn validate_group(&self, messages:  Vec<accumulator::Response<ResultType>>,
