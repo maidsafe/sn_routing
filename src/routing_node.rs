@@ -144,11 +144,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 // },
                 crust::Event::LostConnection(endpoint) => {
                     self.handle_lost_connection(endpoint);
-                },
-                crust::Event::FailedToConnect(endpoints) => {
-                    for endpoint in endpoints.iter() {
-                        self.handle_lost_connection(endpoint.clone());
-                    }
                 }
             }
         }
