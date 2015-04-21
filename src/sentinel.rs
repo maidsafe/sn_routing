@@ -181,6 +181,7 @@ impl<'a> Sentinel<'a> {
     if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
       return Vec::new();
     }
+
     let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
     for node_key in keys.iter() {
       let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
@@ -188,8 +189,8 @@ impl<'a> Sentinel<'a> {
       Sentinel::update_key_map(&mut keys_map, key_response.address, key_response.public_sign_key);
     }
 
-    // FIXME: Is this correct? Shouldn't we take the majority of same keys and
-    // if there is QUORUM_SIZE of them, use that?
+    // FIXME: We should take the majority of same keys and
+    // if there is QUORUM_SIZE of them, use that.
     if !has_single_entry(&keys_map) { return Vec::new(); }
     let pub_key = &keys_map.iter().next().unwrap().1[0];
 
