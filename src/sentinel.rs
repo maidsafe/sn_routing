@@ -163,36 +163,40 @@ impl<'a> Sentinel<'a> {
       }
   }
 
+  fn verify_result(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
+      let signature = response.0.get_signature();
+
+      // FIXME: Dangerous unwrap.
+      let is_correct = crypto::sign::verify_detached(
+                         &signature.unwrap().get_crypto_signature(),
+                         &response.2[..],
+                         &pub_key.get_crypto_public_sign_key());
+
+      if !is_correct { return None; }
+      Some(response.clone())
+  }
+
   fn validate_node(&self, messages: Vec<accumulator::Response<ResultType>>,
                    keys: Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
     if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
-      return Vec::<ResultType>::new();
+      return Vec::new();
     }
-    let mut verified_messages : Vec<ResultType> = Vec::new();
     let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
     for node_key in keys.iter() {
       let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
       let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
       Sentinel::update_key_map(&mut keys_map, key_response.address, key_response.public_sign_key);
     }
-    let mut pub_key_list : Vec<types::PublicSignKey> = Vec::new();
-    for (_, value) in keys_map.iter() {
-      pub_key_list = value.clone();
-      break;
-    }
-    if keys_map.len() != 1 || pub_key_list.len() != 1 {
-      return Vec::<ResultType>::new();
-    }
-    // let public_sign_key = pub_key_list[0];
-    for message in messages.iter() {
-      let signature = message.value.0.get_signature();
-      let ref msg = message.value.2;
-      if crypto::sign::verify_detached(&signature.unwrap().get_crypto_signature(),
-                                       &msg[..], &pub_key_list[0].get_crypto_public_sign_key()) {
-        verified_messages.push(message.value.clone());
-      }
-    }
-    verified_messages
+
+    // FIXME: Is this correct? Shouldn't we take the majority of same keys and
+    // if there is QUORUM_SIZE of them, use that?
+    if !has_single_entry(&keys_map) { return Vec::new(); }
+    let pub_key = &keys_map.iter().next().unwrap().1[0];
+
+    messages.iter().filter_map(
+        |&accumulator::Response{address:ref addr, value:ref result}|
+            Sentinel::verify_result(result, pub_key))
+        .collect()
   }
 
   fn validate_group(&self, messages:  Vec<accumulator::Response<ResultType>>,
@@ -294,6 +298,9 @@ impl<'a> Sentinel<'a> {
   }
 }
 
+fn has_single_entry<T>(key_map: &HashMap<DhtId, Vec<T>>) -> bool {
+    key_map.len() == 1 && key_map.iter().next().unwrap().1.len() == 1
+}
 
 #[cfg(test)]
 mod test {
@@ -842,3 +849,4 @@ mod test {
   assert_eq!(1, trace_get_keys.count_get_group_key_calls(&embedded_signature_group.get_group_address()));
   }
 }
+
