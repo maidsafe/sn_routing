@@ -27,8 +27,9 @@ pub struct FindGroupResponse {
 
 impl FindGroupResponse {
     pub fn generate_random() -> FindGroupResponse {
-        let mut vec: Vec<types::PublicPmid> = Vec::with_capacity(99);
-        for i in 0..99 {
+        let total = types::GROUP_SIZE as usize + 20;
+        let mut vec: Vec<types::PublicPmid> = Vec::with_capacity(total);
+        for i in 0..total {
             vec.push(types::PublicPmid::generate_random());
         }
 
@@ -108,6 +109,7 @@ impl Decodable for FindGroupResponse {
 mod test {
     use super::*;
     use cbor; 
+    use types;
     
     #[test]
     fn find_group_response_serialisation() {
@@ -120,5 +122,44 @@ mod test {
         let obj_after: FindGroupResponse = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
+    }
+
+    #[test]
+    fn merge() {
+        let obj = FindGroupResponse::generate_random();
+        assert!(obj.group.len() >= types::GROUP_SIZE as usize);
+        // if group size changes, reimplement the below
+        assert!(types::GROUP_SIZE >= 13);
+
+        // pick random keys
+        let mut keys = Vec::<types::PublicPmid>::with_capacity(7);
+        keys.push(obj.group[3].clone());
+        keys.push(obj.group[5].clone());
+        keys.push(obj.group[7].clone());
+        keys.push(obj.group[8].clone());
+        keys.push(obj.group[9].clone());
+        keys.push(obj.group[10].clone());
+        keys.push(obj.group[13].clone());
+
+        let mut responses = Vec::<FindGroupResponse>::with_capacity(4);
+        for _ in 0..4 {
+            let mut response = FindGroupResponse::generate_random();
+            response.target_id = obj.target_id.clone();
+            response.group[1] = keys[0].clone();
+            response.group[4] = keys[1].clone();
+            response.group[6] = keys[2].clone();
+            response.group[0] = keys[3].clone();
+            response.group[5] = keys[4].clone();
+            response.group[9] = keys[5].clone();
+            response.group[10] = keys[6].clone();
+            responses.push(response);
+        }
+
+        let merged_obj = obj.merge(&responses);
+        assert!(merged_obj.is_some());
+        let merged_response = merged_obj.unwrap();
+        for i in 0..7 {
+            assert!(keys.iter().find(|a| **a == merged_response.group[i]).is_some());
+        }
     }
 }
