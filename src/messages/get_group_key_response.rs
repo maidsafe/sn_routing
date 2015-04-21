@@ -31,8 +31,9 @@ pub struct GetGroupKeyResponse {
 
 impl GetGroupKeyResponse {
     pub fn generate_random() -> GetGroupKeyResponse {
-        let mut vec: Vec<(types::DhtId, types::PublicSignKey)> = Vec::with_capacity(30);
-        for i in 0..30 {
+        let total: usize = types::GROUP_SIZE as usize + 7;
+        let mut vec: Vec<(types::DhtId, types::PublicSignKey)> = Vec::with_capacity(total);
+        for i in 0..total {
             vec.push((types::DhtId::generate_random(), types::PublicSignKey::generate_random()));
         }
         GetGroupKeyResponse {
@@ -106,6 +107,7 @@ impl Decodable for GetGroupKeyResponse {
 
 #[cfg(test)]
 mod test {
+    use types;
     use super::*;
     use cbor; 
     
@@ -120,5 +122,44 @@ mod test {
         let obj_after: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
+    }
+
+    #[test]
+    fn merge() {
+        let obj = GetGroupKeyResponse::generate_random();
+        assert!(obj.public_sign_keys.len() >= types::GROUP_SIZE as usize);
+        // if group size changes, reimplement the below
+        assert!(types::GROUP_SIZE >= 13);
+
+        // pick random keys
+        let mut keys = Vec::<(types::DhtId, types::PublicSignKey)>::with_capacity(7);
+        keys.push(obj.public_sign_keys[3].clone());
+        keys.push(obj.public_sign_keys[5].clone());
+        keys.push(obj.public_sign_keys[7].clone());
+        keys.push(obj.public_sign_keys[8].clone());
+        keys.push(obj.public_sign_keys[9].clone());
+        keys.push(obj.public_sign_keys[10].clone());
+        keys.push(obj.public_sign_keys[13].clone());
+
+        let mut responses = Vec::<GetGroupKeyResponse>::with_capacity(4);
+        for _ in 0..4 {
+            let mut response = GetGroupKeyResponse::generate_random();
+            response.target_id = obj.target_id.clone();
+            response.public_sign_keys[1] = keys[0].clone();
+            response.public_sign_keys[4] = keys[1].clone();
+            response.public_sign_keys[6] = keys[2].clone();
+            response.public_sign_keys[0] = keys[3].clone();
+            response.public_sign_keys[5] = keys[4].clone();
+            response.public_sign_keys[9] = keys[5].clone();
+            response.public_sign_keys[10] = keys[6].clone();
+            responses.push(response);
+        }
+
+        let merged_obj = obj.merge(&responses);
+        assert!(merged_obj.is_some());
+        let merged_response = merged_obj.unwrap();
+        for i in 0..7 {
+            assert!(keys.iter().find(|a| **a == merged_response.public_sign_keys[i]).is_some());
+        }
     }
 }
