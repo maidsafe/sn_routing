@@ -27,10 +27,11 @@ use types::RoutingTrait;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
-use types::{DhtId, PublicSignKey};
+use types::{DhtId, PublicSignKey, SerialisedMessage};
+use rustc_serialize::{Decodable, Encodable};
 
 pub type ResultType = (message_header::MessageHeader,
-                       types::MessageTypeTag, types::SerialisedMessage);
+                       types::MessageTypeTag, SerialisedMessage);
 
 type NodeKeyType = (types::NodeAddress, types::MessageId);
 type GroupKeyType = (types::GroupAddress, types::MessageId);
@@ -239,31 +240,43 @@ impl<'a> Sentinel<'a> {
     }
   }
 
+  fn decode<T: Decodable>(data: &SerialisedMessage) -> Option<T> {
+      let mut decoder = cbor::Decoder::from_bytes(data.clone());
+      decoder.decode().next().and_then(|result_msg| result_msg.ok())
+  }
+
+  fn encode<T: Encodable>(value: T) -> SerialisedMessage {
+    let mut e = cbor::Encoder::from_memory();
+    let _ = e.encode(&[&value]); // FIXME: Panic when failed to encode?
+    e.as_bytes().to_vec()
+  }
+
   fn resolve(&self, verified_messages : Vec<ResultType>, _ : bool) -> Option<ResultType> {
     if verified_messages.len() < types::QUORUM_SIZE as usize {
       return None;
     }
+
     if verified_messages[0].1 == types::MessageTypeTag::FindGroupResponse {
-      let mut decoded_responses : Vec<FindGroupResponse>
-        = Vec::with_capacity(verified_messages.len());
-      let mut d = cbor::Decoder::from_bytes(verified_messages[0].2.clone());
-      let first_find_group_response_message : FindGroupResponse = d.decode().next().unwrap().unwrap();
-      // skip first messages, as we will merge into it
-      for message in verified_messages.iter().skip(1) {
-        let mut d = cbor::Decoder::from_bytes(message.2.clone());
-        let find_group_response_message : FindGroupResponse = d.decode().next().unwrap().unwrap();
-        decoded_responses.push(find_group_response_message);
-      }
-      let merged_responses = match first_find_group_response_message.merge(&decoded_responses) {
-        Some(merged_responses) => merged_responses,
-        None => panic!("No merged group confirmed.") // return None;
-      };
-      let mut e = cbor::Encoder::from_memory();
-      let _ = e.encode(&[&merged_responses]);
-      let serialised_merged_message_response = e.as_bytes().to_vec();
-      return Some((verified_messages[0].0.clone(),
-                  verified_messages[0].1.clone(),
-                  serialised_merged_message_response));
+        let decoded_responses = verified_messages.iter()
+            .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
+            .collect::<Vec<_>>();
+
+        if decoded_responses.len() == 0 {
+            // None of the messages was successfully decoded.
+            return None;
+        }
+
+        let first = decoded_responses[0].clone();
+        let rest  = decoded_responses.iter().skip(1).map(|a|a.clone()).collect::<Vec<_>>();
+
+        let merged_responses = match first.merge(&rest) {
+          Some(merged_responses) => merged_responses,
+          None => panic!("No merged group confirmed.") // return None;
+        };
+
+        return Some((verified_messages[0].0.clone(),
+                     verified_messages[0].1.clone(),
+                     Sentinel::encode(merged_responses)));
     // if part addresses non-account transfer message types, where an exact match is required
     } else if verified_messages[0].1 != types::MessageTypeTag::AccountTransfer {
       for index in 0..verified_messages.len() {
