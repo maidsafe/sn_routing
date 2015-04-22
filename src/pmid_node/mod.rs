@@ -15,16 +15,15 @@
 
 #![allow(dead_code)]
 
-extern crate routing;
-extern crate maidsafe_types;
-
 use chunk_store::ChunkStore;
-use self::maidsafe_types::traits::RoutingTrait;
-use self::routing::types::DhtId;
+use routing::interface::Interface;
+use routing::types::{DhtId, CloseGroupDifference};
+use routing;
+use maidsafe_types;
+use routing::message_interface::MessageInterface;
 
 use cbor::{ Decoder};
 
-type CloseGroupDifference = self::routing::types::CloseGroupDifference;
 
 pub struct PmidNode {
   chunk_store_ : ChunkStore
@@ -65,6 +64,7 @@ impl PmidNode {
   }
 
 }
+
 
 #[cfg(test)]
 mod test {
@@ -109,3 +109,4 @@ mod test {
     }
   }
 }
+

@@ -15,14 +15,13 @@
 
 #![allow(dead_code)]
 
-extern crate lru_time_cache;
-extern crate routing;
+use routing;
+use routing::message_interface::MessageInterface;
+use lru_time_cache::LruCache;
 
-use self::lru_time_cache::LruCache;
-
-type Identity = self::routing::types::DhtId; // name of the chunk
-type PmidNode = self::routing::types::PmidNode;
-type PmidNodes = self::routing::types::PmidNodes;
+type Identity = routing::types::DhtId; // name of the chunk
+use routing::types::PmidNode;
+use routing::types::PmidNodes;
 
 pub struct DataManagerDatabase {
   storage : LruCache<Identity, PmidNodes>
@@ -84,15 +83,16 @@ impl DataManagerDatabase {
 
 #[cfg(test)]
 mod test {
-  extern crate cbor;
-  extern crate maidsafe_types;
-  extern crate rand;
-  extern crate routing;
+  use cbor;
+  use maidsafe_types;
+  use rand;
+  use routing;
   use super::*;
-  use self::maidsafe_types::ImmutableData;
-  use self::maidsafe_types::NameType;
-  use self::maidsafe_types::traits::RoutingTrait;
-  use self::routing::types::{DhtId, generate_random_vec_u8};
+  use routing::message_interface::MessageInterface;
+  use maidsafe_types::ImmutableData;
+  use routing::name_type::NameType;
+  use routing::interface::Interface;
+  use routing::types::{DhtId, generate_random_vec_u8};
 
   #[test]
   fn exist() {

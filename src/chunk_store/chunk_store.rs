@@ -15,9 +15,7 @@
 
 #![allow(dead_code)]
 
-extern crate routing;
-
-use self::routing::types::DhtId;
+use routing::types::DhtId;
 
 pub struct Entry {
     name: DhtId,

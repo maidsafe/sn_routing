@@ -1,24 +1,24 @@
 #[cfg(test)]
 mod test {
-  extern crate rand;
-  extern crate maidsafe_types;
-  extern crate routing;
+  use rand;
+  use maidsafe_types;
+  use routing;
 
 
   use rand::{thread_rng, Rng};
   use chunk_store::ChunkStore;
-  use self::routing::types::DhtId;
+  use routing::types::DhtId;
 
   static ONE_KB: usize = 1024;
 
   static K_DEFAULT_MAX_DISK_USAGE: usize = 4 * 1024;// // 4 * OneKB;
 
-  struct NameValueContainer(Vec<(maidsafe_types::NameType, String)>);
+  struct NameValueContainer(Vec<(routing::name_type::NameType, String)>);
 
-  fn get_random_name_type() ->  maidsafe_types::NameType {
+  fn get_random_name_type() ->  routing::name_type::NameType {
       let mut v = [0u8; 64];
       thread_rng().fill_bytes(&mut v);
-      maidsafe_types::NameType(v)
+      routing::name_type::NameType(v)
   }
 
   fn get_random_non_empty_string(length: usize) -> String {
@@ -31,7 +31,7 @@ mod test {
 
   fn add_random_name_value_pairs(number: usize, size: usize) -> NameValueContainer {
       let mut i = 0usize;
-      let mut container: Vec<(maidsafe_types::NameType, String)> = Vec::with_capacity(number);
+      let mut container: Vec<(routing::name_type::NameType, String)> = Vec::with_capacity(number);
       loop {
           container.push((get_random_name_type(), get_random_non_empty_string(size)));
           i += 1; // i++; is not compiling
@@ -148,9 +148,9 @@ mod test {
       let name_value_container = chunk_store_utest.populate_chunk_store(num_entries, num_disk_entries).0;
       let name = DhtId::generate_random();
       let value = get_random_non_empty_string(2 * ONE_KB);
-      // let first_name: maidsafe_types::NameType = name_value_container[0].0.clone();
+      // let first_name: routing::name_type::NameType = name_value_container[0].0.clone();
       name_value_container[0].0.clone();
-      // let second_name: maidsafe_types::NameType = name_value_container[1].0.clone();
+      // let second_name: routing::name_type::NameType = name_value_container[1].0.clone();
       name_value_container[1].0.clone();
       chunk_store_utest.put(name, value.into_bytes());
   }

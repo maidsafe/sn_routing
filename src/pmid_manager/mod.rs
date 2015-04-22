@@ -15,13 +15,11 @@
 
 #![allow(dead_code)]
 
-extern crate routing;
-extern crate maidsafe_types;
-
 mod database;
-
-use self::routing::types::DhtId;
-use self::routing::types::DestinationAddress;
+use routing;
+use routing::types::DhtId;
+use routing::types::DestinationAddress;
+use routing::message_interface::MessageInterface;
 
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
@@ -45,18 +43,18 @@ impl PmidManager {
 
 #[cfg(test)]
 mod test {
-  extern crate cbor;
-  extern crate maidsafe_types;
-  extern crate routing;
+  use cbor;
+  use maidsafe_types;
+  use routing;
   use super::*;
-  use self::maidsafe_types::*;
-  use self::routing::types::*;
+  use maidsafe_types::*;
+  use routing::types::*;
 
   #[test]
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
     let dest = DestinationAddress { dest: DhtId::generate_random(), reply_to: None };
-    let name = NameType([3u8; 64]);
+    let name = routing::name_type::NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);

@@ -15,19 +15,16 @@
 
 #![allow(dead_code)]
 
-extern crate routing;
-extern crate maidsafe_types;
-
 mod database;
 
 use std::cmp;
-
-use self::maidsafe_types::traits::RoutingTrait;
-use self::routing::types::{DhtId, closer_to_target};
-
+use routing;
+use maidsafe_types;
+use routing::interface::Interface;
+use routing::types::{DhtId, closer_to_target, CloseGroupDifference};
+use routing::message_interface::MessageInterface;
 use cbor::{ Decoder };
 
-type CloseGroupDifference = self::routing::types::CloseGroupDifference;
 type Address = DhtId;
 
 pub static PARALLELISM: usize = 4;
@@ -53,7 +50,7 @@ impl DataManager {
   }
 
   pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<DhtId>) ->Result<routing::Action, routing::RoutingError> {
-    let mut name : maidsafe_types::NameType;
+    let mut name : routing::name_type::NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
@@ -142,3 +139,4 @@ mod test {
     }
   }
 }
+

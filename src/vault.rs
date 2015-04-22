@@ -15,31 +15,15 @@
 
 #![allow(unused_variables)]
 
-extern crate routing;
-extern crate maidsafe_types;
+use routing;
+use routing::{Action, RoutingError};
+use routing::types::{Authority, DestinationAddress, DhtId};
 
-#[path="data_manager/data_manager.rs"]
-mod data_manager;
-#[path="maid_manager/maid_manager.rs"]
-mod maid_manager;
-#[path="pmid_manager/pmid_manager.rs"]
-mod pmid_manager;
-#[path="pmid_node/pmid_node.rs"]
-mod pmid_node;
-#[path="version_handler/version_handler.rs"]
-mod version_handler;
-
-use self::routing::Action;
-use self::routing::RoutingError;
-use self::routing::types::Authority;
-use self::routing::types::DestinationAddress;
-use self::routing::types::DhtId;
-
-use self::data_manager::DataManager;
-use self::maid_manager::MaidManager;
-use self::pmid_manager::PmidManager;
-use self::pmid_node::PmidNode;
-use self::version_handler::VersionHandler;
+use data_manager::DataManager;
+use maid_manager::MaidManager;
+use pmid_manager::PmidManager;
+use pmid_node::PmidNode;
+use version_handler::VersionHandler;
 
 pub struct VaultFacade {
   data_manager : DataManager,
@@ -50,7 +34,7 @@ pub struct VaultFacade {
   nodes_in_table : Vec<DhtId>
 }
 
-impl routing::facade::Facade for VaultFacade {
+impl routing::interface::Interface for VaultFacade {
   fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
                 from_address: DhtId, data_name: Vec<u8>)->Result<Action, RoutingError> {
     let name = DhtId(data_name);

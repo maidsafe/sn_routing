@@ -15,16 +15,15 @@
 
 #![allow(dead_code)]
 
-extern crate routing;
-extern crate maidsafe_types;
-
 mod database;
 
 use cbor::{ Decoder };
-use self::maidsafe_types::traits::RoutingTrait;
-use self::routing::types::DhtId;
+use routing;
+use maidsafe_types;
+use routing::interface::Interface;
+use routing::types::{DhtId, CloseGroupDifference};
+use routing::message_interface::MessageInterface;
 
-type CloseGroupDifference = self::routing::types::CloseGroupDifference;
 type Address = DhtId;
 
 pub struct MaidManager {
@@ -43,7 +42,7 @@ impl MaidManager {
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
-        let data_name = self::routing::types::array_as_vector(&immutable_data.get_name().get_id());
+        let data_name = routing::types::array_as_vector(&immutable_data.get_name().get_id());
         if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
           return Err(routing::RoutingError::InvalidRequest);
         }
@@ -98,3 +97,4 @@ mod test {
   }
 
 }
+
