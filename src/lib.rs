@@ -70,7 +70,7 @@ mod messages;
 pub mod name_type;
 pub mod message_interface;
 pub mod routing_node;
-pub mod interface;
+pub mod node_interface;
 pub mod test_utils;
 use types::DhtId;
 
@@ -97,7 +97,7 @@ pub enum RoutingError {
 fn facade_implementation() {
 
   mod routing_node;
-  use interface::Interface;
+  use node_interface::Interface;
   use types::{DhtId, DestinationAddress, Authority};
   use test_utils::Random;
   

@@ -21,7 +21,7 @@ use crust;
 use message_filter::MessageFilter;
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::Receiver;
-use interface::Interface;
+use node_interface::Interface;
 use rand;
 use std::net::SocketAddr;
 use std::collections::{HashSet, HashMap, BTreeMap};
@@ -76,7 +76,7 @@ pub struct RoutingNode<F: Interface> {
 
 impl<F> RoutingNode<F> where F: Interface {
     pub fn new(my_interface: F) -> RoutingNode<F> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to mutlithread now)
+        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
@@ -106,14 +106,14 @@ impl<F> RoutingNode<F> where F: Interface {
         })
     }
 
-    /// Retreive something from the network (non mutating) - Direct call
+    /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&self, type_id: u64, name: NameType) { unimplemented!() }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&self, name: NameType, content: Vec<u8>) { unimplemented!() }
+    pub fn put(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
-    pub fn post(&self, name: NameType, content: Vec<u8>) { unimplemented!() }
+    pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
 
     pub fn add_bootstrap(&mut self, endpoint: crust::Endpoint) {
         self.pending_connections.insert(endpoint.clone());
@@ -581,7 +581,7 @@ impl<F> RoutingNode<F> where F: Interface {
 #[cfg(test)]
 mod test {
     //use routing_node::{RoutingNode};
-    use interface::*;
+    use node_interface::*;
     use types::{Authority, DestinationAddress};
     use name_type::NameType;
     use super::super::{Action, RoutingError};

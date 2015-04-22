@@ -57,9 +57,5 @@ pub trait Interface : Sync + Send {
                             from_address: NameType,
                             response: Result<Vec<u8>, RoutingError>);
 
-    fn add_node(&mut self, node: NameType);
-
-    fn drop_node(&mut self, node: NameType);
-
     fn handle_churn(&mut self);
 }
