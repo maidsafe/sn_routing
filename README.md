@@ -45,19 +45,20 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
     - [ ] OS/X installer (fpm)
     - [ ] Win32 installer (windows advanced installer)
     - [ ] Win64 installer (windows advanced installer)
-- [ ] API version 0.1.0
+
 - [ ] Complete Post Flow
 - [ ] Handle Churn
     - [ ] Implement Account Transfer
     - [ ] Churn Test
+- [ ] API version 0.0.9
 - [ ] Test with client having file system feature
 - [ ] Implement MpidManager
     - [ ] Complete the put route (sending message)
     - [ ] Complete the get route (checking message)
 - [ ] Test with client having messaging ability
 - [ ] Performance Test
-- [ ] Coverage analysis
-
+- [x] Coverage analysis
+- [ ] API version 0.1.0
 #Detailed documentation
 
 ### Overview
