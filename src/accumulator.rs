@@ -19,7 +19,6 @@
 use lru_time_cache::LruCache;
 
 use NameType;
-use types;
 
 /// entry in the accumulator
 #[derive(Clone)]
@@ -107,7 +106,6 @@ mod test {
     use std::num;
     use rand;
     use NameType;
-    use types::*;
 
     pub fn generate_address() -> Vec<u8> {
         let mut address: Vec<u8> = vec![];
