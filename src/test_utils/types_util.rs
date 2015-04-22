@@ -17,6 +17,7 @@
 // use of the MaidSafe Software.
 
 use types::*;
+use name_type::NameType;
 use rand::random;
 use super::random_trait::Random;
 
@@ -71,5 +72,11 @@ impl Random for SourceAddress {
             from_group: None,
             reply_to: None,
         }
+	}
+}
+
+impl Random for NameType {
+	fn generate_random() -> NameType {
+		NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
 	}
 }

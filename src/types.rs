@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
-// licence you accepted on initial access to the Software (the "Licences").
+// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License, version
+// 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which licence you
+// accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the MaidSafe Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://www.maidsafe.net/licenses
+// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also available at
+// http://maidsafe.net/licenses
 //
 // Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe Software.
+// See the Licences for the specific language governing permissions and limitations relating to use
+// of the MaidSafe Software.
 
 #![allow(unused_assignments)]
 
@@ -24,6 +24,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::fmt;
 use rand::random;
 use sodiumoxide;
+use name_type::NameType;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -151,13 +152,11 @@ impl Decodable for Authority {
 }
 
 pub type MessageId = u32;
-pub type NodeAddress = DhtId; // (Address, NodeTag)
-pub type GroupAddress = DhtId; // (Address, GroupTag)
+pub type NodeAddress = NameType; // (Address, NodeTag)
+pub type GroupAddress = NameType; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
-pub type CloseGroupDifference = (Vec<DhtId>, Vec<DhtId>);
-pub type PmidNode = DhtId;
+pub type PmidNode = NameType;
 pub type PmidNodes = Vec<PmidNode>;
-pub type FilterType = (DhtId, MessageId);
 
 pub trait RoutingTrait {
   fn get_name(&self)->DhtId;
@@ -185,6 +184,8 @@ impl Decodable for NameAndTypeId {
     Ok(NameAndTypeId { name: name, type_id: type_id })
   }
 }
+
+pub type FilterType = (NameType, MessageId);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct Signature {
@@ -290,7 +291,6 @@ pub struct PublicPmid {
 }
 
 impl PublicPmid {
-
     pub fn new(pmid : &Pmid) -> PublicPmid {
       PublicPmid {
         public_key : pmid.get_public_key(),
@@ -454,8 +454,8 @@ impl Decodable for SourceAddress {
 /// Address of the destination of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct DestinationAddress {
-  pub dest : DhtId,
-  pub reply_to : Option<DhtId>
+  pub dest : NameType,
+  pub reply_to : Option<NameType>
 }
 
 impl Encodable for DestinationAddress {
@@ -519,13 +519,13 @@ mod test {
   }
 
   #[test]
-  fn dhtid_from_data() {
+  fn name_from_data() {
     use rustc_serialize::hex::ToHex;
     let data = "this is a known string".to_string().into_bytes();
     let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
                          e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
                          ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
-    assert_eq!(&expected_name, &DhtId::from_data(&data).0.to_hex());
+    assert_eq!(&expected_name, &NameType::from_data(&data).0.to_hex());
   }
 
   #[test]
@@ -545,6 +545,7 @@ mod test {
 
   #[test]
   fn test_source_address() {
+
     test_object(SourceAddress { from_node : Random::generate_random(),
                                 from_group : None,
                                 reply_to: None });

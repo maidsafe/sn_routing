@@ -1,14 +1,14 @@
 [package]
 
 name = "routing"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["David Irvine <david.irvine@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
 documentation = "http://dirvine.github.io/routing/"
 repository = "https://github.com/dirvine/routing"
 readme = "README.md"
 license = "GPL-3.0"
-homepage = "http://www.maidsafe.net"
+homepage = "http://maidsafe.net"
 
 
 [dependencies]
