@@ -73,10 +73,6 @@ impl DhtId {
         DhtId::new(&crypto::hash::sha512::hash(data).0)
     }
 
-    pub fn generate_random() -> DhtId {
-        DhtId(generate_random_vec_u8(64))
-    }
-
     pub fn is_valid(&self) -> bool {
         if self.0.len() != 64 {
           return false;
@@ -176,15 +172,6 @@ pub struct NameAndTypeId {
   pub type_id : u32
 }
 
-impl NameAndTypeId {
-    pub fn generate_random() -> NameAndTypeId {
-        NameAndTypeId {
-            name: generate_random_vec_u8(64),
-            type_id: random::<u32>(),
-        }
-    }
-}
-
 impl Encodable for NameAndTypeId {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_000, &(&self.name, &self.type_id)).encode(e)
@@ -207,13 +194,9 @@ pub struct Signature {
 impl Signature {
   pub fn new(signature : crypto::sign::Signature) -> Signature {
     assert_eq!(signature.0.len(), 32);
-    Signature{
+    Signature {
       signature : signature.0.to_vec()
     }
-  }
-
-  pub fn generate_random() -> Signature {
-      Signature { signature: generate_random_vec_u8(32) }
   }
 
   pub fn get_crypto_signature(&self) -> crypto::sign::Signature {
@@ -248,10 +231,6 @@ impl PublicSignKey {
     }
   }
 
-  pub fn generate_random() -> PublicSignKey {
-      PublicSignKey { public_sign_key: generate_random_vec_u8(32) }
-  }
-
   pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
     crypto::sign::PublicKey(vector_as_u8_32_array(self.public_sign_key.clone()))
   }
@@ -282,11 +261,7 @@ impl PublicKey {
       public_key : public_key.0.to_vec()
     }
   }
-
-  pub fn generate_random() -> PublicKey {
-    PublicKey { public_key: generate_random_vec_u8(32) }
-  }
-
+  
   pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
     crypto::asymmetricbox::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
   }
@@ -324,14 +299,7 @@ impl PublicPmid {
         name : pmid.get_name()
       }
     }
-    pub fn generate_random() -> PublicPmid {
-      PublicPmid {
-        public_key : PublicKey::generate_random(),
-        public_sign_key : PublicSignKey::generate_random(),
-        validation_token : Signature::generate_random(),
-        name : DhtId::generate_random()
-      }
-    }
+
 }
 
 impl RoutingTrait for PublicPmid {
@@ -469,16 +437,6 @@ pub struct SourceAddress {
   pub reply_to : Option<DhtId>
 }
 
-impl SourceAddress {
-    pub fn generate_random() -> SourceAddress {
-        SourceAddress {
-            from_node: DhtId::generate_random(),
-            from_group: None,
-            reply_to: None,
-        }
-    }
-}
-
 impl Encodable for SourceAddress {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_102 , &(&self.from_node, &self.from_group, &self.reply_to)).encode(e)
@@ -542,6 +500,7 @@ mod test {
   use super::*;
   use rand::random;
   use rustc_serialize::{Decodable, Encodable};
+  use test_utils::Random;
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];
@@ -581,12 +540,12 @@ mod test {
 
   #[test]
   fn test_destination_address() {
-    test_object(DestinationAddress { dest: DhtId::generate_random(), reply_to: None });
+    test_object(DestinationAddress { dest: Random::generate_random(), reply_to: None });
   }
 
   #[test]
   fn test_source_address() {
-    test_object(SourceAddress { from_node : DhtId::generate_random(),
+    test_object(SourceAddress { from_node : Random::generate_random(),
                                 from_group : None,
                                 reply_to: None });
   }

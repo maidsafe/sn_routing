@@ -26,15 +26,6 @@ pub struct GetGroupKey {
   pub target_id : types::DhtId,
 }
 
-impl GetGroupKey {
-    pub fn generate_random() -> GetGroupKey {
-        GetGroupKey {
-            requester: types::SourceAddress::generate_random(),
-            target_id: types::DhtId::generate_random(),
-        }
-    }
-}
-
 impl Encodable for GetGroupKey {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.requester, &self.target_id)).encode(e)
@@ -53,10 +44,11 @@ impl Decodable for GetGroupKey {
 mod test {
     use super::*;
     use cbor;
-    
+    use test_utils::Random;
+
     #[test]
     fn get_group_key_serialisation() {
-        let obj_before = GetGroupKey::generate_random();
+        let obj_before : GetGroupKey = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

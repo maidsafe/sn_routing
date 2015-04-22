@@ -31,30 +31,6 @@ pub struct ConnectRequest {
   pub requester_fob : types::PublicPmid
 }
 
-impl ConnectRequest {
-    pub fn generate_random() -> ConnectRequest {
-        use std::net::{Ipv4Addr, SocketAddrV4};
-        use rand::random;
-
-        // TODO: IPv6
-        let random_addr = || -> SocketAddr {
-            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>()),
-                                             random::<u16>()))
-        };
-
-        ConnectRequest {
-            local: random_addr(),
-            external: random_addr(),
-            requester_id: types::DhtId::generate_random(),
-            receiver_id: types::DhtId::generate_random(),
-            requester_fob: types::PublicPmid::generate_random(),
-        }
-    }
-}
-
 impl Encodable for ConnectRequest {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
       // FIXME: Implement Encodable/Decodable for SocketAddr
@@ -92,10 +68,11 @@ impl Decodable for ConnectRequest {
 mod test {
     use super::*;
     use cbor;
+    use test_utils::Random;
 
     #[test]
     fn connect_request_serialisation() {
-        let obj_before = ConnectRequest::generate_random();
+        let obj_before : ConnectRequest = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

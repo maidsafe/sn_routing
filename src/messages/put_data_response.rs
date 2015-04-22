@@ -15,8 +15,6 @@
 
 #![allow(unused_assignments)]
 
-use rand;
-use types;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
@@ -25,16 +23,6 @@ pub struct PutDataResponse {
   pub type_id : u32,
   pub data : Vec<u8>,  // len() == 0 indicates no data responsed
   pub error : Vec<u8>  //  TODO this shall be a serializable MaidSafeError type
-}
-
-impl PutDataResponse {
-    pub fn generate_random() -> PutDataResponse {
-        PutDataResponse {
-            type_id: rand::random::<u32>(),
-            data: types::generate_random_vec_u8(99),
-            error: types::generate_random_vec_u8(27),
-        }
-    }
 }
 
 impl Encodable for PutDataResponse {
@@ -55,10 +43,11 @@ impl Decodable for PutDataResponse {
 mod test {
     use cbor;
     use super::*;
-
+    use test_utils::Random;
+    
     #[test]
     fn put_data_response_serialisation() {
-        let obj_before = PutDataResponse::generate_random();
+        let obj_before : PutDataResponse = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
