@@ -62,6 +62,7 @@ macro_rules! convert_to_array {
 /// NameType struct
 ///
 /// NameType Struct can be created using the new function by passing, id as its parameter.
+#[derive(Eq, Hash)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
@@ -94,7 +95,7 @@ impl NameType {
         }
         false
     }
-     
+
     pub fn generate_random() -> NameType {
         let mut arr: [u8; NAME_TYPE_LEN] = unsafe { mem::uninitialized() };
         for i in 0..NAME_TYPE_LEN {
@@ -115,6 +116,7 @@ impl PartialEq for NameType {
   	slice_equal(&self.0, &other.0)
     }
 }
+
 
 impl Clone for NameType {
     fn clone(&self) -> Self {
@@ -190,7 +192,7 @@ mod test {
         assert!(NameType::closer_to_target(&obj0_clone, &obj1, &obj0));
         assert!(!NameType::closer_to_target(&obj1, &obj0_clone, &obj0));
     }
-    
+
     #[test]
     fn copy_strings_to_bad_array() {
         let one = "some string".to_string();

@@ -22,6 +22,7 @@ use cbor;
 
 use accumulator;
 use message_header;
+use NameType;
 use types;
 use types::RoutingTrait;
 use messages::find_group_response::FindGroupResponse;
@@ -41,7 +42,7 @@ type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultTy
 // TODO (ben 2015-4-2): replace dynamic dispatching with static dispatching
 //          https://doc.rust-lang.org/book/static-and-dynamic-dispatch.html
 pub trait SendGetKeys {
-  fn get_client_key(&mut self, address : types::DhtId);
+  fn get_client_key(&mut self, address : NameType);
   fn get_group_key(&mut self, group_address : types::GroupAddress);
 }
 
@@ -156,7 +157,7 @@ impl<'a> Sentinel<'a> {
       return Vec::<ResultType>::new();
     }
     let mut verified_messages : Vec<ResultType> = Vec::new();
-    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
+    let mut keys_map : HashMap<NameType, Vec<types::PublicSignKey>> = HashMap::new();
     for node_key in keys.iter() {
       let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
       let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
@@ -198,7 +199,7 @@ impl<'a> Sentinel<'a> {
       return Vec::<ResultType>::new();
     }
     let mut verified_messages: Vec<ResultType> = Vec::new();
-    let mut keys_map: HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
+    let mut keys_map: HashMap<NameType, Vec<types::PublicSignKey>> = HashMap::new();
     for group_key in keys.iter() {
       // deserialise serialised message GetGroupKeyResponse
       let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
@@ -349,7 +350,7 @@ mod test {
 
   impl SignatureGroup {
     pub fn new(group_size : usize, authority : types::Authority) -> SignatureGroup {
-      let group_address = types::DhtId::generate_random();
+      let group_address = NameType::generate_random();
       let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
       for _ in 0..group_size {
         nodes.push(types::Pmid::new());
@@ -387,8 +388,8 @@ mod test {
       headers
     }
 
-    pub fn get_public_keys(&self) -> Vec<(types::DhtId, types::PublicSignKey)> {
-        let mut public_keys : Vec<(types::DhtId, types::PublicSignKey)>
+    pub fn get_public_keys(&self) -> Vec<(NameType, types::PublicSignKey)> {
+        let mut public_keys : Vec<(NameType, types::PublicSignKey)>
            = Vec::with_capacity(self.nodes_.len());
       for node in &self.nodes_ {
         public_keys.push((node.get_name(),
@@ -405,7 +406,7 @@ mod test {
     nodes_ : Vec<types::Pmid>,
     // store the close nodes according
     // to the close group of original group_address
-    nodes_of_nodes_ : Vec<(types::DhtId, Vec<types::Pmid>)>
+    nodes_of_nodes_ : Vec<(NameType, Vec<types::Pmid>)>
   }
 
   impl EmbeddedSignatureGroup {
@@ -414,13 +415,13 @@ mod test {
       let network_size = 10 * group_size;
       let mut all_nodes : Vec<types::Pmid> = Vec::with_capacity(network_size);
       let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
-      let mut nodes_of_nodes : Vec<(types::DhtId, Vec<types::Pmid>)>
+      let mut nodes_of_nodes : Vec<(NameType, Vec<types::Pmid>)>
                                 = Vec::with_capacity(group_size);
       for _ in 0..network_size {
         all_nodes.push(types::Pmid::new()); // generates two keys !
                                             // can be optimised for larger scaled
       }
-      let group_address = types::DhtId::generate_random();
+      let group_address = NameType::generate_random();
       // first sort all nodes to group_address
       all_nodes.sort_by(
         |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &group_address) {
@@ -480,10 +481,10 @@ mod test {
       headers
     }
 
-    pub fn get_public_keys(&self, node_name : types::DhtId)
-          -> Vec<(types::DhtId, types::PublicSignKey)> {
+    pub fn get_public_keys(&self, node_name : NameType)
+          -> Vec<(NameType, types::PublicSignKey)> {
       let nodes_of_node = &self.nodes_of_nodes_.iter().find(|x| x.0 == node_name).unwrap();
-      let mut public_keys : Vec<(types::DhtId, types::PublicSignKey)>
+      let mut public_keys : Vec<(NameType, types::PublicSignKey)>
         = Vec::with_capacity(nodes_of_node.1.len());
       for node in &nodes_of_node.1 {
         let public_sign_key =
@@ -493,7 +494,7 @@ mod test {
       public_keys
     }
 
-    pub fn get_public_pmids(&self, node_name : types::DhtId) -> Vec<types::PublicPmid> {
+    pub fn get_public_pmids(&self, node_name : NameType) -> Vec<types::PublicPmid> {
       let nodes_of_node = &self.nodes_of_nodes_.iter().find(|x| x.0 == node_name).unwrap();
       let mut public_pmids : Vec<types::PublicPmid>
         = Vec::with_capacity(nodes_of_node.1.len());
@@ -577,7 +578,7 @@ mod test {
   }
 
   pub struct TraceGetKeys {
-    send_get_client_key_calls_ : Vec<types::DhtId>,
+    send_get_client_key_calls_ : Vec<NameType>,
     send_get_group_key_calls_ : Vec<types::GroupAddress>,
   }
 
@@ -589,7 +590,7 @@ mod test {
       }
     }
 
-    pub fn count_get_client_key_calls(&self, address : &types::DhtId) -> usize {
+    pub fn count_get_client_key_calls(&self, address : &NameType) -> usize {
       self.send_get_client_key_calls_.iter()
                        .filter(|&x| x == address)
                        .count()
@@ -603,7 +604,7 @@ mod test {
   }
 
   impl SendGetKeys for TraceGetKeys {
-  fn get_client_key(&mut self, address : types::DhtId) {
+  fn get_client_key(&mut self, address : NameType) {
     self.send_get_client_key_calls_.push(address);
   }
     fn get_group_key(&mut self, group_address : types::GroupAddress) {
