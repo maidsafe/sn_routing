@@ -179,7 +179,7 @@ impl Random for messages::post::Post {
 impl Random for messages::put_data::PutData {
 	fn generate_random() -> messages::put_data::PutData {
         messages::put_data::PutData {
-            name: generate_random_vec_u8(64),
+            name: Random::generate_random(),
             data: generate_random_vec_u8(99),
         }
     }

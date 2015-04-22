@@ -74,6 +74,10 @@ impl ClientIdPacket {
       digest.0
     }
 
+    pub fn get_name(&self) -> NameType {
+      NameType::new(self.get_id())
+    }
+
     pub fn get_public_keys(&self) -> &(crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey){
         &self.public_keys
     }
@@ -186,7 +190,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             id_packet: id_packet.clone(),
             bootstrap_address: bootstrap_add.clone(),
             message_id: rand::random::<u32>(),
-            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add.0, id_packet.get_id(), my_interface)),
+            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add.0, id_packet.get_name(), my_interface)),
         }
     }
 
@@ -197,10 +201,10 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             requester: types::SourceAddress {
                 from_node: self.bootstrap_address.0.clone(),
                 from_group: None,
-                reply_to: Some(self.id_packet.get_id()),
+                reply_to: Some(self.id_packet.get_name()),
             },
             name_and_type_id: types::NameAndTypeId {
-                name: name.0.clone(),
+                name: name.clone(),
                 type_id: type_id as u32,
             },
         };
@@ -243,7 +247,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 
         // Make PutData message
         let put_data = messages::put_data::PutData {
-            name: name.0.clone(),
+            name: name.clone(),
             data: content,
         };
 
@@ -251,13 +255,13 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
         let header = message_header::MessageHeader::new(
             self.message_id,
             types::DestinationAddress {
-                dest: self.id_packet.get_id(),
+                dest: self.id_packet.get_name(),
                 reply_to: None,
             },
             types::SourceAddress {
                 from_node: self.bootstrap_address.0.clone(),
                 from_group: None,
-                reply_to: Some(self.id_packet.get_id()),
+                reply_to: Some(self.id_packet.get_name()),
             },
             types::Authority::Client,
             Some(Random::generate_random()), // What is the signautre -- see in c++ Secret - signing key

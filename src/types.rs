@@ -95,7 +95,7 @@ impl fmt::Debug for DhtId {
 }
 
 // lhs is closer to target than rhs
-pub fn closer_to_target(lhs: &DhtId, rhs: &DhtId, target: &DhtId) -> bool {
+pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
     for i in 0..lhs.0.len() {
         let res_0 = lhs.0[i] ^ target.0[i];
         let res_1 = rhs.0[i] ^ target.0[i];
@@ -167,7 +167,7 @@ pub trait RoutingTrait {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
-  pub name : Vec<u8>,
+  pub name : NameType,
   pub type_id : u32
 }
 
