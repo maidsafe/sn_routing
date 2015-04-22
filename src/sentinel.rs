@@ -27,9 +27,11 @@ use types::RoutingTrait;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
+use types::{DhtId, PublicSignKey, SerialisedMessage};
+use rustc_serialize::{Decodable, Encodable};
 
 pub type ResultType = (message_header::MessageHeader,
-                       types::MessageTypeTag, types::SerialisedMessage);
+                       types::MessageTypeTag, SerialisedMessage);
 
 type NodeKeyType = (types::NodeAddress, types::MessageId);
 type GroupKeyType = (types::GroupAddress, types::MessageId);
@@ -150,46 +152,55 @@ impl<'a> Sentinel<'a> {
     None
   }
 
-  fn validate_node(&self, messages: Vec<accumulator::Response<ResultType>>,
-                   keys: Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
-    if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
-      return Vec::<ResultType>::new();
-    }
-    let mut verified_messages : Vec<ResultType> = Vec::new();
-    let mut keys_map : HashMap<types::DhtId, Vec<types::PublicSignKey>> = HashMap::new();
-    for node_key in keys.iter() {
-      let mut d = cbor::Decoder::from_bytes(node_key.value.2.clone());
-      let key_response: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
-      if !keys_map.contains_key(&key_response.address) {
-        keys_map.insert(key_response.address,
-                        vec![key_response.public_sign_key]);
-      } else {
-        let public_keys = keys_map.get_mut(&key_response.address);
-        let mut public_keys_holder = public_keys.unwrap();
-        let target_key = key_response.public_sign_key;
-        if !public_keys_holder.contains(&target_key) {
-          public_keys_holder.push(target_key);
-        }
+  fn update_key_map(key_map: &mut HashMap<DhtId, Vec<PublicSignKey>>, addr: DhtId, key: PublicSignKey) {
+      if !key_map.contains_key(&addr) {
+          key_map.insert(addr, vec![key]);
       }
-    }
-    let mut pub_key_list : Vec<types::PublicSignKey> = Vec::new();
-    for (_, value) in keys_map.iter() {
-      pub_key_list = value.clone();
-      break;
-    }
-    if keys_map.len() != 1 || pub_key_list.len() != 1 {
-      return Vec::<ResultType>::new();
-    }
-    // let public_sign_key = pub_key_list[0];
-    for message in messages.iter() {
-      let signature = message.value.0.get_signature();
-      let ref msg = message.value.2;
-      if crypto::sign::verify_detached(&signature.unwrap().get_crypto_signature(),
-                                       &msg[..], &pub_key_list[0].get_crypto_public_sign_key()) {
-        verified_messages.push(message.value.clone());
+      else {
+          let mut public_keys = key_map.get_mut(&addr).unwrap();
+          if !public_keys.contains(&key) {
+              public_keys.push(key);
+          }
       }
-    }
-    verified_messages
+  }
+
+  fn verify_result(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
+      response.0.get_signature().and_then(|signature| {
+        let is_correct = crypto::sign::verify_detached(
+                           &signature.get_crypto_signature(),
+                           &response.2[..],
+                           &pub_key.get_crypto_public_sign_key());
+
+        if !is_correct { return None; }
+        Some(response.clone())
+      })
+  }
+
+  fn validate_node(&self,
+                   messages: Vec<accumulator::Response<ResultType>>,
+                   keys:     Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+      if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
+        return Vec::new();
+      }
+
+      let mut keys_map = HashMap::<DhtId, Vec<PublicSignKey>>::new();
+
+      for node_key in keys.iter() {
+        Sentinel::decode(&node_key.value.2)
+            .map(|GetClientKeyResponse{address:addr, public_sign_key:key}| {
+                Sentinel::update_key_map(&mut keys_map, addr, key)
+            });
+      }
+
+      // FIXME: We should take the majority of same keys and
+      // if there is QUORUM_SIZE of them, use that.
+      if !has_single_entry(&keys_map) { return Vec::new(); }
+      let pub_key = &keys_map.iter().next().unwrap().1[0];
+
+      messages.iter().filter_map(
+          |&accumulator::Response{address:ref addr, value:ref result}|
+              Sentinel::verify_result(result, pub_key))
+          .collect()
   }
 
   fn validate_group(&self, messages:  Vec<accumulator::Response<ResultType>>,
@@ -203,19 +214,8 @@ impl<'a> Sentinel<'a> {
       // deserialise serialised message GetGroupKeyResponse
       let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
       let group_key_response: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
-      // public_key = (DhtId, PublicSignKey)
       for public_sign_key in group_key_response.public_sign_keys.iter() {
-        if !keys_map.contains_key(&public_sign_key.0) {
-          keys_map.insert(public_sign_key.0.clone(), vec![public_sign_key.1.clone()]);
-        } else {
-          let public_sign_keys = keys_map.get_mut(&public_sign_key.0);
-          let mut public_keys_holder = public_sign_keys.unwrap();
-          let target_key = public_sign_key.1.clone();
-          if !public_keys_holder.contains(&target_key) {
-            // flatten, unless different key found for already encountered Address.
-            public_keys_holder.push(target_key);
-          }
-        }
+          Sentinel::update_key_map(&mut keys_map, public_sign_key.0.clone(), public_sign_key.1.clone());
       }
     }
     // TODO(mmoadeli): For the time being, we assume that no invalid public is received
@@ -242,31 +242,43 @@ impl<'a> Sentinel<'a> {
     }
   }
 
+  fn decode<T: Decodable>(data: &SerialisedMessage) -> Option<T> {
+      let mut decoder = cbor::Decoder::from_bytes(data.clone());
+      decoder.decode().next().and_then(|result_msg| result_msg.ok())
+  }
+
+  fn encode<T: Encodable>(value: T) -> SerialisedMessage {
+    let mut e = cbor::Encoder::from_memory();
+    let _ = e.encode(&[&value]); // FIXME: Panic when failed to encode?
+    e.as_bytes().to_vec()
+  }
+
   fn resolve(&self, verified_messages : Vec<ResultType>, _ : bool) -> Option<ResultType> {
     if verified_messages.len() < types::QUORUM_SIZE as usize {
       return None;
     }
+
     if verified_messages[0].1 == types::MessageTypeTag::FindGroupResponse {
-      let mut decoded_responses : Vec<FindGroupResponse>
-        = Vec::with_capacity(verified_messages.len());
-      let mut d = cbor::Decoder::from_bytes(verified_messages[0].2.clone());
-      let first_find_group_response_message : FindGroupResponse = d.decode().next().unwrap().unwrap();
-      // skip first messages, as we will merge into it
-      for message in verified_messages.iter().skip(1) {
-        let mut d = cbor::Decoder::from_bytes(message.2.clone());
-        let find_group_response_message : FindGroupResponse = d.decode().next().unwrap().unwrap();
-        decoded_responses.push(find_group_response_message);
-      }
-      let merged_responses = match first_find_group_response_message.merge(&decoded_responses) {
-        Some(merged_responses) => merged_responses,
-        None => panic!("No merged group confirmed.") // return None;
-      };
-      let mut e = cbor::Encoder::from_memory();
-      let _ = e.encode(&[&merged_responses]);
-      let serialised_merged_message_response = e.as_bytes().to_vec();
-      return Some((verified_messages[0].0.clone(),
-                  verified_messages[0].1.clone(),
-                  serialised_merged_message_response));
+        let decoded_responses = verified_messages.iter()
+            .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
+            .collect::<Vec<_>>();
+
+        if decoded_responses.len() == 0 {
+            // None of the messages was successfully decoded.
+            return None;
+        }
+
+        let first = decoded_responses[0].clone();
+        let rest  = decoded_responses.iter().skip(1).map(|a|a.clone()).collect::<Vec<_>>();
+
+        let merged_responses = match first.merge(&rest) {
+          Some(merged_responses) => merged_responses,
+          None => panic!("No merged group confirmed.") // return None;
+        };
+
+        return Some((verified_messages[0].0.clone(),
+                     verified_messages[0].1.clone(),
+                     Sentinel::encode(merged_responses)));
     // if part addresses non-account transfer message types, where an exact match is required
     } else if verified_messages[0].1 != types::MessageTypeTag::AccountTransfer {
       for index in 0..verified_messages.len() {
@@ -302,6 +314,9 @@ impl<'a> Sentinel<'a> {
   }
 }
 
+fn has_single_entry<T>(key_map: &HashMap<DhtId, Vec<T>>) -> bool {
+    key_map.len() == 1 && key_map.iter().next().unwrap().1.len() == 1
+}
 
 #[cfg(test)]
 mod test {
@@ -850,3 +865,4 @@ mod test {
   assert_eq!(1, trace_get_keys.count_get_group_key_calls(&embedded_signature_group.get_group_address()));
   }
 }
+
