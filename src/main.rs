@@ -14,7 +14,7 @@
     Software.                                                                 */
 
 #![crate_name = "maidsafe_vault"]
-#![crate_type = "lib"]
+#![crate_type = "bin"]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://dirvine.github.io/dirvine/maidsafe_vault/")]
@@ -40,7 +40,8 @@ mod pmid_manager;
 mod version_handler;
 mod chunk_store;
 mod pmid_node;
-mod vault;
+/// The vault library.
+pub mod vault;
 
 use vault::VaultFacade;
 // use routing::types::DhtId;

@@ -14,14 +14,18 @@
     Software.                                                                 */
 
 #![allow(dead_code)]
+#![deny(missing_docs)]
 
 use routing::types::DhtId;
 
+/// Data entry in the chunkstore network name and data.
 pub struct Entry {
     name: DhtId,
     data: Vec<u8>
 }
 
+/// Chunkstore is a collection for holding all data chunks.
+/// Implements a maximum disk usage to restrict storage.
 pub struct ChunkStore {
     entries: Vec<Entry>,
     max_disk_usage: usize,
@@ -29,6 +33,7 @@ pub struct ChunkStore {
 }
 
 impl ChunkStore {
+    /// Create new chunkstore with zero allowed disk usage.
     pub fn new() -> ChunkStore {
         ChunkStore {
             entries: Vec::new(),
