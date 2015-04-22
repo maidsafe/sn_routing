@@ -71,9 +71,10 @@ mod name_type;
 pub mod message_interface;
 pub mod routing_node;
 pub mod interface;
-
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType};
+pub mod test_utils;
+// use types::DhtId;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
@@ -101,6 +102,7 @@ fn facade_implementation() {
   use interface::Interface;
   use types::{DestinationAddress, Authority};
   use NameType;
+  use test_utils::Random;
 
   struct MyFacade;
 
@@ -117,6 +119,7 @@ fn facade_implementation() {
   }
 
   let my_facade = MyFacade;
-  let my_routing = routing_node::RoutingNode::new(NameType::generate_random(), my_facade);
+
+  let my_routing = routing_node::RoutingNode::new(Random::generate_random(), my_facade);
   /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
 }

@@ -29,18 +29,7 @@ pub struct GetGroupKeyResponse {
   pub public_sign_keys : Vec<(types::DhtId, types::PublicSignKey)>
 }
 
-impl GetGroupKeyResponse {
-    pub fn generate_random() -> GetGroupKeyResponse {
-        let total: usize = types::GROUP_SIZE as usize + 7;
-        let mut vec: Vec<(types::DhtId, types::PublicSignKey)> = Vec::with_capacity(total);
-        for i in 0..total {
-            vec.push((types::DhtId::generate_random(), types::PublicSignKey::generate_random()));
-        }
-        GetGroupKeyResponse {
-            target_id: types::DhtId::generate_random(),
-            public_sign_keys: vec,
-        }
-    }
+impl GetGroupKeyResponse {    
 
     pub fn merge(&self, get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
       let mut frequency_count : Vec<((types::DhtId, types::PublicSignKey), usize)>
@@ -109,11 +98,12 @@ impl Decodable for GetGroupKeyResponse {
 mod test {
     use types;
     use super::*;
-    use cbor; 
+    use cbor;
+    use test_utils::Random;
     
     #[test]
     fn get_group_key_response_serialisation() {
-        let obj_before = GetGroupKeyResponse::generate_random();
+        let obj_before : GetGroupKeyResponse = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
@@ -126,7 +116,7 @@ mod test {
 
     #[test]
     fn merge() {
-        let obj = GetGroupKeyResponse::generate_random();
+        let obj : GetGroupKeyResponse = Random::generate_random();
         assert!(obj.public_sign_keys.len() >= types::GROUP_SIZE as usize);
         // if group size changes, reimplement the below
         assert!(types::GROUP_SIZE >= 13);

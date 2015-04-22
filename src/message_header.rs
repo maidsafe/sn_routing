@@ -144,6 +144,7 @@ mod test {
     use types;
     use cbor;
     use NameType;
+    use test_utils::Random;
 
     pub fn generate_u8_64() -> Vec<u8> {
         let mut u8_64: Vec<u8> = vec![];
@@ -165,11 +166,11 @@ mod test {
     fn test_message_header() {
         test_object(MessageHeader {
             message_id : random::<u32>(),
-            destination : types::DestinationAddress{dest: NameType::generate_random(), reply_to: None },
-            source : types::SourceAddress { from_node : NameType::generate_random(),
-            from_group : None,
-            reply_to: None },
+            destination : types::DestinationAddress{dest: Random::generate_random(), reply_to: None },
+            source : types::SourceAddress { from_node : Random::generate_random(),
+              from_group : None,
+              reply_to: None },
             authority : types::Authority::ManagedNode,
-            signature : Some(types::Signature{ signature: generate_u8_64() }) });
+            signature : Some(Random::generate_random())});
     }
 }

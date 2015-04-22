@@ -29,15 +29,6 @@ pub struct GetClientKeyResponse {
   pub public_sign_key : types::PublicSignKey
 }
 
-impl GetClientKeyResponse {
-    pub fn generate_random() -> GetClientKeyResponse {
-        GetClientKeyResponse {
-            address: types::DhtId::generate_random(),
-            public_sign_key: types::PublicSignKey::generate_random(),
-        }
-    }
-}
-
 impl Encodable for GetClientKeyResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.address, &self.public_sign_key)).encode(e)
@@ -56,10 +47,11 @@ impl Decodable for GetClientKeyResponse {
 mod test {
     use super::*;
     use cbor; 
-    
+    use test_utils::Random;
+
     #[test]
     fn get_client_key_response_serialisation() {
-        let obj_before = GetClientKeyResponse::generate_random();
+        let obj_before : GetClientKeyResponse = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

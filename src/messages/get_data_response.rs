@@ -27,16 +27,6 @@ pub struct GetDataResponse {
   pub error : Vec<u8>  //  TODO this shall be a serializable MaidSafeError type
 }
 
-impl GetDataResponse {
-    pub fn generate_random() -> GetDataResponse {
-        GetDataResponse {
-            name_and_type_id: types::NameAndTypeId::generate_random(),
-            data: types::generate_random_vec_u8(99),
-            error: types::generate_random_vec_u8(99),
-        }
-    }
-}
-
 impl Encodable for GetDataResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.name_and_type_id, &self.data, &self.error)).encode(e)
@@ -55,10 +45,11 @@ impl Decodable for GetDataResponse {
 mod test {
     use super::*;
     use cbor;
-    
+    use test_utils::Random;
+
     #[test]
     fn get_data_response_serialisation() {
-        let obj_before = GetDataResponse::generate_random();
+        let obj_before : GetDataResponse = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

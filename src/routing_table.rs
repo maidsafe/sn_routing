@@ -383,6 +383,7 @@ mod test {
     use types::{DhtId, PublicPmid, RoutingTrait, closer_to_target};
     use types;
     use rand;
+    use test_utils::Random;
 
     enum ContactType {
         Far,
@@ -540,6 +541,9 @@ mod test {
         buckets
     }
 
+mod test {
+    
+}
     fn create_random_socket_address() -> SocketAddr {
         SocketAddr::V4(SocketAddrV4::new(
             Ipv4Addr::new(rand::random::<u8>(),
@@ -577,9 +581,11 @@ mod test {
     }
 
     fn create_random_routing_tables(num_of_tables: usize) -> Vec<RoutingTable> {
+        use test_utils::Random;
+
         let mut vector: Vec<RoutingTable> = Vec::with_capacity(num_of_tables);
         for i in 0..num_of_tables {
-            vector.push(RoutingTable { routing_table: Vec::new(), our_id: DhtId::generate_random() });
+            vector.push(RoutingTable { routing_table: Vec::new(), our_id: Random::generate_random() });
         }
         vector
     }
@@ -604,13 +610,14 @@ mod test {
 
     #[test]
     fn routing_table_test() {
+
         let mut table = RoutingTable {
             routing_table: Vec::new(),
-            our_id: DhtId::generate_random()
+            our_id: Random::generate_random()
         };
 
         for i in 0..RoutingTable::get_group_size() {
-            let id = DhtId::generate_random();
+            let id = Random::generate_random();
             assert!(table.check_node(&id));
         }
 
@@ -1114,14 +1121,14 @@ mod test {
         let mut routing_table_utest = RoutingTableUnitTest::new();
 
         // Check on empty table
-        let mut target_nodes_ = routing_table_utest.table.target_nodes(DhtId::generate_random());
+        let mut target_nodes_ = routing_table_utest.table.target_nodes(Random::generate_random());
         assert_eq!(target_nodes_.len(), 0);
 
         // Partially fill the table with < GroupSize contacts
         routing_table_utest.partially_fill_table();
 
         // Check we get all contacts returnedta
-        target_nodes_ = routing_table_utest.table.target_nodes(DhtId::generate_random());
+        target_nodes_ = routing_table_utest.table.target_nodes(Random::generate_random());
         assert_eq!(routing_table_utest.initial_count, target_nodes_.len());
 
         for i in 0..routing_table_utest.initial_count {
