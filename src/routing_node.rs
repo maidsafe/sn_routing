@@ -16,8 +16,6 @@
 // See the Licences for the specific language governing permissions and limitations relating to use
 // of the MaidSafe Software.
 
-extern crate time;
-
 use sodiumoxide;
 use crust;
 use message_filter::MessageFilter;
@@ -26,7 +24,7 @@ use std::sync::mpsc::Receiver;
 use interface::Interface;
 use rand;
 use std::net::SocketAddr;
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashSet, HashMap, BTreeMap};
 use std::net::{SocketAddrV4, Ipv4Addr};
 use time::Duration;
 
@@ -68,7 +66,7 @@ pub struct RoutingNode<F: Interface> {
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
     pending_connections: HashSet<Endpoint>,
-    all_connections: (HashMap<Endpoint, NameType>, HashMap<NameType, Endpoint>),
+    all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
     routing_table: RoutingTable,
     accepting_on: Option<Vec<Endpoint>>,
     next_message_id: MessageId,
@@ -77,8 +75,8 @@ pub struct RoutingNode<F: Interface> {
 }
 
 impl<F> RoutingNode<F> where F: Interface {
-    pub fn new(id: NameType, my_interface: F) -> RoutingNode<F> {
-        sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
+    pub fn new(my_interface: F) -> RoutingNode<F> {
+        sodiumoxide::init();  // enable shared global (i.e. safe to mutlithread now)
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
@@ -93,7 +91,7 @@ impl<F> RoutingNode<F> where F: Interface {
                       event_input: event_input,
                       connection_manager: cm,
                       pending_connections : HashSet::new(),
-                      all_connections: (HashMap::new(), HashMap::new()),
+                      all_connections: (HashMap::new(), BTreeMap::new()),
                       routing_table : RoutingTable::new(own_id),
                       accepting_on: accepting_on,
                       next_message_id: rand::random::<MessageId>(),
@@ -109,7 +107,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&self, type_id: u64, name: NameType) { unimplemented!()}
+    pub fn get(&self, type_id: u64, name: NameType) { unimplemented!() }
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put(&self, name: NameType, content: Vec<u8>) { unimplemented!() }

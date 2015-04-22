@@ -60,11 +60,10 @@ macro_rules! convert_to_array {
 }
 
 /// NameType can be created using the new function by passing id as its parameter.
-#[derive(Default, Eq, PartialOrd, Ord)]
+#[derive(Default, Eq, PartialOrd, Ord, Hash)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
-    #[allow(dead_code)]
     fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
         for i in 0..lhs.0.len() {
             let res_0 = lhs.0[i] ^ target.0[i];
