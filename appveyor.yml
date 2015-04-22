@@ -16,7 +16,7 @@ install:
   - rustc --version
   - ps: if($env:RUST_INSTALL_TRIPLE -eq 'x86_64-pc-windows-gnu') {
          Start-FileDownload "http://libgd.blob.core.windows.net/mingw/mingw-w64-dgn-x86_64-20141001.7z";
-          7z x -oC:\ mingw-w64-dgn-x86_64-20141001.7z > nul;
+          7z x -oC:\ mingw-w64-dgn-x86_64-20141001.7z;
           Start-FileDownload "https://gitlab.com/Fraser999/Dependencies/raw/master/bin/x86_64-pc-windows-gnu/libsodium.a";
           mkdir .\bin\x86_64-pc-windows-gnu;
           move libsodium.a .\bin\x86_64-pc-windows-gnu;
