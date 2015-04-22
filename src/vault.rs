@@ -116,7 +116,8 @@ mod test {
   extern crate cbor;
   extern crate maidsafe_types;
   extern crate routing;
-  use super::*;
+
+  use super::VaultFacade;
   use maidsafe_types::*;
   use routing::types::{Authority, DestinationAddress, DhtId, generate_random_vec_u8};
   use routing::interface::Interface;
