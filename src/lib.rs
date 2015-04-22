@@ -67,11 +67,13 @@ mod accumulator;
 mod common_bits;
 mod sentinel;
 mod messages;
-pub mod name_type;
+mod name_type;
 pub mod message_interface;
 pub mod routing_node;
 pub mod interface;
 
+/// NameType is a 512bit name to address elements on the DHT network.
+pub use name_type::{NameType};
 use types::DhtId;
 
 //#[derive(RustcEncodable, RustcDecodable)]
