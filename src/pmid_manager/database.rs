@@ -107,7 +107,7 @@ mod test {
   extern crate maidsafe_types;
   extern crate rand;
   extern crate routing;
-  use super::*;
+  use super::{PmidManagerDatabase};
   use self::routing::types::*;
 
   #[test]

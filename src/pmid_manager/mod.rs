@@ -19,7 +19,6 @@ mod database;
 use routing;
 use routing::types::DhtId;
 use routing::types::DestinationAddress;
-use routing::message_interface::MessageInterface;
 
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
@@ -44,9 +43,8 @@ impl PmidManager {
 #[cfg(test)]
 mod test {
   use cbor;
-  use maidsafe_types;
   use routing;
-  use super::*;
+  use super::{PmidManager};
   use maidsafe_types::*;
   use routing::types::*;
 
@@ -54,7 +52,6 @@ mod test {
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
     let dest = DestinationAddress { dest: DhtId::generate_random(), reply_to: None };
-    let name = routing::name_type::NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
@@ -69,7 +66,7 @@ mod test {
         assert_eq!(x.len(), 1);
         assert_eq!(x[0], dest.dest);
       }
-      routing::Action::Reply(x) => panic!("Unexpected"),
+      routing::Action::Reply(_) => panic!("Unexpected"),
     }
   }
 }

@@ -20,8 +20,7 @@ mod database;
 use cbor::{ Decoder };
 use routing;
 use maidsafe_types;
-use routing::interface::Interface;
-use routing::types::{DhtId, CloseGroupDifference};
+use routing::types::{DhtId};
 use routing::message_interface::MessageInterface;
 
 type Address = DhtId;
@@ -42,7 +41,6 @@ impl MaidManager {
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
-        let data_name = routing::types::array_as_vector(&immutable_data.get_name().get_id());
         if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
           return Err(routing::RoutingError::InvalidRequest);
         }
@@ -69,10 +67,11 @@ mod test {
   extern crate cbor;
   extern crate maidsafe_types;
   extern crate routing;
-  use super::*;
-  use self::maidsafe_types::*;
-  use self::routing::message_interface::MessageInterface;
-  use self::routing::types::{DhtId, generate_random_vec_u8};
+
+  use super::{MaidManager};
+  use maidsafe_types::*;
+  use routing::message_interface::MessageInterface;
+  use routing::types::{DhtId, generate_random_vec_u8};
 
   #[test]
   fn handle_put() {
@@ -92,7 +91,7 @@ mod test {
         assert_eq!(x.len(), 1);
         assert_eq!(x[0].0, data.get_name().get_id().to_vec());
       }
-      routing::Action::Reply(x) => panic!("Unexpected"),
+      routing::Action::Reply(_) => panic!("Unexpected"),
     }
   }
 

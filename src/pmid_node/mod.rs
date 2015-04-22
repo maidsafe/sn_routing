@@ -16,8 +16,7 @@
 #![allow(dead_code)]
 
 use chunk_store::ChunkStore;
-use routing::interface::Interface;
-use routing::types::{DhtId, CloseGroupDifference};
+use routing::types::{DhtId};
 use routing;
 use maidsafe_types;
 use routing::message_interface::MessageInterface;
@@ -71,11 +70,12 @@ mod test {
   extern crate cbor;
   extern crate maidsafe_types;
   extern crate routing;
-  use super::*;
-  use self::maidsafe_types::*;
-  use self::routing::types::DhtId;
-  use self::routing::types::array_as_vector;
-  use self::routing::message_interface::MessageInterface;
+
+  use super::{PmidNode};
+  use maidsafe_types::*;
+  use routing::types::DhtId;
+  use routing::types::array_as_vector;
+  use routing::message_interface::MessageInterface;
 
   #[test]
   fn handle_put_get() {

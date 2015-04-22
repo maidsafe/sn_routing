@@ -20,8 +20,7 @@ mod database;
 use std::cmp;
 use routing;
 use maidsafe_types;
-use routing::interface::Interface;
-use routing::types::{DhtId, closer_to_target, CloseGroupDifference};
+use routing::types::{DhtId, closer_to_target};
 use routing::message_interface::MessageInterface;
 use cbor::{ Decoder };
 
@@ -92,19 +91,17 @@ mod test {
   extern crate cbor;
   extern crate maidsafe_types;
   extern crate routing;
-  // extern crate rustc_serialize;
-  use super::*;
-  use self::maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
-  use self::routing::message_interface::MessageInterface;
-  use self::routing::types::{DhtId, array_as_vector};
-  // use self::rustc_serialize::hex::ToHex;
+
+  use super::{DataManager};
+  use maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
+  use routing::message_interface::MessageInterface;
+  use routing::types::{DhtId, array_as_vector};
 
   #[test]
   fn handle_put_get() {
     let mut data_manager = DataManager::new();
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
-    // println!("data_name is {}", &data.get_name().0.as_ref().to_hex());
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
@@ -121,7 +118,7 @@ mod test {
         assert_eq!(x[2], nodes_in_table[2]);
         assert_eq!(x[3], nodes_in_table[3]);
       }
-      routing::Action::Reply(x) => panic!("Unexpected"),
+      routing::Action::Reply(_) => panic!("Unexpected"),
     }
 
     let data_name = DhtId::new(&data.get_name().get_id());
@@ -135,7 +132,7 @@ mod test {
         assert_eq!(x[2], nodes_in_table[2]);
         assert_eq!(x[3], nodes_in_table[3]);
       }
-      routing::Action::Reply(x) => panic!("Unexpected"),
+      routing::Action::Reply(_) => panic!("Unexpected"),
     }
   }
 }
