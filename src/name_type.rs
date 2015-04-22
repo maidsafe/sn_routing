@@ -18,6 +18,8 @@
 
 use cbor::CborTagEncode;
 use sodiumoxide::crypto;
+// use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
+use std::hash;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
 use std::mem;
@@ -61,7 +63,6 @@ macro_rules! convert_to_array {
 }
 
 /// NameType can be created using the new function by passing id as its parameter.
-#[derive(Default, Eq, PartialOrd, Ord, Hash)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
@@ -101,6 +102,49 @@ impl PartialEq for NameType {
     fn eq(&self, other: &NameType) -> bool {
         slice_equal(&self.0, &other.0)
     }
+
+    fn ne(&self, other: &NameType) -> bool {
+        !slice_equal(&self.0, &other.0)
+    }
+}
+
+//FIXME(ben): the ID can be ordered from zero as a normal euclidean number
+//
+impl Ord for NameType {
+  #[inline]
+  fn cmp(&self, other : &NameType) -> Ordering {
+    Ord::cmp(&&self.0[..], &&other.0[..])
+  }
+}
+
+impl PartialOrd for NameType {
+  #[inline]
+  fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
+    PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
+  }
+  #[inline]
+  fn lt(&self, other : &NameType) -> bool {
+    PartialOrd::lt(&&self.0[..], &&other.0[..])
+  }
+  #[inline]
+  fn le(&self, other : &NameType) -> bool {
+    PartialOrd::le(&&self.0[..], &&other.0[..])
+  }
+  #[inline]
+  fn gt(&self, other : &NameType) -> bool {
+    PartialOrd::gt(&&self.0[..], &&other.0[..])
+  }
+  #[inline]
+  fn ge(&self, other : &NameType) -> bool {
+    PartialOrd::ge(&&self.0[..], &&other.0[..])
+  }
+}
+
+// FIXME(Ben): please fix me
+impl hash::Hash for NameType {
+  fn hash<H: hash::Hasher>(&self, state: &mut hash::Hasher) {
+    hash::hash(&self.0[..], state)
+  }
 }
 
 

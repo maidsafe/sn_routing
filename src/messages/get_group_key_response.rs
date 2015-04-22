@@ -100,6 +100,7 @@ mod test {
     use types;
     use super::*;
     use cbor;
+    use NameType;
     use test_utils::Random;
 
     #[test]
