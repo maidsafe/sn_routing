@@ -59,15 +59,12 @@ macro_rules! convert_to_array {
     }};
 }
 
-/// NameType struct
-///
-/// NameType Struct can be created using the new function by passing, id as its parameter.
-#[derive(Eq, Hash)]
+/// NameType can be created using the new function by passing id as its parameter.
+#[derive(Default, Eq, PartialOrd, Ord, Hash)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
-   #[allow(dead_code)]
-   fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
+    fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
         for i in 0..lhs.0.len() {
             let res_0 = lhs.0[i] ^ target.0[i];
             let res_1 = rhs.0[i] ^ target.0[i];
@@ -86,23 +83,6 @@ impl NameType {
     pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
         self.0
     }
-
-    pub fn is_valid(&self) -> bool {
-        for it in self.0.iter() {
-            if *it != 0 {
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn generate_random() -> NameType {
-        let mut arr: [u8; NAME_TYPE_LEN] = unsafe { mem::uninitialized() };
-        for i in 0..NAME_TYPE_LEN {
-            arr[i] = rand::random::<u8>();
-        }
-        NameType(arr)
-    }
 }
 
 impl fmt::Debug for NameType {
@@ -113,7 +93,7 @@ impl fmt::Debug for NameType {
 
 impl PartialEq for NameType {
     fn eq(&self, other: &NameType) -> bool {
-  	slice_equal(&self.0, &other.0)
+        slice_equal(&self.0, &other.0)
     }
 }
 
@@ -130,7 +110,6 @@ impl Clone for NameType {
         NameType(arr_cloned)
     }
 }
-
 
 impl Encodable for NameType {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
