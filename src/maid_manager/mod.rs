@@ -71,7 +71,7 @@ mod test {
   extern crate routing;
   use super::*;
   use self::maidsafe_types::*;
-  use self::maidsafe_types::traits::RoutingTrait;
+  use self::routing::message_interface::MessageInterface;
   use self::routing::types::{DhtId, generate_random_vec_u8};
 
   #[test]

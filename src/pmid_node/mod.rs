@@ -73,9 +73,9 @@ mod test {
   extern crate routing;
   use super::*;
   use self::maidsafe_types::*;
-  use self::maidsafe_types::traits::RoutingTrait;
   use self::routing::types::DhtId;
   use self::routing::types::array_as_vector;
+  use self::routing::message_interface::MessageInterface;
 
   #[test]
   fn handle_put_get() {

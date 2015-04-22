@@ -94,8 +94,8 @@ mod test {
   extern crate routing;
   // extern crate rustc_serialize;
   use super::*;
-  use self::maidsafe_types::traits::RoutingTrait;
   use self::maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
+  use self::routing::message_interface::MessageInterface;
   use self::routing::types::{DhtId, array_as_vector};
   // use self::rustc_serialize::hex::ToHex;
 

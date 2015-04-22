@@ -117,10 +117,12 @@ mod test {
   extern crate maidsafe_types;
   extern crate routing;
   use super::*;
-  use self::maidsafe_types::*;
-  use self::maidsafe_types::traits::RoutingTrait;
-  use self::routing::types::{Authority, DestinationAddress, DhtId, generate_random_vec_u8};
-  use routing::facade::Facade;
+  use maidsafe_types::*;
+  use routing::types::{Authority, DestinationAddress, DhtId, generate_random_vec_u8};
+  use routing::interface::Interface;
+  use routing::message_interface::MessageInterface;
+
+  static PARALLELISM: usize = 4;
 
   #[test]
   fn put_get_flow() {
@@ -163,7 +165,7 @@ mod test {
       assert_eq!(put_result.is_err(), false);
       match put_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
-          assert_eq!(x.len(), super::data_manager::PARALLELISM);
+          assert_eq!(x.len(), PARALLELISM);
           assert_eq!(x[0], vault.nodes_in_table[0]);
           assert_eq!(x[1], vault.nodes_in_table[1]);
           assert_eq!(x[2], vault.nodes_in_table[2]);
@@ -177,7 +179,7 @@ mod test {
       assert_eq!(get_result.is_err(), false);
       match get_result.ok().unwrap() {
         routing::Action::SendOn(ref x) => {
-          assert_eq!(x.len(), super::data_manager::PARALLELISM);
+          assert_eq!(x.len(), PARALLELISM);
           assert_eq!(x[0], vault.nodes_in_table[0]);
           assert_eq!(x[1], vault.nodes_in_table[1]);
           assert_eq!(x[2], vault.nodes_in_table[2]);
