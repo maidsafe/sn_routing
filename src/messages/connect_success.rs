@@ -27,15 +27,6 @@ pub struct ConnectSuccess {
   pub peer_fob : types::PublicPmid
 }
 
-impl ConnectSuccess {
-    pub fn generate_random() -> ConnectSuccess {
-        ConnectSuccess {
-            peer_id: types::DhtId::generate_random(),
-            peer_fob: types::PublicPmid::generate_random(),
-        }
-    }
-}
-
 impl Encodable for ConnectSuccess {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
       CborTagEncode::new(5483_001, &(&self.peer_id,
@@ -61,10 +52,11 @@ mod test {
     extern crate cbor;
 
     use super::*;
+    use test_utils::Random;
 
     #[test]
     fn connect_success_serialisation() {
-        let obj_before = ConnectSuccess::generate_random();
+        let obj_before : ConnectSuccess = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

@@ -221,6 +221,8 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put(&mut self, name: types::DhtId, content: Vec<u8>) -> Result<(u32), IoError> {
+        use test_utils::Random;
+
         // Make PutData message
         let put_data = messages::put_data::PutData {
             name: name.0.clone(),
@@ -240,7 +242,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 reply_to: Some(self.id_packet.get_id()),
             },
             types::Authority::Client,
-            Some(types::Signature::generate_random()), // What is the signautre -- see in c++ Secret - signing key
+            Some(Random::generate_random()), // What is the signautre -- see in c++ Secret - signing key
         );
 
         self.message_id += 1;

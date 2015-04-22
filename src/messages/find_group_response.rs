@@ -26,18 +26,7 @@ pub struct FindGroupResponse {
 }
 
 impl FindGroupResponse {
-    pub fn generate_random() -> FindGroupResponse {
-        let total = types::GROUP_SIZE as usize + 20;
-        let mut vec: Vec<types::PublicPmid> = Vec::with_capacity(total);
-        for i in 0..total {
-            vec.push(types::PublicPmid::generate_random());
-        }
-
-        FindGroupResponse {
-            target_id: types::DhtId::generate_random(),
-            group: vec,
-        }
-    }
+    
 
     // TODO(ben 2015-04-09) to be replaced with a proper merge trait
     //                      for every message type
@@ -110,10 +99,11 @@ mod test {
     use super::*;
     use cbor; 
     use types;
-    
+    use test_utils::Random;
+
     #[test]
     fn find_group_response_serialisation() {
-        let obj_before = FindGroupResponse::generate_random();
+        let obj_before : FindGroupResponse = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
@@ -126,7 +116,7 @@ mod test {
 
     #[test]
     fn merge() {
-        let obj = FindGroupResponse::generate_random();
+        let obj : FindGroupResponse = Random::generate_random();
         assert!(obj.group.len() >= types::GROUP_SIZE as usize);
         // if group size changes, reimplement the below
         assert!(types::GROUP_SIZE >= 13);
@@ -143,7 +133,7 @@ mod test {
 
         let mut responses = Vec::<FindGroupResponse>::with_capacity(4);
         for _ in 0..4 {
-            let mut response = FindGroupResponse::generate_random();
+            let mut response : FindGroupResponse = Random::generate_random();
             response.target_id = obj.target_id.clone();
             response.group[1] = keys[0].clone();
             response.group[4] = keys[1].clone();

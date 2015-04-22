@@ -71,7 +71,7 @@ pub mod name_type;
 pub mod message_interface;
 pub mod routing_node;
 pub mod interface;
-
+pub mod test_utils;
 use types::DhtId;
 
 //#[derive(RustcEncodable, RustcDecodable)]
@@ -99,7 +99,8 @@ fn facade_implementation() {
   mod routing_node;
   use interface::Interface;
   use types::{DhtId, DestinationAddress, Authority};
-
+  use test_utils::Random;
+  
   struct MyFacade;
 
   impl Interface for MyFacade {
@@ -115,6 +116,6 @@ fn facade_implementation() {
   }
 
   let my_facade = MyFacade;
-  let my_routing = routing_node::RoutingNode::new(DhtId::generate_random(), my_facade);
+  let my_routing = routing_node::RoutingNode::new(Random::generate_random(), my_facade);
   /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
 }
