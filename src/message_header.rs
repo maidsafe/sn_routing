@@ -20,6 +20,7 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
+use NameType;
 
 /// Header of various message types used on routing level
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -64,11 +65,11 @@ impl MessageHeader {
         self.message_id
     }
 
-    pub fn from_node(&self) -> types::DhtId {
+    pub fn from_node(&self) -> NameType {
         self.source.from_node.clone()
     }
 
-    pub fn from_group(&self) -> Option<types::DhtId> {
+    pub fn from_group(&self) -> Option<NameType> {
         if self.source.from_group.is_some() {
             self.source.from_group.clone()
         } else {
@@ -92,7 +93,7 @@ impl MessageHeader {
         }
     }
 
-    pub fn reply_to(&self) -> Option<types::DhtId> {
+    pub fn reply_to(&self) -> Option<NameType> {
         if self.source.reply_to.is_some() {
             self.source.reply_to.clone()
         } else {
@@ -100,7 +101,7 @@ impl MessageHeader {
         }
     }
 
-    pub fn from(&self) -> types::DhtId {
+    pub fn from(&self) -> NameType {
         match self.from_group() {
             Some(address) => address,
             None => self.from_node()
@@ -142,6 +143,7 @@ mod test {
     use rustc_serialize::{Decodable, Encodable};
     use types;
     use cbor;
+    use NameType;
 
     pub fn generate_u8_64() -> Vec<u8> {
         let mut u8_64: Vec<u8> = vec![];
@@ -163,8 +165,8 @@ mod test {
     fn test_message_header() {
         test_object(MessageHeader {
             message_id : random::<u32>(),
-            destination : types::DestinationAddress{dest: types::DhtId::generate_random(), reply_to: None },
-            source : types::SourceAddress { from_node : types::DhtId::generate_random(),
+            destination : types::DestinationAddress{dest: NameType::generate_random(), reply_to: None },
+            source : types::SourceAddress { from_node : NameType::generate_random(),
             from_group : None,
             reply_to: None },
             authority : types::Authority::ManagedNode,

@@ -24,7 +24,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::fmt;
 use rand::random;
 use sodiumoxide;
-use name_type::NameType;
+use NameType;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();

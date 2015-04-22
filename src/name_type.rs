@@ -17,6 +17,7 @@
 // of the MaidSafe Software.
 
 use cbor::CborTagEncode;
+use sodiumoxide::crypto;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
 use std::mem;
@@ -79,6 +80,11 @@ impl NameType {
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
     }
+
+    // TODO(Ben): Resolve from_data
+    // pub fn from_data(data : &[u8]) -> NameType {
+    //     NameType::new(&crypto::hash::sha512::hash(data).0)
+    // }
 
     pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
         self.0
@@ -185,4 +191,15 @@ mod test {
         assert!(convert_to_array!(data2, 1).is_none());
         assert!(convert_to_array!(data, 3).is_none());
     }
+
+    //TODO(Ben: resolve from_data)
+    // #[test]
+    // fn name_from_data() {
+    //   use rustc_serialize::hex::ToHex;
+    //   let data = "this is a known string".to_string().into_bytes();
+    //   let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
+    //                        e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
+    //                        ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
+    //   assert_eq!(&expected_name, &NameType::from_data(&data).0.to_hex());
+    // }
 }
