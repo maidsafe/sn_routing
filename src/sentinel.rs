@@ -327,6 +327,7 @@ mod test {
   use sodiumoxide::crypto;
   use types;
   use types::{RoutingTrait, closer_to_target};
+  use NameType;
   use message_header;
   use messages;
   use rustc_serialize::Encodable;

@@ -369,11 +369,11 @@ pub struct Pmid {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
   validation_token: Signature,
-  name: DhtId
+  name: NameType
 }
 
 impl RoutingTrait for Pmid {
-  fn get_name(&self) -> DhtId { self.name.clone() }
+  fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
 
@@ -406,7 +406,7 @@ impl Pmid {
       public_keys : (pub_sign_key, pub_asym_key),
       secret_keys : (sec_sign_key, sec_asym_key),
       validation_token : validation_token,
-      name : DhtId(digest.0.to_vec())
+      name : NameType::new(digest)
     }
   }
 
@@ -557,16 +557,6 @@ mod test {
     let mut d = cbor::Decoder::from_bytes(e.as_bytes());
     let obj_after: T = d.decode().next().unwrap().unwrap();
     assert_eq!(obj_after == obj_before, true)
-  }
-
-  #[test]
-  fn name_from_data() {
-    use rustc_serialize::hex::ToHex;
-    let data = "this is a known string".to_string().into_bytes();
-    let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
-                         e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
-                         ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
-    assert_eq!(&expected_name, &NameType::from_data(&data).0.to_hex());
   }
 
   #[test]

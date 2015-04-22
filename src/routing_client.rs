@@ -18,6 +18,7 @@ extern crate sodiumoxide;
 use std::sync::{Mutex, Arc, mpsc};
 use std::io::Error as IoError;
 use types;
+use NameType;
 use interface::Interface;
 use message_header;
 use messages;
@@ -40,20 +41,41 @@ pub enum CryptoError {
 #[derive(Clone)]
 pub struct ClientIdPacket {
     public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-    secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey)
+    secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
+    name : NameType
 }
 
 impl ClientIdPacket {
     pub fn new(public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
                secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey)) -> ClientIdPacket {
+
+        let sign_arr = &(public_keys.0).0;
+        let asym_arr = &(public_keys.1).0;
+
+        let mut arr_combined = [0u8; 64 * 2];
+
+        for i in 0..sign_arr.len() {
+           arr_combined[i] = sign_arr[i];
+        }
+        for i in 0..asym_arr.len() {
+           arr_combined[64 + i] = asym_arr[i];
+        }
+
+        let digest = crypto::hash::sha512::hash(&arr_combined);
+
         ClientIdPacket {
             public_keys: public_keys,
-            secret_keys: secret_keys
+            secret_keys: secret_keys,
+            name : NameType::new(digest)
         }
     }
 
-    pub fn get_id(&self) -> types::DhtId {
-        types::DhtId(self.public_keys.0 .0.to_vec())
+    //FIXME(ben 2015-04-22) : this is NOT the correct name derived from public keys
+    //                        refer to Pmid for name calculation
+    //  pub fn get_id(&self) -> [u8; NameType::NAME_TYPE_LEN] {
+    //  gives a rustc compiler error; follow up and report bug
+    pub fn get_id(&self) -> [u8; 64usize] {
+      self.name.get_id()
     }
 
     pub fn get_public_keys(&self) -> &(crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey){
