@@ -42,40 +42,36 @@ pub enum CryptoError {
 pub struct ClientIdPacket {
     public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
     secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
-    name : NameType
 }
 
 impl ClientIdPacket {
     pub fn new(public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
                secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey)) -> ClientIdPacket {
-
-        let sign_arr = &(public_keys.0).0;
-        let asym_arr = &(public_keys.1).0;
-
-        let mut arr_combined = [0u8; 64 * 2];
-
-        for i in 0..sign_arr.len() {
-           arr_combined[i] = sign_arr[i];
-        }
-        for i in 0..asym_arr.len() {
-           arr_combined[64 + i] = asym_arr[i];
-        }
-
-        let digest = crypto::hash::sha512::hash(&arr_combined);
-
         ClientIdPacket {
             public_keys: public_keys,
-            secret_keys: secret_keys,
-            name : NameType::new(digest)
+            secret_keys: secret_keys
         }
     }
 
-    //FIXME(ben 2015-04-22) : this is NOT the correct name derived from public keys
-    //                        refer to Pmid for name calculation
+    //FIXME(ben 2015-04-22) :
     //  pub fn get_id(&self) -> [u8; NameType::NAME_TYPE_LEN] {
     //  gives a rustc compiler error; follow up and report bug
     pub fn get_id(&self) -> [u8; 64usize] {
-      self.name.get_id()
+
+      let sign_arr = &(self.public_keys.0).0;
+      let asym_arr = &(self.public_keys.1).0;
+
+      let mut arr_combined = [0u8; 64 * 2];
+
+      for i in 0..sign_arr.len() {
+         arr_combined[i] = sign_arr[i];
+      }
+      for i in 0..asym_arr.len() {
+         arr_combined[64 + i] = asym_arr[i];
+      }
+
+      let digest = crypto::hash::sha512::hash(&arr_combined);
+      digest.0
     }
 
     pub fn get_public_keys(&self) -> &(crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey){
@@ -165,7 +161,7 @@ pub struct RoutingClient<'a, F: Interface + 'a> {
     interface: Arc<Mutex<F>>,
     connection_manager: ConnectionManager,
     id_packet: ClientIdPacket,
-    bootstrap_address: (types::DhtId, Endpoint),
+    bootstrap_address: (NameType, Endpoint),
     message_id: u32,
     join_guard: thread::JoinGuard<'a, ()>,
 }
@@ -180,7 +176,7 @@ impl<'a, F> Drop for RoutingClient<'a, F> where F: Interface {
 impl<'a, F> RoutingClient<'a, F> where F: Interface {
     pub fn new(my_interface: Arc<Mutex<F>>,
                id_packet: ClientIdPacket,
-               bootstrap_add: (types::DhtId, crust::Endpoint)) -> RoutingClient<'a, F> {
+               bootstrap_add: (NameType, crust::Endpoint)) -> RoutingClient<'a, F> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
 
@@ -195,7 +191,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
     }
 
     /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&mut self, type_id: u64, name: types::DhtId) -> Result<u32, IoError> {
+    pub fn get(&mut self, type_id: u64, name: NameType) -> Result<u32, IoError> {
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
@@ -242,7 +238,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, name: types::DhtId, content: Vec<u8>) -> Result<(u32), IoError> {
+    pub fn put(&mut self, name: NameType, content: Vec<u8>) -> Result<(u32), IoError> {
         use test_utils::Random;
 
         // Make PutData message
@@ -287,7 +283,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
         }
     }
 
-    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: types::DhtId, own_address: types::DhtId, my_interface: Arc<Mutex<F>>) {
+    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: NameType, own_address: NameType, my_interface: Arc<Mutex<F>>) {
         for it in rx.iter() {
             match it {
                 crust::connection_manager::Event::NewMessage(id, bytes) => {
@@ -333,15 +329,15 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 //     struct TestInterface;
 //
 //     impl Interface for TestInterface {
-//         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+//         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: NameType , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
 //         fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-//                       from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-//         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-//         fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
-//         fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-//         fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-//         fn add_node(&mut self, node: DhtId) { unimplemented!(); }
-//         fn drop_node(&mut self, node: DhtId) { unimplemented!(); }
+//                       from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+//         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+//         fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
+//         fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+//         fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+//         fn add_node(&mut self, node: NameType) { unimplemented!(); }
+//         fn drop_node(&mut self, node: NameType) { unimplemented!(); }
 //     }
 //
 //     pub fn generate_random(size : usize) -> Vec<u8> {
@@ -356,9 +352,9 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 //     // fn routing_client_put() {
 //     //     let interface = Arc::new(Mutex::new(TestInterface));
 //     //     let maid = Maid::generate_random();
-//     //     let dht_id = DhtId::generate_random();
+//     //     let dht_id = NameType::generate_random();
 //     //     let mut routing_client = RoutingClient::new(interface, maid, dht_id);
-//     //     let name = DhtId::generate_random();
+//     //     let name = NameType::generate_random();
 //     //     let content = generate_random(1024);
 //     //
 //     //     let put_result = routing_client.put(name, content);

@@ -74,7 +74,6 @@ pub mod interface;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType};
 pub mod test_utils;
-// use types::DhtId;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {

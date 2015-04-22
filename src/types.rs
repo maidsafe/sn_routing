@@ -159,7 +159,7 @@ pub type PmidNode = NameType;
 pub type PmidNodes = Vec<PmidNode>;
 
 pub trait RoutingTrait {
-  fn get_name(&self)->DhtId;
+  fn get_name(&self)->NameType;
   fn get_owner(&self)->Vec<u8>;
   fn refresh(&self)->bool;
   fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
@@ -287,7 +287,7 @@ pub struct PublicPmid {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
   pub validation_token: Signature,
-  pub name: DhtId
+  pub name: NameType
 }
 
 impl PublicPmid {
@@ -303,7 +303,7 @@ impl PublicPmid {
 }
 
 impl RoutingTrait for PublicPmid {
-  fn get_name(&self) -> DhtId { self.name.clone() }
+  fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
 
@@ -374,7 +374,7 @@ impl Pmid {
       public_keys : (pub_sign_key, pub_asym_key),
       secret_keys : (sec_sign_key, sec_asym_key),
       validation_token : validation_token,
-      name : NameType::new(digest)
+      name : NameType::new(digest.0)
     }
   }
 
@@ -403,7 +403,7 @@ impl Pmid {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct AccountTransferInfo {
-  pub name : DhtId
+  pub name : NameType
 }
 
 impl Encodable for AccountTransferInfo {
@@ -421,7 +421,7 @@ impl Decodable for AccountTransferInfo {
 }
 
 impl RoutingTrait for AccountTransferInfo {
-  fn get_name(&self)->DhtId { self.name.clone() }
+  fn get_name(&self)->NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { true } // TODO is this an account transfer type
 
@@ -432,9 +432,9 @@ impl RoutingTrait for AccountTransferInfo {
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {
-  pub from_node : DhtId,
-  pub from_group : Option<DhtId>,
-  pub reply_to : Option<DhtId>
+  pub from_node : NameType,
+  pub from_group : Option<NameType>,
+  pub reply_to : Option<NameType>
 }
 
 impl Encodable for SourceAddress {

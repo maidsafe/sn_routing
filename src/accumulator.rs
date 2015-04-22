@@ -211,7 +211,6 @@ mod test {
     fn delete() {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(2);
         let address : NameType = Random::generate_random();
-        let address : DhtId = Random::generate_random();
 
         assert!(accumulator.add(1, 1, address.clone()).is_none());
         assert_eq!(accumulator.have_name(1), true);

@@ -19,12 +19,13 @@
 use rand::random;
 use messages;
 use types::*;
+use NameType;
 use super::random_trait::Random;
 
 impl Random for messages::connect_request::ConnectRequest {
 	fn generate_random() -> messages::connect_request::ConnectRequest {
 		use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
-        
+
 
         // TODO: IPv6
         let random_addr = || -> SocketAddr {
@@ -42,13 +43,13 @@ impl Random for messages::connect_request::ConnectRequest {
             receiver_id: Random::generate_random(),
             requester_fob: Random::generate_random(),
         }
-	}	    
+	}
 }
 
 
 impl Random for messages::connect_response::ConnectResponse {
 	fn generate_random() -> messages::connect_response::ConnectResponse {
-        use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};        
+        use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
 
         // TODO: IPv6
         let random_addr = || -> SocketAddr {
@@ -155,7 +156,7 @@ impl Random for messages::get_group_key::GetGroupKey {
 impl Random for messages::get_group_key_response::GetGroupKeyResponse {
 	fn generate_random() -> messages::get_group_key_response::GetGroupKeyResponse {
         let total: usize = GROUP_SIZE as usize + 7;
-        let mut vec: Vec<(DhtId, PublicSignKey)> = Vec::with_capacity(total);
+        let mut vec: Vec<(NameType, PublicSignKey)> = Vec::with_capacity(total);
         for i in 0..total {
             vec.push((Random::generate_random(), Random::generate_random()));
         }

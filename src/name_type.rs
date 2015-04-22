@@ -164,12 +164,6 @@ mod test {
     }
 
     #[test]
-    fn name_type_validity_assertion() {
-        assert!(NameType([1u8; NAME_TYPE_LEN]).is_valid());
-        assert!(!NameType([0u8; NAME_TYPE_LEN]).is_valid());
-    }
-
-    #[test]
     fn closer_to_target() {
         let obj0 = NameType::generate_random();
         let obj0_clone = obj0.clone();
