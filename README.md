@@ -53,7 +53,7 @@ Steps to compile SQLite by,
 - [x] Version 0.0.8
 - [ ] Test client node
 - [ ] Test basic facade (normal DHT Get Put with republish)
-- [ ] Move bootstrap out of routing
+- [x] Move bootstrap out of routing
 - [ ] Complete Client Interface (Facade)
 - [ ] Complete Routing Node Interface to accomodate churn
 - [ ] Add caching to node interface
@@ -64,7 +64,7 @@ Steps to compile SQLite by,
 - [ ] Check Authority (see Jira 954)
 - [ ] Implement routing connections management
 - [ ] Sentinel:
-  - [ ] Handover existing implementation
+  - [x] Handover existing implementation
   - [ ] Account transfer merge
   - [ ] Group response merge
   - [ ] Signature checks
