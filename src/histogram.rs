@@ -22,7 +22,7 @@ impl<Key: Ord + Clone> Histogram<Key> {
         kvs
     }
 
-    pub fn to_vector(&self) -> Vec<(Key, usize)> {
+    fn to_vector(&self) -> Vec<(Key, usize)> {
         self.map.iter().map(|(k,v)| (k.clone(), v.clone())).collect::<Vec<_>>()
     }
 }
