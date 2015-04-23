@@ -1,38 +1,43 @@
 // Copyright 2015 MaidSafe.net limited
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
-// licence you accepted on initial access to the Software (the "Licences").
+//
+// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License, version
+// 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which licence you
+// accepted on initial access to the Software (the "Licences").
+//
 // By contributing code to the MaidSafe Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://www.maidsafe.net/licenses
+// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also available at
+// http://maidsafe.net/licenses
+//
 // Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
-// See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe
-// Software.
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
+//
+// See the Licences for the specific language governing permissions and limitations relating to use
+// of the MaidSafe Software.
 
-extern crate sodiumoxide;
-
-use std::sync::{Mutex, Arc, mpsc};
-use std::io::Error as IoError;
-use types;
-use NameType;
-use interface::Interface;
-use message_header;
-use messages;
-use std::thread;
-use cbor::CborTagEncode;
 use cbor;
-use crust;
 use rand;
+use rustc_serialize;
+use rustc_serialize::{Decodable, Encodable};
+use sodiumoxide;
 use sodiumoxide::crypto;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use std::io::Error as IoError;
+use std::sync::{Mutex, Arc, mpsc};
+use std::thread;
+
+use client_interface::Interface;
+use crust;
+use messages;
+use message_header;
+use name_type::NameType;
+use sendable::Sendable;
+use types;
+
+pub use crust::Endpoint;
 
 type ConnectionManager = crust::ConnectionManager;
-type Event             = crust::Event;
-pub use crust::Endpoint;
+type Event = crust::Event;
 
 pub enum CryptoError {
     Unknown
@@ -100,11 +105,11 @@ impl ClientIdPacket {
 }
 
 impl Encodable for ClientIdPacket {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    fn encode<E: rustc_serialize::Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let (crypto::sign::PublicKey(pub_sign_vec), crypto::asymmetricbox::PublicKey(pub_asym_vec)) = self.public_keys;
         let (crypto::sign::SecretKey(sec_sign_vec), crypto::asymmetricbox::SecretKey(sec_asym_vec)) = self.secret_keys;
 
-        CborTagEncode::new(5483_001, &(
+        cbor::CborTagEncode::new(5483_001, &(
             pub_sign_vec.as_ref(),
             pub_asym_vec.as_ref(),
             sec_sign_vec.as_ref(),
@@ -112,42 +117,17 @@ impl Encodable for ClientIdPacket {
     }
 }
 
-///
-/// Convert a container to an array. If the container is not the exact size specified, None is
-/// returned. Otherwise, all of the elements are moved into the array.
-///
-/// ```
-/// let mut data = Vec::<usize>::new();
-/// data.push(1);
-/// data.push(2);
-/// assert!(convert_to_array(data, 2).is_some());
-/// assert!(convert_to_array(data, 3).is_none());
-/// ```
-macro_rules! convert_to_array {
-    ($container:ident, $size:expr) => {{
-        if $container.len() != $size {
-            None
-        } else {
-            use std::mem;
-            let mut arr : [_; $size] = unsafe { mem::uninitialized() };
-            for element in $container.into_iter().enumerate() {
-                let old_val = mem::replace(&mut arr[element.0], element.1);
-                unsafe { mem::forget(old_val) };
-            }
-            Some(arr)
-        }
-    }};
-}
-
 impl Decodable for ClientIdPacket {
-    fn decode<D: Decoder>(d: &mut D)-> Result<ClientIdPacket, D::Error> {
+    fn decode<D: rustc_serialize::Decoder>(d: &mut D)-> Result<ClientIdPacket, D::Error> {
         try!(d.read_u64());
         let (pub_sign_vec, pub_asym_vec, sec_sign_vec, sec_asym_vec) : (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) = try!(Decodable::decode(d));
 
-        let pub_sign_arr = convert_to_array!(pub_sign_vec, crypto::sign::PUBLICKEYBYTES);
-        let pub_asym_arr = convert_to_array!(pub_asym_vec, crypto::asymmetricbox::PUBLICKEYBYTES);
-        let sec_sign_arr = convert_to_array!(sec_sign_vec, crypto::sign::SECRETKEYBYTES);
-        let sec_asym_arr = convert_to_array!(sec_asym_vec, crypto::asymmetricbox::SECRETKEYBYTES);
+        let pub_sign_arr = container_of_u8_to_array!(pub_sign_vec, crypto::sign::PUBLICKEYBYTES);
+        let pub_asym_arr =
+            container_of_u8_to_array!(pub_asym_vec, crypto::asymmetricbox::PUBLICKEYBYTES);
+        let sec_sign_arr = container_of_u8_to_array!(sec_sign_vec, crypto::sign::SECRETKEYBYTES);
+        let sec_asym_arr =
+            container_of_u8_to_array!(sec_asym_vec, crypto::asymmetricbox::SECRETKEYBYTES);
 
         if pub_sign_arr.is_none() || pub_asym_arr.is_none() || sec_sign_arr.is_none() || sec_asym_arr.is_none() {
             return Err(d.error("Bad Maid size"));
@@ -181,7 +161,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
     pub fn new(my_interface: Arc<Mutex<F>>,
                id_packet: ClientIdPacket,
                bootstrap_add: (NameType, crust::Endpoint)) -> RoutingClient<'a, F> {
-        sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
+        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
 
         RoutingClient {
@@ -194,7 +174,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
         }
     }
 
-    /// Retreive something from the network (non mutating) - Direct call
+    /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) -> Result<u32, IoError> {
         // Make GetData message
         let get_data = messages::get_data::GetData {
@@ -242,13 +222,12 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, name: NameType, content: Vec<u8>) -> Result<(u32), IoError> {
+    pub fn put<T>(&mut self, content: T) -> Result<u32, IoError> where T: Sendable {
         use test_utils::Random;
-
         // Make PutData message
         let put_data = messages::put_data::PutData {
-            name: name.clone(),
-            data: content,
+            name: content.name(),
+            data: content.serialised_contents(),
         };
 
         // Make MessageHeader
@@ -264,7 +243,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 reply_to: Some(self.id_packet.get_name()),
             },
             types::Authority::Client,
-            Some(Random::generate_random()), // What is the signautre -- see in c++ Secret - signing key
+            Some(Random::generate_random()), // What is the signature -- see in c++ Secret - signing key
         );
 
         self.message_id += 1;
@@ -287,7 +266,8 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
         }
     }
 
-    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: NameType, own_address: NameType, my_interface: Arc<Mutex<F>>) {
+    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: NameType, own_address: NameType,
+             my_interface: Arc<Mutex<F>>) {
         for it in rx.iter() {
             match it {
                 crust::connection_manager::Event::NewMessage(id, bytes) => {
@@ -301,8 +281,8 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                         match routing_msg.message_type {
                             messages::MessageTypeTag::GetDataResponse => {
                                 let mut interface = my_interface.lock().unwrap();
-                                interface.handle_get_response(routing_msg.message_header.source.from_node.clone(),
-                                                           Ok(routing_msg.serialised_body));
+                                interface.handle_get_response(routing_msg.message_header.message_id,
+                                                              Ok(routing_msg.serialised_body));
                             }
                             _ => unimplemented!(),
                         }
@@ -324,7 +304,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 //     use super::*;
 //     use std::sync::{Mutex, Arc};
 //     use types::*;
-//     use interface::Interface;
+//     use client_interface::Interface;
 //     use Action;
 //     use RoutingError;
 //     use maidsafe_types::Random;

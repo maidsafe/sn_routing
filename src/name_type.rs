@@ -23,7 +23,6 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
 use std::fmt;
 
-
 pub const NAME_TYPE_LEN : usize = 64;
 
 ///
@@ -31,33 +30,6 @@ pub const NAME_TYPE_LEN : usize = 64;
 ///
 pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
-}
-
-///
-/// Convert a container to an array. If the container is not the exact size specified, None is
-/// returned. Otherwise, all of the elements are moved into the array.
-///
-/// ```
-/// let mut data = Vec::<usize>::new();
-/// data.push(1);
-/// data.push(2);
-/// assert!(convert_to_array(data, 2).is_some());
-/// assert!(convert_to_array(data, 3).is_none());
-/// ```
-macro_rules! convert_to_array {
-    ($container:ident, $size:expr) => {{
-        if $container.len() != $size {
-            None
-        } else {
-            use std::mem;
-            let mut arr : [_; $size] = unsafe { mem::uninitialized() };
-            for element in $container.into_iter().enumerate() {
-                let old_val = mem::replace(&mut arr[element.0], element.1);
-                unsafe { mem::forget(old_val) };
-            }
-            Some(arr)
-        }
-    }};
 }
 
 /// NameType can be created using the new function by passing id as its parameter.
@@ -167,7 +139,7 @@ impl Decodable for NameType {
         try!(d.read_u64());
         let id : Vec<u8> = try!(Decodable::decode(d));
 
-        match convert_to_array!(id, NAME_TYPE_LEN) {
+        match container_of_u8_to_array!(id, NAME_TYPE_LEN) {
             Some(id_arr) => Ok(NameType(id_arr)),
             None => Err(d.error("Bad NameType size"))
         }
@@ -209,20 +181,6 @@ mod test {
         let obj1: NameType = Random::generate_random();
         assert!(closer_to_target(&obj0_clone, &obj1, &obj0));
         assert!(!closer_to_target(&obj1, &obj0_clone, &obj0));
-    }
-
-    #[test]
-    fn copy_strings_to_bad_array() {
-        let one = "some string".to_string();
-        let two = "some two".to_string();
-
-        let mut data = Vec::<String>::with_capacity(2);
-        data.push(one);
-        data.push(two);
-
-        let data2 = data.clone();
-        assert!(convert_to_array!(data2, 1).is_none());
-        assert!(convert_to_array!(data, 3).is_none());
     }
 
     //TODO(Ben: resolve from_data)
