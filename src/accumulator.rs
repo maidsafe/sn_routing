@@ -106,7 +106,6 @@ mod test {
     use std::num;
     use rand;
     use NameType;
-    use types::*;
     use test_utils::Random;
 
     pub fn generate_address() -> Vec<u8> {

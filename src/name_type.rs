@@ -17,14 +17,12 @@
 // of the MaidSafe Software.
 
 use cbor::CborTagEncode;
-use sodiumoxide::crypto;
 // use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
 use std::hash;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
-use std::mem;
 use std::fmt;
-use rand;
+
 
 pub const NAME_TYPE_LEN : usize = 64;
 

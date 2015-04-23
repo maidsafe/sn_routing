@@ -101,7 +101,6 @@ fn facade_implementation() {
   use interface::Interface;
   use types::{DestinationAddress, Authority};
   use NameType;
-  use test_utils::Random;
 
   struct MyFacade;
 

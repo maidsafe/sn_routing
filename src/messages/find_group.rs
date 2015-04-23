@@ -18,7 +18,6 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
-use types;
 use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]

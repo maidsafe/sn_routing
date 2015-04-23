@@ -143,7 +143,6 @@ mod test {
     use rustc_serialize::{Decodable, Encodable};
     use types;
     use cbor;
-    use NameType;
     use test_utils::Random;
 
     pub fn generate_u8_64() -> Vec<u8> {
