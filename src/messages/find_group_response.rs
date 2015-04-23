@@ -19,7 +19,6 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use histogram::Histogram;
 use types::{PublicPmid, GROUP_SIZE};
-use types;
 use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
