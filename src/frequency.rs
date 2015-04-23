@@ -53,7 +53,7 @@ mod test {
     fn fill_monotonic_distribution() {
         let mut rng = thread_rng();
 
-        // ensure a monotonic descreasing function
+        // ensure a monotonic decreasing function
         let domain_low = 0u32;
         let domain_high = 500u32;
         assert!(domain_low < domain_high);
@@ -69,11 +69,11 @@ mod test {
             for _ in 0usize..count { all_counts.push(x.clone()); };
         };
 
-        // shuffle de duplicated keys
+        // shuffle duplicated keys
         rng.shuffle(&mut all_counts[..]);
         let mut freq = Frequency::new();
         for occurance in all_counts {
-            // and register each multiple times key in random order
+            // and register each key multiple times in random order
             freq.update(occurance);
         };
         // sort the counts
