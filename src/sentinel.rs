@@ -266,10 +266,7 @@ impl<'a> Sentinel<'a> {
             return None;
         }
 
-        let first = decoded_responses[0].clone();
-        let rest  = decoded_responses.iter().skip(1).map(|a|a.clone()).collect::<Vec<_>>();
-
-        let merged_responses = match first.merge(&rest) {
+        let merged_responses = match FindGroupResponse::merge(&decoded_responses) {
           Some(merged_responses) => merged_responses,
           None => panic!("No merged group confirmed.") // return None;
         };
