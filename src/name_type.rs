@@ -218,20 +218,6 @@ mod test {
     }
 
     #[test]
-    fn copy_strings_to_bad_array() {
-        let one = "some string".to_string();
-        let two = "some two".to_string();
-
-        let mut data = Vec::<String>::with_capacity(2);
-        data.push(one);
-        data.push(two);
-
-        let data2 = data.clone();
-        assert!(convert_to_array!(data2, 1).is_none());
-        assert!(convert_to_array!(data, 3).is_none());
-    }
-
-    #[test]
     fn format_pmid_nametype() {
         // test for Pmids
         use types::Pmid;
