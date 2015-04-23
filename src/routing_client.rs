@@ -31,6 +31,7 @@ use crust;
 use messages;
 use message_header;
 use name_type::NameType;
+use sendable::Sendable;
 use types;
 
 pub use crust::Endpoint;
@@ -221,12 +222,12 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, name: NameType, content: Vec<u8>) -> Result<(u32), IoError> {
+    pub fn put<T>(&mut self, content: T) -> Result<u32, IoError> where T: Sendable {
         use test_utils::Random;
         // Make PutData message
         let put_data = messages::put_data::PutData {
-            name: name.clone(),
-            data: content,
+            name: content.name(),
+            data: content.serialised_contents(),
         };
 
         // Make MessageHeader
@@ -242,7 +243,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 reply_to: Some(self.id_packet.get_name()),
             },
             types::Authority::Client,
-            Some(Random::generate_random()), // What is the signautre -- see in c++ Secret - signing key
+            Some(Random::generate_random()), // What is the signature -- see in c++ Secret - signing key
         );
 
         self.message_id += 1;

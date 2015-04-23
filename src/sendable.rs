@@ -16,15 +16,17 @@
 // See the Licences for the specific language governing permissions and limitations relating to use
 // of the MaidSafe Software.
 
-/// This trait require to be avauilable for any type
-/// passed to routing, refresh / account transfer is optional
-/// The name will let routing know its an NaeManager and the owner will allow routing to hash
-/// the requsters id with this name (by hashing the requesters id) for put and post messages
 use name_type;
 
-pub trait MessageInterface {
-    fn get_name(&self)->name_type::NameType;
-    fn get_owner(&self)->Option<Vec<u8>> { Option::None }
+/// This trait require to be available for any type passed to routing.  `owner`, `refresh` and
+/// `merge` are optional.  The name will let routing know its a NaeManager and the owner will allow
+/// routing to hash the requster's ID with this name (by hashing the requester's ID) for put and
+/// post messages.
+pub trait Sendable {
+    fn name(&self)->name_type::NameType;
+    fn type_tag(&self)->u64;
+    fn serialised_contents(&self)->Vec<u8>;
+    fn owner(&self)->Option<name_type::NameType> { Option::None }
     fn refresh(&self)->bool { false } // is this an account transfer type
     fn merge(&self)->bool { false } // how do we merge these
 }

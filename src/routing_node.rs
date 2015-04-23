@@ -16,23 +16,28 @@
 // See the Licences for the specific language governing permissions and limitations relating to use
 // of the MaidSafe Software.
 
+use cbor::{Decoder, Encoder};
+use rand;
+use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
-use crust;
-use message_filter::MessageFilter;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::Receiver;
-use node_interface::Interface;
-use rand;
-use std::net::SocketAddr;
-use std::collections::{HashSet, HashMap, BTreeMap};
-use std::net::{SocketAddrV4, Ipv4Addr};
 use time::Duration;
 
-use routing_table::{RoutingTable, NodeInfo};
+
+
+use crust;
+use crust::Endpoint::Tcp;
+use message_filter::MessageFilter;
 use NameType;
 use name_type::closer_to_target;
-use types::MessageId;
+use node_interface::Interface;
+use routing_table::{RoutingTable, NodeInfo};
+use sendable::Sendable;
 use types;
+use types::{MessageId, RoutingTrait};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -45,18 +50,12 @@ use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::{RoutingMessage, MessageTypeTag};
-use rustc_serialize::{Decodable, Encodable};
-use cbor::{Encoder, Decoder};
 
-use types::RoutingTrait;
-
-use crust::Endpoint::Tcp;
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
-
 type RecvResult = Result<(),()>;
 
 /// DHT node
@@ -111,7 +110,7 @@ impl<F> RoutingNode<F> where F: Interface {
     pub fn get(&self, type_id: u64, name: NameType) { unimplemented!() }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
+    pub fn put<T>(&self, destination: NameType, content: T) where T: Sendable { unimplemented!() }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
     pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
