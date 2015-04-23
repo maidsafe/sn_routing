@@ -46,5 +46,10 @@ impl<Key: Ord + Clone> Frequency<Key> {
 
 #[cfg(test)]
 mod test {
+    use super::*;
 
+    #[test]
+    fn fill_exponential_distribution() {
+        
+    }
 }
