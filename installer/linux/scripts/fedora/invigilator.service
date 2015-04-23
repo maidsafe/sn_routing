@@ -1,0 +1,9 @@
+[Unit]
+Description=MaidSafe LifeStuff Invigilator
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/lifestuff-mgr --start
+
+[Install]
+WantedBy=multi-user.target
