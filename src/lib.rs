@@ -67,7 +67,7 @@ mod accumulator;
 mod common_bits;
 mod sentinel;
 mod messages;
-mod histogram;
+mod frequency;
 mod name_type;
 pub mod message_interface;
 pub mod routing_node;

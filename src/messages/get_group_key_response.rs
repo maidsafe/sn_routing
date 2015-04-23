@@ -20,7 +20,7 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use histogram::{Histogram};
+use frequency::{Frequency};
 
 use types;
 use NameType;
@@ -40,15 +40,15 @@ impl GetGroupKeyResponse {
             return None;
         }
 
-        let mut histogram = Histogram::new();
+        let mut frequency = Frequency::new();
 
         for response in get_group_key_responses {
           for public_sign_key in &response.public_sign_keys {
-              histogram.update(public_sign_key.clone());
+              frequency.update(public_sign_key.clone());
           }
         }
 
-        let merged_group = histogram.sort_by_highest().iter()
+        let merged_group = frequency.sort_by_highest().iter()
                            .take(types::GROUP_SIZE as usize)
                            .map(|&(ref k, _)| k.clone())
                            .collect();
