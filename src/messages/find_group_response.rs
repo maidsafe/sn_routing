@@ -18,15 +18,16 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
-  pub target_id : types::DhtId,
+  pub target_id : NameType,
   pub group : Vec<types::PublicPmid>
 }
 
 impl FindGroupResponse {
-    
+
 
     // TODO(ben 2015-04-09) to be replaced with a proper merge trait
     //                      for every message type
@@ -97,7 +98,7 @@ impl Decodable for FindGroupResponse {
 #[cfg(test)]
 mod test {
     use super::*;
-    use cbor; 
+    use cbor;
     use types;
     use test_utils::Random;
 

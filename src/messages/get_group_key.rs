@@ -19,11 +19,12 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetGroupKey {
   pub requester : types::SourceAddress,
-  pub target_id : types::DhtId,
+  pub target_id : NameType,
 }
 
 impl Encodable for GetGroupKey {

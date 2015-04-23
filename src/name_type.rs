@@ -17,11 +17,12 @@
 // of the MaidSafe Software.
 
 use cbor::CborTagEncode;
+// use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
+use std::hash;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
-use std::mem;
 use std::fmt;
-use rand;
+
 
 pub const NAME_TYPE_LEN : usize = 64;
 
@@ -60,25 +61,18 @@ macro_rules! convert_to_array {
 }
 
 /// NameType can be created using the new function by passing id as its parameter.
-#[derive(Default, Eq, PartialOrd, Ord, Hash)]
+#[derive(Eq)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
-    fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
-        for i in 0..lhs.0.len() {
-            let res_0 = lhs.0[i] ^ target.0[i];
-            let res_1 = rhs.0[i] ^ target.0[i];
-
-            if res_0 != res_1 {
-                return res_0 < res_1
-            }
-        }
-        false
-    }
-
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
     }
+
+    // TODO(Ben): Resolve from_data
+    // pub fn from_data(data : &[u8]) -> NameType {
+    //     NameType::new(&crypto::hash::sha512::hash(data).0)
+    // }
 
     pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
         self.0
@@ -94,6 +88,58 @@ impl fmt::Debug for NameType {
 impl PartialEq for NameType {
     fn eq(&self, other: &NameType) -> bool {
         slice_equal(&self.0, &other.0)
+    }
+}
+
+/// Returns true if `lhs` is closer to `target` than `rhs`.  "Closer" here is as per the Kademlia
+/// notion of XOR distance, i.e. the distance between two `NameType`s is the bitwise XOR of their
+/// values.
+pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
+    for i in 0..lhs.0.len() {
+        let res_0 = lhs.0[i] ^ target.0[i];
+        let res_1 = rhs.0[i] ^ target.0[i];
+
+        if res_0 != res_1 {
+            return res_0 < res_1
+        }
+    }
+    false
+}
+
+/// The `NameType` can be ordered from zero as a normal Euclidean number
+impl Ord for NameType {
+    #[inline]
+    fn cmp(&self, other : &NameType) -> Ordering {
+        Ord::cmp(&&self.0[..], &&other.0[..])
+    }
+}
+
+impl PartialOrd for NameType {
+    #[inline]
+    fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
+        PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn lt(&self, other : &NameType) -> bool {
+        PartialOrd::lt(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn le(&self, other : &NameType) -> bool {
+        PartialOrd::le(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn gt(&self, other : &NameType) -> bool {
+        PartialOrd::gt(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn ge(&self, other : &NameType) -> bool {
+        PartialOrd::ge(&&self.0[..], &&other.0[..])
+    }
+}
+
+impl hash::Hash for NameType {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        state.write(&self.0[..])
     }
 }
 
@@ -130,26 +176,26 @@ impl Decodable for NameType {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
+    use cbor;
     use super::*;
+    use test_utils::Random;
 
     #[test]
     fn serialisation_name_type() {
-      let obj_before = NameType::generate_random();
-      let mut e = cbor::Encoder::from_memory();
-      e.encode(&[&obj_before]).unwrap();
+        let obj_before: NameType = Random::generate_random();
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
 
-      let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-      let obj_after: NameType = d.decode().next().unwrap().unwrap();
-      assert_eq!(obj_before, obj_after);
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: NameType = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
     }
 
     #[test]
     fn name_type_equal_assertion() {
-        let type1 = NameType::generate_random();
+        let type1: NameType = Random::generate_random();
         let type1_clone = type1.clone();
-        let type2 = NameType::generate_random();
+        let type2: NameType = Random::generate_random();
         assert_eq!(type1, type1_clone);
         assert!(type1 == type1_clone);
         assert!(!(type1 != type1_clone));
@@ -157,18 +203,12 @@ mod test {
     }
 
     #[test]
-    fn name_type_validity_assertion() {
-        assert!(NameType([1u8; NAME_TYPE_LEN]).is_valid());
-        assert!(!NameType([0u8; NAME_TYPE_LEN]).is_valid());
-    }
-
-    #[test]
-    fn closer_to_target() {
-        let obj0 = NameType::generate_random();
+    fn closeness() {
+        let obj0: NameType = Random::generate_random();
         let obj0_clone = obj0.clone();
-        let obj1 = NameType::generate_random();
-        assert!(NameType::closer_to_target(&obj0_clone, &obj1, &obj0));
-        assert!(!NameType::closer_to_target(&obj1, &obj0_clone, &obj0));
+        let obj1: NameType = Random::generate_random();
+        assert!(closer_to_target(&obj0_clone, &obj1, &obj0));
+        assert!(!closer_to_target(&obj1, &obj0_clone, &obj0));
     }
 
     #[test]
@@ -184,4 +224,15 @@ mod test {
         assert!(convert_to_array!(data2, 1).is_none());
         assert!(convert_to_array!(data, 3).is_none());
     }
+
+    //TODO(Ben: resolve from_data)
+    // #[test]
+    // fn name_from_data() {
+    //   use rustc_serialize::hex::ToHex;
+    //   let data = "this is a known string".to_string().into_bytes();
+    //   let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
+    //                        e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
+    //                        ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
+    //   assert_eq!(&expected_name, &NameType::from_data(&data).0.to_hex());
+    // }
 }
