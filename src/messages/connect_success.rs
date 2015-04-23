@@ -20,10 +20,11 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectSuccess {
-  pub peer_id   : types::DhtId,
+  pub peer_id   : NameType,
   pub peer_fob : types::PublicPmid
 }
 
@@ -36,11 +37,11 @@ impl Encodable for ConnectSuccess {
 
 impl Decodable for ConnectSuccess {
   fn decode<D: Decoder>(d: &mut D)->Result<ConnectSuccess, D::Error> {
-      use types::DhtId;
+      use NameType;
 
     try!(d.read_u64());
 
-    let (peer_id, peer_fob): (DhtId, types::PublicPmid) = try!(Decodable::decode(d));
+    let (peer_id, peer_fob): (NameType, types::PublicPmid) = try!(Decodable::decode(d));
 
     Ok(ConnectSuccess { peer_id: peer_id,
                         peer_fob: peer_fob})

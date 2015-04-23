@@ -17,10 +17,11 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct PutData {
-  pub name: Vec<u8>,
+  pub name: NameType,
   pub data : Vec<u8>
 }
 

@@ -23,17 +23,18 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use histogram::{Histogram};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetGroupKeyResponse {
   pub target_id : types::GroupAddress,
-  pub public_sign_keys : Vec<(types::DhtId, types::PublicSignKey)>
+  pub public_sign_keys : Vec<(NameType, types::PublicSignKey)>
 }
 
-impl GetGroupKeyResponse {    
+impl GetGroupKeyResponse {
 
     pub fn merge(get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
-      type Key = (types::DhtId, types::PublicSignKey);
+      type Key = (NameType, types::PublicSignKey);
 
       if get_group_key_responses.is_empty() {
           return None;
@@ -79,8 +80,9 @@ mod test {
     use types;
     use super::*;
     use cbor;
+    use NameType;
     use test_utils::Random;
-    
+
     #[test]
     fn get_group_key_response_serialisation() {
         let obj_before : GetGroupKeyResponse = Random::generate_random();
@@ -102,7 +104,7 @@ mod test {
         assert!(types::GROUP_SIZE >= 13);
 
         // pick random keys
-        let mut keys = Vec::<(types::DhtId, types::PublicSignKey)>::new();
+        let mut keys = Vec::<(NameType, types::PublicSignKey)>::new();
         keys.push(obj.public_sign_keys[3].clone());
         keys.push(obj.public_sign_keys[5].clone());
         keys.push(obj.public_sign_keys[7].clone());

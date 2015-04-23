@@ -22,10 +22,11 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetClientKeyResponse {
-  pub address : types::DhtId,
+  pub address : NameType,
   pub public_sign_key : types::PublicSignKey
 }
 
@@ -46,7 +47,7 @@ impl Decodable for GetClientKeyResponse {
 #[cfg(test)]
 mod test {
     use super::*;
-    use cbor; 
+    use cbor;
     use test_utils::Random;
 
     #[test]

@@ -18,7 +18,7 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::net::{SocketAddr};
-use types::DhtId;
+use NameType;
 
 use types;
 
@@ -28,8 +28,8 @@ pub struct ConnectResponse {
   pub requester_external : SocketAddr,
   pub receiver_local     : SocketAddr,
   pub receiver_external  : SocketAddr,
-  pub requester_id       : DhtId,
-  pub receiver_id        : DhtId,
+  pub requester_id       : NameType,
+  pub receiver_id        : NameType,
   pub receiver_fob       : types::PublicPmid
 }
 
@@ -53,7 +53,7 @@ impl Decodable for ConnectResponse {
     try!(d.read_u64());
     let (requester_local, requester_external, receiver_local, receiver_external,
          requester_id, receiver_id, receiver_fob):
-        (String, String, String, String, DhtId, DhtId, types::PublicPmid)
+        (String, String, String, String, NameType, NameType, types::PublicPmid)
         = try!(Decodable::decode(d));
 
     let req_local    = try!(requester_local   .parse().or(Err(d.error("can't parse req_local addr"))));

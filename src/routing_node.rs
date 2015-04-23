@@ -29,7 +29,7 @@ use std::net::{SocketAddrV4, Ipv4Addr};
 use time::Duration;
 
 use routing_table::{RoutingTable, NodeInfo};
-use name_type::NameType;
+use NameType;
 use types::MessageId;
 use types;
 use message_header::MessageHeader;
@@ -602,6 +602,7 @@ mod test {
       fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
       fn add_node(&mut self, node: NameType) {}
       fn drop_node(&mut self, node: NameType) {}
+      fn handle_churn(&mut self) { unimplemented!(); }
     }
 
     //#[test]

@@ -22,61 +22,61 @@ use rand::random;
 use super::random_trait::Random;
 
 impl Random for DhtId {
-	fn generate_random() -> DhtId {
-		   DhtId(generate_random_vec_u8(64))
-	}
+    fn generate_random() -> DhtId {
+           DhtId(generate_random_vec_u8(64))
+    }
 }
 
 impl Random for NameAndTypeId {
-	fn generate_random() -> NameAndTypeId {
+    fn generate_random() -> NameAndTypeId {
         NameAndTypeId {
-            name: generate_random_vec_u8(64),
+            name: Random::generate_random(),
             type_id: random::<u32>(),
         }
     }
 }
 
 impl Random for Signature {
-	fn generate_random() -> Signature {
-		Signature { signature: generate_random_vec_u8(32) }
-	}
+    fn generate_random() -> Signature {
+        Signature { signature: generate_random_vec_u8(32) }
+    }
 }
 
 impl Random for PublicSignKey {
-	fn generate_random() -> PublicSignKey {
-		PublicSignKey { public_sign_key: generate_random_vec_u8(32) }
-	}
+    fn generate_random() -> PublicSignKey {
+        PublicSignKey { public_sign_key: generate_random_vec_u8(32) }
+    }
 }
 
 impl Random for PublicKey {
-	fn generate_random() -> PublicKey {
-		PublicKey { public_key: generate_random_vec_u8(32) }
-	}
+    fn generate_random() -> PublicKey {
+        PublicKey { public_key: generate_random_vec_u8(32) }
+    }
 }
 
 impl Random for PublicPmid {
-	fn generate_random() -> PublicPmid {
-      	PublicPmid {
-	        public_key : Random::generate_random(),
-	        public_sign_key : Random::generate_random(),
-	        validation_token : Random::generate_random(),
-	        name : Random::generate_random()
+    fn generate_random() -> PublicPmid {
+        PublicPmid {
+            public_key : Random::generate_random(),
+            public_sign_key : Random::generate_random(),
+            validation_token : Random::generate_random(),
+            name : Random::generate_random()
         }
-	}
+    }
 }
 
 impl Random for SourceAddress {
-	fn generate_random() -> SourceAddress {
-		SourceAddress {
+    fn generate_random() -> SourceAddress {
+        SourceAddress {
             from_node: Random::generate_random(),
             from_group: None,
             reply_to: None,
         }
-	}
+    }
 }
 
 impl Random for NameType {
-	fn generate_random() -> NameType {
-		NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
-	}
+    fn generate_random() -> NameType {
+        NameType(vector_as_u8_64_array(generate_random_vec_u8(64)))
+    }
 }

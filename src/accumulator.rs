@@ -18,13 +18,13 @@
 
 use lru_time_cache::LruCache;
 
-use types;
+use NameType;
 
 /// entry in the accumulator
 #[derive(Clone)]
 pub struct Response<V> {
     /// address where the response come from
-    pub address: types::DhtId,
+    pub address: NameType,
     /// content of the response
     pub value: V,
 }
@@ -62,7 +62,7 @@ impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
         }
     }
 
-    pub fn add(&mut self, name: K, value: V, sender: types::DhtId)-> Option<(K, Vec<Response<V>>)> {
+    pub fn add(&mut self, name: K, value: V, sender: NameType)-> Option<(K, Vec<Response<V>>)> {
         let entry = self.storage.remove(name.clone());
         if entry.is_none() {
             let entry_in = Entry { received_response : vec![Response { address: sender, value: value }]};
@@ -105,7 +105,7 @@ mod test {
     use super::*;
     use std::num;
     use rand;
-    use types::*;
+    use NameType;
     use test_utils::Random;
 
     pub fn generate_address() -> Vec<u8> {
@@ -119,8 +119,8 @@ mod test {
     #[test]
     fn add() {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(1);
-        let address1 : DhtId = Random::generate_random();
-        let address2 : DhtId = Random::generate_random();
+        let address1 : NameType = Random::generate_random();
+        let address2 : NameType = Random::generate_random();
 
         assert!(accumulator.add(2, 3, address1.clone()).is_some());
         assert_eq!(accumulator.have_name(1), false);
@@ -209,7 +209,7 @@ mod test {
     #[test]
     fn delete() {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(2);
-        let address : DhtId = Random::generate_random();
+        let address : NameType = Random::generate_random();
 
         assert!(accumulator.add(1, 1, address.clone()).is_none());
         assert_eq!(accumulator.have_name(1), true);
@@ -254,7 +254,7 @@ mod test {
     #[test]
     fn fill() {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(1);
-        let address : DhtId = Random::generate_random();
+        let address : NameType = Random::generate_random();
 
         for count in 0..1000 {
             assert!(accumulator.add(count, 1, address.clone()).is_some());
@@ -275,7 +275,7 @@ mod test {
     #[test]
     fn cache_removals() {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(2);
-        let address : DhtId = Random::generate_random();
+        let address : NameType = Random::generate_random();
 
         for count in 0..1000 {
             assert!(accumulator.add(count, 1, address.clone()).is_none());

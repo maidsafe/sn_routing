@@ -22,12 +22,13 @@ use cbor;
 
 use accumulator;
 use message_header;
+use NameType;
 use types;
 use types::RoutingTrait;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
-use types::{DhtId, PublicSignKey, SerialisedMessage};
+use types::{PublicSignKey, SerialisedMessage};
 use rustc_serialize::{Decodable, Encodable};
 
 pub type ResultType = (message_header::MessageHeader,
@@ -43,7 +44,7 @@ type KeyAccumulatorType = accumulator::Accumulator<types::GroupAddress, ResultTy
 // TODO (ben 2015-4-2): replace dynamic dispatching with static dispatching
 //          https://doc.rust-lang.org/book/static-and-dynamic-dispatch.html
 pub trait SendGetKeys {
-  fn get_client_key(&mut self, address : types::DhtId);
+  fn get_client_key(&mut self, address : NameType);
   fn get_group_key(&mut self, group_address : types::GroupAddress);
 }
 
@@ -152,7 +153,7 @@ impl<'a> Sentinel<'a> {
     None
   }
 
-  fn update_key_map(key_map: &mut HashMap<DhtId, Vec<PublicSignKey>>, addr: DhtId, key: PublicSignKey) {
+  fn update_key_map(key_map: &mut HashMap<NameType, Vec<PublicSignKey>>, addr: NameType, key: PublicSignKey) {
       if !key_map.contains_key(&addr) {
           key_map.insert(addr, vec![key]);
       }
@@ -183,7 +184,7 @@ impl<'a> Sentinel<'a> {
         return Vec::new();
       }
 
-      let mut keys_map = HashMap::<DhtId, Vec<PublicSignKey>>::new();
+      let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
 
       for node_key in keys.iter() {
         Sentinel::decode(&node_key.value.2)
@@ -208,7 +209,7 @@ impl<'a> Sentinel<'a> {
     if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
       return Vec::<ResultType>::new();
     }
-    let mut keys_map = HashMap::<DhtId, Vec<PublicSignKey>>::new();
+    let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
     for group_key in keys.iter() {
         Sentinel::decode(&group_key.value.2)
             .map(|GetGroupKeyResponse{target_id: target, public_sign_keys: keys}| {
@@ -311,7 +312,7 @@ impl<'a> Sentinel<'a> {
   }
 }
 
-fn has_single_entry<T>(key_map: &HashMap<DhtId, Vec<T>>) -> bool {
+fn has_single_entry<T>(key_map: &HashMap<NameType, Vec<T>>) -> bool {
     key_map.len() == 1 && key_map.iter().next().unwrap().1.len() == 1
 }
 
@@ -323,6 +324,7 @@ mod test {
   use sodiumoxide::crypto;
   use types;
   use types::{RoutingTrait, closer_to_target};
+  use NameType;
   use message_header;
   use messages;
   use rustc_serialize::Encodable;
@@ -363,7 +365,7 @@ mod test {
 
   impl SignatureGroup {
     pub fn new(group_size : usize, authority : types::Authority) -> SignatureGroup {
-      let group_address = Random::generate_random();
+      let group_address : NameType = Random::generate_random();
       let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
       for _ in 0..group_size {
         nodes.push(types::Pmid::new());
@@ -401,8 +403,8 @@ mod test {
       headers
     }
 
-    pub fn get_public_keys(&self) -> Vec<(types::DhtId, types::PublicSignKey)> {
-        let mut public_keys : Vec<(types::DhtId, types::PublicSignKey)>
+    pub fn get_public_keys(&self) -> Vec<(NameType, types::PublicSignKey)> {
+        let mut public_keys : Vec<(NameType, types::PublicSignKey)>
            = Vec::with_capacity(self.nodes_.len());
       for node in &self.nodes_ {
         public_keys.push((node.get_name(),
@@ -419,7 +421,7 @@ mod test {
     nodes_ : Vec<types::Pmid>,
     // store the close nodes according
     // to the close group of original group_address
-    nodes_of_nodes_ : Vec<(types::DhtId, Vec<types::Pmid>)>
+    nodes_of_nodes_ : Vec<(NameType, Vec<types::Pmid>)>
   }
 
   impl EmbeddedSignatureGroup {
@@ -428,13 +430,13 @@ mod test {
       let network_size = 10 * group_size;
       let mut all_nodes : Vec<types::Pmid> = Vec::with_capacity(network_size);
       let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
-      let mut nodes_of_nodes : Vec<(types::DhtId, Vec<types::Pmid>)>
+      let mut nodes_of_nodes : Vec<(NameType, Vec<types::Pmid>)>
                                 = Vec::with_capacity(group_size);
       for _ in 0..network_size {
         all_nodes.push(types::Pmid::new()); // generates two keys !
                                             // can be optimised for larger scaled
       }
-      let group_address = Random::generate_random();
+      let group_address : NameType = Random::generate_random();
       // first sort all nodes to group_address
       all_nodes.sort_by(
         |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &group_address) {
@@ -494,10 +496,10 @@ mod test {
       headers
     }
 
-    pub fn get_public_keys(&self, node_name : types::DhtId)
-          -> Vec<(types::DhtId, types::PublicSignKey)> {
+    pub fn get_public_keys(&self, node_name : NameType)
+          -> Vec<(NameType, types::PublicSignKey)> {
       let nodes_of_node = &self.nodes_of_nodes_.iter().find(|x| x.0 == node_name).unwrap();
-      let mut public_keys : Vec<(types::DhtId, types::PublicSignKey)>
+      let mut public_keys : Vec<(NameType, types::PublicSignKey)>
         = Vec::with_capacity(nodes_of_node.1.len());
       for node in &nodes_of_node.1 {
         let public_sign_key =
@@ -507,7 +509,7 @@ mod test {
       public_keys
     }
 
-    pub fn get_public_pmids(&self, node_name : types::DhtId) -> Vec<types::PublicPmid> {
+    pub fn get_public_pmids(&self, node_name : NameType) -> Vec<types::PublicPmid> {
       let nodes_of_node = &self.nodes_of_nodes_.iter().find(|x| x.0 == node_name).unwrap();
       let mut public_pmids : Vec<types::PublicPmid>
         = Vec::with_capacity(nodes_of_node.1.len());
@@ -591,7 +593,7 @@ mod test {
   }
 
   pub struct TraceGetKeys {
-    send_get_client_key_calls_ : Vec<types::DhtId>,
+    send_get_client_key_calls_ : Vec<NameType>,
     send_get_group_key_calls_ : Vec<types::GroupAddress>,
   }
 
@@ -603,7 +605,7 @@ mod test {
       }
     }
 
-    pub fn count_get_client_key_calls(&self, address : &types::DhtId) -> usize {
+    pub fn count_get_client_key_calls(&self, address : &NameType) -> usize {
       self.send_get_client_key_calls_.iter()
                        .filter(|&x| x == address)
                        .count()
@@ -617,7 +619,7 @@ mod test {
   }
 
   impl SendGetKeys for TraceGetKeys {
-  fn get_client_key(&mut self, address : types::DhtId) {
+  fn get_client_key(&mut self, address : NameType) {
     self.send_get_client_key_calls_.push(address);
   }
     fn get_group_key(&mut self, group_address : types::GroupAddress) {
@@ -705,8 +707,8 @@ mod test {
     {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
       let data : Vec<u8> = generate_data(100usize);
-      let put_data = messages::put_data::PutData {
-        name: crypto::hash::sha512::hash(&data[..]).0.to_vec(),
+      let put_data = messages::put_data::PutData {        
+        name: NameType::new(types::vector_as_u8_64_array(crypto::hash::sha512::hash(&data[..]).0.to_vec())),
         data : data
       };
       let mut e = cbor::Encoder::from_memory();
@@ -772,7 +774,7 @@ mod test {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
       let data : Vec<u8> = generate_data(100usize);
       let put_data = messages::put_data::PutData {
-        name: crypto::hash::sha512::hash(&data[..]).0.to_vec(),
+        name: NameType::new(types::vector_as_u8_64_array(crypto::hash::sha512::hash(&data[..]).0.to_vec())),
         data : data
       };
       let mut e = cbor::Encoder::from_memory();
@@ -864,4 +866,3 @@ mod test {
   assert_eq!(1, trace_get_keys.count_get_group_key_calls(&embedded_signature_group.get_group_address()));
   }
 }
-
