@@ -23,7 +23,6 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
 use std::fmt;
 
-
 pub const NAME_TYPE_LEN : usize = 64;
 
 ///
@@ -31,33 +30,6 @@ pub const NAME_TYPE_LEN : usize = 64;
 ///
 pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
-}
-
-///
-/// Convert a container to an array. If the container is not the exact size specified, None is
-/// returned. Otherwise, all of the elements are moved into the array.
-///
-/// ```
-/// let mut data = Vec::<usize>::new();
-/// data.push(1);
-/// data.push(2);
-/// assert!(convert_to_array(data, 2).is_some());
-/// assert!(convert_to_array(data, 3).is_none());
-/// ```
-macro_rules! convert_to_array {
-    ($container:ident, $size:expr) => {{
-        if $container.len() != $size {
-            None
-        } else {
-            use std::mem;
-            let mut arr : [_; $size] = unsafe { mem::uninitialized() };
-            for element in $container.into_iter().enumerate() {
-                let old_val = mem::replace(&mut arr[element.0], element.1);
-                unsafe { mem::forget(old_val) };
-            }
-            Some(arr)
-        }
-    }};
 }
 
 /// NameType can be created using the new function by passing id as its parameter.
@@ -77,13 +49,47 @@ impl NameType {
     pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
         self.0
     }
+
+    // private function exposed in fmt Debug {:?} and Display {} traits
+    fn get_debug_id(&self) -> String {
+      format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+              self.0[0],
+              self.0[1],
+              self.0[2],
+              self.0[NAME_TYPE_LEN-3],
+              self.0[NAME_TYPE_LEN-2],
+              self.0[NAME_TYPE_LEN-1])
+    }
+
+    // private function exposed in fmt LowerHex {:x} trait
+    // note(ben): UpperHex explicitly not implemented to prevent mixed usage
+    fn get_full_id(&self) -> String {
+      let mut full_id = String::with_capacity(2 * NAME_TYPE_LEN);
+      for char in self.0.iter() {
+        full_id.push_str(format!("{:02x}", char).as_str());
+      }
+      full_id
+    }
 }
 
 impl fmt::Debug for NameType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.0.to_vec())
+      write!(f, "{}", self.get_debug_id())
     }
 }
+
+impl fmt::Display for NameType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      write!(f, "{}", self.get_debug_id())
+    }
+}
+
+impl fmt::LowerHex for NameType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.get_full_id())
+    }
+}
+
 
 impl PartialEq for NameType {
     fn eq(&self, other: &NameType) -> bool {
@@ -167,7 +173,7 @@ impl Decodable for NameType {
         try!(d.read_u64());
         let id : Vec<u8> = try!(Decodable::decode(d));
 
-        match convert_to_array!(id, NAME_TYPE_LEN) {
+        match container_of_u8_to_array!(id, NAME_TYPE_LEN) {
             Some(id_arr) => Ok(NameType(id_arr)),
             None => Err(d.error("Bad NameType size"))
         }
@@ -212,17 +218,50 @@ mod test {
     }
 
     #[test]
-    fn copy_strings_to_bad_array() {
-        let one = "some string".to_string();
-        let two = "some two".to_string();
+    fn format_pmid_nametype() {
+        // test for Pmids
+        use types::Pmid;
+        use types::RoutingTrait;
+        for _ in 0..5 {
+            let my_pmid = Pmid::new();
+            let my_name = my_pmid.get_name();
+            let debug_id = my_name.get_debug_id();
+            let full_id = my_name.get_full_id();
+            assert_eq!(debug_id.len(), 14);
+            assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
+            assert_eq!(&debug_id[0..6], &full_id[0..6]);
+            assert_eq!(&debug_id[8..14], &full_id[2*NAME_TYPE_LEN-6..2*NAME_TYPE_LEN]);
+            assert_eq!(&debug_id[6..8], "..");
+        }
+    }
 
-        let mut data = Vec::<String>::with_capacity(2);
-        data.push(one);
-        data.push(two);
+    #[test]
+    fn format_random_nametype() {
+        // test for Random NameType
+        for _ in 0..5 {
+            let my_name : NameType = Random::generate_random();
+            let debug_id = my_name.get_debug_id();
+            let full_id = my_name.get_full_id();
+            assert_eq!(debug_id.len(), 14);
+            assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
+            assert_eq!(&debug_id[0..6], &full_id[0..6]);
+            assert_eq!(&debug_id[8..14], &full_id[2*NAME_TYPE_LEN-6..2*NAME_TYPE_LEN]);
+            assert_eq!(&debug_id[6..8], "..");
+        }
+    }
 
-        let data2 = data.clone();
-        assert!(convert_to_array!(data2, 1).is_none());
-        assert!(convert_to_array!(data, 3).is_none());
+    #[test]
+    fn format_fixed_low_char_nametype() {
+        // test for fixed low char values in NameType
+        let low_char_id = [1u8; NAME_TYPE_LEN];
+        let my_low_char_name = NameType::new(low_char_id);
+        let debug_id = my_low_char_name.get_debug_id();
+        let full_id = my_low_char_name.get_full_id();
+        assert_eq!(debug_id.len(), 14);
+        assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
+        assert_eq!(&debug_id[0..6], &full_id[0..6]);
+        assert_eq!(&debug_id[8..14], &full_id[2*NAME_TYPE_LEN-6..2*NAME_TYPE_LEN]);
+        assert_eq!(&debug_id[6..8], "..");
     }
 
     //TODO(Ben: resolve from_data)
