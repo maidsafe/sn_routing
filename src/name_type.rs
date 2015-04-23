@@ -63,10 +63,11 @@ macro_rules! convert_to_array {
 }
 
 /// NameType can be created using the new function by passing id as its parameter.
+#[derive(Eq)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
-    fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
+    pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
         for i in 0..lhs.0.len() {
             let res_0 = lhs.0[i] ^ target.0[i];
             let res_1 = rhs.0[i] ^ target.0[i];
@@ -99,13 +100,11 @@ impl fmt::Debug for NameType {
 }
 
 impl PartialEq for NameType {
+
     fn eq(&self, other: &NameType) -> bool {
         slice_equal(&self.0, &other.0)
     }
 
-    fn ne(&self, other: &NameType) -> bool {
-        !slice_equal(&self.0, &other.0)
-    }
 }
 
 //FIXME(ben): the ID can be ordered from zero as a normal euclidean number
@@ -113,7 +112,7 @@ impl PartialEq for NameType {
 impl Ord for NameType {
   #[inline]
   fn cmp(&self, other : &NameType) -> Ordering {
-    Ord::cmp(&&self.0[..], &&other.0[..])
+    Ord::cmp(&&self.0[..], &&other.0[..])    
   }
 }
 
@@ -142,8 +141,8 @@ impl PartialOrd for NameType {
 
 // FIXME(Ben): please fix me
 impl hash::Hash for NameType {
-  fn hash<H: hash::Hasher>(&self, state: &mut hash::Hasher) {
-    hash::hash(&self.0[..], state)
+  fn hash<H: hash::Hasher>(&self, state: &mut H) {
+    state.write(&self.0[..])
   }
 }
 

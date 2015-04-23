@@ -77,6 +77,6 @@ impl Random for SourceAddress {
 
 impl Random for NameType {
 	fn generate_random() -> NameType {
-		NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
+		NameType(vector_as_u8_64_array(generate_random_vec_u8(64)))
 	}
 }
