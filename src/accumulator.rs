@@ -103,7 +103,6 @@ impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::num;
     use rand;
     use NameType;
     use test_utils::Random;
@@ -288,7 +287,7 @@ mod test {
             assert_eq!(responses.len(), 1);
             assert_eq!(responses[0].value, 1);
             assert_eq!(responses[0].address, address.clone());
-            assert_eq!(accumulator.cache_size(), num::cast(count + 1).unwrap());
+            assert_eq!(accumulator.cache_size(), count as usize + 1);
         }
 
         assert!(accumulator.add(1000, 1, address.clone()).is_none());
