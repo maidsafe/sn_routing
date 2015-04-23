@@ -24,7 +24,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::fmt;
 use rand::random;
 use sodiumoxide;
-use name_type::NameType;
+use NameType;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -95,7 +95,7 @@ impl fmt::Debug for DhtId {
 }
 
 // lhs is closer to target than rhs
-pub fn closer_to_target(lhs: &DhtId, rhs: &DhtId, target: &DhtId) -> bool {
+pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
     for i in 0..lhs.0.len() {
         let res_0 = lhs.0[i] ^ target.0[i];
         let res_1 = rhs.0[i] ^ target.0[i];
@@ -159,7 +159,7 @@ pub type PmidNode = NameType;
 pub type PmidNodes = Vec<PmidNode>;
 
 pub trait RoutingTrait {
-  fn get_name(&self)->DhtId;
+  fn get_name(&self)->NameType;
   fn get_owner(&self)->Vec<u8>;
   fn refresh(&self)->bool;
   fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
@@ -167,7 +167,7 @@ pub trait RoutingTrait {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
-  pub name : Vec<u8>,
+  pub name : NameType,
   pub type_id : u32
 }
 
@@ -262,7 +262,7 @@ impl PublicKey {
       public_key : public_key.0.to_vec()
     }
   }
-  
+
   pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
     crypto::asymmetricbox::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
   }
@@ -287,7 +287,7 @@ pub struct PublicPmid {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
   pub validation_token: Signature,
-  pub name: DhtId
+  pub name: NameType
 }
 
 impl PublicPmid {
@@ -303,7 +303,7 @@ impl PublicPmid {
 }
 
 impl RoutingTrait for PublicPmid {
-  fn get_name(&self) -> DhtId { self.name.clone() }
+  fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
 
@@ -337,11 +337,11 @@ pub struct Pmid {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
   validation_token: Signature,
-  name: DhtId
+  name: NameType
 }
 
 impl RoutingTrait for Pmid {
-  fn get_name(&self) -> DhtId { self.name.clone() }
+  fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
 
@@ -374,7 +374,7 @@ impl Pmid {
       public_keys : (pub_sign_key, pub_asym_key),
       secret_keys : (sec_sign_key, sec_asym_key),
       validation_token : validation_token,
-      name : DhtId(digest.0.to_vec())
+      name : NameType::new(digest.0)
     }
   }
 
@@ -403,7 +403,7 @@ impl Pmid {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct AccountTransferInfo {
-  pub name : DhtId
+  pub name : NameType
 }
 
 impl Encodable for AccountTransferInfo {
@@ -421,7 +421,7 @@ impl Decodable for AccountTransferInfo {
 }
 
 impl RoutingTrait for AccountTransferInfo {
-  fn get_name(&self)->DhtId { self.name.clone() }
+  fn get_name(&self)->NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { true } // TODO is this an account transfer type
 
@@ -432,9 +432,9 @@ impl RoutingTrait for AccountTransferInfo {
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {
-  pub from_node : DhtId,
-  pub from_group : Option<DhtId>,
-  pub reply_to : Option<DhtId>
+  pub from_node : NameType,
+  pub from_group : Option<NameType>,
+  pub reply_to : Option<NameType>
 }
 
 impl Encodable for SourceAddress {
@@ -516,16 +516,6 @@ mod test {
     let mut d = cbor::Decoder::from_bytes(e.as_bytes());
     let obj_after: T = d.decode().next().unwrap().unwrap();
     assert_eq!(obj_after == obj_before, true)
-  }
-
-  #[test]
-  fn name_from_data() {
-    use rustc_serialize::hex::ToHex;
-    let data = "this is a known string".to_string().into_bytes();
-    let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
-                         e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
-                         ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
-    assert_eq!(&expected_name, &NameType::from_data(&data).0.to_hex());
   }
 
   #[test]

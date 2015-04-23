@@ -17,6 +17,9 @@
 // of the MaidSafe Software.
 
 use cbor::CborTagEncode;
+use sodiumoxide::crypto;
+// use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
+use std::hash;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
 use std::mem;
@@ -60,7 +63,6 @@ macro_rules! convert_to_array {
 }
 
 /// NameType can be created using the new function by passing id as its parameter.
-#[derive(Default, Eq, PartialOrd, Ord, Hash)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
@@ -80,6 +82,11 @@ impl NameType {
         NameType(id)
     }
 
+    // TODO(Ben): Resolve from_data
+    // pub fn from_data(data : &[u8]) -> NameType {
+    //     NameType::new(&crypto::hash::sha512::hash(data).0)
+    // }
+
     pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
         self.0
     }
@@ -95,7 +102,51 @@ impl PartialEq for NameType {
     fn eq(&self, other: &NameType) -> bool {
         slice_equal(&self.0, &other.0)
     }
+
+    fn ne(&self, other: &NameType) -> bool {
+        !slice_equal(&self.0, &other.0)
+    }
 }
+
+//FIXME(ben): the ID can be ordered from zero as a normal euclidean number
+//
+impl Ord for NameType {
+  #[inline]
+  fn cmp(&self, other : &NameType) -> Ordering {
+    Ord::cmp(&&self.0[..], &&other.0[..])
+  }
+}
+
+impl PartialOrd for NameType {
+  #[inline]
+  fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
+    PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
+  }
+  #[inline]
+  fn lt(&self, other : &NameType) -> bool {
+    PartialOrd::lt(&&self.0[..], &&other.0[..])
+  }
+  #[inline]
+  fn le(&self, other : &NameType) -> bool {
+    PartialOrd::le(&&self.0[..], &&other.0[..])
+  }
+  #[inline]
+  fn gt(&self, other : &NameType) -> bool {
+    PartialOrd::gt(&&self.0[..], &&other.0[..])
+  }
+  #[inline]
+  fn ge(&self, other : &NameType) -> bool {
+    PartialOrd::ge(&&self.0[..], &&other.0[..])
+  }
+}
+
+// FIXME(Ben): please fix me
+impl hash::Hash for NameType {
+  fn hash<H: hash::Hasher>(&self, state: &mut hash::Hasher) {
+    hash::hash(&self.0[..], state)
+  }
+}
+
 
 impl Clone for NameType {
     fn clone(&self) -> Self {
@@ -157,12 +208,6 @@ mod test {
     }
 
     #[test]
-    fn name_type_validity_assertion() {
-        assert!(NameType([1u8; NAME_TYPE_LEN]).is_valid());
-        assert!(!NameType([0u8; NAME_TYPE_LEN]).is_valid());
-    }
-
-    #[test]
     fn closer_to_target() {
         let obj0 = NameType::generate_random();
         let obj0_clone = obj0.clone();
@@ -184,4 +229,15 @@ mod test {
         assert!(convert_to_array!(data2, 1).is_none());
         assert!(convert_to_array!(data, 3).is_none());
     }
+
+    //TODO(Ben: resolve from_data)
+    // #[test]
+    // fn name_from_data() {
+    //   use rustc_serialize::hex::ToHex;
+    //   let data = "this is a known string".to_string().into_bytes();
+    //   let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
+    //                        e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
+    //                        ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
+    //   assert_eq!(&expected_name, &NameType::from_data(&data).0.to_hex());
+    // }
 }

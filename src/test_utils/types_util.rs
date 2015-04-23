@@ -30,7 +30,7 @@ impl Random for DhtId {
 impl Random for NameAndTypeId {
 	fn generate_random() -> NameAndTypeId {
         NameAndTypeId {
-            name: generate_random_vec_u8(64),
+            name: Random::generate_random(),
             type_id: random::<u32>(),
         }
     }

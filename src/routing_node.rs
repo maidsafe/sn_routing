@@ -29,7 +29,7 @@ use std::net::{SocketAddrV4, Ipv4Addr};
 use time::Duration;
 
 use routing_table::{RoutingTable, NodeInfo};
-use name_type::NameType;
+use NameType;
 use types::MessageId;
 use types;
 use message_header::MessageHeader;
