@@ -91,7 +91,9 @@ impl PartialEq for NameType {
     }
 }
 
-// lhs is closer to target than rhs
+/// Returns true if `lhs` is closer to `target` than `rhs`.  "Closer" here is as per the Kademlia
+/// notion of XOR distance, i.e. the distance between two `NameType`s is the bitwise XOR of their
+/// values.
 pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
     for i in 0..lhs.0.len() {
         let res_0 = lhs.0[i] ^ target.0[i];
@@ -104,45 +106,42 @@ pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bo
     false
 }
 
-//FIXME(ben): the ID can be ordered from zero as a normal euclidean number
-//
+/// The `NameType` can be ordered from zero as a normal Euclidean number
 impl Ord for NameType {
-  #[inline]
-  fn cmp(&self, other : &NameType) -> Ordering {
-    Ord::cmp(&&self.0[..], &&other.0[..])
-  }
+    #[inline]
+    fn cmp(&self, other : &NameType) -> Ordering {
+        Ord::cmp(&&self.0[..], &&other.0[..])
+    }
 }
 
 impl PartialOrd for NameType {
-  #[inline]
-  fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
-    PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
-  }
-  #[inline]
-  fn lt(&self, other : &NameType) -> bool {
-    PartialOrd::lt(&&self.0[..], &&other.0[..])
-  }
-  #[inline]
-  fn le(&self, other : &NameType) -> bool {
-    PartialOrd::le(&&self.0[..], &&other.0[..])
-  }
-  #[inline]
-  fn gt(&self, other : &NameType) -> bool {
-    PartialOrd::gt(&&self.0[..], &&other.0[..])
-  }
-  #[inline]
-  fn ge(&self, other : &NameType) -> bool {
-    PartialOrd::ge(&&self.0[..], &&other.0[..])
-  }
+    #[inline]
+    fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
+        PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn lt(&self, other : &NameType) -> bool {
+        PartialOrd::lt(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn le(&self, other : &NameType) -> bool {
+        PartialOrd::le(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn gt(&self, other : &NameType) -> bool {
+        PartialOrd::gt(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn ge(&self, other : &NameType) -> bool {
+        PartialOrd::ge(&&self.0[..], &&other.0[..])
+    }
 }
 
-// FIXME(Ben): please fix me
 impl hash::Hash for NameType {
-  fn hash<H: hash::Hasher>(&self, state: &mut H) {
-    state.write(&self.0[..])
-  }
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        state.write(&self.0[..])
+    }
 }
-
 
 impl Clone for NameType {
     fn clone(&self) -> Self {
@@ -177,20 +176,19 @@ impl Decodable for NameType {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
+    use cbor;
     use super::*;
     use test_utils::Random;
 
     #[test]
     fn serialisation_name_type() {
-      let obj_before: NameType = Random::generate_random();
-      let mut e = cbor::Encoder::from_memory();
-      e.encode(&[&obj_before]).unwrap();
+        let obj_before: NameType = Random::generate_random();
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
 
-      let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-      let obj_after: NameType = d.decode().next().unwrap().unwrap();
-      assert_eq!(obj_before, obj_after);
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: NameType = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
     }
 
     #[test]
