@@ -20,6 +20,7 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use histogram::{Histogram};
 
 use types;
 use NameType;
@@ -32,52 +33,31 @@ pub struct GetGroupKeyResponse {
 
 impl GetGroupKeyResponse {
 
-    pub fn merge(&self, get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
-      let mut frequency_count : Vec<((NameType, types::PublicSignKey), usize)>
-        = Vec::with_capacity(2 * types::GROUP_SIZE as usize);
-      for public_sign_key in &self.public_sign_keys {
-        let mut new_public_sign_key : bool = false;
-        match frequency_count.iter_mut()
-              .find(|ref mut count| count.0 == *public_sign_key) {
-          Some(count) => count.1 += 1,
-          None => new_public_sign_key = true
-        };
-        if new_public_sign_key { frequency_count.push((public_sign_key.clone(), 1)); };
-      }
-      for other in get_group_key_responses {
-        if other.target_id != self.target_id { return None; }
-        for public_sign_key in &other.public_sign_keys {
-          let mut new_public_sign_key : bool = false;
-          match frequency_count.iter_mut()
-                .find(|ref mut count| count.0 == *public_sign_key) {
-            Some(count) => count.1 += 1,
-            None => new_public_sign_key = true
-          };
-          if new_public_sign_key { frequency_count.push((public_sign_key.clone(), 1)); };
+    pub fn merge(get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
+        type Key = (NameType, types::PublicSignKey);
+
+        if get_group_key_responses.is_empty() {
+            return None;
         }
-      }
-      // sort from highest mention_count to lowest
-      frequency_count.sort_by(|a, b| b.1.cmp(&a.1));
-      let mut merged_group = Vec::<(NameType, types::PublicSignKey)>::with_capacity(types::GROUP_SIZE as usize);
-      for public_sign_key in frequency_count {
-        if merged_group.len() < types::GROUP_SIZE as usize {
-          // can also be done with map_in_place,
-          // but explicit for-loop allows for asserts
-          // assert!(public_pmid_count.1 >= types::QUORUM_SIZE as usize);
-          assert!(public_sign_key.1 <= types::GROUP_SIZE as usize);
-          // TODO(ben 2015-04-09) return None once logic assured
-          merged_group.push(public_sign_key.0);
-        } else {
-          break; //  NOTE(ben 2015-04-15): here we can measure the fuzzy
-                 //  boundary of groups
+
+        let mut histogram = Histogram::new();
+
+        for response in get_group_key_responses {
+          for public_sign_key in &response.public_sign_keys {
+              histogram.update(public_sign_key.clone());
+          }
         }
-      }
-      assert_eq!(merged_group.len(), types::GROUP_SIZE as usize);
-      // TODO(ben 2015-04-09) : curtosy call to sort to target,
-      //                        but requires correct name on PublicPmid
-      // merged_group.sort_by(...)
-      Some(GetGroupKeyResponse{target_id : self.target_id.clone(),
-                             public_sign_keys : merged_group})
+
+        let merged_group = histogram.sort_by_highest().iter()
+                           .take(types::GROUP_SIZE as usize)
+                           .map(|&(ref k, _)| k.clone())
+                           .collect();
+
+        // FIXME: How should we merge the target_id?
+        let target_id = get_group_key_responses[0].target_id.clone();
+
+        Some(GetGroupKeyResponse{target_id        : target_id,
+                                 public_sign_keys : merged_group})
     }
 }
 
@@ -124,7 +104,7 @@ mod test {
         assert!(types::GROUP_SIZE >= 13);
 
         // pick random keys
-        let mut keys = Vec::<(NameType, types::PublicSignKey)>::with_capacity(7);
+        let mut keys = Vec::<(NameType, types::PublicSignKey)>::new();
         keys.push(obj.public_sign_keys[3].clone());
         keys.push(obj.public_sign_keys[5].clone());
         keys.push(obj.public_sign_keys[7].clone());
@@ -133,10 +113,12 @@ mod test {
         keys.push(obj.public_sign_keys[10].clone());
         keys.push(obj.public_sign_keys[13].clone());
 
-        let mut responses = Vec::<GetGroupKeyResponse>::with_capacity(4);
+        let mut responses = Vec::<GetGroupKeyResponse>::new();
+        let target_id = obj.target_id.clone();
+        responses.push(obj);
         for _ in 0..4 {
             let mut response = GetGroupKeyResponse::generate_random();
-            response.target_id = obj.target_id.clone();
+            response.target_id = target_id.clone();
             response.public_sign_keys[1] = keys[0].clone();
             response.public_sign_keys[4] = keys[1].clone();
             response.public_sign_keys[6] = keys[2].clone();
@@ -147,7 +129,7 @@ mod test {
             responses.push(response);
         }
 
-        let merged_obj = obj.merge(&responses);
+        let merged_obj = GetGroupKeyResponse::merge(&responses);
         assert!(merged_obj.is_some());
         let merged_response = merged_obj.unwrap();
         for i in 0..7 {
