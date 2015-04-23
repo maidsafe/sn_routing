@@ -47,9 +47,50 @@ impl<Key: Ord + Clone> Frequency<Key> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rand::{thread_rng, Rng};
 
     #[test]
-    fn fill_exponential_distribution() {
-        
+    fn fill_monotonic_distribution() {
+        let mut rng = thread_rng();
+
+        // ensure a monotonic descreasing function
+        let domain_low = 0u32;
+        let domain_high = 500u32;
+        assert!(domain_low < domain_high);
+        let mut all_counts : Vec<u32> = Vec::with_capacity(3000); // simple approx upperbound
+        for _ in 0..100 {
+            let x : u32 = rng.gen_range(domain_low, domain_high);
+            if all_counts.contains(&x) { continue; } // avoid double counting
+            let fx : f64 = x.clone() as f64;
+            // use monotonic descending range of gaussian
+            let y : f64 = 30f64 * (- (fx.powi(2i32) / 100000f64)).exp();
+            let count : usize = y.trunc() as usize + 1;
+            // duplicate the keys for
+            for _ in 0usize..count { all_counts.push(x.clone()); };
+        };
+
+        // shuffle de duplicated keys
+        rng.shuffle(&mut all_counts[..]);
+        let mut freq = Frequency::new();
+        for occurance in all_counts {
+            // and register each multiple times key in random order
+            freq.update(occurance);
+        };
+        // sort the counts
+        let ordered_counts = freq.sort_by_highest();
+        let mut max_count = 31usize;
+        let mut min_x = 0u32;
+        for value in ordered_counts {
+            let fx : f64 = value.0.clone() as f64;
+            let y : f64 = 30f64 * (- (fx.powi(2i32) / 100000f64)).exp();
+            let count : usize = y.trunc() as usize + 1;
+            // because we started with random keys whos occurance monotonically decreased
+            // for increasing key, the keys should now increase, as the count increases.
+            assert!(value.0 >= min_x);
+            assert_eq!(value.1, count);
+            assert!(value.1 <= max_count);
+            min_x = value.0.clone();
+            max_count = value.1.clone();
+        };
     }
 }
