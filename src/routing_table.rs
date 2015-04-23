@@ -410,7 +410,7 @@ mod test {
             ContactType::Far => {},
         };
 
-        NameType(binary_id.to_bytes())
+        NameType(types::vector_as_u8_64_array(binary_id.to_bytes()))
     }
 
     struct Bucket {
@@ -509,7 +509,7 @@ mod test {
     }
 
     fn debug_id(id: &NameType) -> String {
-        let id_as_bytes = id.0.clone();
+        let id_as_bytes = id.clone().0;
         fmt::format(format_args!("{}{}{}..{}{}{}",
             to_hex(id_as_bytes[0]),
             to_hex(id_as_bytes[1]),
@@ -526,7 +526,7 @@ mod test {
             arr_res[i] = arr[i] ^ our_id.0[i];
         }
 
-        let farthest_from_tables_own_id = NameType::new(&arr_res);
+        let farthest_from_tables_own_id = NameType::new(arr_res);
 
         let mut buckets = Vec::new();
         for i in 0..100 {
@@ -880,7 +880,7 @@ mod test {
         test.complete_filling_table();
 
         // Try with invalid Address
-        test.table.drop_node(&NameType::new(&[0u8;64]));
+        test.table.drop_node(&NameType::new([0u8;64]));
         assert_eq!(RoutingTable::get_optimal_size(), test.table.size());
 
         // Try with our ID

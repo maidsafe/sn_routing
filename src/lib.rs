@@ -115,10 +115,11 @@ fn facade_implementation() {
     fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
     fn add_node(&mut self, node: NameType) { unimplemented!(); }
     fn drop_node(&mut self, node: NameType) { unimplemented!(); }
+    fn handle_churn(&mut self) { unimplemented!(); }
   }
 
   let my_facade = MyFacade;
 
-  let my_routing = routing_node::RoutingNode::new(Random::generate_random(), my_facade);
+  let my_routing = routing_node::RoutingNode::new(my_facade);
   /* assert_eq!(999, my_routing.get_facade().handle_get_response());  */
 }

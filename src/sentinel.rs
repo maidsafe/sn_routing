@@ -711,7 +711,8 @@ mod test {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
       let data : Vec<u8> = generate_data(100usize);
       let put_data = messages::put_data::PutData {
-        name: crypto::hash::sha512::hash(&data[..]).0.to_vec(),
+        // Validate (Krishna)
+        name: Random::generate_random(),
         data : data
       };
       let mut e = cbor::Encoder::from_memory();
@@ -777,7 +778,7 @@ mod test {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
       let data : Vec<u8> = generate_data(100usize);
       let put_data = messages::put_data::PutData {
-        name: crypto::hash::sha512::hash(&data[..]).0.to_vec(),
+        name: Random::generate_random(),
         data : data
       };
       let mut e = cbor::Encoder::from_memory();

@@ -183,10 +183,11 @@ mod test {
     extern crate cbor;
 
     use super::*;
+    use test_utils::Random;
 
     #[test]
     fn serialisation_name_type() {
-      let obj_before = NameType::generate_random();
+      let obj_before: NameType = Random::generate_random();
       let mut e = cbor::Encoder::from_memory();
       e.encode(&[&obj_before]).unwrap();
 
@@ -197,9 +198,9 @@ mod test {
 
     #[test]
     fn name_type_equal_assertion() {
-        let type1 = NameType::generate_random();
+        let type1: NameType = Random::generate_random();
         let type1_clone = type1.clone();
-        let type2 = NameType::generate_random();
+        let type2: NameType = Random::generate_random();
         assert_eq!(type1, type1_clone);
         assert!(type1 == type1_clone);
         assert!(!(type1 != type1_clone));
@@ -208,9 +209,9 @@ mod test {
 
     #[test]
     fn closer_to_target() {
-        let obj0 = NameType::generate_random();
+        let obj0: NameType = Random::generate_random();
         let obj0_clone = obj0.clone();
-        let obj1 = NameType::generate_random();
+        let obj1: NameType = Random::generate_random();
         assert!(NameType::closer_to_target(&obj0_clone, &obj1, &obj0));
         assert!(!NameType::closer_to_target(&obj1, &obj0_clone, &obj0));
     }
