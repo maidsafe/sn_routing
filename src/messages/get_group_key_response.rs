@@ -34,30 +34,30 @@ pub struct GetGroupKeyResponse {
 impl GetGroupKeyResponse {
 
     pub fn merge(get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
-      type Key = (NameType, types::PublicSignKey);
+        type Key = (NameType, types::PublicSignKey);
 
-      if get_group_key_responses.is_empty() {
-          return None;
-      }
-
-      let mut histogram = Histogram::new();
-
-      for response in get_group_key_responses {
-        for public_sign_key in &response.public_sign_keys {
-            histogram.update(public_sign_key.clone());
+        if get_group_key_responses.is_empty() {
+            return None;
         }
-      }
 
-      let merged_group = histogram.sort_by_highest().iter()
-                         .take(types::GROUP_SIZE as usize)
-                         .map(|&(ref k, _)| k.clone())
-                         .collect();
+        let mut histogram = Histogram::new();
 
-      // FIXME: How should we merge the target_id?
-      let target_id = get_group_key_responses[0].target_id.clone();
+        for response in get_group_key_responses {
+          for public_sign_key in &response.public_sign_keys {
+              histogram.update(public_sign_key.clone());
+          }
+        }
 
-      Some(GetGroupKeyResponse{target_id        : target_id,
-                               public_sign_keys : merged_group})
+        let merged_group = histogram.sort_by_highest().iter()
+                           .take(types::GROUP_SIZE as usize)
+                           .map(|&(ref k, _)| k.clone())
+                           .collect();
+
+        // FIXME: How should we merge the target_id?
+        let target_id = get_group_key_responses[0].target_id.clone();
+
+        Some(GetGroupKeyResponse{target_id        : target_id,
+                                 public_sign_keys : merged_group})
     }
 }
 
