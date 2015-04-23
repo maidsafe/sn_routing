@@ -26,15 +26,6 @@ pub struct GetClientKey {
   pub target_id : types::DhtId,
 }
 
-impl GetClientKey {
-    pub fn generate_random() -> GetClientKey {
-        GetClientKey {
-            requester_id: types::DhtId::generate_random(),
-            target_id: types::DhtId::generate_random(),
-        }
-    }
-}
-
 impl Encodable for GetClientKey {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.requester_id, &self.target_id)).encode(e)
@@ -53,10 +44,11 @@ impl Decodable for GetClientKey {
 mod test {
     use super::*;
     use cbor;
-    
+    use test_utils::Random;
+
     #[test]
     fn get_client_serialisation() {
-        let obj_before = GetClientKey::generate_random();
+        let obj_before : GetClientKey = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

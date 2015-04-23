@@ -26,15 +26,6 @@ pub struct Post {
   pub data : Vec<u8>
 }
 
-impl Post {
-    pub fn generate_random() -> Post {
-        Post {
-            name_and_type_id: types::NameAndTypeId::generate_random(),
-            data: types::generate_random_vec_u8(99),
-        }
-    }
-}
-
 impl Encodable for Post {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.name_and_type_id, &self.data)).encode(e)
@@ -53,10 +44,11 @@ impl Decodable for Post {
 mod test {
     use super::*;
     use cbor; 
+    use test_utils::Random;
     
     #[test]
     fn post_serialisation() {
-        let obj_before = Post::generate_random();
+        let obj_before : Post = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

@@ -328,6 +328,8 @@ mod test {
   use rustc_serialize::Encodable;
   use rand;
   use cbor;
+  use test_utils::Random;
+
 
   pub struct AddSentinelMessage {
     header : message_header::MessageHeader,
@@ -361,7 +363,7 @@ mod test {
 
   impl SignatureGroup {
     pub fn new(group_size : usize, authority : types::Authority) -> SignatureGroup {
-      let group_address = types::DhtId::generate_random();
+      let group_address = Random::generate_random();
       let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
       for _ in 0..group_size {
         nodes.push(types::Pmid::new());
@@ -432,7 +434,7 @@ mod test {
         all_nodes.push(types::Pmid::new()); // generates two keys !
                                             // can be optimised for larger scaled
       }
-      let group_address = types::DhtId::generate_random();
+      let group_address = Random::generate_random();
       // first sort all nodes to group_address
       all_nodes.sort_by(
         |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &group_address) {

@@ -142,6 +142,7 @@ mod test {
     use rustc_serialize::{Decodable, Encodable};
     use types;
     use cbor;
+    use test_utils::Random;
 
     pub fn generate_u8_64() -> Vec<u8> {
         let mut u8_64: Vec<u8> = vec![];
@@ -163,8 +164,8 @@ mod test {
     fn test_message_header() {
         test_object(MessageHeader {
             message_id : random::<u32>(),
-            destination : types::DestinationAddress{dest: types::DhtId::generate_random(), reply_to: None },
-            source : types::SourceAddress { from_node : types::DhtId::generate_random(),
+            destination : types::DestinationAddress{dest: Random::generate_random(), reply_to: None },
+            source : types::SourceAddress { from_node : Random::generate_random(),
             from_group : None,
             reply_to: None },
             authority : types::Authority::ManagedNode,
