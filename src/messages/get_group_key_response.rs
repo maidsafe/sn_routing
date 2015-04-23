@@ -20,6 +20,7 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use std::collections::BTreeMap;
 
 use types;
 
@@ -42,34 +43,37 @@ impl GetGroupKeyResponse {
         }
     }
 
+    fn update_histogram<Key: Ord>(histogram: &mut BTreeMap<Key, usize>, key: Key) {
+        *histogram.entry(key).or_insert(0) += 1;
+    }
+
+    fn sort_by_highest<Key: Ord + Clone>(histogram: &BTreeMap<Key, usize>) -> Vec<(Key, usize)> {
+        let mut kvs = histogram.iter().map(|(k,v)| (k.clone(), v.clone())).collect::<Vec<_>>();
+        kvs.sort_by(|a,b| b.1.cmp(&a.1));
+        kvs
+    }
+
     pub fn merge(&self, get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
-      let mut frequency_count : Vec<((types::DhtId, types::PublicSignKey), usize)>
-        = Vec::with_capacity(2 * types::GROUP_SIZE as usize);
+      type Key = (types::DhtId, types::PublicSignKey);
+
+      let mut histogram = BTreeMap::<Key, usize>::new();
+
       for public_sign_key in &self.public_sign_keys {
-        let mut new_public_sign_key : bool = false;
-        match frequency_count.iter_mut()
-              .find(|ref mut count| count.0 == *public_sign_key) {
-          Some(count) => count.1 += 1,
-          None => new_public_sign_key = true
-        };
-        if new_public_sign_key { frequency_count.push((public_sign_key.clone(), 1)); };
+          GetGroupKeyResponse::update_histogram(&mut histogram, public_sign_key.clone());
       }
+
       for other in get_group_key_responses {
         if other.target_id != self.target_id { return None; }
         for public_sign_key in &other.public_sign_keys {
-          let mut new_public_sign_key : bool = false;
-          match frequency_count.iter_mut()
-                .find(|ref mut count| count.0 == *public_sign_key) {
-            Some(count) => count.1 += 1,
-            None => new_public_sign_key = true
-          };
-          if new_public_sign_key { frequency_count.push((public_sign_key.clone(), 1)); };
+            GetGroupKeyResponse::update_histogram(&mut histogram, public_sign_key.clone());
         }
       }
-      // sort from highest mention_count to lowest
-      frequency_count.sort_by(|a, b| b.1.cmp(&a.1));
-      let mut merged_group = Vec::<(types::DhtId, types::PublicSignKey)>::with_capacity(types::GROUP_SIZE as usize);
-      for public_sign_key in frequency_count {
+
+      let frequency_count2 = GetGroupKeyResponse::sort_by_highest(&histogram);
+
+      let mut merged_group = Vec::<Key>::with_capacity(types::GROUP_SIZE as usize);
+
+      for public_sign_key in frequency_count2 {
         if merged_group.len() < types::GROUP_SIZE as usize {
           // can also be done with map_in_place,
           // but explicit for-loop allows for asserts
