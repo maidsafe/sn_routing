@@ -710,8 +710,7 @@ mod test {
     {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
       let data : Vec<u8> = generate_data(100usize);
-      let put_data = messages::put_data::PutData {
-        // Validate (Krishna)
+      let put_data = messages::put_data::PutData {        
         name: Random::generate_random(),
         data : data
       };
