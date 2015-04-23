@@ -23,7 +23,6 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
 use std::fmt;
 
-
 pub const NAME_TYPE_LEN : usize = 64;
 
 ///
@@ -33,50 +32,11 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
 }
 
-///
-/// Convert a container to an array. If the container is not the exact size specified, None is
-/// returned. Otherwise, all of the elements are moved into the array.
-///
-/// ```
-/// let mut data = Vec::<usize>::new();
-/// data.push(1);
-/// data.push(2);
-/// assert!(convert_to_array(data, 2).is_some());
-/// assert!(convert_to_array(data, 3).is_none());
-/// ```
-macro_rules! convert_to_array {
-    ($container:ident, $size:expr) => {{
-        if $container.len() != $size {
-            None
-        } else {
-            use std::mem;
-            let mut arr : [_; $size] = unsafe { mem::uninitialized() };
-            for element in $container.into_iter().enumerate() {
-                let old_val = mem::replace(&mut arr[element.0], element.1);
-                unsafe { mem::forget(old_val) };
-            }
-            Some(arr)
-        }
-    }};
-}
-
 /// NameType can be created using the new function by passing id as its parameter.
 #[derive(Eq)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
-    pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
-        for i in 0..lhs.0.len() {
-            let res_0 = lhs.0[i] ^ target.0[i];
-            let res_1 = rhs.0[i] ^ target.0[i];
-
-            if res_0 != res_1 {
-                return res_0 < res_1
-            }
-        }
-        false
-    }
-
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
     }
@@ -98,52 +58,62 @@ impl fmt::Debug for NameType {
 }
 
 impl PartialEq for NameType {
-
     fn eq(&self, other: &NameType) -> bool {
         slice_equal(&self.0, &other.0)
     }
-
 }
 
-//FIXME(ben): the ID can be ordered from zero as a normal euclidean number
-//
+/// Returns true if `lhs` is closer to `target` than `rhs`.  "Closer" here is as per the Kademlia
+/// notion of XOR distance, i.e. the distance between two `NameType`s is the bitwise XOR of their
+/// values.
+pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
+    for i in 0..lhs.0.len() {
+        let res_0 = lhs.0[i] ^ target.0[i];
+        let res_1 = rhs.0[i] ^ target.0[i];
+
+        if res_0 != res_1 {
+            return res_0 < res_1
+        }
+    }
+    false
+}
+
+/// The `NameType` can be ordered from zero as a normal Euclidean number
 impl Ord for NameType {
-  #[inline]
-  fn cmp(&self, other : &NameType) -> Ordering {
-    Ord::cmp(&&self.0[..], &&other.0[..])    
-  }
+    #[inline]
+    fn cmp(&self, other : &NameType) -> Ordering {
+        Ord::cmp(&&self.0[..], &&other.0[..])
+    }
 }
 
 impl PartialOrd for NameType {
-  #[inline]
-  fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
-    PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
-  }
-  #[inline]
-  fn lt(&self, other : &NameType) -> bool {
-    PartialOrd::lt(&&self.0[..], &&other.0[..])
-  }
-  #[inline]
-  fn le(&self, other : &NameType) -> bool {
-    PartialOrd::le(&&self.0[..], &&other.0[..])
-  }
-  #[inline]
-  fn gt(&self, other : &NameType) -> bool {
-    PartialOrd::gt(&&self.0[..], &&other.0[..])
-  }
-  #[inline]
-  fn ge(&self, other : &NameType) -> bool {
-    PartialOrd::ge(&&self.0[..], &&other.0[..])
-  }
+    #[inline]
+    fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
+        PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn lt(&self, other : &NameType) -> bool {
+        PartialOrd::lt(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn le(&self, other : &NameType) -> bool {
+        PartialOrd::le(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn gt(&self, other : &NameType) -> bool {
+        PartialOrd::gt(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn ge(&self, other : &NameType) -> bool {
+        PartialOrd::ge(&&self.0[..], &&other.0[..])
+    }
 }
 
-// FIXME(Ben): please fix me
 impl hash::Hash for NameType {
-  fn hash<H: hash::Hasher>(&self, state: &mut H) {
-    state.write(&self.0[..])
-  }
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        state.write(&self.0[..])
+    }
 }
-
 
 impl Clone for NameType {
     fn clone(&self) -> Self {
@@ -169,7 +139,7 @@ impl Decodable for NameType {
         try!(d.read_u64());
         let id : Vec<u8> = try!(Decodable::decode(d));
 
-        match convert_to_array!(id, NAME_TYPE_LEN) {
+        match container_of_u8_to_array!(id, NAME_TYPE_LEN) {
             Some(id_arr) => Ok(NameType(id_arr)),
             None => Err(d.error("Bad NameType size"))
         }
@@ -178,20 +148,19 @@ impl Decodable for NameType {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
+    use cbor;
     use super::*;
     use test_utils::Random;
 
     #[test]
     fn serialisation_name_type() {
-      let obj_before: NameType = Random::generate_random();
-      let mut e = cbor::Encoder::from_memory();
-      e.encode(&[&obj_before]).unwrap();
+        let obj_before: NameType = Random::generate_random();
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
 
-      let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-      let obj_after: NameType = d.decode().next().unwrap().unwrap();
-      assert_eq!(obj_before, obj_after);
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: NameType = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
     }
 
     #[test]
@@ -206,26 +175,12 @@ mod test {
     }
 
     #[test]
-    fn closer_to_target() {
+    fn closeness() {
         let obj0: NameType = Random::generate_random();
         let obj0_clone = obj0.clone();
         let obj1: NameType = Random::generate_random();
-        assert!(NameType::closer_to_target(&obj0_clone, &obj1, &obj0));
-        assert!(!NameType::closer_to_target(&obj1, &obj0_clone, &obj0));
-    }
-
-    #[test]
-    fn copy_strings_to_bad_array() {
-        let one = "some string".to_string();
-        let two = "some two".to_string();
-
-        let mut data = Vec::<String>::with_capacity(2);
-        data.push(one);
-        data.push(two);
-
-        let data2 = data.clone();
-        assert!(convert_to_array!(data2, 1).is_none());
-        assert!(convert_to_array!(data, 3).is_none());
+        assert!(closer_to_target(&obj0_clone, &obj1, &obj0));
+        assert!(!closer_to_target(&obj1, &obj0_clone, &obj0));
     }
 
     //TODO(Ben: resolve from_data)

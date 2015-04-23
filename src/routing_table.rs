@@ -21,7 +21,8 @@ use sodiumoxide::crypto;
 use std::cmp;
 use std::usize;
 use NameType;
-use types::{PublicPmid, RoutingTrait, closer_to_target};
+use types::{PublicPmid, RoutingTrait};
+use name_type::closer_to_target;
 
 static BUCKET_SIZE: usize = 1;
 static GROUP_SIZE: usize = 23;
@@ -374,7 +375,8 @@ mod test {
     use std::collections::BitVec;
     use std::net::*;
     use std::fmt;
-    use types::{PublicPmid, RoutingTrait, closer_to_target};
+    use types::{PublicPmid, RoutingTrait};
+    use name_type::closer_to_target;
     use types;
     use NameType;
     use rand;

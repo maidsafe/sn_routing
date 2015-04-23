@@ -16,22 +16,28 @@
 // See the Licences for the specific language governing permissions and limitations relating to use
 // of the MaidSafe Software.
 
+use cbor::{Decoder, Encoder};
+use rand;
+use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
-use crust;
-use message_filter::MessageFilter;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::Receiver;
-use interface::Interface;
-use rand;
-use std::net::SocketAddr;
-use std::collections::{HashSet, HashMap, BTreeMap};
-use std::net::{SocketAddrV4, Ipv4Addr};
 use time::Duration;
 
-use routing_table::{RoutingTable, NodeInfo};
+
+
+use crust;
+use crust::Endpoint::Tcp;
+use message_filter::MessageFilter;
 use NameType;
-use types::MessageId;
+use name_type::closer_to_target;
+use node_interface::Interface;
+use routing_table::{RoutingTable, NodeInfo};
+use sendable::Sendable;
 use types;
+use types::{MessageId, RoutingTrait};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -44,18 +50,12 @@ use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::{RoutingMessage, MessageTypeTag};
-use rustc_serialize::{Decodable, Encodable};
-use cbor::{Encoder, Decoder};
 
-use types::RoutingTrait;
-
-use crust::Endpoint::Tcp;
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
-
 type RecvResult = Result<(),()>;
 
 /// DHT node
@@ -76,7 +76,7 @@ pub struct RoutingNode<F: Interface> {
 
 impl<F> RoutingNode<F> where F: Interface {
     pub fn new(my_interface: F) -> RoutingNode<F> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to mutlithread now)
+        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
@@ -106,14 +106,14 @@ impl<F> RoutingNode<F> where F: Interface {
         })
     }
 
-    /// Retreive something from the network (non mutating) - Direct call
+    /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&self, type_id: u64, name: NameType) { unimplemented!() }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&self, name: NameType, content: Vec<u8>) { unimplemented!() }
+    pub fn put<T>(&self, destination: NameType, content: T) where T: Sendable { unimplemented!() }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
-    pub fn post(&self, name: NameType, content: Vec<u8>) { unimplemented!() }
+    pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
 
     pub fn add_bootstrap(&mut self, endpoint: crust::Endpoint) {
         self.pending_connections.insert(endpoint.clone());
@@ -572,7 +572,7 @@ impl<F> RoutingNode<F> where F: Interface {
         }
 
         let close_group = self.routing_table.our_close_group();
-        NameType::closer_to_target(&address, &self.routing_table.our_close_group().pop().unwrap().id, &self.own_id)
+        closer_to_target(&address, &self.routing_table.our_close_group().pop().unwrap().id, &self.own_id)
     }
 
     pub fn id(&self) -> NameType { self.own_id.clone() }
@@ -581,7 +581,7 @@ impl<F> RoutingNode<F> where F: Interface {
 #[cfg(test)]
 mod test {
     //use routing_node::{RoutingNode};
-    use interface::*;
+    use node_interface::*;
     use types::{Authority, DestinationAddress};
     use name_type::NameType;
     use super::super::{Action, RoutingError};
@@ -600,8 +600,6 @@ mod test {
       fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
       fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
       fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn add_node(&mut self, node: NameType) {}
-      fn drop_node(&mut self, node: NameType) {}
       fn handle_churn(&mut self) { unimplemented!(); }
     }
 
