@@ -21,12 +21,18 @@
 /// Convert a container of `u8`s to an array.  If the container is not the exact size specified,
 /// `None` is returned.  Otherwise, all of the elements are moved into the array.
 ///
+/// ## Examples
+///
 /// ```
+/// # #[macro_use] extern crate routing;
+/// # fn main() {
 /// let mut data = Vec::<u8>::new();
 /// data.push(1);
 /// data.push(2);
+/// let data_copy = data.clone();
 /// assert!(container_of_u8_to_array!(data, 2).is_some());
-/// assert!(container_of_u8_to_array!(data, 3).is_none());
+/// assert!(container_of_u8_to_array!(data_copy, 3).is_none());
+/// # }
 /// ```
 #[macro_export]
 macro_rules! container_of_u8_to_array {
