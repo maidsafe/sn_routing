@@ -21,13 +21,14 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::net::{SocketAddr};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectRequest {
   pub local         : SocketAddr,
   pub external      : SocketAddr,
-  pub requester_id  : types::DhtId,
-  pub receiver_id   : types::DhtId,
+  pub requester_id  : NameType,
+  pub receiver_id   : NameType,
   pub requester_fob : types::PublicPmid
 }
 
@@ -46,12 +47,11 @@ impl Encodable for ConnectRequest {
 
 impl Decodable for ConnectRequest {
   fn decode<D: Decoder>(d: &mut D)->Result<ConnectRequest, D::Error> {
-      use types::DhtId;
 
     try!(d.read_u64());
 
     let (local_str, external_str, requester_id, receiver_id, requester_fob):
-        (String, String, DhtId, DhtId, types::PublicPmid) = try!(Decodable::decode(d));
+        (String, String, NameType, NameType, types::PublicPmid) = try!(Decodable::decode(d));
 
     let local    = try!(local_str   .parse().or(Err(d.error("can't parse local addr"))));
     let external = try!(external_str.parse().or(Err(d.error("can't parse external addr"))));

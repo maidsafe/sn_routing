@@ -19,5 +19,5 @@
 
 /// Trait to self construct a type with random values
 pub trait Random {
-	fn generate_random() -> Self;
+    fn generate_random() -> Self;
 }

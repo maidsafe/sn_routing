@@ -22,17 +22,18 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetGroupKeyResponse {
   pub target_id : types::GroupAddress,
-  pub public_sign_keys : Vec<(types::DhtId, types::PublicSignKey)>
+  pub public_sign_keys : Vec<(NameType, types::PublicSignKey)>
 }
 
-impl GetGroupKeyResponse {    
+impl GetGroupKeyResponse {
 
     pub fn merge(&self, get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
-      let mut frequency_count : Vec<((types::DhtId, types::PublicSignKey), usize)>
+      let mut frequency_count : Vec<((NameType, types::PublicSignKey), usize)>
         = Vec::with_capacity(2 * types::GROUP_SIZE as usize);
       for public_sign_key in &self.public_sign_keys {
         let mut new_public_sign_key : bool = false;
@@ -57,7 +58,7 @@ impl GetGroupKeyResponse {
       }
       // sort from highest mention_count to lowest
       frequency_count.sort_by(|a, b| b.1.cmp(&a.1));
-      let mut merged_group = Vec::<(types::DhtId, types::PublicSignKey)>::with_capacity(types::GROUP_SIZE as usize);
+      let mut merged_group = Vec::<(NameType, types::PublicSignKey)>::with_capacity(types::GROUP_SIZE as usize);
       for public_sign_key in frequency_count {
         if merged_group.len() < types::GROUP_SIZE as usize {
           // can also be done with map_in_place,
@@ -99,8 +100,9 @@ mod test {
     use types;
     use super::*;
     use cbor;
+    use NameType;
     use test_utils::Random;
-    
+
     #[test]
     fn get_group_key_response_serialisation() {
         let obj_before : GetGroupKeyResponse = Random::generate_random();
@@ -122,7 +124,7 @@ mod test {
         assert!(types::GROUP_SIZE >= 13);
 
         // pick random keys
-        let mut keys = Vec::<(types::DhtId, types::PublicSignKey)>::with_capacity(7);
+        let mut keys = Vec::<(NameType, types::PublicSignKey)>::with_capacity(7);
         keys.push(obj.public_sign_keys[3].clone());
         keys.push(obj.public_sign_keys[5].clone());
         keys.push(obj.public_sign_keys[7].clone());
