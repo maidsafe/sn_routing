@@ -17,8 +17,12 @@ impl<Key: Ord + Clone> Histogram<Key> {
     }
 
     pub fn sort_by_highest(&self) -> Vec<(Key, usize)> {
-        let mut kvs = self.map.iter().map(|(k,v)| (k.clone(), v.clone())).collect::<Vec<_>>();
+        let mut kvs = self.to_vector();
         kvs.sort_by(|a,b| b.1.cmp(&a.1));
         kvs
+    }
+
+    pub fn to_vector(&self) -> Vec<(Key, usize)> {
+        self.map.iter().map(|(k,v)| (k.clone(), v.clone())).collect::<Vec<_>>()
     }
 }
