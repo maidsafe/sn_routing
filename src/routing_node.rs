@@ -601,8 +601,6 @@ mod test {
       fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
       fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
       fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn add_node(&mut self, node: NameType) {}
-      fn drop_node(&mut self, node: NameType) {}
       fn handle_churn(&mut self) { unimplemented!(); }
     }
 

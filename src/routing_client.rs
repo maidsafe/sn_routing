@@ -16,12 +16,11 @@
 // See the Licences for the specific language governing permissions and limitations relating to use
 // of the MaidSafe Software.
 
-pub mod client_interface;
-
-use std::thread;
-use cbor::CborTagEncode;
+use cbor;
 use rand;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize;
+use rustc_serialize::{Decodable, Encodable};
+use sodiumoxide;
 use sodiumoxide::crypto;
 use std::io::Error as IoError;
 use std::sync::{Mutex, Arc, mpsc};
@@ -105,11 +104,11 @@ impl ClientIdPacket {
 }
 
 impl Encodable for ClientIdPacket {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    fn encode<E: rustc_serialize::Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let (crypto::sign::PublicKey(pub_sign_vec), crypto::asymmetricbox::PublicKey(pub_asym_vec)) = self.public_keys;
         let (crypto::sign::SecretKey(sec_sign_vec), crypto::asymmetricbox::SecretKey(sec_asym_vec)) = self.secret_keys;
 
-        CborTagEncode::new(5483_001, &(
+        cbor::CborTagEncode::new(5483_001, &(
             pub_sign_vec.as_ref(),
             pub_asym_vec.as_ref(),
             sec_sign_vec.as_ref(),
@@ -118,14 +117,16 @@ impl Encodable for ClientIdPacket {
 }
 
 impl Decodable for ClientIdPacket {
-    fn decode<D: Decoder>(d: &mut D)-> Result<ClientIdPacket, D::Error> {
+    fn decode<D: rustc_serialize::Decoder>(d: &mut D)-> Result<ClientIdPacket, D::Error> {
         try!(d.read_u64());
         let (pub_sign_vec, pub_asym_vec, sec_sign_vec, sec_asym_vec) : (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) = try!(Decodable::decode(d));
 
-        let pub_sign_arr = convert_to_array!(pub_sign_vec, crypto::sign::PUBLICKEYBYTES);
-        let pub_asym_arr = convert_to_array!(pub_asym_vec, crypto::asymmetricbox::PUBLICKEYBYTES);
-        let sec_sign_arr = convert_to_array!(sec_sign_vec, crypto::sign::SECRETKEYBYTES);
-        let sec_asym_arr = convert_to_array!(sec_asym_vec, crypto::asymmetricbox::SECRETKEYBYTES);
+        let pub_sign_arr = container_of_u8_to_array!(pub_sign_vec, crypto::sign::PUBLICKEYBYTES);
+        let pub_asym_arr =
+            container_of_u8_to_array!(pub_asym_vec, crypto::asymmetricbox::PUBLICKEYBYTES);
+        let sec_sign_arr = container_of_u8_to_array!(sec_sign_vec, crypto::sign::SECRETKEYBYTES);
+        let sec_asym_arr =
+            container_of_u8_to_array!(sec_asym_vec, crypto::asymmetricbox::SECRETKEYBYTES);
 
         if pub_sign_arr.is_none() || pub_asym_arr.is_none() || sec_sign_arr.is_none() || sec_asym_arr.is_none() {
             return Err(d.error("Bad Maid size"));
@@ -279,8 +280,8 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                         match routing_msg.message_type {
                             messages::MessageTypeTag::GetDataResponse => {
                                 let mut interface = my_interface.lock().unwrap();
-                                interface.handle_get_response(routing_msg.message_header.source.from_node.clone(),
-                                                           Ok(routing_msg.serialised_body));
+                                interface.handle_get_response(routing_msg.message_header.message_id,
+                                                              Ok(routing_msg.serialised_body));
                             }
                             _ => unimplemented!(),
                         }

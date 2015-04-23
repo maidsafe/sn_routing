@@ -59,6 +59,7 @@ extern crate crust;
 
 use sodiumoxide::crypto;
 
+mod macros;
 pub mod routing_client;
 pub mod types;
 mod message_header;
@@ -68,6 +69,8 @@ mod common_bits;
 mod sentinel;
 mod messages;
 mod name_type;
+
+pub mod client_interface;
 pub mod message_interface;
 pub mod routing_node;
 pub mod node_interface;

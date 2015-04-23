@@ -1,7 +1,7 @@
 [package]
 
 name = "routing"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["David Irvine <david.irvine@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
 documentation = "http://dirvine.github.io/routing/"
