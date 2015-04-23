@@ -81,8 +81,46 @@ impl NameType {
 
 impl fmt::Debug for NameType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.0.to_vec())
+      write!(f, "{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+             self.0[0],
+             self.0[1],
+             self.0[2],
+             self.0[NAME_TYPE_LEN-3],
+             self.0[NAME_TYPE_LEN-2],
+             self.0[NAME_TYPE_LEN-1])
     }
+}
+
+impl fmt::Display for NameType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+               self.0[0],
+               self.0[1],
+               self.0[2],
+               self.0[NAME_TYPE_LEN-3],
+               self.0[NAME_TYPE_LEN-2],
+               self.0[NAME_TYPE_LEN-1])
+    }
+}
+
+impl fmt::LowerHex for NameType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut full_id = String::with_capacity(2*NAME_TYPE_LEN);
+        for char in self.0.iter() {
+          full_id.push_str(format!("{:02x}", char).as_str());
+        }
+        write!(f, "{}", full_id)
+    }
+}
+
+impl fmt::UpperHex for NameType {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      let mut full_id = String::with_capacity(2*NAME_TYPE_LEN);
+      for char in self.0.iter() {
+        full_id.push_str(format!("{:02X}", char).as_str());
+      }
+      write!(f, "{}", full_id)
+  }
 }
 
 impl PartialEq for NameType {
