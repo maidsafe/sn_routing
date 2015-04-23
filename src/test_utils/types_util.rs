@@ -21,12 +21,6 @@ use name_type::NameType;
 use rand::random;
 use super::random_trait::Random;
 
-impl Random for DhtId {
-    fn generate_random() -> DhtId {
-           DhtId(generate_random_vec_u8(64))
-    }
-}
-
 impl Random for NameAndTypeId {
     fn generate_random() -> NameAndTypeId {
         NameAndTypeId {

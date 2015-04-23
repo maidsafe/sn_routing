@@ -65,18 +65,6 @@ macro_rules! convert_to_array {
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
-    pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
-        for i in 0..lhs.0.len() {
-            let res_0 = lhs.0[i] ^ target.0[i];
-            let res_1 = rhs.0[i] ^ target.0[i];
-
-            if res_0 != res_1 {
-                return res_0 < res_1
-            }
-        }
-        false
-    }
-
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
     }
@@ -98,11 +86,22 @@ impl fmt::Debug for NameType {
 }
 
 impl PartialEq for NameType {
-
     fn eq(&self, other: &NameType) -> bool {
         slice_equal(&self.0, &other.0)
     }
+}
 
+// lhs is closer to target than rhs
+pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
+    for i in 0..lhs.0.len() {
+        let res_0 = lhs.0[i] ^ target.0[i];
+        let res_1 = rhs.0[i] ^ target.0[i];
+
+        if res_0 != res_1 {
+            return res_0 < res_1
+        }
+    }
+    false
 }
 
 //FIXME(ben): the ID can be ordered from zero as a normal euclidean number
@@ -110,7 +109,7 @@ impl PartialEq for NameType {
 impl Ord for NameType {
   #[inline]
   fn cmp(&self, other : &NameType) -> Ordering {
-    Ord::cmp(&&self.0[..], &&other.0[..])    
+    Ord::cmp(&&self.0[..], &&other.0[..])
   }
 }
 
@@ -206,12 +205,12 @@ mod test {
     }
 
     #[test]
-    fn closer_to_target() {
+    fn closeness() {
         let obj0: NameType = Random::generate_random();
         let obj0_clone = obj0.clone();
         let obj1: NameType = Random::generate_random();
-        assert!(NameType::closer_to_target(&obj0_clone, &obj1, &obj0));
-        assert!(!NameType::closer_to_target(&obj1, &obj0_clone, &obj0));
+        assert!(closer_to_target(&obj0_clone, &obj1, &obj0));
+        assert!(!closer_to_target(&obj1, &obj0_clone, &obj0));
     }
 
     #[test]

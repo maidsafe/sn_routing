@@ -21,7 +21,6 @@
 use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use std::fmt;
 use rand::random;
 use sodiumoxide;
 use NameType;
@@ -60,52 +59,6 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 
 pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
-
-#[derive(Default, PartialEq, Eq, Hash, Clone, RustcEncodable, RustcDecodable, PartialOrd, Ord)]
-pub struct DhtId(pub Vec<u8>);
-
-impl DhtId {
-
-    pub fn new(array : &[u8; 64]) -> DhtId {
-        DhtId(array.to_vec())
-    }
-
-    pub fn from_data(data : &[u8]) -> DhtId {
-        DhtId::new(&crypto::hash::sha512::hash(data).0)
-    }
-
-    pub fn is_valid(&self) -> bool {
-        if self.0.len() != 64 {
-          return false;
-        }
-        for it in self.0.iter() {
-            if *it != 0 {
-                return true;
-            }
-        }
-        false
-    }
-}
-
-impl fmt::Debug for DhtId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let &DhtId(ref v) = self;
-        write!(f, "DhtId({:x}{:x})", v[0], v[1])
-    }
-}
-
-// lhs is closer to target than rhs
-pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
-    for i in 0..lhs.0.len() {
-        let res_0 = lhs.0[i] ^ target.0[i];
-        let res_1 = rhs.0[i] ^ target.0[i];
-
-        if res_0 != res_1 {
-            return res_0 < res_1
-        }
-    }
-    false
-}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
