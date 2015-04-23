@@ -209,38 +209,35 @@ impl<'a> Sentinel<'a> {
     if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
       return Vec::<ResultType>::new();
     }
-    let mut verified_messages: Vec<ResultType> = Vec::new();
-    let mut keys_map: HashMap<NameType, Vec<types::PublicSignKey>> = HashMap::new();
+    let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
     for group_key in keys.iter() {
-      // deserialise serialised message GetGroupKeyResponse
-      let mut d = cbor::Decoder::from_bytes(group_key.value.2.clone());
-      let group_key_response: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
-      for public_sign_key in group_key_response.public_sign_keys.iter() {
-          Sentinel::update_key_map(&mut keys_map, public_sign_key.0.clone(), public_sign_key.1.clone());
-      }
+        Sentinel::decode(&group_key.value.2)
+            .map(|GetGroupKeyResponse{target_id: target, public_sign_keys: keys}| {
+                for (addr, key) in keys {
+                    Sentinel::update_key_map(&mut keys_map, addr.clone(), key.clone())
+                }
+            });
     }
+
     // TODO(mmoadeli): For the time being, we assume that no invalid public is received
     for (_, pub_key_list) in keys_map.iter() {
       if pub_key_list.len() != 1 {
         panic!("Different keys returned for a single address.");
       }
     }
-    for message in messages.iter() {
-      let key_map_iter = keys_map.get_mut(&message.value.0.from_node());
-      if key_map_iter.is_some() {
-        let public_sign_key = key_map_iter.unwrap()[0].get_crypto_public_sign_key();
-        let signature = message.value.0.get_signature();
-        let ref msg = message.value.2;
-        if crypto::sign::verify_detached(&signature.unwrap().get_crypto_signature(), &msg[..], &public_sign_key) {
-          verified_messages.push(message.value.clone());
-        }
-      }
+
+    let verified_messages = messages.iter().filter_map(|message| {
+        keys_map.get_mut(&message.value.0.from_node())
+        .and_then(|keys| {
+            Sentinel::verify_result(&message.value, &keys[0])
+        })
+    }).collect::<Vec<_>>();
+
+    if verified_messages.len() < types::QUORUM_SIZE as usize {
+      return Vec::new()
     }
-    if verified_messages.len() >= types::QUORUM_SIZE as usize {
-      verified_messages
-    } else {
-      Vec::<ResultType>::new()
-    }
+
+    verified_messages
   }
 
   fn decode<T: Decodable>(data: &SerialisedMessage) -> Option<T> {
@@ -269,10 +266,7 @@ impl<'a> Sentinel<'a> {
             return None;
         }
 
-        let first = decoded_responses[0].clone();
-        let rest  = decoded_responses.iter().skip(1).map(|a|a.clone()).collect::<Vec<_>>();
-
-        let merged_responses = match first.merge(&rest) {
+        let merged_responses = match FindGroupResponse::merge(&decoded_responses) {
           Some(merged_responses) => merged_responses,
           None => panic!("No merged group confirmed.") // return None;
         };

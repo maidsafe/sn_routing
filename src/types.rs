@@ -172,7 +172,7 @@ impl Decodable for Signature {
   }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct PublicSignKey {
   pub public_sign_key : Vec<u8>
 }
@@ -189,6 +189,13 @@ impl PublicSignKey {
     crypto::sign::PublicKey(vector_as_u8_32_array(self.public_sign_key.clone()))
   }
 }
+
+impl fmt::Debug for PublicSignKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PublicSignKey(...)")
+    }
+}
+
 
 impl Encodable for PublicSignKey {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {

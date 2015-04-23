@@ -17,67 +17,45 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use histogram::Histogram;
+use types::{PublicPmid, GROUP_SIZE};
 use types;
 use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
   pub target_id : NameType,
-  pub group : Vec<types::PublicPmid>
+  pub group     : Vec<PublicPmid>
 }
 
 impl FindGroupResponse {
 
-
     // TODO(ben 2015-04-09) to be replaced with a proper merge trait
     //                      for every message type
-    pub fn merge(&self, others : &Vec<FindGroupResponse>) -> Option<FindGroupResponse> {
-      let mut frequency_count : Vec<(types::PublicPmid, usize)>
-        = Vec::with_capacity(2 * types::GROUP_SIZE as usize);
-      for public_pmid in &self.group {
-        let mut new_public_pmid : bool = false;
-        match frequency_count.iter_mut()
-              .find(|ref mut count| count.0.public_key == public_pmid.public_key) {
-          Some(count) => count.1 += 1,
-          None => new_public_pmid = true
-        };
-        if new_public_pmid { frequency_count.push((public_pmid.clone(), 1)); };
-      }
-      for other in others {
-        if other.target_id != self.target_id { return None; }
-        for public_pmid in &other.group {
-          let mut new_public_pmid : bool = false;
-          match frequency_count.iter_mut()
-                .find(|ref mut count| count.0.public_key == public_pmid.public_key) {
-            Some(count) => count.1 += 1,
-            None => new_public_pmid = true
-          };
-          if new_public_pmid { frequency_count.push((public_pmid.clone(), 1)); };
+    pub fn merge(responses : &Vec<FindGroupResponse>) -> Option<FindGroupResponse> {
+        let mut histogram = Histogram::new();
+
+        if responses.is_empty() {
+            return None;
         }
-      }
-      // sort from highest mention_count to lowest
-      frequency_count.sort_by(|a, b| b.1.cmp(&a.1));
-      let mut merged_group : Vec<types::PublicPmid>
-        = Vec::with_capacity(types::GROUP_SIZE as usize);
-      for public_pmid_count in frequency_count {
-        if merged_group.len() < types::GROUP_SIZE as usize {
-          // can also be done with map_in_place,
-          // but explicit for-loop allows for asserts
-          // assert!(public_pmid_count.1 >= types::QUORUM_SIZE as usize);
-          assert!(public_pmid_count.1 <= types::GROUP_SIZE as usize);
-          // TODO(ben 2015-04-09) return None once logic assured
-          merged_group.push(public_pmid_count.0);
-        } else {
-          break; //  NOTE(ben 2015-04-15): here we can measure the fuzzy
-                 //  boundary of groups
+
+        for response in responses {
+            for public_pmid in &response.group {
+                histogram.update(public_pmid.clone());
+            }
         }
-      }
-      assert_eq!(merged_group.len(), types::GROUP_SIZE as usize);
-      // TODO(ben 2015-04-09) : curtosy call to sort to target,
-      //                        but requires correct name on PublicPmid
-      // merged_group.sort_by(...)
-      Some(FindGroupResponse{target_id : self.target_id.clone(),
-                             group : merged_group})
+
+        let frequency_count = histogram.sort_by_highest();
+
+        let merged_group = histogram.sort_by_highest().iter()
+                           .take(GROUP_SIZE as usize)
+                           .map(|&(ref k, _)| k.clone())
+                           .collect();
+
+        // FIXME: How should we merge the target_id?
+        let target_id = responses[0].target_id.clone();
+
+        Some(FindGroupResponse{target_id : target_id, group : merged_group})
     }
 }
 
@@ -133,9 +111,11 @@ mod test {
         keys.push(obj.group[13].clone());
 
         let mut responses = Vec::<FindGroupResponse>::with_capacity(4);
+        let target_id = obj.target_id.clone();
+        responses.push(obj);
         for _ in 0..4 {
             let mut response : FindGroupResponse = Random::generate_random();
-            response.target_id = obj.target_id.clone();
+            response.target_id = target_id.clone();
             response.group[1] = keys[0].clone();
             response.group[4] = keys[1].clone();
             response.group[6] = keys[2].clone();
@@ -146,7 +126,7 @@ mod test {
             responses.push(response);
         }
 
-        let merged_obj = obj.merge(&responses);
+        let merged_obj = FindGroupResponse::merge(&responses);
         assert!(merged_obj.is_some());
         let merged_response = merged_obj.unwrap();
         for i in 0..7 {
