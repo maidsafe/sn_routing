@@ -58,4 +58,15 @@ pub trait Interface : Sync + Send {
                             response: Result<Vec<u8>, RoutingError>);
 
     fn handle_churn(&mut self);
+
+    fn handle_cache_get(&mut self,
+                        type_id: u64,
+                        from_authority: Authority,
+                        from_address: NameType,
+                        data: Vec<u8>) -> Result<Action, RoutingError>;
+
+    fn handle_cache_put(&mut self,
+                        from_authority: Authority,
+                        from_address: NameType,
+                        data: Vec<u8>) -> Result<Action, RoutingError>;
 }

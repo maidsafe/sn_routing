@@ -592,15 +592,42 @@ mod test {
     struct NullInterface;
 
     impl Interface for NullInterface {
-      fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
-                    from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                    from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_churn(&mut self) { unimplemented!(); }
+        fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
+                    from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
+        fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                    from_address: NameType, dest_address: DestinationAddress,
+                    data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
+        fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
+                       from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
+        fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
+                               RoutingError>) {
+            unimplemented!();
+        }
+        fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
+                               response: Result<Vec<u8>, RoutingError>) {
+            unimplemented!();
+        }
+        fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
+                                response: Result<Vec<u8>, RoutingError>) {
+            unimplemented!();
+        }
+        fn handle_churn(&mut self) {
+            unimplemented!();
+        }
+        fn handle_cache_get(&mut self, type_id: u64, from_authority: Authority,
+                            from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
+        fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
+                            data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
     }
 
     //#[test]
