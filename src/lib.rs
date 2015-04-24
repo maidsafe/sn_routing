@@ -63,7 +63,7 @@ mod common_bits;
 mod macros;
 mod message_header;
 mod messages;
-mod histogram;
+mod frequency;
 mod name_type;
 mod routing_table;
 mod sentinel;

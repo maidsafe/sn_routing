@@ -17,9 +17,8 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use histogram::Histogram;
+use frequency::Frequency;
 use types::{PublicPmid, GROUP_SIZE};
-use types;
 use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -33,7 +32,7 @@ impl FindGroupResponse {
     // TODO(ben 2015-04-09) to be replaced with a proper merge trait
     //                      for every message type
     pub fn merge(responses : &Vec<FindGroupResponse>) -> Option<FindGroupResponse> {
-        let mut histogram = Histogram::new();
+        let mut frequency = Frequency::new();
 
         if responses.is_empty() {
             return None;
@@ -41,13 +40,13 @@ impl FindGroupResponse {
 
         for response in responses {
             for public_pmid in &response.group {
-                histogram.update(public_pmid.clone());
+                frequency.update(public_pmid.clone());
             }
         }
 
-        let frequency_count = histogram.sort_by_highest();
+        let frequency_count = frequency.sort_by_highest();
 
-        let merged_group = histogram.sort_by_highest().iter()
+        let merged_group = frequency.sort_by_highest().iter()
                            .take(GROUP_SIZE as usize)
                            .map(|&(ref k, _)| k.clone())
                            .collect();
