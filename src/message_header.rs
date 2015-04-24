@@ -78,19 +78,11 @@ impl MessageHeader {
     }
 
     pub fn is_from_group(&self) -> bool {
-        if self.source.from_group.is_some() {
-            true
-        } else {
-            false
-        }
+        self.source.from_group.is_some()
     }
 
     pub fn is_relayed(&self) -> bool {
-        if self.source.reply_to.is_some() {
-            true
-        } else {
-            false
-        }
+        self.source.reply_to.is_some()
     }
 
     pub fn reply_to(&self) -> Option<NameType> {
@@ -145,14 +137,6 @@ mod test {
     use cbor;
     use test_utils::Random;
 
-    pub fn generate_u8_64() -> Vec<u8> {
-        let mut u8_64: Vec<u8> = vec![];
-        for _ in (0..64) {
-            u8_64.push(random::<u8>());
-        }
-        u8_64
-    }
-
     fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
@@ -165,10 +149,10 @@ mod test {
     fn test_message_header() {
         test_object(MessageHeader {
             message_id : random::<u32>(),
-            destination : types::DestinationAddress{dest: Random::generate_random(), reply_to: None },
+            destination : types::DestinationAddress{ dest: Random::generate_random(),
+                                                     reply_to: None },
             source : types::SourceAddress { from_node : Random::generate_random(),
-              from_group : None,
-              reply_to: None },
+                                            from_group : None, reply_to: None },
             authority : types::Authority::ManagedNode,
             signature : Some(Random::generate_random())});
     }
