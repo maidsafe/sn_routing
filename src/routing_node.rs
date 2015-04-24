@@ -50,10 +50,11 @@ use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::{RoutingMessage, MessageTypeTag};
+use super::RoutingError;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
-type Endpoint = crust::Endpoint;
+pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
 type RecvResult = Result<(),()>;
@@ -100,12 +101,6 @@ impl<F> RoutingNode<F> where F: Interface {
                     }
     }
 
-    pub fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
-        self.accepting_on.clone().and_then(|endpoints| {
-            Some(endpoints)
-        })
-    }
-
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&self, type_id: u64, name: NameType) { unimplemented!() }
 
@@ -115,10 +110,18 @@ impl<F> RoutingNode<F> where F: Interface {
     /// Mutate something on the network (you must prove ownership) - Direct call
     pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
 
-    pub fn add_bootstrap(&mut self, endpoint: crust::Endpoint) {
-        self.pending_connections.insert(endpoint.clone());
-        let endpoints = vec![endpoint];
-        let _ = self.connection_manager.connect(endpoints);
+    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
+                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
+        match self.connection_manager.bootstrap(bootstrap_list/*, beacon_port*/) {
+            Err(reason) => {
+                println!("Failed to bootstrap: {:?}", reason);
+                Err(RoutingError::FailedToBootstrap)
+            }
+            Ok(bootstrapped_to) => {
+                self.bootstrap_node_id = Some(bootstrapped_to);
+                Ok(())
+            }
+        }
     }
 
     pub fn run(&mut self) {
@@ -148,6 +151,12 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
             }
         }
+    }
+
+    fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
+        self.accepting_on.clone().and_then(|endpoints| {
+            Some(endpoints)
+        })
     }
 
     fn next_endpoint_pair(&self) -> Option<(Vec<Endpoint>, Vec<Endpoint>)> {
