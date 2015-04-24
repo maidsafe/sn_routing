@@ -18,7 +18,7 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::Frequency;
-use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE};
+use types::{PublicPmid, GROUP_SIZE};
 use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -43,7 +43,6 @@ impl FindGroupResponse {
         // first identify the target_ids; Select all that are mentioned more than QuorumSize.
         let target_ids : Vec<NameType> = freq_target_id.sort_by_highest()
                                        .iter()
-                                       .filter(|pair| pair.1 >= QUORUM_SIZE as usize)
                                        .map(|&(ref id, _ )| id.clone())
                                        .collect();
         for target_id in target_ids {
@@ -59,7 +58,7 @@ impl FindGroupResponse {
                                                .take(GROUP_SIZE as usize)
                                                .map(|&(ref k, _)| k.clone())
                                                .collect();
-            if merged_group.len() >= QUORUM_SIZE as usize {
+            if !merged_group.is_empty() {
                 return Some(FindGroupResponse{target_id : target_id, group : merged_group}); };
         }
         return None;
