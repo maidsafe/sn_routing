@@ -17,9 +17,9 @@
 
 mod database;
 use routing;
-use routing::types::DhtId;
+use routing::NameType;
 use routing::types::DestinationAddress;
-use routing::message_interface::MessageInterface;
+
 
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
@@ -32,7 +32,7 @@ impl PmidManager {
 
   pub fn handle_put(&mut self, dest_address: &DestinationAddress, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
     if self.db_.put_data(&dest_address.dest, data.len() as u64) {
-      let mut destinations : Vec<DhtId> = Vec::new();
+      let mut destinations : Vec<NameType> = Vec::new();
       destinations.push(dest_address.dest.clone());
       Ok(routing::Action::SendOn(destinations))
     } else {
@@ -53,8 +53,8 @@ mod test {
   #[test]
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
-    let dest = DestinationAddress { dest: DhtId::generate_random(), reply_to: None };
-    let name = routing::name_type::NameType([3u8; 64]);
+    let dest = DestinationAddress { dest: routing::test_utils::Random::generate_random(), reply_to: None };
+    let name = routing::NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);

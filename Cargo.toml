@@ -17,5 +17,6 @@ time = "*"
 sodiumoxide = "*"
 rand = "*"
 lru_time_cache = "0.1.2"
-maidsafe_types = "0.0.9"
-routing = "0.0.9"
+[dependencies.routing]
+git = "https://github.com/dirvine/routing.git"[dependencies.maidsafe_types]
+path = "../maidsafe_types"

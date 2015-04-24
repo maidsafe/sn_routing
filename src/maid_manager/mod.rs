@@ -19,12 +19,11 @@ mod database;
 
 use cbor::{ Decoder };
 use routing;
+use routing::NameType;
 use maidsafe_types;
-use routing::interface::Interface;
-use routing::types::{DhtId, CloseGroupDifference};
-use routing::message_interface::MessageInterface;
+use routing::sendable::Sendable;
 
-type Address = DhtId;
+type Address = NameType;
 
 pub struct MaidManager {
   db_ : database::MaidManagerDatabase
@@ -35,32 +34,31 @@ impl MaidManager {
     MaidManager { db_: database::MaidManagerDatabase::new() }
   }
 
-  pub fn handle_put(&mut self, from : &DhtId, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, from : &NameType, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
-    let mut destinations : Vec<DhtId> = Vec::new();
+    let mut destinations : Vec<NameType> = Vec::new();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
-        let data_name = routing::types::array_as_vector(&immutable_data.get_name().get_id());
+        let data_name = routing::types::array_as_vector(&immutable_data.name().get_id());
         if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
           return Err(routing::RoutingError::InvalidRequest);
         }
-        destinations.push(DhtId::new(&immutable_data.get_name().get_id()));
+        destinations.push(NameType::new(immutable_data.name().get_id()));
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         // PublicMaid doesn't use any allowance
-        destinations.push(DhtId::new(&payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id()));
+        destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicMaid>().name().get_id()));
       }
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
         // PublicAnMaid doesn't use any allowance
-        destinations.push(DhtId::new(&payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id()));
+        destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicAnMaid>().name().get_id()));
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
     }
     Ok(routing::Action::SendOn(destinations))
   }
-
 }
 
 //
@@ -76,7 +74,7 @@ impl MaidManager {
 //   #[test]
 //   fn handle_put() {
 //     let mut maid_manager = MaidManager::new();
-//     let from = DhtId::generate_random();
+//     let from = NameType::generate_random();
 //     let name = NameType([3u8; 64]);
 //     let value = routing::types::generate_random_vec_u8(1024);
 //     let data = ImmutableData::new(value);

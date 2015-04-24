@@ -16,8 +16,9 @@
 #![allow(unused_variables)]
 
 use routing;
-use routing::{Action, RoutingError};
-use routing::types::{Authority, DestinationAddress, DhtId};
+use routing::{Action, RoutingError, NameType};
+
+use routing::types::{Authority, DestinationAddress};
 
 use data_manager::DataManager;
 use maid_manager::MaidManager;
@@ -31,13 +32,13 @@ pub struct VaultFacade {
   pmid_manager : PmidManager,
   pmid_node : PmidNode,
   version_handler : VersionHandler,
-  nodes_in_table : Vec<DhtId>
+  nodes_in_table : Vec<NameType>
 }
 
-impl routing::interface::Interface for VaultFacade {
+impl routing::node_interface::Interface for VaultFacade {
   fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
-                from_address: DhtId, data_name: Vec<u8>)->Result<Action, RoutingError> {
-    let name = DhtId(data_name);
+                from_address: NameType, data_name: Vec<u8>)->Result<Action, RoutingError> {
+    let name = NameType::new(routing::types::vector_as_u8_64_array(data_name));
     match our_authority {
       Authority::NaeManager => {
         // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
@@ -54,7 +55,7 @@ impl routing::interface::Interface for VaultFacade {
   }
 
   fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
+                from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
     match our_authority {
       Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
       Authority::NaeManager => {
@@ -73,33 +74,37 @@ impl routing::interface::Interface for VaultFacade {
     }
   }
 
-  fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> {
+  fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> {
     ;
     Err(RoutingError::InvalidRequest)
   }
 
-  fn handle_get_response(&mut self, from_address: DhtId, response: Result<Vec<u8>, RoutingError>) {
+  fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
     ;
   }
 
-  fn handle_put_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>) {
+  fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
     ;
   }
 
-  fn handle_post_response(&mut self, from_authority: Authority, from_address: DhtId, response: Result<Vec<u8>, RoutingError>) {
+  fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
     ;
   }
 
-  fn add_node(&mut self, node: DhtId) { self.nodes_in_table.push(node); }
+  fn handle_churn(&mut self) {
+    unimplemented!();
+  }
 
-  fn drop_node(&mut self, node: DhtId) {
+  /*fn add_node(&mut self, node: NameType) { self.nodes_in_table.push(node); }
+
+  fn drop_node(&mut self, node: NameType) {
     for index in 0..self.nodes_in_table.len() {
       if self.nodes_in_table[index] == node {
         self.nodes_in_table.remove(index);
         break;
       }
     }
-  }
+  }*/
 }
 
 impl VaultFacade {
@@ -110,6 +115,18 @@ impl VaultFacade {
   }
 }
 
+/// Remove (Krishna) - Tempoarary function - Can be called from routing if shared cross lib
+pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
+    for i in 0..lhs.0.len() {
+        let res_0 = lhs.0[i] ^ target.0[i];
+        let res_1 = rhs.0[i] ^ target.0[i];
+
+        if res_0 != res_1 {
+            return res_0 < res_1
+        }
+    }
+    false
+}
 
 // #[cfg(test)]
 // mod test {
@@ -120,7 +137,7 @@ impl VaultFacade {
 //   use maidsafe_types::traits::RoutingTrait;
 //   use routing::types::Authority;
 //   use routing::types::DestinationAddress;
-//   use routing::types::DhtId;
+//   use routing::types::NameType;
 //   use routing::facade::Facade;
 //
 //   #[test]
@@ -136,9 +153,9 @@ impl VaultFacade {
 //     assert_eq!(encode_result.is_ok(), true);
 //
 //     { // MaidManager, shall allowing the put and SendOn to DataManagers around name
-//       let from = DhtId::new(&[1u8; 64]);
+//       let from = NameType::new(&[1u8; 64]);
 //       // TODO : in this stage, dest can be populated as anything ?
-//       let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
+//       let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
 //       let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
 //                                         self::routing::types::array_as_vector(encoder.as_bytes()));
 //       assert_eq!(put_result.is_err(), false);
@@ -150,15 +167,15 @@ impl VaultFacade {
 //         routing::Action::Reply(x) => panic!("Unexpected"),
 //       }
 //     }
-//     let nodes_in_table = vec![DhtId::new(&[1u8; 64]), DhtId::new(&[2u8; 64]), DhtId::new(&[3u8; 64]), DhtId::new(&[4u8; 64]),
-//                               DhtId::new(&[5u8; 64]), DhtId::new(&[6u8; 64]), DhtId::new(&[7u8; 64]), DhtId::new(&[8u8; 64])];
+//     let nodes_in_table = vec![NameType::new(&[1u8; 64]), NameType::new(&[2u8; 64]), NameType::new(&[3u8; 64]), NameType::new(&[4u8; 64]),
+//                               NameType::new(&[5u8; 64]), NameType::new(&[6u8; 64]), NameType::new(&[7u8; 64]), NameType::new(&[8u8; 64])];
 //     for node in nodes_in_table.iter() {
 //       vault.add_node(node.clone());
 //     }
 //     { // DataManager, shall SendOn to pmid_nodes
-//       let from = DhtId::new(&[1u8; 64]);
+//       let from = NameType::new(&[1u8; 64]);
 //       // TODO : in this stage, dest can be populated as anything ?
-//       let dest = DestinationAddress{ dest : DhtId::generate_random(), reply_to: None };
+//       let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
 //       let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
 //                                         self::routing::types::array_as_vector(encoder.as_bytes()));
 //       assert_eq!(put_result.is_err(), false);
@@ -172,7 +189,7 @@ impl VaultFacade {
 //         }
 //         routing::Action::Reply(x) => panic!("Unexpected"),
 //       }
-//       let from = DhtId::new(&[1u8; 64]);
+//       let from = NameType::new(&[1u8; 64]);
 //       let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::NaeManager,
 //                                         Authority::Client, from, data.get_name().0.to_vec());
 //       assert_eq!(get_result.is_err(), false);
@@ -188,8 +205,8 @@ impl VaultFacade {
 //       }
 //     }
 //     { // PmidManager, shall put to pmid_nodes
-//       let from = DhtId::new(&[3u8; 64]);
-//       let dest = DestinationAddress{ dest : DhtId::new(&[7u8; 64]), reply_to: None };
+//       let from = NameType::new(&[3u8; 64]);
+//       let dest = DestinationAddress{ dest : NameType::new(&[7u8; 64]), reply_to: None };
 //       let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager, from, dest,
 //                                         self::routing::types::array_as_vector(encoder.as_bytes()));
 //       assert_eq!(put_result.is_err(), false);
@@ -202,8 +219,8 @@ impl VaultFacade {
 //       }
 //     }
 //     { // PmidNode stores/retrieves data
-//       let from = DhtId::new(&[7u8; 64]);
-//       let dest = DestinationAddress{ dest : DhtId::new(&[6u8; 64]), reply_to: None };
+//       let from = NameType::new(&[7u8; 64]);
+//       let dest = DestinationAddress{ dest : NameType::new(&[6u8; 64]), reply_to: None };
 //       let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager, from, dest,
 //                                         self::routing::types::array_as_vector(encoder.as_bytes()));
 //       assert_eq!(put_result.is_err(), true);
@@ -211,7 +228,7 @@ impl VaultFacade {
 //         routing::RoutingError::Success => { }
 //         _ => panic!("Unexpected"),
 //       }
-//       let from = DhtId::new(&[7u8; 64]);
+//       let from = NameType::new(&[7u8; 64]);
 //       let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::ManagedNode,
 //                                         Authority::NodeManager, from, [3u8; 64].to_vec());
 //       assert_eq!(get_result.is_err(), false);

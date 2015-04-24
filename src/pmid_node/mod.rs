@@ -16,12 +16,10 @@
 #![allow(dead_code)]
 
 use chunk_store::ChunkStore;
-use routing::interface::Interface;
-use routing::types::{DhtId, CloseGroupDifference};
+use routing::NameType;
 use routing;
 use maidsafe_types;
-use routing::message_interface::MessageInterface;
-
+use routing::sendable::Sendable;
 use cbor::{ Decoder};
 
 
@@ -34,7 +32,7 @@ impl PmidNode {
     PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
   }
 
-  pub fn handle_get(&self, name: DhtId) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_get(&self, name: NameType) ->Result<routing::Action, routing::RoutingError> {
     let data = self.chunk_store_.get(name);
     if data.len() == 0 {
       return Err(routing::RoutingError::NoData);
@@ -43,18 +41,18 @@ impl PmidNode {
   }
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
-    let mut data_name : DhtId;
+    let mut data_name : NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
-        data_name = DhtId::new(&payload.get_data::<maidsafe_types::ImmutableData>().get_name().get_id());
+        data_name = payload.get_data::<maidsafe_types::ImmutableData>().name();
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
-        data_name = DhtId::new(&payload.get_data::<maidsafe_types::PublicMaid>().get_name().get_id());
+        data_name = payload.get_data::<maidsafe_types::PublicMaid>().name();
       }
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        data_name = DhtId::new(&payload.get_data::<maidsafe_types::PublicAnMaid>().get_name().get_id());
+        data_name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
     }
@@ -73,7 +71,7 @@ impl PmidNode {
 //   use super::*;
 //   use self::maidsafe_types::*;
 //   use self::maidsafe_types::traits::RoutingTrait;
-//   use self::routing::types::DhtId;
+//   use self::routing::types::NameType;
 //   use self::routing::types::array_as_vector;
 //
 //   #[test]
@@ -94,7 +92,7 @@ impl PmidNode {
 //       _ => panic!("Unexpected"),
 //     }
 //
-//     let get_result = pmid_node.handle_get(DhtId::new(&name.0));
+//     let get_result = pmid_node.handle_get(NameType::new(&name.0));
 //     assert_eq!(get_result.is_err(), false);
 //     match get_result.ok().unwrap() {
 //         routing::Action::Reply(ref x) => {

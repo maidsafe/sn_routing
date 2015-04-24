@@ -16,10 +16,9 @@
 #![allow(dead_code)]
 
 use routing;
-use routing::message_interface::MessageInterface;
 use lru_time_cache::LruCache;
 
-type Identity = routing::types::DhtId; // name of the chunk
+type Identity = routing::NameType; // name of the chunk
 use routing::types::PmidNode;
 use routing::types::PmidNodes;
 
@@ -87,26 +86,26 @@ mod test {
   use maidsafe_types;
   use rand;
   use routing;
-  use super::*;
-  use routing::message_interface::MessageInterface;
+  use super::*;  
   use maidsafe_types::ImmutableData;
-  use routing::name_type::NameType;
-  use routing::interface::Interface;
-  use routing::types::{DhtId, generate_random_vec_u8};
-
+  use routing::NameType;
+  use routing::types::{generate_random_vec_u8};
+  use routing::test_utils::Random;
+  use routing::sendable::Sendable;
+  
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();
     let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
-    let mut pmid_nodes : Vec<DhtId> = vec![];
+    let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(DhtId::generate_random());
+      pmid_nodes.push(Random::generate_random());
     }
 
-    let data_name = DhtId::new(&data.get_name().get_id());
+    let data_name = data.name();
     assert_eq!(db.exist(&data_name), false);
     db.put_pmid_nodes(&data_name, pmid_nodes);
     assert_eq!(db.exist(&data_name), true);
@@ -118,11 +117,11 @@ mod test {
     let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
-    let data_name = DhtId::new(&data.get_name().get_id());
-    let mut pmid_nodes : Vec<DhtId> = vec![];
+    let data_name = data.name();
+    let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(DhtId::generate_random());
+      pmid_nodes.push(Random::generate_random());
     }
 
     let result = db.get_pmid_nodes(&data_name);
@@ -140,11 +139,11 @@ mod test {
     let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
-    let data_name = DhtId::new(&data.get_name().get_id());
-    let mut pmid_nodes : Vec<DhtId> = vec![];
+    let data_name = data.name();
+    let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(DhtId::generate_random());
+      pmid_nodes.push(Random::generate_random());
     }
 
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());
@@ -166,13 +165,13 @@ mod test {
     let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
-    let data_name = DhtId::new(&data.get_name().get_id());
-    let mut pmid_nodes : Vec<DhtId> = vec![];
-    let mut new_pmid_nodes : Vec<DhtId> = vec![];
+    let data_name = data.name();
+    let mut pmid_nodes : Vec<NameType> = vec![];
+    let mut new_pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(DhtId::generate_random());
-      new_pmid_nodes.push(DhtId::generate_random());
+      pmid_nodes.push(Random::generate_random());
+      new_pmid_nodes.push(Random::generate_random());
     }
 
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());

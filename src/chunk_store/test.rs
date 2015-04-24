@@ -3,22 +3,22 @@ mod test {
   use rand;
   use maidsafe_types;
   use routing;
-
+  use routing::test_utils::Random;
 
   use rand::{thread_rng, Rng};
   use chunk_store::ChunkStore;
-  use routing::types::DhtId;
+  use routing::NameType;
 
   static ONE_KB: usize = 1024;
 
   static K_DEFAULT_MAX_DISK_USAGE: usize = 4 * 1024;// // 4 * OneKB;
 
-  struct NameValueContainer(Vec<(routing::name_type::NameType, String)>);
+  struct NameValueContainer(Vec<(routing::NameType, String)>);
 
-  fn get_random_name_type() ->  routing::name_type::NameType {
+  fn get_random_name_type() ->  routing::NameType {
       let mut v = [0u8; 64];
       thread_rng().fill_bytes(&mut v);
-      routing::name_type::NameType(v)
+      routing::NameType(v)
   }
 
   fn get_random_non_empty_string(length: usize) -> String {
@@ -31,7 +31,7 @@ mod test {
 
   fn add_random_name_value_pairs(number: usize, size: usize) -> NameValueContainer {
       let mut i = 0usize;
-      let mut container: Vec<(routing::name_type::NameType, String)> = Vec::with_capacity(number);
+      let mut container: Vec<(routing::NameType, String)> = Vec::with_capacity(number);
       loop {
           container.push((get_random_name_type(), get_random_non_empty_string(size)));
           i += 1; // i++; is not compiling
@@ -62,7 +62,7 @@ mod test {
   //        }
   //    }
 
-      pub fn put(&mut self, name: DhtId, value: Vec<u8>) {
+      pub fn put(&mut self, name: NameType, value: Vec<u8>) {
           self.chunk_store.put(name, value);
       }
 
@@ -73,8 +73,8 @@ mod test {
           self.max_disk_storage = disk_usage;
           for name_value in name_value_pairs.0.clone() {
               let data_as_bytes = name_value.1.into_bytes();
-              self.chunk_store.put(DhtId::new(&name_value.0.clone().get_id()), data_as_bytes.clone());
-              let recovered = self.chunk_store.get(DhtId::new(&name_value.0.clone().get_id()));
+              self.chunk_store.put(NameType::new(name_value.0.clone().get_id()), data_as_bytes.clone());
+              let recovered = self.chunk_store.get(NameType::new(name_value.0.clone().get_id()));
               assert!(data_as_bytes == recovered);
           }
           name_value_pairs
@@ -95,7 +95,7 @@ mod test {
       let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
 
       let mut put = |size| {
-          let name = DhtId::generate_random();
+          let name = Random::generate_random();
           let data = get_random_non_empty_string(size);
           let size_before_insert = chunk_store.current_disk_usage();
           chunk_store.put(name, data.into_bytes());
@@ -114,7 +114,7 @@ mod test {
   fn should_fail_if_chunk_size_is_greater_than_max_disk_size() {
       let k_disk_size: usize = 116;
       let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
-      let name = DhtId::generate_random();
+      let name = Random::generate_random();
       let data = get_random_non_empty_string(k_disk_size + 1);
       chunk_store.put(name, data.into_bytes());
   }
@@ -126,7 +126,7 @@ mod test {
       let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
 
       let mut put_and_delete = |size| {
-          let name = DhtId::generate_random();
+          let name : NameType = Random::generate_random();
           let data = get_random_non_empty_string(size);
 
           chunk_store.put(name.clone(), data.into_bytes());
@@ -146,11 +146,11 @@ mod test {
       let num_disk_entries = 4;
       let mut chunk_store_utest = ChunkStoreTest::new();
       let name_value_container = chunk_store_utest.populate_chunk_store(num_entries, num_disk_entries).0;
-      let name = DhtId::generate_random();
+      let name = Random::generate_random();
       let value = get_random_non_empty_string(2 * ONE_KB);
-      // let first_name: routing::name_type::NameType = name_value_container[0].0.clone();
+      // let first_name: routing::NameType = name_value_container[0].0.clone();
       name_value_container[0].0.clone();
-      // let second_name: routing::name_type::NameType = name_value_container[1].0.clone();
+      // let second_name: routing::NameType = name_value_container[1].0.clone();
       name_value_container[1].0.clone();
       chunk_store_utest.put(name, value.into_bytes());
   }
@@ -161,7 +161,7 @@ mod test {
       let k_disk_size: usize = 116;
       let mut chunk_store = ChunkStore::with_max_disk_usage(k_disk_size);
 
-      let name = DhtId::generate_random();
+      let name: NameType = Random::generate_random();
       let data = get_random_non_empty_string(data_size).into_bytes();
       chunk_store.put(name.clone(), data.clone());
       let recovered = chunk_store.get(name);
@@ -180,7 +180,7 @@ mod test {
           chunk_store.current_disk_usage()
       };
 
-      let name = DhtId::generate_random();
+      let name: NameType = Random::generate_random();
       put(name.clone(), 1usize);
       put(name.clone(), 100usize);
       put(name.clone(), 10usize);

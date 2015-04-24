@@ -23,7 +23,7 @@ mod pmid_node;
 mod vault;
 
 use vault::VaultFacade;
-// use routing::types::DhtId;
+// use routing::types::NameType;
 // use routing::routing_node::RoutingNode;
 
 /// Placeholder doc test
@@ -39,7 +39,7 @@ impl Vault {
   }
 
   pub fn start_vault(&self) {
-    // let my_routing = RoutingNode::new(DhtId::generate_random(), &self.my_facade);
+    // let my_routing = RoutingNode::new(NameType::generate_random(), &self.my_facade);
     loop {
       always_true();
     }
