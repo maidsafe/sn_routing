@@ -20,6 +20,8 @@ use cbor::{Decoder, Encoder};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
+use sodiumoxide::crypto;
+use sodiumoxide::crypto::sign;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::{Arc, mpsc, Mutex};
@@ -110,7 +112,23 @@ impl<F> RoutingNode<F> where F: Interface {
     pub fn get(&self, type_id: u64, name: NameType) { unimplemented!() }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&self, destination: NameType, content: T) where T: Sendable { unimplemented!() }
+    pub fn put<T>(&self, destination: NameType, content: T) where T: Sendable {
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: self.id(), reply_to: None };
+        let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None };
+        let authority = types::Authority::Client;
+        let crypto_signature = crypto::sign::sign_detached(
+                &content.serialised_contents(), &self.pmid.get_crypto_secret_sign_key());
+        let signature = types::Signature::new(crypto_signature);
+        let header = MessageHeader::new(message_id, destination, source, authority, Some(signature));
+        let request = PutData{ name: content.name(), data: content.serialised_contents() };
+        let message = RoutingMessage::new(MessageTypeTag::PutData, header, request);
+
+        let targets = self.get_connected_target(&self.id());
+        for target in targets {
+            self.connection_manager.send(target, message);
+        }
+    }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
     pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
