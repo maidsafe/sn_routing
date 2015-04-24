@@ -1,0 +1,18 @@
+#!/bin/sh
+
+VAULT_PATH=/opt/maidsafe/vault
+
+if [ ! -f $VAULT_PATH/vault-manager ] ; then
+  echo "vault manager executable is missing in $VAULT_PATH" >&2
+  exit 1
+fi
+if [ ! -f $VAULT_PATH/vault_manager.service ] ; then
+  echo "vault service is missing in $VAULT_PATH" >&2
+  exit 1
+fi
+ln -s $VAULT_PATH/vault-manager /usr/bin/maidsafe_vault_manager
+systemctl enable $VAULT_PATH/vault_manager.service
+
+systemctl start vault_manager.service
+
+exit 0

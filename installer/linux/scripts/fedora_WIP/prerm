@@ -1,0 +1,6 @@
+#!/bin/sh
+VAULT_PATH=/opt/maidsafe/vault
+systemctl stop vault_manager.service
+systemctl disable $VAULT_PATH/vault_manager.service
+rm /usr/bin/maidsafe_vault_manager $VAULT_PATH/vault_manager.service
+

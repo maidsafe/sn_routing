@@ -1,0 +1,6 @@
+#!/bin/sh
+
+VAULT_PATH=/opt/maidsafe/
+/etc/init.d/maidsafe_vault stop
+/usr/sbin/update-rc.d -f maidsafe_vault remove
+rm /usr/bin/maidsafe_vault /etc/init.d/maidsafe_vault
