@@ -50,12 +50,7 @@ impl Random for PublicKey {
 
 impl Random for PublicPmid {
     fn generate_random() -> PublicPmid {
-        PublicPmid {
-            public_key : Random::generate_random(),
-            public_sign_key : Random::generate_random(),
-            validation_token : Random::generate_random(),
-            name : Random::generate_random()
-        }
+        PublicPmid::new(&Pmid::new())
     }
 }
 
