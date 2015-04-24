@@ -70,6 +70,7 @@ pub struct RoutingNode<F: Interface> {
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
     routing_table: RoutingTable,
     accepting_on: Option<Vec<Endpoint>>,
+    listening_for_broadcasts_on_port: Option<u16>,
     next_message_id: MessageId,
     bootstrap_node_id: Option<Endpoint>,
     filter: MessageFilter<types::FilterType>,
@@ -82,9 +83,19 @@ impl<F> RoutingNode<F> where F: Interface {
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
         let cm = crust::ConnectionManager::new(event_output);
-        // TODO : Default Protocol and Port need to be passed down
+        // TODO: Default Protocol and Port need to be passed down
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-        let accepting_on = cm.start_listening(ports_and_protocols).ok();
+        // TODO: Beacon port should be passed down
+        let beacon_port = Some(5483u16);
+        let listeners = match cm.start_listening(ports_and_protocols, beacon_port) {
+            Err(reason) => {
+                println!("Failed to start listening: {:?}", reason);
+                (None, None)
+            }
+            Ok(listeners_and_beacon) => {
+                (Some(listeners_and_beacon.0), listeners_and_beacon.1)
+            }
+        };
 
         RoutingNode { interface: Arc::new(Mutex::new(my_interface)),
                       pmid : pmid,
@@ -94,7 +105,8 @@ impl<F> RoutingNode<F> where F: Interface {
                       pending_connections : HashSet::new(),
                       all_connections: (HashMap::new(), BTreeMap::new()),
                       routing_table : RoutingTable::new(own_id),
-                      accepting_on: accepting_on,
+                      accepting_on: listeners.0,
+                      listening_for_broadcasts_on_port: listeners.1,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20))
@@ -112,7 +124,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
                      beacon_port: Option<u16>) -> Result<(), RoutingError> {
-        match self.connection_manager.bootstrap(bootstrap_list/*, beacon_port*/) {
+        match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
             Err(reason) => {
                 println!("Failed to bootstrap: {:?}", reason);
                 Err(RoutingError::FailedToBootstrap)
