@@ -60,7 +60,19 @@ Steps to compile SQLite by,
 - [ ] Implement routing node (100%)
 - [ ] Implement PUT in routing
 - [ ] Handle PMID Caching
-- [ ] Split Message handling
+- [ ] Split Messages and  handle message
+  - [ ] GetData HandleGetData
+  - [ ] GetDataResponse HandleGetDataResponse 
+  - [ ] GetClientKey GetClientKey 
+  - [ ] GetClientKeyResponse HandleGetClientKeyResponse 
+  - [ ] GetGroupKey HandleGetGroupKey 
+  - [ ] GetGroupKeyResponse HandleGetGroupKeyResponse 
+  - [ ] Post HandlePost 
+  - [ ] PostResponse HandlePostResponse 
+  - [ ] PutData HandlePutData 
+  - [ ] PutDataResponse HandlePutDataResponse 
+  - [ ] PutKey HandlePutKey 
+  - [ ] AccountTransfer HandleAccountTransfer 
 - [ ] Check Authority (see Jira 954)
 - [ ] Implement routing connections management
 - [ ] Sentinel:
