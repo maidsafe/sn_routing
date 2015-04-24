@@ -40,7 +40,7 @@ impl FindGroupResponse {
         for response in responses {
             freq_target_id.update(response.target_id.clone());
         }
-        // first identify the target_ids; Select all that are mentioned more than QuorumSize.
+        // first identify the target_ids;
         let target_ids : Vec<NameType> = freq_target_id.sort_by_highest()
                                        .iter()
                                        .map(|&(ref id, _ )| id.clone())
