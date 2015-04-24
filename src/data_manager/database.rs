@@ -78,6 +78,12 @@ impl DataManagerDatabase {
   	}
   }
 
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, PmidNodes)> {
+    let data: Vec<(Identity, PmidNodes)> = self.storage.retrieve_all();
+    self.storage = LruCache::with_capacity(10000);
+    data
+  }
+
 }
 
 #[cfg(test)]

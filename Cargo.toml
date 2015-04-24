@@ -16,7 +16,9 @@ cbor = "*"
 time = "*"
 sodiumoxide = "*"
 rand = "*"
-lru_time_cache = "0.1.2"
+[dependencies.lru_time_cache]
+git = "https://github.com/dirvine/lru_time_cache.git"
 [dependencies.routing]
-git = "https://github.com/dirvine/routing.git"[dependencies.maidsafe_types]
+git = "https://github.com/dirvine/routing.git"
+[dependencies.maidsafe_types]
 path = "../maidsafe_types"

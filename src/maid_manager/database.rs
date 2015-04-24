@@ -26,6 +26,15 @@ pub struct MaidManagerAccount {
   space_available : u64
 }
 
+impl Clone for MaidManagerAccount {
+    fn clone(&self) -> Self {
+        MaidManagerAccount {
+          data_stored: self.data_stored,
+          space_available: self.space_available
+        }
+    }
+}
+
 impl MaidManagerAccount {
   pub fn new() -> MaidManagerAccount {
     // FIXME : to bypass the AccountCreation process for simple network allownance is granted automatically
@@ -75,6 +84,12 @@ impl MaidManagerDatabase {
     let result = tmp.put_data(size);
     self.storage.add(name.clone(), tmp);
     result
+  }
+
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, MaidManagerAccount)> {
+    let data: Vec<(Identity, MaidManagerAccount)> = self.storage.retrieve_all();
+    self.storage = LruCache::with_capacity(10000);
+    data
   }
 
   pub fn delete_data(&mut self, name : &Identity, size: u64) {

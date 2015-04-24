@@ -84,6 +84,10 @@ impl DataManager {
     self.db_.put_pmid_nodes(&data_name, dest_pmids.clone());
     Ok(routing::Action::SendOn(dest_pmids))
   }
+
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<(NameType, Vec<NameType>)> {
+    self.db_.retrieve_all_and_reset()
+  }
 }
 
 // #[cfg(test)]

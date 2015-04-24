@@ -29,6 +29,16 @@ pub struct PmidManagerAccount {
   offered_space : u64
 }
 
+impl Clone for PmidManagerAccount {
+  fn clone(&self) -> Self {
+    PmidManagerAccount {
+      stored_total_size : self.stored_total_size,
+      lost_total_size : self.lost_total_size,
+      offered_space : self.offered_space
+    }
+  }  
+}
+
 impl PmidManagerAccount {
   pub fn new() -> PmidManagerAccount {
     // FIXME : to bypass the AccountCreation process for simple network, capacity is assumed automatically
@@ -96,6 +106,13 @@ impl PmidManagerDatabase {
     let result = tmp.put_data(size);
     self.storage.add(name.clone(), tmp);
     result
+  }
+
+
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, PmidManagerAccount)> {
+    let data: Vec<(Identity, PmidManagerAccount)> = self.storage.retrieve_all();
+    self.storage = LruCache::with_capacity(10000);
+    data
   }
 
 }

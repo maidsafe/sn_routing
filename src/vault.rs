@@ -21,8 +21,8 @@ use routing::{Action, RoutingError, NameType};
 use routing::types::{Authority, DestinationAddress};
 
 use data_manager::DataManager;
-use maid_manager::MaidManager;
-use pmid_manager::PmidManager;
+use maid_manager::{ MaidManager, MaidManagerAccount };
+use pmid_manager::{ PmidManager, PmidManagerAccount };
 use pmid_node::PmidNode;
 use version_handler::VersionHandler;
 
@@ -92,19 +92,12 @@ impl routing::node_interface::Interface for VaultFacade {
   }
 
   fn handle_churn(&mut self) {
-    unimplemented!();
+    let dm: Vec<(NameType, Vec<NameType>)> = self.data_manager.retrieve_all_and_reset();
+    let mm: Vec<(NameType, MaidManagerAccount)> = self.maid_manager.retrieve_all_and_reset();
+    let pm: Vec<(NameType, PmidManagerAccount)> = self.pmid_manager.retrieve_all_and_reset();
+    // TODO Pass data to routing node as Sendable
   }
 
-  /*fn add_node(&mut self, node: NameType) { self.nodes_in_table.push(node); }
-
-  fn drop_node(&mut self, node: NameType) {
-    for index in 0..self.nodes_in_table.len() {
-      if self.nodes_in_table[index] == node {
-        self.nodes_in_table.remove(index);
-        break;
-      }
-    }
-  }*/
 }
 
 impl VaultFacade {

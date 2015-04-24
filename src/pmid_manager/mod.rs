@@ -19,7 +19,7 @@ mod database;
 use routing;
 use routing::NameType;
 use routing::types::DestinationAddress;
-
+pub use self::database::PmidManagerAccount;
 
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
@@ -38,6 +38,10 @@ impl PmidManager {
     } else {
       Err(routing::RoutingError::InvalidRequest)
     }
+  }
+
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<(NameType, PmidManagerAccount)>{
+    self.db_.retrieve_all_and_reset()
   }
 }
 
