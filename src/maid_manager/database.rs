@@ -18,6 +18,7 @@
 
 use lru_time_cache::LruCache;
 use routing::NameType;
+use routing::sendable::Sendable;
 
 type Identity = NameType; // maid node address
 

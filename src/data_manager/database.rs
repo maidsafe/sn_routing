@@ -17,13 +17,56 @@
 
 use routing;
 use lru_time_cache::LruCache;
+use cbor;
+use cbor::CborTagEncode;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 type Identity = routing::NameType; // name of the chunk
 use routing::types::PmidNode;
 use routing::types::PmidNodes;
+use routing::NameType;
+use routing::sendable::Sendable;
 
+#[derive(Clone)]
 pub struct DataManagerDatabase {
   storage : LruCache<Identity, PmidNodes>
+}
+
+pub struct DataManagerAccount {
+  name: NameType,
+  pmid_nodes: Vec<NameType>
+}
+
+impl Sendable for DataManagerAccount {
+    fn name(&self) -> NameType {
+        self.name.clone()
+    }
+
+    fn type_tag(&self)->u64 {
+        501
+    }
+
+    fn serialised_contents(&self)->Vec<u8> {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
+    }
+}
+
+impl Encodable for DataManagerAccount {
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {        
+        CborTagEncode::new(5001, &(
+            self.name.clone(),
+            self.pmid_nodes.clone())).encode(e)
+    }
+}
+
+impl Decodable for DataManagerAccount {
+    fn decode<D: Decoder>(d: &mut D)-> Result<DataManagerAccount, D::Error> {
+        try!(d.read_u64());
+        let (name, pmid_nodes) : (NameType, Vec<NameType>) = try!(Decodable::decode(d));    
+        Ok(DataManagerAccount{ name: name, pmid_nodes: pmid_nodes })
+    }
 }
 
 impl DataManagerDatabase {
@@ -78,10 +121,17 @@ impl DataManagerDatabase {
   	}
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, PmidNodes)> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<DataManagerAccount> {
     let data: Vec<(Identity, PmidNodes)> = self.storage.retrieve_all();
+    let mut sendable_data: Vec<DataManagerAccount> = Vec::with_capacity(data.len());
     self.storage = LruCache::with_capacity(10000);
-    data
+    for acc in data {
+      sendable_data.push(DataManagerAccount {
+        name : acc.0,
+        pmid_nodes : acc.1,
+      });
+    }
+    sendable_data
   }
 
 }

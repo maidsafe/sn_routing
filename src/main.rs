@@ -23,23 +23,22 @@ mod pmid_node;
 mod vault;
 
 use vault::VaultFacade;
-// use routing::types::NameType;
-// use routing::routing_node::RoutingNode;
 
 /// Placeholder doc test
 pub fn always_true() -> bool { true }
 
 pub struct Vault {
-  my_facade : VaultFacade
+  my_facade : VaultFacade  
 }
 
 impl Vault {
-  pub fn new() -> Vault {
-    Vault { my_facade: VaultFacade::new() }
+  pub fn new() -> Vault {    
+    Vault {
+      my_facade: VaultFacade::new()
+    }
   }
 
-  pub fn start_vault(&self) {
-    // let my_routing = RoutingNode::new(NameType::generate_random(), &self.my_facade);
+  pub fn start_vault(&self) {    
     loop {
       always_true();
     }
@@ -47,15 +46,11 @@ impl Vault {
 }
 
 fn main () {
-    
-let vault = Vault::new();
-vault.start_vault();
-    
+  let vault = Vault::new();
+  vault.start_vault();
 }
-
-
 
 #[test]
 fn it_works() {
- assert_eq!(always_true(), true);
+  assert_eq!(always_true(), true);
 }

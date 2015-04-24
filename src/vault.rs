@@ -17,10 +17,9 @@
 
 use routing;
 use routing::{Action, RoutingError, NameType};
-
 use routing::types::{Authority, DestinationAddress};
 
-use data_manager::DataManager;
+use data_manager::{ DataManager, DataManagerAccount };
 use maid_manager::{ MaidManager, MaidManagerAccount };
 use pmid_manager::{ PmidManager, PmidManagerAccount };
 use pmid_node::PmidNode;
@@ -33,6 +32,12 @@ pub struct VaultFacade {
   pmid_node : PmidNode,
   version_handler : VersionHandler,
   nodes_in_table : Vec<NameType>
+}
+
+impl Clone for VaultFacade {
+  fn clone(&self) -> VaultFacade {
+    VaultFacade::new()
+  }
 }
 
 impl routing::node_interface::Interface for VaultFacade {
@@ -92,23 +97,26 @@ impl routing::node_interface::Interface for VaultFacade {
   }
 
   fn handle_churn(&mut self) {
-    let dm: Vec<(NameType, Vec<NameType>)> = self.data_manager.retrieve_all_and_reset();
+    let dm: Vec<DataManagerAccount> = self.data_manager.retrieve_all_and_reset();
     let mm: Vec<(NameType, MaidManagerAccount)> = self.maid_manager.retrieve_all_and_reset();
     let pm: Vec<(NameType, PmidManagerAccount)> = self.pmid_manager.retrieve_all_and_reset();
     // TODO Pass data to routing node as Sendable
+    //let route_node = routing_node.unwrap();
   }
 
 }
 
 impl VaultFacade {
+  
   pub fn new() -> VaultFacade {
     VaultFacade { data_manager: DataManager::new(), maid_manager: MaidManager::new(),
                   pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
                   version_handler: VersionHandler::new(), nodes_in_table: Vec::new() }
   }
+
 }
 
-/// Remove (Krishna) - Tempoarary function - Can be called from routing if shared cross lib
+/// Remove (Krishna) - Temporary function - Can be called from routing::name_type if exposed as public in routing
 pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
     for i in 0..lhs.0.len() {
         let res_0 = lhs.0[i] ^ target.0[i];
