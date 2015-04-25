@@ -138,6 +138,13 @@ impl DataManagerDatabase {
 
 #[cfg(test)]
 mod test {
+<<<<<<< HEAD
+  use super::{DataManagerDatabase};
+  use routing::message_interface::MessageInterface;
+  use maidsafe_types::ImmutableData;
+  use routing::types::{DhtId, generate_random_vec_u8};
+
+=======
   use cbor;
   use maidsafe_types;
   use rand;
@@ -149,10 +156,10 @@ mod test {
   use routing::test_utils::Random;
   use routing::sendable::Sendable;
   
+>>>>>>> fbb92e647dd07c4b03736745d15d6c75e229a4b1
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let mut pmid_nodes : Vec<NameType> = vec![];
@@ -170,7 +177,6 @@ mod test {
   #[test]
   fn put() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();
@@ -192,7 +198,6 @@ mod test {
   #[test]
   fn remove_pmid() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();
@@ -218,7 +223,6 @@ mod test {
   #[test]
   fn replace_pmids() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();

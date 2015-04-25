@@ -17,13 +17,23 @@
 
 
 use lru_time_cache::LruCache;
-use routing::types::DhtId;
+use routing::NameType;
+use routing::sendable::Sendable;
 
-type Identity = DhtId; // maid node address
+type Identity = NameType; // maid node address
 
 pub struct MaidManagerAccount {
   data_stored : u64,
   space_available : u64
+}
+
+impl Clone for MaidManagerAccount {
+    fn clone(&self) -> Self {
+        MaidManagerAccount {
+          data_stored: self.data_stored,
+          space_available: self.space_available
+        }
+    }
 }
 
 impl MaidManagerAccount {
@@ -77,6 +87,12 @@ impl MaidManagerDatabase {
     result
   }
 
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, MaidManagerAccount)> {
+    let data: Vec<(Identity, MaidManagerAccount)> = self.storage.retrieve_all();
+    self.storage = LruCache::with_capacity(10000);
+    data
+  }
+
   pub fn delete_data(&mut self, name : &Identity, size: u64) {
     let entry = self.storage.remove(name.clone());
     if entry.is_some() {
@@ -91,17 +107,13 @@ impl MaidManagerDatabase {
 
 #[cfg(test)]
 mod test {
-  extern crate cbor;
-  extern crate maidsafe_types;
-  extern crate rand;
-  extern crate routing;
-  use super::*;
-  use self::routing::types::*;
+  use super::*;  
+  use routing;
 
   #[test]
   fn exist() {
     let mut db = MaidManagerDatabase::new();
-    let name = DhtId::generate_random();
+    let name = routing::test_utils::Random::generate_random();
     assert_eq!(db.exist(&name), false);
     db.put_data(&name, 1024);
     assert_eq!(db.exist(&name), true);
@@ -110,7 +122,7 @@ mod test {
   #[test]
   fn put_data() {
     let mut db = MaidManagerDatabase::new();
-    let name = DhtId::generate_random();
+    let name = routing::test_utils::Random::generate_random();
     assert_eq!(db.put_data(&name, 0), true);
     assert_eq!(db.put_data(&name, 1), true);
     assert_eq!(db.put_data(&name, 1073741823), true);
@@ -124,7 +136,7 @@ mod test {
   #[test]
   fn delete_data() {
     let mut db = MaidManagerDatabase::new();
-    let name = DhtId::generate_random();
+    let name = routing::test_utils::Random::generate_random();
     db.delete_data(&name, 0);
     assert_eq!(db.exist(&name), false);
     assert_eq!(db.put_data(&name, 0), true);

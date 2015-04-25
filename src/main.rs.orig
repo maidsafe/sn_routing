@@ -40,7 +40,8 @@ mod pmid_manager;
 mod version_handler;
 mod chunk_store;
 mod pmid_node;
-mod vault;
+/// The vault library.
+pub mod vault;
 
 use vault::VaultFacade;
 
@@ -53,6 +54,16 @@ pub struct Vault {
 }
 
 impl Vault {
+<<<<<<< HEAD
+  /// Create a new interface.
+  pub fn new() -> Vault {
+    Vault { my_facade: VaultFacade::new() }
+  }
+
+  /// Start a RoutingNode and run the event loop to handle persona messages.
+  pub fn start_vault(&self) {
+    // let my_routing = RoutingNode::new(DhtId::generate_random(), &self.my_facade);
+=======
   pub fn new() -> Vault {    
     Vault {
       my_facade: VaultFacade::new()
@@ -60,6 +71,7 @@ impl Vault {
   }
 
   pub fn start_vault(&self) {    
+>>>>>>> fbb92e647dd07c4b03736745d15d6c75e229a4b1
     loop {
       std::thread::sleep_ms(500u32);
       always_true();
@@ -68,8 +80,15 @@ impl Vault {
 }
 
 fn main () {
+<<<<<<< HEAD
+
   let vault = Vault::new();
   vault.start_vault();
+
+=======
+  let vault = Vault::new();
+  vault.start_vault();
+>>>>>>> fbb92e647dd07c4b03736745d15d6c75e229a4b1
 }
 
 #[test]

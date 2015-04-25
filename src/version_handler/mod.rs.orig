@@ -16,7 +16,12 @@
 #![allow(dead_code)]
 use routing;
 use maidsafe_types;
+<<<<<<< HEAD
+
+use routing::types::{DhtId};
+=======
 use routing::NameType;
+>>>>>>> fbb92e647dd07c4b03736745d15d6c75e229a4b1
 use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
 use cbor::{ Decoder};
@@ -58,6 +63,56 @@ impl VersionHandler {
 
 }
 
+<<<<<<< HEAD
+#[cfg(test)]
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate routing;
+
+  use super::{VersionHandler};
+  use maidsafe_types::*;
+  use routing::types::*;
+  use routing::name_type::NameType;
+  use routing::message_interface::MessageInterface;
+
+  #[test]
+  fn handle_put_get() {
+    let mut version_handler = VersionHandler::new();
+    let name = NameType([3u8; 64]);
+    let value = NameType([5u8; 64]);
+    let sdv = StructuredData::new(name, value);
+    let payload = Payload::new(PayloadTypeTag::StructuredData, &sdv);
+    let mut encoder = cbor::Encoder::from_memory();
+    let encode_result = encoder.encode(&[&payload]);
+    assert_eq!(encode_result.is_ok(), true);
+
+    let put_result = version_handler.handle_put(array_as_vector(encoder.as_bytes()));
+    assert_eq!(put_result.is_err(), true);
+    match put_result.err().unwrap() {
+      routing::RoutingError::Success => assert_eq!(true, true),
+      _ => assert_eq!(true, false),
+    }
+
+    let data_name = DhtId::new(&sdv.get_name().0);
+    let get_result = version_handler.handle_get(data_name);
+    assert_eq!(get_result.is_err(), false);
+    match get_result.ok().unwrap() {
+      routing::Action::SendOn(_) => panic!("Unexpected"),
+      routing::Action::Reply(x) => {
+        let mut d = cbor::Decoder::from_bytes(x);
+        let obj_after: Payload = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::StructuredData);
+        let sdv_after = obj_after.get_data::<maidsafe_types::StructuredData>();
+        assert_eq!(sdv_after.get_name().0.to_vec(), [3u8; 64].to_vec());
+        assert_eq!(sdv_after.get_value().len(), 0);
+        // assert_eq!(sdv_after.get_value()[0].len(), 1);
+        // assert_eq!(sdv_after.get_value()[0][0].0.to_vec(), [5u8; 64].to_vec());
+      }
+    }
+  }
+}
+=======
 // #[cfg(test)]
 // mod test {
 //   extern crate cbor;
@@ -106,3 +161,4 @@ impl VersionHandler {
 //     }
 //   }
 // }
+>>>>>>> fbb92e647dd07c4b03736745d15d6c75e229a4b1

@@ -19,7 +19,10 @@ mod database;
 use routing;
 use routing::NameType;
 use routing::types::DestinationAddress;
+<<<<<<< HEAD
+=======
 pub use self::database::PmidManagerAccount;
+>>>>>>> fbb92e647dd07c4b03736745d15d6c75e229a4b1
 
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
@@ -56,8 +59,12 @@ mod test {
   #[test]
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
+<<<<<<< HEAD
+    let dest = DestinationAddress { dest: DhtId::generate_random(), reply_to: None };
+=======
     let dest = DestinationAddress { dest: routing::test_utils::Random::generate_random(), reply_to: None };
     let name = routing::NameType([3u8; 64]);
+>>>>>>> fbb92e647dd07c4b03736745d15d6c75e229a4b1
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);

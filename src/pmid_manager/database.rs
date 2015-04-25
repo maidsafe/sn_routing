@@ -21,12 +21,22 @@ extern crate routing;
 
 use self::lru_time_cache::LruCache;
 
-type Identity = self::routing::types::DhtId; // pmidnode address
+type Identity = self::routing::NameType; // pmidnode address
 
 pub struct PmidManagerAccount {
   stored_total_size : u64,
   lost_total_size : u64,
   offered_space : u64
+}
+
+impl Clone for PmidManagerAccount {
+  fn clone(&self) -> Self {
+    PmidManagerAccount {
+      stored_total_size : self.stored_total_size,
+      lost_total_size : self.lost_total_size,
+      offered_space : self.offered_space
+    }
+  }  
 }
 
 impl PmidManagerAccount {
@@ -98,6 +108,13 @@ impl PmidManagerDatabase {
     result
   }
 
+
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, PmidManagerAccount)> {
+    let data: Vec<(Identity, PmidManagerAccount)> = self.storage.retrieve_all();
+    self.storage = LruCache::with_capacity(10000);
+    data
+  }
+
 }
 
 
@@ -113,7 +130,7 @@ mod test {
   #[test]
   fn exist() {
     let mut db = PmidManagerDatabase::new();
-    let name = DhtId::generate_random();
+    let name = routing::test_utils::Random::generate_random();
     assert_eq!(db.exist(&name), false);
     db.put_data(&name, 1024);
     assert_eq!(db.exist(&name), true);
@@ -122,7 +139,7 @@ mod test {
   #[test]
   fn put_data() {
     let mut db = PmidManagerDatabase::new();
-    let name = DhtId::generate_random();
+    let name = routing::test_utils::Random::generate_random();
     assert_eq!(db.put_data(&name, 0), true);
     assert_eq!(db.exist(&name), true);
     assert_eq!(db.put_data(&name, 1), true);

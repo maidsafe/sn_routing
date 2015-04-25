@@ -1,9 +1,11 @@
 #[cfg(test)]
 mod test {
   use rand;
-  use maidsafe_types;
   use routing;
+<<<<<<< HEAD
+=======
   use routing::test_utils::Random;
+>>>>>>> fbb92e647dd07c4b03736745d15d6c75e229a4b1
 
   use rand::{thread_rng, Rng};
   use chunk_store::ChunkStore;
