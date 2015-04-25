@@ -20,8 +20,7 @@ mod database;
 use std::cmp;
 use routing;
 use maidsafe_types;
-use routing::interface::Interface;
-use routing::types::{DhtId, closer_to_target, CloseGroupDifference};
+use routing::types::{DhtId, closer_to_target};
 use routing::message_interface::MessageInterface;
 use cbor::{ Decoder };
 
@@ -87,53 +86,54 @@ impl DataManager {
   }
 }
 
-// #[cfg(test)]
-// mod test {
-//   extern crate cbor;
-//   extern crate maidsafe_types;
-//   extern crate routing;
-//   use super::*;
-//   use self::maidsafe_types::traits::RoutingTrait;
-//   use self::maidsafe_types::{NameType, ImmutableData, PayloadTypeTag, Payload};
-//   use self::routing::types::{DhtId, array_as_vector};
-//
-//   #[test]
-//   fn handle_put_get() {
-//     let mut data_manager = DataManager::new();
-//     let name = NameType([3u8; 64]);
-//     let value = routing::types::generate_random_vec_u8(1024);
-//     let data = ImmutableData::new(value);
-//     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
-//     let mut encoder = cbor::Encoder::from_memory();
-//     let encode_result = encoder.encode(&[&payload]);
-//     assert_eq!(encode_result.is_ok(), true);
-//     let mut nodes_in_table = vec![DhtId::new(&[1u8; 64]), DhtId::new(&[2u8; 64]), DhtId::new(&[3u8; 64]), DhtId::new(&[4u8; 64]),
-//                                   DhtId::new(&[5u8; 64]), DhtId::new(&[6u8; 64]), DhtId::new(&[7u8; 64]), DhtId::new(&[8u8; 64])];
-//     let put_result = data_manager.handle_put(&array_as_vector(encoder.as_bytes()), &mut nodes_in_table);
-//     assert_eq!(put_result.is_err(), false);
-//     match put_result.ok().unwrap() {
-//       routing::Action::SendOn(ref x) => {
-//         assert_eq!(x.len(), super::PARALLELISM);
-//         assert_eq!(x[0].0, [3u8; 64].to_vec());
-//         assert_eq!(x[1].0, [2u8; 64].to_vec());
-//         assert_eq!(x[2].0, [1u8; 64].to_vec());
-//         assert_eq!(x[3].0, [7u8; 64].to_vec());
-//       }
-//       routing::Action::Reply(x) => panic!("Unexpected"),
-//     }
-//
-//     let data_name = DhtId::new(&data.get_name().get_id());
-//     let get_result = data_manager.handle_get(&data_name);
-//     assert_eq!(get_result.is_err(), false);
-//     match get_result.ok().unwrap() {
-//       routing::Action::SendOn(ref x) => {
-//         assert_eq!(x.len(), super::PARALLELISM);
-//         assert_eq!(x[0].0, [3u8; 64].to_vec());
-//         assert_eq!(x[1].0, [2u8; 64].to_vec());
-//         assert_eq!(x[2].0, [1u8; 64].to_vec());
-//         assert_eq!(x[3].0, [7u8; 64].to_vec());
-//       }
-//       routing::Action::Reply(x) => panic!("Unexpected"),
-//     }
-//   }
-// }
+#[cfg(test)]
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate routing;
+
+  use super::{DataManager};
+  use maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
+  use routing::message_interface::MessageInterface;
+  use routing::types::{DhtId, array_as_vector};
+
+  #[test]
+  fn handle_put_get() {
+    let mut data_manager = DataManager::new();
+    let value = routing::types::generate_random_vec_u8(1024);
+    let data = ImmutableData::new(value);
+    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+    let mut encoder = cbor::Encoder::from_memory();
+    let encode_result = encoder.encode(&[&payload]);
+    assert_eq!(encode_result.is_ok(), true);
+    let mut nodes_in_table = vec![DhtId::new(&[1u8; 64]), DhtId::new(&[2u8; 64]), DhtId::new(&[3u8; 64]), DhtId::new(&[4u8; 64]),
+                                  DhtId::new(&[5u8; 64]), DhtId::new(&[6u8; 64]), DhtId::new(&[7u8; 64]), DhtId::new(&[8u8; 64])];
+    let put_result = data_manager.handle_put(&array_as_vector(encoder.as_bytes()), &mut nodes_in_table);
+    assert_eq!(put_result.is_err(), false);
+    match put_result.ok().unwrap() {
+      routing::Action::SendOn(ref x) => {
+        assert_eq!(x.len(), super::PARALLELISM);
+        assert_eq!(x[0], nodes_in_table[0]);
+        assert_eq!(x[1], nodes_in_table[1]);
+        assert_eq!(x[2], nodes_in_table[2]);
+        assert_eq!(x[3], nodes_in_table[3]);
+      }
+      routing::Action::Reply(_) => panic!("Unexpected"),
+    }
+
+    let data_name = DhtId::new(&data.get_name().get_id());
+    let get_result = data_manager.handle_get(&data_name);
+    assert_eq!(get_result.is_err(), false);
+    match get_result.ok().unwrap() {
+      routing::Action::SendOn(ref x) => {
+        assert_eq!(x.len(), super::PARALLELISM);
+        assert_eq!(x[0], nodes_in_table[0]);
+        assert_eq!(x[1], nodes_in_table[1]);
+        assert_eq!(x[2], nodes_in_table[2]);
+        assert_eq!(x[3], nodes_in_table[3]);
+      }
+      routing::Action::Reply(_) => panic!("Unexpected"),
+    }
+  }
+}
+

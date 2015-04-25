@@ -16,8 +16,7 @@
 #![allow(dead_code)]
 
 use chunk_store::ChunkStore;
-use routing::interface::Interface;
-use routing::types::{DhtId, CloseGroupDifference};
+use routing::types::{DhtId};
 use routing;
 use maidsafe_types;
 use routing::message_interface::MessageInterface;
@@ -64,48 +63,50 @@ impl PmidNode {
   }
 
 }
-//
-// #[cfg(test)]
-// mod test {
-//   extern crate cbor;
-//   extern crate maidsafe_types;
-//   extern crate routing;
-//   use super::*;
-//   use self::maidsafe_types::*;
-//   use self::maidsafe_types::traits::RoutingTrait;
-//   use self::routing::types::DhtId;
-//   use self::routing::types::array_as_vector;
-//
-//   #[test]
-//   fn handle_put_get() {
-//     let mut pmid_node = super::PmidNode::new();
-//     let name = NameType([3u8; 64]);
-//     let value = routing::types::generate_random_vec_u8(1024);
-//     let data = ImmutableData::new(value);
-//     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
-//     let mut encoder = cbor::Encoder::from_memory();
-//     let encode_result = encoder.encode(&[&payload]);
-//     assert_eq!(encode_result.is_ok(), true);
-//
-//     let put_result = pmid_node.handle_put(array_as_vector(encoder.as_bytes()));
-//     assert_eq!(put_result.is_err(), true);
-//     match put_result.err().unwrap() {
-//       routing::RoutingError::Success => { }
-//       _ => panic!("Unexpected"),
-//     }
-//
-//     let get_result = pmid_node.handle_get(DhtId::new(&name.0));
-//     assert_eq!(get_result.is_err(), false);
-//     match get_result.ok().unwrap() {
-//         routing::Action::Reply(ref x) => {
-//             let mut d = cbor::Decoder::from_bytes(&x[..]);
-//             let obj_after: Payload = d.decode().next().unwrap().unwrap();
-//             assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::ImmutableData);
-//             let data_after = obj_after.get_data::<maidsafe_types::ImmutableData>();
-//             assert_eq!(data.get_name().0.to_vec(), data_after.get_name().0.to_vec());
-//             assert_eq!(data.get_value(), data_after.get_value());
-//         },
-//         _ => panic!("Unexpected"),
-//     }
-//   }
-// }
+
+
+#[cfg(test)]
+mod test {
+  extern crate cbor;
+  extern crate maidsafe_types;
+  extern crate routing;
+
+  use super::{PmidNode};
+  use maidsafe_types::*;
+  use routing::types::DhtId;
+  use routing::types::array_as_vector;
+  use routing::message_interface::MessageInterface;
+
+  #[test]
+  fn handle_put_get() {
+    let mut pmid_node = super::PmidNode::new();
+    let value = routing::types::generate_random_vec_u8(1024);
+    let data = ImmutableData::new(value);
+    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+    let mut encoder = cbor::Encoder::from_memory();
+    let encode_result = encoder.encode(&[&payload]);
+    assert_eq!(encode_result.is_ok(), true);
+
+    let put_result = pmid_node.handle_put(array_as_vector(encoder.as_bytes()));
+    assert_eq!(put_result.is_err(), true);
+    match put_result.err().unwrap() {
+      routing::RoutingError::Success => { }
+      _ => panic!("Unexpected"),
+    }
+
+    let get_result = pmid_node.handle_get(DhtId::new(&data.get_name().get_id()));
+    assert_eq!(get_result.is_err(), false);
+    match get_result.ok().unwrap() {
+        routing::Action::Reply(ref x) => {
+            let mut d = cbor::Decoder::from_bytes(&x[..]);
+            let obj_after: Payload = d.decode().next().unwrap().unwrap();
+            assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::ImmutableData);
+            let data_after = obj_after.get_data::<maidsafe_types::ImmutableData>();
+            assert_eq!(data.get_name().0.to_vec(), data_after.get_name().0.to_vec());
+            assert_eq!(data.get_value(), data_after.get_value());
+        },
+        _ => panic!("Unexpected"),
+    }
+  }
+}
+

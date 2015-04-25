@@ -16,7 +16,6 @@
 #![allow(dead_code)]
 
 use routing;
-use routing::message_interface::MessageInterface;
 use lru_time_cache::LruCache;
 
 type Identity = routing::types::DhtId; // name of the chunk
@@ -83,21 +82,14 @@ impl DataManagerDatabase {
 
 #[cfg(test)]
 mod test {
-  use cbor;
-  use maidsafe_types;
-  use rand;
-  use routing;
-  use super::*;
+  use super::{DataManagerDatabase};
   use routing::message_interface::MessageInterface;
   use maidsafe_types::ImmutableData;
-  use routing::name_type::NameType;
-  use routing::interface::Interface;
   use routing::types::{DhtId, generate_random_vec_u8};
 
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let mut pmid_nodes : Vec<DhtId> = vec![];
@@ -115,7 +107,6 @@ mod test {
   #[test]
   fn put() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = DhtId::new(&data.get_name().get_id());
@@ -137,7 +128,6 @@ mod test {
   #[test]
   fn remove_pmid() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = DhtId::new(&data.get_name().get_id());
@@ -163,7 +153,6 @@ mod test {
   #[test]
   fn replace_pmids() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = DhtId::new(&data.get_name().get_id());
