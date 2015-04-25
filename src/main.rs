@@ -53,13 +53,13 @@ pub struct Vault {
 }
 
 impl Vault {
-  pub fn new() -> Vault {    
+  fn new() -> Vault {    
     Vault {
       my_facade: VaultFacade::new()
     }
   }
 
-  pub fn start_vault(&self) {    
+  fn start_vault(&self) {    
     loop {
       std::thread::sleep_ms(500u32);
       always_true();

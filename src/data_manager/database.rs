@@ -27,7 +27,6 @@ use routing::types::PmidNodes;
 use routing::NameType;
 use routing::sendable::Sendable;
 
-#[derive(Clone)]
 pub struct DataManagerDatabase {
   storage : LruCache<Identity, PmidNodes>
 }
