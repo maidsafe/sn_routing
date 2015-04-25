@@ -2,8 +2,8 @@
 
 name = "routing"
 version = "0.1.2"
-authors = [“MaidSafe Developers <dev@maidsafe.net>"]
-description = “A specialised storage DHT.”
+authors = [“David Irvine <david.irvine@maidsafe.net>"]
+description = “This is Pre alpha, and not useful, no code worth looking at.”
 documentation = "http://dirvine.github.io/routing/"
 repository = "https://github.com/dirvine/routing"
 readme = "README.md"
