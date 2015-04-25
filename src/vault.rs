@@ -14,6 +14,7 @@
     Software.                                                                 */
 
 #![allow(unused_variables)]
+#![deny(missing_docs)]
 
 use routing;
 use routing::{Action, RoutingError};
@@ -25,6 +26,7 @@ use pmid_manager::PmidManager;
 use pmid_node::PmidNode;
 use version_handler::VersionHandler;
 
+/// Main struct to hold all personas
 pub struct VaultFacade {
   data_manager : DataManager,
   maid_manager : MaidManager,
@@ -65,7 +67,7 @@ impl routing::interface::Interface for VaultFacade {
           Authority::ClientManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
           Authority::ManagedNode => { return self.version_handler.handle_put(data); }
           _ => { return Err(RoutingError::InvalidRequest); }
-        }        
+        }
       }
       Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
       Authority::ManagedNode => { return self.pmid_node.handle_put(data); }
@@ -103,6 +105,7 @@ impl routing::interface::Interface for VaultFacade {
 }
 
 impl VaultFacade {
+  /// Initialise all the personas in the Vault interface.
   pub fn new() -> VaultFacade {
     VaultFacade { data_manager: DataManager::new(), maid_manager: MaidManager::new(),
                   pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
