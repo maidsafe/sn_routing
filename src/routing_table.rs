@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the MaidSafe Software, or to this project generally, you agree to be
+// By contributing code to the Safe Network Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
 // directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://www.maidsafe.net/licenses
+// available at: http://maidsafe.net/network-platform-licensing
 //
-// Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
+// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 // OF ANY KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe Software.
+// Please review the Licences for the specific language governing permissions and limitations relating to
+// use of the Safe Network Software.
 
 use common_bits::*;
 use sodiumoxide::crypto;
@@ -57,7 +57,7 @@ impl NodeInfo {
   }
 }
 
-/// The RoutingTable class is used to maintain a list of contacts to which we are connected.
+/// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
     our_id: NameType,
@@ -87,7 +87,7 @@ impl RoutingTable {
 
     pub fn get_quorum_size() -> usize { QUORUM_SIZE }
 
-    /// Potentially adds a contact to the routing table.  If the contact is added, the first return arg
+    /// Adds a contact to the routing table.  If the contact is added, the first return arg
     /// is true, otherwise false.  If adding the contact caused another contact to be dropped, the
     /// dropped one is returned in the second field, otherwise the optional field is empty.  The
     /// following steps are used to determine whether to add the new contact or not:
@@ -137,8 +137,8 @@ impl RoutingTable {
         (false, None)
     }
 
-    /// This is used to see whether to bother retrieving a contact's public key from the PKI with a
-    /// view to adding the contact to our table.  The checking procedure is the same as for
+    /// This is used to check whether it is worth while retrieving a contact's public key from the PKI with a
+    /// view to adding the contact to our routing table.  The checking procedure is the same as for
     /// 'AddNode' above, except for the lack of a public key to check in step 1.
     pub fn check_node(&self, their_id: &NameType)->bool {
 
@@ -895,7 +895,7 @@ mod test {
           routing_table_utest.table.check_node(&routing_table_utest.buckets[0].far_contact.clone()),
           false);
 
-      // Add further 'OptimalSize()' - 1 contacts (should all succeed with no removals).  Set this
+      // Add further 'OptimalSize()' - 1 contact (should all succeed with no removals).  Set this
       // up so that bucket 0 (furthest) and bucket 1 have 3 contacts each and all others have 0 or 1
       // contacts.
 
@@ -956,7 +956,7 @@ mod test {
               routing_table_utest.table.routing_table.len());
       }
 
-      // Check far contacts again which are now not in the table
+      // Check for contacts again which are now not in the table
       assert_eq!(routing_table_utest.table.check_node(
           &routing_table_utest.buckets[0].far_contact.clone()), false);
       assert_eq!(routing_table_utest.table.check_node(
@@ -1001,7 +1001,7 @@ mod test {
                 tables[i].drop_node(&drop_vec[j]);
             }
         }
-        // remove ids too
+        // remove IDs too
         addresses = addresses.split_off(nodes_to_remove);
 
         for i in 0..tables.len() {

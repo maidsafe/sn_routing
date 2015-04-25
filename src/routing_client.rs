@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License, version
-// 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which licence you
-// accepted on initial access to the Software (the "Licences").
+// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
+// licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the MaidSafe Software, or to this project generally, you agree to be
+// By contributing code to the Safe Network Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also available at
-// http://maidsafe.net/licenses
+// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
+// available at: http://maidsafe.net/network-platform-licensing
 //
-// Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
+// OF ANY KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to use
-// of the MaidSafe Software.
+// Please review the Licences for the specific language governing permissions and limitations relating to
+// use of the Safe Network Software.
 
 use cbor;
 use rand;
@@ -117,6 +117,36 @@ impl Encodable for ClientIdPacket {
     }
 }
 
+<<<<<<< HEAD
+=======
+///
+/// Convert a container to an array. If the container is not the exact size specified, None is
+/// returned, otherwise, all of the elements are moved into the array.
+///
+/// ```
+/// let mut data = Vec::<usize>::new();
+/// data.push(1);
+/// data.push(2);
+/// assert!(convert_to_array(data, 2).is_some());
+/// assert!(convert_to_array(data, 3).is_none());
+/// ```
+macro_rules! convert_to_array {
+    ($container:ident, $size:expr) => {{
+        if $container.len() != $size {
+            None
+        } else {
+            use std::mem;
+            let mut arr : [_; $size] = unsafe { mem::uninitialized() };
+            for element in $container.into_iter().enumerate() {
+                let old_val = mem::replace(&mut arr[element.0], element.1);
+                unsafe { mem::forget(old_val) };
+            }
+            Some(arr)
+        }
+    }};
+}
+
+>>>>>>> Changes to docs
 impl Decodable for ClientIdPacket {
     fn decode<D: rustc_serialize::Decoder>(d: &mut D)-> Result<ClientIdPacket, D::Error> {
         try!(d.read_u64());
@@ -175,7 +205,11 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
+<<<<<<< HEAD
     pub fn get(&mut self, type_id: u64, name: NameType) -> Result<u32, IoError> {
+=======
+    pub fn get(&mut self, type_id: u64, name: types::DhtId) -> Result<u32, IoError> {
+>>>>>>> Changes to docs
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
