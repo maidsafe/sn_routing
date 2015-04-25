@@ -374,7 +374,6 @@ mod test {
     use std::cmp;
     use std::collections::BitVec;
     use std::net::*;
-    use std::fmt;
     use types::{PublicPmid, RoutingTrait};
     use name_type::closer_to_target;
     use types;
@@ -457,10 +456,6 @@ mod test {
             };
 
             for i in 0..99 {
-                // println!("{}\tFar: {}\tMid: {}\tClose: {}", i,
-                //     RoutingTableUnitTest::debug_id(&table.buckets[i].far_contact),
-                //     RoutingTableUnitTest::debug_id(&table.buckets[i].mid_contact),
-                //     RoutingTableUnitTest::debug_id(&table.buckets[i].close_contact));
                 assert!(closer_to_target(&table.buckets[i].mid_contact,
                     &table.buckets[i].far_contact, &table.our_id));
                 assert!(closer_to_target(&table.buckets[i].close_contact,
@@ -497,28 +492,6 @@ mod test {
             assert_eq!(RoutingTable::get_optimal_size(), self.table.size());
         }
 
-    }
-
-    fn to_hex(char: u8) -> String {
-        let hex = fmt::format(format_args!("{:x}", char));
-        if hex.len() == 1 {
-            let mut s = String::from_str("0");
-            s.push_str(hex.as_str());
-            s
-        } else {
-            hex
-        }
-    }
-
-    fn debug_id(id: &NameType) -> String {
-        let id_as_bytes = id.clone().0;
-        fmt::format(format_args!("{}{}{}..{}{}{}",
-            to_hex(id_as_bytes[0]),
-            to_hex(id_as_bytes[1]),
-            to_hex(id_as_bytes[2]),
-            to_hex(id_as_bytes[61]),
-            to_hex(id_as_bytes[62]),
-            to_hex(id_as_bytes[63])))
     }
 
     fn initialise_buckets(our_id: &NameType) -> Vec<Bucket> {

@@ -95,6 +95,7 @@ pub enum Action {
 
 pub enum RoutingError {
   Success,  // vault will also return a Success to indicate a dead end
+  FailedToBootstrap,
   NoData,
   InvalidRequest,
   IncorrectData(Vec<u8>),
