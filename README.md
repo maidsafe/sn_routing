@@ -53,7 +53,7 @@ Steps to compile SQLite by,
 - [x] Version 0.0.8
 - [x] Move bootstrap out of routing
 - [ ] Complete Client Interface (Facade)
-- [ ] Complete Routing Node Interface to accomodate churn
+- [x] Complete Routing Node Interface to accomodate churn
 - [x] Add caching to node interface
 - [ ] Implement routing node (100%)
 - [ ] Handle PMID Caching
