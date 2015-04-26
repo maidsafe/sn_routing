@@ -77,7 +77,7 @@ Steps to compile SQLite by,
   - [ ] Group response merge
   - [ ] Signature checks
   - [ ] QA Sentinel including code review from system design perspective
-  - [ ] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
+- [ ] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
 - [ ] Examples:
   - [ ] zero state network
   - [ ] Routing Node with type erased cache
