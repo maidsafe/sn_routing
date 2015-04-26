@@ -54,9 +54,10 @@ Steps to compile SQLite by,
 - [x] Move bootstrap out of routing
 - [ ] Complete Client Interface (Facade)
 - [ ] Complete Routing Node Interface to accomodate churn
-- [ ] Add caching to node interface
+- [x] Add caching to node interface
 - [ ] Implement routing node (100%)
 - [ ] Handle PMID Caching
+- [ ] Handle Cache / Get / Check calls
 - [ ] Split Messages and  handle message
   - [ ] GetData HandleGetData
   - [ ] GetDataResponse HandleGetDataResponse 
