@@ -51,19 +51,16 @@ Steps to compile SQLite by,
 - [x] Test message types
 - [x] Implement Get Put Post messages
 - [x] Version 0.0.8
-- [ ] Test client node
-- [ ] Test basic facade (normal DHT Get Put with republish)
 - [x] Move bootstrap out of routing
 - [ ] Complete Client Interface (Facade)
 - [ ] Complete Routing Node Interface to accomodate churn
 - [ ] Add caching to node interface
 - [ ] Implement routing node (100%)
-- [ ] Implement PUT in routing
 - [ ] Handle PMID Caching
 - [ ] Split Messages and  handle message
   - [ ] GetData HandleGetData
   - [ ] GetDataResponse HandleGetDataResponse 
-  - [ ] GetClientKey GetClientKey 
+  - [ ] GetClientKey HandleGetClientKey 
   - [ ] GetClientKeyResponse HandleGetClientKeyResponse 
   - [ ] GetGroupKey HandleGetGroupKey 
   - [ ] GetGroupKeyResponse HandleGetGroupKeyResponse 
@@ -82,13 +79,10 @@ Steps to compile SQLite by,
   - [ ] Signature checks
   - [ ] QA Sentinel including code review from system design perspective
 - [ ] Examples:
+  - [ ] zero state network
   - [ ] Routing Node with type erased cache
   - [ ] Routing Client accepting key, value as string for GET/PUT
   - [ ] Local Network Test. 12 Linux, 2 OSX, 2 WIN
   - [ ] 101 Droplet test
-- [ ] zero state network
-- [ ] Test node network (process on single machine)
-- [ ] Test node network (local area network (12 linux 2 OSX 2 Win)
-- [ ] Test node network (across digital ocean images (256 nodes)
-- [ ] Version 0.1 (crates.io)
+- [ ] Version 0.1.5 (crates.io)
 - [ ] Address re-location (security essential)
