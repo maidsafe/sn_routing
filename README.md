@@ -35,6 +35,10 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [x] Test Get Flow
 - [ ] Test with client having simple put and get ability
 - [ ] Integration Test
+- [ ] Complete Post Flow
+- [ ] Handle Churn
+    - [ ] Implement Account Transfer
+    - [ ] Churn Test
 - [ ] Installers
     - [ ] linux 32 bit .deb installer (oldest possible version)
     - [ ] linux 64 bit .deb installer (oldest possible version)
@@ -45,11 +49,6 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
     - [ ] OS/X installer (fpm)
     - [ ] Win32 installer (windows advanced installer)
     - [ ] Win64 installer (windows advanced installer)
-
-- [ ] Complete Post Flow
-- [ ] Handle Churn
-    - [ ] Implement Account Transfer
-    - [ ] Churn Test
 - [ ] API version 0.0.9
 - [ ] Test with client having file system feature
 - [ ] Implement MpidManager
