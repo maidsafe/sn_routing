@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License, version
-// 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which licence you
-// accepted on initial access to the Software (the "Licences").
+// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
+// licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the MaidSafe Software, or to this project generally, you agree to be
+// By contributing code to the Safe Network Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also available at
-// http://maidsafe.net/licenses
+// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
+// available at: http://maidsafe.net/network-platform-licensing
 //
-// Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
+// OF ANY KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to use
-// of the MaidSafe Software.
+// Please review the Licences for the specific language governing permissions and limitations relating to
+// use of the Safe Network Software.
 
 use cbor::{Decoder, Encoder};
 use rand;
@@ -38,7 +38,7 @@ use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
-use types::{MessageId, RoutingTrait};
+use types::{MessageId, RoutingTrait, Authority};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -51,10 +51,11 @@ use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::{RoutingMessage, MessageTypeTag};
+use super::RoutingError;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
-type Endpoint = crust::Endpoint;
+pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
 type RecvResult = Result<(),()>;
@@ -70,6 +71,7 @@ pub struct RoutingNode<F: Interface> {
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
     routing_table: RoutingTable,
     accepting_on: Option<Vec<Endpoint>>,
+    listening_for_broadcasts_on_port: Option<u16>,
     next_message_id: MessageId,
     bootstrap_node_id: Option<Endpoint>,
     filter: MessageFilter<types::FilterType>,
@@ -82,9 +84,19 @@ impl<F> RoutingNode<F> where F: Interface {
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
         let cm = crust::ConnectionManager::new(event_output);
-        // TODO : Default Protocol and Port need to be passed down
+        // TODO: Default Protocol and Port need to be passed down
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-        let accepting_on = cm.start_listening(ports_and_protocols).ok();
+        // TODO: Beacon port should be passed down
+        let beacon_port = Some(5483u16);
+        let listeners = match cm.start_listening(ports_and_protocols, beacon_port) {
+            Err(reason) => {
+                println!("Failed to start listening: {:?}", reason);
+                (None, None)
+            }
+            Ok(listeners_and_beacon) => {
+                (Some(listeners_and_beacon.0), listeners_and_beacon.1)
+            }
+        };
 
         RoutingNode { interface: Arc::new(Mutex::new(my_interface)),
                       pmid : pmid,
@@ -94,17 +106,12 @@ impl<F> RoutingNode<F> where F: Interface {
                       pending_connections : HashSet::new(),
                       all_connections: (HashMap::new(), BTreeMap::new()),
                       routing_table : RoutingTable::new(own_id),
-                      accepting_on: accepting_on,
+                      accepting_on: listeners.0,
+                      listening_for_broadcasts_on_port: listeners.1,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20))
                     }
-    }
-
-    pub fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
-        self.accepting_on.clone().and_then(|endpoints| {
-            Some(endpoints)
-        })
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
@@ -131,10 +138,18 @@ impl<F> RoutingNode<F> where F: Interface {
     /// Mutate something on the network (you must prove ownership) - Direct call
     pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
 
-    pub fn add_bootstrap(&mut self, endpoint: crust::Endpoint) {
-        self.pending_connections.insert(endpoint.clone());
-        let endpoints = vec![endpoint];
-        let _ = self.connection_manager.connect(endpoints);
+    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
+                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
+        match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
+            Err(reason) => {
+                println!("Failed to bootstrap: {:?}", reason);
+                Err(RoutingError::FailedToBootstrap)
+            }
+            Ok(bootstrapped_to) => {
+                self.bootstrap_node_id = Some(bootstrapped_to);
+                Ok(())
+            }
+        }
     }
 
     pub fn run(&mut self) {
@@ -164,6 +179,12 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
             }
         }
+    }
+
+    fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
+        self.accepting_on.clone().and_then(|endpoints| {
+            Some(endpoints)
+        })
     }
 
     fn next_endpoint_pair(&self) -> Option<(Vec<Endpoint>, Vec<Endpoint>)> {
@@ -306,6 +327,43 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
+    /// This returns our calculated authority with regards
+    /// to the element passed in from the message and the message header.
+    /// Note that the message has first to pass Sentinel as to be verified.
+    /// a) if the message is not from a group,
+    ///       the originating node is within our close group range
+    ///       and the element is not the destination
+    ///    -> Client Manager
+    /// b) if the element is within our close group range
+    ///       and the destination is the element
+    ///    -> Network-Addressable-Element Manager
+    /// c) if the message is from a group,
+    ///       the destination is within our close group,
+    ///       and our id is not the destination
+    ///    -> Node Manager
+    /// d) if the message is from a group,
+    ///       the group is within our close group range,
+    ///       and the destination is our id
+    ///    -> Managed Node
+    /// e) otherwise return Unknown Authority
+    fn our_authority(&self, element : &NameType, header : &MessageHeader) -> Authority {
+        if !header.is_from_group()
+           && self.routing_table.address_in_our_close_group_range(Some(header.from_node()))
+           && header.destination.dest != *element {
+            return Authority::ClientManager; }
+        else if self.routing_table.address_in_our_close_group_range(Some(element.clone()))
+           && header.destination.dest == *element {
+            return Authority::NaeManager; }
+        else if header.is_from_group()
+           && self.routing_table.address_in_our_close_group_range(Some(header.destination.dest.clone()))
+           && header.destination.dest != self.own_id {
+            return Authority::NodeManager; }
+        else if self.routing_table.address_in_our_close_group_range(header.from_group())
+           && header.destination.dest == self.own_id {
+            return Authority::ManagedNode; }
+        return Authority::Unknown;
+    }
+
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectRequest ", self.own_id);
         let connect_request = try!(self.decode::<ConnectRequest>(&body).ok_or(()));
@@ -411,8 +469,7 @@ impl<F> RoutingNode<F> where F: Interface {
     // // for clients, below methods are required
     fn handle_put_data(&self, header: MessageHeader, body: Bytes) -> RecvResult {
         let put_data = try!(self.decode::<PutData>(&body).ok_or(()));
-        // TODO determine our authority...
-        let our_authority = types::Authority::Unknown;
+        let our_authority = self.our_authority(&put_data.name, &header);
         let from_authority = header.from_authority();
         let from = header.from();
         let to = header.send_to();
@@ -429,18 +486,15 @@ impl<F> RoutingNode<F> where F: Interface {
         let from_authority = header.from_authority();
         let from = header.from();
 
-        let mut response;
+        let response;
         if put_data_response.data.len() != 0 {
             response = Ok(put_data_response.data);
         } else {
-            response = Err(put_data_response.error);
+            response = Err(RoutingError::IncorrectData(put_data_response.error));
         }
 
-        // let mut interface = self.interface.lock().unwrap();
-        // match interface.handle_put_response(from_authority, from, response) {
-        //     Ok(_) => Ok(()),
-        //     Err(_) => Err(())
-        // }
+        let mut interface = self.interface.lock().unwrap();
+        interface.handle_put_response(from_authority, from, response);
         Ok(())
     }
 
@@ -631,18 +685,6 @@ mod test {
     //use std::str::FromStr;
 
     struct NullInterface;
-
-    impl Interface for NullInterface {
-      fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
-                    from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                    from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_churn(&mut self) { unimplemented!(); }
-    }
 
     //#[test]
     //fn test_routing_node() {

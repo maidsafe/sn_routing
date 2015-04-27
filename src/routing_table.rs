@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the MaidSafe Software, or to this project generally, you agree to be
+// By contributing code to the Safe Network Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
 // directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://www.maidsafe.net/licenses
+// available at: http://maidsafe.net/network-platform-licensing
 //
-// Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
+// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 // OF ANY KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe Software.
+// Please review the Licences for the specific language governing permissions and limitations relating to
+// use of the Safe Network Software.
 
 use common_bits::*;
 use sodiumoxide::crypto;
@@ -25,7 +25,7 @@ use types::{PublicPmid, RoutingTrait};
 use name_type::closer_to_target;
 
 static BUCKET_SIZE: usize = 1;
-static GROUP_SIZE: usize = 23;
+pub static GROUP_SIZE: usize = 23;
 static QUORUM_SIZE: usize = 19;
 pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
@@ -57,7 +57,7 @@ impl NodeInfo {
   }
 }
 
-/// The RoutingTable class is used to maintain a list of contacts to which we are connected.
+/// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
     our_id: NameType,
@@ -87,7 +87,7 @@ impl RoutingTable {
 
     pub fn get_quorum_size() -> usize { QUORUM_SIZE }
 
-    /// Potentially adds a contact to the routing table.  If the contact is added, the first return arg
+    /// Adds a contact to the routing table.  If the contact is added, the first return arg
     /// is true, otherwise false.  If adding the contact caused another contact to be dropped, the
     /// dropped one is returned in the second field, otherwise the optional field is empty.  The
     /// following steps are used to determine whether to add the new contact or not:
@@ -137,8 +137,8 @@ impl RoutingTable {
         (false, None)
     }
 
-    /// This is used to see whether to bother retrieving a contact's public key from the PKI with a
-    /// view to adding the contact to our table.  The checking procedure is the same as for
+    /// This is used to check whether it is worth while retrieving a contact's public key from the PKI with a
+    /// view to adding the contact to our routing table.  The checking procedure is the same as for
     /// 'AddNode' above, except for the lack of a public key to check in step 1.
     pub fn check_node(&self, their_id: &NameType)->bool {
 
@@ -253,9 +253,27 @@ impl RoutingTable {
         }
     }
 
+    /// This returns the length of the routing table.
     pub fn size(&self)->usize {
         //std::lock_guard<std::mutex> lock(mutex_);
         self.routing_table.len()
+    }
+
+
+    /// This returns true if the provided id is closer than the furthest node
+    /// in our close group. If the routing table contains less than GroupSize
+    /// nodes, then every address is considered to be in our close group range.
+    pub fn address_in_our_close_group_range(&self, id : Option<NameType>) -> bool {
+      match id {
+          None => false,
+          Some(id) => {
+                if self.routing_table.len() < GROUP_SIZE {
+                  return true;
+                }
+                let furthest_close_node = self.routing_table[GROUP_SIZE].clone();
+                closer_to_target(&id, &furthest_close_node.id, &self.our_id)
+            }
+        }
     }
 
     fn find_candidate_for_removal(&self) -> usize {
@@ -374,7 +392,6 @@ mod test {
     use std::cmp;
     use std::collections::BitVec;
     use std::net::*;
-    use std::fmt;
     use types::{PublicPmid, RoutingTrait};
     use name_type::closer_to_target;
     use types;
@@ -457,10 +474,6 @@ mod test {
             };
 
             for i in 0..99 {
-                // println!("{}\tFar: {}\tMid: {}\tClose: {}", i,
-                //     RoutingTableUnitTest::debug_id(&table.buckets[i].far_contact),
-                //     RoutingTableUnitTest::debug_id(&table.buckets[i].mid_contact),
-                //     RoutingTableUnitTest::debug_id(&table.buckets[i].close_contact));
                 assert!(closer_to_target(&table.buckets[i].mid_contact,
                     &table.buckets[i].far_contact, &table.our_id));
                 assert!(closer_to_target(&table.buckets[i].close_contact,
@@ -497,28 +510,6 @@ mod test {
             assert_eq!(RoutingTable::get_optimal_size(), self.table.size());
         }
 
-    }
-
-    fn to_hex(char: u8) -> String {
-        let hex = fmt::format(format_args!("{:x}", char));
-        if hex.len() == 1 {
-            let mut s = String::from_str("0");
-            s.push_str(hex.as_str());
-            s
-        } else {
-            hex
-        }
-    }
-
-    fn debug_id(id: &NameType) -> String {
-        let id_as_bytes = id.clone().0;
-        fmt::format(format_args!("{}{}{}..{}{}{}",
-            to_hex(id_as_bytes[0]),
-            to_hex(id_as_bytes[1]),
-            to_hex(id_as_bytes[2]),
-            to_hex(id_as_bytes[61]),
-            to_hex(id_as_bytes[62]),
-            to_hex(id_as_bytes[63])))
     }
 
     fn initialise_buckets(our_id: &NameType) -> Vec<Bucket> {
@@ -922,7 +913,7 @@ mod test {
           routing_table_utest.table.check_node(&routing_table_utest.buckets[0].far_contact.clone()),
           false);
 
-      // Add further 'OptimalSize()' - 1 contacts (should all succeed with no removals).  Set this
+      // Add further 'OptimalSize()' - 1 contact (should all succeed with no removals).  Set this
       // up so that bucket 0 (furthest) and bucket 1 have 3 contacts each and all others have 0 or 1
       // contacts.
 
@@ -983,7 +974,7 @@ mod test {
               routing_table_utest.table.routing_table.len());
       }
 
-      // Check far contacts again which are now not in the table
+      // Check for contacts again which are now not in the table
       assert_eq!(routing_table_utest.table.check_node(
           &routing_table_utest.buckets[0].far_contact.clone()), false);
       assert_eq!(routing_table_utest.table.check_node(
@@ -1028,7 +1019,7 @@ mod test {
                 tables[i].drop_node(&drop_vec[j]);
             }
         }
-        // remove ids too
+        // remove IDs too
         addresses = addresses.split_off(nodes_to_remove);
 
         for i in 0..tables.len() {

@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the MaidSafe Software, or to this project generally, you agree to be
+// By contributing code to the Safe Network Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
 // directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://www.maidsafe.net/licenses
+// available at: http://maidsafe.net/network-platform-licensing
 //
-// Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
+// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 // OF ANY KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe Software.
+// Please review the Licences for the specific language governing permissions and limitations relating to
+// use of the Safe Network Software.
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
@@ -78,19 +78,11 @@ impl MessageHeader {
     }
 
     pub fn is_from_group(&self) -> bool {
-        if self.source.from_group.is_some() {
-            true
-        } else {
-            false
-        }
+        self.source.from_group.is_some()
     }
 
     pub fn is_relayed(&self) -> bool {
-        if self.source.reply_to.is_some() {
-            true
-        } else {
-            false
-        }
+        self.source.reply_to.is_some()
     }
 
     pub fn reply_to(&self) -> Option<NameType> {
@@ -145,14 +137,6 @@ mod test {
     use cbor;
     use test_utils::Random;
 
-    pub fn generate_u8_64() -> Vec<u8> {
-        let mut u8_64: Vec<u8> = vec![];
-        for _ in (0..64) {
-            u8_64.push(random::<u8>());
-        }
-        u8_64
-    }
-
     fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
@@ -165,10 +149,10 @@ mod test {
     fn test_message_header() {
         test_object(MessageHeader {
             message_id : random::<u32>(),
-            destination : types::DestinationAddress{dest: Random::generate_random(), reply_to: None },
+            destination : types::DestinationAddress{ dest: Random::generate_random(),
+                                                     reply_to: None },
             source : types::SourceAddress { from_node : Random::generate_random(),
-              from_group : None,
-              reply_to: None },
+                                            from_group : None, reply_to: None },
             authority : types::Authority::ManagedNode,
             signature : Some(Random::generate_random())});
     }
