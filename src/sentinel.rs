@@ -274,22 +274,7 @@ impl<'a> Sentinel<'a> {
         return Some((verified_messages[0].0.clone(),
                      verified_messages[0].1.clone(),
                      Sentinel::encode(merged_responses)));
-    // if part addresses non-account transfer message types, where an exact match is required
-    } else if verified_messages[0].1 != types::MessageTypeTag::AccountTransfer {
-      for index in 0..verified_messages.len() {
-        let serialised_message = verified_messages[index].2.clone();
-        let mut count = 0;
-        for message in verified_messages.iter() {
-          if message.2 == serialised_message {
-            // TODO(ben 2015-04-9) FIX ERROR: overcounts, currently not a problem
-            count = count + 1;
-          }
-        }
-        if count > types::QUORUM_SIZE {
-          return Some(verified_messages[index].clone());
-        }
-      }
-    } else {  // account transfer
+    } else if verified_messages[0].1 == types::MessageTypeTag::AccountTransfer {
       let mut accounts : Vec<types::AccountTransferInfo> = Vec::new();
       for message in verified_messages.iter() {
         let mut d = cbor::Decoder::from_bytes(message.2.clone());
@@ -303,6 +288,21 @@ impl<'a> Sentinel<'a> {
         e.encode(&[&result.unwrap()]).unwrap();
         tmp.2 = types::array_as_vector(e.as_bytes());
         return Some(tmp);
+      }
+    // if part addresses non-account transfer message types, where an exact match is required
+    } else {
+      for index in 0..verified_messages.len() {
+        let serialised_message = verified_messages[index].2.clone();
+        let mut count = 0;
+        for message in verified_messages.iter() {
+          if message.2 == serialised_message {
+            // TODO(ben 2015-04-9) FIX ERROR: overcounts, currently not a problem
+            count = count + 1;
+          }
+        }
+        if count > types::QUORUM_SIZE {
+          return Some(verified_messages[index].clone());
+        }
       }
     }
     None
