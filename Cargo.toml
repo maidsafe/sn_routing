@@ -2,8 +2,8 @@
 
 name = "routing"
 version = "0.1.2"
-authors = ["David Irvine <david.irvine@maidsafe.net>"]
-description = "This is Pre alpha, and not useful, no code worth looking at."
+authors = ["MaidSafe Developers <dev@maidsafe.net>"]
+description = "A specialised storage DHT."
 documentation = "http://dirvine.github.io/routing/"
 repository = "https://github.com/dirvine/routing"
 readme = "README.md"
@@ -18,5 +18,5 @@ time = "*"
 sodiumoxide = "*"
 rand = "*"
 message_filter = "*"
-lru_time_cache = "0.1.0"
+lru_time_cache = "0.1.4"
 crust = "0.0.5"

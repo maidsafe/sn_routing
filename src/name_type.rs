@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License, version
-// 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which licence you
-// accepted on initial access to the Software (the "Licences").
+// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
+// licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the MaidSafe Software, or to this project generally, you agree to be
+// By contributing code to the Safe Network Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also available at
-// http://maidsafe.net/licenses
+// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
+// available at: http://maidsafe.net/network-platform-licensing
 //
-// Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
+// OF ANY KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to use
-// of the MaidSafe Software.
+// Please review the Licences for the specific language governing permissions and limitations relating to
+// use of the Safe Network Software.
 
 use cbor::CborTagEncode;
 // use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
@@ -26,13 +26,13 @@ use std::fmt;
 pub const NAME_TYPE_LEN : usize = 64;
 
 ///
-/// Returns true if both slices are equal in length, and have equal contents
+/// Returns true if both slices are equal in length and have equal contents
 ///
 pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
 }
 
-/// NameType can be created using the new function by passing id as its parameter.
+/// NameType can be created using the new function by passing ID as it’s parameter.
 #[derive(Eq)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 

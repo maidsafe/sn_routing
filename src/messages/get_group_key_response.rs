@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the MaidSafe Software, or to this project generally, you agree to be
+// By contributing code to the Safe Network Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
 // directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://www.maidsafe.net/licenses
+// available at: http://maidsafe.net/network-platform-licensing
 //
-// Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
+// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 // OF ANY KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe Software.
+// Please review the Licences for the specific language governing permissions and limitations relating to
+// use of the Safe Network Software.
 
 #![allow(unused_assignments)]
 
@@ -34,30 +34,37 @@ pub struct GetGroupKeyResponse {
 impl GetGroupKeyResponse {
 
     pub fn merge(get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
-        type Key = (NameType, types::PublicSignKey);
-
         if get_group_key_responses.is_empty() {
             return None;
         }
 
-        let mut frequency = Frequency::new();
-
+        let mut freq_target_id = Frequency::new();
         for response in get_group_key_responses {
-          for public_sign_key in &response.public_sign_keys {
-              frequency.update(public_sign_key.clone());
-          }
+            freq_target_id.update(response.target_id.clone());
         }
-
-        let merged_group = frequency.sort_by_highest().iter()
-                           .take(types::GROUP_SIZE as usize)
-                           .map(|&(ref k, _)| k.clone())
-                           .collect();
-
-        // FIXME: How should we merge the target_id?
-        let target_id = get_group_key_responses[0].target_id.clone();
-
-        Some(GetGroupKeyResponse{target_id        : target_id,
-                                 public_sign_keys : merged_group})
+        // first identify the target_ids;
+        let target_ids : Vec<NameType> = freq_target_id.sort_by_highest()
+                                       .iter()
+                                       .map(|&(ref id, _ )| id.clone())
+                                       .collect();
+        for target_id in target_ids {
+            let mut freq_public_sign_key = Frequency::new();
+            for response in get_group_key_responses.iter()
+                              .filter(|response| &response.target_id == &target_id) {
+                for public_sign_key in &response.public_sign_keys {
+                    freq_public_sign_key.update(public_sign_key.clone());
+                }
+            }
+            let merged_group : Vec<(NameType, types::PublicSignKey)>
+                             = freq_public_sign_key.sort_by_highest().iter()
+                                                   .take(types::GROUP_SIZE as usize)
+                                                   .map(|&(ref k, _)| k.clone())
+                                                   .collect();
+            if !merged_group.is_empty() {
+                return Some(GetGroupKeyResponse{target_id : target_id,
+                                                public_sign_keys : merged_group}); };
+        }
+        return None;
     }
 }
 
