@@ -28,11 +28,11 @@ use types::RoutingTrait;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
-use types::{PublicSignKey, SerialisedMessage};
+use types::{PublicSignKey, SerialisedMessage, MessageTypeTag, AccountTransferInfo};
 use rustc_serialize::{Decodable, Encodable};
 
 pub type ResultType = (message_header::MessageHeader,
-                       types::MessageTypeTag, SerialisedMessage);
+                       MessageTypeTag, SerialisedMessage);
 
 type NodeKeyType = (types::NodeAddress, types::MessageId);
 type GroupKeyType = (types::GroupAddress, types::MessageId);
@@ -69,10 +69,10 @@ impl<'a> Sentinel<'a> {
 
   // pub fn get_send_get_keys(&'a mut self) -> &'a mut SendGetKeys { self.send_get_keys }
 
-  pub fn add(&mut self, header: message_header::MessageHeader, type_tag: types::MessageTypeTag,
+  pub fn add(&mut self, header: message_header::MessageHeader, type_tag: MessageTypeTag,
              message : types::SerialisedMessage) -> Option<ResultType> {
     match type_tag {
-      types::MessageTypeTag::GetClientKeyResponse => {
+      MessageTypeTag::GetClientKeyResponse => {
         if header.is_from_group() {
           let keys = self.node_key_accumulator_.add(header.from_group().unwrap(),
                                                     (header.clone(), type_tag, message),
@@ -91,7 +91,7 @@ impl<'a> Sentinel<'a> {
           }
         }
       }
-      types::MessageTypeTag::GetGroupKeyResponse => {
+      MessageTypeTag::GetGroupKeyResponse => {
         if header.is_from_group() {
           let keys = self.group_key_accumulator_.add(header.from_group().unwrap(),
                                                      (header.clone(), type_tag, message),
@@ -256,7 +256,7 @@ impl<'a> Sentinel<'a> {
       return None;
     }
 
-    if verified_messages[0].1 == types::MessageTypeTag::FindGroupResponse {
+    if verified_messages[0].1 == MessageTypeTag::FindGroupResponse {
         let decoded_responses = verified_messages.iter()
             .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
             .collect::<Vec<_>>();
@@ -274,21 +274,20 @@ impl<'a> Sentinel<'a> {
         return Some((verified_messages[0].0.clone(),
                      verified_messages[0].1.clone(),
                      Sentinel::encode(merged_responses)));
-    } else if verified_messages[0].1 == types::MessageTypeTag::AccountTransfer {
-      let mut accounts : Vec<types::AccountTransferInfo> = Vec::new();
-      for message in verified_messages.iter() {
-        let mut d = cbor::Decoder::from_bytes(message.2.clone());
-        let obj_after: types::AccountTransferInfo = d.decode().next().unwrap().unwrap();
-        accounts.push(obj_after);
-      }
+
+    } else if verified_messages[0].1 == MessageTypeTag::AccountTransfer {
+      let accounts = verified_messages.iter()
+          .filter_map(|msg_triple| { Sentinel::decode::<AccountTransferInfo>(&msg_triple.2) })
+          .collect::<Vec<_>>();
+
       let result = accounts[0].merge(&accounts);
-      if result.is_some() {
-        let mut tmp = verified_messages[0].clone();
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&result.unwrap()]).unwrap();
-        tmp.2 = types::array_as_vector(e.as_bytes());
-        return Some(tmp);
-      }
+
+      return result.map(|r| {
+          (verified_messages[0].0.clone(),
+           verified_messages[0].1.clone(),
+           Sentinel::encode(r))
+      });
+
     // if part addresses non-account transfer message types, where an exact match is required
     } else {
       for index in 0..verified_messages.len() {
