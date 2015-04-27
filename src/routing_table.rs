@@ -25,7 +25,7 @@ use types::{PublicPmid, RoutingTrait};
 use name_type::closer_to_target;
 
 static BUCKET_SIZE: usize = 1;
-static GROUP_SIZE: usize = 23;
+pub static GROUP_SIZE: usize = 23;
 static QUORUM_SIZE: usize = 19;
 pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
@@ -253,9 +253,27 @@ impl RoutingTable {
         }
     }
 
+    /// This returns the length of the routing table.
     pub fn size(&self)->usize {
         //std::lock_guard<std::mutex> lock(mutex_);
         self.routing_table.len()
+    }
+
+
+    /// This returns true if the provided id is closer than the furthest node
+    /// in our close group. If the routing table contains less than GroupSize
+    /// nodes, then every address is considered to be in our close group range.
+    pub fn address_in_our_close_group_range(&self, id : Option<NameType>) -> bool {
+      match id {
+          None => false,
+          Some(id) => {
+                if self.routing_table.len() < GROUP_SIZE {
+                  return true;
+                }
+                let furthest_close_node = self.routing_table[GROUP_SIZE].clone();
+                closer_to_target(&id, &furthest_close_node.id, &self.our_id)
+            }
+        }
     }
 
     fn find_candidate_for_removal(&self) -> usize {

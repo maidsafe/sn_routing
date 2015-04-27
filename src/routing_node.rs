@@ -37,7 +37,7 @@ use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
-use types::{MessageId, RoutingTrait};
+use types::{MessageId, RoutingTrait, Authority};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -309,6 +309,43 @@ impl<F> RoutingNode<F> where F: Interface {
                 Err(())
             }
         }
+    }
+
+    /// This returns our calculated authority with regards
+    /// to the element passed in from the message and the message header.
+    /// Note that the message has first to pass Sentinel as to be verified.
+    /// a) if the message is not from a group,
+    ///       the originating node is within our close group range
+    ///       and the element is not the destination
+    ///    -> Client Manager
+    /// b) if the element is within our close group range
+    ///       and the destination is the element
+    ///    -> Network-Addressable-Element Manager
+    /// c) if the message is from a group,
+    ///       the destination is within our close group,
+    ///       and our id is not the destination
+    ///    -> Node Manager
+    /// d) if the message is from a group,
+    ///       the group is within our close group range,
+    ///       and the destination is our id
+    ///    -> Managed Node
+    /// e) otherwise return Unknown Authority
+    fn our_authority(&self, element : &NameType, header : &MessageHeader) -> Authority {
+        if !header.is_from_group()
+           && self.routing_table.address_in_our_close_group_range(Some(header.from_node()))
+           && header.destination.dest != *element {
+            return Authority::ClientManager; }
+        else if self.routing_table.address_in_our_close_group_range(Some(element.clone()))
+           && header.destination.dest == *element {
+            return Authority::NaeManager; }
+        else if header.is_from_group()
+           && self.routing_table.address_in_our_close_group_range(Some(header.destination.dest.clone()))
+           && header.destination.dest != self.own_id {
+            return Authority::NodeManager; }
+        else if self.routing_table.address_in_our_close_group_range(header.from_group())
+           && header.destination.dest == self.own_id {
+            return Authority::ManagedNode; }
+        return Authority::Unknown;
     }
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
