@@ -261,19 +261,11 @@ impl<'a> Sentinel<'a> {
             .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
             .collect::<Vec<_>>();
 
-        if decoded_responses.len() == 0 {
-            // None of the messages was successfully decoded.
-            return None;
-        }
-
-        let merged_responses = match FindGroupResponse::merge(&decoded_responses) {
-          Some(merged_responses) => merged_responses,
-          None => panic!("No merged group confirmed.") // return None;
-        };
-
-        return Some((verified_messages[0].0.clone(),
-                     verified_messages[0].1.clone(),
-                     Sentinel::encode(merged_responses)));
+        return FindGroupResponse::merge(&decoded_responses).map(|merged| {
+            (verified_messages[0].0.clone(),
+             verified_messages[0].1.clone(),
+             Sentinel::encode(merged))
+        });
 
     } else if verified_messages[0].1 == MessageTypeTag::AccountTransfer {
       let accounts = verified_messages.iter()
