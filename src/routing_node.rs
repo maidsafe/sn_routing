@@ -332,17 +332,20 @@ impl<F> RoutingNode<F> where F: Interface {
     /// e) otherwise return Unknown Authority
     fn our_authority(&self, element : &NameType, header : &MessageHeader) -> Authority {
         if !header.is_from_group()
-           && self.routing_table.address_in_our_close_group_range(Some(header.from_node()))
+           && self.routing_table.address_in_our_close_group_range(&header.from_node())
            && header.destination.dest != *element {
             return Authority::ClientManager; }
-        else if self.routing_table.address_in_our_close_group_range(Some(element.clone()))
+        else if self.routing_table.address_in_our_close_group_range(element)
            && header.destination.dest == *element {
             return Authority::NaeManager; }
         else if header.is_from_group()
-           && self.routing_table.address_in_our_close_group_range(Some(header.destination.dest.clone()))
+           && self.routing_table.address_in_our_close_group_range(&header.destination.dest)
            && header.destination.dest != self.own_id {
             return Authority::NodeManager; }
-        else if self.routing_table.address_in_our_close_group_range(header.from_group())
+        else if header.from_group()
+                      .and_then(|group| Some(self.routing_table
+                                                 .address_in_our_close_group_range(&group)))
+                      .unwrap_or(false)
            && header.destination.dest == self.own_id {
             return Authority::ManagedNode; }
         return Authority::Unknown;
