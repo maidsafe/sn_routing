@@ -38,7 +38,7 @@ use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
-use types::{MessageId, RoutingTrait};
+use types::MessageId;
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -83,7 +83,7 @@ impl<F> RoutingNode<F> where F: Interface {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
-        let own_id = pmid.get_name();
+        let own_id = pmid.name();
         let cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
@@ -134,6 +134,10 @@ impl<F> RoutingNode<F> where F: Interface {
             }
             Ok(bootstrapped_to) => {
                 self.bootstrap_node_id = Some(bootstrapped_to);
+                // put our public pmid so that our connect requests are validated
+                let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
+                self.put::<types::PublicPmid>(our_public_pmid.name.clone(), our_public_pmid.clone());
+                // connect to close group
                 Ok(())
             }
         }
@@ -416,10 +420,16 @@ impl<F> RoutingNode<F> where F: Interface {
         unimplemented!();
     }
 
-    // // for clients, below methods are required
+
     fn handle_put_data(put_data: PutData, original_header: MessageHeader) {
-        // need to call interface handle_get_response
+        // if data type is public pmid and our authority is nae then add to public_pmid_cache
+        // don't call upper layer if public pmid type
+        // need to call interface handle_put_data
         unimplemented!();
+    }
+
+    fn add_to_public_pmid_cache (&mut self, public_pmid: types::PublicPmid) {
+      self.public_pmid_cache.add(public_pmid.name.clone(), public_pmid);
     }
 
     fn handle_put_data_response(put_data_response: PutDataResponse, original_header: MessageHeader) {

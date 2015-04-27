@@ -19,12 +19,14 @@
 #![allow(unused_assignments)]
 
 use sodiumoxide::crypto;
+use cbor;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
 use NameType;
 use std::fmt;
+use sendable::Sendable;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -257,19 +259,25 @@ impl PublicPmid {
         public_key : pmid.get_public_key(),
         public_sign_key : pmid.get_public_sign_key(),
         validation_token : pmid.get_validation_token(),
-        name : pmid.get_name()
+        name : pmid.name()
       }
     }
-
 }
 
-impl RoutingTrait for PublicPmid {
-  fn get_name(&self) -> NameType { self.name.clone() }
-  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-  fn refresh(&self)->bool { false } // TODO is this an account transfer type
+impl Sendable for PublicPmid {
+  fn name(&self)-> NameType { self.name.clone() }
 
-   // TODO how do we merge these
-  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+  fn type_tag(&self)->u64 { 0 }
+
+  fn serialised_contents(&self)->Vec<u8> {
+      let mut e = cbor::Encoder::from_memory();
+      e.encode(&[&self]).unwrap();
+      e.into_bytes()
+  }
+
+  fn owner(&self)->Option<NameType> { Option::None }  //FIXME is it correct ?
+  fn refresh(&self)->bool { false }
+  fn merge(&self)->bool { false }
 }
 
 impl Encodable for PublicPmid {
@@ -337,6 +345,10 @@ impl Pmid {
       validation_token : validation_token,
       name : NameType::new(digest.0)
     }
+  }
+
+  pub fn name(&self) -> NameType {
+    self.name.clone()
   }
 
   pub fn get_public_key(&self) -> PublicKey {
@@ -502,4 +514,15 @@ mod test {
                                 reply_to: None });
   }
 
+#[test]
+    fn serialisation_public_pmid() {
+        let obj_before = PublicPmid::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: PublicPmid = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
+    }
 }
