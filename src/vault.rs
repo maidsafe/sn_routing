@@ -34,7 +34,6 @@ pub struct VaultFacade {
   pmid_node : PmidNode,
   version_handler : VersionHandler,
   nodes_in_table : Vec<NameType>,
-  // routing_node: routing::routing_node::RoutingNode<VaultFacade>,
 }
 
 impl Clone for VaultFacade {
@@ -99,24 +98,28 @@ impl routing::node_interface::Interface for VaultFacade {
     ;
   }
 
-  fn handle_churn(&mut self) {    
-    let dm = self.data_manager.retrieve_all_and_reset();
-    let mm = self.maid_manager.retrieve_all_and_reset();
-    let pm = self.pmid_manager.retrieve_all_and_reset();
+    fn handle_churn(&mut self) {
+        let vault_facade = VaultFacade::new();
+        let routing_node = routing::routing_node::RoutingNode::<VaultFacade>::new(vault_facade);
+        let dm = self.data_manager.retrieve_all_and_reset();
+        let mm = self.maid_manager.retrieve_all_and_reset();
+        let pm = self.pmid_manager.retrieve_all_and_reset();
 
-    for it in dm.iter().chain(mm.iter().chain(pm.iter())) {
-        // self.routing_node.put(it.0, it.1);
+        for it in dm.iter().chain(mm.iter().chain(pm.iter())) {
+            routing_node.put(it.0.clone(), it.1.clone());
+        }
     }
-  }
 
 }
 
 impl VaultFacade {
    /// Initialise all the personas in the Vault interface.  
   pub fn new() -> VaultFacade {    
-    VaultFacade { data_manager: DataManager::new(), maid_manager: MaidManager::new(),
-                  pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
-                  version_handler: VersionHandler::new(), nodes_in_table: Vec::new() }
+    VaultFacade {
+        data_manager: DataManager::new(), maid_manager: MaidManager::new(),
+        pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
+        version_handler: VersionHandler::new(), nodes_in_table: Vec::new(),
+    }
   }
 
 }

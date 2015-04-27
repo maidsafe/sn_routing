@@ -19,6 +19,7 @@
 use routing;
 use routing::sendable::Sendable;
 
+#[derive(Clone)]
 pub struct GenericSendableType {
     name: routing::NameType,
     type_tag: u64,
