@@ -642,8 +642,9 @@ impl<F> RoutingNode<F> where F: Interface {
 #[cfg(test)]
 mod test {
     //use routing_node::{RoutingNode};
+    use super::*;
     use node_interface::*;
-    use types::{Authority, DestinationAddress};
+    use types::{Pmid, Authority, DestinationAddress};
     use name_type::NameType;
     use super::super::{Action, RoutingError};
     //use std::thread;
@@ -689,6 +690,12 @@ mod test {
                             data: Vec<u8>) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
+    }
+
+    #[test]
+    fn our_authority_full_routing_table() {
+        let our_pmid = Pmid::new();
+        let mut routing_node = RoutingNode::new(NullInterface);
     }
 
     //#[test]
