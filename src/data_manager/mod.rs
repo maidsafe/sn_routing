@@ -17,13 +17,13 @@
 
 mod database;
 
+use generic_sendable_type;
 use std::cmp;
 use routing;
 use routing::NameType;
 use maidsafe_types;
 use cbor::{ Decoder };
 use routing::sendable::Sendable;
-pub use self::database::DataManagerAccount;
 type Address = NameType;
 
 pub static PARALLELISM: usize = 4;
@@ -85,7 +85,7 @@ impl DataManager {
     Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<DataManagerAccount> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<(routing::NameType, generic_sendable_type::GenericSendableType)> {
     self.db_.retrieve_all_and_reset()
   }
 }
