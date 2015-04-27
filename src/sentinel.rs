@@ -28,7 +28,7 @@ use frequency::Frequency;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
-use types::{PublicSignKey, SerialisedMessage, MessageTypeTag, AccountTransferInfo};
+use types::{PublicSignKey, SerialisedMessage, MessageTypeTag};
 use rustc_serialize::{Decodable, Encodable};
 
 pub type ResultType = (message_header::MessageHeader,
@@ -256,39 +256,38 @@ impl<'a> Sentinel<'a> {
             return None;
         }
 
-        if verified_messages[0].1 == MessageTypeTag::FindGroupResponse {
+        // TODO: Make sure the header is used from a message that belongs to the quorum.
+
+        return if verified_messages[0].1 == MessageTypeTag::FindGroupResponse {
             let decoded_responses = verified_messages.iter()
                 .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
                 .collect::<Vec<_>>();
 
-            return FindGroupResponse::merge(&decoded_responses).map(|merged| {
+            FindGroupResponse::merge(&decoded_responses).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
                  Sentinel::encode(merged))
-            });
-
-        } else if verified_messages[0].1 == MessageTypeTag::AccountTransfer {
+            })
+        } else if verified_messages[0].1 == MessageTypeTag::GetGroupKeyResponse {
             let accounts = verified_messages.iter()
-                .filter_map(|msg_triple| { Sentinel::decode::<AccountTransferInfo>(&msg_triple.2) })
+                .filter_map(|msg_triple| { Sentinel::decode::<GetGroupKeyResponse>(&msg_triple.2) })
                 .collect::<Vec<_>>();
 
-            return take_most_frequent(&accounts, types::QUORUM_SIZE as usize).map(|merged| {
+            GetGroupKeyResponse::merge(&accounts).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
                  Sentinel::encode(merged))
-            });
-
-        // if part addresses non-account transfer message types, where an exact match is required
+            })
         } else {
             let msg_bodies = verified_messages.iter()
                              .map(|&(_, _, ref body)| body.clone())
                              .collect::<Vec<_>>();
 
-            return take_most_frequent(&msg_bodies, types::QUORUM_SIZE as usize).map(|merged| {
+            take_most_frequent(&msg_bodies, types::QUORUM_SIZE as usize).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
                  merged)
-            });
+            })
         }
     }
 }
