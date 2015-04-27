@@ -25,6 +25,7 @@ use message_header;
 use NameType;
 use types;
 use types::RoutingTrait;
+use frequency::Frequency;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
@@ -272,7 +273,7 @@ impl<'a> Sentinel<'a> {
                 .filter_map(|msg_triple| { Sentinel::decode::<AccountTransferInfo>(&msg_triple.2) })
                 .collect::<Vec<_>>();
 
-            return AccountTransferInfo::merge(&accounts).map(|merged| {
+            return take_most_frequent(&accounts, types::QUORUM_SIZE as usize).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
                  Sentinel::encode(merged))
@@ -300,6 +301,17 @@ impl<'a> Sentinel<'a> {
 
 fn has_single_entry<T>(key_map: &HashMap<NameType, Vec<T>>) -> bool {
     key_map.len() == 1 && key_map.iter().next().unwrap().1.len() == 1
+}
+
+fn take_most_frequent<E>(elements: &Vec<E>, min_count: usize) -> Option<E>
+where E: Clone + Ord {
+    let mut freq_counter = Frequency::<E>::new();
+    for element in elements {
+        freq_counter.update(element.clone());
+    }
+    freq_counter.sort_by_highest().iter().nth(0).and_then(|&(ref element,ref count)| {
+        if *count >= min_count as usize { Some(element.clone()) } else { None }
+    })
 }
 
 #[cfg(test)]

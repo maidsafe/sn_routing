@@ -24,6 +24,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
 use NameType;
+use frequency::Frequency;
 use std::fmt;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
@@ -116,8 +117,6 @@ pub trait RoutingTrait {
   fn get_name(&self)->NameType;
   fn get_owner(&self)->Vec<u8>;
   fn refresh(&self)->bool;
-
-  fn merge(&Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -268,9 +267,6 @@ impl RoutingTrait for PublicPmid {
   fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
-
-   // TODO how do we merge these
-  fn merge(_ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
 }
 
 impl Encodable for PublicPmid {
@@ -306,9 +302,6 @@ impl RoutingTrait for Pmid {
   fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
-
-   // TODO how do we merge these
-  fn merge(_ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
 }
 
 impl Pmid {
@@ -383,20 +376,17 @@ impl Decodable for AccountTransferInfo {
 }
 
 impl RoutingTrait for AccountTransferInfo {
-  fn get_name(&self)->NameType { self.name.clone() }
-  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-  fn refresh(&self)->bool { true } // TODO is this an account transfer type
-
-   // TODO how do we merge these
-  fn merge(_ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+    fn get_name(&self)->NameType { self.name.clone() }
+    fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
+    fn refresh(&self)->bool { true } // TODO is this an account transfer type
 }
 
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {
-  pub from_node : NameType,
+  pub from_node  : NameType,
   pub from_group : Option<NameType>,
-  pub reply_to : Option<NameType>
+  pub reply_to   : Option<NameType>
 }
 
 impl Encodable for SourceAddress {
