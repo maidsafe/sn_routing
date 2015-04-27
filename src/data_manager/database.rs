@@ -15,6 +15,7 @@
 
 #![allow(dead_code)]
 
+use routing::generic_sendable_type;
 use routing;
 use lru_time_cache::LruCache;
 use cbor;
@@ -29,43 +30,6 @@ use routing::sendable::Sendable;
 
 pub struct DataManagerDatabase {
   storage : LruCache<Identity, PmidNodes>
-}
-
-pub struct DataManagerAccount {
-  name: NameType,
-  pmid_nodes: Vec<NameType>
-}
-
-impl Sendable for DataManagerAccount {
-    fn name(&self) -> NameType {
-        self.name.clone()
-    }
-
-    fn type_tag(&self)->u64 {
-        501
-    }
-
-    fn serialised_contents(&self)->Vec<u8> {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
-        e.into_bytes()
-    }
-}
-
-impl Encodable for DataManagerAccount {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {        
-        CborTagEncode::new(5001, &(
-            self.name.clone(),
-            self.pmid_nodes.clone())).encode(e)
-    }
-}
-
-impl Decodable for DataManagerAccount {
-    fn decode<D: Decoder>(d: &mut D)-> Result<DataManagerAccount, D::Error> {
-        try!(d.read_u64());
-        let (name, pmid_nodes) : (NameType, Vec<NameType>) = try!(Decodable::decode(d));    
-        Ok(DataManagerAccount{ name: name, pmid_nodes: pmid_nodes })
-    }
 }
 
 impl DataManagerDatabase {
@@ -120,19 +84,19 @@ impl DataManagerDatabase {
   	}
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<DataManagerAccount> {
-    let data: Vec<(Identity, PmidNodes)> = self.storage.retrieve_all();
-    let mut sendable_data: Vec<DataManagerAccount> = Vec::with_capacity(data.len());
-    self.storage = LruCache::with_capacity(10000);
-    for acc in data {
-      sendable_data.push(DataManagerAccount {
-        name : acc.0,
-        pmid_nodes : acc.1,
-      });
+    pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, generic_sendable_type::GenericSendableType)> {
+        let data: Vec<(Identity, PmidNodes)> = self.storage.retrieve_all();
+        let mut sendable_data = Vec::<(Identity, generic_sendable_type::GenericSendableType)>::with_capacity(data.len());
+        for element in data {
+            let mut e = cbor::Encoder::from_memory();
+            e.encode(&[&element.1]).unwrap();
+            let serialised_content = e.into_bytes();
+            let sendable_type = generic_sendable_type::GenericSendableType::new(element.0.clone(), 1, serialised_content); //TODO Get type_tag correct
+            sendable_data.push((element.0, sendable_type));
+        }
+        self.storage = LruCache::with_capacity(10000);
+        sendable_data
     }
-    sendable_data
-  }
-
 }
 
 #[cfg(test)]
