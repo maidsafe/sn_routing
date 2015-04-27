@@ -117,36 +117,6 @@ impl Encodable for ClientIdPacket {
     }
 }
 
-<<<<<<< HEAD
-=======
-///
-/// Convert a container to an array. If the container is not the exact size specified, None is
-/// returned, otherwise, all of the elements are moved into the array.
-///
-/// ```
-/// let mut data = Vec::<usize>::new();
-/// data.push(1);
-/// data.push(2);
-/// assert!(convert_to_array(data, 2).is_some());
-/// assert!(convert_to_array(data, 3).is_none());
-/// ```
-macro_rules! convert_to_array {
-    ($container:ident, $size:expr) => {{
-        if $container.len() != $size {
-            None
-        } else {
-            use std::mem;
-            let mut arr : [_; $size] = unsafe { mem::uninitialized() };
-            for element in $container.into_iter().enumerate() {
-                let old_val = mem::replace(&mut arr[element.0], element.1);
-                unsafe { mem::forget(old_val) };
-            }
-            Some(arr)
-        }
-    }};
-}
-
->>>>>>> Changes to docs
 impl Decodable for ClientIdPacket {
     fn decode<D: rustc_serialize::Decoder>(d: &mut D)-> Result<ClientIdPacket, D::Error> {
         try!(d.read_u64());
@@ -205,11 +175,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
-<<<<<<< HEAD
     pub fn get(&mut self, type_id: u64, name: NameType) -> Result<u32, IoError> {
-=======
-    pub fn get(&mut self, type_id: u64, name: types::DhtId) -> Result<u32, IoError> {
->>>>>>> Changes to docs
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
