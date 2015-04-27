@@ -24,15 +24,15 @@ use accumulator;
 use message_header;
 use NameType;
 use types;
-use types::RoutingTrait;
+use frequency::Frequency;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
-use types::{PublicSignKey, SerialisedMessage};
+use types::{PublicSignKey, SerialisedMessage, MessageTypeTag};
 use rustc_serialize::{Decodable, Encodable};
 
 pub type ResultType = (message_header::MessageHeader,
-                       types::MessageTypeTag, SerialisedMessage);
+                       MessageTypeTag, SerialisedMessage);
 
 type NodeKeyType = (types::NodeAddress, types::MessageId);
 type GroupKeyType = (types::GroupAddress, types::MessageId);
@@ -57,260 +57,254 @@ pub struct Sentinel<'a> {
 }
 
 impl<'a> Sentinel<'a> {
-  pub fn new(send_get_keys: &'a mut SendGetKeys) -> Sentinel<'a> {
-    Sentinel {
-      send_get_keys_: send_get_keys,
-      node_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
-      group_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
-      group_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize),
-      node_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize)
+    pub fn new(send_get_keys: &'a mut SendGetKeys) -> Sentinel<'a> {
+      Sentinel {
+        send_get_keys_: send_get_keys,
+        node_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
+        group_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
+        group_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize),
+        node_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize)
+      }
     }
-  }
 
-  // pub fn get_send_get_keys(&'a mut self) -> &'a mut SendGetKeys { self.send_get_keys }
+    // pub fn get_send_get_keys(&'a mut self) -> &'a mut SendGetKeys { self.send_get_keys }
 
-  pub fn add(&mut self, header: message_header::MessageHeader, type_tag: types::MessageTypeTag,
-             message : types::SerialisedMessage) -> Option<ResultType> {
-    match type_tag {
-      types::MessageTypeTag::GetClientKeyResponse => {
-        if header.is_from_group() {
-          let keys = self.node_key_accumulator_.add(header.from_group().unwrap(),
-                                                    (header.clone(), type_tag, message),
-                                                    header.from_node());
-          if keys.is_some() {
-            let key = (header.from_group().unwrap(), header.message_id());
-            let messages = self.node_accumulator_.get(key.clone());
-            if messages.is_some() {
-              let resolved = self.resolve(self.validate_node(messages.unwrap().1,
-                                                             keys.unwrap().1), false);
-              if resolved.is_some() {
-                self.node_accumulator_.delete(key);
-                return resolved;
-              }
-            }
-          }
-        }
-      }
-      types::MessageTypeTag::GetGroupKeyResponse => {
-        if header.is_from_group() {
-          let keys = self.group_key_accumulator_.add(header.from_group().unwrap(),
-                                                     (header.clone(), type_tag, message),
-                                                     header.from_node());
-          if keys.is_some() {
-            let key = (header.from_group().unwrap(), header.message_id());
-            let messages = self.group_accumulator_.get(key.clone());
-            if messages.is_some() {
-              let resolved = self.resolve(self.validate_group(messages.unwrap().1,
-                                                              keys.unwrap().1), true);
-              if resolved.is_some() {
-                self.group_accumulator_.delete(key);
-                return resolved;
-              }
-            }
-          }
-        }
-      }
-      _ => {
-        if header.is_from_group() {
-          let key = (header.from_group().unwrap(), header.message_id());
-          if !self.group_accumulator_.have_name(key.clone()) {
-            self.send_get_keys_.get_group_key(header.from_group().unwrap()); };
-          let messages = self.group_accumulator_.add(key.clone(),
-                                                     (header.clone(), type_tag, message),
-                                                     header.from_node());
-          if messages.is_some() {
-            let keys = self.group_key_accumulator_.get(header.from_group().unwrap());
+    pub fn add(&mut self, header: message_header::MessageHeader, type_tag: MessageTypeTag,
+               message : types::SerialisedMessage) -> Option<ResultType> {
+      match type_tag {
+        MessageTypeTag::GetClientKeyResponse => {
+          if header.is_from_group() {
+            let keys = self.node_key_accumulator_.add(header.from_group().unwrap(),
+                                                      (header.clone(), type_tag, message),
+                                                      header.from_node());
             if keys.is_some() {
-              let resolved = self.resolve(self.validate_group(messages.unwrap().1,
-                                                              keys.unwrap().1), true);
-              if resolved.is_some() {
-                self.group_accumulator_.delete(key);
-                return resolved;
-              }
-            }
-          }
-        } else {
-          let key = (header.from_node(), header.message_id());
-          if !self.node_accumulator_.have_name(key.clone()) {
-            self.send_get_keys_.get_client_key(header.from_group().unwrap()); };
-          let messages = self.node_accumulator_.add(key.clone(),
-                                                    (header.clone(), type_tag, message),
-                                                    header.from_node());
-          if messages.is_some() {
-            let keys = self.node_key_accumulator_.get(header.from_group().unwrap());
-            if keys.is_some() {
-              let resolved = self.resolve(self.validate_node(messages.unwrap().1,
-                                                             keys.unwrap().1), false);
-              if resolved.is_some() {
-                self.node_accumulator_.delete(key);
-                return resolved;
-              }
-            }
-          }
-        }
-      }
-    }
-    None
-  }
-
-  fn update_key_map(key_map: &mut HashMap<NameType, Vec<PublicSignKey>>, addr: NameType, key: PublicSignKey) {
-      if !key_map.contains_key(&addr) {
-          key_map.insert(addr, vec![key]);
-      }
-      else {
-          let mut public_keys = key_map.get_mut(&addr).unwrap();
-          if !public_keys.contains(&key) {
-              public_keys.push(key);
-          }
-      }
-  }
-
-  fn verify_result(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
-      response.0.get_signature().and_then(|signature| {
-        let is_correct = crypto::sign::verify_detached(
-                           &signature.get_crypto_signature(),
-                           &response.2[..],
-                           &pub_key.get_crypto_public_sign_key());
-
-        if !is_correct { return None; }
-        Some(response.clone())
-      })
-  }
-
-  fn validate_node(&self,
-                   messages: Vec<accumulator::Response<ResultType>>,
-                   keys:     Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
-      if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
-        return Vec::new();
-      }
-
-      let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
-
-      for node_key in keys.iter() {
-        Sentinel::decode(&node_key.value.2)
-            .map(|GetClientKeyResponse{address:addr, public_sign_key:key}| {
-                Sentinel::update_key_map(&mut keys_map, addr, key)
-            });
-      }
-
-      // FIXME: We should take the majority of same keys and
-      // if there is QUORUM_SIZE of them, use that.
-      if !has_single_entry(&keys_map) { return Vec::new(); }
-      let pub_key = &keys_map.iter().next().unwrap().1[0];
-
-      messages.iter().filter_map(
-          |&accumulator::Response{address:ref addr, value:ref result}|
-              Sentinel::verify_result(result, pub_key))
-          .collect()
-  }
-
-  fn validate_group(&self, messages:  Vec<accumulator::Response<ResultType>>,
-                    keys: Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
-    if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
-      return Vec::<ResultType>::new();
-    }
-    let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
-    for group_key in keys.iter() {
-        Sentinel::decode(&group_key.value.2)
-            .map(|GetGroupKeyResponse{target_id: target, public_sign_keys: keys}| {
-                for (addr, key) in keys {
-                    Sentinel::update_key_map(&mut keys_map, addr.clone(), key.clone())
+              let key = (header.from_group().unwrap(), header.message_id());
+              let messages = self.node_accumulator_.get(key.clone());
+              if messages.is_some() {
+                let resolved = self.resolve(self.validate_node(messages.unwrap().1,
+                                                               keys.unwrap().1), false);
+                if resolved.is_some() {
+                  self.node_accumulator_.delete(key);
+                  return resolved;
                 }
-            });
-    }
-
-    // TODO(mmoadeli): For the time being, we assume that no invalid public is received
-    for (_, pub_key_list) in keys_map.iter() {
-      if pub_key_list.len() != 1 {
-        panic!("Different keys returned for a single address.");
+              }
+            }
+          }
+        }
+        MessageTypeTag::GetGroupKeyResponse => {
+          if header.is_from_group() {
+            let keys = self.group_key_accumulator_.add(header.from_group().unwrap(),
+                                                       (header.clone(), type_tag, message),
+                                                       header.from_node());
+            if keys.is_some() {
+              let key = (header.from_group().unwrap(), header.message_id());
+              let messages = self.group_accumulator_.get(key.clone());
+              if messages.is_some() {
+                let resolved = self.resolve(self.validate_group(messages.unwrap().1,
+                                                                keys.unwrap().1), true);
+                if resolved.is_some() {
+                  self.group_accumulator_.delete(key);
+                  return resolved;
+                }
+              }
+            }
+          }
+        }
+        _ => {
+          if header.is_from_group() {
+            let key = (header.from_group().unwrap(), header.message_id());
+            if !self.group_accumulator_.have_name(key.clone()) {
+              self.send_get_keys_.get_group_key(header.from_group().unwrap()); };
+            let messages = self.group_accumulator_.add(key.clone(),
+                                                       (header.clone(), type_tag, message),
+                                                       header.from_node());
+            if messages.is_some() {
+              let keys = self.group_key_accumulator_.get(header.from_group().unwrap());
+              if keys.is_some() {
+                let resolved = self.resolve(self.validate_group(messages.unwrap().1,
+                                                                keys.unwrap().1), true);
+                if resolved.is_some() {
+                  self.group_accumulator_.delete(key);
+                  return resolved;
+                }
+              }
+            }
+          } else {
+            let key = (header.from_node(), header.message_id());
+            if !self.node_accumulator_.have_name(key.clone()) {
+              self.send_get_keys_.get_client_key(header.from_group().unwrap()); };
+            let messages = self.node_accumulator_.add(key.clone(),
+                                                      (header.clone(), type_tag, message),
+                                                      header.from_node());
+            if messages.is_some() {
+              let keys = self.node_key_accumulator_.get(header.from_group().unwrap());
+              if keys.is_some() {
+                let resolved = self.resolve(self.validate_node(messages.unwrap().1,
+                                                               keys.unwrap().1), false);
+                if resolved.is_some() {
+                  self.node_accumulator_.delete(key);
+                  return resolved;
+                }
+              }
+            }
+          }
+        }
       }
+      None
     }
 
-    let verified_messages = messages.iter().filter_map(|message| {
-        keys_map.get_mut(&message.value.0.from_node())
-        .and_then(|keys| {
-            Sentinel::verify_result(&message.value, &keys[0])
+    fn update_key_map(key_map: &mut HashMap<NameType, Vec<PublicSignKey>>, addr: NameType, key: PublicSignKey) {
+        if !key_map.contains_key(&addr) {
+            key_map.insert(addr, vec![key]);
+        }
+        else {
+            let mut public_keys = key_map.get_mut(&addr).unwrap();
+            if !public_keys.contains(&key) {
+                public_keys.push(key);
+            }
+        }
+    }
+
+    fn verify_result(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
+        response.0.get_signature().and_then(|signature| {
+          let is_correct = crypto::sign::verify_detached(
+                             &signature.get_crypto_signature(),
+                             &response.2[..],
+                             &pub_key.get_crypto_public_sign_key());
+
+          if !is_correct { return None; }
+          Some(response.clone())
         })
-    }).collect::<Vec<_>>();
-
-    if verified_messages.len() < types::QUORUM_SIZE as usize {
-      return Vec::new()
     }
 
-    verified_messages
-  }
+    fn validate_node(&self,
+                     messages: Vec<accumulator::Response<ResultType>>,
+                     keys:     Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+        if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
+          return Vec::new();
+        }
 
-  fn decode<T: Decodable>(data: &SerialisedMessage) -> Option<T> {
-      let mut decoder = cbor::Decoder::from_bytes(data.clone());
-      decoder.decode().next().and_then(|result_msg| result_msg.ok())
-  }
+        let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
 
-  fn encode<T: Encodable>(value: T) -> SerialisedMessage {
-    let mut e = cbor::Encoder::from_memory();
-    let _ = e.encode(&[&value]); // FIXME: Panic when failed to encode?
-    e.as_bytes().to_vec()
-  }
+        for node_key in keys.iter() {
+          Sentinel::decode(&node_key.value.2)
+              .map(|GetClientKeyResponse{address:addr, public_sign_key:key}| {
+                  Sentinel::update_key_map(&mut keys_map, addr, key)
+              });
+        }
 
-  fn resolve(&self, verified_messages : Vec<ResultType>, _ : bool) -> Option<ResultType> {
-    if verified_messages.len() < types::QUORUM_SIZE as usize {
-      return None;
+        // FIXME: We should take the majority of same keys and
+        // if there is QUORUM_SIZE of them, use that.
+        if !has_single_entry(&keys_map) { return Vec::new(); }
+        let pub_key = &keys_map.iter().next().unwrap().1[0];
+
+        messages.iter().filter_map(
+            |&accumulator::Response{address:ref addr, value:ref result}|
+                Sentinel::verify_result(result, pub_key))
+            .collect()
     }
 
-    if verified_messages[0].1 == types::MessageTypeTag::FindGroupResponse {
-        let decoded_responses = verified_messages.iter()
-            .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
-            .collect::<Vec<_>>();
+    fn validate_group(&self, messages:  Vec<accumulator::Response<ResultType>>,
+                      keys: Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+      if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
+          return Vec::<ResultType>::new();
+      }
+      let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
+      for group_key in keys.iter() {
+          Sentinel::decode(&group_key.value.2)
+              .map(|GetGroupKeyResponse{target_id: target, public_sign_keys: keys}| {
+                  for (addr, key) in keys {
+                      Sentinel::update_key_map(&mut keys_map, addr.clone(), key.clone())
+                  }
+              });
+      }
 
-        if decoded_responses.len() == 0 {
-            // None of the messages was successfully decoded.
+      // TODO(mmoadeli): For the time being, we assume that no invalid public is received
+      for (_, pub_key_list) in keys_map.iter() {
+          if pub_key_list.len() != 1 {
+              panic!("Different keys returned for a single address.");
+          }
+      }
+
+      let verified_messages = messages.iter().filter_map(|message| {
+          keys_map.get_mut(&message.value.0.from_node())
+          .and_then(|keys| {
+              Sentinel::verify_result(&message.value, &keys[0])
+          })
+      }).collect::<Vec<_>>();
+
+      if verified_messages.len() < types::QUORUM_SIZE as usize {
+          return Vec::new()
+      }
+
+      verified_messages
+    }
+
+    fn decode<T: Decodable>(data: &SerialisedMessage) -> Option<T> {
+        let mut decoder = cbor::Decoder::from_bytes(data.clone());
+        decoder.decode().next().and_then(|result_msg| result_msg.ok())
+    }
+
+    fn encode<T: Encodable>(value: T) -> SerialisedMessage {
+        let mut e = cbor::Encoder::from_memory();
+        let _ = e.encode(&[&value]); // FIXME: Panic when failed to encode?
+        e.as_bytes().to_vec()
+    }
+
+    fn resolve(&self, verified_messages : Vec<ResultType>, _ : bool) -> Option<ResultType> {
+        if verified_messages.len() < types::QUORUM_SIZE as usize {
             return None;
         }
 
-        let merged_responses = match FindGroupResponse::merge(&decoded_responses) {
-          Some(merged_responses) => merged_responses,
-          None => panic!("No merged group confirmed.") // return None;
-        };
+        // TODO: Make sure the header is used from a message that belongs to the quorum.
 
-        return Some((verified_messages[0].0.clone(),
-                     verified_messages[0].1.clone(),
-                     Sentinel::encode(merged_responses)));
-    // if part addresses non-account transfer message types, where an exact match is required
-    } else if verified_messages[0].1 != types::MessageTypeTag::AccountTransfer {
-      for index in 0..verified_messages.len() {
-        let serialised_message = verified_messages[index].2.clone();
-        let mut count = 0;
-        for message in verified_messages.iter() {
-          if message.2 == serialised_message {
-            // TODO(ben 2015-04-9) FIX ERROR: overcounts, currently not a problem
-            count = count + 1;
-          }
+        return if verified_messages[0].1 == MessageTypeTag::FindGroupResponse {
+            let decoded_responses = verified_messages.iter()
+                .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
+                .collect::<Vec<_>>();
+
+            FindGroupResponse::merge(&decoded_responses).map(|merged| {
+                (verified_messages[0].0.clone(),
+                 verified_messages[0].1.clone(),
+                 Sentinel::encode(merged))
+            })
+        } else if verified_messages[0].1 == MessageTypeTag::GetGroupKeyResponse {
+            let accounts = verified_messages.iter()
+                .filter_map(|msg_triple| { Sentinel::decode::<GetGroupKeyResponse>(&msg_triple.2) })
+                .collect::<Vec<_>>();
+
+            GetGroupKeyResponse::merge(&accounts).map(|merged| {
+                (verified_messages[0].0.clone(),
+                 verified_messages[0].1.clone(),
+                 Sentinel::encode(merged))
+            })
+        } else {
+            let msg_bodies = verified_messages.iter()
+                             .map(|&(_, _, ref body)| body.clone())
+                             .collect::<Vec<_>>();
+
+            take_most_frequent(&msg_bodies, types::QUORUM_SIZE as usize).map(|merged| {
+                (verified_messages[0].0.clone(),
+                 verified_messages[0].1.clone(),
+                 merged)
+            })
         }
-        if count > types::QUORUM_SIZE {
-          return Some(verified_messages[index].clone());
-        }
-      }
-    } else {  // account transfer
-      let mut accounts : Vec<types::AccountTransferInfo> = Vec::new();
-      for message in verified_messages.iter() {
-        let mut d = cbor::Decoder::from_bytes(message.2.clone());
-        let obj_after: types::AccountTransferInfo = d.decode().next().unwrap().unwrap();
-        accounts.push(obj_after);
-      }
-      let result = accounts[0].merge(&accounts);
-      if result.is_some() {
-        let mut tmp = verified_messages[0].clone();
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&result.unwrap()]).unwrap();
-        tmp.2 = types::array_as_vector(e.as_bytes());
-        return Some(tmp);
-      }
     }
-    None
-  }
 }
 
 fn has_single_entry<T>(key_map: &HashMap<NameType, Vec<T>>) -> bool {
     key_map.len() == 1 && key_map.iter().next().unwrap().1.len() == 1
+}
+
+fn take_most_frequent<E>(elements: &Vec<E>, min_count: usize) -> Option<E>
+where E: Clone + Ord {
+    let mut freq_counter = Frequency::<E>::new();
+    for element in elements {
+        freq_counter.update(element.clone());
+    }
+    freq_counter.sort_by_highest().iter().nth(0).and_then(|&(ref element,ref count)| {
+        if *count >= min_count as usize { Some(element.clone()) } else { None }
+    })
 }
 
 #[cfg(test)]
@@ -730,30 +724,31 @@ mod test {
       let collect_response_messages = generate_messages(headers_response, response_tag,
           &serialised_message_response, &mut message_tracker);
 
-    for message in collect_messages {
-      sentinel_returns.push((message.index,
-                             sentinel.add(message.header,
-                                          message.tag,
-                                          message.serialised_message)));
-    }
-    assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
-    assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
-    assert_eq!(false, verify_exactly_one_response(&sentinel_returns));
+      for message in collect_messages {
+        sentinel_returns.push((message.index,
+                               sentinel.add(message.header,
+                                            message.tag,
+                                            message.serialised_message)));
+      }
+      assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
+      assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
+      assert_eq!(false, verify_exactly_one_response(&sentinel_returns));
 
-    for message in collect_response_messages {
-      sentinel_returns.push((message.index,
-                            sentinel.add(message.header,
-                                         message.tag,
-                                         message.serialised_message)));
+      for message in collect_response_messages {
+        sentinel_returns.push((message.index,
+                              sentinel.add(message.header,
+                                           message.tag,
+                                           message.serialised_message)));
+      }
+      assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
+      assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
+      assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
+      assert_eq!(1, get_selected_sentinel_returns(&mut sentinel_returns,
+                      &mut vec![(types::GROUP_SIZE + types::QUORUM_SIZE) as u64]).len());
     }
-    assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
-    assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
-    assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
-    assert_eq!(1, get_selected_sentinel_returns(&mut sentinel_returns,
-                    &mut vec![(types::GROUP_SIZE + types::QUORUM_SIZE) as u64]).len());
-    }
-  assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
-  assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
+
+    assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
+    assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
   }
 
   #[test]

@@ -16,7 +16,6 @@
 // Please review the Licences for the specific language governing permissions and limitations relating to
 // use of the Safe Network Software.
 
-use sendable;
 use generic_sendable_type;
 use name_type::NameType;
 use types::{Authority, DestinationAddress};
@@ -26,10 +25,10 @@ pub trait Interface : Sync + Send {
     /// if reply is data then we send back the response message (ie get_response )
     fn handle_get(&mut self,
                   type_id: u64,
+                  name: NameType,
                   our_authority: Authority,
                   from_authority: Authority,
-                  from_address: NameType,
-                  data: Vec<u8>) -> Result<Action, RoutingError>;
+                  from_address: NameType) -> Result<Action, RoutingError>;
 
     /// data: Vec<u8> is serialised maidsafe_types::Payload which holds typetag and content
     fn handle_put(&mut self,
@@ -63,9 +62,9 @@ pub trait Interface : Sync + Send {
 
     fn handle_cache_get(&mut self,
                         type_id: u64,
+                        name: NameType,
                         from_authority: Authority,
-                        from_address: NameType,
-                        data: Vec<u8>) -> Result<Action, RoutingError>;
+                        from_address: NameType) -> Result<Action, RoutingError>;
 
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
