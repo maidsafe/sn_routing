@@ -20,9 +20,9 @@ use routing;
 use routing::{Action, RoutingError, NameType};
 use routing::types::{Authority, DestinationAddress};
 
-use data_manager::{ DataManager };
-use maid_manager::{ MaidManager, MaidManagerAccount };
-use pmid_manager::{ PmidManager, PmidManagerAccount };
+use data_manager::DataManager;
+use maid_manager::MaidManager;
+use pmid_manager::PmidManager;
 use pmid_node::PmidNode;
 use version_handler::VersionHandler;
 
