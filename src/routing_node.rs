@@ -30,6 +30,7 @@ use time::Duration;
 
 use crust;
 use crust::Endpoint::Tcp;
+use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
 use name_type::closer_to_target;
@@ -74,6 +75,7 @@ pub struct RoutingNode<F: Interface> {
     next_message_id: MessageId,
     bootstrap_node_id: Option<Endpoint>,
     filter: MessageFilter<types::FilterType>,
+    public_pmid_cache: LruCache<NameType, types::PublicPmid>
 }
 
 impl<F> RoutingNode<F> where F: Interface {
@@ -109,7 +111,8 @@ impl<F> RoutingNode<F> where F: Interface {
                       listening_for_broadcasts_on_port: listeners.1,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
-                      filter: MessageFilter::with_expiry_duration(Duration::minutes(20))
+                      filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
+                      public_pmid_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(1), 10)  // FIXME need appropriate numbers
                     }
     }
 
