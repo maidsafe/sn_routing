@@ -19,7 +19,10 @@ extern crate lru_time_cache;
 
 extern crate routing;
 
+use cbor;
+use generic_sendable_type;
 use self::lru_time_cache::LruCache;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 type Identity = self::routing::NameType; // pmidnode address
 
@@ -37,6 +40,23 @@ impl Clone for PmidManagerAccount {
       offered_space : self.offered_space
     }
   }  
+}
+
+impl Encodable for PmidManagerAccount {
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        cbor::CborTagEncode::new(5483_002, &(
+            self.stored_total_size,
+            self.lost_total_size,
+            self.offered_space)).encode(e)
+    }
+}
+
+impl Decodable for PmidManagerAccount {
+    fn decode<D: Decoder>(d: &mut D)-> Result<PmidManagerAccount, D::Error> {
+        try!(d.read_u64());
+        let (stored_total_size, lost_total_size, offered_space) : (u64, u64, u64) = try!(Decodable::decode(d));
+        Ok(PmidManagerAccount {stored_total_size: stored_total_size, lost_total_size: lost_total_size, offered_space: offered_space, })
+    }
 }
 
 impl PmidManagerAccount {
@@ -108,13 +128,19 @@ impl PmidManagerDatabase {
     result
   }
 
-
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, PmidManagerAccount)> {
-    let data: Vec<(Identity, PmidManagerAccount)> = self.storage.retrieve_all();
-    self.storage = LruCache::with_capacity(10000);
-    data
-  }
-
+    pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, generic_sendable_type::GenericSendableType)> {
+        let data: Vec<(Identity, PmidManagerAccount)> = self.storage.retrieve_all();
+        let mut sendable_data = Vec::<(Identity, generic_sendable_type::GenericSendableType)>::with_capacity(data.len());
+        for element in data {
+            let mut e = cbor::Encoder::from_memory();
+            e.encode(&[&element.1]).unwrap();
+            let serialised_content = e.into_bytes();
+            let sendable_type = generic_sendable_type::GenericSendableType::new(element.0.clone(), 2, serialised_content); //TODO Get type_tag correct
+            sendable_data.push((element.0, sendable_type));
+        }
+        self.storage = LruCache::with_capacity(10000);
+        sendable_data
+    }
 }
 
 

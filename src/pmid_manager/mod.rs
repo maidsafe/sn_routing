@@ -19,6 +19,7 @@ mod database;
 use routing;
 use routing::NameType;
 use routing::types::DestinationAddress;
+use generic_sendable_type;
 pub use self::database::PmidManagerAccount;
 
 pub struct PmidManager {
@@ -40,7 +41,7 @@ impl PmidManager {
     }
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<(NameType, PmidManagerAccount)>{
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<(routing::NameType, generic_sendable_type::GenericSendableType)> {
     self.db_.retrieve_all_and_reset()
   }
 }
