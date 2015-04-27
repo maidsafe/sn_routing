@@ -104,8 +104,8 @@ impl routing::node_interface::Interface for VaultFacade {
         let dm = self.data_manager.retrieve_all_and_reset();
         let mm = self.maid_manager.retrieve_all_and_reset();
         let pm = self.pmid_manager.retrieve_all_and_reset();
-
-        for it in dm.iter().chain(mm.iter().chain(pm.iter())) {
+        let vh = self.version_handler.retrieve_all_and_reset();
+        for it in dm.iter().chain(mm.iter().chain(pm.iter().chain(vh.iter()))) {
             routing_node.put(it.0.clone(), it.1.clone());
         }
     }
