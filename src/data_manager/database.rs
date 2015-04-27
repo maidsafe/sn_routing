@@ -15,7 +15,7 @@
 
 #![allow(dead_code)]
 
-use generic_sendable_type;
+use routing::generic_sendable_type;
 use routing;
 use lru_time_cache::LruCache;
 use cbor;

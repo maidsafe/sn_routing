@@ -19,7 +19,7 @@ mod database;
 use routing;
 use routing::NameType;
 use routing::types::DestinationAddress;
-use generic_sendable_type;
+use routing::generic_sendable_type;
 pub use self::database::PmidManagerAccount;
 
 pub struct PmidManager {

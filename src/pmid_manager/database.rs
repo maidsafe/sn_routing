@@ -20,7 +20,7 @@ extern crate lru_time_cache;
 extern crate routing;
 
 use cbor;
-use generic_sendable_type;
+use routing::generic_sendable_type;
 use self::lru_time_cache::LruCache;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 

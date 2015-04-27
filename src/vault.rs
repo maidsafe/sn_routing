@@ -98,18 +98,31 @@ impl routing::node_interface::Interface for VaultFacade {
     ;
   }
 
-    fn handle_churn(&mut self) {
-        let vault_facade = VaultFacade::new();
-        let routing_node = routing::routing_node::RoutingNode::<VaultFacade>::new(vault_facade);
-        let dm = self.data_manager.retrieve_all_and_reset();
-        let mm = self.maid_manager.retrieve_all_and_reset();
-        let pm = self.pmid_manager.retrieve_all_and_reset();
-        let vh = self.version_handler.retrieve_all_and_reset();
-        for it in dm.iter().chain(mm.iter().chain(pm.iter().chain(vh.iter()))) {
-            routing_node.put(it.0.clone(), it.1.clone());
-        }
+    fn handle_churn(&mut self) -> Vec<(routing::NameType, routing::generic_sendable_type::GenericSendableType)> {
+        let mut dm = self.data_manager.retrieve_all_and_reset();
+        let mut mm = self.maid_manager.retrieve_all_and_reset();
+        let mut pm = self.pmid_manager.retrieve_all_and_reset();
+        let mut vh = self.version_handler.retrieve_all_and_reset();
+
+        let mut return_val = Vec::<(routing::NameType, routing::generic_sendable_type::GenericSendableType)>::with_capacity(dm.len() + mm.len() + pm.len() + vh.len());
+        return_val.append(dm);
+        return_val.append(mm);
+        return_val.append(pm);
+        return_val.append(vh);
+
+        return_val
     }
 
+    // fn handle_cache_get(&mut self,
+    //                     type_id: u64,
+    //                     from_authority: routing::types::Authority,
+    //                     from_address: routing::NameType,
+    //                     data: Vec<u8>) -> Result<Action, RoutingError> { unimplemented!() }
+
+    // fn handle_cache_put(&mut self,
+    //                     from_authority: routing::types::Authority,
+    //                     from_address: routing::NameType,
+    //                     data: Vec<u8>) -> Result<Action, RoutingError> { unimplemented!() }
 }
 
 impl VaultFacade {

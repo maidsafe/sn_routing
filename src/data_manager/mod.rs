@@ -17,7 +17,7 @@
 
 mod database;
 
-use generic_sendable_type;
+use routing::generic_sendable_type;
 use std::cmp;
 use routing;
 use routing::NameType;
