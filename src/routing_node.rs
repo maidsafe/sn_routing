@@ -646,7 +646,9 @@ mod test {
     use generic_sendable_type;
     use node_interface::*;
     use types::{Pmid, Authority, DestinationAddress};
-    use name_type::NameType;
+    use types::{PublicPmid};
+    use routing_table;
+    use NameType;
     use super::super::{Action, RoutingError};
     //use std::thread;
     //use std::net::{SocketAddr};
@@ -697,6 +699,16 @@ mod test {
     #[test]
     fn our_authority_full_routing_table() {
         let mut routing_node = RoutingNode::new(NullInterface);
+
+        let mut count : usize = 0;
+        loop {
+            routing_node.routing_table.add_node(routing_table::NodeInfo::new(
+                                       PublicPmid::new(&Pmid::new()), true));
+            count += 1;
+            if routing_node.routing_table.size() >=
+               routing_table::RoutingTable::get_optimal_size() { break; }
+            if count >= 120 {panic!("Routing table does not fill up.")}
+        }
     }
 
     //#[test]
