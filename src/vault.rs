@@ -98,7 +98,7 @@ impl routing::node_interface::Interface for VaultFacade {
     ;
   }
 
-    fn handle_churn(&mut self) -> Vec<(routing::NameType, routing::generic_sendable_type::GenericSendableType)> {
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<(routing::NameType, routing::generic_sendable_type::GenericSendableType)> {
         let mut dm = self.data_manager.retrieve_all_and_reset();
         let mut mm = self.maid_manager.retrieve_all_and_reset();
         let mut pm = self.pmid_manager.retrieve_all_and_reset();
@@ -113,16 +113,16 @@ impl routing::node_interface::Interface for VaultFacade {
         return_val
     }
 
-    // fn handle_cache_get(&mut self,
-    //                     type_id: u64,
-    //                     from_authority: routing::types::Authority,
-    //                     from_address: routing::NameType,
-    //                     data: Vec<u8>) -> Result<Action, RoutingError> { unimplemented!() }
+    fn handle_cache_get(&mut self,
+                        type_id: u64,
+                        from_authority: routing::types::Authority,
+                        from_address: routing::NameType,
+                        data: Vec<u8>) -> Result<Action, RoutingError> { unimplemented!() }
 
-    // fn handle_cache_put(&mut self,
-    //                     from_authority: routing::types::Authority,
-    //                     from_address: routing::NameType,
-    //                     data: Vec<u8>) -> Result<Action, RoutingError> { unimplemented!() }
+    fn handle_cache_put(&mut self,
+                        from_authority: routing::types::Authority,
+                        from_address: routing::NameType,
+                        data: Vec<u8>) -> Result<Action, RoutingError> { unimplemented!() }
 }
 
 impl VaultFacade {
