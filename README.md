@@ -38,6 +38,14 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [ ] Complete Post Flow
 - [ ] Handle Churn
     - [ ] Implement Account Transfer
+        - [ ] Handle churn for all Persona (except PN)(retrive account, move to lru, apply account)
+        - [ ] Before retrieving accounts, pass close_group (get from routing) to DM and remove down pmids
+        - [ ] Before retrieving accounts, pass close_group to PM and remove accounts of down pmids
+        - [ ] Implement HandlePut for Account transfer data (call apply accounts for relevant persona)
+        - [ ] Implement merge trait for accounts of MM
+        - [ ] Implement merge trait for accounts of DM
+        - [ ] Implement merge trait for accounts of PM
+        - [ ] Implement merge trait for accounts of VH
     - [ ] Churn Test
 - [ ] Installers
     - [ ] linux 32 bit .deb installer (oldest possible version)
