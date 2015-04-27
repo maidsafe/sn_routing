@@ -79,7 +79,7 @@ pub mod types;
 use sodiumoxide::crypto;
 
 /// NameType is a 512bit name to address elements on the DHT network.
-pub use name_type::{NameType};
+pub use name_type::{NameType, closer_to_target};
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
