@@ -59,7 +59,7 @@ pub trait Interface : Sync + Send {
                             from_address: NameType,
                             response: Result<Vec<u8>, RoutingError>);
 
-    fn handle_churn(&mut self) -> Vec<(NameType, generic_sendable_type::GenericSendableType)>;
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<(NameType, generic_sendable_type::GenericSendableType)>;
 
     fn handle_cache_get(&mut self,
                         type_id: u64,
