@@ -74,51 +74,54 @@ impl VersionHandler {
 
 }
 
-// #[cfg(test)]
-// mod test {
-//   extern crate cbor;
-//   extern crate maidsafe_types;
-//   extern crate routing;
-//   use super::*;
-//   use self::maidsafe_types::*;
-//   use self::routing::types::*;
-//
-//   #[test]
-//   fn handle_put_get() {
-//     let mut version_handler = VersionHandler::new();
-//     let name = (NameType([3u8; 64]), NameType([4u8; 64]));
-//     let mut value = Vec::new();
-//     value.push(vec![NameType([5u8; 64]), NameType([6u8; 64])]);
-//     let sdv = StructuredData::new(name, value);
-//     let payload = Payload::new(PayloadTypeTag::StructuredData, &sdv);
-//     let mut encoder = cbor::Encoder::from_memory();
-//     let encode_result = encoder.encode(&[&payload]);
-//     assert_eq!(encode_result.is_ok(), true);
-//
-//     let put_result = version_handler.handle_put(array_as_vector(encoder.as_bytes()));
-//     assert_eq!(put_result.is_err(), true);
-//     match put_result.err().unwrap() {
-//       routing::RoutingError::Success => assert_eq!(true, true),
-//       _ => assert_eq!(true, false),
-//     }
-//
-//     let data_name = NameType::new(&sdv.get_name().0.get_id());
-//     let get_result = version_handler.handle_get(data_name);
-//     assert_eq!(get_result.is_err(), false);
-//     match get_result.ok().unwrap() {
-//       routing::Action::SendOn(_) => panic!("Unexpected"),
-//       routing::Action::Reply(x) => {
-//         let mut d = cbor::Decoder::from_bytes(x);
-//         let obj_after: Payload = d.decode().next().unwrap().unwrap();
-//         assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::StructuredData);
-//         let sdv_after = obj_after.get_data::<maidsafe_types::StructuredData>();
-//         assert_eq!(sdv_after.get_name().0.get_id()[63], 3u8);
-//         assert_eq!(sdv_after.get_name().1.get_id()[63], 4u8);
-//         assert_eq!(sdv_after.get_value().len(), 1);
-//         assert_eq!(sdv_after.get_value()[0].len(), 2);
-//         assert_eq!(sdv_after.get_value()[0][0].get_id()[63], 5u8);
-//         assert_eq!(sdv_after.get_value()[0][1].get_id()[63], 6u8);
-//       }
-//     }
-//   }
-// }
+#[cfg(test)]
+mod test {
+ use cbor;
+ use maidsafe_types;
+ use routing;
+ use super::*;
+ use maidsafe_types::*;
+ use routing::types::*;
+ use routing::NameType;
+ use routing::sendable::Sendable;
+
+ #[test]
+ fn handle_put_get() {
+    let mut version_handler = VersionHandler::new();
+    let name = NameType([3u8; 64]);
+    let owner = NameType([4u8; 64]);
+    let mut value = Vec::new();
+    value.push(vec![NameType([5u8; 64]), NameType([6u8; 64])]);
+    let sdv = StructuredData::new(name, owner, value);
+    let payload = Payload::new(PayloadTypeTag::StructuredData, &sdv);
+    let mut encoder = cbor::Encoder::from_memory();
+    let encode_result = encoder.encode(&[&payload]);
+    assert_eq!(encode_result.is_ok(), true);
+
+    let put_result = version_handler.handle_put(array_as_vector(encoder.as_bytes()));
+    assert_eq!(put_result.is_err(), true);
+    match put_result.err().unwrap() {
+        routing::RoutingError::Success => assert_eq!(true, true),
+        _ => assert_eq!(true, false),
+    }
+
+    let data_name = NameType::new(sdv.name().0);
+    let get_result = version_handler.handle_get(data_name);
+    assert_eq!(get_result.is_err(), false);
+    match get_result.ok().unwrap() {
+        routing::Action::SendOn(_) => panic!("Unexpected"),
+        routing::Action::Reply(x) => {
+                let mut d = cbor::Decoder::from_bytes(x);
+                let obj_after: Payload = d.decode().next().unwrap().unwrap();
+                assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::StructuredData);
+                let sdv_after = obj_after.get_data::<maidsafe_types::StructuredData>();
+                assert_eq!(sdv_after.name(), NameType([3u8;64]));
+                assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
+                assert_eq!(sdv_after.get_value().len(), 1);
+                assert_eq!(sdv_after.get_value()[0].len(), 2);
+                assert_eq!(sdv_after.get_value()[0][0], NameType([5u8;64]));
+                assert_eq!(sdv_after.get_value()[0][1], NameType([6u8;64]));
+            }
+        }
+    }
+}
