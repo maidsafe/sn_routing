@@ -229,8 +229,19 @@ impl<F> RoutingNode<F> where F: Interface {
             let peer_id = removed_entry.unwrap();
             self.routing_table.drop_node(&peer_id);
             self.all_connections.1.remove(&peer_id);
-          // TODO : remove from the non routing list
-          // handle_churn
+
+            // do account transfers
+            let mut self_interface = match self.interface.lock() {
+                Err(_) => return,
+                Ok(interface) => interface,
+            };
+            let our_close_group: Vec<NameType> = self.routing_table.our_close_group();
+            convert to Vec<NameType>
+            let accounts = self_interface.handle_churn(our_close_group);
+            send each as a put request
+
+            // notify peers of lost connection if it was in our close group
+
         }
     }
 
