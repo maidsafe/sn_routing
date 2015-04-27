@@ -70,7 +70,6 @@ Steps to compile SQLite:
   - [ ] PutData HandlePutData 
   - [ ] PutDataResponse HandlePutDataResponse 
   - [ ] PutKey HandlePutKey 
-  - [ ] AccountTransfer HandleAccountTransfer 
 - [ ] Implement routing connections management
 - [ ] Sentinel:
   - [x] Handover existing implementation
