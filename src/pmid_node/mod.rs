@@ -56,9 +56,9 @@ impl PmidNode {
       }
       _ => return Err(routing::RoutingError::InvalidRequest)
     }
-    // the type_tag needs to be stored as well
+    // the type_tag needs to be stored as well    
     self.chunk_store_.put(data_name, data);
-    return Err(routing::RoutingError::Success);
+    Err(routing::RoutingError::Success)
   }
 
 }
@@ -83,13 +83,14 @@ mod test {
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
     assert_eq!(encode_result.is_ok(), true);
+
     let put_result = pmid_node.handle_put(array_as_vector(encoder.as_bytes()));
     assert_eq!(put_result.is_err(), true);
     match put_result.err().unwrap() {
       routing::RoutingError::Success => { }
       _ => panic!("Unexpected"),
     }
-    let get_result = pmid_node.handle_get(NameType::new(name.0));
+    let get_result = pmid_node.handle_get(data.name());
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
         routing::Action::Reply(ref x) => {
