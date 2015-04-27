@@ -18,7 +18,7 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::net::{SocketAddr};
-use types::DhtId;
+use NameType;
 
 use types;
 
@@ -28,35 +28,9 @@ pub struct ConnectResponse {
   pub requester_external : SocketAddr,
   pub receiver_local     : SocketAddr,
   pub receiver_external  : SocketAddr,
-  pub requester_id       : DhtId,
-  pub receiver_id        : DhtId,
+  pub requester_id       : NameType,
+  pub receiver_id        : NameType,
   pub receiver_fob       : types::PublicPmid
-}
-
-impl ConnectResponse {
-    pub fn generate_random() -> ConnectResponse {
-        use std::net::{Ipv4Addr, SocketAddrV4};
-        use rand::random;
-
-        // TODO: IPv6
-        let random_addr = || -> SocketAddr {
-            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>()),
-                                             random::<u16>()))
-        };
-
-        ConnectResponse {
-            requester_local: random_addr(),
-            requester_external: random_addr(),
-            receiver_local: random_addr(),
-            receiver_external: random_addr(),
-            requester_id: types::DhtId::generate_random(),
-            receiver_id: types::DhtId::generate_random(),
-            receiver_fob: types::PublicPmid::generate_random(),
-        }
-    }
 }
 
 impl Encodable for ConnectResponse {
@@ -79,7 +53,7 @@ impl Decodable for ConnectResponse {
     try!(d.read_u64());
     let (requester_local, requester_external, receiver_local, receiver_external,
          requester_id, receiver_id, receiver_fob):
-        (String, String, String, String, DhtId, DhtId, types::PublicPmid)
+        (String, String, String, String, NameType, NameType, types::PublicPmid)
         = try!(Decodable::decode(d));
 
     let req_local    = try!(requester_local   .parse().or(Err(d.error("can't parse req_local addr"))));
@@ -97,9 +71,11 @@ impl Decodable for ConnectResponse {
 mod test {
     use super::*;
     use cbor;
+    use test_utils::Random;
+
     #[test]
     fn connect_response_serialisation() {
-        let obj_before = ConnectResponse::generate_random();
+        let obj_before: ConnectResponse = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

@@ -21,38 +21,15 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::net::{SocketAddr};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectRequest {
   pub local         : SocketAddr,
   pub external      : SocketAddr,
-  pub requester_id  : types::DhtId,
-  pub receiver_id   : types::DhtId,
+  pub requester_id  : NameType,
+  pub receiver_id   : NameType,
   pub requester_fob : types::PublicPmid
-}
-
-impl ConnectRequest {
-    pub fn generate_random() -> ConnectRequest {
-        use std::net::{Ipv4Addr, SocketAddrV4};
-        use rand::random;
-
-        // TODO: IPv6
-        let random_addr = || -> SocketAddr {
-            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>()),
-                                             random::<u16>()))
-        };
-
-        ConnectRequest {
-            local: random_addr(),
-            external: random_addr(),
-            requester_id: types::DhtId::generate_random(),
-            receiver_id: types::DhtId::generate_random(),
-            requester_fob: types::PublicPmid::generate_random(),
-        }
-    }
 }
 
 impl Encodable for ConnectRequest {
@@ -70,12 +47,11 @@ impl Encodable for ConnectRequest {
 
 impl Decodable for ConnectRequest {
   fn decode<D: Decoder>(d: &mut D)->Result<ConnectRequest, D::Error> {
-      use types::DhtId;
 
     try!(d.read_u64());
 
     let (local_str, external_str, requester_id, receiver_id, requester_fob):
-        (String, String, DhtId, DhtId, types::PublicPmid) = try!(Decodable::decode(d));
+        (String, String, NameType, NameType, types::PublicPmid) = try!(Decodable::decode(d));
 
     let local    = try!(local_str   .parse().or(Err(d.error("can't parse local addr"))));
     let external = try!(external_str.parse().or(Err(d.error("can't parse external addr"))));
@@ -92,10 +68,11 @@ impl Decodable for ConnectRequest {
 mod test {
     use super::*;
     use cbor;
+    use test_utils::Random;
 
     #[test]
     fn connect_request_serialisation() {
-        let obj_before = ConnectRequest::generate_random();
+        let obj_before : ConnectRequest = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

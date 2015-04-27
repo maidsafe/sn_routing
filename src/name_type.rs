@@ -17,11 +17,11 @@
 // of the MaidSafe Software.
 
 use cbor::CborTagEncode;
+// use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
+use std::hash;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
-use std::mem;
 use std::fmt;
-use rand;
 
 pub const NAME_TYPE_LEN : usize = 64;
 
@@ -32,87 +32,120 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
 }
 
-///
-/// Convert a container to an array. If the container is not the exact size specified, None is
-/// returned. Otherwise, all of the elements are moved into the array.
-///
-/// ```
-/// let mut data = Vec::<usize>::new();
-/// data.push(1);
-/// data.push(2);
-/// assert!(convert_to_array(data, 2).is_some());
-/// assert!(convert_to_array(data, 3).is_none());
-/// ```
-macro_rules! convert_to_array {
-    ($container:ident, $size:expr) => {{
-        if $container.len() != $size {
-            None
-        } else {
-            use std::mem;
-            let mut arr : [_; $size] = unsafe { mem::uninitialized() };
-            for element in $container.into_iter().enumerate() {
-                let old_val = mem::replace(&mut arr[element.0], element.1);
-                unsafe { mem::forget(old_val) };
-            }
-            Some(arr)
-        }
-    }};
-}
-
-/// NameType struct
-///
-/// NameType Struct can be created using the new function by passing, id as its parameter.
+/// NameType can be created using the new function by passing id as its parameter.
+#[derive(Eq)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
-   #[allow(dead_code)]
-   fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
-        for i in 0..lhs.0.len() {
-            let res_0 = lhs.0[i] ^ target.0[i];
-            let res_1 = rhs.0[i] ^ target.0[i];
-
-            if res_0 != res_1 {
-                return res_0 < res_1
-            }
-        }
-        false
-    }
-
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
     }
+
+    // TODO(Ben): Resolve from_data
+    // pub fn from_data(data : &[u8]) -> NameType {
+    //     NameType::new(&crypto::hash::sha512::hash(data).0)
+    // }
 
     pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
         self.0
     }
 
-    pub fn is_valid(&self) -> bool {
-        for it in self.0.iter() {
-            if *it != 0 {
-                return true;
-            }
-        }
-        false
+    // private function exposed in fmt Debug {:?} and Display {} traits
+    fn get_debug_id(&self) -> String {
+      format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+              self.0[0],
+              self.0[1],
+              self.0[2],
+              self.0[NAME_TYPE_LEN-3],
+              self.0[NAME_TYPE_LEN-2],
+              self.0[NAME_TYPE_LEN-1])
     }
-     
-    pub fn generate_random() -> NameType {
-        let mut arr: [u8; NAME_TYPE_LEN] = unsafe { mem::uninitialized() };
-        for i in 0..NAME_TYPE_LEN {
-            arr[i] = rand::random::<u8>();
-        }
-        NameType(arr)
+
+    // private function exposed in fmt LowerHex {:x} trait
+    // note(ben): UpperHex explicitly not implemented to prevent mixed usage
+    fn get_full_id(&self) -> String {
+      let mut full_id = String::with_capacity(2 * NAME_TYPE_LEN);
+      for char in self.0.iter() {
+        full_id.push_str(format!("{:02x}", char).as_str());
+      }
+      full_id
     }
 }
 
 impl fmt::Debug for NameType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.0.to_vec())
+      write!(f, "{}", self.get_debug_id())
     }
 }
 
+impl fmt::Display for NameType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      write!(f, "{}", self.get_debug_id())
+    }
+}
+
+impl fmt::LowerHex for NameType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.get_full_id())
+    }
+}
+
+
 impl PartialEq for NameType {
     fn eq(&self, other: &NameType) -> bool {
-  	slice_equal(&self.0, &other.0)
+        slice_equal(&self.0, &other.0)
+    }
+}
+
+/// Returns true if `lhs` is closer to `target` than `rhs`.  "Closer" here is as per the Kademlia
+/// notion of XOR distance, i.e. the distance between two `NameType`s is the bitwise XOR of their
+/// values.
+pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
+    for i in 0..lhs.0.len() {
+        let res_0 = lhs.0[i] ^ target.0[i];
+        let res_1 = rhs.0[i] ^ target.0[i];
+
+        if res_0 != res_1 {
+            return res_0 < res_1
+        }
+    }
+    false
+}
+
+/// The `NameType` can be ordered from zero as a normal Euclidean number
+impl Ord for NameType {
+    #[inline]
+    fn cmp(&self, other : &NameType) -> Ordering {
+        Ord::cmp(&&self.0[..], &&other.0[..])
+    }
+}
+
+impl PartialOrd for NameType {
+    #[inline]
+    fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
+        PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn lt(&self, other : &NameType) -> bool {
+        PartialOrd::lt(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn le(&self, other : &NameType) -> bool {
+        PartialOrd::le(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn gt(&self, other : &NameType) -> bool {
+        PartialOrd::gt(&&self.0[..], &&other.0[..])
+    }
+    #[inline]
+    fn ge(&self, other : &NameType) -> bool {
+        PartialOrd::ge(&&self.0[..], &&other.0[..])
+    }
+}
+
+impl hash::Hash for NameType {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        state.write(&self.0[..])
     }
 }
 
@@ -129,7 +162,6 @@ impl Clone for NameType {
     }
 }
 
-
 impl Encodable for NameType {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         CborTagEncode::new(5483_000, &(self.0.as_ref())).encode(e)
@@ -141,7 +173,7 @@ impl Decodable for NameType {
         try!(d.read_u64());
         let id : Vec<u8> = try!(Decodable::decode(d));
 
-        match convert_to_array!(id, NAME_TYPE_LEN) {
+        match container_of_u8_to_array!(id, NAME_TYPE_LEN) {
             Some(id_arr) => Ok(NameType(id_arr)),
             None => Err(d.error("Bad NameType size"))
         }
@@ -150,26 +182,26 @@ impl Decodable for NameType {
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
+    use cbor;
     use super::*;
+    use test_utils::Random;
 
     #[test]
     fn serialisation_name_type() {
-      let obj_before = NameType::generate_random();
-      let mut e = cbor::Encoder::from_memory();
-      e.encode(&[&obj_before]).unwrap();
+        let obj_before: NameType = Random::generate_random();
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
 
-      let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-      let obj_after: NameType = d.decode().next().unwrap().unwrap();
-      assert_eq!(obj_before, obj_after);
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: NameType = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
     }
 
     #[test]
     fn name_type_equal_assertion() {
-        let type1 = NameType::generate_random();
+        let type1: NameType = Random::generate_random();
         let type1_clone = type1.clone();
-        let type2 = NameType::generate_random();
+        let type2: NameType = Random::generate_random();
         assert_eq!(type1, type1_clone);
         assert!(type1 == type1_clone);
         assert!(!(type1 != type1_clone));
@@ -177,31 +209,69 @@ mod test {
     }
 
     #[test]
-    fn name_type_validity_assertion() {
-        assert!(NameType([1u8; NAME_TYPE_LEN]).is_valid());
-        assert!(!NameType([0u8; NAME_TYPE_LEN]).is_valid());
-    }
-
-    #[test]
-    fn closer_to_target() {
-        let obj0 = NameType::generate_random();
+    fn closeness() {
+        let obj0: NameType = Random::generate_random();
         let obj0_clone = obj0.clone();
-        let obj1 = NameType::generate_random();
-        assert!(NameType::closer_to_target(&obj0_clone, &obj1, &obj0));
-        assert!(!NameType::closer_to_target(&obj1, &obj0_clone, &obj0));
+        let obj1: NameType = Random::generate_random();
+        assert!(closer_to_target(&obj0_clone, &obj1, &obj0));
+        assert!(!closer_to_target(&obj1, &obj0_clone, &obj0));
     }
-    
+
     #[test]
-    fn copy_strings_to_bad_array() {
-        let one = "some string".to_string();
-        let two = "some two".to_string();
-
-        let mut data = Vec::<String>::with_capacity(2);
-        data.push(one);
-        data.push(two);
-
-        let data2 = data.clone();
-        assert!(convert_to_array!(data2, 1).is_none());
-        assert!(convert_to_array!(data, 3).is_none());
+    fn format_pmid_nametype() {
+        // test for Pmids
+        use types::Pmid;
+        use types::RoutingTrait;
+        for _ in 0..5 {
+            let my_pmid = Pmid::new();
+            let my_name = my_pmid.get_name();
+            let debug_id = my_name.get_debug_id();
+            let full_id = my_name.get_full_id();
+            assert_eq!(debug_id.len(), 14);
+            assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
+            assert_eq!(&debug_id[0..6], &full_id[0..6]);
+            assert_eq!(&debug_id[8..14], &full_id[2*NAME_TYPE_LEN-6..2*NAME_TYPE_LEN]);
+            assert_eq!(&debug_id[6..8], "..");
+        }
     }
+
+    #[test]
+    fn format_random_nametype() {
+        // test for Random NameType
+        for _ in 0..5 {
+            let my_name : NameType = Random::generate_random();
+            let debug_id = my_name.get_debug_id();
+            let full_id = my_name.get_full_id();
+            assert_eq!(debug_id.len(), 14);
+            assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
+            assert_eq!(&debug_id[0..6], &full_id[0..6]);
+            assert_eq!(&debug_id[8..14], &full_id[2*NAME_TYPE_LEN-6..2*NAME_TYPE_LEN]);
+            assert_eq!(&debug_id[6..8], "..");
+        }
+    }
+
+    #[test]
+    fn format_fixed_low_char_nametype() {
+        // test for fixed low char values in NameType
+        let low_char_id = [1u8; NAME_TYPE_LEN];
+        let my_low_char_name = NameType::new(low_char_id);
+        let debug_id = my_low_char_name.get_debug_id();
+        let full_id = my_low_char_name.get_full_id();
+        assert_eq!(debug_id.len(), 14);
+        assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
+        assert_eq!(&debug_id[0..6], &full_id[0..6]);
+        assert_eq!(&debug_id[8..14], &full_id[2*NAME_TYPE_LEN-6..2*NAME_TYPE_LEN]);
+        assert_eq!(&debug_id[6..8], "..");
+    }
+
+    //TODO(Ben: resolve from_data)
+    // #[test]
+    // fn name_from_data() {
+    //   use rustc_serialize::hex::ToHex;
+    //   let data = "this is a known string".to_string().into_bytes();
+    //   let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
+    //                        e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
+    //                        ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
+    //   assert_eq!(&expected_name, &NameType::from_data(&data).0.to_hex());
+    // }
 }

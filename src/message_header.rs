@@ -20,6 +20,7 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
+use NameType;
 
 /// Header of various message types used on routing level
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -64,11 +65,11 @@ impl MessageHeader {
         self.message_id
     }
 
-    pub fn from_node(&self) -> types::DhtId {
+    pub fn from_node(&self) -> NameType {
         self.source.from_node.clone()
     }
 
-    pub fn from_group(&self) -> Option<types::DhtId> {
+    pub fn from_group(&self) -> Option<NameType> {
         if self.source.from_group.is_some() {
             self.source.from_group.clone()
         } else {
@@ -77,22 +78,14 @@ impl MessageHeader {
     }
 
     pub fn is_from_group(&self) -> bool {
-        if self.source.from_group.is_some() {
-            true
-        } else {
-            false
-        }
+        self.source.from_group.is_some()
     }
 
     pub fn is_relayed(&self) -> bool {
-        if self.source.reply_to.is_some() {
-            true
-        } else {
-            false
-        }
+        self.source.reply_to.is_some()
     }
 
-    pub fn reply_to(&self) -> Option<types::DhtId> {
+    pub fn reply_to(&self) -> Option<NameType> {
         if self.source.reply_to.is_some() {
             self.source.reply_to.clone()
         } else {
@@ -100,7 +93,7 @@ impl MessageHeader {
         }
     }
 
-    pub fn from(&self) -> types::DhtId {
+    pub fn from(&self) -> NameType {
         match self.from_group() {
             Some(address) => address,
             None => self.from_node()
@@ -142,14 +135,7 @@ mod test {
     use rustc_serialize::{Decodable, Encodable};
     use types;
     use cbor;
-
-    pub fn generate_u8_64() -> Vec<u8> {
-        let mut u8_64: Vec<u8> = vec![];
-        for _ in (0..64) {
-            u8_64.push(random::<u8>());
-        }
-        u8_64
-    }
+    use test_utils::Random;
 
     fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
         let mut e = cbor::Encoder::from_memory();
@@ -163,11 +149,11 @@ mod test {
     fn test_message_header() {
         test_object(MessageHeader {
             message_id : random::<u32>(),
-            destination : types::DestinationAddress{dest: types::DhtId::generate_random(), reply_to: None },
-            source : types::SourceAddress { from_node : types::DhtId::generate_random(),
-            from_group : None,
-            reply_to: None },
+            destination : types::DestinationAddress{ dest: Random::generate_random(),
+                                                     reply_to: None },
+            source : types::SourceAddress { from_node : Random::generate_random(),
+                                            from_group : None, reply_to: None },
             authority : types::Authority::ManagedNode,
-            signature : Some(types::Signature{ signature: generate_u8_64() }) });
+            signature : Some(Random::generate_random())});
     }
 }

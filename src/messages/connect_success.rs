@@ -20,20 +20,12 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectSuccess {
-  pub peer_id   : types::DhtId,
+  pub peer_id   : NameType,
   pub peer_fob : types::PublicPmid
-}
-
-impl ConnectSuccess {
-    pub fn generate_random() -> ConnectSuccess {
-        ConnectSuccess {
-            peer_id: types::DhtId::generate_random(),
-            peer_fob: types::PublicPmid::generate_random(),
-        }
-    }
 }
 
 impl Encodable for ConnectSuccess {
@@ -45,11 +37,11 @@ impl Encodable for ConnectSuccess {
 
 impl Decodable for ConnectSuccess {
   fn decode<D: Decoder>(d: &mut D)->Result<ConnectSuccess, D::Error> {
-      use types::DhtId;
+      use NameType;
 
     try!(d.read_u64());
 
-    let (peer_id, peer_fob): (DhtId, types::PublicPmid) = try!(Decodable::decode(d));
+    let (peer_id, peer_fob): (NameType, types::PublicPmid) = try!(Decodable::decode(d));
 
     Ok(ConnectSuccess { peer_id: peer_id,
                         peer_fob: peer_fob})
@@ -61,10 +53,11 @@ mod test {
     extern crate cbor;
 
     use super::*;
+    use test_utils::Random;
 
     #[test]
     fn connect_success_serialisation() {
-        let obj_before = ConnectSuccess::generate_random();
+        let obj_before : ConnectSuccess = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

@@ -17,22 +17,12 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-
-use types;
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct PutData {
-  pub name: Vec<u8>,
+  pub name: NameType,
   pub data : Vec<u8>
-}
-
-impl PutData {
-    pub fn generate_random() -> PutData {
-        PutData {
-            name: types::generate_random_vec_u8(64),
-            data: types::generate_random_vec_u8(99),
-        }
-    }
 }
 
 impl Encodable for PutData {
@@ -53,10 +43,11 @@ impl Decodable for PutData {
 mod test {
     use super::*;
     use cbor;
+    use test_utils::Random;
 
     #[test]
     fn put_data_serialisation() {
-        let obj_before = PutData::generate_random();
+        let obj_before : PutData = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

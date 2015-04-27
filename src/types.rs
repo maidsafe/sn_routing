@@ -1,29 +1,30 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
-// licence you accepted on initial access to the Software (the "Licences").
+// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License, version
+// 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which licence you
+// accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the MaidSafe Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://www.maidsafe.net/licenses
+// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also available at
+// http://maidsafe.net/licenses
 //
 // Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe Software.
+// See the Licences for the specific language governing permissions and limitations relating to use
+// of the MaidSafe Software.
 
 #![allow(unused_assignments)]
 
 use sodiumoxide::crypto;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use std::fmt;
 use rand::random;
 use sodiumoxide;
+use NameType;
+use std::fmt;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -59,56 +60,6 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 
 pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
-
-#[derive(Default, PartialEq, Eq, Hash, Clone, RustcEncodable, RustcDecodable, PartialOrd, Ord)]
-pub struct DhtId(pub Vec<u8>);
-
-impl DhtId {
-
-    pub fn new(array : &[u8; 64]) -> DhtId {
-        DhtId(array.to_vec())
-    }
-
-    pub fn from_data(data : &[u8]) -> DhtId {
-        DhtId::new(&crypto::hash::sha512::hash(data).0)
-    }
-
-    pub fn generate_random() -> DhtId {
-        DhtId(generate_random_vec_u8(64))
-    }
-
-    pub fn is_valid(&self) -> bool {
-        if self.0.len() != 64 {
-          return false;
-        }
-        for it in self.0.iter() {
-            if *it != 0 {
-                return true;
-            }
-        }
-        false
-    }
-}
-
-impl fmt::Debug for DhtId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let &DhtId(ref v) = self;
-        write!(f, "DhtId({:x}{:x})", v[0], v[1])
-    }
-}
-
-// lhs is closer to target than rhs
-pub fn closer_to_target(lhs: &DhtId, rhs: &DhtId, target: &DhtId) -> bool {
-    for i in 0..lhs.0.len() {
-        let res_0 = lhs.0[i] ^ target.0[i];
-        let res_1 = rhs.0[i] ^ target.0[i];
-
-        if res_0 != res_1 {
-            return res_0 < res_1
-        }
-    }
-    false
-}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
@@ -155,16 +106,14 @@ impl Decodable for Authority {
 }
 
 pub type MessageId = u32;
-pub type NodeAddress = DhtId; // (Address, NodeTag)
-pub type GroupAddress = DhtId; // (Address, GroupTag)
+pub type NodeAddress = NameType; // (Address, NodeTag)
+pub type GroupAddress = NameType; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
-pub type CloseGroupDifference = (Vec<DhtId>, Vec<DhtId>);
-pub type PmidNode = DhtId;
+pub type PmidNode = NameType;
 pub type PmidNodes = Vec<PmidNode>;
-pub type FilterType = (DhtId, MessageId);
 
 pub trait RoutingTrait {
-  fn get_name(&self)->DhtId;
+  fn get_name(&self)->NameType;
   fn get_owner(&self)->Vec<u8>;
   fn refresh(&self)->bool;
   fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
@@ -172,17 +121,8 @@ pub trait RoutingTrait {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
-  pub name : Vec<u8>,
+  pub name : NameType,
   pub type_id : u32
-}
-
-impl NameAndTypeId {
-    pub fn generate_random() -> NameAndTypeId {
-        NameAndTypeId {
-            name: generate_random_vec_u8(64),
-            type_id: random::<u32>(),
-        }
-    }
 }
 
 impl Encodable for NameAndTypeId {
@@ -199,6 +139,8 @@ impl Decodable for NameAndTypeId {
   }
 }
 
+pub type FilterType = (NameType, MessageId);
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct Signature {
   pub signature : Vec<u8>
@@ -207,13 +149,9 @@ pub struct Signature {
 impl Signature {
   pub fn new(signature : crypto::sign::Signature) -> Signature {
     assert_eq!(signature.0.len(), 32);
-    Signature{
+    Signature {
       signature : signature.0.to_vec()
     }
-  }
-
-  pub fn generate_random() -> Signature {
-      Signature { signature: generate_random_vec_u8(32) }
   }
 
   pub fn get_crypto_signature(&self) -> crypto::sign::Signature {
@@ -235,7 +173,7 @@ impl Decodable for Signature {
   }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct PublicSignKey {
   pub public_sign_key : Vec<u8>
 }
@@ -248,14 +186,17 @@ impl PublicSignKey {
     }
   }
 
-  pub fn generate_random() -> PublicSignKey {
-      PublicSignKey { public_sign_key: generate_random_vec_u8(32) }
-  }
-
   pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
     crypto::sign::PublicKey(vector_as_u8_32_array(self.public_sign_key.clone()))
   }
 }
+
+impl fmt::Debug for PublicSignKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PublicSignKey(...)")
+    }
+}
+
 
 impl Encodable for PublicSignKey {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
@@ -283,10 +224,6 @@ impl PublicKey {
     }
   }
 
-  pub fn generate_random() -> PublicKey {
-    PublicKey { public_key: generate_random_vec_u8(32) }
-  }
-
   pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
     crypto::asymmetricbox::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
   }
@@ -311,11 +248,10 @@ pub struct PublicPmid {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
   pub validation_token: Signature,
-  pub name: DhtId
+  pub name: NameType
 }
 
 impl PublicPmid {
-
     pub fn new(pmid : &Pmid) -> PublicPmid {
       PublicPmid {
         public_key : pmid.get_public_key(),
@@ -324,18 +260,11 @@ impl PublicPmid {
         name : pmid.get_name()
       }
     }
-    pub fn generate_random() -> PublicPmid {
-      PublicPmid {
-        public_key : PublicKey::generate_random(),
-        public_sign_key : PublicSignKey::generate_random(),
-        validation_token : Signature::generate_random(),
-        name : DhtId::generate_random()
-      }
-    }
+
 }
 
 impl RoutingTrait for PublicPmid {
-  fn get_name(&self) -> DhtId { self.name.clone() }
+  fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
 
@@ -369,11 +298,11 @@ pub struct Pmid {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
   validation_token: Signature,
-  name: DhtId
+  name: NameType
 }
 
 impl RoutingTrait for Pmid {
-  fn get_name(&self) -> DhtId { self.name.clone() }
+  fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
 
@@ -406,7 +335,7 @@ impl Pmid {
       public_keys : (pub_sign_key, pub_asym_key),
       secret_keys : (sec_sign_key, sec_asym_key),
       validation_token : validation_token,
-      name : DhtId(digest.0.to_vec())
+      name : NameType::new(digest.0)
     }
   }
 
@@ -435,7 +364,7 @@ impl Pmid {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct AccountTransferInfo {
-  pub name : DhtId
+  pub name : NameType
 }
 
 impl Encodable for AccountTransferInfo {
@@ -453,7 +382,7 @@ impl Decodable for AccountTransferInfo {
 }
 
 impl RoutingTrait for AccountTransferInfo {
-  fn get_name(&self)->DhtId { self.name.clone() }
+  fn get_name(&self)->NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { true } // TODO is this an account transfer type
 
@@ -464,19 +393,9 @@ impl RoutingTrait for AccountTransferInfo {
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {
-  pub from_node : DhtId,
-  pub from_group : Option<DhtId>,
-  pub reply_to : Option<DhtId>
-}
-
-impl SourceAddress {
-    pub fn generate_random() -> SourceAddress {
-        SourceAddress {
-            from_node: DhtId::generate_random(),
-            from_group: None,
-            reply_to: None,
-        }
-    }
+  pub from_node : NameType,
+  pub from_group : Option<NameType>,
+  pub reply_to : Option<NameType>
 }
 
 impl Encodable for SourceAddress {
@@ -496,8 +415,8 @@ impl Decodable for SourceAddress {
 /// Address of the destination of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct DestinationAddress {
-  pub dest : DhtId,
-  pub reply_to : Option<DhtId>
+  pub dest : NameType,
+  pub reply_to : Option<NameType>
 }
 
 impl Encodable for DestinationAddress {
@@ -542,6 +461,7 @@ mod test {
   use super::*;
   use rand::random;
   use rustc_serialize::{Decodable, Encodable};
+  use test_utils::Random;
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];
@@ -560,16 +480,6 @@ mod test {
   }
 
   #[test]
-  fn dhtid_from_data() {
-    use rustc_serialize::hex::ToHex;
-    let data = "this is a known string".to_string().into_bytes();
-    let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
-                         e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
-                         ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
-    assert_eq!(&expected_name, &DhtId::from_data(&data).0.to_hex());
-  }
-
-  #[test]
   fn test_authority() {
     test_object(Authority::ClientManager);
     test_object(Authority::NaeManager);
@@ -581,12 +491,13 @@ mod test {
 
   #[test]
   fn test_destination_address() {
-    test_object(DestinationAddress { dest: DhtId::generate_random(), reply_to: None });
+    test_object(DestinationAddress { dest: Random::generate_random(), reply_to: None });
   }
 
   #[test]
   fn test_source_address() {
-    test_object(SourceAddress { from_node : DhtId::generate_random(),
+
+    test_object(SourceAddress { from_node : Random::generate_random(),
                                 from_group : None,
                                 reply_to: None });
   }

@@ -22,20 +22,12 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetClientKeyResponse {
-  pub address : types::DhtId,
+  pub address : NameType,
   pub public_sign_key : types::PublicSignKey
-}
-
-impl GetClientKeyResponse {
-    pub fn generate_random() -> GetClientKeyResponse {
-        GetClientKeyResponse {
-            address: types::DhtId::generate_random(),
-            public_sign_key: types::PublicSignKey::generate_random(),
-        }
-    }
 }
 
 impl Encodable for GetClientKeyResponse {
@@ -55,11 +47,12 @@ impl Decodable for GetClientKeyResponse {
 #[cfg(test)]
 mod test {
     use super::*;
-    use cbor; 
-    
+    use cbor;
+    use test_utils::Random;
+
     #[test]
     fn get_client_key_response_serialisation() {
-        let obj_before = GetClientKeyResponse::generate_random();
+        let obj_before : GetClientKeyResponse = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

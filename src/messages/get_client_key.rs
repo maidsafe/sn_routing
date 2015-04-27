@@ -18,21 +18,12 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
-use types;
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetClientKey {
-  pub requester_id : types::DhtId,
-  pub target_id : types::DhtId,
-}
-
-impl GetClientKey {
-    pub fn generate_random() -> GetClientKey {
-        GetClientKey {
-            requester_id: types::DhtId::generate_random(),
-            target_id: types::DhtId::generate_random(),
-        }
-    }
+  pub requester_id : NameType,
+  pub target_id : NameType,
 }
 
 impl Encodable for GetClientKey {
@@ -53,10 +44,11 @@ impl Decodable for GetClientKey {
 mod test {
     use super::*;
     use cbor;
-    
+    use test_utils::Random;
+
     #[test]
     fn get_client_serialisation() {
-        let obj_before = GetClientKey::generate_random();
+        let obj_before : GetClientKey = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

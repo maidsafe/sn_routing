@@ -51,33 +51,39 @@ Steps to compile SQLite by,
 - [x] Test message types
 - [x] Implement Get Put Post messages
 - [x] Version 0.0.8
-- [ ] Test client node
-- [ ] Test basic facade (normal DHT Get Put with republish)
-- [ ] Move bootstrap out of routing
+- [x] Move bootstrap out of routing
 - [ ] Complete Client Interface (Facade)
-- [ ] Complete Routing Node Interface to accomodate churn
-- [ ] Add caching to node interface
+- [x] Complete Routing Node Interface to accomodate churn
+- [x] Add caching to node interface
 - [ ] Implement routing node (100%)
-- [ ] Implement PUT in routing
 - [ ] Handle PMID Caching
-- [ ] Split Message handling
-- [ ] Check Authority (see Jira 954)
+- [ ] Handle Cache / Get / Check calls
+- [ ] Split Messages and  handle message
+  - [ ] GetData HandleGetData
+  - [ ] GetDataResponse HandleGetDataResponse 
+  - [ ] GetClientKey HandleGetClientKey 
+  - [ ] GetClientKeyResponse HandleGetClientKeyResponse 
+  - [ ] GetGroupKey HandleGetGroupKey 
+  - [ ] GetGroupKeyResponse HandleGetGroupKeyResponse 
+  - [ ] Post HandlePost 
+  - [ ] PostResponse HandlePostResponse 
+  - [ ] PutData HandlePutData 
+  - [ ] PutDataResponse HandlePutDataResponse 
+  - [ ] PutKey HandlePutKey 
+  - [ ] AccountTransfer HandleAccountTransfer 
 - [ ] Implement routing connections management
 - [ ] Sentinel:
-  - [ ] Handover existing implementation
+  - [x] Handover existing implementation
   - [ ] Account transfer merge
   - [ ] Group response merge
   - [ ] Signature checks
   - [ ] QA Sentinel including code review from system design perspective
+- [ ] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
 - [ ] Examples:
+  - [ ] zero state network
   - [ ] Routing Node with type erased cache
   - [ ] Routing Client accepting key, value as string for GET/PUT
   - [ ] Local Network Test. 12 Linux, 2 OSX, 2 WIN
   - [ ] 101 Droplet test
-- [ ] zero state network
-- [ ] Test node network (process on single machine)
-- [ ] Test node network (local area network (12 linux 2 OSX 2 Win)
-- [ ] Test node network (across digital ocean images (256 nodes)
-- [ ] Version 0.1 (crates.io)
+- [ ] Version 0.1.5 (crates.io)
 - [ ] Address re-location (security essential)
-- [ ] Implement NAT traversal (requires crust v0.1.0)

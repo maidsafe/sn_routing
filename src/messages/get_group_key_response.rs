@@ -20,25 +20,44 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use frequency::{Frequency};
 
 use types;
+use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetGroupKeyResponse {
   pub target_id : types::GroupAddress,
-  pub public_sign_keys : Vec<(types::DhtId, types::PublicSignKey)>
+  pub public_sign_keys : Vec<(NameType, types::PublicSignKey)>
 }
 
 impl GetGroupKeyResponse {
-    pub fn generate_random() -> GetGroupKeyResponse {
-        let mut vec: Vec<(types::DhtId, types::PublicSignKey)> = Vec::with_capacity(30);
-        for i in 0..30 {
-            vec.push((types::DhtId::generate_random(), types::PublicSignKey::generate_random()));
+
+    pub fn merge(get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
+        type Key = (NameType, types::PublicSignKey);
+
+        if get_group_key_responses.is_empty() {
+            return None;
         }
-        GetGroupKeyResponse {
-            target_id: types::DhtId::generate_random(),
-            public_sign_keys: vec,
+
+        let mut frequency = Frequency::new();
+
+        for response in get_group_key_responses {
+          for public_sign_key in &response.public_sign_keys {
+              frequency.update(public_sign_key.clone());
+          }
         }
+
+        let merged_group = frequency.sort_by_highest().iter()
+                           .take(types::GROUP_SIZE as usize)
+                           .map(|&(ref k, _)| k.clone())
+                           .collect();
+
+        // FIXME: How should we merge the target_id?
+        let target_id = get_group_key_responses[0].target_id.clone();
+
+        Some(GetGroupKeyResponse{target_id        : target_id,
+                                 public_sign_keys : merged_group})
     }
 }
 
@@ -58,12 +77,15 @@ impl Decodable for GetGroupKeyResponse {
 
 #[cfg(test)]
 mod test {
+    use types;
     use super::*;
-    use cbor; 
-    
+    use cbor;
+    use NameType;
+    use test_utils::Random;
+
     #[test]
     fn get_group_key_response_serialisation() {
-        let obj_before = GetGroupKeyResponse::generate_random();
+        let obj_before : GetGroupKeyResponse = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
@@ -72,5 +94,46 @@ mod test {
         let obj_after: GetGroupKeyResponse = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
+    }
+
+    #[test]
+    fn merge() {
+        let obj : GetGroupKeyResponse = Random::generate_random();
+        assert!(obj.public_sign_keys.len() >= types::GROUP_SIZE as usize);
+        // if group size changes, reimplement the below
+        assert!(types::GROUP_SIZE >= 13);
+
+        // pick random keys
+        let mut keys = Vec::<(NameType, types::PublicSignKey)>::new();
+        keys.push(obj.public_sign_keys[3].clone());
+        keys.push(obj.public_sign_keys[5].clone());
+        keys.push(obj.public_sign_keys[7].clone());
+        keys.push(obj.public_sign_keys[8].clone());
+        keys.push(obj.public_sign_keys[9].clone());
+        keys.push(obj.public_sign_keys[10].clone());
+        keys.push(obj.public_sign_keys[13].clone());
+
+        let mut responses = Vec::<GetGroupKeyResponse>::new();
+        let target_id = obj.target_id.clone();
+        responses.push(obj);
+        for _ in 0..4 {
+            let mut response = GetGroupKeyResponse::generate_random();
+            response.target_id = target_id.clone();
+            response.public_sign_keys[1] = keys[0].clone();
+            response.public_sign_keys[4] = keys[1].clone();
+            response.public_sign_keys[6] = keys[2].clone();
+            response.public_sign_keys[0] = keys[3].clone();
+            response.public_sign_keys[5] = keys[4].clone();
+            response.public_sign_keys[9] = keys[5].clone();
+            response.public_sign_keys[10] = keys[6].clone();
+            responses.push(response);
+        }
+
+        let merged_obj = GetGroupKeyResponse::merge(&responses);
+        assert!(merged_obj.is_some());
+        let merged_response = merged_obj.unwrap();
+        for i in 0..7 {
+            assert!(keys.iter().find(|a| **a == merged_response.public_sign_keys[i]).is_some());
+        }
     }
 }

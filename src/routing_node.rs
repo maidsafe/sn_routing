@@ -1,36 +1,43 @@
 // Copyright 2015 MaidSafe.net limited
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
-// licence you accepted on initial access to the Software (the "Licences").
+//
+// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License, version
+// 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which licence you
+// accepted on initial access to the Software (the "Licences").
+//
 // By contributing code to the MaidSafe Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://www.maidsafe.net/licenses
+// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also available at
+// http://maidsafe.net/licenses
+//
 // Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
-// See the Licences for the specific language governing permissions and limitations relating to
-// use of the MaidSafe
-// Software.
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
+//
+// See the Licences for the specific language governing permissions and limitations relating to use
+// of the MaidSafe Software.
 
-extern crate time;
-
-use sodiumoxide;
-use crust;
-use message_filter::MessageFilter;
-use std::sync::{Arc, mpsc, Mutex};
-use std::sync::mpsc::{Receiver};
-use interface::Interface;
+use cbor::{Decoder, Encoder};
 use rand;
-use std::net::{SocketAddr};
-use std::collections::HashSet;
-use std::collections::HashMap;
-use std::net::{SocketAddrV4, Ipv4Addr};
+use rustc_serialize::{Decodable, Encodable};
+use sodiumoxide;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::sync::{Arc, mpsc, Mutex};
+use std::sync::mpsc::Receiver;
 use time::Duration;
 
+
+
+use crust;
+use crust::Endpoint::Tcp;
+use message_filter::MessageFilter;
+use NameType;
+use name_type::closer_to_target;
+use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
-use types::{DhtId, MessageId, closer_to_target};
+use sendable::Sendable;
 use types;
+use types::{MessageId, RoutingTrait};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -43,46 +50,52 @@ use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::{RoutingMessage, MessageTypeTag};
-use rustc_serialize::{Decodable, Encodable};
-use cbor::{Encoder, Decoder};
+use super::RoutingError;
 
-use types::RoutingTrait;
-
-use crust::Endpoint::Tcp;
 type ConnectionManager = crust::ConnectionManager;
-type Event             = crust::Event;
-type Endpoint          = crust::Endpoint;
-type PortAndProtocol   = crust::Port;
-type Bytes             = Vec<u8>;
-
+type Event = crust::Event;
+pub type Endpoint = crust::Endpoint;
+type PortAndProtocol = crust::Port;
+type Bytes = Vec<u8>;
 type RecvResult = Result<(),()>;
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
     interface: Arc<Mutex<F>>,
     pmid: types::Pmid,
-    own_id: DhtId,
+    own_id: NameType,
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
     pending_connections: HashSet<Endpoint>,
-    all_connections: (HashMap<Endpoint, DhtId>, HashMap<DhtId, Endpoint>),
+    all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
     routing_table: RoutingTable,
     accepting_on: Option<Vec<Endpoint>>,
+    listening_for_broadcasts_on_port: Option<u16>,
     next_message_id: MessageId,
     bootstrap_node_id: Option<Endpoint>,
     filter: MessageFilter<types::FilterType>,
 }
 
 impl<F> RoutingNode<F> where F: Interface {
-    pub fn new(id: DhtId, my_interface: F) -> RoutingNode<F> {
-        sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
+    pub fn new(my_interface: F) -> RoutingNode<F> {
+        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
         let cm = crust::ConnectionManager::new(event_output);
-        // TODO : Default Protocol and Port need to be passed down
+        // TODO: Default Protocol and Port need to be passed down
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-        let accepting_on = cm.start_listening(ports_and_protocols).ok();
+        // TODO: Beacon port should be passed down
+        let beacon_port = Some(5483u16);
+        let listeners = match cm.start_listening(ports_and_protocols, beacon_port) {
+            Err(reason) => {
+                println!("Failed to start listening: {:?}", reason);
+                (None, None)
+            }
+            Ok(listeners_and_beacon) => {
+                (Some(listeners_and_beacon.0), listeners_and_beacon.1)
+            }
+        };
 
         RoutingNode { interface: Arc::new(Mutex::new(my_interface)),
                       pmid : pmid,
@@ -90,34 +103,37 @@ impl<F> RoutingNode<F> where F: Interface {
                       event_input: event_input,
                       connection_manager: cm,
                       pending_connections : HashSet::new(),
-                      all_connections: (HashMap::new(), HashMap::new()),
+                      all_connections: (HashMap::new(), BTreeMap::new()),
                       routing_table : RoutingTable::new(own_id),
-                      accepting_on: accepting_on,
+                      accepting_on: listeners.0,
+                      listening_for_broadcasts_on_port: listeners.1,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20))
                     }
     }
 
-    pub fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
-        self.accepting_on.clone().and_then(|endpoints| {
-            Some(endpoints)
-        })
-    }
-
-    /// Retreive something from the network (non mutating) - Direct call
-    pub fn get(&self, type_id: u64, name: DhtId) { unimplemented!()}
+    /// Retrieve something from the network (non mutating) - Direct call
+    pub fn get(&self, type_id: u64, name: NameType) { unimplemented!() }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
+    pub fn put<T>(&self, destination: NameType, content: T) where T: Sendable { unimplemented!() }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
-    pub fn post(&self, name: DhtId, content: Vec<u8>) { unimplemented!() }
+    pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
 
-    pub fn add_bootstrap(&mut self, endpoint: crust::Endpoint) {
-        self.pending_connections.insert(endpoint.clone());
-        let endpoints = vec![endpoint];
-        let _ = self.connection_manager.connect(endpoints);
+    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
+                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
+        match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
+            Err(reason) => {
+                println!("Failed to bootstrap: {:?}", reason);
+                Err(RoutingError::FailedToBootstrap)
+            }
+            Ok(bootstrapped_to) => {
+                self.bootstrap_node_id = Some(bootstrapped_to);
+                Ok(())
+            }
+        }
     }
 
     pub fn run(&mut self) {
@@ -144,9 +160,15 @@ impl<F> RoutingNode<F> where F: Interface {
                 // },
                 crust::Event::LostConnection(endpoint) => {
                     self.handle_lost_connection(endpoint);
-                },
+                }
             }
         }
+    }
+
+    fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
+        self.accepting_on.clone().and_then(|endpoints| {
+            Some(endpoints)
+        })
     }
 
     fn next_endpoint_pair(&self) -> Option<(Vec<Endpoint>, Vec<Endpoint>)> {
@@ -171,7 +193,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let _ = self.connection_manager.send(peer_endpoint, msg);
     }
 
-    fn handle_accept(&mut self, peer_endpoint: Endpoint, peer_id: DhtId, bytes: Bytes) {
+    fn handle_accept(&mut self, peer_endpoint: Endpoint, peer_id: NameType, bytes: Bytes) {
         // println!("In handle accept of {:?}", self.own_id);
         if self.all_connections.0.contains_key(&peer_endpoint) ||
            !self.pending_connections.contains(&peer_endpoint) {
@@ -214,7 +236,7 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn message_received(&mut self, peer_id: &DhtId, serialised_message: Bytes) -> RecvResult {
+    fn message_received(&mut self, peer_id: &NameType, serialised_message: Bytes) -> RecvResult {
         // Parse
         let msg = self.decode::<RoutingMessage>(&serialised_message);
 
@@ -426,7 +448,7 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn our_group_address(&self, group_id: DhtId) -> types::SourceAddress {
+    fn our_group_address(&self, group_id: NameType) -> types::SourceAddress {
         types::SourceAddress{ from_node: self.own_id.clone(), from_group: Some(group_id.clone()),
                                 reply_to: None }
     }
@@ -479,7 +501,7 @@ impl<F> RoutingNode<F> where F: Interface {
         return connect_success
     }
 
-    fn construct_connect_request_msg(&mut self, peer_id: &DhtId) -> RoutingMessage {
+    fn construct_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingMessage {
         let header = MessageHeader {
             message_id:  self.get_next_message_id(),
             destination: types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
@@ -546,7 +568,7 @@ impl<F> RoutingNode<F> where F: Interface {
         current
     }
 
-    fn send_swarm_or_parallel(&self, target: &DhtId, serialised_message: &Bytes) {
+    fn send_swarm_or_parallel(&self, target: &NameType, serialised_message: &Bytes) {
         for peer in self.get_connected_target(target) {
             if self.all_connections.1.contains_key(&peer.id) {
                 let res = self.connection_manager.send(self.all_connections.1.get(&peer.id).unwrap().clone(),
@@ -558,14 +580,14 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn get_connected_target(&self, target: &DhtId) -> Vec<NodeInfo> {
+    fn get_connected_target(&self, target: &NameType) -> Vec<NodeInfo> {
         let mut nodes = self.routing_table.target_nodes(target.clone());
         //println!("{:?} get_connected_target routing_table.size:{} target:{:?} -> {:?}", self.own_id, self.routing_table.size(), target, nodes);
         nodes.retain(|x| { x.connected });
         nodes
     }
 
-    fn address_in_close_group_range(&self, address: &DhtId) -> bool {
+    fn address_in_close_group_range(&self, address: &NameType) -> bool {
         if self.routing_table.size() < RoutingTable::get_group_size() {
             return true;
         }
@@ -574,14 +596,15 @@ impl<F> RoutingNode<F> where F: Interface {
         closer_to_target(&address, &self.routing_table.our_close_group().pop().unwrap().id, &self.own_id)
     }
 
-    pub fn id(&self) -> DhtId { self.own_id.clone() }
+    pub fn id(&self) -> NameType { self.own_id.clone() }
 }
 
 #[cfg(test)]
 mod test {
     //use routing_node::{RoutingNode};
-    use interface::*;
-    use types::{Authority, DhtId, DestinationAddress};
+    use node_interface::*;
+    use types::{Authority, DestinationAddress};
+    use name_type::NameType;
     use super::super::{Action, RoutingError};
     //use std::thread;
     //use std::net::{SocketAddr};
@@ -590,15 +613,42 @@ mod test {
     struct NullInterface;
 
     impl Interface for NullInterface {
-      fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: DhtId , data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                    from_address: DhtId, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: DhtId, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_get_response(&mut self, from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_put_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_post_response(&mut self, from_authority: Authority,from_address: DhtId , response: Result<Vec<u8>, RoutingError>) { }
-      fn add_node(&mut self, node: DhtId) {}
-      fn drop_node(&mut self, node: DhtId) {}
+        fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
+                    from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
+        fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                    from_address: NameType, dest_address: DestinationAddress,
+                    data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
+        fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
+                       from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
+        fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
+                               RoutingError>) {
+            unimplemented!();
+        }
+        fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
+                               response: Result<Vec<u8>, RoutingError>) {
+            unimplemented!();
+        }
+        fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
+                                response: Result<Vec<u8>, RoutingError>) {
+            unimplemented!();
+        }
+        fn handle_churn(&mut self) {
+            unimplemented!();
+        }
+        fn handle_cache_get(&mut self, type_id: u64, from_authority: Authority,
+                            from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
+        fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
+                            data: Vec<u8>) -> Result<Action, RoutingError> {
+            Err(RoutingError::Success)
+        }
     }
 
     //#[test]
@@ -606,9 +656,9 @@ mod test {
     //    let f1 = NullInterface;
     //    let f2 = NullInterface;
     //    let f3 = NullInterface;
-    //    let n1 = RoutingNode::new(DhtId::generate_random(), f1);
-    //    let n2 = RoutingNode::new(DhtId::generate_random(), f2);
-    //    let n3 = RoutingNode::new(DhtId::generate_random(), f3);
+    //    let n1 = RoutingNode::new(NameType::generate_random(), f1);
+    //    let n2 = RoutingNode::new(NameType::generate_random(), f2);
+    //    let n3 = RoutingNode::new(NameType::generate_random(), f3);
 
     //    println!("{:?}->Alice", n1.id());
     //    println!("{:?}->Betty", n2.id());
