@@ -82,7 +82,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
-        let cm = crust::ConnectionManager::new(event_output);
+        let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
         // TODO: Beacon port should be passed down
@@ -643,6 +643,7 @@ impl<F> RoutingNode<F> where F: Interface {
 mod test {
     //use routing_node::{RoutingNode};
     use super::*;
+    use generic_sendable_type;
     use node_interface::*;
     use types::{Pmid, Authority, DestinationAddress};
     use name_type::NameType;
@@ -679,7 +680,8 @@ mod test {
                                 response: Result<Vec<u8>, RoutingError>) {
             unimplemented!();
         }
-        fn handle_churn(&mut self) {
+        fn handle_churn(&mut self, close_group: Vec<NameType>)
+            -> Vec<(NameType, generic_sendable_type::GenericSendableType)> {
             unimplemented!();
         }
         fn handle_cache_get(&mut self, type_id: u64, from_authority: Authority,
@@ -694,7 +696,6 @@ mod test {
 
     #[test]
     fn our_authority_full_routing_table() {
-        let our_pmid = Pmid::new();
         let mut routing_node = RoutingNode::new(NullInterface);
     }
 
