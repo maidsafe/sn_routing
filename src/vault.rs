@@ -20,7 +20,7 @@ use routing;
 use routing::{Action, RoutingError, NameType};
 use routing::types::{Authority, DestinationAddress};
 
-use data_manager::{ DataManager, DataManagerAccount };
+use data_manager::{ DataManager };
 use maid_manager::{ MaidManager, MaidManagerAccount };
 use pmid_manager::{ PmidManager, PmidManagerAccount };
 use pmid_node::PmidNode;
@@ -33,7 +33,8 @@ pub struct VaultFacade {
   pmid_manager : PmidManager,
   pmid_node : PmidNode,
   version_handler : VersionHandler,
-  nodes_in_table : Vec<NameType>
+  nodes_in_table : Vec<NameType>,
+  // routing_node: routing::routing_node::RoutingNode<VaultFacade>,
 }
 
 impl Clone for VaultFacade {
@@ -99,11 +100,13 @@ impl routing::node_interface::Interface for VaultFacade {
   }
 
   fn handle_churn(&mut self) {
-    let dm: Vec<DataManagerAccount> = self.data_manager.retrieve_all_and_reset();
-    let mm: Vec<(NameType, MaidManagerAccount)> = self.maid_manager.retrieve_all_and_reset();
-    let pm: Vec<(NameType, PmidManagerAccount)> = self.pmid_manager.retrieve_all_and_reset();
-    // TODO Pass data to routing node as Sendable
-    //let route_node = routing_node.unwrap();
+    let dm = self.data_manager.retrieve_all_and_reset();
+    let mm = self.maid_manager.retrieve_all_and_reset();
+    let pm = self.pmid_manager.retrieve_all_and_reset();
+
+    for it in dm.iter().chain(mm.iter().chain(pm.iter())) {
+        // self.routing_node.put(it.0, it.1);
+    }
   }
 
 }
