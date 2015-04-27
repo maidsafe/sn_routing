@@ -105,10 +105,10 @@ impl routing::node_interface::Interface for VaultFacade {
         let mut vh = self.version_handler.retrieve_all_and_reset();
 
         let mut return_val = Vec::<(routing::NameType, routing::generic_sendable_type::GenericSendableType)>::with_capacity(dm.len() + mm.len() + pm.len() + vh.len());
-        return_val.append(dm);
-        return_val.append(mm);
-        return_val.append(pm);
-        return_val.append(vh);
+
+        for it in dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))) {
+            return_val.push(it);
+        }
 
         return_val
     }
