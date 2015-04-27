@@ -24,7 +24,6 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
 use NameType;
-use frequency::Frequency;
 use std::fmt;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {

@@ -24,7 +24,6 @@ use accumulator;
 use message_header;
 use NameType;
 use types;
-use types::RoutingTrait;
 use frequency::Frequency;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
@@ -731,30 +730,31 @@ mod test {
       let collect_response_messages = generate_messages(headers_response, response_tag,
           &serialised_message_response, &mut message_tracker);
 
-    for message in collect_messages {
-      sentinel_returns.push((message.index,
-                             sentinel.add(message.header,
-                                          message.tag,
-                                          message.serialised_message)));
-    }
-    assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
-    assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
-    assert_eq!(false, verify_exactly_one_response(&sentinel_returns));
+      for message in collect_messages {
+        sentinel_returns.push((message.index,
+                               sentinel.add(message.header,
+                                            message.tag,
+                                            message.serialised_message)));
+      }
+      assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
+      assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
+      assert_eq!(false, verify_exactly_one_response(&sentinel_returns));
 
-    for message in collect_response_messages {
-      sentinel_returns.push((message.index,
-                            sentinel.add(message.header,
-                                         message.tag,
-                                         message.serialised_message)));
+      for message in collect_response_messages {
+        sentinel_returns.push((message.index,
+                              sentinel.add(message.header,
+                                           message.tag,
+                                           message.serialised_message)));
+      }
+      assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
+      assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
+      assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
+      assert_eq!(1, get_selected_sentinel_returns(&mut sentinel_returns,
+                      &mut vec![(types::GROUP_SIZE + types::QUORUM_SIZE) as u64]).len());
     }
-    assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
-    assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
-    assert_eq!(true, verify_exactly_one_response(&sentinel_returns));
-    assert_eq!(1, get_selected_sentinel_returns(&mut sentinel_returns,
-                    &mut vec![(types::GROUP_SIZE + types::QUORUM_SIZE) as u64]).len());
-    }
-  assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
-  assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
+
+    assert_eq!(0, trace_get_keys.count_get_client_key_calls(&signature_group.get_group_address()));
+    assert_eq!(1, trace_get_keys.count_get_group_key_calls(&signature_group.get_group_address()));
   }
 
   #[test]
