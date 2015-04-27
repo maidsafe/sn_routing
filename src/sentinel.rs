@@ -280,21 +280,16 @@ impl<'a> Sentinel<'a> {
 
         // if part addresses non-account transfer message types, where an exact match is required
         } else {
-            for index in 0..verified_messages.len() {
-                let serialised_message = verified_messages[index].2.clone();
-                let mut count = 0;
-                for message in verified_messages.iter() {
-                    if message.2 == serialised_message {
-                      // TODO(ben 2015-04-9) FIX ERROR: overcounts, currently not a problem
-                      count = count + 1;
-                    }
-                }
-                if count > types::QUORUM_SIZE {
-                    return Some(verified_messages[index].clone());
-                }
-            }
+            let msg_bodies = verified_messages.iter()
+                             .map(|&(_, _, ref body)| body.clone())
+                             .collect::<Vec<_>>();
+
+            return take_most_frequent(&msg_bodies, types::QUORUM_SIZE as usize).map(|merged| {
+                (verified_messages[0].0.clone(),
+                 verified_messages[0].1.clone(),
+                 merged)
+            });
         }
-        None
     }
 }
 
