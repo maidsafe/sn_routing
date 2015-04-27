@@ -150,127 +150,130 @@ pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bo
     false
 }
 
-// Test fail because of the change in the routing interface
-// Code has been refactored to support the recent interface changes.
-//#[cfg(test)]
-// mod test {
-//   use super::*;
-//   use data_manager;
-//   use routing;
-//   use cbor;
-//   use maidsafe_types;
-//   use maidsafe_types::{PayloadTypeTag, Payload};
-//   use routing::types:: { Authority, DestinationAddress };   
-//   use routing::NameType;
-//   use routing::test_utils::Random;
-//   use routing::node_interface::Interface;
-//   use routing::sendable::Sendable;
-//
-//   #[test]
-//   fn put_get_flow() {
-//     let mut vault = VaultFacade::new();
 
-//     let name = NameType([3u8; 64]);
-//    let value = routing::types::generate_random_vec_u8(1024);
-//     let data = maidsafe_types::ImmutableData::new(value);
-//     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
-//     let mut encoder = cbor::Encoder::from_memory();
-//     let encode_result = encoder.encode(&[&payload]);
-//     assert_eq!(encode_result.is_ok(), true);
+#[cfg(test)]
+ mod test {
+    use super::*;
+    use data_manager;
+    use routing;
+    use cbor;
+    use maidsafe_types;
+    use maidsafe_types::{PayloadTypeTag, Payload};
+    use routing::types:: { Authority, DestinationAddress };   
+    use routing::NameType;
+    use routing::test_utils::Random;
+    use routing::node_interface::Interface;
+    use routing::sendable::Sendable;
 
-//     { // MaidManager, shall allowing the put and SendOn to DataManagers around name
-//       let from = NameType::new([1u8; 64]);
-//       // TODO : in this stage, dest can be populated as anything ?
-//       let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
-//       let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
-//                                         routing::types::array_as_vector(encoder.as_bytes()));
-//       assert_eq!(put_result.is_err(), false);
-//       match put_result.ok().unwrap() {
-//         routing::Action::SendOn(ref x) => {
-//           assert_eq!(x.len(), 1);
-//           assert_eq!(x[0], NameType([3u8; 64]));
-//         }
-//         routing::Action::Reply(x) => panic!("Unexpected"),
-//       }
-//     }
-//     let nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
-//                               NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
-//     // Add node removed from interface 
-     //for node in nodes_in_table.iter() {
-     //  vault.add_node(node.clone());
-     //}     
-//     { // DataManager, shall SendOn to pmid_nodes
-//       let from = NameType::new([1u8; 64]);
-//       // TODO : in this stage, dest can be populated as anything ?
-//       let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
-//       let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
-//                                         routing::types::array_as_vector(encoder.as_bytes()));
-//       assert_eq!(put_result.is_err(), false);
-//       match put_result.ok().unwrap() {
-//         routing::Action::SendOn(ref x) => {
-//           assert_eq!(x.len(), data_manager::PARALLELISM);
-//           assert_eq!(x[0], NameType([3u8; 64]));
-//           assert_eq!(x[1], NameType([2u8; 64]));
-//           assert_eq!(x[2], NameType([1u8; 64]));
-//           assert_eq!(x[3], NameType([7u8; 64]));
-//         }
-//         routing::Action::Reply(x) => panic!("Unexpected"),
-//       }
-//       let from = NameType::new([1u8; 64]);
-//       let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::NaeManager,
-//                                         Authority::Client, from, data.name().0.to_vec());
-//       assert_eq!(get_result.is_err(), false);
-//       match get_result.ok().unwrap() {
-//         routing::Action::SendOn(ref x) => {
-//           assert_eq!(x.len(), data_manager::PARALLELISM);
-//           assert_eq!(x[0], NameType([3u8; 64]));
-//           assert_eq!(x[1], NameType([2u8; 64]));
-//           assert_eq!(x[2], NameType([1u8; 64]));
-//           assert_eq!(x[3], NameType([7u8; 64]));
-//         }
-//         routing::Action::Reply(x) => panic!("Unexpected"),
-//       }
-//     }
-//     { // PmidManager, shall put to pmid_nodes
-//       let from = NameType::new([3u8; 64]);
-//       let dest = DestinationAddress{ dest : NameType::new([7u8; 64]), reply_to: None };
-//       let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager, from, dest,
-//                                         routing::types::array_as_vector(encoder.as_bytes()));
-//       assert_eq!(put_result.is_err(), false);
-//       match put_result.ok().unwrap() {
-//         routing::Action::SendOn(ref x) => {
-//           assert_eq!(x.len(), 1);
-//           assert_eq!(x[0], NameType([7u8; 64]));
-//         }
-//         routing::Action::Reply(x) => panic!("Unexpected"),
-//       }
-//     }
-//     { // PmidNode stores/retrieves data
-//       let from = NameType::new([7u8; 64]);
-//       let dest = DestinationAddress{ dest : NameType::new([6u8; 64]), reply_to: None };
-//       let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager, from, dest,
-//                                         routing::types::array_as_vector(encoder.as_bytes()));
-//       assert_eq!(put_result.is_err(), true);
-//       match put_result.err().unwrap() {
-//         routing::RoutingError::Success => { }
-//         _ => panic!("Unexpected"),
-//       }
-//       let from = NameType::new([7u8; 64]);
-//       let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::ManagedNode,
-//                                         Authority::NodeManager, from, [3u8; 64].to_vec());
-//       assert_eq!(get_result.is_err(), false);
-//       match get_result.ok().unwrap() {
-//         routing::Action::Reply(ref x) => {
-//             let mut d = cbor::Decoder::from_bytes(&x[..]);
-//             let payload_retrieved: Payload = d.decode().next().unwrap().unwrap();
-//             assert_eq!(payload_retrieved.get_type_tag(), PayloadTypeTag::ImmutableData);
-//             let data_retrieved = payload_retrieved.get_data::<maidsafe_types::ImmutableData>();
-//             assert_eq!(data.name().0.to_vec(), data_retrieved.name().0.to_vec());
-//             assert_eq!(data.serialised_contents(), data_retrieved.serialised_contents());
-//         },
-//           _ => panic!("Unexpected"),
-//       }
-//     }
-//   }
+    fn array_as_vector_u8(array : [u8;64]) -> Vec<u8> {
+        let mut vec = Vec::with_capacity(array.len());
+        for i in array.iter() {
+          vec.push(*i);
+        }
+        vec
+    }
 
-// }
+    #[test]
+    fn put_get_flow() {
+        let mut vault = VaultFacade::new();
+
+        let name = NameType([3u8; 64]);
+        let value = routing::types::generate_random_vec_u8(1024);
+        let data = maidsafe_types::ImmutableData::new(value);
+        let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+        let mut encoder = cbor::Encoder::from_memory();
+        let encode_result = encoder.encode(&[&payload]);
+        assert_eq!(encode_result.is_ok(), true);
+
+        { // MaidManager, shall allowing the put and SendOn to DataManagers around name
+            let from = NameType::new([1u8; 64]);
+            // TODO : in this stage, dest can be populated as anything ?
+            let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
+            let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
+                                             routing::types::array_as_vector(encoder.as_bytes()));
+            assert_eq!(put_result.is_err(), false);
+            match put_result.ok().unwrap() {
+                routing::Action::SendOn(ref x) => {
+                    assert_eq!(x.len(), 1);
+                    assert_eq!(x[0], data.name());
+                }
+             routing::Action::Reply(x) => panic!("Unexpected"),
+            }
+        }
+        vault.nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
+                               NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];        
+        { // DataManager, shall SendOn to pmid_nodes
+            let from = NameType::new([1u8; 64]);
+            // TODO : in this stage, dest can be populated as anything ?
+            let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
+            let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
+                                             routing::types::array_as_vector(encoder.as_bytes()));
+            assert_eq!(put_result.is_err(), false);
+            match put_result.ok().unwrap() {
+                routing::Action::SendOn(ref x) => {
+                    assert_eq!(x.len(), data_manager::PARALLELISM);
+                    //assert_eq!(x[0], NameType([3u8; 64]));
+                    //assert_eq!(x[1], NameType([2u8; 64]));
+                    //assert_eq!(x[2], NameType([1u8; 64]));
+                    //assert_eq!(x[3], NameType([7u8; 64]));
+                }
+                routing::Action::Reply(x) => panic!("Unexpected"),
+            }
+            let from = NameType::new([1u8; 64]);
+            let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::NaeManager,
+                                             Authority::Client, from, data.name().0.to_vec());
+            assert_eq!(get_result.is_err(), false);
+            match get_result.ok().unwrap() {
+                routing::Action::SendOn(ref x) => {
+                    assert_eq!(x.len(), data_manager::PARALLELISM);
+                    //assert_eq!(x[0], NameType([3u8; 64]));
+                    //assert_eq!(x[1], NameType([2u8; 64]));
+                    //assert_eq!(x[2], NameType([1u8; 64]));
+                    //assert_eq!(x[3], NameType([7u8; 64]));
+                }
+                routing::Action::Reply(x) => panic!("Unexpected"),
+            }
+        }
+        { // PmidManager, shall put to pmid_nodes
+            let from = NameType::new([3u8; 64]);
+            let dest = DestinationAddress{ dest : NameType::new([7u8; 64]), reply_to: None };
+            let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager, from, dest,
+                                         routing::types::array_as_vector(encoder.as_bytes()));
+            assert_eq!(put_result.is_err(), false);
+            match put_result.ok().unwrap() {
+                routing::Action::SendOn(ref x) => {
+                    assert_eq!(x.len(), 1);
+                    assert_eq!(x[0], NameType([7u8; 64]));
+                }
+                routing::Action::Reply(x) => panic!("Unexpected"),
+            }
+        }
+        { // PmidNode stores/retrieves data
+            let from = NameType::new([7u8; 64]);
+            let dest = DestinationAddress{ dest : NameType::new([6u8; 64]), reply_to: None };
+            let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager, from.clone(), dest,
+                                             routing::types::array_as_vector(encoder.as_bytes()));
+            assert_eq!(put_result.is_err(), true);
+            match put_result.err().unwrap() {
+             routing::RoutingError::Success => { }
+             _ => panic!("Unexpected"),
+            }
+            let from = NameType::new([7u8; 64]);
+
+            let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::ManagedNode,
+                                             Authority::NodeManager, from, array_as_vector_u8(data.name().0));
+            assert_eq!(get_result.is_err(), false);
+            match get_result.ok().unwrap() {
+                routing::Action::Reply(ref x) => {
+                    let mut d = cbor::Decoder::from_bytes(&x[..]);
+                    let payload_retrieved: Payload = d.decode().next().unwrap().unwrap();
+                    assert_eq!(payload_retrieved.get_type_tag(), PayloadTypeTag::ImmutableData);
+                    let data_retrieved = payload_retrieved.get_data::<maidsafe_types::ImmutableData>();
+                    assert_eq!(data.name().0.to_vec(), data_retrieved.name().0.to_vec());
+                    assert_eq!(data.serialised_contents(), data_retrieved.serialised_contents());
+                },
+                _ => panic!("Unexpected"),
+            }
+        }
+    }
+}
