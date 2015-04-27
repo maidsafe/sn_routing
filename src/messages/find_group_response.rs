@@ -35,29 +35,36 @@ impl FindGroupResponse {
     // TODO(ben 2015-04-09) to be replaced with a proper merge trait
     //                      for every message type
     pub fn merge(responses : &Vec<FindGroupResponse>) -> Option<FindGroupResponse> {
-        let mut frequency = Frequency::new();
-
         if responses.is_empty() {
             return None;
         }
 
+        let mut freq_target_id = Frequency::new();
         for response in responses {
-            for public_pmid in &response.group {
-                frequency.update(public_pmid.clone());
-            }
+            freq_target_id.update(response.target_id.clone());
         }
-
-        let frequency_count = frequency.sort_by_highest();
-
-        let merged_group = frequency.sort_by_highest().iter()
-                           .take(GROUP_SIZE as usize)
-                           .map(|&(ref k, _)| k.clone())
-                           .collect();
-
-        // FIXME: How should we merge the target_id?
-        let target_id = responses[0].target_id.clone();
-
-        Some(FindGroupResponse{target_id : target_id, group : merged_group})
+        // first identify the target_ids;
+        let target_ids : Vec<NameType> = freq_target_id.sort_by_highest()
+                                       .iter()
+                                       .map(|&(ref id, _ )| id.clone())
+                                       .collect();
+        for target_id in target_ids {
+            let mut freq_public_pmid = Frequency::new();
+            for response in responses.iter()
+                                     .filter(|response| &response.target_id == &target_id) {
+                for public_pmid in &response.group {
+                    freq_public_pmid.update(public_pmid.clone());
+                }
+            }
+            let merged_group : Vec<PublicPmid>
+                             = freq_public_pmid.sort_by_highest().iter()
+                                               .take(GROUP_SIZE as usize)
+                                               .map(|&(ref k, _)| k.clone())
+                                               .collect();
+            if !merged_group.is_empty() {
+                return Some(FindGroupResponse{target_id : target_id, group : merged_group}); };
+        }
+        return None;
     }
 }
 
