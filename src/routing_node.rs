@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License, version
-// 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which licence you
-// accepted on initial access to the Software (the "Licences").
+// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
+// licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the MaidSafe Software, or to this project generally, you agree to be
+// By contributing code to the Safe Network Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also available at
-// http://maidsafe.net/licenses
+// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
+// available at: http://maidsafe.net/network-platform-licensing
 //
-// Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
+// OF ANY KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to use
-// of the MaidSafe Software.
+// Please review the Licences for the specific language governing permissions and limitations relating to
+// use of the Safe Network Software.
 
 use cbor::{Decoder, Encoder};
 use rand;
@@ -26,8 +26,6 @@ use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::Receiver;
 use time::Duration;
 
-
-
 use crust;
 use crust::Endpoint::Tcp;
 use message_filter::MessageFilter;
@@ -37,7 +35,7 @@ use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
-use types::{MessageId, RoutingTrait};
+use types::{MessageId, RoutingTrait, Authority};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -50,13 +48,14 @@ use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::{RoutingMessage, MessageTypeTag};
+use super::{Action, RoutingError};
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
-type Endpoint = crust::Endpoint;
+pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
-type RecvResult = Result<(),()>;
+type RecvResult = Result<(), ()>;
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
@@ -69,6 +68,7 @@ pub struct RoutingNode<F: Interface> {
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
     routing_table: RoutingTable,
     accepting_on: Option<Vec<Endpoint>>,
+    listening_for_broadcasts_on_port: Option<u16>,
     next_message_id: MessageId,
     bootstrap_node_id: Option<Endpoint>,
     filter: MessageFilter<types::FilterType>,
@@ -81,9 +81,19 @@ impl<F> RoutingNode<F> where F: Interface {
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
         let cm = crust::ConnectionManager::new(event_output);
-        // TODO : Default Protocol and Port need to be passed down
+        // TODO: Default Protocol and Port need to be passed down
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-        let accepting_on = cm.start_listening(ports_and_protocols).ok();
+        // TODO: Beacon port should be passed down
+        let beacon_port = Some(5483u16);
+        let listeners = match cm.start_listening(ports_and_protocols, beacon_port) {
+            Err(reason) => {
+                println!("Failed to start listening: {:?}", reason);
+                (None, None)
+            }
+            Ok(listeners_and_beacon) => {
+                (Some(listeners_and_beacon.0), listeners_and_beacon.1)
+            }
+        };
 
         RoutingNode { interface: Arc::new(Mutex::new(my_interface)),
                       pmid : pmid,
@@ -93,17 +103,12 @@ impl<F> RoutingNode<F> where F: Interface {
                       pending_connections : HashSet::new(),
                       all_connections: (HashMap::new(), BTreeMap::new()),
                       routing_table : RoutingTable::new(own_id),
-                      accepting_on: accepting_on,
+                      accepting_on: listeners.0,
+                      listening_for_broadcasts_on_port: listeners.1,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20))
                     }
-    }
-
-    pub fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
-        self.accepting_on.clone().and_then(|endpoints| {
-            Some(endpoints)
-        })
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
@@ -115,10 +120,18 @@ impl<F> RoutingNode<F> where F: Interface {
     /// Mutate something on the network (you must prove ownership) - Direct call
     pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
 
-    pub fn add_bootstrap(&mut self, endpoint: crust::Endpoint) {
-        self.pending_connections.insert(endpoint.clone());
-        let endpoints = vec![endpoint];
-        let _ = self.connection_manager.connect(endpoints);
+    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
+                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
+        match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
+            Err(reason) => {
+                println!("Failed to bootstrap: {:?}", reason);
+                Err(RoutingError::FailedToBootstrap)
+            }
+            Ok(bootstrapped_to) => {
+                self.bootstrap_node_id = Some(bootstrapped_to);
+                Ok(())
+            }
+        }
     }
 
     pub fn run(&mut self) {
@@ -148,6 +161,12 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
             }
         }
+    }
+
+    fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
+        self.accepting_on.clone().and_then(|endpoints| {
+            Some(endpoints)
+        })
     }
 
     fn next_endpoint_pair(&self) -> Option<(Vec<Endpoint>, Vec<Endpoint>)> {
@@ -217,27 +236,66 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn message_received(&mut self, peer_id: &NameType, serialised_message: Bytes) -> RecvResult {
         // Parse
-        let msg = self.decode::<RoutingMessage>(&serialised_message);
+        let message = match self.decode::<RoutingMessage>(&serialised_message) {
+            None => {
+                println!("Problem parsing message of size {} from {:?}",
+                         serialised_message.len(), peer_id);
+                return Err(());
+            },
+            Some(msg) => msg,
+        };
 
-        if msg.is_none() {
-            println!("Problem parsing message of size {} from {:?}",
-                     serialised_message.len(), peer_id);
-            return Err(());
-        }
-
-        let msg    = msg.unwrap();
-        let header = msg.message_header;
-        let body   = msg.serialised_body;
-        println!("{:?} <= {:?}: {:?} {:?}", self.own_id, peer_id, msg.message_type, header.destination);
+        let header = message.message_header;
+        let body = message.serialised_body;
         // filter check
         if self.filter.check(&header.get_filter()) {
-          // should just return quietly
-          return Err(());
+            // should just return quietly
+            return Err(());
         }
         // add to filter
         self.filter.add(header.get_filter());
+
         // add to cache
+        if message.message_type == MessageTypeTag::GetDataResponse {
+            let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
+            if get_data_response.data.len() != 0 {
+                let mut self_interface = match self.interface.lock() {
+                    Err(_) => return Err(()),
+                    Ok(interface) => interface,
+                };
+                let _ = self_interface.handle_cache_put(header.from_authority(), header.from(),
+                                                        get_data_response.data);
+            }
+        }
+
         // cache check / response
+        if message.message_type == MessageTypeTag::GetData {
+            let get_data = try!(self.decode::<GetData>(&body).ok_or(()));
+            let mut retrieved_data: Result<Action, RoutingError>;
+            {
+                let mut self_interface = match self.interface.lock() {
+                    Err(_) => return Err(()),
+                    Ok(interface) => interface,
+                };
+                let get_data_copy = get_data.clone();
+                retrieved_data = self_interface.handle_cache_get(
+                    get_data_copy.name_and_type_id.type_id as u64,
+                    get_data_copy.name_and_type_id.name, header.from_authority(), header.from());
+            }
+            match retrieved_data {
+                Err(_) => (),
+                Ok(action) => match action {
+                    Action::Reply(data) => {
+                        let reply = self.construct_get_data_response_msg(&header, &get_data, data);
+                        let serialised_reply = self.encode(&reply);
+                        self.send_swarm_or_parallel(&header.send_to().dest, &serialised_reply);
+                        return Ok(());
+                    },
+                    _ => (),
+                },
+            };
+        }
+
         self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);
         // handle relay request/response
 
@@ -266,7 +324,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // Sentinel check
 
         // switch message type
-        match msg.message_type {
+        match message.message_type {
             MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
             MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
@@ -282,12 +340,51 @@ impl<F> RoutingNode<F> where F: Interface {
             //PutData,
             //PutDataResponse,
             //PutKey,
-            //AccountTransfer
             _ => {
                 println!("unhandled message from {:?}", peer_id);
                 Err(())
             }
         }
+    }
+
+    /// This returns our calculated authority with regards
+    /// to the element passed in from the message and the message header.
+    /// Note that the message has first to pass Sentinel as to be verified.
+    /// a) if the message is not from a group,
+    ///       the originating node is within our close group range
+    ///       and the element is not the destination
+    ///    -> Client Manager
+    /// b) if the element is within our close group range
+    ///       and the destination is the element
+    ///    -> Network-Addressable-Element Manager
+    /// c) if the message is from a group,
+    ///       the destination is within our close group,
+    ///       and our id is not the destination
+    ///    -> Node Manager
+    /// d) if the message is from a group,
+    ///       the group is within our close group range,
+    ///       and the destination is our id
+    ///    -> Managed Node
+    /// e) otherwise return Unknown Authority
+    fn our_authority(&self, element : &NameType, header : &MessageHeader) -> Authority {
+        if !header.is_from_group()
+           && self.routing_table.address_in_our_close_group_range(&header.from_node())
+           && header.destination.dest != *element {
+            return Authority::ClientManager; }
+        else if self.routing_table.address_in_our_close_group_range(element)
+           && header.destination.dest == *element {
+            return Authority::NaeManager; }
+        else if header.is_from_group()
+           && self.routing_table.address_in_our_close_group_range(&header.destination.dest)
+           && header.destination.dest != self.own_id {
+            return Authority::NodeManager; }
+        else if header.from_group()
+                      .and_then(|group| Some(self.routing_table
+                                                 .address_in_our_close_group_range(&group)))
+                      .unwrap_or(false)
+           && header.destination.dest == self.own_id {
+            return Authority::ManagedNode; }
+        return Authority::Unknown;
     }
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
@@ -343,7 +440,7 @@ impl<F> RoutingNode<F> where F: Interface {
         //println!("{:?} received FindGroup", self.own_id);
         let find_group = try!(self.decode::<FindGroup>(&body).ok_or(()));
         let close_group = self.routing_table.our_close_group();
-        let mut group: Vec<types::PublicPmid> =  vec![];;
+        let mut group: Vec<types::PublicPmid> = vec![];
         for x in close_group {
             group.push(x.fob);
         }
@@ -392,7 +489,7 @@ impl<F> RoutingNode<F> where F: Interface {
         unimplemented!();
     }
 
-    // // for clients, below methods are required
+    // // for clients the following methods are required
     fn handle_put_data(put_data: PutData, original_header: MessageHeader) {
         // need to call interface handle_get_response
         unimplemented!();
@@ -408,8 +505,7 @@ impl<F> RoutingNode<F> where F: Interface {
         dec.decode().next().and_then(|result| result.ok())
     }
 
-    fn encode<T>(&self, value: &T) -> Bytes where T: Encodable
-    {
+    fn encode<T>(&self, value: &T) -> Bytes where T: Encodable {
         let mut enc = Encoder::from_memory();
         let _ = enc.encode(&[value]);
         enc.into_bytes()
@@ -541,6 +637,25 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
+    fn construct_get_data_response_msg(&mut self, original_header: &MessageHeader,
+                                       get_data: &GetData, data: Vec<u8>) -> RoutingMessage {
+        let header = MessageHeader {
+            message_id: self.get_next_message_id(),
+            destination: original_header.send_to(),
+            source: self.our_source_address(),
+            authority: types::Authority::ManagedNode,
+            signature: None  // FIXME
+        };
+        let get_data_response = GetDataResponse {
+            name_and_type_id: get_data.name_and_type_id.clone(), data: data, error: vec![]
+        };
+        RoutingMessage{
+            message_type: MessageTypeTag::GetDataResponse,
+            message_header: header,
+            serialised_body: self.encode(&get_data_response)
+        }
+    }
+
     fn get_next_message_id(&mut self) -> MessageId {
         let current = self.next_message_id;
         self.next_message_id += 1;
@@ -581,27 +696,15 @@ impl<F> RoutingNode<F> where F: Interface {
 #[cfg(test)]
 mod test {
     //use routing_node::{RoutingNode};
-    use node_interface::*;
-    use types::{Authority, DestinationAddress};
-    use name_type::NameType;
-    use super::super::{Action, RoutingError};
+    // use node_interface::*;
+    // use types::{Authority, DestinationAddress};
+    // use name_type::NameType;
+    // use super::super::{Action, RoutingError};
     //use std::thread;
     //use std::net::{SocketAddr};
     //use std::str::FromStr;
 
     struct NullInterface;
-
-    impl Interface for NullInterface {
-      fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
-                    from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                    from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { Err(RoutingError::Success) }
-      fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { }
-      fn handle_churn(&mut self) { unimplemented!(); }
-    }
 
     //#[test]
     //fn test_routing_node() {
