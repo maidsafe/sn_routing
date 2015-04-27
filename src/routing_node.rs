@@ -135,8 +135,9 @@ impl<F> RoutingNode<F> where F: Interface {
             Ok(bootstrapped_to) => {
                 self.bootstrap_node_id = Some(bootstrapped_to);
                 // put our public pmid so that our connect requests are validated
-                let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
-                self.put::<types::PublicPmid>(our_public_pmid.name.clone(), our_public_pmid.clone());
+                self.put_own_public_pmid();
+                //let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
+                //self.put::<types::PublicPmid>(our_public_pmid.name.clone(), our_public_pmid.clone());
                 // connect to close group
                 Ok(())
             }
@@ -170,6 +171,10 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
             }
         }
+    }
+
+    fn put_own_public_pmid(&mut self) {
+     unimplemented!()
     }
 
     fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {

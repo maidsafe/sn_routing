@@ -46,6 +46,9 @@ pub mod post;
 pub mod put_data;
 #[path="messages/put_data_response.rs"]
 pub mod put_data_response;
+#[path="messages/put_public_pmid.rs"]
+pub mod put_public_pmid;
+
 
 
 use cbor;

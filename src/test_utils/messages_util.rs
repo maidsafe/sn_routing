@@ -194,3 +194,12 @@ impl Random for messages::put_data_response::PutDataResponse {
         }
     }
 }
+
+impl Random for messages::put_public_pmid::PutPublicPmid {
+    fn generate_random() -> messages::put_public_pmid::PutPublicPmid {
+        let public_pmid : PublicPmid = Random::generate_random();
+        messages::put_public_pmid::PutPublicPmid {
+            public_pmid: public_pmid,
+        }
+    }
+}
