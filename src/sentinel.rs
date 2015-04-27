@@ -272,12 +272,10 @@ impl<'a> Sentinel<'a> {
           .filter_map(|msg_triple| { Sentinel::decode::<AccountTransferInfo>(&msg_triple.2) })
           .collect::<Vec<_>>();
 
-      let result = accounts[0].merge(&accounts);
-
-      return result.map(|r| {
+      return AccountTransferInfo::merge(&accounts).map(|merged| {
           (verified_messages[0].0.clone(),
            verified_messages[0].1.clone(),
-           Sentinel::encode(r))
+           Sentinel::encode(merged))
       });
 
     // if part addresses non-account transfer message types, where an exact match is required

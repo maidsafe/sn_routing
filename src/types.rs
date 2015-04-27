@@ -116,7 +116,8 @@ pub trait RoutingTrait {
   fn get_name(&self)->NameType;
   fn get_owner(&self)->Vec<u8>;
   fn refresh(&self)->bool;
-  fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
+
+  fn merge(&Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -269,7 +270,7 @@ impl RoutingTrait for PublicPmid {
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
 
    // TODO how do we merge these
-  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+  fn merge(_ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
 }
 
 impl Encodable for PublicPmid {
@@ -307,7 +308,7 @@ impl RoutingTrait for Pmid {
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
 
    // TODO how do we merge these
-  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+  fn merge(_ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
 }
 
 impl Pmid {
@@ -387,7 +388,7 @@ impl RoutingTrait for AccountTransferInfo {
   fn refresh(&self)->bool { true } // TODO is this an account transfer type
 
    // TODO how do we merge these
-  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+  fn merge(_ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
 }
 
 /// Address of the source of the message
