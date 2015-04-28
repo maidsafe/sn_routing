@@ -97,19 +97,13 @@ impl routing::node_interface::Interface for VaultFacade {
         ;
     }
 
-    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<(routing::NameType, routing::generic_sendable_type::GenericSendableType)> {
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<routing::generic_sendable_type::GenericSendableType> {
         let mut dm = self.data_manager.retrieve_all_and_reset();
         let mut mm = self.maid_manager.retrieve_all_and_reset();
-        let mut pm = self.pmid_manager.retrieve_all_and_reset();
+        let mut pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let mut vh = self.version_handler.retrieve_all_and_reset();
 
-        let mut return_val = Vec::<(routing::NameType, routing::generic_sendable_type::GenericSendableType)>::with_capacity(dm.len() + mm.len() + pm.len() + vh.len());
-
-        for it in dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))) {
-            return_val.push(it);
-        }
-
-        return_val
+        dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
     }
 
     fn handle_cache_get(&mut self,
@@ -344,9 +338,9 @@ impl VaultFacade {
             maid_manager_put(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
             assert!(churn_data.len() == 1);
-            assert!(churn_data[0].0 == from);
+            assert!(churn_data[0].name() == from);
             // MaidManagerAccount
-            let sendable: GenericSendableType = churn_data[0].1.clone();
+            let sendable: GenericSendableType = churn_data[0].clone();
             assert_eq!(sendable.name(), from.clone());
 
             let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
@@ -362,9 +356,9 @@ impl VaultFacade {
             data_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
             assert!(churn_data.len() == 1);
-            assert!(churn_data[0].0 == data.name().clone());
+            assert!(churn_data[0].name() == data.name().clone());
 
-            let sendable: GenericSendableType = churn_data[0].1.clone();
+            let sendable: GenericSendableType = churn_data[0].clone();
             assert_eq!(sendable.name(), data.name().clone());
 
             let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
@@ -376,14 +370,14 @@ impl VaultFacade {
 
         {// PmidManager - churn handling
             pmid_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
-            let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
-            assert!(churn_data.len() == 1);
+            let churn_data = vault.handle_churn(vec![dest.dest.clone()]);
+            assert_eq!(churn_data.len(), 1);
             //assert_eq!(churn_data[0].0, from);
 
-            let sendable: GenericSendableType = churn_data[0].1.clone();
+            let sendable: GenericSendableType = churn_data[0].clone();
             assert_eq!(sendable.name(), dest.dest);
 
-            assert!(vault.pmid_manager.retrieve_all_and_reset().is_empty());
+            assert!(vault.pmid_manager.retrieve_all_and_reset(&Vec::new()).is_empty());
         }
 
         {// VersionHandler - churn handling
@@ -404,9 +398,9 @@ impl VaultFacade {
             version_handler_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
             assert_eq!(churn_data.len(), 1);
-            assert_eq!(churn_data[0].0, data.name());
+            assert_eq!(churn_data[0].name(), data.name());
 
-            let sendable: GenericSendableType = churn_data[0].1.clone();
+            let sendable: GenericSendableType = churn_data[0].clone();
             assert_eq!(sendable.name(), data.name());
             let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
             let decoded_data: Payload = decoder.decode().next().unwrap().unwrap();

@@ -24,6 +24,7 @@
 //!
 //! The resulting executable is the Vault node for the SAFE network.
 //! Refer to https://github.com/dirvine/maidsafe_vault
+#![feature(std_misc)]
 
 extern crate sodiumoxide;
 extern crate rustc_serialize;

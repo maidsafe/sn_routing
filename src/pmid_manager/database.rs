@@ -23,6 +23,7 @@ use cbor;
 use routing::generic_sendable_type;
 use self::lru_time_cache::LruCache;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use std::collections;
 
 type Identity = self::routing::NameType; // pmidnode address
 
@@ -102,41 +103,35 @@ impl PmidManagerAccount {
 }
 
 pub struct PmidManagerDatabase {
-  storage : LruCache<Identity, PmidManagerAccount>
+  storage : collections::HashMap<Identity, PmidManagerAccount>,
 }
 
 impl PmidManagerDatabase {
   pub fn new () -> PmidManagerDatabase {
-    PmidManagerDatabase { storage: LruCache::with_capacity(10000) }
+      PmidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
   }
 
   pub fn exist(&mut self, name : &Identity) -> bool {
-    self.storage.get(name.clone()).is_some()
+      self.storage.contains_key(name)
   }
 
   pub fn put_data(&mut self, name : &Identity, size: u64) -> bool {
-    let mut tmp = PmidManagerAccount::new();
-    let entry = self.storage.remove(name.clone());
-      if entry.is_some() {
-        tmp = entry.unwrap();
-      }
-    let result = tmp.put_data(size);
-    self.storage.add(name.clone(), tmp);
-    result
+      let entry = self.storage.entry(name.clone()).or_insert(PmidManagerAccount::new());
+      entry.put_data(size)
   }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, generic_sendable_type::GenericSendableType)> {
-        let data: Vec<(Identity, PmidManagerAccount)> = self.storage.retrieve_all();
-        let mut sendable_data = Vec::<(Identity, generic_sendable_type::GenericSendableType)>::with_capacity(data.len());
-        for element in data {
-            let mut e = cbor::Encoder::from_memory();
-            e.encode(&[&element.1]).unwrap();
-            let serialised_content = e.into_bytes();
-            let sendable_type = generic_sendable_type::GenericSendableType::new(element.0.clone(), 2, serialised_content); //TODO Get type_tag correct
-            sendable_data.push((element.0, sendable_type));
-        }
-        self.storage = LruCache::with_capacity(10000);
-        sendable_data
+    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<generic_sendable_type::GenericSendableType> {
+      let data: Vec<_> = self.storage.drain().collect();
+      let mut sendable_data = Vec::with_capacity(data.len());
+      for element in data {
+          if close_group.iter().find(|a| **a == element.0).is_some() {
+              let mut e = cbor::Encoder::from_memory();
+              e.encode(&[&element.1]).unwrap();
+              let serialised_content = e.into_bytes();
+              sendable_data.push(generic_sendable_type::GenericSendableType::new(element.0, 0, serialised_content)); //TODO Get type_tag correct
+          }
+      }
+      sendable_data
     }
 }
 

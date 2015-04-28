@@ -15,7 +15,7 @@
 
 #![allow(dead_code)]
 
-
+use std::collections;
 use routing::generic_sendable_type;
 use lru_time_cache::LruCache;
 use routing::NameType;
@@ -77,52 +77,41 @@ impl MaidManagerAccount {
 }
 
 pub struct MaidManagerDatabase {
-  storage : LruCache<Identity, MaidManagerAccount>
+  storage: collections::HashMap<Identity, MaidManagerAccount>,
 }
 
 impl MaidManagerDatabase {
   pub fn new () -> MaidManagerDatabase {
-    MaidManagerDatabase { storage: LruCache::with_capacity(10000) }
+      MaidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
   }
 
   pub fn exist(&mut self, name : &Identity) -> bool {
-    self.storage.get(name.clone()).is_some()
+      self.storage.contains_key(name)
   }
 
-  pub fn put_data(&mut self, name : &Identity, size: u64) -> bool {
-    let mut tmp = MaidManagerAccount::new();
-    let entry = self.storage.remove(name.clone());
-  	if entry.is_some() {
-  	  tmp = entry.unwrap();
-  	}
-    let result = tmp.put_data(size);
-    self.storage.add(name.clone(), tmp);
-    result
+  pub fn put_data(&mut self, name: &Identity, size: u64) -> bool {
+      let entry = self.storage.entry(name.clone()).or_insert(MaidManagerAccount::new());
+      entry.put_data(size)
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, generic_sendable_type::GenericSendableType)> {
-    let data: Vec<(Identity, MaidManagerAccount)> = self.storage.retrieve_all();
-    let mut sendable_data = Vec::<(Identity, generic_sendable_type::GenericSendableType)>::with_capacity(data.len());
-    for element in data {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&element.1]).unwrap();
-        let serialised_content = e.into_bytes();
-        let sendable_type = generic_sendable_type::GenericSendableType::new(element.0.clone(), 0, serialised_content); //TODO Get type_tag correct
-        sendable_data.push((element.0, sendable_type));
-    }
-    self.storage = LruCache::with_capacity(10000);
-    sendable_data
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
+      let data: Vec<_> = self.storage.drain().collect();
+      let mut sendable_data = Vec::with_capacity(data.len());
+      for element in data {
+          let mut e = cbor::Encoder::from_memory();
+          e.encode(&[&element.1]).unwrap();
+          let serialised_content = e.into_bytes();
+          sendable_data.push(generic_sendable_type::GenericSendableType::new(element.0, 0, serialised_content)); //TODO Get type_tag correct
+      }
+      sendable_data
   }
 
   pub fn delete_data(&mut self, name : &Identity, size: u64) {
-    let entry = self.storage.remove(name.clone());
-    if entry.is_some() {
-      let mut tmp = entry.unwrap();
-      tmp.delete_data(size);
-      self.storage.add(name.clone(), tmp);
-    }
+      match self.storage.get_mut(name) {
+          Some(value) => value.delete_data(size),
+          None => (),
+      }
   }
-
 }
 
 

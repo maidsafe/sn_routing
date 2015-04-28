@@ -84,15 +84,15 @@ impl DataManagerDatabase {
       }
   }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, generic_sendable_type::GenericSendableType)> {
+    pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
         let data: Vec<(Identity, PmidNodes)> = self.storage.retrieve_all();
-        let mut sendable_data = Vec::<(Identity, generic_sendable_type::GenericSendableType)>::with_capacity(data.len());
+        let mut sendable_data = Vec::<generic_sendable_type::GenericSendableType>::with_capacity(data.len());
         for element in data {
             let mut e = cbor::Encoder::from_memory();
             e.encode(&[&element.1]).unwrap();
             let serialised_content = e.into_bytes();
             let sendable_type = generic_sendable_type::GenericSendableType::new(element.0.clone(), 1, serialised_content); //TODO Get type_tag correct
-            sendable_data.push((element.0, sendable_type));
+            sendable_data.push(sendable_type);
         }
         self.storage = LruCache::with_capacity(10000);
         sendable_data

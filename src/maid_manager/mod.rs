@@ -62,7 +62,7 @@ impl MaidManager {
     Ok(routing::Action::SendOn(destinations))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<(routing::NameType, generic_sendable_type::GenericSendableType)> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
     self.db_.retrieve_all_and_reset()
   }
 
