@@ -350,30 +350,34 @@ impl<F> RoutingNode<F> where F: Interface {
         // and this node is in the group but the message destination is another group member node.
         // "not for me"
 
-        // Sentinel check
-
-        // switch message type
+        // pre-sentinel message handling
         match message.message_type {
-            MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
-            MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
-            MessageTypeTag::FindGroup => self.handle_find_group(header, body),
-            MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
-            MessageTypeTag::GetData => self.handle_get_data(header, body),
-            MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
-            //GetClientKey,
-            //GetClientKeyResponse,
-            //GetGroupKey,
-            //GetGroupKeyResponse,
-            //Post,
-            //PostResponse,
-            MessageTypeTag::PutData => self.handle_put_data(header, body),
-            MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
-            //PutKey,
+            // MessageTypeTag::GetClientKey =>
+            MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
             _ => {
-                println!("unhandled message from {:?}", peer_id);
-                Err(())
+                // Sentinel check
+
+                // switch message type
+                match message.message_type {
+                    MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
+                    MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
+                    MessageTypeTag::FindGroup => self.handle_find_group(header, body),
+                    MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
+                    MessageTypeTag::GetData => self.handle_get_data(header, body),
+                    MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
+                    //Post,
+                    //PostResponse,
+                    MessageTypeTag::PutData => self.handle_put_data(header, body),
+                    MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
+                    //PutKey,
+                    _ => {
+                        println!("unhandled message from {:?}", peer_id);
+                        Err(())
+                    }
+                }
             }
         }
+
     }
 
     /// This returns our calculated authority with regards
@@ -414,6 +418,10 @@ impl<F> RoutingNode<F> where F: Interface {
            && header.destination.dest == self.own_id {
             return Authority::ManagedNode; }
         return Authority::Unknown;
+    }
+
+    fn handle_get_group_key(&mut self, original_header : MessageHeader, body : Bytes) -> RecvResult {
+        Ok(())
     }
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
