@@ -359,7 +359,7 @@ impl<F> RoutingNode<F> where F: Interface {
             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
             MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
             MessageTypeTag::GetData => self.handle_get_data(header, body),
-            //GetDataResponse,
+            MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
             //GetClientKey,
             //GetClientKeyResponse,
             //GetGroupKey,
@@ -518,15 +518,26 @@ impl<F> RoutingNode<F> where F: Interface {
         let name = get_data.name_and_type_id.name;
 
         let mut interface = self.interface.lock().unwrap();
-        match interface.handle_get(type_id, our_authority, from_authority, from, name) {
+        match interface.handle_get(type_id, name, our_authority, from_authority, from) {
             Ok(_) => Ok(()),
             Err(_) => Err(())
         }
     }
 
-    fn handle_get_data_response(get_data_response: GetDataResponse, original_header: MessageHeader) {
-        // need to call interface handle_get_response
-        unimplemented!();
+    fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+        let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
+        let from = header.from();
+        let response;
+
+        if get_data_response.error.len() != 0 {
+            response = Err(RoutingError::NoData);
+        } else {
+            response = Ok(get_data_response.data);
+        }
+
+        let mut interface = self.interface.lock().unwrap();
+        interface.handle_get_response(from, response);
+        Ok(())
     }
 
     // // for clients, below methods are required
@@ -548,8 +559,8 @@ impl<F> RoutingNode<F> where F: Interface {
         let put_data_response = try!(self.decode::<PutDataResponse>(&body).ok_or(()));
         let from_authority = header.from_authority();
         let from = header.from();
-
         let response;
+
         if put_data_response.data.len() != 0 {
             response = Ok(put_data_response.data);
         } else {
