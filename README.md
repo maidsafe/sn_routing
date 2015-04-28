@@ -23,12 +23,6 @@ libsodium is a native dependency for [sodiumxoide](https://github.com/dnaq/sodiu
 For windows, download and use the [prebuilt mingw library](https://download.libsodium.org/libsodium/releases/libsodium-1.0.2-mingw.tar.gz).
 Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit System, or "bin\i686-pc-windows-gnu" for a 32bit system.
 
-SQLite3 is also native dependency for [rustsqlite](https://github.com/linuxfood/rustsqlite).
-Steps to compile SQLite:
-1. Download SQLite Source code which includes a ‘configure’ script from [SQLite download page](https://www.sqlite.org/download.html) 
-2. On Linux, Run `./configure --prefix=/usr && make && sudo make install` to build the SQLite source. On Windows users can build using (mingw + msys) and run './configure && make' 
-3. On Windows, Copy the `libsqlite3.a` file from the .libs folder to the "bin\{TARGET-TRIPLE}" (i.e. i686-pc-win32 or x86_64-pc-win32 etc.) in the project root folder (or at least in your path).
- 
 ##Todo Items
 
 - [x] Set up facade design pattern
@@ -70,7 +64,6 @@ Steps to compile SQLite:
   - [ ] PutData HandlePutData 
   - [ ] PutDataResponse HandlePutDataResponse 
   - [ ] PutKey HandlePutKey 
-  - [ ] AccountTransfer HandleAccountTransfer 
 - [ ] Implement routing connections management
 - [ ] Sentinel:
   - [x] Handover existing implementation
