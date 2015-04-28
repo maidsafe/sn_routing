@@ -741,8 +741,8 @@ mod test {
     use routing_table;
     use message_header::MessageHeader;
     use NameType;
-    use name_type::{closer_to_target, xor};
-    use test_utils::Random;
+    use name_type::{closer_to_target};
+    use test_utils::{Random, xor};
     use super::super::{Action, RoutingError};
     use rand::random;
 
