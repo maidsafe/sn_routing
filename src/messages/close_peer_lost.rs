@@ -16,57 +16,45 @@
 // Please review the Licences for the specific language governing permissions and limitations relating to
 // use of the Safe Network Software.
 
-#![allow(unused_assignments)]
-
-extern crate rand;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
-use types;
 use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct ConnectSuccess {
-  pub peer_id : NameType,
-  pub peer_fob : types::PublicPmid
+pub struct ClosePeerLost {
+    pub peer_id : NameType,
 }
 
-impl Encodable for ConnectSuccess {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-      CborTagEncode::new(5483_001, &(&self.peer_id,
-                                     &self.peer_fob)).encode(e)
-  }
+impl Encodable for ClosePeerLost {
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        CborTagEncode::new(5483_001, &(&self.peer_id)).encode(e)
+    }
 }
 
-impl Decodable for ConnectSuccess {
-  fn decode<D: Decoder>(d: &mut D)->Result<ConnectSuccess, D::Error> {
-      use NameType;
-
-    try!(d.read_u64());
-
-    let (peer_id, peer_fob): (NameType, types::PublicPmid) = try!(Decodable::decode(d));
-
-    Ok(ConnectSuccess { peer_id: peer_id,
-                        peer_fob: peer_fob})
-  }
+impl Decodable for ClosePeerLost {
+    fn decode<D: Decoder>(d: &mut D)->Result<ClosePeerLost, D::Error> {
+        try!(d.read_u64());
+        let peer_id = try!(Decodable::decode(d));
+        Ok(ClosePeerLost { peer_id: peer_id })
+    }
 }
 
 #[cfg(test)]
 mod test {
-    extern crate cbor;
-
     use super::*;
+    use cbor;
     use test_utils::Random;
 
     #[test]
-    fn connect_success_serialisation() {
-        let obj_before : ConnectSuccess = Random::generate_random();
+    fn close_peer_lost_serialisation() {
+        let obj_before : ClosePeerLost = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: ConnectSuccess = d.decode().next().unwrap().unwrap();
+        let obj_after: ClosePeerLost = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
     }

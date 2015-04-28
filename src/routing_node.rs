@@ -45,6 +45,7 @@ use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
 use messages::put_data_response::PutDataResponse;
+use messages::close_peer_lost::ClosePeerLost;
 use messages::connect_request::ConnectRequest;
 use messages::connect_response::ConnectResponse;
 use messages::connect_success::ConnectSuccess;
@@ -240,15 +241,27 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
+    fn handle_lost_connection_by_id(&mut self, peer_id: NameType) {
+        let peer_endpoint = match self.all_connections.1.get(&peer_id) {
+            None => return,
+            Some(peer) => peer.clone(),
+        };
+        self.handle_lost_connection(peer_endpoint);
+    }
+
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
         self.pending_connections.remove(&peer_endpoint);
         let peer_id = match self.all_connections.0.remove(&peer_endpoint) {
             None => return,
             Some(peer) => peer,
         };
-        // TODO - it would be more efficient if routing_table.drop_node returned a bool to
-        // indicate whether the dropped node was in the close group or not - we wouldn't need to
-        // compare routing_table.our_close_group before and after to find out.
+        match self.all_connections.1.remove(&peer_id) {
+            None => panic!("Mismatch in containers of `all_connections`"),
+            Some(peer) => assert!(peer == peer_endpoint),
+        }
+        // TODO - it would be more efficient if routing_table.drop_node returned a bool to indicate
+        // whether the dropped node was in the close group or not - we wouldn't need to compare
+        // routing_table.our_close_group before and after to find out.
         let close_group_before = BTreeSet::<NameType>::from_iter(
             self.routing_table.our_close_group().iter().map(
                 |ref node_info| node_info.id.clone()));
@@ -374,6 +387,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // switch message type
         match message.message_type {
+            MessageTypeTag::ClosePeerLost => self.handle_close_peer_lost(body),
             MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
             MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
@@ -434,6 +448,12 @@ impl<F> RoutingNode<F> where F: Interface {
            && header.destination.dest == self.own_id {
             return Authority::ManagedNode; }
         return Authority::Unknown;
+    }
+
+    fn handle_close_peer_lost(&mut self, body: Bytes) -> RecvResult {
+        let close_peer_lost = try!(self.decode::<ClosePeerLost>(&body).ok_or(()));
+        self.handle_lost_connection_by_id(close_peer_lost.peer_id);
+        Ok(())
     }
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
@@ -726,8 +746,18 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn send_close_peer_lost(&self, lost_peer: &NameType) {
-
+    fn send_close_peer_lost(&mut self, lost_peer: &NameType) {
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: lost_peer.clone(), reply_to: None };
+        let source = types::SourceAddress{ from_node: self.id(),
+                                           from_group: Some(lost_peer.clone()), reply_to: None };
+        let authority = types::Authority::Client;
+        let header = MessageHeader::new(message_id, destination, source, authority, None);
+        let request = ClosePeerLost{ peer_id: lost_peer.clone() };
+        let message = RoutingMessage::new(MessageTypeTag::ClosePeerLost, header, request);
+        let mut encoder = Encoder::from_memory();
+        encoder.encode(&[message]).unwrap();
+        self.send_swarm_or_parallel(lost_peer, &encoder.into_bytes());
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
