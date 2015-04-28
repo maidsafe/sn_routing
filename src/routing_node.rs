@@ -562,9 +562,7 @@ impl<F> RoutingNode<F> where F: Interface {
         RoutingMessage{
             message_type:    messages::MessageTypeTag::FindGroupResponse,
             message_header:  header,
-            serialised_body: self.encode(&FindGroupResponse{ target_id: find_group.target_id.clone(),
-                                                             group: group
-                                                            })
+            serialised_body: self.encode(&FindGroupResponse{ group: group })
         }
     }
 
