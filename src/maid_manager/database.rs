@@ -102,7 +102,7 @@ impl MaidManagerDatabase {
     let entry = self.storage.remove(name.clone());
   	if entry.is_some() {
   	  tmp = entry.unwrap();
-  	} 
+  	}
     let result = tmp.put_data(size);
     self.storage.add(name.clone(), tmp);
     result
@@ -136,8 +136,9 @@ impl MaidManagerDatabase {
 
 #[cfg(test)]
 mod test {
-  use super::*;  
+  use super::*;
   use routing;
+  use cbor;
 
   #[test]
   fn exist() {
@@ -181,6 +182,19 @@ mod test {
     assert_eq!(db.exist(&name), true);
     assert_eq!(db.put_data(&name, 1073741825), false);
     assert_eq!(db.put_data(&name, 1073741824), true);
+  }
+
+  #[test]
+  fn maid_manager_account_serialization() {
+      let obj_before = MaidManagerAccount::new();
+
+       let mut e = cbor::Encoder::from_memory();
+       e.encode(&[&obj_before]).unwrap();
+
+       let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+       let obj_after: MaidManagerAccount = d.decode().next().unwrap().unwrap();
+
+       //assert_eq!(obj_before, obj_after);
   }
 
 }

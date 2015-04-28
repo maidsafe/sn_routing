@@ -43,59 +43,59 @@ impl Clone for VaultFacade {
 }
 
 impl routing::node_interface::Interface for VaultFacade {
-  fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
-                from_address: NameType)->Result<Action, RoutingError> {    
-    match our_authority {
-      Authority::NaeManager => {
-        // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
-        // data input here is assumed as name only(no type info attached)
-        let data_manager_result = self.data_manager.handle_get(&name);
-        if data_manager_result.is_ok() {
-          return data_manager_result;
+    fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
+                from_address: NameType)->Result<Action, RoutingError> {
+        match our_authority {
+            Authority::NaeManager => {
+                // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
+                // data input here is assumed as name only(no type info attached)
+                let data_manager_result = self.data_manager.handle_get(&name);
+                if data_manager_result.is_ok() {
+                    return data_manager_result;
+                }
+                return self.version_handler.handle_get(name);
+            }
+            Authority::ManagedNode => { return self.pmid_node.handle_get(name); }
+            _ => { return Err(RoutingError::InvalidRequest); }
         }
-        return self.version_handler.handle_get(name);
-      }
-      Authority::ManagedNode => { return self.pmid_node.handle_get(name); }
-      _ => { return Err(RoutingError::InvalidRequest); }
     }
-  }
 
-  fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
-    match our_authority {
-      Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
-      Authority::NaeManager => {
-        // both DataManager and VersionHandler are NaeManagers
-        // However Put request to DataManager is from ClientManager (MaidManager)
-        // meanwhile Put request to VersionHandler is from Node
-        match from_authority {
-          Authority::ClientManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
-          Authority::ManagedNode => { return self.version_handler.handle_put(data); }
-          _ => { return Err(RoutingError::InvalidRequest); }
+        match our_authority {
+            Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
+            Authority::NaeManager => {
+                // both DataManager and VersionHandler are NaeManagers
+                // However Put request to DataManager is from ClientManager (MaidManager)
+                // meanwhile Put request to VersionHandler is from Node
+                match from_authority {
+                  Authority::ClientManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
+                  Authority::ManagedNode => { return self.version_handler.handle_put(data); }
+                  _ => { return Err(RoutingError::InvalidRequest); }
+                }
+            }
+            Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
+            Authority::ManagedNode => { return self.pmid_node.handle_put(data); }
+            _ => { return Err(RoutingError::InvalidRequest); }
         }
-      }
-      Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
-      Authority::ManagedNode => { return self.pmid_node.handle_put(data); }
-      _ => { return Err(RoutingError::InvalidRequest); }
     }
-  }
 
-  fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> {
-    ;
-    Err(RoutingError::InvalidRequest)
-  }
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> {
+        ;
+        Err(RoutingError::InvalidRequest)
+    }
 
-  fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
-    ;
-  }
+    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
+        ;
+    }
 
-  fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
-    ;
-  }
+    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
+        ;
+    }
 
-  fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
-    ;
-  }
+    fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
+        ;
+    }
 
     fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<(routing::NameType, routing::generic_sendable_type::GenericSendableType)> {
         let mut dm = self.data_manager.retrieve_all_and_reset();
@@ -125,8 +125,8 @@ impl routing::node_interface::Interface for VaultFacade {
 }
 
 impl VaultFacade {
-   /// Initialise all the personas in the Vault interface.  
-  pub fn new() -> VaultFacade {    
+   /// Initialise all the personas in the Vault interface.
+  pub fn new() -> VaultFacade {
     VaultFacade {
         data_manager: DataManager::new(), maid_manager: MaidManager::new(),
         pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
@@ -143,12 +143,14 @@ impl VaultFacade {
     use routing;
     use cbor;
     use maidsafe_types;
+    use maid_manager;
     use maidsafe_types::{PayloadTypeTag, Payload};
-    use routing::types:: { Authority, DestinationAddress };   
+    use routing::types:: { Authority, DestinationAddress };
     use routing::NameType;
     use routing::test_utils::Random;
     use routing::node_interface::Interface;
     use routing::sendable::Sendable;
+    use routing::generic_sendable_type::GenericSendableType;
 
     fn array_as_vector_u8(array : [u8;64]) -> Vec<u8> {
         let mut vec = Vec::with_capacity(array.len());
@@ -186,7 +188,7 @@ impl VaultFacade {
             }
         }
         vault.nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
-                               NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];        
+                               NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
         { // DataManager, shall SendOn to pmid_nodes
             let from = NameType::new([1u8; 64]);
             // TODO : in this stage, dest can be populated as anything ?
@@ -260,5 +262,49 @@ impl VaultFacade {
                 _ => panic!("Unexpected"),
             }
         }
+    }
+
+    fn put_maid_manager_data(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress,
+            payload_name: NameType, payload: Vec<u8>) {
+        let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
+                                         payload);
+        assert_eq!(put_result.is_err(), false);
+        match put_result.ok().unwrap() {
+            routing::Action::SendOn(ref x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], payload_name);
+            }
+            routing::Action::Reply(x) => panic!("Unexpected"),
+        }
+    }
+
+    #[test]
+    fn churn_test() {
+        let mut vault = VaultFacade::new();
+
+        // name = NameType::new();//generate_random();
+        let value = routing::types::generate_random_vec_u8(1024);
+        let data = maidsafe_types::ImmutableData::new(value);
+        let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+
+        let mut encoder = cbor::Encoder::from_memory();
+        let encode_result = encoder.encode(&[&payload]);
+        assert_eq!(encode_result.is_ok(), true);
+
+        let from = NameType::generate_random();
+        let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
+        let data_as_vec = routing::types::array_as_vector(encoder.as_bytes());
+        put_maid_manager_data(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
+
+        let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
+        assert!(churn_data.len() == 1);
+        assert!(churn_data[0].0 == from);
+        // MaidManagerAccount
+        let sendable: GenericSendableType = churn_data[0].1.clone();
+        assert_eq!(sendable.name(), from);
+        // panic!("{:?}", sendable.serialised_contents().clone());
+        // let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
+        // let obj: maid_manager::MaidManagerAccount = decoder.decode().next().unwrap().unwrap();
+        //assert_eq!(sendable.serialised_contents(), data_as_vec);
     }
 }
