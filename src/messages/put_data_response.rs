@@ -44,7 +44,7 @@ mod test {
     use cbor;
     use super::*;
     use test_utils::Random;
-    
+
     #[test]
     fn put_data_response_serialisation() {
         let obj_before : PutDataResponse = Random::generate_random();

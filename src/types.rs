@@ -1,20 +1,20 @@
 // Copyright 2015 MaidSafe.net limited
 //
-// This MaidSafe Software is licensed to you under (1) the MaidSafe.net Commercial License, version
-// 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which licence you
-// accepted on initial access to the Software (the "Licences").
+// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
+// licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the MaidSafe Software, or to this project generally, you agree to be
+// By contributing code to the Safe Network Software, or to this project generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also available at
-// http://maidsafe.net/licenses
+// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
+// available at: http://maidsafe.net/network-platform-licensing
 //
-// Unless required by applicable law or agreed to in writing, the MaidSafe Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
+// OF ANY KIND, either express or implied.
 //
-// See the Licences for the specific language governing permissions and limitations relating to use
-// of the MaidSafe Software.
+// Please review the Licences for the specific language governing permissions and limitations relating to
+// use of the Safe Network Software.
 
 #![allow(unused_assignments)]
 
@@ -64,8 +64,8 @@ pub static QUORUM_SIZE: u32 = 19;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
   ClientManager,  // from a node in our range but not routing table
-  NaeManager,     // Target (name()) is in the group we are in
-  NodeManager,    // recieved from a node in our routing table (Handle refresh here)
+  NaeManager,     // target (name()) is in the group we are in
+  NodeManager,    // received from a node in our routing table (handle refresh here)
   ManagedNode,    // in our group and routing table
   ManagedClient,  // in our group
   Client,         // detached
@@ -116,7 +116,6 @@ pub trait RoutingTrait {
   fn get_name(&self)->NameType;
   fn get_owner(&self)->Vec<u8>;
   fn refresh(&self)->bool;
-  fn merge(&self, &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo>;
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -267,9 +266,6 @@ impl RoutingTrait for PublicPmid {
   fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
-
-   // TODO how do we merge these
-  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
 }
 
 impl Encodable for PublicPmid {
@@ -305,9 +301,6 @@ impl RoutingTrait for Pmid {
   fn get_name(&self) -> NameType { self.name.clone() }
   fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
   fn refresh(&self)->bool { false } // TODO is this an account transfer type
-
-   // TODO how do we merge these
-  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
 }
 
 impl Pmid {
@@ -382,20 +375,17 @@ impl Decodable for AccountTransferInfo {
 }
 
 impl RoutingTrait for AccountTransferInfo {
-  fn get_name(&self)->NameType { self.name.clone() }
-  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-  fn refresh(&self)->bool { true } // TODO is this an account transfer type
-
-   // TODO how do we merge these
-  fn merge(&self, _ : &Vec<AccountTransferInfo>) -> Option<AccountTransferInfo> { None }
+    fn get_name(&self)->NameType { self.name.clone() }
+    fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
+    fn refresh(&self)->bool { true } // TODO is this an account transfer type
 }
 
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {
-  pub from_node : NameType,
+  pub from_node  : NameType,
   pub from_group : Option<NameType>,
-  pub reply_to : Option<NameType>
+  pub reply_to   : Option<NameType>
 }
 
 impl Encodable for SourceAddress {
