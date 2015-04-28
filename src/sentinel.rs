@@ -165,7 +165,7 @@ impl<'a> Sentinel<'a> {
         }
     }
 
-    fn verify_result(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
+    fn check_signature(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
         response.0.get_signature().and_then(|signature| {
           let is_correct = crypto::sign::verify_detached(
                              &signature.get_crypto_signature(),
@@ -184,60 +184,51 @@ impl<'a> Sentinel<'a> {
           return Vec::new();
         }
 
-        let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
+        // TODO: Would be nice if we didn't need to decode it here every time
+        // this function is called. We could then avoid the below check as well.
+        let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.value.2)).collect::<Vec<_>>();
 
-        for node_key in keys.iter() {
-          Sentinel::decode(&node_key.value.2)
-              .map(|GetClientKeyResponse{address:addr, public_sign_key:key}| {
-                  Sentinel::update_key_map(&mut keys_map, addr, key)
-              });
+        if keys.len() < types::QUORUM_SIZE as usize {
+          return Vec::new();
         }
 
-        // FIXME: We should take the majority of same keys and
-        // if there is QUORUM_SIZE of them, use that.
-        if !has_single_entry(&keys_map) { return Vec::new(); }
-        let pub_key = &keys_map.iter().next().unwrap().1[0];
-
-        messages.iter().filter_map(
-            |&accumulator::Response{address:ref addr, value:ref result}|
-                Sentinel::verify_result(result, pub_key))
-            .collect()
+        take_most_frequent(&keys, types::QUORUM_SIZE as usize)
+            .into_iter()
+            .flat_map(|GetClientKeyResponse{address: _, public_sign_key: pub_key}| {
+                messages.iter().filter_map(move |response| {
+                    Sentinel::check_signature(&response.value, &pub_key)
+                })
+            })
+            .collect::<Vec<_>>()
     }
 
-    fn validate_group(&self, messages:  Vec<accumulator::Response<ResultType>>,
-                      keys: Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
-      if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
-          return Vec::<ResultType>::new();
-      }
-      let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
-      for group_key in keys.iter() {
-          Sentinel::decode(&group_key.value.2)
-              .map(|GetGroupKeyResponse{public_sign_keys: keys}| {
-                  for (addr, key) in keys {
-                      Sentinel::update_key_map(&mut keys_map, addr.clone(), key.clone())
-                  }
-              });
-      }
+    fn validate_group(&self,
+                      messages: Vec<accumulator::Response<ResultType>>,
+                      keys:     Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+        if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
+            return Vec::<ResultType>::new();
+        }
 
-      // TODO(mmoadeli): For the time being, we assume that no invalid public is received
-      for (_, pub_key_list) in keys_map.iter() {
-          if pub_key_list.len() != 1 {
-              panic!("Different keys returned for a single address.");
-          }
-      }
+        // TODO: Would be nice if we didn't need to decode it here every time
+        // this function is called. We could then avoid the below check as well.
+        let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.value.2)).collect::<Vec<_>>();
 
-      let verified_messages = messages.iter().filter_map(|message| {
-          keys_map.get_mut(&message.value.0.from_node())
-          .and_then(|keys| {
-              Sentinel::verify_result(&message.value, &keys[0])
-          })
-      }).collect::<Vec<_>>();
+        if keys.len() < types::QUORUM_SIZE as usize {
+            return Vec::<ResultType>::new();
+        }
 
-      if verified_messages.len() < types::QUORUM_SIZE as usize {
-          return Vec::new()
-      }
+        let key_map = GetGroupKeyResponse::merge(&keys)
+            .into_iter()
+            .flat_map(|GetGroupKeyResponse{public_sign_keys: addr_key_pairs}| {
+                addr_key_pairs.into_iter()
+            })
+            .collect::<HashMap<_,_>>();
 
-      verified_messages
+        messages.iter().filter_map(|message| {
+            key_map.get(&message.value.0.from_node())
+                .and_then(|pub_key| Sentinel::check_signature(&message.value, &pub_key))
+        })
+        .collect::<Vec<_>>()
     }
 
     fn decode<T: Decodable>(data: &SerialisedMessage) -> Option<T> {
