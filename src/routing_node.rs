@@ -646,10 +646,13 @@ mod test {
     use generic_sendable_type;
     use node_interface::*;
     use types::{Pmid, Authority, DestinationAddress};
-    use types::{PublicPmid};
+    use types::{PublicPmid, MessageId};
     use routing_table;
+    use message_header::MessageHeader;
     use NameType;
+    use test_utils::Random;
     use super::super::{Action, RoutingError};
+    use rand::random;
     //use std::thread;
     //use std::net::{SocketAddr};
     //use std::str::FromStr;
@@ -706,9 +709,22 @@ mod test {
                                        PublicPmid::new(&Pmid::new()), true));
             count += 1;
             if routing_node.routing_table.size() >=
-               routing_table::RoutingTable::get_optimal_size() { break; }
-            if count >= 120 {panic!("Routing table does not fill up.")}
+                routing_table::RoutingTable::get_optimal_size() { break; }
+            if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
+                panic!("Routing table does not fill up."); }
         }
+        let a_message_id : MessageId = random::<u32>();
+        let our_furthest_close_group_node : routing_table::NodeInfo
+            = routing_node.routing_table
+                          .our_close_group().last()
+                          .unwrap_or( panic!("No furthest node in close group.") )
+                          .clone();
+
+        // assert to get a client_manager Authority
+        // let client_manager_header : MessageHeader = MessageHeader {
+        //     message_id : Random::generate_random(),
+        //
+        // }
     }
 
     //#[test]
