@@ -15,7 +15,7 @@
 
 #![allow(dead_code)]
 
-
+use std::collections;
 use routing::generic_sendable_type;
 use lru_time_cache::LruCache;
 use routing::NameType;
@@ -25,6 +25,7 @@ use cbor;
 
 type Identity = NameType; // maid node address
 
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
 pub struct MaidManagerAccount {
   data_stored : u64,
   space_available : u64
@@ -39,105 +40,86 @@ impl Clone for MaidManagerAccount {
     }
 }
 
-impl Encodable for MaidManagerAccount {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        cbor::CborTagEncode::new(5483_002, &(
-            self.data_stored,
-            self.space_available)).encode(e)
-    }
-}
-
-impl Decodable for MaidManagerAccount {
-    fn decode<D: Decoder>(d: &mut D)-> Result<MaidManagerAccount, D::Error> {
-        try!(d.read_u64());
-        let (data_stored, space_available) : (u64, u64) = try!(Decodable::decode(d));
-        Ok(MaidManagerAccount {data_stored: data_stored, space_available: space_available })
-    }
-}
-
-
-
 impl MaidManagerAccount {
-  pub fn new() -> MaidManagerAccount {
-    // FIXME : to bypass the AccountCreation process for simple network allownance is granted automatically
-    MaidManagerAccount { data_stored: 0, space_available: 1073741824 }
-  }
-
-  pub fn put_data(&mut self, size : u64) -> bool {
-    if size > self.space_available {
-      return false;
+    pub fn new() -> MaidManagerAccount {
+        // FIXME : to bypass the AccountCreation process for simple network allownance is granted automatically
+        MaidManagerAccount { data_stored: 0, space_available: 1073741824 }
     }
-    self.data_stored += size;
-    self.space_available -= size;
-    true
-  }
 
-  pub fn delete_data(&mut self, size : u64) {
-    if self.data_stored < size {
-      self.space_available += self.data_stored;
-      self.data_stored = 0;
-    } else {
-      self.data_stored -= size;
-      self.space_available += size;
+    pub fn put_data(&mut self, size : u64) -> bool {
+        if size > self.space_available {
+            return false;
+        }
+        self.data_stored += size;
+        self.space_available -= size;
+        true
     }
-  }
+
+    pub fn delete_data(&mut self, size : u64) {
+        if self.data_stored < size {
+            self.space_available += self.data_stored;
+            self.data_stored = 0;
+        } else {
+            self.data_stored -= size;
+            self.space_available += size;
+        }
+    }
+
+    pub fn get_available_space(&self) -> u64 {
+      self.space_available.clone()
+    }
+
+
+    pub fn get_data_stored(&self) -> u64 {
+        self.data_stored.clone()
+    }
 
 }
 
 pub struct MaidManagerDatabase {
-  storage : LruCache<Identity, MaidManagerAccount>
+  storage: collections::HashMap<Identity, MaidManagerAccount>,
 }
 
 impl MaidManagerDatabase {
   pub fn new () -> MaidManagerDatabase {
-    MaidManagerDatabase { storage: LruCache::with_capacity(10000) }
+      MaidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
   }
 
   pub fn exist(&mut self, name : &Identity) -> bool {
-    self.storage.get(name.clone()).is_some()
+      self.storage.contains_key(name)
   }
 
-  pub fn put_data(&mut self, name : &Identity, size: u64) -> bool {
-    let mut tmp = MaidManagerAccount::new();
-    let entry = self.storage.remove(name.clone());
-  	if entry.is_some() {
-  	  tmp = entry.unwrap();
-  	} 
-    let result = tmp.put_data(size);
-    self.storage.add(name.clone(), tmp);
-    result
+  pub fn put_data(&mut self, name: &Identity, size: u64) -> bool {
+      let entry = self.storage.entry(name.clone()).or_insert(MaidManagerAccount::new());
+      entry.put_data(size)
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, generic_sendable_type::GenericSendableType)> {
-    let data: Vec<(Identity, MaidManagerAccount)> = self.storage.retrieve_all();
-    let mut sendable_data = Vec::<(Identity, generic_sendable_type::GenericSendableType)>::with_capacity(data.len());
-    for element in data {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&element.1]).unwrap();
-        let serialised_content = e.into_bytes();
-        let sendable_type = generic_sendable_type::GenericSendableType::new(element.0.clone(), 0, serialised_content); //TODO Get type_tag correct
-        sendable_data.push((element.0, sendable_type));
-    }
-    self.storage = LruCache::with_capacity(10000);
-    sendable_data
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
+      let data: Vec<_> = self.storage.drain().collect();
+      let mut sendable_data = Vec::with_capacity(data.len());
+      for element in data {
+          let mut e = cbor::Encoder::from_memory();
+          e.encode(&[&element.1]).unwrap();
+          let serialised_content = e.into_bytes();
+          sendable_data.push(generic_sendable_type::GenericSendableType::new(element.0, 0, serialised_content)); //TODO Get type_tag correct
+      }
+      sendable_data
   }
 
   pub fn delete_data(&mut self, name : &Identity, size: u64) {
-    let entry = self.storage.remove(name.clone());
-    if entry.is_some() {
-      let mut tmp = entry.unwrap();
-      tmp.delete_data(size);
-      self.storage.add(name.clone(), tmp);
-    }
+      match self.storage.get_mut(name) {
+          Some(value) => value.delete_data(size),
+          None => (),
+      }
   }
-
 }
 
 
 #[cfg(test)]
 mod test {
-  use super::*;  
+  use super::*;
   use routing;
+  use cbor;
 
   #[test]
   fn exist() {
@@ -181,6 +163,19 @@ mod test {
     assert_eq!(db.exist(&name), true);
     assert_eq!(db.put_data(&name, 1073741825), false);
     assert_eq!(db.put_data(&name, 1073741824), true);
+  }
+
+  #[test]
+  fn maid_manager_account_serialisation() {
+      let obj_before = MaidManagerAccount::new();
+
+       let mut e = cbor::Encoder::from_memory();
+       e.encode(&[&obj_before]).unwrap();
+
+       let mut d = cbor::Decoder::from_bytes(e.into_bytes());
+       let obj_after: MaidManagerAccount = d.decode().next().unwrap().unwrap();
+
+       assert_eq!(obj_before, obj_after);
   }
 
 }
