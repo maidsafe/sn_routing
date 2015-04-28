@@ -18,6 +18,8 @@
 
 #![allow(unused_assignments)]
 
+#[path="messages/close_peer_lost.rs"]
+pub mod close_peer_lost;
 #[path="messages/connect_request.rs"]
 pub mod connect_request;
 #[path="messages/connect_response.rs"]
@@ -57,6 +59,7 @@ use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum MessageTypeTag {
+    ClosePeerLost,
     ConnectRequest,
     ConnectResponse,
     FindGroup,
@@ -80,6 +83,7 @@ impl Encodable for MessageTypeTag {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let mut type_tag = "";
         match *self {
+            MessageTypeTag::ClosePeerLost => type_tag = "ClosePeerLost",
             MessageTypeTag::ConnectRequest => type_tag = "ConnectRequest",
             MessageTypeTag::ConnectResponse => type_tag = "ConnectResponse",
             MessageTypeTag::FindGroup => type_tag = "FindGroup",
@@ -108,6 +112,7 @@ impl Decodable for MessageTypeTag {
         let mut type_tag : String = String::new();
         type_tag = try!(Decodable::decode(d));
         match &type_tag[..] {
+            "ClosePeerLost" => Ok(MessageTypeTag::ClosePeerLost),
             "ConnectRequest" => Ok(MessageTypeTag::ConnectRequest),
             "ConnectResponse" => Ok(MessageTypeTag::ConnectResponse),
             "FindGroup" => Ok(MessageTypeTag::FindGroup),

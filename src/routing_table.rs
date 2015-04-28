@@ -238,7 +238,6 @@ impl RoutingTable {
 
     /// This returns the public key for the given node if the node is in our table.
     pub fn get_public_key(&self, their_id: NameType)->Option<crypto::asymmetricbox::PublicKey> {
-
         //std::lock_guard<std::mutex> lock(mutex_);
         if !self.is_nodes_sorted() {
             panic!("Nodes are not sorted");

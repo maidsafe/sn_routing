@@ -47,6 +47,7 @@
 #![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core,
            thread_sleep, ip_addr, convert, scoped)]
 extern crate cbor;
+extern crate core;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;

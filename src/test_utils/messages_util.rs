@@ -22,6 +22,14 @@ use types::*;
 use NameType;
 use super::random_trait::Random;
 
+impl Random for messages::close_peer_lost::ClosePeerLost {
+    fn generate_random() -> messages::close_peer_lost::ClosePeerLost {
+        messages::close_peer_lost::ClosePeerLost {
+            peer_id: Random::generate_random(),
+        }
+    }
+}
+
 impl Random for messages::connect_request::ConnectRequest {
     fn generate_random() -> messages::connect_request::ConnectRequest {
         use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
