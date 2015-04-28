@@ -47,41 +47,41 @@ impl DataManagerDatabase {
 
   pub fn add_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
     let entry = self.storage.remove(name.clone());
-  	if entry.is_some() {
-  	  let mut tmp = entry.unwrap();
-  	  for i in 0..tmp.len() {
-  	  	if tmp[i] == pmid_node {
-  	  	  return;
-  	  	}
-  	  }
-  	  tmp.push(pmid_node);
+      if entry.is_some() {
+        let mut tmp = entry.unwrap();
+        for i in 0..tmp.len() {
+            if tmp[i] == pmid_node {
+              return;
+            }
+        }
+        tmp.push(pmid_node);
       self.storage.add(name.clone(), tmp);
-  	} else {
+      } else {
       self.storage.add(name.clone(), vec![pmid_node]);
-  	}
+      }
   }
 
   pub fn remove_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
     let entry = self.storage.remove(name.clone());
-  	if entry.is_some() {
-  	  let mut tmp = entry.unwrap();
-  	  for i in 0..tmp.len() {
-  	  	if tmp[i] == pmid_node {
-  	  	  tmp.remove(i);
+      if entry.is_some() {
+        let mut tmp = entry.unwrap();
+        for i in 0..tmp.len() {
+            if tmp[i] == pmid_node {
+              tmp.remove(i);
           break;
-  	  	}
-  	  }
+            }
+        }
       self.storage.add(name.clone(), tmp);
-  	}
+      }
   }
 
   pub fn get_pmid_nodes(&mut self, name : &Identity) -> PmidNodes {
     let entry = self.storage.get(name.clone());
-  	if entry.is_some() {
-  	  entry.unwrap().clone()
-  	} else {
-  	  Vec::<PmidNode>::new()
-  	}
+      if entry.is_some() {
+        entry.unwrap().clone()
+      } else {
+        Vec::<PmidNode>::new()
+      }
   }
 
     pub fn retrieve_all_and_reset(&mut self) -> Vec<(Identity, generic_sendable_type::GenericSendableType)> {
@@ -105,13 +105,13 @@ mod test {
   use maidsafe_types;
   use rand;
   use routing;
-  use super::*;  
+  use super::*;
   use maidsafe_types::ImmutableData;
   use routing::NameType;
   use routing::types::{generate_random_vec_u8};
   use routing::test_utils::Random;
   use routing::sendable::Sendable;
-  
+
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();

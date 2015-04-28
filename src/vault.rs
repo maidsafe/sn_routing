@@ -144,6 +144,7 @@ impl VaultFacade {
     use cbor;
     use maidsafe_types;
     use maid_manager;
+    use pmid_manager::PmidManagerAccount;
     use maidsafe_types::{PayloadTypeTag, Payload};
     use routing::types:: { Authority, DestinationAddress };
     use routing::NameType;
@@ -264,8 +265,8 @@ impl VaultFacade {
         }
     }
 
-    fn put_maid_manager_data(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress,
-            payload_name: NameType, payload: Vec<u8>) {
+    fn maid_manager_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress,
+                        payload_name: NameType, payload: Vec<u8>) {
         let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
                                          payload);
         assert_eq!(put_result.is_err(), false);
@@ -273,6 +274,39 @@ impl VaultFacade {
             routing::Action::SendOn(ref x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], payload_name);
+            }
+            routing::Action::Reply(x) => panic!("Unexpected"),
+        }
+    }
+
+    fn data_manager_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress,
+                        payload: Vec<u8>) {
+        let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from,
+            dest, payload);
+        assert_eq!(put_result.is_err(), false);
+        match put_result.ok().unwrap() {
+            routing::Action::SendOn(ref x) => {
+                assert_eq!(x.len(), data_manager::PARALLELISM);
+            }
+            routing::Action::Reply(x) => panic!("Unexpected"),
+        }
+    }
+
+    fn add_nodes_to_table(vault: &mut VaultFacade, size: u8) {
+        for i in 0..size {
+            vault.nodes_in_table.push(NameType::generate_random());
+        }
+    }
+
+    fn pmid_manager_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress,
+                        payload: Vec<u8>) {
+        let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager, from, dest.clone(),
+                                     payload);
+        assert_eq!(put_result.is_err(), false);
+        match put_result.ok().unwrap() {
+            routing::Action::SendOn(ref x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], dest.dest);
             }
             routing::Action::Reply(x) => panic!("Unexpected"),
         }
@@ -294,17 +328,55 @@ impl VaultFacade {
         let from = NameType::generate_random();
         let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
         let data_as_vec = routing::types::array_as_vector(encoder.as_bytes());
-        put_maid_manager_data(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
 
-        let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
-        assert!(churn_data.len() == 1);
-        assert!(churn_data[0].0 == from);
-        // MaidManagerAccount
-        let sendable: GenericSendableType = churn_data[0].1.clone();
-        assert_eq!(sendable.name(), from);
-        // panic!("{:?}", sendable.serialised_contents().clone());
-        // let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
-        // let obj: maid_manager::MaidManagerAccount = decoder.decode().next().unwrap().unwrap();
-        //assert_eq!(sendable.serialised_contents(), data_as_vec);
+        {// MaidManager - churn handling
+            maid_manager_put(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
+            let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
+            assert!(churn_data.len() == 1);
+            assert!(churn_data[0].0 == from);
+            // MaidManagerAccount
+            let sendable: GenericSendableType = churn_data[0].1.clone();
+            assert_eq!(sendable.name(), from.clone());
+            // panic!("{:?}", sendable.serialised_contents().clone());
+            // let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
+            // let obj: maid_manager::MaidManagerAccount = decoder.decode().next().unwrap().unwrap();
+            //assert_eq!(sendable.serialised_contents(), data_as_vec);
+            // Since the vaules are cleared the data should be empty
+            assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
+        }
+
+        add_nodes_to_table(&mut vault, 10);
+
+        {// DataManager - churn handling
+            data_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
+            assert!(churn_data.len() == 1);
+            assert!(churn_data[0].0 == data.name().clone());
+
+            let sendable: GenericSendableType = churn_data[0].1.clone();
+            assert_eq!(sendable.name(), data.name().clone());
+
+            let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
+            let pmids: Vec<NameType> = decoder.decode().next().unwrap().unwrap();
+            assert_eq!(pmids.len(), data_manager::PARALLELISM);
+
+            assert!(vault.data_manager.retrieve_all_and_reset().is_empty());
+        }
+
+        {// PmidManager - churn handling
+            pmid_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
+            assert!(churn_data.len() == 1);
+            //assert_eq!(churn_data[0].0, from);
+
+            let sendable: GenericSendableType = churn_data[0].1.clone();
+            assert_eq!(sendable.name(), dest.dest);
+
+            // let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
+            // let pmids: PmidManagerAccount = decoder.decode().next().unwrap().unwrap();
+            // assert_eq!(pmids.len(), data_manager::PARALLELISM);
+
+            assert!(vault.pmid_manager.retrieve_all_and_reset().is_empty());
+        }
     }
 }

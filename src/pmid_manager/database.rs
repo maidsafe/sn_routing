@@ -39,7 +39,7 @@ impl Clone for PmidManagerAccount {
       lost_total_size : self.lost_total_size,
       offered_space : self.offered_space
     }
-  }  
+  }
 }
 
 impl Encodable for PmidManagerAccount {
@@ -122,7 +122,7 @@ impl PmidManagerDatabase {
     let entry = self.storage.remove(name.clone());
   	if entry.is_some() {
   	  tmp = entry.unwrap();
-  	} 
+  	}
     let result = tmp.put_data(size);
     self.storage.add(name.clone(), tmp);
     result
@@ -150,7 +150,7 @@ mod test {
   extern crate maidsafe_types;
   extern crate rand;
   extern crate routing;
-  use super::{PmidManagerDatabase};
+  use super::{PmidManagerDatabase, PmidManagerAccount};
   use self::routing::types::*;
 
   #[test]
@@ -177,5 +177,17 @@ mod test {
     assert_eq!(db.exist(&name), true);
   }
 
+  #[test]
+  fn pmid_manager_account_serialization() {
+      let obj_before = PmidManagerAccount::new();
+
+       let mut e = cbor::Encoder::from_memory();
+       e.encode(&[&obj_before]).unwrap();
+
+       let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+       let obj_after: PmidManagerAccount = d.decode().next().unwrap().unwrap();
+
+       //assert_eq!(obj_before, obj_after);
+  }
 
 }
