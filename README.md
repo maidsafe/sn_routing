@@ -61,8 +61,8 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
   - [ ] GetGroupKeyResponse HandleGetGroupKeyResponse 
   - [ ] Post HandlePost 
   - [ ] PostResponse HandlePostResponse 
-  - [ ] PutData HandlePutData 
-  - [ ] PutDataResponse HandlePutDataResponse 
+  - [x] PutData HandlePutData 
+  - [x] PutDataResponse HandlePutDataResponse 
   - [ ] PutKey HandlePutKey 
 - [ ] Implement routing connections management
 - [ ] Sentinel:
