@@ -185,7 +185,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             },
             name_and_type_id: types::NameAndTypeId {
                 name: name.clone(),
-                type_id: type_id as u32,
+                type_id: type_id,
             },
         };
 
