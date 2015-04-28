@@ -112,12 +112,6 @@ pub type SerialisedMessage = Vec<u8>;
 pub type PmidNode = NameType;
 pub type PmidNodes = Vec<PmidNode>;
 
-// pub trait RoutingTrait {
-//   fn get_name(&self)->NameType;
-//   fn get_owner(&self)->Vec<u8>;
-//   fn refresh(&self)->bool;
-// }
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
   pub name : NameType,
