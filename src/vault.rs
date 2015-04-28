@@ -219,8 +219,8 @@ pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bo
                 routing::Action::Reply(x) => panic!("Unexpected"),
             }
             let from = NameType::new([1u8; 64]);
-            let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::NaeManager,
-                                             Authority::Client, from, data.name().0.to_vec());
+            let get_result = vault.handle_get(payload.get_type_tag() as u64, data.name().clone(), Authority::NaeManager,
+                                             Authority::Client, from);
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
                 routing::Action::SendOn(ref x) => {
@@ -259,8 +259,8 @@ pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bo
             }
             let from = NameType::new([7u8; 64]);
 
-            let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::ManagedNode,
-                                             Authority::NodeManager, from, array_as_vector_u8(data.name().0));
+            let get_result = vault.handle_get(payload.get_type_tag() as u64, data.name().clone(), Authority::ManagedNode,
+                                             Authority::NodeManager, from);
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
                 routing::Action::Reply(ref x) => {
