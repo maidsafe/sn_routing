@@ -312,6 +312,17 @@ impl VaultFacade {
         }
     }
 
+    fn version_handler_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress,
+                        payload: Vec<u8>) {
+        let put_result = vault.handle_put(Authority::NaeManager, Authority::ManagedNode,
+            from.clone(), dest, payload);
+        assert_eq!(put_result.is_err(), true);
+        match put_result.err().unwrap() {
+             routing::RoutingError::Success => { },
+             _ => panic!("Unexpected"),
+        }
+    }
+
     #[test]
     fn churn_test() {
         let mut vault = VaultFacade::new();
@@ -371,8 +382,37 @@ impl VaultFacade {
 
             let sendable: GenericSendableType = churn_data[0].1.clone();
             assert_eq!(sendable.name(), dest.dest);
-            
+
             assert!(vault.pmid_manager.retrieve_all_and_reset().is_empty());
         }
+
+        {// VersionHandler - churn handling
+            let name = NameType::generate_random();
+            let owner = NameType::generate_random();
+            let mut vec_name_types = Vec::<NameType>::with_capacity(10);
+            for i in 0..10 {
+                vec_name_types.push(NameType::generate_random());
+            }
+            let data = maidsafe_types::StructuredData::new(name, owner, vec![vec_name_types.clone()]);
+            let payload = Payload::new(PayloadTypeTag::StructuredData, &data);
+
+            let mut encoder = cbor::Encoder::from_memory();
+            let encode_result = encoder.encode(&[&payload]);
+            assert_eq!(encode_result.is_ok(), true);
+            let data_as_vec = routing::types::array_as_vector(encoder.as_bytes());
+
+            version_handler_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
+            assert_eq!(churn_data.len(), 1);
+            assert_eq!(churn_data[0].0, data.name());
+
+            let sendable: GenericSendableType = churn_data[0].1.clone();
+            assert_eq!(sendable.name(), data.name());
+            let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
+            let decoded_data: Payload = decoder.decode().next().unwrap().unwrap();
+            assert_eq!(decoded_data, payload);
+            assert!(vault.version_handler.retrieve_all_and_reset().is_empty());
+        }
+
     }
 }

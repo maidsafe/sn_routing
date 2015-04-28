@@ -62,10 +62,7 @@ impl VersionHandler {
        let mut sendable = Vec::with_capacity(names.len());
        for name in names {
             let data = self.chunk_store_.get(name.clone());
-            let mut e = Encoder::from_memory();
-            e.encode(&[&data]).unwrap();
-            let serialised_content = e.into_bytes();
-            let sendable_type = generic_sendable_type::GenericSendableType::new(name.clone(), 1, serialised_content); //TODO Get type_tag correct
+            let sendable_type = generic_sendable_type::GenericSendableType::new(name.clone(), 1, data); //TODO Get type_tag correct
             sendable.push((name, sendable_type));
        }
        self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
