@@ -34,7 +34,7 @@ use message_filter::MessageFilter;
 use NameType;
 use name_type::closer_to_target;
 use node_interface::Interface;
-use routing_table::{RoutingTable, NodeInfo, GROUP_SIZE};
+use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
 use types::{MessageId, Authority, NameAndTypeId};
@@ -114,8 +114,7 @@ impl<F> RoutingNode<F> where F: Interface {
                       bootstrap_endpoint: None,
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
-                      public_pmid_cache: LruCache::with_expiry_duration_and_capacity(
-                          Duration::minutes(10), GROUP_SIZE)
+                      public_pmid_cache: LruCache::with_expiry_duration(Duration::minutes(10))
                     }
     }
 
