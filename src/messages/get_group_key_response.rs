@@ -22,13 +22,12 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::{Frequency};
 
-use types;
+use types::{PublicSignKey, GROUP_SIZE};
 use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct GetGroupKeyResponse {
-  pub target_id : types::GroupAddress,
-  pub public_sign_keys : Vec<(NameType, types::PublicSignKey)>
+  pub public_sign_keys : Vec<(NameType, PublicSignKey)>
 }
 
 impl GetGroupKeyResponse {
@@ -38,47 +37,34 @@ impl GetGroupKeyResponse {
             return None;
         }
 
-        let mut freq_target_id = Frequency::new();
+        let mut frequency = Frequency::new();
+
         for response in get_group_key_responses {
-            freq_target_id.update(response.target_id.clone());
-        }
-        // first identify the target_ids;
-        let target_ids : Vec<NameType> = freq_target_id.sort_by_highest()
-                                       .iter()
-                                       .map(|&(ref id, _ )| id.clone())
-                                       .collect();
-        for target_id in target_ids {
-            let mut freq_public_sign_key = Frequency::new();
-            for response in get_group_key_responses.iter()
-                              .filter(|response| &response.target_id == &target_id) {
-                for public_sign_key in &response.public_sign_keys {
-                    freq_public_sign_key.update(public_sign_key.clone());
-                }
+            for public_sign_key in &response.public_sign_keys {
+                frequency.update(public_sign_key.clone());
             }
-            let merged_group : Vec<(NameType, types::PublicSignKey)>
-                             = freq_public_sign_key.sort_by_highest().iter()
-                                                   .take(types::GROUP_SIZE as usize)
-                                                   .map(|&(ref k, _)| k.clone())
-                                                   .collect();
-            if !merged_group.is_empty() {
-                return Some(GetGroupKeyResponse{target_id : target_id,
-                                                public_sign_keys : merged_group}); };
         }
-        return None;
+
+        let merged_group = frequency.sort_by_highest().iter()
+                           .take(GROUP_SIZE as usize)
+                           .map(|&(ref k, _)| k.clone())
+                           .collect();
+
+        Some(GetGroupKeyResponse{ public_sign_keys: merged_group })
     }
 }
 
 impl Encodable for GetGroupKeyResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.target_id, &self.public_sign_keys)).encode(e)
+    CborTagEncode::new(5483_001, &self.public_sign_keys).encode(e)
   }
 }
 
 impl Decodable for GetGroupKeyResponse {
   fn decode<D: Decoder>(d: &mut D)->Result<GetGroupKeyResponse, D::Error> {
     try!(d.read_u64());
-    let (target_id, public_sign_keys) = try!(Decodable::decode(d));
-    Ok(GetGroupKeyResponse { target_id: target_id , public_sign_keys: public_sign_keys})
+    let public_sign_keys = try!(Decodable::decode(d));
+    Ok(GetGroupKeyResponse { public_sign_keys: public_sign_keys})
   }
 }
 
@@ -121,11 +107,9 @@ mod test {
         keys.push(obj.public_sign_keys[13].clone());
 
         let mut responses = Vec::<GetGroupKeyResponse>::new();
-        let target_id = obj.target_id.clone();
         responses.push(obj);
         for _ in 0..4 {
             let mut response = GetGroupKeyResponse::generate_random();
-            response.target_id = target_id.clone();
             response.public_sign_keys[1] = keys[0].clone();
             response.public_sign_keys[4] = keys[1].clone();
             response.public_sign_keys[6] = keys[2].clone();
