@@ -767,14 +767,19 @@ impl<F> RoutingNode<F> where F: Interface {
 
 #[cfg(test)]
 mod test {
-    //use routing_node::{RoutingNode};
-    // use node_interface::*;
-    // use types::{Authority, DestinationAddress};
-    // use name_type::NameType;
-    // use super::super::{Action, RoutingError};
-    //use std::thread;
-    //use std::net::{SocketAddr};
-    //use std::str::FromStr;
+    use super::*;
+    use generic_sendable_type;
+    use node_interface::*;
+    use types::{Pmid, Authority, DestinationAddress};
+    use types::{PublicPmid, MessageId};
+    use routing_table;
+    use message_header::MessageHeader;
+    use NameType;
+    use types;
+    use name_type::{closer_to_target};
+    use test_utils::{Random, xor};
+    use super::super::{Action, RoutingError};
+    use rand::random;
 
     struct NullInterface;
 
