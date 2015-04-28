@@ -34,7 +34,7 @@ use message_filter::MessageFilter;
 use NameType;
 use name_type::closer_to_target;
 use node_interface::Interface;
-use routing_table::{RoutingTable, NodeInfo};
+use routing_table::{RoutingTable, NodeInfo, GROUP_SIZE};
 use sendable::Sendable;
 use types;
 use types::{MessageId, Authority};
@@ -59,8 +59,6 @@ pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
 type RecvResult = Result<(), ()>;
-
-static PUBLIC_PMID_CACHE_SIZE: usize = 23;
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
@@ -117,7 +115,7 @@ impl<F> RoutingNode<F> where F: Interface {
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                       public_pmid_cache: LruCache::with_expiry_duration_and_capacity(
-                          Duration::minutes(10), PUBLIC_PMID_CACHE_SIZE)
+                          Duration::minutes(10), GROUP_SIZE)
                     }
     }
 
@@ -193,7 +191,8 @@ impl<F> RoutingNode<F> where F: Interface {
         let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: our_public_pmid.name.clone(), reply_to: None };
-        let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None }; // FIXME bootstrap node
+        let source = types::SourceAddress{ from_node: self.id(), from_group: None,
+                                            reply_to: self.bootstrap_node_id.clone() };
         let authority = types::Authority::ManagedNode;
 
         //FIXME should we sign the request here ?
