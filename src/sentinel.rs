@@ -259,15 +259,15 @@ impl<'a> Sentinel<'a> {
                  Sentinel::encode(merged))
             })
         } else {
-            let msg_bodies = verified_messages.iter()
-                             .map(|&(_, _, ref body)| body.clone())
+            let header = verified_messages[0].0.clone();
+            let tag    = verified_messages[0].1.clone();
+
+            let msg_bodies = verified_messages.into_iter()
+                             .map(|(_, _, body)| body)
                              .collect::<Vec<_>>();
 
-            take_most_frequent(&msg_bodies, types::QUORUM_SIZE as usize).map(|merged| {
-                (verified_messages[0].0.clone(),
-                 verified_messages[0].1.clone(),
-                 merged)
-            })
+            take_most_frequent(&msg_bodies, types::QUORUM_SIZE as usize)
+                .map(|merged| { (header, tag, merged) })
         }
     }
 }
@@ -282,8 +282,8 @@ where E: Clone + Ord {
     for element in elements {
         freq_counter.update(element.clone());
     }
-    freq_counter.sort_by_highest().iter().nth(0).and_then(|&(ref element,ref count)| {
-        if *count >= min_count as usize { Some(element.clone()) } else { None }
+    freq_counter.sort_by_highest().into_iter().nth(0).and_then(|(element, count)| {
+        if count >= min_count as usize { Some(element) } else { None }
     })
 }
 
