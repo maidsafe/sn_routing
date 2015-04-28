@@ -168,7 +168,7 @@ mod test {
   }
 
   #[test]
-  fn maid_manager_account_serialization() {
+  fn maid_manager_account_serialisation() {
       let obj_before = MaidManagerAccount::new();
 
        let mut e = cbor::Encoder::from_memory();

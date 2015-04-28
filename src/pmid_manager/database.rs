@@ -162,7 +162,7 @@ mod test {
   }
 
     #[test]
-    fn pmid_manager_account_serialization() {
+    fn pmid_manager_account_serialisation() {
         let obj_before = super::PmidManagerAccount::new();
 
         let mut e = cbor::Encoder::from_memory();
