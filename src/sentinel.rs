@@ -154,18 +154,6 @@ impl<'a> Sentinel<'a> {
       None
     }
 
-    fn update_key_map(key_map: &mut HashMap<NameType, Vec<PublicSignKey>>, addr: NameType, key: PublicSignKey) {
-        if !key_map.contains_key(&addr) {
-            key_map.insert(addr, vec![key]);
-        }
-        else {
-            let mut public_keys = key_map.get_mut(&addr).unwrap();
-            if !public_keys.contains(&key) {
-                public_keys.push(key);
-            }
-        }
-    }
-
     fn check_signature(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
         response.0.get_signature().and_then(|signature| {
           let is_correct = crypto::sign::verify_detached(
@@ -750,7 +738,7 @@ mod test {
     let embedded_signature_group = EmbeddedSignatureGroup::new(types::GROUP_SIZE as usize,
                types::Authority::NaeManager);
     let mut trace_get_keys = TraceGetKeys::new();
-    let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
+    let mut sentinel_returns = Vec::<(u64, Option<ResultType>)>::new();
     let mut message_tracker : u64 = 0;
     {
       let mut sentinel = Sentinel::new(&mut trace_get_keys);
