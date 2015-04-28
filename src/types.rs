@@ -363,12 +363,6 @@ impl Decodable for AccountTransferInfo {
   }
 }
 
-impl RoutingTrait for AccountTransferInfo {
-    fn get_name(&self)->NameType { self.name.clone() }
-    fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-    fn refresh(&self)->bool { true } // TODO is this an account transfer type
-}
-
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {

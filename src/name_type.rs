@@ -221,7 +221,6 @@ mod test {
     fn format_pmid_nametype() {
         // test for Pmids
         use types::Pmid;
-        use types::RoutingTrait;
         for _ in 0..5 {
             let my_pmid = Pmid::new();
             let my_name = my_pmid.get_name();

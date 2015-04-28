@@ -314,7 +314,6 @@ mod test {
   use std::cmp;
   use sodiumoxide::crypto;
   use types;
-  use types::RoutingTrait;
   use name_type::closer_to_target;
   use NameType;
   use message_header;
