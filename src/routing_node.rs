@@ -434,6 +434,8 @@ impl<F> RoutingNode<F> where F: Interface {
             group_keys.push((close_node.fob.name.clone(),
                              close_node.fob.public_sign_key.clone()));
         }
+        // add our own signature key
+        group_keys.push((self.pmid.get_name(),self.pmid.get_public_sign_key()));
         Ok(())
     }
 
@@ -619,6 +621,16 @@ impl<F> RoutingNode<F> where F: Interface {
     fn our_group_address(&self, group_id: NameType) -> types::SourceAddress {
         types::SourceAddress{ from_node: self.own_id.clone(), from_group: Some(group_id.clone()),
                                 reply_to: None }
+    }
+
+    fn construct_get_group_key_response_msg(&mut self, original_message_id : &MessageId) -> RoutingMessage {
+        let header = MessageHeader {
+            message_id: original_message_id.clone(),
+            destination: types::DestinationAddress {
+                             dest:     self.own_id.clone(),
+                             reply_to: None
+                         },
+        }
     }
 
     fn construct_find_group_msg(&mut self) -> RoutingMessage {
