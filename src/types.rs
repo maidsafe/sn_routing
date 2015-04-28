@@ -261,22 +261,12 @@ impl PublicPmid {
         name : pmid.name()
       }
     }
-}
 
-impl Sendable for PublicPmid {
-  fn name(&self)-> NameType { self.name.clone() }
-
-  fn type_tag(&self)->u64 { 0 }
-
-  fn serialised_contents(&self)->Vec<u8> {
-      let mut e = cbor::Encoder::from_memory();
-      e.encode(&[&self]).unwrap();
-      e.into_bytes()
-  }
-
-  fn owner(&self)->Option<NameType> { Option::None }  //FIXME is it correct ?
-  fn refresh(&self)->bool { false }
-  fn merge(&self)->bool { false }
+    pub fn serialised_contents(&self)->Vec<u8> {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
+    }
 }
 
 impl Encodable for PublicPmid {
