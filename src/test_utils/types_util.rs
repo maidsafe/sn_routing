@@ -25,7 +25,7 @@ impl Random for NameAndTypeId {
     fn generate_random() -> NameAndTypeId {
         NameAndTypeId {
             name: Random::generate_random(),
-            type_id: random::<u32>(),
+            type_id: random::<u64>(),
         }
     }
 }
