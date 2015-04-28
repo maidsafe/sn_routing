@@ -26,6 +26,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 type Identity = self::routing::NameType; // pmidnode address
 
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
 pub struct PmidManagerAccount {
   stored_total_size : u64,
   lost_total_size : u64,
@@ -40,23 +41,6 @@ impl Clone for PmidManagerAccount {
       offered_space : self.offered_space
     }
   }
-}
-
-impl Encodable for PmidManagerAccount {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        cbor::CborTagEncode::new(5483_002, &(
-            self.stored_total_size,
-            self.lost_total_size,
-            self.offered_space)).encode(e)
-    }
-}
-
-impl Decodable for PmidManagerAccount {
-    fn decode<D: Decoder>(d: &mut D)-> Result<PmidManagerAccount, D::Error> {
-        try!(d.read_u64());
-        let (stored_total_size, lost_total_size, offered_space) : (u64, u64, u64) = try!(Decodable::decode(d));
-        Ok(PmidManagerAccount {stored_total_size: stored_total_size, lost_total_size: lost_total_size, offered_space: offered_space, })
-    }
 }
 
 impl PmidManagerAccount {
@@ -153,41 +137,41 @@ mod test {
   use super::{PmidManagerDatabase, PmidManagerAccount};
   use self::routing::types::*;
 
-  #[test]
-  fn exist() {
-    let mut db = PmidManagerDatabase::new();
-    let name = routing::test_utils::Random::generate_random();
-    assert_eq!(db.exist(&name), false);
-    db.put_data(&name, 1024);
-    assert_eq!(db.exist(&name), true);
-  }
+    #[test]
+    fn exist() {
+        let mut db = PmidManagerDatabase::new();
+        let name = routing::test_utils::Random::generate_random();
+        assert_eq!(db.exist(&name), false);
+        db.put_data(&name, 1024);
+        assert_eq!(db.exist(&name), true);
+    }
 
-  #[test]
-  fn put_data() {
-    let mut db = PmidManagerDatabase::new();
-    let name = routing::test_utils::Random::generate_random();
-    assert_eq!(db.put_data(&name, 0), true);
-    assert_eq!(db.exist(&name), true);
-    assert_eq!(db.put_data(&name, 1), true);
-    assert_eq!(db.put_data(&name, 1073741823), true);
-    assert_eq!(db.put_data(&name, 1), false);
-    assert_eq!(db.put_data(&name, 1), false);
-    assert_eq!(db.put_data(&name, 0), true);
-    assert_eq!(db.put_data(&name, 1), false);
-    assert_eq!(db.exist(&name), true);
-  }
+    #[test]
+    fn put_data() {
+        let mut db = PmidManagerDatabase::new();
+        let name = routing::test_utils::Random::generate_random();
+        assert_eq!(db.put_data(&name, 0), true);
+        assert_eq!(db.exist(&name), true);
+        assert_eq!(db.put_data(&name, 1), true);
+        assert_eq!(db.put_data(&name, 1073741823), true);
+        assert_eq!(db.put_data(&name, 1), false);
+        assert_eq!(db.put_data(&name, 1), false);
+        assert_eq!(db.put_data(&name, 0), true);
+        assert_eq!(db.put_data(&name, 1), false);
+        assert_eq!(db.exist(&name), true);
+    }
 
-  #[test]
-  fn pmid_manager_account_serialization() {
-      let obj_before = PmidManagerAccount::new();
+    #[test]
+    fn pmid_manager_account_serialisation() {
+        let obj_before = super::PmidManagerAccount::new();
 
-       let mut e = cbor::Encoder::from_memory();
-       e.encode(&[&obj_before]).unwrap();
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
 
-       let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-       let obj_after: PmidManagerAccount = d.decode().next().unwrap().unwrap();
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: super::PmidManagerAccount = d.decode().next().unwrap().unwrap();
 
-       //assert_eq!(obj_before, obj_after);
-  }
+        assert_eq!(obj_before, obj_after);
+    }
 
 }

@@ -25,6 +25,7 @@ use cbor;
 
 type Identity = NameType; // maid node address
 
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
 pub struct MaidManagerAccount {
   data_stored : u64,
   space_available : u64
@@ -38,24 +39,6 @@ impl Clone for MaidManagerAccount {
         }
     }
 }
-
-impl Encodable for MaidManagerAccount {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        cbor::CborTagEncode::new(5483_002, &(
-            self.data_stored,
-            self.space_available)).encode(e)
-    }
-}
-
-impl Decodable for MaidManagerAccount {
-    fn decode<D: Decoder>(d: &mut D)-> Result<MaidManagerAccount, D::Error> {
-        try!(d.read_u64());
-        let (data_stored, space_available) : (u64, u64) = try!(Decodable::decode(d));
-        Ok(MaidManagerAccount {data_stored: data_stored, space_available: space_available })
-    }
-}
-
-
 
 impl MaidManagerAccount {
   pub fn new() -> MaidManagerAccount {
@@ -185,16 +168,16 @@ mod test {
   }
 
   #[test]
-  fn maid_manager_account_serialization() {
+  fn maid_manager_account_serialisation() {
       let obj_before = MaidManagerAccount::new();
 
        let mut e = cbor::Encoder::from_memory();
        e.encode(&[&obj_before]).unwrap();
 
-       let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+       let mut d = cbor::Decoder::from_bytes(e.into_bytes());
        let obj_after: MaidManagerAccount = d.decode().next().unwrap().unwrap();
 
-       //assert_eq!(obj_before, obj_after);
+       assert_eq!(obj_before, obj_after);
   }
 
 }
