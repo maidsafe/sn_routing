@@ -76,6 +76,7 @@ pub enum MessageTypeTag {
     PutDataResponse,
     PutKey,
     AccountTransfer,
+    PutPublicPmid,
     Unknown,
 }
 
@@ -99,7 +100,8 @@ impl Encodable for MessageTypeTag {
             MessageTypeTag::PutDataResponse => type_tag = "PutDataResponse",
             MessageTypeTag::PutKey => type_tag = "PutKey",
             MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
-                MessageTypeTag::Unknown => type_tag = "Unknown",
+            MessageTypeTag::PutPublicPmid => type_tag = "PutPublicPmid",
+            MessageTypeTag::Unknown => type_tag = "Unknown",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
     }
@@ -126,8 +128,9 @@ impl Decodable for MessageTypeTag {
             "PutData" => Ok(MessageTypeTag::PutData),
             "PutDataResponse" => Ok(MessageTypeTag::PutDataResponse),
             "PutKey" => Ok(MessageTypeTag::PutKey),
+            "PutPublicPmid" => Ok(MessageTypeTag::PutPublicPmid),
             "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),
-                _ => Ok(MessageTypeTag::Unknown)
+            _ => Ok(MessageTypeTag::Unknown)
         }
     }
 }

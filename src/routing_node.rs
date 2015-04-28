@@ -151,8 +151,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 self.bootstrap_node_id = Some(bootstrapped_to);
                 // put our public pmid so that our connect requests are validated
                 self.put_own_public_pmid();
-                //let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
-                //self.put::<types::PublicPmid>(our_public_pmid.name.clone(), our_public_pmid.clone());
                 // connect to close group
                 Ok(())
             }
@@ -178,9 +176,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 crust::Event::NewConnection(endpoint) => {
                     self.handle_connect(endpoint);
                 },
-                // crust::Event::Accept(id, bytes) => {
-                //     self.handle_accept(id.clone(), bytes);
-                // },
                 crust::Event::LostConnection(endpoint) => {
                     self.handle_lost_connection(endpoint);
                 }
@@ -189,7 +184,19 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn put_own_public_pmid(&mut self) {
-     unimplemented!()
+        let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: our_public_pmid.name.clone(), reply_to: None };
+        let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None }; // FIXME bootstrap node
+        let authority = types::Authority::ManagedNode;  // check authority
+        // is signature needed ?  FIXME(prakash)
+        let header = MessageHeader::new(message_id, destination, source, authority, None);
+        let request = PutPublicPmid{ public_pmid: our_public_pmid };
+        let message = RoutingMessage::new(MessageTypeTag::PutPublicPmid, header, request);
+        let mut e = Encoder::from_memory();
+
+        e.encode(&[message]).unwrap();
+        self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
     }
 
     fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
@@ -368,6 +375,7 @@ impl<F> RoutingNode<F> where F: Interface {
             //PostResponse,
             MessageTypeTag::PutData => self.handle_put_data(header, body),
             MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
+            MessageTypeTag::PutPublicPmid => self.handle_put_public_pmid(header, body),
             //PutKey,
             _ => {
                 println!("unhandled message from {:?}", peer_id);
@@ -518,14 +526,19 @@ impl<F> RoutingNode<F> where F: Interface {
         unimplemented!();
     }
 
-    fn handle_put_public_pmid(put_public_pmid: PutPublicPmid, original_header: MessageHeader) {
+    fn handle_put_public_pmid(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         // if data type is public pmid and our authority is nae then add to public_pmid_cache
         // don't call upper layer if public pmid type
-        unimplemented!();
-    }
-
-    fn add_to_public_pmid_cache (&mut self, public_pmid: types::PublicPmid) {
-      self.public_pmid_cache.add(public_pmid.name.clone(), public_pmid);
+        let put_public_pmid = try!(self.decode::<PutPublicPmid>(&body).ok_or(()));
+        let our_authority = self.our_authority(&put_public_pmid.public_pmid.name, &header);
+        if our_authority == Authority::NaeManager {
+            // FIXME (prakash) signature check ?
+            self.public_pmid_cache.add(put_public_pmid.public_pmid.name.clone(),
+                                       put_public_pmid.public_pmid);
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     // // for clients, below methods are required
