@@ -26,7 +26,6 @@ use rand::random;
 use sodiumoxide;
 use NameType;
 use std::fmt;
-use sendable::Sendable;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -123,7 +122,7 @@ pub trait RoutingTrait {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
   pub name : NameType,
-  pub type_id : u32
+  pub type_id : u64
 }
 
 impl Encodable for NameAndTypeId {
