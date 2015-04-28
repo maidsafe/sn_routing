@@ -41,29 +41,38 @@ impl Clone for MaidManagerAccount {
 }
 
 impl MaidManagerAccount {
-  pub fn new() -> MaidManagerAccount {
-    // FIXME : to bypass the AccountCreation process for simple network allownance is granted automatically
-    MaidManagerAccount { data_stored: 0, space_available: 1073741824 }
-  }
-
-  pub fn put_data(&mut self, size : u64) -> bool {
-    if size > self.space_available {
-      return false;
+    pub fn new() -> MaidManagerAccount {
+        // FIXME : to bypass the AccountCreation process for simple network allownance is granted automatically
+        MaidManagerAccount { data_stored: 0, space_available: 1073741824 }
     }
-    self.data_stored += size;
-    self.space_available -= size;
-    true
-  }
 
-  pub fn delete_data(&mut self, size : u64) {
-    if self.data_stored < size {
-      self.space_available += self.data_stored;
-      self.data_stored = 0;
-    } else {
-      self.data_stored -= size;
-      self.space_available += size;
+    pub fn put_data(&mut self, size : u64) -> bool {
+        if size > self.space_available {
+            return false;
+        }
+        self.data_stored += size;
+        self.space_available -= size;
+        true
     }
-  }
+
+    pub fn delete_data(&mut self, size : u64) {
+        if self.data_stored < size {
+            self.space_available += self.data_stored;
+            self.data_stored = 0;
+        } else {
+            self.data_stored -= size;
+            self.space_available += size;
+        }
+    }
+
+    pub fn get_available_space(&self) -> u64 {
+      self.space_available.clone()
+    }
+
+
+    pub fn get_data_stored(&self) -> u64 {
+        self.data_stored.clone()
+    }
 
 }
 

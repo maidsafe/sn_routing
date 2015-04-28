@@ -86,6 +86,19 @@ impl PmidManagerAccount {
     }
     self.lost_total_size += diff_size;
   }
+
+  pub fn get_offered_space(&self) -> u64 {
+      self.offered_space.clone()
+  }
+
+  pub fn get_lost_total_size(&self) -> u64 {
+      self.lost_total_size.clone()
+  }
+
+
+  pub fn get_stored_total_size(&self) -> u64 {
+      self.stored_total_size.clone()
+  }
 }
 
 pub struct PmidManagerDatabase {
@@ -104,9 +117,9 @@ impl PmidManagerDatabase {
   pub fn put_data(&mut self, name : &Identity, size: u64) -> bool {
     let mut tmp = PmidManagerAccount::new();
     let entry = self.storage.remove(name.clone());
-  	if entry.is_some() {
-  	  tmp = entry.unwrap();
-  	}
+      if entry.is_some() {
+        tmp = entry.unwrap();
+      }
     let result = tmp.put_data(size);
     self.storage.add(name.clone(), tmp);
     result

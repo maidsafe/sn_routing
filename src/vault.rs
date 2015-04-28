@@ -337,11 +337,11 @@ impl VaultFacade {
             // MaidManagerAccount
             let sendable: GenericSendableType = churn_data[0].1.clone();
             assert_eq!(sendable.name(), from.clone());
-            // panic!("{:?}", sendable.serialised_contents().clone());
-            // let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
-            // let obj: maid_manager::MaidManagerAccount = decoder.decode().next().unwrap().unwrap();
-            //assert_eq!(sendable.serialised_contents(), data_as_vec);
-            // Since the vaules are cleared the data should be empty
+
+            let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
+            let maid_manager: maid_manager::MaidManagerAccount = decoder.decode().next().unwrap().unwrap();
+            assert_eq!(maid_manager.get_data_stored(), 1024);
+
             assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
         }
 
@@ -371,11 +371,7 @@ impl VaultFacade {
 
             let sendable: GenericSendableType = churn_data[0].1.clone();
             assert_eq!(sendable.name(), dest.dest);
-
-            // let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
-            // let pmids: PmidManagerAccount = decoder.decode().next().unwrap().unwrap();
-            // assert_eq!(pmids.len(), data_manager::PARALLELISM);
-
+            
             assert!(vault.pmid_manager.retrieve_all_and_reset().is_empty());
         }
     }
