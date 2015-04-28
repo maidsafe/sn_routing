@@ -81,7 +81,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let (event_output, event_input) = mpsc::channel();
         let pmid = types::Pmid::new();
         let own_id = pmid.get_name();
-        let cm = crust::ConnectionManager::new(event_output);
+        let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
         // TODO: Beacon port should be passed down
