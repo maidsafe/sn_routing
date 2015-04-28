@@ -196,7 +196,7 @@ impl PublicSignKey {
 
 impl fmt::Debug for PublicSignKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PublicSignKey(...)")
+        write!(f, "PublicSignKey({:?})", self.public_sign_key.iter().take(6).collect::<Vec<_>>())
     }
 }
 
