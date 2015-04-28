@@ -22,7 +22,7 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::{Frequency};
 
-use types::{PublicSignKey, GROUP_SIZE};
+use types::{PublicSignKey, GROUP_SIZE, QUORUM_SIZE};
 use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -45,9 +45,10 @@ impl GetGroupKeyResponse {
             }
         }
 
-        let merged_group = frequency.sort_by_highest().iter()
+        let merged_group = frequency.sort_by_highest().into_iter()
+                           .filter(|&(_, ref count)| *count >= QUORUM_SIZE as usize)
                            .take(GROUP_SIZE as usize)
-                           .map(|&(ref k, _)| k.clone())
+                           .map(|(k, _)| k)
                            .collect();
 
         Some(GetGroupKeyResponse{ public_sign_keys: merged_group })

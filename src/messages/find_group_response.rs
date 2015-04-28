@@ -21,7 +21,7 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::Frequency;
-use types::{PublicPmid, GROUP_SIZE};
+use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
@@ -43,9 +43,10 @@ impl FindGroupResponse {
             }
         }
 
-        let merged_group = frequency.sort_by_highest().iter()
+        let merged_group = frequency.sort_by_highest().into_iter()
+                           .filter(|&(_, ref count)| *count >= QUORUM_SIZE as usize)
                            .take(GROUP_SIZE as usize)
-                           .map(|&(ref k, _)| k.clone())
+                           .map(|(k, _)| k)
                            .collect();
 
         Some(FindGroupResponse{ group: merged_group })
