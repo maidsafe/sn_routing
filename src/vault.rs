@@ -43,9 +43,8 @@ impl Clone for VaultFacade {
 }
 
 impl routing::node_interface::Interface for VaultFacade {
-  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
-                from_address: NameType, data_name: Vec<u8>)->Result<Action, RoutingError> {
-    let name = NameType::new(routing::types::vector_as_u8_64_array(data_name));
+  fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
+                from_address: NameType)->Result<Action, RoutingError> {    
     match our_authority {
       Authority::NaeManager => {
         // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
@@ -115,9 +114,9 @@ impl routing::node_interface::Interface for VaultFacade {
 
     fn handle_cache_get(&mut self,
                         type_id: u64,
-                        from_authority: routing::types::Authority,
-                        from_address: routing::NameType,
-                        data: Vec<u8>) -> Result<Action, RoutingError> { unimplemented!() }
+                        name: NameType,
+                        from_authority: Authority,
+                        from_address: NameType) -> Result<Action, RoutingError> { unimplemented!() }
 
     fn handle_cache_put(&mut self,
                         from_authority: routing::types::Authority,
