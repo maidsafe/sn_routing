@@ -27,8 +27,6 @@ use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::Receiver;
 use time::Duration;
 
-
-
 use crust;
 use crust::Endpoint::Tcp;
 use message_filter::MessageFilter;
@@ -51,14 +49,14 @@ use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::{RoutingMessage, MessageTypeTag};
-use super::RoutingError;
+use super::{Action, RoutingError};
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
-type RecvResult = Result<(),()>;
+type RecvResult = Result<(), ()>;
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
@@ -267,27 +265,66 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn message_received(&mut self, peer_id: &NameType, serialised_message: Bytes) -> RecvResult {
         // Parse
-        let msg = self.decode::<RoutingMessage>(&serialised_message);
+        let message = match self.decode::<RoutingMessage>(&serialised_message) {
+            None => {
+                println!("Problem parsing message of size {} from {:?}",
+                         serialised_message.len(), peer_id);
+                return Err(());
+            },
+            Some(msg) => msg,
+        };
 
-        if msg.is_none() {
-            println!("Problem parsing message of size {} from {:?}",
-                     serialised_message.len(), peer_id);
-            return Err(());
-        }
-
-        let msg    = msg.unwrap();
-        let header = msg.message_header;
-        let body   = msg.serialised_body;
-        println!("{:?} <= {:?}: {:?} {:?}", self.own_id, peer_id, msg.message_type, header.destination);
+        let header = message.message_header;
+        let body = message.serialised_body;
         // filter check
         if self.filter.check(&header.get_filter()) {
-          // should just return quietly
-          return Err(());
+            // should just return quietly
+            return Err(());
         }
         // add to filter
         self.filter.add(header.get_filter());
+
         // add to cache
+        if message.message_type == MessageTypeTag::GetDataResponse {
+            let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
+            if get_data_response.data.len() != 0 {
+                let mut self_interface = match self.interface.lock() {
+                    Err(_) => return Err(()),
+                    Ok(interface) => interface,
+                };
+                let _ = self_interface.handle_cache_put(header.from_authority(), header.from(),
+                                                        get_data_response.data);
+            }
+        }
+
         // cache check / response
+        if message.message_type == MessageTypeTag::GetData {
+            let get_data = try!(self.decode::<GetData>(&body).ok_or(()));
+            let mut retrieved_data: Result<Action, RoutingError>;
+            {
+                let mut self_interface = match self.interface.lock() {
+                    Err(_) => return Err(()),
+                    Ok(interface) => interface,
+                };
+                let get_data_copy = get_data.clone();
+                retrieved_data = self_interface.handle_cache_get(
+                    get_data_copy.name_and_type_id.type_id as u64,
+                    get_data_copy.name_and_type_id.name, header.from_authority(), header.from());
+            }
+            match retrieved_data {
+                Err(_) => (),
+                Ok(action) => match action {
+                    Action::Reply(data) => {
+                        let reply = self.construct_get_data_response_msg(&header, &get_data, data);
+                        let serialised_reply = self.encode(&reply);
+                        self.send_swarm_or_parallel(&header.send_to().dest, &serialised_reply);
+                        return Ok(());
+                    },
+                    _ => (),
+                },
+            };
+        }
+
         self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);
         // handle relay request/response
 
@@ -316,7 +353,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // Sentinel check
 
         // switch message type
-        match msg.message_type {
+        match message.message_type {
             MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
             MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
@@ -332,7 +369,6 @@ impl<F> RoutingNode<F> where F: Interface {
             MessageTypeTag::PutData => self.handle_put_data(header, body),
             MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
             //PutKey,
-            //AccountTransfer
             _ => {
                 println!("unhandled message from {:?}", peer_id);
                 Err(())
@@ -361,17 +397,20 @@ impl<F> RoutingNode<F> where F: Interface {
     /// e) otherwise return Unknown Authority
     fn our_authority(&self, element : &NameType, header : &MessageHeader) -> Authority {
         if !header.is_from_group()
-           && self.routing_table.address_in_our_close_group_range(Some(header.from_node()))
+           && self.routing_table.address_in_our_close_group_range(&header.from_node())
            && header.destination.dest != *element {
             return Authority::ClientManager; }
-        else if self.routing_table.address_in_our_close_group_range(Some(element.clone()))
+        else if self.routing_table.address_in_our_close_group_range(element)
            && header.destination.dest == *element {
             return Authority::NaeManager; }
         else if header.is_from_group()
-           && self.routing_table.address_in_our_close_group_range(Some(header.destination.dest.clone()))
+           && self.routing_table.address_in_our_close_group_range(&header.destination.dest)
            && header.destination.dest != self.own_id {
             return Authority::NodeManager; }
-        else if self.routing_table.address_in_our_close_group_range(header.from_group())
+        else if header.from_group()
+                      .and_then(|group| Some(self.routing_table
+                                                 .address_in_our_close_group_range(&group)))
+                      .unwrap_or(false)
            && header.destination.dest == self.own_id {
             return Authority::ManagedNode; }
         return Authority::Unknown;
@@ -430,7 +469,7 @@ impl<F> RoutingNode<F> where F: Interface {
         //println!("{:?} received FindGroup", self.own_id);
         let find_group = try!(self.decode::<FindGroup>(&body).ok_or(()));
         let close_group = self.routing_table.our_close_group();
-        let mut group: Vec<types::PublicPmid> =  vec![];;
+        let mut group: Vec<types::PublicPmid> = vec![];
         for x in close_group {
             group.push(x.fob);
         }
@@ -527,8 +566,7 @@ impl<F> RoutingNode<F> where F: Interface {
         dec.decode().next().and_then(|result| result.ok())
     }
 
-    fn encode<T>(&self, value: &T) -> Bytes where T: Encodable
-    {
+    fn encode<T>(&self, value: &T) -> Bytes where T: Encodable {
         let mut enc = Encoder::from_memory();
         let _ = enc.encode(&[value]);
         enc.into_bytes()
@@ -660,6 +698,25 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
+    fn construct_get_data_response_msg(&mut self, original_header: &MessageHeader,
+                                       get_data: &GetData, data: Vec<u8>) -> RoutingMessage {
+        let header = MessageHeader {
+            message_id: self.get_next_message_id(),
+            destination: original_header.send_to(),
+            source: self.our_source_address(),
+            authority: types::Authority::ManagedNode,
+            signature: None  // FIXME
+        };
+        let get_data_response = GetDataResponse {
+            name_and_type_id: get_data.name_and_type_id.clone(), data: data, error: vec![]
+        };
+        RoutingMessage{
+            message_type: MessageTypeTag::GetDataResponse,
+            message_header: header,
+            serialised_body: self.encode(&get_data_response)
+        }
+    }
+
     fn get_next_message_id(&mut self) -> MessageId {
         let current = self.next_message_id;
         self.next_message_id += 1;
@@ -700,10 +757,10 @@ impl<F> RoutingNode<F> where F: Interface {
 #[cfg(test)]
 mod test {
     //use routing_node::{RoutingNode};
-    use node_interface::*;
-    use types::{Authority, DestinationAddress};
-    use name_type::NameType;
-    use super::super::{Action, RoutingError};
+    // use node_interface::*;
+    // use types::{Authority, DestinationAddress};
+    // use name_type::NameType;
+    // use super::super::{Action, RoutingError};
     //use std::thread;
     //use std::net::{SocketAddr};
     //use std::str::FromStr;

@@ -263,17 +263,12 @@ impl RoutingTable {
     /// This returns true if the provided id is closer than the furthest node
     /// in our close group. If the routing table contains less than GroupSize
     /// nodes, then every address is considered to be in our close group range.
-    pub fn address_in_our_close_group_range(&self, id : Option<NameType>) -> bool {
-      match id {
-          None => false,
-          Some(id) => {
-                if self.routing_table.len() < GROUP_SIZE {
-                  return true;
-                }
-                let furthest_close_node = self.routing_table[GROUP_SIZE].clone();
-                closer_to_target(&id, &furthest_close_node.id, &self.our_id)
-            }
+    pub fn address_in_our_close_group_range(&self, id : &NameType) -> bool {
+        if self.routing_table.len() < GROUP_SIZE {
+            return true;
         }
+        let furthest_close_node = self.routing_table[GROUP_SIZE].clone();
+        closer_to_target(&id, &furthest_close_node.id, &self.our_id)
     }
 
     fn find_candidate_for_removal(&self) -> usize {
