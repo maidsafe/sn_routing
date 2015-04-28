@@ -28,18 +28,18 @@ use version_handler::VersionHandler;
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
-  data_manager : DataManager,
-  maid_manager : MaidManager,
-  pmid_manager : PmidManager,
-  pmid_node : PmidNode,
-  version_handler : VersionHandler,
-  nodes_in_table : Vec<NameType>,
+    data_manager : DataManager,
+    maid_manager : MaidManager,
+    pmid_manager : PmidManager,
+    pmid_node : PmidNode,
+    version_handler : VersionHandler,
+    nodes_in_table : Vec<NameType>,
 }
 
 impl Clone for VaultFacade {
-  fn clone(&self) -> VaultFacade {
-    VaultFacade::new()
-  }
+    fn clone(&self) -> VaultFacade {
+        VaultFacade::new()
+    }
 }
 
 impl routing::node_interface::Interface for VaultFacade {
@@ -135,20 +135,6 @@ impl VaultFacade {
   }
 
 }
-
-/// Remove (Krishna) - Temporary function - Can be called from routing::name_type if exposed as public in routing
-pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
-    for i in 0..lhs.0.len() {
-        let res_0 = lhs.0[i] ^ target.0[i];
-        let res_1 = rhs.0[i] ^ target.0[i];
-
-        if res_0 != res_1 {
-            return res_0 < res_1
-        }
-    }
-    false
-}
-
 
 #[cfg(test)]
  mod test {
