@@ -16,7 +16,6 @@
 // See the Licences for the specific language governing permissions and limitations relating to use
 // of the MaidSafe Software.
 
-use sendable;
 use generic_sendable_type;
 use name_type::NameType;
 use types::{Authority, DestinationAddress};
@@ -59,7 +58,7 @@ pub trait Interface : Sync + Send {
                             from_address: NameType,
                             response: Result<Vec<u8>, RoutingError>);
 
-    fn handle_churn(&mut self) -> Vec<(NameType, generic_sendable_type::GenericSendableType)>;
+    fn handle_churn(&mut self) -> Vec<generic_sendable_type::GenericSendableType>;
 
     fn handle_cache_get(&mut self,
                         type_id: u64,
