@@ -768,17 +768,17 @@ impl<F> RoutingNode<F> where F: Interface {
 #[cfg(test)]
 mod test {
     use super::*;
+    use super::super::{Action, RoutingError};
     use generic_sendable_type;
     use node_interface::*;
+    use types;
     use types::{Pmid, Authority, DestinationAddress};
     use types::{PublicPmid, MessageId};
     use routing_table;
     use message_header::MessageHeader;
     use NameType;
-    use types;
     use name_type::{closer_to_target};
     use test_utils::{Random, xor};
-    use super::super::{Action, RoutingError};
     use rand::random;
 
     struct NullInterface;
