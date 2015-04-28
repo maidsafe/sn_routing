@@ -71,7 +71,7 @@ impl DataManager {
     }
 
     nodes_in_table.sort_by(|a, b|
-        if super::vault::closer_to_target(&a, &b, &data_name) {
+        if routing::closer_to_target(&a, &b, &data_name) {
           cmp::Ordering::Less
         } else {
           cmp::Ordering::Greater

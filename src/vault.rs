@@ -28,24 +28,23 @@ use version_handler::VersionHandler;
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
-  data_manager : DataManager,
-  maid_manager : MaidManager,
-  pmid_manager : PmidManager,
-  pmid_node : PmidNode,
-  version_handler : VersionHandler,
-  nodes_in_table : Vec<NameType>,
+    data_manager : DataManager,
+    maid_manager : MaidManager,
+    pmid_manager : PmidManager,
+    pmid_node : PmidNode,
+    version_handler : VersionHandler,
+    nodes_in_table : Vec<NameType>,
 }
 
 impl Clone for VaultFacade {
-  fn clone(&self) -> VaultFacade {
-    VaultFacade::new()
-  }
+    fn clone(&self) -> VaultFacade {
+        VaultFacade::new()
+    }
 }
 
 impl routing::node_interface::Interface for VaultFacade {
-  fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
-                from_address: NameType, data_name: Vec<u8>)->Result<Action, RoutingError> {
-    let name = NameType::new(routing::types::vector_as_u8_64_array(data_name));
+  fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
+                from_address: NameType)->Result<Action, RoutingError> {    
     match our_authority {
       Authority::NaeManager => {
         // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
@@ -115,9 +114,9 @@ impl routing::node_interface::Interface for VaultFacade {
 
     fn handle_cache_get(&mut self,
                         type_id: u64,
-                        from_authority: routing::types::Authority,
-                        from_address: routing::NameType,
-                        data: Vec<u8>) -> Result<Action, RoutingError> { unimplemented!() }
+                        name: NameType,
+                        from_authority: Authority,
+                        from_address: NameType) -> Result<Action, RoutingError> { unimplemented!() }
 
     fn handle_cache_put(&mut self,
                         from_authority: routing::types::Authority,
@@ -136,20 +135,6 @@ impl VaultFacade {
   }
 
 }
-
-/// Remove (Krishna) - Temporary function - Can be called from routing::name_type if exposed as public in routing
-pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
-    for i in 0..lhs.0.len() {
-        let res_0 = lhs.0[i] ^ target.0[i];
-        let res_1 = rhs.0[i] ^ target.0[i];
-
-        if res_0 != res_1 {
-            return res_0 < res_1
-        }
-    }
-    false
-}
-
 
 #[cfg(test)]
  mod test {
@@ -220,8 +205,8 @@ pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bo
                 routing::Action::Reply(x) => panic!("Unexpected"),
             }
             let from = NameType::new([1u8; 64]);
-            let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::NaeManager,
-                                             Authority::Client, from, data.name().0.to_vec());
+            let get_result = vault.handle_get(payload.get_type_tag() as u64, data.name().clone(), Authority::NaeManager,
+                                             Authority::Client, from);
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
                 routing::Action::SendOn(ref x) => {
@@ -260,8 +245,8 @@ pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bo
             }
             let from = NameType::new([7u8; 64]);
 
-            let get_result = vault.handle_get(payload.get_type_tag() as u64, Authority::ManagedNode,
-                                             Authority::NodeManager, from, array_as_vector_u8(data.name().0));
+            let get_result = vault.handle_get(payload.get_type_tag() as u64, data.name().clone(), Authority::ManagedNode,
+                                             Authority::NodeManager, from);
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
                 routing::Action::Reply(ref x) => {
