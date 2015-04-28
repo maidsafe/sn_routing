@@ -36,7 +36,7 @@ use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
-use types::{MessageId, RoutingTrait, Authority};
+use types::{MessageId, RoutingTrait, Authority, NameAndTypeId};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
@@ -113,13 +113,26 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&self, type_id: u64, name: NameType) { unimplemented!() }
+    pub fn get(&mut self, type_id: u64, name: NameType) {
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()), reply_to: None };
+        let source = self.our_source_address();
+        let authority = types::Authority::Client;
+        let header = MessageHeader::new(message_id, destination, source, authority, None);
+        let name_and_type_id = NameAndTypeId{ name: NameType::new(name.get_id()), type_id: type_id };
+        let request = GetData{ requester: self.our_source_address(),  name_and_type_id: name_and_type_id };
+        let message = RoutingMessage::new(MessageTypeTag::GetData, header, request);
+        let mut e = Encoder::from_memory();
+
+        e.encode(&[message]).unwrap();
+        self.send_swarm_or_parallel(&name, &e.into_bytes());
+    }
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put<T>(&mut self, destination: NameType, content: T) where T: Sendable {
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: self.id(), reply_to: None };
-        let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None };
+        let source = self.our_source_address();
         let authority = types::Authority::Client;
         let crypto_signature = crypto::sign::sign_detached(
                 &content.serialised_contents(), &self.pmid.get_crypto_secret_sign_key());
@@ -345,8 +358,8 @@ impl<F> RoutingNode<F> where F: Interface {
             MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
             MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
-            //GetData,
-            //GetDataResponse,
+            MessageTypeTag::GetData => self.handle_get_data(header, body),
+            MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
             //GetClientKey,
             //GetClientKeyResponse,
             //GetGroupKey,
@@ -496,13 +509,35 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data(get_data: GetData, original_header: MessageHeader) {
-        unimplemented!();
+    fn handle_get_data(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+        let get_data = try!(self.decode::<GetData>(&body).ok_or(()));
+        let type_id = get_data.name_and_type_id.type_id;
+        let our_authority = self.our_authority(&get_data.name_and_type_id.name, &header);
+        let from_authority = header.from_authority();
+        let from = header.from();
+        let name = get_data.name_and_type_id.name;
+
+        let mut interface = self.interface.lock().unwrap();
+        match interface.handle_get(type_id, name, our_authority, from_authority, from) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(())
+        }
     }
 
-    fn handle_get_data_response(get_data_response: GetDataResponse, original_header: MessageHeader) {
-        // need to call interface handle_get_response
-        unimplemented!();
+    fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+        let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
+        let from = header.from();
+        let response;
+
+        if get_data_response.error.len() != 0 {
+            response = Err(RoutingError::NoData);
+        } else {
+            response = Ok(get_data_response.data);
+        }
+
+        let mut interface = self.interface.lock().unwrap();
+        interface.handle_get_response(from, response);
+        Ok(())
     }
 
     // // for clients, below methods are required
@@ -524,8 +559,8 @@ impl<F> RoutingNode<F> where F: Interface {
         let put_data_response = try!(self.decode::<PutDataResponse>(&body).ok_or(()));
         let from_authority = header.from_authority();
         let from = header.from();
-
         let response;
+
         if put_data_response.data.len() != 0 {
             response = Ok(put_data_response.data);
         } else {

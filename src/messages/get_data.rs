@@ -48,7 +48,7 @@ mod test {
     use super::*;
     use cbor;
     use test_utils::Random;
-    
+
     #[test]
     fn get_data_serialisation() {
         let obj_before: GetData = Random::generate_random();

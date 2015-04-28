@@ -121,7 +121,7 @@ pub trait RoutingTrait {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
   pub name : NameType,
-  pub type_id : u32
+  pub type_id : u64
 }
 
 impl Encodable for NameAndTypeId {
