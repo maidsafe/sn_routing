@@ -48,6 +48,8 @@ use messages::connect_response::ConnectResponse;
 use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
+use messages::get_group_key::GetGroupKey;
+use messages::get_group_key_response::GetGroupKeyResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action, RoutingError};
 
@@ -420,7 +422,18 @@ impl<F> RoutingNode<F> where F: Interface {
         return Authority::Unknown;
     }
 
+    /// This method sends a GetGroupKeyResponse message on receiving the GetGroupKey request.
+    /// It collects and replies with all the public signature keys from its close group.
     fn handle_get_group_key(&mut self, original_header : MessageHeader, body : Bytes) -> RecvResult {
+        println!("{:?} received GetGroupKey ", self.own_id);
+        let get_group_key = try!(self.decode::<GetGroupKey>(&body).ok_or(()));
+        let close_group = self.routing_table.our_close_group();
+        let mut group_keys : Vec<(NameType, types::PublicSignKey)>
+            = Vec::with_capacity(close_group.len());
+        for close_node in close_group {
+            group_keys.push((close_node.fob.name.clone(),
+                             close_node.fob.public_sign_key.clone()));
+        }
         Ok(())
     }
 
