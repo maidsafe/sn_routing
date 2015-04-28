@@ -223,7 +223,7 @@ mod test {
         use types::Pmid;
         for _ in 0..5 {
             let my_pmid = Pmid::new();
-            let my_name = my_pmid.name();
+            let my_name = my_pmid.get_name();
             let debug_id = my_name.get_debug_id();
             let full_id = my_name.get_full_id();
             assert_eq!(debug_id.len(), 14);
