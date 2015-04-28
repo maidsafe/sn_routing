@@ -51,10 +51,10 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [x] Add caching to node interface
 - [ ] Implement routing node (100%)
 - [ ] Handle PMID Caching
-- [ ] Handle Cache / Get / Check calls
+- [x] Handle Cache / Get / Check calls
 - [ ] Split Messages and  handle message
-  - [ ] GetData HandleGetData
-  - [ ] GetDataResponse HandleGetDataResponse 
+  - [x] GetData HandleGetData
+  - [x] GetDataResponse HandleGetDataResponse 
   - [ ] GetClientKey HandleGetClientKey 
   - [ ] GetClientKeyResponse HandleGetClientKeyResponse 
   - [ ] GetGroupKey HandleGetGroupKey 
@@ -67,8 +67,8 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [ ] Implement routing connections management
 - [ ] Sentinel:
   - [x] Handover existing implementation
-  - [ ] Account transfer merge
-  - [ ] Group response merge
+  - [x] Account transfer merge
+  - [x] Group response merge
   - [ ] Signature checks
   - [ ] QA Sentinel including code review from system design perspective
 - [ ] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
@@ -78,5 +78,5 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
   - [ ] Routing Client accepting key, value as string for GET/PUT
   - [ ] Local Network Test. 12 Linux, 2 OSX, 2 WIN
   - [ ] 101 Droplet test
-- [ ] Version 0.1.5 (crates.io)
+- [ ] Version 0.1.6 (crates.io)
 - [ ] Address re-location (security essential)
