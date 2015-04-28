@@ -49,27 +49,20 @@ pub fn always_true() -> bool { true }
 
 /// The Vault structure to hold the logical interface to provide behavioural logic to routing.
 pub struct Vault {
-  my_facade : VaultFacade  
+  routing_node: routing::routing_node::RoutingNode<VaultFacade>,  
 }
 
 impl Vault {
   fn new() -> Vault {    
     Vault {
-      my_facade: VaultFacade::new()
-    }
-  }
-
-  fn start_vault(&self) {    
-    loop {
-      std::thread::sleep_ms(500u32);
-      always_true();
+      routing_node: routing::routing_node::RoutingNode::new(VaultFacade::new()),
     }
   }
 }
 
 fn main () {
-  let vault = Vault::new();
-  vault.start_vault();
+  let mut vault = Vault::new();
+  vault.routing_node.run();
 }
 
 #[test]
