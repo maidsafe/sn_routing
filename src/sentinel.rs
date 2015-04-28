@@ -24,6 +24,7 @@ use accumulator;
 use message_header;
 use NameType;
 use types;
+use types::{Mergable};
 use frequency::Frequency;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
@@ -219,7 +220,7 @@ impl<'a> Sentinel<'a> {
             return Vec::<ResultType>::new();
         }
 
-        let key_map = GetGroupKeyResponse::merge(&keys)
+        let key_map = Mergable::merge(keys.iter())
             .into_iter()
             .flat_map(|GetGroupKeyResponse{public_sign_keys: addr_key_pairs}| {
                 addr_key_pairs.into_iter()
@@ -256,7 +257,7 @@ impl<'a> Sentinel<'a> {
                 .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
                 .collect::<Vec<_>>();
 
-            FindGroupResponse::merge(&decoded_responses).map(|merged| {
+            Mergable::merge(decoded_responses.iter()).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
                  Sentinel::encode(merged))
@@ -266,7 +267,7 @@ impl<'a> Sentinel<'a> {
                 .filter_map(|msg_triple| { Sentinel::decode::<GetGroupKeyResponse>(&msg_triple.2) })
                 .collect::<Vec<_>>();
 
-            GetGroupKeyResponse::merge(&accounts).map(|merged| {
+            Mergable::merge(accounts.iter()).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
                  Sentinel::encode(merged))

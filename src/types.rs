@@ -61,6 +61,10 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 pub static GROUP_SIZE: u32 = 23;
 pub static QUORUM_SIZE: u32 = 19;
 
+pub trait Mergable {
+    fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
   ClientManager,  // from a node in our range but not routing table
