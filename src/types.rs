@@ -19,6 +19,7 @@
 #![allow(unused_assignments)]
 
 use sodiumoxide::crypto;
+use cbor;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
@@ -253,6 +254,12 @@ impl PublicPmid {
         name : pmid.get_name()
       }
     }
+
+    pub fn serialised_contents(&self)->Vec<u8> {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
+    }
 }
 
 impl Encodable for PublicPmid {
@@ -312,9 +319,11 @@ impl Pmid {
       name : NameType::new(digest.0)
     }
   }
+
   pub fn get_name(&self) -> NameType {
     self.name.clone()
   }
+
   pub fn get_public_key(&self) -> PublicKey {
     PublicKey::new(self.public_keys.1.clone())
   }
@@ -469,4 +478,15 @@ mod test {
                                 reply_to: None });
   }
 
+#[test]
+    fn serialisation_public_pmid() {
+        let obj_before = PublicPmid::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: PublicPmid = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
+    }
 }
