@@ -188,6 +188,7 @@ impl<'a> Sentinel<'a> {
         // this function is called. We could then avoid the below check as well.
         let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.value.2)).collect::<Vec<_>>();
 
+        // Need to check this again because decoding may have failed.
         if keys.len() < types::QUORUM_SIZE as usize {
           return Vec::new();
         }
@@ -213,6 +214,7 @@ impl<'a> Sentinel<'a> {
         // this function is called. We could then avoid the below check as well.
         let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.value.2)).collect::<Vec<_>>();
 
+        // Need to check this again because decoding may have failed.
         if keys.len() < types::QUORUM_SIZE as usize {
             return Vec::<ResultType>::new();
         }
