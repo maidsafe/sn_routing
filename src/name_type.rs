@@ -112,6 +112,14 @@ pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bo
     false
 }
 
+pub fn xor(lhs: &NameType, rhs: &NameType) -> NameType {
+    let mut result = NameType::new([0u8; NAME_TYPE_LEN]);
+    for i in 0..lhs.0.len() {
+        result.0[i] = lhs.0[i] ^ rhs.0[i];
+    }
+    result
+}
+
 /// The `NameType` can be ordered from zero as a normal Euclidean number
 impl Ord for NameType {
     #[inline]
