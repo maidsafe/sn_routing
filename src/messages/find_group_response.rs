@@ -22,63 +22,47 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::Frequency;
 use types::{PublicPmid, GROUP_SIZE};
-use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
-  pub target_id : NameType,
-  pub group     : Vec<PublicPmid>
+  pub group : Vec<PublicPmid>
 }
 
 impl FindGroupResponse {
 
-    // TODO(ben 2015-04-09) to be replaced with a proper merge trait
-    //                      for every message type
-    pub fn merge(responses : &Vec<FindGroupResponse>) -> Option<FindGroupResponse> {
+    pub fn merge(responses: &Vec<FindGroupResponse>) -> Option<FindGroupResponse> {
         if responses.is_empty() {
             return None;
         }
 
-        let mut freq_target_id = Frequency::new();
+        let mut frequency = Frequency::new();
+
         for response in responses {
-            freq_target_id.update(response.target_id.clone());
-        }
-        // first identify the target_ids;
-        let target_ids : Vec<NameType> = freq_target_id.sort_by_highest()
-                                       .iter()
-                                       .map(|&(ref id, _ )| id.clone())
-                                       .collect();
-        for target_id in target_ids {
-            let mut freq_public_pmid = Frequency::new();
-            for response in responses.iter()
-                                     .filter(|response| &response.target_id == &target_id) {
-                for public_pmid in &response.group {
-                    freq_public_pmid.update(public_pmid.clone());
-                }
+            for public_pmid in &response.group {
+                frequency.update(public_pmid.clone());
             }
-            let merged_group : Vec<PublicPmid>
-                             = freq_public_pmid.sort_by_highest().iter()
-                                               .take(GROUP_SIZE as usize)
-                                               .map(|&(ref k, _)| k.clone())
-                                               .collect();
-            if !merged_group.is_empty() {
-                return Some(FindGroupResponse{target_id : target_id, group : merged_group}); };
         }
-        return None;
+
+        let merged_group = frequency.sort_by_highest().iter()
+                           .take(GROUP_SIZE as usize)
+                           .map(|&(ref k, _)| k.clone())
+                           .collect();
+
+        Some(FindGroupResponse{ group: merged_group })
     }
 }
 
 impl Encodable for FindGroupResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.target_id, &self.group)).encode(e)
+    CborTagEncode::new(5483_001, &self.group).encode(e)
   }
 }
 
 impl Decodable for FindGroupResponse {
   fn decode<D: Decoder>(d: &mut D)->Result<FindGroupResponse, D::Error> {
     try!(d.read_u64());
-    let (target_id, group) = try!(Decodable::decode(d));
-    Ok(FindGroupResponse { target_id: target_id, group: group})
+    let group = try!(Decodable::decode(d));
+    Ok(FindGroupResponse { group: group})
   }
 }
 
@@ -120,11 +104,9 @@ mod test {
         keys.push(obj.group[13].clone());
 
         let mut responses = Vec::<FindGroupResponse>::with_capacity(4);
-        let target_id = obj.target_id.clone();
         responses.push(obj);
         for _ in 0..4 {
             let mut response : FindGroupResponse = Random::generate_random();
-            response.target_id = target_id.clone();
             response.group[1] = keys[0].clone();
             response.group[4] = keys[1].clone();
             response.group[6] = keys[2].clone();

@@ -212,7 +212,7 @@ impl<'a> Sentinel<'a> {
       let mut keys_map = HashMap::<NameType, Vec<PublicSignKey>>::new();
       for group_key in keys.iter() {
           Sentinel::decode(&group_key.value.2)
-              .map(|GetGroupKeyResponse{target_id: target, public_sign_keys: keys}| {
+              .map(|GetGroupKeyResponse{public_sign_keys: keys}| {
                   for (addr, key) in keys {
                       Sentinel::update_key_map(&mut keys_map, addr.clone(), key.clone())
                   }
@@ -314,7 +314,6 @@ mod test {
   use std::cmp;
   use sodiumoxide::crypto;
   use types;
-  use types::RoutingTrait;
   use name_type::closer_to_target;
   use NameType;
   use message_header;
@@ -518,7 +517,6 @@ mod test {
       let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(self.group_size_);
       for node in &self.nodes_ {
         let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
-          target_id : self.group_address_.clone(),
           public_sign_keys : self.get_public_keys(node.get_name())
         };
         let mut e = cbor::Encoder::from_memory();
@@ -554,7 +552,6 @@ mod test {
       let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(self.group_size_);
       for node in &self.nodes_ {
         let find_group_response = messages::find_group_response::FindGroupResponse {
-          target_id : self.group_address_.clone(),
           group : self.get_public_pmids(node.get_name())
         };
         let mut e = cbor::Encoder::from_memory();
@@ -712,7 +709,6 @@ mod test {
       let collect_messages = generate_messages(headers, tag, &serialised_message, &mut message_tracker);
 
       let get_group_key_response = messages::get_group_key_response::GetGroupKeyResponse {
-        target_id : signature_group.get_group_address(),
         public_sign_keys : signature_group.get_public_keys()
       };
       let mut e = cbor::Encoder::from_memory();
