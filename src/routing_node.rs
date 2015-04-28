@@ -741,6 +741,7 @@ mod test {
     use routing_table;
     use message_header::MessageHeader;
     use NameType;
+    use types;
     use name_type::{closer_to_target};
     use test_utils::{Random, xor};
     use super::super::{Action, RoutingError};
@@ -776,7 +777,7 @@ mod test {
             unimplemented!();
         }
         fn handle_churn(&mut self, close_group: Vec<NameType>)
-            -> Vec<(NameType, generic_sendable_type::GenericSendableType)> {
+            -> Vec<generic_sendable_type::GenericSendableType> {
             unimplemented!();
         }
         fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
@@ -804,7 +805,7 @@ mod test {
                 panic!("Routing table does not fill up."); }
         }
         let a_message_id : MessageId = random::<u32>();
-        let our_name = routing_node.own_id;
+        let our_name = routing_node.own_id.clone();
         let our_close_group : Vec<routing_table::NodeInfo>
             = routing_node.routing_table.our_close_group();
         let furthest_node_close_group : routing_table::NodeInfo
@@ -814,23 +815,91 @@ mod test {
         let second_closest_node_in_our_close_group : routing_table::NodeInfo
             = our_close_group[1].clone();
 
-        let nae_in_our_close_group : NameType
+        let nae_or_client_in_our_close_group : NameType
             = xor(&xor(&closest_node_in_our_close_group.id, &our_name),
                   &second_closest_node_in_our_close_group.id);
         // assert nae is indeed within close group
-        assert!(closer_to_target(&nae_in_our_close_group,
+        assert!(closer_to_target(&nae_or_client_in_our_close_group,
                                  &furthest_node_close_group.id,
                                  &our_name));
         for close_node in our_close_group {
-          // assert that nae does not collide with close node
-          assert!(close_node.id != nae_in_our_close_group);
+            // assert that nae does not collide with close node
+            assert!(close_node.id != nae_or_client_in_our_close_group);
         }
+        // invert to get a far away address outside of the close group
+        let name_outside_close_group : NameType
+            = xor(&furthest_node_close_group.id, &NameType::new([255u8; 64]));
+        assert!(closer_to_target(&furthest_node_close_group.id,
+                                 &name_outside_close_group,
+                                 &our_name));
 
         // assert to get a client_manager Authority
-        // let client_manager_header : MessageHeader = MessageHeader {
-        //     message_id : random::<u32>(),
-        //
-        // }
+        let client_manager_header : MessageHeader = MessageHeader {
+            message_id : a_message_id.clone(),
+            destination : types::DestinationAddress {
+                dest : Random::generate_random(),
+                reply_to : None },
+            source : types::SourceAddress {
+                from_node : nae_or_client_in_our_close_group.clone(),
+                from_group : None,
+                reply_to : None },
+            authority : types::Authority::Client,
+            signature : None // authority does not verify a signature
+        };
+        assert_eq!(routing_node.our_authority(&name_outside_close_group,
+                                              &client_manager_header),
+                   types::Authority::ClientManager);
+
+        // assert to get a nae_manager Authority
+        let nae_manager_header : MessageHeader = MessageHeader {
+            message_id : a_message_id.clone(),
+            destination : types::DestinationAddress {
+                dest : nae_or_client_in_our_close_group.clone(),
+                reply_to : None },
+            source : types::SourceAddress {
+                from_node : Random::generate_random(),
+                from_group : Some(name_outside_close_group.clone()),
+                reply_to : None },
+            authority : types::Authority::ClientManager,
+            signature : None // authority does not verify a signature
+        };
+        assert_eq!(routing_node.our_authority(&nae_or_client_in_our_close_group,
+                                              &nae_manager_header),
+                   types::Authority::NaeManager);
+
+        // assert to get a node_manager Authority
+        let node_manager_header : MessageHeader = MessageHeader {
+            message_id : a_message_id.clone(),
+            destination : types::DestinationAddress {
+                dest : second_closest_node_in_our_close_group.id.clone(),
+                reply_to : None },
+            source : types::SourceAddress {
+                from_node : Random::generate_random(),
+                from_group : Some(name_outside_close_group.clone()),
+                reply_to : None },
+            authority : types::Authority::NaeManager,
+            signature : None // authority does not verify a signature
+        };
+        assert_eq!(routing_node.our_authority(&name_outside_close_group,
+                                              &node_manager_header),
+                   types::Authority::NodeManager);
+
+        // assert to get a managed_node Authority
+        let managed_node_header : MessageHeader = MessageHeader {
+            message_id : a_message_id.clone(),
+            destination : types::DestinationAddress {
+                dest : our_name.clone(),
+                reply_to : None },
+            source : types::SourceAddress {
+                from_node : Random::generate_random(),
+                from_group : Some(second_closest_node_in_our_close_group.id.clone()),
+                reply_to : None },
+            authority : types::Authority::NodeManager,
+            signature : None // authority does not verify a signature
+        };
+        assert_eq!(routing_node.our_authority(&name_outside_close_group,
+                                              &managed_node_header),
+                   types::Authority::ManagedNode);
     }
 
     //#[test]
