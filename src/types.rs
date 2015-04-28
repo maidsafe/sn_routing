@@ -112,16 +112,10 @@ pub type SerialisedMessage = Vec<u8>;
 pub type PmidNode = NameType;
 pub type PmidNodes = Vec<PmidNode>;
 
-pub trait RoutingTrait {
-  fn get_name(&self)->NameType;
-  fn get_owner(&self)->Vec<u8>;
-  fn refresh(&self)->bool;
-}
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
   pub name : NameType,
-  pub type_id : u32
+  pub type_id : u64
 }
 
 impl Encodable for NameAndTypeId {
@@ -259,13 +253,6 @@ impl PublicPmid {
         name : pmid.get_name()
       }
     }
-
-}
-
-impl RoutingTrait for PublicPmid {
-  fn get_name(&self) -> NameType { self.name.clone() }
-  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-  fn refresh(&self)->bool { false } // TODO is this an account transfer type
 }
 
 impl Encodable for PublicPmid {
@@ -297,12 +284,6 @@ pub struct Pmid {
   name: NameType
 }
 
-impl RoutingTrait for Pmid {
-  fn get_name(&self) -> NameType { self.name.clone() }
-  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-  fn refresh(&self)->bool { false } // TODO is this an account transfer type
-}
-
 impl Pmid {
   pub fn new() -> Pmid {
     let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
@@ -331,7 +312,9 @@ impl Pmid {
       name : NameType::new(digest.0)
     }
   }
-
+  pub fn get_name(&self) -> NameType {
+    self.name.clone()
+  }
   pub fn get_public_key(&self) -> PublicKey {
     PublicKey::new(self.public_keys.1.clone())
   }
@@ -372,12 +355,6 @@ impl Decodable for AccountTransferInfo {
     let name = try!(Decodable::decode(d));
     Ok(AccountTransferInfo { name: name })
   }
-}
-
-impl RoutingTrait for AccountTransferInfo {
-    fn get_name(&self)->NameType { self.name.clone() }
-    fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-    fn refresh(&self)->bool { true } // TODO is this an account transfer type
 }
 
 /// Address of the source of the message

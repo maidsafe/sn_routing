@@ -101,16 +101,13 @@ impl Random for messages::find_group::FindGroup {
 impl Random for messages::find_group_response::FindGroupResponse {
     fn generate_random() -> messages::find_group_response::FindGroupResponse {
         let total = GROUP_SIZE as usize + 20;
-        let mut vec: Vec<PublicPmid> = Vec::with_capacity(total);
+        let mut vec = Vec::<PublicPmid>::with_capacity(total);
         for i in 0..total {
             let public_pmid : PublicPmid = Random::generate_random();
             vec.push(public_pmid);
         }
 
-        messages::find_group_response::FindGroupResponse {
-            target_id: Random::generate_random(),
-            group: vec,
-        }
+        messages::find_group_response::FindGroupResponse { group: vec }
     }
 }
 
@@ -164,12 +161,11 @@ impl Random for messages::get_group_key::GetGroupKey {
 impl Random for messages::get_group_key_response::GetGroupKeyResponse {
     fn generate_random() -> messages::get_group_key_response::GetGroupKeyResponse {
         let total: usize = GROUP_SIZE as usize + 7;
-        let mut vec: Vec<(NameType, PublicSignKey)> = Vec::with_capacity(total);
+        let mut vec = Vec::<(NameType, PublicSignKey)>::with_capacity(total);
         for i in 0..total {
             vec.push((Random::generate_random(), Random::generate_random()));
         }
         messages::get_group_key_response::GetGroupKeyResponse {
-            target_id: Random::generate_random(),
             public_sign_keys: vec,
         }
     }

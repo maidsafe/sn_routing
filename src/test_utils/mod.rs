@@ -24,3 +24,12 @@ pub use self::random_trait::*;
 pub use self::types_util::*;
 pub use self::messages_util::*;
 
+use NameType;
+
+pub fn xor(lhs: &NameType, rhs: &NameType) -> NameType {
+    let mut result = NameType::new([0u8; 64]);
+    for i in 0..lhs.0.len() {
+        result.0[i] = lhs.0[i] ^ rhs.0[i];
+    }
+    result
+}
