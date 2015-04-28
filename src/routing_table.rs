@@ -21,7 +21,7 @@ use sodiumoxide::crypto;
 use std::cmp;
 use std::usize;
 use NameType;
-use types::{PublicPmid, RoutingTrait};
+use types::PublicPmid;
 use name_type::closer_to_target;
 
 static BUCKET_SIZE: usize = 1;
@@ -50,7 +50,7 @@ impl NodeInfo {
   pub fn new(fob: PublicPmid, connected: bool)
          -> NodeInfo {
     NodeInfo {
-      id : fob.get_name(),
+      id : fob.name.clone(),
       fob : fob,
       connected : connected
     }
@@ -387,7 +387,7 @@ mod test {
     use std::cmp;
     use std::collections::BitVec;
     use std::net::*;
-    use types::{PublicPmid, RoutingTrait};
+    use types::PublicPmid;
     use name_type::closer_to_target;
     use types;
     use NameType;
@@ -557,7 +557,7 @@ mod test {
     fn create_random_node_info() -> NodeInfo {
         let public_pmid = types::PublicPmid::new(&types::Pmid::new());
         NodeInfo {
-            id : public_pmid.get_name(),
+            id : public_pmid.name.clone(),
             fob: public_pmid,
             connected: false,
         }

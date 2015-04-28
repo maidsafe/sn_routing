@@ -36,7 +36,7 @@ use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
-use types::{MessageId, RoutingTrait, Authority};
+use types::{MessageId, Authority};
 use message_header::MessageHeader;
 use messages;
 use messages::get_data::GetData;
