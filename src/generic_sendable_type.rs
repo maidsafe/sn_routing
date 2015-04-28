@@ -27,7 +27,8 @@ pub struct GenericSendableType {
 }
 
 impl GenericSendableType {
-    pub fn new(name: name_type::NameType, type_tag: u64, serialised_contents: Vec<u8>) -> GenericSendableType {
+    pub fn new(name: name_type::NameType, type_tag: u64,
+               serialised_contents: Vec<u8>) -> GenericSendableType {
         GenericSendableType {
             name: name,
             type_tag: type_tag,

@@ -17,11 +17,12 @@
 // use of the Safe Network Software.
 
 use cbor::{Decoder, Encoder};
+use core::iter::FromIterator;
 use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
 use sodiumoxide::crypto;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::Receiver;
@@ -29,6 +30,7 @@ use time::Duration;
 
 use crust;
 use crust::Endpoint::Tcp;
+use generic_sendable_type::GenericSendableType;
 use message_filter::MessageFilter;
 use NameType;
 use name_type::closer_to_target;
@@ -240,25 +242,45 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
         self.pending_connections.remove(&peer_endpoint);
-        let removed_entry = self.all_connections.0.remove(&peer_endpoint);
-        if removed_entry.is_some() {
-            let peer_id = removed_entry.unwrap();
-            self.routing_table.drop_node(&peer_id);
-            self.all_connections.1.remove(&peer_id);
+        let peer_id = match self.all_connections.0.remove(&peer_endpoint) {
+            None => return,
+            Some(peer) => peer,
+        };
+        // TODO - it would be more efficient if routing_table.drop_node returned a bool to
+        // indicate whether the dropped node was in the close group or not - we wouldn't need to
+        // compare routing_table.our_close_group before and after to find out.
+        let close_group_before = BTreeSet::<NameType>::from_iter(
+            self.routing_table.our_close_group().iter().map(
+                |ref node_info| node_info.id.clone()));
+        self.routing_table.drop_node(&peer_id);
+        let close_group_after = self.routing_table.our_close_group();
+        self.all_connections.1.remove(&peer_id);
 
-            // do account transfers
+        // do account transfers
+        let mut accounts: Vec<GenericSendableType>;
+        {
             let mut self_interface = match self.interface.lock() {
                 Err(_) => return,
                 Ok(interface) => interface,
             };
-            let our_close_group: Vec<NameType> = self.routing_table.our_close_group();
-            convert to Vec<NameType>
-            let accounts = self_interface.handle_churn(our_close_group);
-            send each as a put request
-
-            // notify peers of lost connection if it was in our close group
-
+            let current_close_group = Vec::<NameType>::from_iter(close_group_after.iter().map(
+                |ref node_info| node_info.id.clone()));
+            accounts = self_interface.handle_churn(current_close_group);
         }
+        for account in accounts.iter() {
+            self.put(account.name(), account.clone());
+        }
+
+        // notify peers of lost connection if it was in our close group
+        let current_close_group = BTreeSet::<NameType>::from_iter(close_group_after.iter().map(
+            |ref node_info| node_info.id.clone()));
+        let difference: Vec<NameType> =
+            close_group_before.difference(&current_close_group).cloned().collect();
+        assert!(difference.len() < 2);
+        if difference.is_empty() {
+            return;
+        }
+        self.send_close_peer_lost(&difference[0]);
     }
 
     fn message_received(&mut self, peer_id: &NameType, serialised_message: Bytes) -> RecvResult {
@@ -702,6 +724,10 @@ impl<F> RoutingNode<F> where F: Interface {
             message_header: header,
             serialised_body: self.encode(&get_data_response)
         }
+    }
+
+    fn send_close_peer_lost(&self, lost_peer: &NameType) {
+
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
