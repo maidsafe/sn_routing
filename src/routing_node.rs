@@ -741,6 +741,7 @@ mod test {
     use routing_table;
     use message_header::MessageHeader;
     use NameType;
+    use name_type::{closer_to_target, xor};
     use test_utils::Random;
     use super::super::{Action, RoutingError};
     use rand::random;
@@ -749,8 +750,8 @@ mod test {
     struct NullInterface;
 
     impl Interface for NullInterface {
-        fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,
-                    from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+        fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: Authority,
+                      from_authority: Authority, from_address: NameType) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
         fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
@@ -778,8 +779,8 @@ mod test {
             -> Vec<(NameType, generic_sendable_type::GenericSendableType)> {
             unimplemented!();
         }
-        fn handle_cache_get(&mut self, type_id: u64, from_authority: Authority,
-                            from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+        fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
+                            from_address: NameType) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
         fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
@@ -803,15 +804,31 @@ mod test {
                 panic!("Routing table does not fill up."); }
         }
         let a_message_id : MessageId = random::<u32>();
-        let our_furthest_close_group_node : routing_table::NodeInfo
-            = routing_node.routing_table
-                          .our_close_group().last()
-                          .unwrap_or( panic!("No furthest node in close group.") )
-                          .clone();
+        let our_name = routing_node.own_id;
+        let our_close_group : Vec<routing_table::NodeInfo>
+            = routing_node.routing_table.our_close_group();
+        let furthest_node_close_group : routing_table::NodeInfo
+            = our_close_group.last().unwrap().clone();
+        let closest_node_in_our_close_group : routing_table::NodeInfo
+            = our_close_group.first().unwrap().clone();
+        let second_closest_node_in_our_close_group : routing_table::NodeInfo
+            = our_close_group[1].clone();
+
+        let nae_in_our_close_group : NameType
+            = xor(&xor(&closest_node_in_our_close_group.id, &our_name),
+                  &second_closest_node_in_our_close_group.id);
+        // assert nae is indeed within close group
+        assert!(closer_to_target(&nae_in_our_close_group,
+                                 &furthest_node_close_group.id,
+                                 &our_name));
+        for close_node in our_close_group {
+          // assert that nae does not collide with close node
+          assert!(close_node.id != nae_in_our_close_group);
+        }
 
         // assert to get a client_manager Authority
         // let client_manager_header : MessageHeader = MessageHeader {
-        //     message_id : Random::generate_random(),
+        //     message_id : random::<u32>(),
         //
         // }
     }
