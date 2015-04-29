@@ -50,7 +50,7 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [x] Complete Routing Node Interface to accomodate churn
 - [x] Add caching to node interface
 - [ ] Implement routing node (100%)
-- [ ] Handle PMID Caching
+- [x] Handle PMID Caching
 - [x] Handle Cache / Get / Check calls
 - [ ] Split Messages and  handle message
   - [x] GetData HandleGetData
