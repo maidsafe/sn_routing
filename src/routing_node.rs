@@ -1003,8 +1003,7 @@ mod test {
                 from_node : nae_or_client_in_our_close_group.clone(),
                 from_group : None,
                 reply_to : None },
-            authority : types::Authority::Client,
-            signature : None // authority does not verify a signature
+            authority : types::Authority::Client
         };
         assert_eq!(routing_node.our_authority(&name_outside_close_group,
                                               &client_manager_header),
@@ -1020,8 +1019,7 @@ mod test {
                 from_node : Random::generate_random(),
                 from_group : Some(name_outside_close_group.clone()),
                 reply_to : None },
-            authority : types::Authority::ClientManager,
-            signature : None // authority does not verify a signature
+            authority : types::Authority::ClientManager
         };
         assert_eq!(routing_node.our_authority(&nae_or_client_in_our_close_group,
                                               &nae_manager_header),
@@ -1037,8 +1035,7 @@ mod test {
                 from_node : Random::generate_random(),
                 from_group : Some(name_outside_close_group.clone()),
                 reply_to : None },
-            authority : types::Authority::NaeManager,
-            signature : None // authority does not verify a signature
+            authority : types::Authority::NaeManager
         };
         assert_eq!(routing_node.our_authority(&name_outside_close_group,
                                               &node_manager_header),
@@ -1054,8 +1051,7 @@ mod test {
                 from_node : Random::generate_random(),
                 from_group : Some(second_closest_node_in_our_close_group.id.clone()),
                 reply_to : None },
-            authority : types::Authority::NodeManager,
-            signature : None // authority does not verify a signature
+            authority : types::Authority::NodeManager
         };
         assert_eq!(routing_node.our_authority(&name_outside_close_group,
                                               &managed_node_header),
@@ -1082,15 +1078,11 @@ mod test {
             message_id:  n1.get_next_message_id(),
             destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
             source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
-            authority:   Authority::NaeManager,
-            signature:   None
+            authority:   Authority::NaeManager
         };
 
-        let message = RoutingMessage{
-            message_type:    MessageTypeTag::PutData,
-            message_header:  header.clone(),
-            serialised_body: n1.encode(&put_data)
-        };
+        let message = RoutingMessage::new( MessageTypeTag::PutData, header,
+            put_data, &n1.pmid.get_crypto_secret_sign_key() );
 
         let serialised_msssage = n1.encode(&message);
 
@@ -1110,15 +1102,11 @@ mod test {
             message_id:  n1.get_next_message_id(),
             destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
             source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
-            authority:   Authority::NaeManager,
-            signature:   None
+            authority:   Authority::NaeManager
         };
 
-        let message = RoutingMessage{
-            message_type:    MessageTypeTag::PutDataResponse,
-            message_header:  header.clone(),
-            serialised_body: n1.encode(&put_data_response)
-        };
+        let message = RoutingMessage::new( MessageTypeTag::PutDataResponse, header,
+            put_data_response, &n1.pmid.get_crypto_secret_sign_key());
 
         let serialised_msssage = n1.encode(&message);
 
