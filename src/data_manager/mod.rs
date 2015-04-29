@@ -85,8 +85,8 @@ impl DataManager {
     Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
-    self.db_.retrieve_all_and_reset()
+  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<routing::NameType>) -> Vec<generic_sendable_type::GenericSendableType> {
+    self.db_.retrieve_all_and_reset(close_group)
   }
 }
 

@@ -27,6 +27,7 @@ use routing::types::PmidNode;
 use routing::types::PmidNodes;
 use routing::NameType;
 use routing::sendable::Sendable;
+use std::cmp;
 
 pub struct DataManagerDatabase {
   storage : HashMap<Identity, PmidNodes>
@@ -74,7 +75,38 @@ impl DataManagerDatabase {
         }
     }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
+    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<routing::NameType>) -> Vec<generic_sendable_type::GenericSendableType> {
+        for it in self.storage.iter_mut() {
+            let mut new_pmid_nodes = Vec::<routing::NameType>::with_capacity(it.1.len());
+            for vec_it in it.1.iter() {
+                if close_group.iter().find(|a| **a == *vec_it).is_some() {
+                    new_pmid_nodes.push(vec_it.clone());
+                }
+            }
+
+            if new_pmid_nodes.len() < 3 {
+                assert!(close_group.len() >= 3);
+
+                close_group.sort_by(|a, b| {
+                    if routing::closer_to_target(&a, &b, &it.0) {
+                      cmp::Ordering::Less
+                    } else {
+                      cmp::Ordering::Greater
+                    }
+                });
+
+                while new_pmid_nodes.len() < 3 {
+                    for close_grp_it in close_group.iter() {
+                        if new_pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
+                            new_pmid_nodes.push(close_grp_it.clone());
+                        }
+                    }
+                }
+            }
+
+            *it.1 = new_pmid_nodes;
+        }
+
         let data: Vec<_> = self.storage.drain().collect();
         let mut sendable_data = Vec::<generic_sendable_type::GenericSendableType>::with_capacity(data.len());
         for element in data {
