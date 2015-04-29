@@ -86,8 +86,8 @@ impl ClientIdPacket {
         &self.public_keys
     }
 
-    pub fn sign(&self, data : &[u8]) -> Vec<u8> {
-        return crypto::sign::sign(&data, &self.secret_keys.0)
+    pub fn sign(&self, data : &[u8]) -> crypto::sign::Signature {
+        return crypto::sign::sign_detached(&data, &self.secret_keys.0)
     }
 
     pub fn encrypt(&self, data : &[u8], to : &crypto::asymmetricbox::PublicKey) -> (Vec<u8>, crypto::asymmetricbox::Nonce) {
@@ -196,8 +196,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 reply_to: None
             },
             get_data.requester.clone(),
-            types::Authority::Client,
-            None,
+            types::Authority::Client
         );
 
         self.message_id += 1;
@@ -207,6 +206,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             messages::MessageTypeTag::GetData,
             header,
             get_data,
+            &self.id_packet.secret_keys.0
         );
 
         // Serialise RoutingMessage
@@ -222,7 +222,6 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put<T>(&mut self, content: T) -> Result<u32, IoError> where T: Sendable {
-        use test_utils::Random;
         // Make PutData message
         let put_data = messages::put_data::PutData {
             name: content.name(),
@@ -241,8 +240,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 from_group: None,
                 reply_to: Some(self.id_packet.get_name()),
             },
-            types::Authority::Client,
-            Some(Random::generate_random()), // What is the signature -- see in c++ Secret - signing key
+            types::Authority::Client
         );
 
         self.message_id += 1;
@@ -252,6 +250,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             messages::MessageTypeTag::PutData,
             header,
             put_data,
+            &self.id_packet.secret_keys.0
         );
 
         // Serialise RoutingMessage

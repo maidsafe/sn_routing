@@ -53,6 +53,7 @@ pub mod put_public_pmid;
 use cbor;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use sodiumoxide::crypto;
 
 use message_header;
 use types;
@@ -139,34 +140,42 @@ pub struct RoutingMessage {
     pub message_type: MessageTypeTag,
     pub message_header: message_header::MessageHeader,
     pub serialised_body: Vec<u8>,
+    pub signature : types::Signature
 }
 
 impl Encodable for RoutingMessage {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_001, &(&self.message_type, &self.message_header, &self.serialised_body)).encode(e)
+        CborTagEncode::new(5483_001, &(&self.message_type, &self.message_header,
+            &self.serialised_body, &self.signature)).encode(e)
     }
 }
 
 impl Decodable for RoutingMessage {
     fn decode<D: Decoder>(d: &mut D)->Result<RoutingMessage, D::Error> {
         try!(d.read_u64());
-        let (message_type, message_header, serialised_body) = try!(Decodable::decode(d));
-        Ok(RoutingMessage { message_type: message_type, message_header: message_header, serialised_body: serialised_body })
+        let (message_type, message_header, serialised_body, signature) = try!(Decodable::decode(d));
+        Ok(RoutingMessage { message_type: message_type, message_header: message_header,
+            serialised_body: serialised_body, signature : signature })
     }
 }
 
 impl RoutingMessage {
-    pub fn dummy_new(message_type: MessageTypeTag,
-                     message_header: message_header::MessageHeader) -> RoutingMessage {
-        RoutingMessage { message_type: message_type, message_header: message_header, serialised_body: Vec::<u8>::new() }
-    }
+    // pub fn dummy_new(message_type: MessageTypeTag,
+    //                  message_header: message_header::MessageHeader) -> RoutingMessage {
+    //     RoutingMessage { message_type: message_type, message_header: message_header, serialised_body: Vec::<u8>::new() }
+    // }
 
     pub fn new<T>(message_type: MessageTypeTag, message_header: message_header::MessageHeader,
-                  message : T) -> RoutingMessage where T: for<'a> Encodable + Decodable {
+                  message : T, private_sign_key : &crypto::sign::SecretKey) -> RoutingMessage where T: for<'a> Encodable + Decodable {
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&message]).unwrap();
-        RoutingMessage { message_type: message_type, message_header: message_header,
-        serialised_body: types::array_as_vector(e.as_bytes()) }
+        let signature = types::Signature::new(crypto::sign::sign_detached(&e.as_bytes(),
+                                              &private_sign_key));
+        RoutingMessage {
+            message_type: message_type,
+            message_header: message_header,
+            serialised_body: types::array_as_vector(e.as_bytes()),
+            signature: signature }
     }
 
     pub fn get_message_body<T>(&self) -> T where T: for<'a> Encodable + Decodable {
