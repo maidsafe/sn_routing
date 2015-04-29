@@ -24,7 +24,7 @@ use accumulator;
 use message_header;
 use NameType;
 use types;
-use types::{Mergable};
+use types::{Mergable, QUORUM_SIZE};
 use frequency::Frequency;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
@@ -61,10 +61,10 @@ impl<'a> Sentinel<'a> {
     pub fn new(send_get_keys: &'a mut SendGetKeys) -> Sentinel<'a> {
       Sentinel {
         send_get_keys_: send_get_keys,
-        node_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
-        group_accumulator_: NodeAccumulatorType::new(types::QUORUM_SIZE as usize),
-        group_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize),
-        node_key_accumulator_: KeyAccumulatorType::new(types::QUORUM_SIZE as usize)
+        node_accumulator_: NodeAccumulatorType::new(QUORUM_SIZE as usize),
+        group_accumulator_: NodeAccumulatorType::new(QUORUM_SIZE as usize),
+        group_key_accumulator_: KeyAccumulatorType::new(QUORUM_SIZE as usize),
+        node_key_accumulator_: KeyAccumulatorType::new(QUORUM_SIZE as usize)
       }
     }
 
@@ -164,7 +164,7 @@ impl<'a> Sentinel<'a> {
 
     fn validate_node(messages: Vec<ResultType>,
                      keys:     Vec<ResultType>) -> Vec<ResultType> {
-        if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
+        if messages.len() == 0 || keys.len() < QUORUM_SIZE as usize {
           return Vec::new();
         }
 
@@ -173,11 +173,11 @@ impl<'a> Sentinel<'a> {
         let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.2)).collect::<Vec<_>>();
 
         // Need to check this again because decoding may have failed.
-        if keys.len() < types::QUORUM_SIZE as usize {
+        if keys.len() < QUORUM_SIZE as usize {
           return Vec::new();
         }
 
-        take_most_frequent(&keys, types::QUORUM_SIZE as usize)
+        take_most_frequent(&keys, QUORUM_SIZE as usize)
             .into_iter()
             .flat_map(|GetClientKeyResponse{address: _, public_sign_key: pub_key}| {
                 messages.iter().filter_map(move |response| {
@@ -189,7 +189,7 @@ impl<'a> Sentinel<'a> {
 
     fn validate_group(messages: Vec<ResultType>,
                       keys:     Vec<ResultType>) -> Vec<ResultType> {
-        if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
+        if messages.len() < QUORUM_SIZE as usize || keys.len() < QUORUM_SIZE as usize {
             return Vec::<ResultType>::new();
         }
 
@@ -198,7 +198,7 @@ impl<'a> Sentinel<'a> {
         let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.2)).collect::<Vec<_>>();
 
         // Need to check this again because decoding may have failed.
-        if keys.len() < types::QUORUM_SIZE as usize {
+        if keys.len() < QUORUM_SIZE as usize {
             return Vec::<ResultType>::new();
         }
 
@@ -228,7 +228,7 @@ impl<'a> Sentinel<'a> {
     }
 
     fn resolve(&self, verified_messages : Vec<ResultType>, _ : bool) -> Option<ResultType> {
-        if verified_messages.len() < types::QUORUM_SIZE as usize {
+        if verified_messages.len() < QUORUM_SIZE as usize {
             return None;
         }
 
@@ -245,6 +245,7 @@ impl<'a> Sentinel<'a> {
                  Sentinel::encode(merged))
             })
         } else if verified_messages[0].1 == MessageTypeTag::GetGroupKeyResponse {
+            // TODO: GetGroupKeyResponse will probably never reach this function.(?)
             let accounts = verified_messages.iter()
                 .filter_map(|msg_triple| { Sentinel::decode::<GetGroupKeyResponse>(&msg_triple.2) })
                 .collect::<Vec<_>>();
@@ -262,7 +263,7 @@ impl<'a> Sentinel<'a> {
                              .map(|(_, _, body)| body)
                              .collect::<Vec<_>>();
 
-            take_most_frequent(&msg_bodies, types::QUORUM_SIZE as usize)
+            take_most_frequent(&msg_bodies, QUORUM_SIZE as usize)
                 .map(|merged| { (header, tag, merged) })
         }
     }
