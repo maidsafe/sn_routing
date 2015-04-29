@@ -436,6 +436,10 @@ impl<F> RoutingNode<F> where F: Interface {
         }
         // add our own signature key
         group_keys.push((self.pmid.get_name(),self.pmid.get_public_sign_key()));
+        let routing_msg = self.construct_get_group_key_response_msg(&original_header,
+                                                                    &get_group_key,
+                                                                    group_keys);
+
         Ok(())
     }
 
@@ -623,13 +627,23 @@ impl<F> RoutingNode<F> where F: Interface {
                                 reply_to: None }
     }
 
-    fn construct_get_group_key_response_msg(&mut self, original_message_id : &MessageId) -> RoutingMessage {
+    fn construct_get_group_key_response_msg(&mut self, original_header : &MessageHeader,
+                                            get_group_key : &GetGroupKey,
+                                            group_keys : Vec<(NameType, types::PublicSignKey)>)
+                                            -> RoutingMessage {
         let header = MessageHeader {
-            message_id: original_message_id.clone(),
-            destination: types::DestinationAddress {
-                             dest:     self.own_id.clone(),
-                             reply_to: None
-                         },
+            // Sentinel accumulates on the same MessageId to be returned.
+            message_id:  original_header.message_id.clone(),
+            destination: original_header.send_to(),
+            source:      self.our_group_address(get_group_key.target_id.clone()),
+            authority:   types::Authority::NaeManager,
+            signature:   None
+        };
+
+        RoutingMessage{
+            message_type:    messages::MessageTypeTag::GetGroupKeyResponse,
+            message_header:  header,
+            serialised_body: self.encode(&GetGroupKeyResponse{ public_sign_keys  : group_keys })
         }
     }
 
