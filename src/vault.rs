@@ -372,7 +372,7 @@ impl VaultFacade {
 
             let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
             let pmids: Vec<NameType> = decoder.decode().next().unwrap().unwrap();
-            assert_eq!(pmids.len(), 3);
+            assert!(pmids.len() >= 3);
 
             assert!(vault.data_manager.retrieve_all_and_reset(&mut Vec::new()).is_empty());
         }
