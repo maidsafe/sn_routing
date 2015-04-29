@@ -142,7 +142,7 @@ pub struct Signature {
 
 impl Signature {
   pub fn new(signature : crypto::sign::Signature) -> Signature {
-    assert_eq!(signature.0.len(), 32);
+    assert_eq!(signature.0.len(), 64);
     Signature {
       signature : signature.0.to_vec()
     }

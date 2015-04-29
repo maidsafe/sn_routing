@@ -862,7 +862,7 @@ mod test {
     }
 
     impl Sendable for TestData {
-        fn name(&self) -> NameType { unimplemented!() }
+        fn name(&self) -> NameType { Random::generate_random() }
 
         fn type_tag(&self)->u64 { unimplemented!() }
 
@@ -1065,7 +1065,7 @@ mod test {
 
         n1.message_received(&header.source.from_node, serialised_msssage);
         let stats = stats.clone();
-        let mut stats = stats.lock().unwrap();
+        let stats = stats.lock().unwrap();
         assert_eq!(stats.call_count, 1u32);
     }
 
@@ -1094,7 +1094,7 @@ mod test {
         n1.message_received(&header.source.from_node, serialised_msssage);
 
         let stats = stats.clone();
-        let mut stats = stats.lock().unwrap();
+        let stats = stats.lock().unwrap();
         assert_eq!(stats.call_count, 1u32);
     }
 
