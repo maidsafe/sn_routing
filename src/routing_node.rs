@@ -49,6 +49,8 @@ use messages::connect_response::ConnectResponse;
 use messages::connect_success::ConnectSuccess;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
+use messages::get_group_key::GetGroupKey;
+use messages::get_group_key_response::GetGroupKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action, RoutingError};
@@ -383,31 +385,35 @@ impl<F> RoutingNode<F> where F: Interface {
         // and this node is in the group but the message destination is another group member node.
         // "not for me"
 
-        // Sentinel check
-
-        // switch message type
+        // pre-sentinel message handling
         match message.message_type {
-            MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
-            MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
-            MessageTypeTag::FindGroup => self.handle_find_group(header, body),
-            MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
-            MessageTypeTag::GetData => self.handle_get_data(header, body),
-            MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
-            //GetClientKey,
-            //GetClientKeyResponse,
-            //GetGroupKey,
-            //GetGroupKeyResponse,
-            //Post,
-            //PostResponse,
-            MessageTypeTag::PutData => self.handle_put_data(header, body),
-            MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
-            MessageTypeTag::PutPublicPmid => self.handle_put_public_pmid(header, body),
-            //PutKey,
+            // MessageTypeTag::GetClientKey =>
+            MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
             _ => {
-                println!("unhandled message from {:?}", peer_id);
-                Err(())
+                // Sentinel check
+
+                // switch message type
+                match message.message_type {
+                    MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
+                    MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
+                    MessageTypeTag::FindGroup => self.handle_find_group(header, body),
+                    MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
+                    MessageTypeTag::GetData => self.handle_get_data(header, body),
+                    MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
+                    //Post,
+                    //PostResponse,
+                    MessageTypeTag::PutData => self.handle_put_data(header, body),
+                    MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
+                    MessageTypeTag::PutPublicPmid => self.handle_put_public_pmid(header, body),
+                    //PutKey,
+                    _ => {
+                        println!("unhandled message from {:?}", peer_id);
+                        Err(())
+                    }
+                }
             }
         }
+
     }
 
     /// This returns our calculated authority with regards
@@ -448,6 +454,30 @@ impl<F> RoutingNode<F> where F: Interface {
            && header.destination.dest == self.own_id {
             return Authority::ManagedNode; }
         return Authority::Unknown;
+    }
+
+    /// This method sends a GetGroupKeyResponse message on receiving the GetGroupKey request.
+    /// It collects and replies with all the public signature keys from its close group.
+    fn handle_get_group_key(&mut self, original_header : MessageHeader, body : Bytes) -> RecvResult {
+        println!("{:?} received GetGroupKey ", self.own_id);
+        let get_group_key = try!(self.decode::<GetGroupKey>(&body).ok_or(()));
+        let close_group = self.routing_table.our_close_group();
+        let mut group_keys : Vec<(NameType, types::PublicSignKey)>
+            = Vec::with_capacity(close_group.len());
+        for close_node in close_group {
+            group_keys.push((close_node.fob.name.clone(),
+                             close_node.fob.public_sign_key.clone()));
+        }
+        // add our own signature key
+        group_keys.push((self.pmid.get_name(),self.pmid.get_public_sign_key()));
+        let routing_msg = self.construct_get_group_key_response_msg(&original_header,
+                                                                    &get_group_key,
+                                                                    group_keys);
+        let encoded_msg = self.encode(&routing_msg);
+        let original_group = original_header.from_group();
+        original_group.and_then(|group| Some(self.send_swarm_or_parallel(&group,
+                                                                         &encoded_msg)));
+        Ok(())
     }
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
@@ -644,9 +674,37 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
+    fn group_address_for_group(&self, group_address : &types::GroupAddress) -> types::SourceAddress {
+        types::SourceAddress {
+          from_node : self.own_id.clone(),
+          from_group : Some(group_address.clone()),
+          reply_to : None
+        }
+    }
+
     fn our_group_address(&self, group_id: NameType) -> types::SourceAddress {
         types::SourceAddress{ from_node: self.own_id.clone(), from_group: Some(group_id.clone()),
                                 reply_to: None }
+    }
+
+    fn construct_get_group_key_response_msg(&mut self, original_header : &MessageHeader,
+                                            get_group_key : &GetGroupKey,
+                                            group_keys : Vec<(NameType, types::PublicSignKey)>)
+                                            -> RoutingMessage {
+        let header = MessageHeader {
+            // Sentinel accumulates on the same MessageId to be returned.
+            message_id:  original_header.message_id.clone(),
+            destination: original_header.send_to(),
+            source:      self.our_group_address(get_group_key.target_id.clone()),
+            authority:   types::Authority::NaeManager,
+            signature:   None
+        };
+
+        RoutingMessage{
+            message_type:    messages::MessageTypeTag::GetGroupKeyResponse,
+            message_header:  header,
+            serialised_body: self.encode(&GetGroupKeyResponse{ public_sign_keys  : group_keys })
+        }
     }
 
     fn construct_find_group_msg(&mut self) -> RoutingMessage {
