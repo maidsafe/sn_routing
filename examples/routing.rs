@@ -2,7 +2,6 @@ extern crate docopt;
 extern crate rustc_serialize;
 
 use docopt::Docopt;
-use std::thread::spawn;
 use std::io;
 
 static USAGE: &'static str = "
@@ -10,6 +9,8 @@ Usage: routing -h
        routing <type> -s <size>
 
 Options:
+    type             OperationType to be performed. GET, PUT, NONE are accepted values for type.
+    size             Size as a numeric value
     -h, --help       Display the help message.
     -s, --size       Size numeric type
 ";
