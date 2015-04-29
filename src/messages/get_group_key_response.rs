@@ -20,7 +20,7 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::{Frequency};
-use types::{PublicSignKey, GROUP_SIZE, QUORUM_SIZE, Mergable};
+use types::{PublicSignKey, GROUP_SIZE, QUORUM_SIZE, Mergeable};
 use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -28,7 +28,7 @@ pub struct GetGroupKeyResponse {
   pub public_sign_keys : Vec<(NameType, PublicSignKey)>
 }
 
-impl Mergable for GetGroupKeyResponse {
+impl Mergeable for GetGroupKeyResponse {
     fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
         let mut frequency = Frequency::new();
 
@@ -128,9 +128,9 @@ mod test {
             responses.push(response);
         }
 
-        let merged_obj = types::Mergable::merge(responses.iter());
-        assert!(merged_obj.is_some());
-        let merged_response = merged_obj.unwrap();
+        let merged = types::Mergeable::merge(responses.iter());
+        assert!(merged.is_some());
+        let merged_response = merged.unwrap();
         for i in 0..quorum_size {
             assert!(sign_keys.iter().find(|a| **a == merged_response.public_sign_keys[i]).is_some());
         }

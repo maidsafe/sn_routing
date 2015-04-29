@@ -23,7 +23,7 @@ use accumulator;
 use message_header;
 use NameType;
 use types;
-use types::{Mergable, QUORUM_SIZE};
+use types::{Mergeable, QUORUM_SIZE};
 use frequency::Frequency;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
@@ -204,7 +204,7 @@ impl<'a> Sentinel<'a> {
             return Vec::<ResultType>::new();
         }
 
-        let key_map = Mergable::merge(keys.iter())
+        let key_map = Mergeable::merge(keys.iter())
             .into_iter()
             .flat_map(|GetGroupKeyResponse{public_sign_keys: addr_key_pairs}| {
                 addr_key_pairs.into_iter()
@@ -245,7 +245,7 @@ impl<'a> Sentinel<'a> {
             //            have lost meaning; we should be returning less then this;
             //            in particular will the signature no longer match
             //            merged message
-            Mergable::merge(decoded_responses.iter()).map(|merged| {
+            Mergeable::merge(decoded_responses.iter()).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
                  Sentinel::encode(merged),
@@ -258,7 +258,7 @@ impl<'a> Sentinel<'a> {
                 .collect::<Vec<_>>();
 
             //FIXME(ben): see comment above
-            Mergable::merge(accounts.iter()).map(|merged| {
+            Mergeable::merge(accounts.iter()).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
                  Sentinel::encode(merged),
