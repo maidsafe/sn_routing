@@ -144,13 +144,6 @@ impl<F> RoutingNode<F> where F: Interface {
         let source = self.our_source_address();
         let authority = types::Authority::Client;
         let signing_request = PutData{ name: content.name(), data: content.serialised_contents() };
-        // CLEANUP
-        // let request = signing_request.clone();
-        // let mut e = Encoder::from_memory();
-        // e.encode(&[signing_request]).unwrap();
-        // let crypto_signature = crypto::sign::sign_detached(
-                // &e.into_bytes(), &self.pmid.get_crypto_secret_sign_key());
-        // let signature = types::Signature::new(crypto_signature);
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
             signing_request, &self.pmid.get_crypto_secret_sign_key());
@@ -214,13 +207,6 @@ impl<F> RoutingNode<F> where F: Interface {
         let source = types::SourceAddress{ from_node: self.id(), from_group: None,
                                             reply_to: self.bootstrap_node_id.clone() };
         let authority = types::Authority::ManagedNode;
-
-        // CLEANUP
-        // //FIXME should we sign the request here ?
-        // let crypto_signature = crypto::sign::sign_detached(
-        //         &our_public_pmid.serialised_contents(), &self.pmid.get_crypto_secret_sign_key());
-        // let signature = types::Signature::new(crypto_signature);
-
         let request = PutPublicPmid{ public_pmid: our_public_pmid };
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::PutPublicPmid, header,
