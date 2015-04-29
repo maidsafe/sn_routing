@@ -137,13 +137,12 @@ impl<F> RoutingNode<F> where F: Interface {
     /// Add something to the network, will always go via ClientManager group
     pub fn put<T>(&mut self, destination: NameType, content: T) where T: Sendable {
         let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: self.id(), reply_to: None };
+        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
         let source = self.our_source_address();
-        let authority = types::Authority::Client;
-        let signing_request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let request = signing_request.clone();
+        let authority = types::Authority::ManagedNode;
+        let request = PutData{ name: content.name(), data: content.serialised_contents() };
         let mut e = Encoder::from_memory();
-        e.encode(&[signing_request]).unwrap();
+        e.encode(&[request.clone()]).unwrap();
         let crypto_signature = crypto::sign::sign_detached(
                 &e.into_bytes(), &self.pmid.get_crypto_secret_sign_key());
         let signature = types::Signature::new(crypto_signature);
@@ -216,6 +215,11 @@ impl<F> RoutingNode<F> where F: Interface {
         let signature = types::Signature::new(crypto_signature);
 
         let request = PutPublicPmid{ public_pmid: our_public_pmid };
+
+        let mut e = Encoder::from_memory();
+        e.encode(&[request.clone()]).unwrap();
+        let crypto_signature = crypto::sign::sign_detached(
+                &e.into_bytes(), &self.pmid.get_crypto_secret_sign_key());
         let header = MessageHeader::new(message_id, destination, source, authority, Some(signature));
         let message = RoutingMessage::new(MessageTypeTag::PutPublicPmid, header, request);
         let mut e = Encoder::from_memory();
