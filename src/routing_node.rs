@@ -876,33 +876,72 @@ impl<F> RoutingNode<F> where F: Interface {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use super::super::{Action, RoutingError};
     use generic_sendable_type;
+    use routing_node::{RoutingNode};
     use node_interface::*;
-    use types;
-    use types::{Pmid, Authority, DestinationAddress};
-    use types::{PublicPmid, MessageId};
-    use routing_table;
+    use name_type::NameType;
+    use super::super::{Action, RoutingError};
+    use std::thread;
+    use std::net::{SocketAddr};
+    use std::str::FromStr;
+    use sendable::Sendable;
+    use messages::put_data::PutData;
+    use messages::put_data_response::PutDataResponse;
+    use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
-    use NameType;
-    use name_type::{closer_to_target};
+    use types::{MessageId, NameAndTypeId};
+    use std::sync::{Arc, mpsc, Mutex};
+    use routing_table;
     use test_utils::{Random, xor};
     use rand::random;
+    use name_type::{closer_to_target};
+    use types;
+    use types::{Pmid, PublicPmid, Authority};
 
     struct NullInterface;
 
-    impl Interface for NullInterface {
-        fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: Authority,
-                      from_authority: Authority, from_address: NameType) -> Result<Action, RoutingError> {
+    struct Stats {
+        call_count: u32,
+        data: Option<Vec<u8>>
+    }
+
+    struct TestInterface {
+        stats: Arc<Mutex<Stats>>
+    }
+
+    struct TestData {
+        data: Vec<u8>
+    }
+
+    impl TestData {
+        fn new(in_data: Vec<u8>) -> TestData {
+            TestData { data: in_data }
+        }
+    }
+
+    impl Sendable for TestData {
+        fn name(&self) -> NameType { Random::generate_random() }
+
+        fn type_tag(&self)->u64 { unimplemented!() }
+
+        fn serialised_contents(&self)->Vec<u8> { self.data.clone() }
+    }
+
+    impl Interface for TestInterface {
+        fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
+                      from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
-        fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                    from_address: NameType, dest_address: DestinationAddress,
+        fn handle_put(&mut self, our_authority: types::Authority, from_authority: types::Authority,
+                    from_address: NameType, dest_address: types::DestinationAddress,
                     data: Vec<u8>) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
+            let stats = self.stats.clone();
+            let mut stats_value = stats.lock().unwrap();
+            stats_value.call_count += 1;
+            stats_value.data = Some(data.clone());
+            Ok(Action::Reply(data))
         }
-        fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
+        fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
                        from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
@@ -910,11 +949,17 @@ mod test {
                                RoutingError>) {
             unimplemented!();
         }
-        fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
+        fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
                                response: Result<Vec<u8>, RoutingError>) {
-            unimplemented!();
+            let stats = self.stats.clone();
+            let mut stats_value = stats.lock().unwrap();
+            stats_value.call_count += 1;
+            stats_value.data = match response {
+               Ok(data) => Some(data),
+                Err(_) => None
+            };
         }
-        fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
+        fn handle_post_response(&mut self, from_authority: types::Authority, from_address: NameType,
                                 response: Result<Vec<u8>, RoutingError>) {
             unimplemented!();
         }
@@ -922,11 +967,11 @@ mod test {
             -> Vec<generic_sendable_type::GenericSendableType> {
             unimplemented!();
         }
-        fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
+        fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
                             from_address: NameType) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
-        fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
+        fn handle_cache_put(&mut self, from_authority: types::Authority, from_address: NameType,
                             data: Vec<u8>) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
@@ -934,7 +979,7 @@ mod test {
 
     #[test]
     fn our_authority_full_routing_table() {
-        let mut routing_node = RoutingNode::new(NullInterface);
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
 
         let mut count : usize = 0;
         loop {
@@ -1042,6 +1087,73 @@ mod test {
         assert_eq!(routing_node.our_authority(&name_outside_close_group,
                                               &managed_node_header),
                    types::Authority::ManagedNode);
+    }
+
+
+#[test]
+    fn call_put() {
+        let data = "this is a known string".to_string().into_bytes();
+        let chunk = TestData::new(data);
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
+        let name: NameType = Random::generate_random();
+        n1.put(name, chunk);
+    }
+
+#[test]
+    fn call_handle_put() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: None}));
+        let stats_copy = stats.clone();
+        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
+        let put_data : PutData = Random::generate_random();
+        let header = MessageHeader {
+            message_id:  n1.get_next_message_id(),
+            destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
+            source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
+            authority:   Authority::NaeManager,
+            signature:   None
+        };
+
+        let message = RoutingMessage{
+            message_type:    MessageTypeTag::PutData,
+            message_header:  header.clone(),
+            serialised_body: n1.encode(&put_data)
+        };
+
+        let serialised_msssage = n1.encode(&message);
+
+        n1.message_received(&header.source.from_node, serialised_msssage);
+        let stats = stats.clone();
+        let stats = stats.lock().unwrap();
+        assert_eq!(stats.call_count, 1u32);
+    }
+
+#[test]
+    fn call_handle_put_response() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: None}));
+        let stats_copy = stats.clone();
+        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
+        let put_data_response : PutDataResponse = Random::generate_random();
+        let header = MessageHeader {
+            message_id:  n1.get_next_message_id(),
+            destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
+            source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
+            authority:   Authority::NaeManager,
+            signature:   None
+        };
+
+        let message = RoutingMessage{
+            message_type:    MessageTypeTag::PutDataResponse,
+            message_header:  header.clone(),
+            serialised_body: n1.encode(&put_data_response)
+        };
+
+        let serialised_msssage = n1.encode(&message);
+
+        n1.message_received(&header.source.from_node, serialised_msssage);
+
+        let stats = stats.clone();
+        let stats = stats.lock().unwrap();
+        assert_eq!(stats.call_count, 1u32);
     }
 
     //#[test]
