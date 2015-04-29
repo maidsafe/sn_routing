@@ -71,7 +71,7 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
   - [x] Group response merge
   - [ ] Signature checks
   - [ ] QA Sentinel including code review from system design perspective
-- [ ] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
+- [x] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
 - [ ] Examples:
   - [ ] zero state network
   - [ ] Routing Node with type erased cache
