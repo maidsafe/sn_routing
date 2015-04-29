@@ -242,10 +242,15 @@ impl<'a> Sentinel<'a> {
                 .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
                 .collect::<Vec<_>>();
 
+            //FIXME(ben): after merging the messages the headers and the signature
+            //            have lost meaning; we should be returning less then this;
+            //            in particular will the signature no longer match
+            //            merged message
             Mergable::merge(decoded_responses.iter()).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
-                 Sentinel::encode(merged))
+                 Sentinel::encode(merged),
+                 verified_messages[0].3.clone())
             })
         } else if verified_messages[0].1 == MessageTypeTag::GetGroupKeyResponse {
             // TODO: GetGroupKeyResponse will probably never reach this function.(?)
@@ -253,21 +258,25 @@ impl<'a> Sentinel<'a> {
                 .filter_map(|msg_triple| { Sentinel::decode::<GetGroupKeyResponse>(&msg_triple.2) })
                 .collect::<Vec<_>>();
 
+            //FIXME(ben): see comment above
             Mergable::merge(accounts.iter()).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
-                 Sentinel::encode(merged))
+                 Sentinel::encode(merged),
+                 verified_messages[0].3.clone())
             })
         } else {
             let header = verified_messages[0].0.clone();
             let tag    = verified_messages[0].1.clone();
+            //FIXME(ben): see comment above
+            let signature = verified_messages[0].3.clone();
 
             let msg_bodies = verified_messages.into_iter()
-                             .map(|(_, _, body)| body)
+                             .map(|(_, _, body, _)| body)
                              .collect::<Vec<_>>();
 
             take_most_frequent(&msg_bodies, QUORUM_SIZE as usize)
-                .map(|merged| { (header, tag, merged) })
+                .map(|merged| { (header, tag, merged, signature) })
         }
     }
 }
