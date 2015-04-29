@@ -21,26 +21,25 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
-use types;
 use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetGroupKey {
-  pub requester : types::SourceAddress,
+  // pub requester : types::SourceAddress,
   pub target_id : NameType,
 }
 
 impl Encodable for GetGroupKey {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.requester, &self.target_id)).encode(e)
+    CborTagEncode::new(5483_001, &self.target_id).encode(e)
   }
 }
 
 impl Decodable for GetGroupKey {
   fn decode<D: Decoder>(d: &mut D)->Result<GetGroupKey, D::Error> {
     try!(d.read_u64());
-    let (requester, target_id) = try!(Decodable::decode(d));
-    Ok(GetGroupKey { requester: requester, target_id: target_id})
+    let target_id = try!(Decodable::decode(d));
+    Ok(GetGroupKey { target_id: target_id })
   }
 }
 
