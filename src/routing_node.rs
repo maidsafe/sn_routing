@@ -51,6 +51,8 @@ use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_group_key::GetGroupKey;
 use messages::get_group_key_response::GetGroupKeyResponse;
+use messages::get_client_key::GetClientKey;
+use messages::get_client_key_response::GetClientKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action, RoutingError};
@@ -475,8 +477,29 @@ impl<F> RoutingNode<F> where F: Interface {
                                                                     group_keys);
         let encoded_msg = self.encode(&routing_msg);
         let original_group = original_header.from_group();
-        original_group.and_then(|group| Some(self.send_swarm_or_parallel(&group,
-                                                                         &encoded_msg)));
+        original_group.and_then(|group| Some(self.send_swarm_or_parallel(&group, &encoded_msg)));
+        Ok(())
+    }
+
+    /// This method sends GetKeyResponse message on receiving the GetClientKey request.
+    /// It collects and replies with the public signature keys from its close group.
+    fn handle_get_client_key(&mut self, original_header : MessageHeader, body : Bytes) -> RecvResult {
+        println!("{:?} received GetClientKey ", self.own_id);
+        let get_client_key = try!(self.decode::<GetClientKey>(&body).ok_or(()));
+        let close_group = self.routing_table.our_close_group();
+        let nodes = close_group.iter().filter(|&fob| fob.id == get_client_key.target_id.clone()).collect::<Vec<_>>();
+        if nodes.len() != 1  {
+            return Err(())
+        }
+
+        let public_key = nodes[0].fob.public_sign_key.clone();
+
+        let routing_msg = self.construct_get_client_key_response_msg(&original_header,
+                                                                     &get_client_key,
+                                                                     public_key);
+        let encoded_msg = self.encode(&routing_msg);
+        let original_group = original_header.from_group();
+        original_group.and_then(|group| Some(self.send_swarm_or_parallel(&group, &encoded_msg)));
         Ok(())
     }
 
@@ -706,6 +729,27 @@ impl<F> RoutingNode<F> where F: Interface {
             serialised_body: self.encode(&GetGroupKeyResponse{ public_sign_keys  : group_keys })
         }
     }
+
+    fn construct_get_client_key_response_msg(&mut self, original_header : &MessageHeader,
+                                             get_client_key : &GetClientKey,
+                                             public_sign_key : types::PublicSignKey)
+                                             -> RoutingMessage {
+        let header = MessageHeader {
+            // Sentinel accumulates on the same MessageId to be returned.
+            message_id:  original_header.message_id.clone(),
+            destination: original_header.send_to(),
+            source:      self.our_group_address(get_client_key.target_id.clone()),
+            authority:   types::Authority::NaeManager,
+            signature:   None
+        };
+
+        RoutingMessage{
+            message_type:    messages::MessageTypeTag::GetClientKeyResponse,
+            message_header:  header,
+            serialised_body: self.encode(&GetClientKeyResponse{ address: get_client_key.target_id.clone(),  public_sign_key  : public_sign_key })
+        }
+    }
+
 
     fn construct_find_group_msg(&mut self) -> RoutingMessage {
         let header = MessageHeader {
