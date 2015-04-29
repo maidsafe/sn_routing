@@ -28,24 +28,23 @@ pub struct MessageHeader {
     pub message_id: types::MessageId,
     pub destination: types::DestinationAddress,
     pub source: types::SourceAddress,
-    pub authority: types::Authority,
-    pub signature: types::Signature,
+    pub authority: types::Authority
 }
 
 impl Encodable for MessageHeader {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         CborTagEncode::new(5483_004,
                            &(&self.message_id, &self.destination, &self.source,
-                             &self.authority, &self.signature)).encode(e)
+                             &self.authority)).encode(e)
     }
 }
 
 impl Decodable for MessageHeader {
     fn decode<D: Decoder>(d: &mut D)->Result<MessageHeader, D::Error> {
         try!(d.read_u64());
-        let (message_id, destination, source, authority, signature) = try!(Decodable::decode(d));
+        let (message_id, destination, source, authority) = try!(Decodable::decode(d));
         Ok(MessageHeader{ message_id : message_id, destination : destination,
-            source : source, authority : authority, signature : signature })
+            source : source, authority : authority })
     }
 }
 
@@ -53,11 +52,10 @@ impl MessageHeader {
     pub fn new(message_id : types::MessageId,
                destination : types::DestinationAddress,
                source : types::SourceAddress,
-               authority : types::Authority,
-               signature : types::Signature) -> MessageHeader {
+               authority : types::Authority) -> MessageHeader {
         MessageHeader {
             message_id : message_id, destination : destination,
-            source : source, authority : authority, signature : signature
+            source : source, authority : authority
         }
     }
 
@@ -121,10 +119,6 @@ impl MessageHeader {
     pub fn from_authority(&self) -> types::Authority {
         self.authority.clone()
     }
-
-    pub fn get_signature(&self) -> types::Signature {
-        self.signature.clone()
-    }
 }
 
 #[cfg(test)]
@@ -153,7 +147,6 @@ mod test {
                                                      reply_to: None },
             source : types::SourceAddress { from_node : Random::generate_random(),
                                             from_group : None, reply_to: None },
-            authority : types::Authority::ManagedNode,
-            signature : Random::generate_random()});
+            authority : types::Authority::ManagedNode });
     }
 }
