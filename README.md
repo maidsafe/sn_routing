@@ -47,7 +47,7 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
         - [ ] Implement merge trait for accounts of PM
         - [ ] Implement merge trait for accounts of VH
     - [ ] Churn Test
-- [x] Installers (lunix deb/rpm 32/64 bit, Windows 32 / 64. OS/x)
+- [x] Installers (linux deb/rpm 32/64 bit, Windows 32 / 64. OSX)
 - [ ] API version 0.0.9
 - [ ] Test with client having file system feature
 - [ ] Implement MpidManager
