@@ -81,8 +81,8 @@ impl<'a> Sentinel<'a> {
               let key = (header.from_group().unwrap(), header.message_id());
               let messages = self.node_accumulator_.get(key.clone());
               if messages.is_some() {
-                let resolved = self.resolve(Sentinel::validate_node(messages.unwrap().1,
-                                                                    keys.unwrap().1), false);
+                let resolved = Sentinel::resolve(Sentinel::validate_node(messages.unwrap().1,
+                                                                         keys.unwrap().1));
                 if resolved.is_some() {
                   self.node_accumulator_.delete(key);
                   return resolved;
@@ -99,8 +99,8 @@ impl<'a> Sentinel<'a> {
               let key = (header.from_group().unwrap(), header.message_id());
               let messages = self.group_accumulator_.get(key.clone());
               if messages.is_some() {
-                let resolved = self.resolve(Sentinel::validate_group(messages.unwrap().1,
-                                                                     keys.unwrap().1), true);
+                let resolved = Sentinel::resolve(Sentinel::validate_group(messages.unwrap().1,
+                                                                          keys.unwrap().1));
                 if resolved.is_some() {
                   self.group_accumulator_.delete(key);
                   return resolved;
@@ -119,8 +119,8 @@ impl<'a> Sentinel<'a> {
             if messages.is_some() {
               let keys = self.group_key_accumulator_.get(header.from_group().unwrap());
               if keys.is_some() {
-                let resolved = self.resolve(Sentinel::validate_group(messages.unwrap().1,
-                                                                     keys.unwrap().1), true);
+                let resolved = Sentinel::resolve(Sentinel::validate_group(messages.unwrap().1,
+                                                                          keys.unwrap().1));
                 if resolved.is_some() {
                   self.group_accumulator_.delete(key);
                   return resolved;
@@ -136,8 +136,8 @@ impl<'a> Sentinel<'a> {
             if messages.is_some() {
               let keys = self.node_key_accumulator_.get(header.from_group().unwrap());
               if keys.is_some() {
-                let resolved = self.resolve(Sentinel::validate_node(messages.unwrap().1,
-                                                                    keys.unwrap().1), false);
+                let resolved = Sentinel::resolve(Sentinel::validate_node(messages.unwrap().1,
+                                                                         keys.unwrap().1));
                 if resolved.is_some() {
                   self.node_accumulator_.delete(key);
                   return resolved;
@@ -227,7 +227,7 @@ impl<'a> Sentinel<'a> {
         e.as_bytes().to_vec()
     }
 
-    fn resolve(&self, verified_messages : Vec<ResultType>, _ : bool) -> Option<ResultType> {
+    fn resolve(verified_messages : Vec<ResultType>) -> Option<ResultType> {
         if verified_messages.len() < QUORUM_SIZE as usize {
             return None;
         }
