@@ -162,15 +162,15 @@ impl<'a> Sentinel<'a> {
         })
     }
 
-    fn validate_node(messages: Vec<accumulator::Response<ResultType>>,
-                     keys:     Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+    fn validate_node(messages: Vec<ResultType>,
+                     keys:     Vec<ResultType>) -> Vec<ResultType> {
         if messages.len() == 0 || keys.len() < types::QUORUM_SIZE as usize {
           return Vec::new();
         }
 
         // TODO: Would be nice if we didn't need to decode it here every time
         // this function is called. We could then avoid the below check as well.
-        let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.value.2)).collect::<Vec<_>>();
+        let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.2)).collect::<Vec<_>>();
 
         // Need to check this again because decoding may have failed.
         if keys.len() < types::QUORUM_SIZE as usize {
@@ -181,21 +181,21 @@ impl<'a> Sentinel<'a> {
             .into_iter()
             .flat_map(|GetClientKeyResponse{address: _, public_sign_key: pub_key}| {
                 messages.iter().filter_map(move |response| {
-                    Sentinel::check_signature(&response.value, &pub_key)
+                    Sentinel::check_signature(&response, &pub_key)
                 })
             })
             .collect::<Vec<_>>()
     }
 
-    fn validate_group(messages: Vec<accumulator::Response<ResultType>>,
-                      keys:     Vec<accumulator::Response<ResultType>>) -> Vec<ResultType> {
+    fn validate_group(messages: Vec<ResultType>,
+                      keys:     Vec<ResultType>) -> Vec<ResultType> {
         if messages.len() < types::QUORUM_SIZE as usize || keys.len() < types::QUORUM_SIZE as usize {
             return Vec::<ResultType>::new();
         }
 
         // TODO: Would be nice if we didn't need to decode it here every time
         // this function is called. We could then avoid the below check as well.
-        let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.value.2)).collect::<Vec<_>>();
+        let keys = keys.iter().filter_map(|key_msg| Sentinel::decode(&key_msg.2)).collect::<Vec<_>>();
 
         // Need to check this again because decoding may have failed.
         if keys.len() < types::QUORUM_SIZE as usize {
@@ -210,8 +210,8 @@ impl<'a> Sentinel<'a> {
             .collect::<HashMap<_,_>>();
 
         messages.iter().filter_map(|message| {
-            key_map.get(&message.value.0.from_node())
-                .and_then(|pub_key| Sentinel::check_signature(&message.value, &pub_key))
+            key_map.get(&message.0.from_node())
+                .and_then(|pub_key| Sentinel::check_signature(&message, &pub_key))
         })
         .collect::<Vec<_>>()
     }

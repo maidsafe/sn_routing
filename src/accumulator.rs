@@ -20,16 +20,9 @@ use lru_time_cache::LruCache;
 
 /// entry in the accumulator
 #[derive(Clone)]
-pub struct Response<V> {
-    /// content of the response
-    pub value: V,
-}
-
-/// entry in the accumulator
-#[derive(Clone)]
 pub struct Entry<V> {
     /// Expected threshold for resolve
-    pub received_response: Vec<Response<V>>,
+    pub received_response: Vec<V>,
 }
 
 /// Accumulator for various message types
@@ -58,10 +51,10 @@ impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
         }
     }
 
-    pub fn add(&mut self, name: K, value: V)-> Option<(K, Vec<Response<V>>)> {
+    pub fn add(&mut self, name: K, value: V)-> Option<(K, Vec<V>)> {
         let entry = self.storage.remove(name.clone());
         if entry.is_none() {
-            let entry_in = Entry { received_response : vec![Response { value: value }]};
+            let entry_in = Entry { received_response : vec![value]};
             self.storage.add(name.clone(), entry_in.clone());
             if self.quorum == 1 {
                 let result = (name, entry_in.received_response);
@@ -69,7 +62,7 @@ impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
             }
         } else {
             let mut tmp = entry.unwrap();
-            tmp.received_response.push(Response{ value : value });
+            tmp.received_response.push(value);
             self.storage.add(name.clone(), tmp.clone());
             if tmp.received_response.len() >= self.quorum {
                 return Some((name, tmp.received_response));
@@ -78,7 +71,7 @@ impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
         None
     }
 
-    pub fn get(&mut self, name: K) -> Option<(K, Vec<Response<V>>)>{
+    pub fn get(&mut self, name: K) -> Option<(K, Vec<V>)>{
         let entry = self.storage.get(name.clone());
         if entry.is_none() {
             None
@@ -121,14 +114,14 @@ mod test {
 
         assert_eq!(key, 1);
         assert_eq!(responses.len(), 2);
-        assert_eq!(responses[0].value, 3);
-        assert_eq!(responses[1].value, 3);
+        assert_eq!(responses[0], 3);
+        assert_eq!(responses[1], 3);
 
         let (key, responses) = accumulator.get(2).unwrap();
 
         assert_eq!(key, 2);
         assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].value, 3);
+        assert_eq!(responses[0], 3);
     }
 
     #[test]
@@ -142,7 +135,7 @@ mod test {
             let key_value = accumulator.get(key).unwrap();
             assert_eq!(key_value.0, key);
             assert_eq!(key_value.1.len(), i + 1);
-            for response in key_value.1 { assert_eq!(response.value, value); };
+            for response in key_value.1 { assert_eq!(response, value); };
             assert_eq!(accumulator.is_quorum_reached(key), false);
         }
         assert!(accumulator.add(key, value).is_some());
@@ -150,7 +143,7 @@ mod test {
         let key_value = accumulator.get(key).unwrap();
         assert_eq!(key_value.0, key);
         assert_eq!(key_value.1.len(), quorum_size);
-        for response in key_value.1 { assert_eq!(response.value, value); };
+        for response in key_value.1 { assert_eq!(response, value); };
     }
 
     #[test]
@@ -198,7 +191,7 @@ mod test {
 
         assert_eq!(key, 1);
         assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].value, 1);
+        assert_eq!(responses[0], 1);
 
         accumulator.delete(1);
 
@@ -217,8 +210,8 @@ mod test {
 
         assert_eq!(key, 1);
         assert_eq!(responses.len(), 2);
-        assert_eq!(responses[0].value, 1);
-        assert_eq!(responses[1].value, 1);
+        assert_eq!(responses[0], 1);
+        assert_eq!(responses[1], 1);
 
         accumulator.delete(1);
 
@@ -242,7 +235,7 @@ mod test {
 
             assert_eq!(key, count);
             assert_eq!(responses.len(), 1);
-            assert_eq!(responses[0].value, 1);
+            assert_eq!(responses[0], 1);
         }
     }
 
@@ -259,7 +252,7 @@ mod test {
 
             assert_eq!(key, count);
             assert_eq!(responses.len(), 1);
-            assert_eq!(responses[0].value, 1);
+            assert_eq!(responses[0], 1);
             assert_eq!(accumulator.cache_size(), count as usize + 1);
         }
 
