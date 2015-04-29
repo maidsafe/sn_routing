@@ -21,20 +21,15 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::Frequency;
-use types::{PublicPmid, GROUP_SIZE};
+use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE, Mergable};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
   pub group : Vec<PublicPmid>
 }
 
-impl FindGroupResponse {
-
-    pub fn merge(responses: &Vec<FindGroupResponse>) -> Option<FindGroupResponse> {
-        if responses.is_empty() {
-            return None;
-        }
-
+impl Mergable for FindGroupResponse {
+    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
         let mut frequency = Frequency::new();
 
         for response in responses {
@@ -43,11 +38,13 @@ impl FindGroupResponse {
             }
         }
 
-        let merged_group = frequency.sort_by_highest().iter()
+        let merged_group = frequency.sort_by_highest().into_iter()
+                           .filter(|&(_, ref count)| *count >= QUORUM_SIZE as usize)
                            .take(GROUP_SIZE as usize)
-                           .map(|&(ref k, _)| k.clone())
-                           .collect();
+                           .map(|(k, _)| k)
+                           .collect::<Vec<_>>();
 
+        if merged_group.is_empty() { return None; }
         Some(FindGroupResponse{ group: merged_group })
     }
 }
@@ -117,7 +114,7 @@ mod test {
             responses.push(response);
         }
 
-        let merged_obj = FindGroupResponse::merge(&responses);
+        let merged_obj = types::Mergable::merge(responses.iter());
         assert!(merged_obj.is_some());
         let merged_response = merged_obj.unwrap();
         for i in 0..7 {
