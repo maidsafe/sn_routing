@@ -1067,12 +1067,12 @@ mod test {
             authority:   Authority::NaeManager
         };
 
-        let message = RoutingMessage::new( MessageTypeTag::PutData, header,
+        let message = RoutingMessage::new( MessageTypeTag::PutData, header.clone(),
             put_data, &n1.pmid.get_crypto_secret_sign_key() );
 
-        let serialised_msssage = n1.encode(&message);
+        let serialised_message = n1.encode(&message);
 
-        n1.message_received(&header.source.from_node, serialised_msssage);
+        n1.message_received(&header.source.from_node, serialised_message);
         let stats = stats.clone();
         let stats = stats.lock().unwrap();
         assert_eq!(stats.call_count, 1u32);
@@ -1091,12 +1091,12 @@ mod test {
             authority:   Authority::NaeManager
         };
 
-        let message = RoutingMessage::new( MessageTypeTag::PutDataResponse, header,
+        let message = RoutingMessage::new( MessageTypeTag::PutDataResponse, header.clone(),
             put_data_response, &n1.pmid.get_crypto_secret_sign_key());
 
-        let serialised_msssage = n1.encode(&message);
+        let serialised_message = n1.encode(&message);
 
-        n1.message_received(&header.source.from_node, serialised_msssage);
+        n1.message_received(&header.source.from_node, serialised_message);
 
         let stats = stats.clone();
         let stats = stats.lock().unwrap();
