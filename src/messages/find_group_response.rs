@@ -67,7 +67,11 @@ mod test {
     use super::*;
     use cbor;
     use types;
+    use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE};
     use test_utils::Random;
+    use rand::{thread_rng, Rng};
+    use rand::distributions::{IndependentSample, Range};
+
 
     #[test]
     fn find_group_response_serialisation() {
@@ -84,40 +88,50 @@ mod test {
 
     #[test]
     fn merge() {
-        let obj : FindGroupResponse = Random::generate_random();
-        assert!(obj.group.len() >= types::GROUP_SIZE as usize);
-        // if group size changes, reimplement the below
-        assert!(types::GROUP_SIZE >= 13);
+        let pmids : FindGroupResponse = Random::generate_random();
+        // pmids.group.len() == types::GROUP_SIZE + 20
+        assert!(pmids.group.len() >= GROUP_SIZE as usize);
+        // if group or quorum size changes, redefine the following assertions
+        assert!(GROUP_SIZE == 23);
+        assert!(QUORUM_SIZE == 19);
 
-        // pick random keys
-        let mut keys = Vec::<types::PublicPmid>::with_capacity(7);
-        keys.push(obj.group[3].clone());
-        keys.push(obj.group[5].clone());
-        keys.push(obj.group[7].clone());
-        keys.push(obj.group[8].clone());
-        keys.push(obj.group[9].clone());
-        keys.push(obj.group[10].clone());
-        keys.push(obj.group[13].clone());
+        let group_size: usize = GROUP_SIZE as usize;
+        let quorum_size: usize = QUORUM_SIZE as usize;
 
-        let mut responses = Vec::<FindGroupResponse>::with_capacity(4);
-        responses.push(obj);
-        for _ in 0..4 {
-            let mut response : FindGroupResponse = Random::generate_random();
-            response.group[1] = keys[0].clone();
-            response.group[4] = keys[1].clone();
-            response.group[6] = keys[2].clone();
-            response.group[0] = keys[3].clone();
-            response.group[5] = keys[4].clone();
-            response.group[9] = keys[5].clone();
-            response.group[10] = keys[6].clone();
+        // get random GROUP_SIZE groups
+        let mut groups = Vec::<PublicPmid>::with_capacity(group_size);
+        let mut rng = thread_rng();
+        let range = Range::new(0, pmids.group.len());
+
+        loop {
+            let index = range.ind_sample(&mut rng);
+            if groups.contains(&pmids.group[index]) { continue; }
+            groups.push(pmids.group[index].clone());
+            if groups.len() == group_size { break; }
+        };
+
+        let mut responses = Vec::<FindGroupResponse>::with_capacity(quorum_size);
+
+        for _ in 0..quorum_size {
+            let mut response = FindGroupResponse{ group: Vec::new() };
+            // Take the first QUORUM_SIZE as common...
+            for i in 0..quorum_size {
+                response.group.push(groups[i].clone());
+            }
+            // ...and the remainder arbitrary
+            for _ in quorum_size..group_size {
+                response.group.push(PublicPmid::generate_random());
+            }
+
+            rng.shuffle(&mut response.group[..]);
             responses.push(response);
         }
 
         let merged_obj = types::Mergable::merge(responses.iter());
         assert!(merged_obj.is_some());
         let merged_response = merged_obj.unwrap();
-        for i in 0..7 {
-            assert!(keys.iter().find(|a| **a == merged_response.group[i]).is_some());
+        for i in 0..quorum_size {
+            assert!(groups.iter().find(|a| **a == merged_response.group[i]).is_some());
         }
     }
 }
