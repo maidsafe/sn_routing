@@ -198,7 +198,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             },
             get_data.requester.clone(),
             types::Authority::Client,
-            None,
+            crypto::sign::sign_detached(&get_data),
         );
 
         self.message_id += 1;
