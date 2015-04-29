@@ -33,7 +33,7 @@ use types::{PublicSignKey, SerialisedMessage, MessageTypeTag};
 use rustc_serialize::{Decodable, Encodable};
 
 pub type ResultType = (message_header::MessageHeader,
-                       MessageTypeTag, SerialisedMessage);
+                       MessageTypeTag, SerialisedMessage, types::Signature);
 
 type NodeKeyType = (types::NodeAddress, types::MessageId);
 type GroupKeyType = (types::GroupAddress, types::MessageId);
@@ -71,12 +71,14 @@ impl<'a> Sentinel<'a> {
     // pub fn get_send_get_keys(&'a mut self) -> &'a mut SendGetKeys { self.send_get_keys }
 
     pub fn add(&mut self, header: message_header::MessageHeader, type_tag: MessageTypeTag,
-               message : types::SerialisedMessage) -> Option<ResultType> {
+               message : types::SerialisedMessage, signature : types::Signature)
+               -> Option<ResultType> {
       match type_tag {
         MessageTypeTag::GetClientKeyResponse => {
           if header.is_from_group() {
             let keys = self.node_key_accumulator_.add(header.from_group().unwrap(),
-                                                      (header.clone(), type_tag, message));
+                                                      (header.clone(), type_tag,
+                                                       message, signature));
             if keys.is_some() {
               let key = (header.from_group().unwrap(), header.message_id());
               let messages = self.node_accumulator_.get(key.clone());
@@ -94,7 +96,8 @@ impl<'a> Sentinel<'a> {
         MessageTypeTag::GetGroupKeyResponse => {
           if header.is_from_group() {
             let keys = self.group_key_accumulator_.add(header.from_group().unwrap(),
-                                                       (header.clone(), type_tag, message));
+                                                       (header.clone(), type_tag,
+                                                        message, signature));
             if keys.is_some() {
               let key = (header.from_group().unwrap(), header.message_id());
               let messages = self.group_accumulator_.get(key.clone());
@@ -115,7 +118,8 @@ impl<'a> Sentinel<'a> {
             if !self.group_accumulator_.have_name(key.clone()) {
               self.send_get_keys_.get_group_key(header.from_group().unwrap()); };
             let messages = self.group_accumulator_.add(key.clone(),
-                                                       (header.clone(), type_tag, message));
+                                                       (header.clone(), type_tag,
+                                                        message, signature));
             if messages.is_some() {
               let keys = self.group_key_accumulator_.get(header.from_group().unwrap());
               if keys.is_some() {
@@ -132,7 +136,8 @@ impl<'a> Sentinel<'a> {
             if !self.node_accumulator_.have_name(key.clone()) {
               self.send_get_keys_.get_client_key(header.from_group().unwrap()); };
             let messages = self.node_accumulator_.add(key.clone(),
-                                                      (header.clone(), type_tag, message));
+                                                      (header.clone(), type_tag,
+                                                       message, signature));
             if messages.is_some() {
               let keys = self.node_key_accumulator_.get(header.from_group().unwrap());
               if keys.is_some() {
@@ -152,7 +157,7 @@ impl<'a> Sentinel<'a> {
 
     fn check_signature(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
         let is_correct = crypto::sign::verify_detached(
-                           &response.0.get_signature().get_crypto_signature(),
+                           &response.3.get_crypto_signature(),
                            &response.2[..],
                            &pub_key.get_crypto_public_sign_key());
 
