@@ -223,7 +223,6 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put<T>(&mut self, content: T) -> Result<u32, IoError> where T: Sendable {
-        use test_utils::Random;
         // Make PutData message
         let put_data = messages::put_data::PutData {
             name: content.name(),
