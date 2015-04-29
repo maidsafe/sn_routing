@@ -76,8 +76,7 @@ impl<'a> Sentinel<'a> {
         MessageTypeTag::GetClientKeyResponse => {
           if header.is_from_group() {
             let keys = self.node_key_accumulator_.add(header.from_group().unwrap(),
-                                                      (header.clone(), type_tag, message),
-                                                      header.from_node());
+                                                      (header.clone(), type_tag, message));
             if keys.is_some() {
               let key = (header.from_group().unwrap(), header.message_id());
               let messages = self.node_accumulator_.get(key.clone());
@@ -95,8 +94,7 @@ impl<'a> Sentinel<'a> {
         MessageTypeTag::GetGroupKeyResponse => {
           if header.is_from_group() {
             let keys = self.group_key_accumulator_.add(header.from_group().unwrap(),
-                                                       (header.clone(), type_tag, message),
-                                                       header.from_node());
+                                                       (header.clone(), type_tag, message));
             if keys.is_some() {
               let key = (header.from_group().unwrap(), header.message_id());
               let messages = self.group_accumulator_.get(key.clone());
@@ -117,8 +115,7 @@ impl<'a> Sentinel<'a> {
             if !self.group_accumulator_.have_name(key.clone()) {
               self.send_get_keys_.get_group_key(header.from_group().unwrap()); };
             let messages = self.group_accumulator_.add(key.clone(),
-                                                       (header.clone(), type_tag, message),
-                                                       header.from_node());
+                                                       (header.clone(), type_tag, message));
             if messages.is_some() {
               let keys = self.group_key_accumulator_.get(header.from_group().unwrap());
               if keys.is_some() {
@@ -135,8 +132,7 @@ impl<'a> Sentinel<'a> {
             if !self.node_accumulator_.have_name(key.clone()) {
               self.send_get_keys_.get_client_key(header.from_group().unwrap()); };
             let messages = self.node_accumulator_.add(key.clone(),
-                                                      (header.clone(), type_tag, message),
-                                                      header.from_node());
+                                                      (header.clone(), type_tag, message));
             if messages.is_some() {
               let keys = self.node_key_accumulator_.get(header.from_group().unwrap());
               if keys.is_some() {
@@ -270,10 +266,6 @@ impl<'a> Sentinel<'a> {
                 .map(|merged| { (header, tag, merged) })
         }
     }
-}
-
-fn has_single_entry<T>(key_map: &HashMap<NameType, Vec<T>>) -> bool {
-    key_map.len() == 1 && key_map.iter().next().unwrap().1.len() == 1
 }
 
 fn take_most_frequent<E>(elements: &Vec<E>, min_count: usize) -> Option<E>
