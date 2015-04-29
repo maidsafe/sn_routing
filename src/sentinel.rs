@@ -313,6 +313,7 @@ mod test {
     header : message_header::MessageHeader,
     tag : types::MessageTypeTag,
     serialised_message : Vec<u8>,
+    signature: types::Signature,
     index : u64
   }
 
@@ -358,23 +359,20 @@ mod test {
 
     pub fn get_headers(&self, destination_address : &types::DestinationAddress,
                message_id : &types::MessageId, serialised_message : &Vec<u8> )
-              -> Vec<message_header::MessageHeader> {
-        let mut headers : Vec<message_header::MessageHeader>
+              -> Vec<(message_header::MessageHeader, types::Signature)> {
+        let mut headers : Vec<(message_header::MessageHeader, types::Signature)>
             = Vec::with_capacity(self.group_size_);
       for node in &self.nodes_ {
-        headers.push(message_header::MessageHeader::new(message_id.clone(),
-                    destination_address.clone(),
-                    types::SourceAddress {
-                      from_node : node.get_name(),
-                      from_group : Some(self.group_address_.clone()),
-                      reply_to : None
-                    },
-                    self.authority_.clone(),
-                    Some(types::Signature {
-                                signature : crypto::sign::sign(&serialised_message[..],
-                                              &node.get_crypto_secret_sign_key())
-                    })
-        ));
+        headers.push((message_header::MessageHeader::new(message_id.clone(),
+                          destination_address.clone(),
+                          types::SourceAddress {
+                            from_node : node.get_name(),
+                            from_group : Some(self.group_address_.clone()),
+                            reply_to : None
+                          },
+                          self.authority_.clone()),
+                      types::Signature::new(crypto::sign::sign_detached(&serialised_message,
+                          &node.get_crypto_secret_sign_key()))));
       }
       headers
     }
@@ -451,23 +449,20 @@ mod test {
 
     pub fn get_headers(&self, destination_address : &types::DestinationAddress,
                message_id : &types::MessageId, serialised_message : &Vec<u8> )
-              -> Vec<message_header::MessageHeader> {
-      let mut headers : Vec<message_header::MessageHeader>
+              -> Vec<(message_header::MessageHeader, types::Signature)> {
+      let mut headers : Vec<(message_header::MessageHeader, types::Signature)>
           = Vec::with_capacity(self.group_size_);
       for node in &self.nodes_ {
-        headers.push(message_header::MessageHeader::new(message_id.clone(),
-                    destination_address.clone(),
-                    types::SourceAddress {
-                      from_node : node.get_name(),
-                      from_group : Some(self.group_address_.clone()),
-                      reply_to : None
-                    },
-                    self.authority_.clone(),
-                    Some(types::Signature {
-                                signature : crypto::sign::sign(&serialised_message[..],
-                                              &node.get_crypto_secret_sign_key())
-                    })
-        ));
+        headers.push((message_header::MessageHeader::new(message_id.clone(),
+                          destination_address.clone(),
+                          types::SourceAddress {
+                            from_node : node.get_name(),
+                            from_group : Some(self.group_address_.clone()),
+                            reply_to : None
+                          },
+                          self.authority_.clone()),
+                      types::Signature::new(crypto::sign::sign_detached(&serialised_message,
+                          &node.get_crypto_secret_sign_key()))));
       }
       headers
     }
@@ -514,15 +509,14 @@ mod test {
                       from_group : Some(self.group_address_.clone()),
                       reply_to : None
                     },
-                    self.authority_.clone(),
-                    Some(types::Signature {
-                                signature : crypto::sign::sign(&serialised_message_response[..],
-                                              &node.get_crypto_secret_sign_key())
-                    }));
+                    self.authority_.clone());
+        let signature = types::Signature::new(crypto::sign::sign_detached(
+            &serialised_message_response[..], &node.get_crypto_secret_sign_key()));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
                                 tag : types::MessageTypeTag::GetGroupKeyResponse,
                                 serialised_message : serialised_message_response,
+                                signature : signature,
                                 index : message_index.clone()
                               });
         *message_index += 1;
@@ -549,15 +543,14 @@ mod test {
                       from_group : Some(self.group_address_.clone()),
                       reply_to : None
                     },
-                    self.authority_.clone(),
-                    Some(types::Signature {
-                                signature : crypto::sign::sign(&serialised_message_response[..],
-                                              &node.get_crypto_secret_sign_key())
-                    }));
+                    self.authority_.clone());
+        let signature = types::Signature::new(crypto::sign::sign_detached(
+            &serialised_message_response[..], &node.get_crypto_secret_sign_key()));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
                                 tag : types::MessageTypeTag::FindGroupResponse,
                                 serialised_message : serialised_message_response,
+                                signature : signature,
                                 index : message_index.clone()
                               });
         *message_index += 1;
@@ -601,15 +594,16 @@ mod test {
     }
   }
 
-  fn generate_messages(headers : Vec<message_header::MessageHeader>,
+  fn generate_messages(headers : Vec<(message_header::MessageHeader, types::Signature)>,
                tag : types::MessageTypeTag, message : &Vec<u8>,
                message_index : &mut u64)
                -> Vec<AddSentinelMessage> {
     let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
     for header in headers {
-      collect_messages.push(AddSentinelMessage{ header : header,
+      collect_messages.push(AddSentinelMessage{ header : header.0,
                             tag : tag.clone(),
                             serialised_message : message.clone(),
+                            signature : header.1,
                             index : message_index.clone()});
       *message_index += 1;
     }
@@ -709,7 +703,8 @@ mod test {
         sentinel_returns.push((message.index,
                                sentinel.add(message.header,
                                             message.tag,
-                                            message.serialised_message)));
+                                            message.serialised_message,
+                                            message.signature)));
       }
       assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
       assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
@@ -719,7 +714,8 @@ mod test {
         sentinel_returns.push((message.index,
                               sentinel.add(message.header,
                                            message.tag,
-                                           message.serialised_message)));
+                                           message.serialised_message,
+                                           message.signature)));
       }
       assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
       assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
@@ -767,7 +763,8 @@ mod test {
       sentinel_returns.push((message.index,
                              sentinel.add(message.header,
                                           message.tag,
-                                          message.serialised_message)));
+                                          message.serialised_message,
+                                          message.signature)));
     }
     assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
     assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
@@ -777,7 +774,8 @@ mod test {
       sentinel_returns.push((message.index,
                             sentinel.add(message.header,
                                          message.tag,
-                                         message.serialised_message)));
+                                         message.serialised_message,
+                                         message.signature)));
     }
     assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
     assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
@@ -818,7 +816,8 @@ mod test {
       sentinel_returns.push((message.index,
                              sentinel.add(message.header,
                                           message.tag,
-                                          message.serialised_message)));
+                                          message.serialised_message,
+                                          message.signature)));
     }
     assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
     assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
@@ -828,7 +827,8 @@ mod test {
       sentinel_returns.push((message.index,
                             sentinel.add(message.header,
                                          message.tag,
-                                         message.serialised_message)));
+                                         message.serialised_message,
+                                         message.signature)));
     }
     assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
     assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
