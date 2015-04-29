@@ -97,8 +97,8 @@ impl routing::node_interface::Interface for VaultFacade {
         ;
     }
 
-    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<routing::generic_sendable_type::GenericSendableType> {
-        let mut dm = self.data_manager.retrieve_all_and_reset();
+    fn handle_churn(&mut self, mut close_group: Vec<NameType>) -> Vec<routing::generic_sendable_type::GenericSendableType> {
+        let mut dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
         let mut mm = self.maid_manager.retrieve_all_and_reset();
         let mut pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let mut vh = self.version_handler.retrieve_all_and_reset();
@@ -354,8 +354,12 @@ impl VaultFacade {
 
         {// DataManager - churn handling
             data_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
-            let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
-            assert!(churn_data.len() == 1);
+            let mut close_group = Vec::with_capacity(10);
+            for _ in 0..10 {
+                close_group.push(NameType::generate_random());
+            }
+            let churn_data = vault.handle_churn(close_group);
+            assert!(churn_data.len() >= 3);
             assert!(churn_data[0].name() == data.name().clone());
 
             let sendable: GenericSendableType = churn_data[0].clone();
@@ -365,7 +369,7 @@ impl VaultFacade {
             let pmids: Vec<NameType> = decoder.decode().next().unwrap().unwrap();
             assert_eq!(pmids.len(), data_manager::PARALLELISM);
 
-            assert!(vault.data_manager.retrieve_all_and_reset().is_empty());
+            assert!(vault.data_manager.retrieve_all_and_reset(&mut Vec::new()).is_empty());
         }
 
         {// PmidManager - churn handling
