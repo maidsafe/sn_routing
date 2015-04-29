@@ -242,8 +242,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 from_group: None,
                 reply_to: Some(self.id_packet.get_name()),
             },
-            types::Authority::Client,
-            Some(Random::generate_random()), // What is the signature -- see in c++ Secret - signing key
+            types::Authority::Client
         );
 
         self.message_id += 1;
@@ -253,6 +252,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             messages::MessageTypeTag::PutData,
             header,
             put_data,
+            &self.id_packet.secret_keys.0
         );
 
         // Serialise RoutingMessage
