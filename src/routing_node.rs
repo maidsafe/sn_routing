@@ -829,6 +829,8 @@ mod test {
     use sendable::Sendable;
     use messages::put_data::PutData;
     use messages::put_data_response::PutDataResponse;
+    use messages::get_data::GetData;
+    use messages::get_data_response::GetDataResponse;
     use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
     use types::{MessageId, NameAndTypeId};
@@ -839,9 +841,11 @@ mod test {
     use name_type::{closer_to_target};
     use types;
     use types::{Pmid, PublicPmid, Authority};
+    use rustc_serialize::{Encodable};
 
     struct NullInterface;
 
+    #[derive(Clone)]
     struct Stats {
         call_count: u32,
         data: Option<Vec<u8>>
@@ -872,7 +876,10 @@ mod test {
     impl Interface for TestInterface {
         fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
                       from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
+            let stats = self.stats.clone();
+            let mut stats_value = stats.lock().unwrap();
+            stats_value.call_count += 1;
+            Ok(Action::Reply("handle_get called".to_string().into_bytes()))
         }
         fn handle_put(&mut self, our_authority: types::Authority, from_authority: types::Authority,
                     from_address: NameType, dest_address: types::DestinationAddress,
@@ -889,7 +896,10 @@ mod test {
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
                                RoutingError>) {
-            unimplemented!();
+            let stats = self.stats.clone();
+            let mut stats_value = stats.lock().unwrap();
+            stats_value.call_count += 1;
+            stats_value.data = Some("handle_get_response called".to_string().into_bytes());
         }
         fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
                                response: Result<Vec<u8>, RoutingError>) {
@@ -1031,6 +1041,31 @@ mod test {
                    types::Authority::ManagedNode);
     }
 
+    fn call_operation<T>(operation: T, message_type: MessageTypeTag) -> Stats where T: Encodable {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: None}));
+        let stats_copy = stats.clone();
+        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
+        let header = MessageHeader {
+            message_id:  n1.get_next_message_id(),
+            destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
+            source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
+            authority:   Authority::NaeManager,
+            signature:   None
+        };
+
+        let message = RoutingMessage{
+            message_type:    message_type,
+            message_header:  header.clone(),
+            serialised_body: n1.encode(&operation)
+        };
+
+        let serialised_msssage = n1.encode(&message);
+
+        n1.message_received(&header.source.from_node, serialised_msssage);
+        let stats = stats.clone();
+        let stats_value = stats.lock().unwrap();
+        stats_value.clone()
+    }
 
 #[test]
     fn call_put() {
@@ -1043,60 +1078,34 @@ mod test {
 
 #[test]
     fn call_handle_put() {
-        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: None}));
-        let stats_copy = stats.clone();
-        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
-        let put_data : PutData = Random::generate_random();
-        let header = MessageHeader {
-            message_id:  n1.get_next_message_id(),
-            destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
-            source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
-            authority:   Authority::NaeManager,
-            signature:   None
-        };
-
-        let message = RoutingMessage{
-            message_type:    MessageTypeTag::PutData,
-            message_header:  header.clone(),
-            serialised_body: n1.encode(&put_data)
-        };
-
-        let serialised_msssage = n1.encode(&message);
-
-        n1.message_received(&header.source.from_node, serialised_msssage);
-        let stats = stats.clone();
-        let stats = stats.lock().unwrap();
-        assert_eq!(stats.call_count, 1u32);
-    }
+        let put_data: PutData = Random::generate_random();
+        assert_eq!(call_operation(put_data, MessageTypeTag::PutData).call_count, 1u32);    }
 
 #[test]
     fn call_handle_put_response() {
-        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: None}));
-        let stats_copy = stats.clone();
-        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
-        let put_data_response : PutDataResponse = Random::generate_random();
-        let header = MessageHeader {
-            message_id:  n1.get_next_message_id(),
-            destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
-            source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
-            authority:   Authority::NaeManager,
-            signature:   None
-        };
-
-        let message = RoutingMessage{
-            message_type:    MessageTypeTag::PutDataResponse,
-            message_header:  header.clone(),
-            serialised_body: n1.encode(&put_data_response)
-        };
-
-        let serialised_msssage = n1.encode(&message);
-
-        n1.message_received(&header.source.from_node, serialised_msssage);
-
-        let stats = stats.clone();
-        let stats = stats.lock().unwrap();
-        assert_eq!(stats.call_count, 1u32);
+        let put_data_response: PutDataResponse = Random::generate_random();
+        assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse).call_count, 1u32);
     }
+
+#[test]
+    fn call_get() {
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
+        let name: NameType = Random::generate_random();
+        n1.get(100u64, name);
+    }
+
+#[test]
+    fn call_handle_get_data() {
+        let get_data: GetData = Random::generate_random();
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetData).call_count, 1u32);
+    }
+
+#[test]
+    fn call_handle_get_data_response() {
+        let get_data: GetDataResponse = Random::generate_random();
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse).call_count, 1u32);
+    }
+
 
     //#[test]
     //fn test_routing_node() {
