@@ -87,8 +87,8 @@ impl ClientIdPacket {
         &self.public_keys
     }
 
-    pub fn sign(&self, data : &[u8]) -> Vec<u8> {
-        return crypto::sign::sign(&data, &self.secret_keys.0)
+    pub fn sign(&self, data : &[u8]) -> crypto::sign::Signature {
+        return crypto::sign::sign_detached(&data, &self.secret_keys.0)
     }
 
     pub fn encrypt(&self, data : &[u8], to : &crypto::asymmetricbox::PublicKey) -> (Vec<u8>, crypto::asymmetricbox::Nonce) {
