@@ -29,7 +29,7 @@ pub struct MessageHeader {
     pub destination: types::DestinationAddress,
     pub source: types::SourceAddress,
     pub authority: types::Authority,
-    pub signature: Option<types::Signature>,
+    pub signature: types::Signature,
 }
 
 impl Encodable for MessageHeader {
@@ -54,7 +54,7 @@ impl MessageHeader {
                destination : types::DestinationAddress,
                source : types::SourceAddress,
                authority : types::Authority,
-               signature : Option<types::Signature>) -> MessageHeader {
+               signature : types::Signature) -> MessageHeader {
         MessageHeader {
             message_id : message_id, destination : destination,
             source : source, authority : authority, signature : signature
@@ -122,7 +122,7 @@ impl MessageHeader {
         self.authority.clone()
     }
 
-    pub fn get_signature(&self) -> Option<types::Signature> {
+    pub fn get_signature(&self) -> types::Signature {
         self.signature.clone()
     }
 }
@@ -154,6 +154,6 @@ mod test {
             source : types::SourceAddress { from_node : Random::generate_random(),
                                             from_group : None, reply_to: None },
             authority : types::Authority::ManagedNode,
-            signature : Some(Random::generate_random())});
+            signature : Random::generate_random()});
     }
 }

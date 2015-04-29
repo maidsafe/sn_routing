@@ -151,15 +151,13 @@ impl<'a> Sentinel<'a> {
     }
 
     fn check_signature(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
-        response.0.get_signature().and_then(|signature| {
-          let is_correct = crypto::sign::verify_detached(
-                             &signature.get_crypto_signature(),
-                             &response.2[..],
-                             &pub_key.get_crypto_public_sign_key());
+        let is_correct = crypto::sign::verify_detached(
+                           &response.0.get_signature().get_crypto_signature(),
+                           &response.2[..],
+                           &pub_key.get_crypto_public_sign_key());
 
-          if !is_correct { return None; }
-          Some(response.clone())
-        })
+        if !is_correct { return None; }
+        Some(response.clone())
     }
 
     fn validate_node(messages: Vec<ResultType>,
