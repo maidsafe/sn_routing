@@ -286,9 +286,9 @@ impl VaultFacade {
         }
     }
 
-    fn add_nodes_to_table(vault: &mut VaultFacade, size: u8) {
-        for i in 0..size {
-            vault.nodes_in_table.push(NameType::generate_random());
+    fn add_nodes_to_table(vault: &mut VaultFacade, nodes: &Vec<NameType>) {
+        for node in nodes {
+            vault.nodes_in_table.push(node.clone());
         }
     }
 
@@ -321,7 +321,11 @@ impl VaultFacade {
     fn churn_test() {
         let mut vault = VaultFacade::new();
 
-        // name = NameType::new();//generate_random();
+        let mut available_nodes = Vec::with_capacity(30);
+        for _ in 0..30 {
+            available_nodes.push(NameType::generate_random());
+        }
+
         let value = routing::types::generate_random_vec_u8(1024);
         let data = maidsafe_types::ImmutableData::new(value);
         let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
@@ -330,8 +334,8 @@ impl VaultFacade {
         let encode_result = encoder.encode(&[&payload]);
         assert_eq!(encode_result.is_ok(), true);
 
-        let from = NameType::generate_random();
-        let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
+        let from = available_nodes[0].clone();
+        let dest = DestinationAddress{ dest : available_nodes[1].clone(), reply_to: None };
         let data_as_vec = routing::types::array_as_vector(encoder.as_bytes());
 
         {// MaidManager - churn handling
@@ -350,16 +354,17 @@ impl VaultFacade {
             assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
         }
 
-        add_nodes_to_table(&mut vault, 10);
+        add_nodes_to_table(&mut vault, &available_nodes);
 
         {// DataManager - churn handling
             data_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
-            let mut close_group = Vec::with_capacity(10);
-            for _ in 0..10 {
-                close_group.push(NameType::generate_random());
+            let mut close_group = Vec::with_capacity(20);
+            for i in 10..30 {
+                close_group.push(available_nodes[i].clone());
             }
+            
             let churn_data = vault.handle_churn(close_group);
-            assert!(churn_data.len() >= 3);
+            assert_eq!(churn_data.len(), 1);
             assert!(churn_data[0].name() == data.name().clone());
 
             let sendable: GenericSendableType = churn_data[0].clone();
@@ -367,7 +372,7 @@ impl VaultFacade {
 
             let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
             let pmids: Vec<NameType> = decoder.decode().next().unwrap().unwrap();
-            assert_eq!(pmids.len(), data_manager::PARALLELISM);
+            assert_eq!(pmids.len(), 3);
 
             assert!(vault.data_manager.retrieve_all_and_reset(&mut Vec::new()).is_empty());
         }
