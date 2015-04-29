@@ -33,7 +33,6 @@ extern crate time;
 extern crate routing;
 extern crate maidsafe_types;
 extern crate rand;
-extern crate lru_time_cache;
 
 mod data_manager;
 mod maid_manager;
@@ -50,11 +49,11 @@ pub fn always_true() -> bool { true }
 
 /// The Vault structure to hold the logical interface to provide behavioural logic to routing.
 pub struct Vault {
-  routing_node: routing::routing_node::RoutingNode<VaultFacade>,  
+  routing_node: routing::routing_node::RoutingNode<VaultFacade>,
 }
 
 impl Vault {
-  fn new() -> Vault {    
+  fn new() -> Vault {
     Vault {
       routing_node: routing::routing_node::RoutingNode::new(VaultFacade::new()),
     }

@@ -15,13 +15,10 @@
 
 #![allow(dead_code)]
 
-extern crate lru_time_cache;
-
 extern crate routing;
 
 use cbor;
 use routing::generic_sendable_type;
-use self::lru_time_cache::LruCache;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::collections;
 

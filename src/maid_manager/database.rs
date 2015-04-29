@@ -17,7 +17,6 @@
 
 use std::collections;
 use routing::generic_sendable_type;
-use lru_time_cache::LruCache;
 use routing::NameType;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
