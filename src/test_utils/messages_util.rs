@@ -144,7 +144,6 @@ impl Random for messages::get_data_response::GetDataResponse {
 impl Random for messages::get_group_key::GetGroupKey {
     fn generate_random() -> messages::get_group_key::GetGroupKey {
         messages::get_group_key::GetGroupKey {
-            requester: Random::generate_random(),
             target_id: Random::generate_random(),
         }
     }
