@@ -126,10 +126,11 @@ impl<F> RoutingNode<F> where F: Interface {
         let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()), reply_to: None };
         let source = self.our_source_address();
         let authority = types::Authority::Client;
-        let header = MessageHeader::new(message_id, destination, source, authority, None);
+        let header = MessageHeader::new(message_id, destination, source, authority);
         let name_and_type_id = NameAndTypeId{ name: NameType::new(name.get_id()), type_id: type_id };
         let request = GetData{ requester: self.our_source_address(),  name_and_type_id: name_and_type_id };
-        let message = RoutingMessage::new(MessageTypeTag::GetData, header, request);
+        let message = RoutingMessage::new(MessageTypeTag::GetData, header,
+                                          request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
         e.encode(&[message]).unwrap();
@@ -143,14 +144,16 @@ impl<F> RoutingNode<F> where F: Interface {
         let source = self.our_source_address();
         let authority = types::Authority::Client;
         let signing_request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let request = signing_request.clone();
-        let mut e = Encoder::from_memory();
-        e.encode(&[signing_request]).unwrap();
-        let crypto_signature = crypto::sign::sign_detached(
-                &e.into_bytes(), &self.pmid.get_crypto_secret_sign_key());
-        let signature = types::Signature::new(crypto_signature);
-        let header = MessageHeader::new(message_id, destination, source, authority, Some(signature));
-        let message = RoutingMessage::new(MessageTypeTag::PutData, header, request);
+        // CLEANUP
+        // let request = signing_request.clone();
+        // let mut e = Encoder::from_memory();
+        // e.encode(&[signing_request]).unwrap();
+        // let crypto_signature = crypto::sign::sign_detached(
+                // &e.into_bytes(), &self.pmid.get_crypto_secret_sign_key());
+        // let signature = types::Signature::new(crypto_signature);
+        let header = MessageHeader::new(message_id, destination, source, authority);
+        let message = RoutingMessage::new(MessageTypeTag::PutData, header,
+            signing_request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
         e.encode(&[message]).unwrap();
@@ -212,14 +215,16 @@ impl<F> RoutingNode<F> where F: Interface {
                                             reply_to: self.bootstrap_node_id.clone() };
         let authority = types::Authority::ManagedNode;
 
-        //FIXME should we sign the request here ?
-        let crypto_signature = crypto::sign::sign_detached(
-                &our_public_pmid.serialised_contents(), &self.pmid.get_crypto_secret_sign_key());
-        let signature = types::Signature::new(crypto_signature);
+        // CLEANUP
+        // //FIXME should we sign the request here ?
+        // let crypto_signature = crypto::sign::sign_detached(
+        //         &our_public_pmid.serialised_contents(), &self.pmid.get_crypto_secret_sign_key());
+        // let signature = types::Signature::new(crypto_signature);
 
         let request = PutPublicPmid{ public_pmid: our_public_pmid };
-        let header = MessageHeader::new(message_id, destination, source, authority, Some(signature));
-        let message = RoutingMessage::new(MessageTypeTag::PutPublicPmid, header, request);
+        let header = MessageHeader::new(message_id, destination, source, authority);
+        let message = RoutingMessage::new(MessageTypeTag::PutPublicPmid, header,
+            request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
         e.encode(&[message]).unwrap();
@@ -691,60 +696,48 @@ impl<F> RoutingNode<F> where F: Interface {
                                             get_group_key : &GetGroupKey,
                                             group_keys : Vec<(NameType, types::PublicSignKey)>)
                                             -> RoutingMessage {
-        let header = MessageHeader {
+        let header = MessageHeader::new(
             // Sentinel accumulates on the same MessageId to be returned.
-            message_id:  original_header.message_id.clone(),
-            destination: original_header.send_to(),
-            source:      self.our_group_address(get_group_key.target_id.clone()),
-            authority:   types::Authority::NaeManager,
-            signature:   None
-        };
+            original_header.message_id.clone(),
+            original_header.send_to(),
+            self.our_group_address(get_group_key.target_id.clone()),
+            types::Authority::NaeManager);
 
-        RoutingMessage{
-            message_type:    messages::MessageTypeTag::GetGroupKeyResponse,
-            message_header:  header,
-            serialised_body: self.encode(&GetGroupKeyResponse{ public_sign_keys  : group_keys })
-        }
+        RoutingMessage::new(MessageTypeTag::GetGroupKeyResponse, header,
+            GetGroupKeyResponse{ public_sign_keys  : group_keys },
+            &self.pmid.get_crypto_secret_sign_key()
+        )
     }
 
     fn construct_find_group_msg(&mut self) -> RoutingMessage {
-        let header = MessageHeader {
-            message_id:  self.get_next_message_id(),
-            destination: types::DestinationAddress {
-                             dest:     self.own_id.clone(),
-                             reply_to: None
-                         },
-            source:      self.our_source_address(),
-            authority:   types::Authority::ManagedNode,
-            signature:   None
-        };
-        RoutingMessage{
-            message_type:    messages::MessageTypeTag::FindGroup,
-            message_header:  header,
-            serialised_body: self.encode(&FindGroup{ requester_id: self.own_id.clone(),
-                                                     target_id:    self.own_id.clone()
-                                                   })
-        }
+        let header = MessageHeader::new(
+            self.get_next_message_id(),
+            types::DestinationAddress {
+                 dest:     self.own_id.clone(),
+                 reply_to: None
+            },
+            self.our_source_address(),
+            types::Authority::ManagedNode);
+
+        RoutingMessage::new( MessageTypeTag::FindGroup, header,
+            FindGroup{ requester_id: self.own_id.clone(),
+                       target_id:    self.own_id.clone()},
+            &self.pmid.get_crypto_secret_sign_key())
     }
 
     fn construct_find_group_response_msg(&mut self, original_header : &MessageHeader,
                                          find_group: &FindGroup,
                                          group: Vec<types::PublicPmid>) -> RoutingMessage {
-        let header = MessageHeader {
-            message_id:  self.get_next_message_id(),
-            destination: original_header.send_to(),
-            source:      self.our_group_address(find_group.target_id.clone()),
-            authority:   types::Authority::NaeManager,
-            signature:   None
-        };
+        let header = MessageHeader::new(self.get_next_message_id(),
+            original_header.send_to(),
+            self.our_group_address(find_group.target_id.clone()),
+            types::Authority::NaeManager);
 
-        RoutingMessage{
-            message_type:    messages::MessageTypeTag::FindGroupResponse,
-            message_header:  header,
-            serialised_body: self.encode(&FindGroupResponse{ group: group })
-        }
+        RoutingMessage::new(MessageTypeTag::FindGroupResponse, header,
+            FindGroupResponse{ group: group }, &self.pmid.get_crypto_secret_sign_key())
     }
 
+    // TODO(Ben): this function breaks consistency and does not return RoutingMessage
     fn construct_success_msg(&mut self) -> ConnectSuccess {
         let connect_success = ConnectSuccess {
                                                 peer_id: self.own_id.clone(),
@@ -754,13 +747,9 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn construct_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingMessage {
-        let header = MessageHeader {
-            message_id:  self.get_next_message_id(),
-            destination: types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
-            source:      self.our_source_address(),
-            authority:   types::Authority::ManagedNode,
-            signature:   None
-        };
+        let header = MessageHeader::new(self.get_next_message_id(),
+            types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
+            self.our_source_address(), types::Authority::ManagedNode);
 
         let invalid_addr = vec![Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0)))];
         let (requester_local, requester_external)
@@ -775,11 +764,8 @@ impl<F> RoutingNode<F> where F: Interface {
             requester_fob:  types::PublicPmid::new(&self.pmid),
         };
 
-        RoutingMessage{
-            message_type:    MessageTypeTag::ConnectRequest,
-            message_header:  header,
-            serialised_body: self.encode(&connect_request)
-        }
+        RoutingMessage::new(MessageTypeTag::ConnectRequest, header, connect_request,
+            &self.pmid.get_crypto_secret_sign_key())
     }
 
     fn construct_connect_response_msg(&mut self, original_header : &MessageHeader,
@@ -787,13 +773,10 @@ impl<F> RoutingNode<F> where F: Interface {
         println!("{:?} construct_connect_response_msg ", self.own_id);
         debug_assert!(connect_request.receiver_id == self.own_id, format!("{:?} == {:?} failed", self.own_id, connect_request.receiver_id));
 
-        let header = MessageHeader {
-            message_id:  self.get_next_message_id(),
-            destination: original_header.send_to(),
-            source:      self.our_source_address(),
-            authority:   types::Authority::ManagedNode,
-            signature:   None  // FIXME
-        };
+        let header = MessageHeader::new(self.get_next_message_id(),
+            original_header.send_to(), self.our_source_address(),
+            types::Authority::ManagedNode);
+
         let invalid_addr = vec![Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0)))];
         let (receiver_local, receiver_external)
             = self.next_endpoint_pair().unwrap_or((invalid_addr.clone(), invalid_addr));  // FIXME
@@ -807,30 +790,20 @@ impl<F> RoutingNode<F> where F: Interface {
             receiver_id:        self.own_id.clone(),
             receiver_fob:       types::PublicPmid::new(&self.pmid) };
 
-        RoutingMessage{
-            message_type:    MessageTypeTag::ConnectResponse,
-            message_header:  header,
-            serialised_body: self.encode(&connect_response)
-        }
+        RoutingMessage::new(MessageTypeTag::ConnectResponse, header,
+            connect_response, &self.pmid.get_crypto_secret_sign_key())
     }
 
     fn construct_get_data_response_msg(&mut self, original_header: &MessageHeader,
                                        get_data: &GetData, data: Vec<u8>) -> RoutingMessage {
-        let header = MessageHeader {
-            message_id: self.get_next_message_id(),
-            destination: original_header.send_to(),
-            source: self.our_source_address(),
-            authority: types::Authority::ManagedNode,
-            signature: None  // FIXME
-        };
+        let header = MessageHeader::new( self.get_next_message_id(),
+            original_header.send_to(), self.our_source_address(),
+            types::Authority::ManagedNode);
         let get_data_response = GetDataResponse {
             name_and_type_id: get_data.name_and_type_id.clone(), data: data, error: vec![]
         };
-        RoutingMessage{
-            message_type: MessageTypeTag::GetDataResponse,
-            message_header: header,
-            serialised_body: self.encode(&get_data_response)
-        }
+        RoutingMessage::new(MessageTypeTag::GetDataResponse, header,
+            get_data_response, &self.pmid.get_crypto_secret_sign_key())
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
