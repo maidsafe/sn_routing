@@ -167,7 +167,7 @@ impl RoutingMessage {
     // }
 
     pub fn new<T>(message_type: MessageTypeTag, message_header: message_header::MessageHeader,
-                  message : T, private_sign_key : crypto::sign::SecretKey) -> RoutingMessage where T: for<'a> Encodable + Decodable {
+                  message : T, private_sign_key : &crypto::sign::SecretKey) -> RoutingMessage where T: for<'a> Encodable + Decodable {
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&message]).unwrap();
         let signature = types::Signature::new(crypto::sign::sign_detached(&e.as_bytes(),

@@ -197,8 +197,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 reply_to: None
             },
             get_data.requester.clone(),
-            types::Authority::Client,
-            crypto::sign::sign_detached(&get_data),
+            types::Authority::Client
         );
 
         self.message_id += 1;
@@ -208,6 +207,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             messages::MessageTypeTag::GetData,
             header,
             get_data,
+            &self.id_packet.secret_keys.0
         );
 
         // Serialise RoutingMessage
