@@ -470,7 +470,10 @@ impl<F> RoutingNode<F> where F: Interface {
         let routing_msg = self.construct_get_group_key_response_msg(&original_header,
                                                                     &get_group_key,
                                                                     group_keys);
-
+        let encoded_msg = self.encode(&routing_msg);
+        let original_group = original_header.from_group();
+        original_group.and_then(|group| Some(self.send_swarm_or_parallel(&group,
+                                                                         &encoded_msg)));
         Ok(())
     }
 
@@ -665,6 +668,14 @@ impl<F> RoutingNode<F> where F: Interface {
             return types::SourceAddress{ from_node: self.own_id.clone(),
                                          from_group: None,
                                          reply_to: None }
+        }
+    }
+
+    fn group_address_for_group(&self, group_address : &types::GroupAddress) -> types::SourceAddress {
+        types::SourceAddress {
+          from_node : self.own_id.clone(),
+          from_group : Some(group_address.clone()),
+          reply_to : None
         }
     }
 
