@@ -839,47 +839,6 @@ mod test {
 
     struct NullInterface;
 
-    impl Interface for NullInterface {
-        fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
-                      from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
-        }
-        fn handle_put(&mut self, our_authority: types::Authority, from_authority: types::Authority,
-                    from_address: NameType, dest_address: types::DestinationAddress,
-                    data: Vec<u8>) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
-        }
-        fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
-                       from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
-        }
-        fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                               RoutingError>) {
-            unimplemented!();
-        }
-        fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
-                               response: Result<Vec<u8>, RoutingError>) {
-            unimplemented!();
-        }
-        fn handle_post_response(&mut self, from_authority: types::Authority, from_address: NameType,
-                                response: Result<Vec<u8>, RoutingError>) {
-            unimplemented!();
-        }
-        fn handle_churn(&mut self, close_group: Vec<NameType>)
-            -> Vec<generic_sendable_type::GenericSendableType> {
-            unimplemented!();
-        }
-        fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
-                            from_address: NameType) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
-        }
-        fn handle_cache_put(&mut self, from_authority: types::Authority, from_address: NameType,
-                            data: Vec<u8>) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
-        }
-    }
-
-
     struct Stats {
         call_count: u32,
         data: Option<Vec<u8>>
@@ -959,7 +918,7 @@ mod test {
 
     #[test]
     fn our_authority_full_routing_table() {
-        let mut routing_node = RoutingNode::new(NullInterface);
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
 
         let mut count : usize = 0;
         loop {
@@ -1074,10 +1033,7 @@ mod test {
     fn call_put() {
         let data = "this is a known string".to_string().into_bytes();
         let chunk = TestData::new(data);
-        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: None}));
-        let stats_copy = stats.clone();
-        let i1 = TestInterface { stats: stats_copy };
-        let mut n1 = RoutingNode::new(i1);
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
         let name: NameType = Random::generate_random();
         n1.put(name, chunk);
     }
@@ -1086,8 +1042,7 @@ mod test {
     fn call_handle_put() {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: None}));
         let stats_copy = stats.clone();
-        let i1 = TestInterface { stats: stats_copy };
-        let mut n1 = RoutingNode::new(i1);
+        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
         let put_data : PutData = Random::generate_random();
         let header = MessageHeader {
             message_id:  n1.get_next_message_id(),
@@ -1115,8 +1070,7 @@ mod test {
     fn call_handle_put_response() {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: None}));
         let stats_copy = stats.clone();
-        let i1 = TestInterface { stats: stats_copy };
-        let mut n1 = RoutingNode::new(i1);
+        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
         let put_data_response : PutDataResponse = Random::generate_random();
         let header = MessageHeader {
             message_id:  n1.get_next_message_id(),
