@@ -21,8 +21,7 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::{Frequency};
-
-use types::{PublicSignKey, GROUP_SIZE};
+use types::{PublicSignKey, GROUP_SIZE, QUORUM_SIZE, Mergable};
 use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -30,26 +29,23 @@ pub struct GetGroupKeyResponse {
   pub public_sign_keys : Vec<(NameType, PublicSignKey)>
 }
 
-impl GetGroupKeyResponse {
-
-    pub fn merge(get_group_key_responses: &Vec<GetGroupKeyResponse>) -> Option<GetGroupKeyResponse> {
-        if get_group_key_responses.is_empty() {
-            return None;
-        }
-
+impl Mergable for GetGroupKeyResponse {
+    fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
         let mut frequency = Frequency::new();
 
-        for response in get_group_key_responses {
+        for response in xs {
             for public_sign_key in &response.public_sign_keys {
                 frequency.update(public_sign_key.clone());
             }
         }
 
-        let merged_group = frequency.sort_by_highest().iter()
+        let merged_group = frequency.sort_by_highest().into_iter()
+                           .filter(|&(_, ref count)| *count >= QUORUM_SIZE as usize)
                            .take(GROUP_SIZE as usize)
-                           .map(|&(ref k, _)| k.clone())
-                           .collect();
+                           .map(|(k, _)| k)
+                           .collect::<Vec<_>>();
 
+        if merged_group.is_empty() { return None; }
         Some(GetGroupKeyResponse{ public_sign_keys: merged_group })
     }
 }
@@ -120,7 +116,7 @@ mod test {
             responses.push(response);
         }
 
-        let merged_obj = GetGroupKeyResponse::merge(&responses);
+        let merged_obj = types::Mergable::merge(responses.iter());
         assert!(merged_obj.is_some());
         let merged_response = merged_obj.unwrap();
         for i in 0..7 {

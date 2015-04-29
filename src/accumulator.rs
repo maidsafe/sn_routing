@@ -18,22 +18,11 @@
 
 use lru_time_cache::LruCache;
 
-use NameType;
-
-/// entry in the accumulator
-#[derive(Clone)]
-pub struct Response<V> {
-    /// address where the response come from
-    pub address: NameType,
-    /// content of the response
-    pub value: V,
-}
-
 /// entry in the accumulator
 #[derive(Clone)]
 pub struct Entry<V> {
     /// Expected threshold for resolve
-    pub received_response: Vec<Response<V>>,
+    pub received_response: Vec<V>,
 }
 
 /// Accumulator for various message types
@@ -62,10 +51,10 @@ impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
         }
     }
 
-    pub fn add(&mut self, name: K, value: V, sender: NameType)-> Option<(K, Vec<Response<V>>)> {
+    pub fn add(&mut self, name: K, value: V)-> Option<(K, Vec<V>)> {
         let entry = self.storage.remove(name.clone());
         if entry.is_none() {
-            let entry_in = Entry { received_response : vec![Response { address: sender, value: value }]};
+            let entry_in = Entry { received_response : vec![value]};
             self.storage.add(name.clone(), entry_in.clone());
             if self.quorum == 1 {
                 let result = (name, entry_in.received_response);
@@ -73,7 +62,7 @@ impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
             }
         } else {
             let mut tmp = entry.unwrap();
-            tmp.received_response.push(Response{ address : sender, value : value });
+            tmp.received_response.push(value);
             self.storage.add(name.clone(), tmp.clone());
             if tmp.received_response.len() >= self.quorum {
                 return Some((name, tmp.received_response));
@@ -82,7 +71,7 @@ impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
         None
     }
 
-    pub fn get(&mut self, name: K) -> Option<(K, Vec<Response<V>>)>{
+    pub fn get(&mut self, name: K) -> Option<(K, Vec<V>)>{
         let entry = self.storage.get(name.clone());
         if entry.is_none() {
             None
@@ -104,32 +93,20 @@ impl<K: PartialOrd + Ord + Clone, V: Clone> Accumulator<K, V> {
 mod test {
     use super::*;
     use rand;
-    use NameType;
-    use test_utils::Random;
-
-    pub fn generate_address() -> Vec<u8> {
-        let mut address: Vec<u8> = vec![];
-        for _ in (0..64) {
-            address.push(rand::random::<u8>());
-        }
-        address
-    }
 
     #[test]
     fn add() {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(1);
-        let address1 : NameType = Random::generate_random();
-        let address2 : NameType = Random::generate_random();
 
-        assert!(accumulator.add(2, 3, address1.clone()).is_some());
+        assert!(accumulator.add(2, 3).is_some());
         assert_eq!(accumulator.have_name(1), false);
         assert_eq!(accumulator.have_name(2), true);
         assert_eq!(accumulator.is_quorum_reached(1), false);
         assert_eq!(accumulator.is_quorum_reached(2), true);
-        assert!(accumulator.add(1, 3, address2.clone()).is_some());
+        assert!(accumulator.add(1, 3).is_some());
         assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), true);
-        assert!(accumulator.add(1, 3, address2.clone()).is_some());
+        assert!(accumulator.add(1, 3).is_some());
         assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), true);
 
@@ -137,17 +114,14 @@ mod test {
 
         assert_eq!(key, 1);
         assert_eq!(responses.len(), 2);
-        assert_eq!(responses[0].value, 3);
-        assert_eq!(responses[0].address, address2.clone());
-        assert_eq!(responses[1].value, 3);
-        assert_eq!(responses[1].address, address2.clone());
+        assert_eq!(responses[0], 3);
+        assert_eq!(responses[1], 3);
 
         let (key, responses) = accumulator.get(2).unwrap();
 
         assert_eq!(key, 2);
         assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].value, 3);
-        assert_eq!(responses[0].address, address1.clone());
+        assert_eq!(responses[0], 3);
     }
 
     #[test]
@@ -157,19 +131,19 @@ mod test {
         let key = rand::random::<i32>();
         let value = rand::random::<u32>();
         for i in 0..quorum_size-1 {
-            assert!(accumulator.add(key, value, Random::generate_random()).is_none());
+            assert!(accumulator.add(key, value).is_none());
             let key_value = accumulator.get(key).unwrap();
             assert_eq!(key_value.0, key);
             assert_eq!(key_value.1.len(), i + 1);
-            for response in key_value.1 { assert_eq!(response.value, value); };
+            for response in key_value.1 { assert_eq!(response, value); };
             assert_eq!(accumulator.is_quorum_reached(key), false);
         }
-        assert!(accumulator.add(key, value, Random::generate_random()).is_some());
+        assert!(accumulator.add(key, value).is_some());
         assert_eq!(accumulator.is_quorum_reached(key), true);
         let key_value = accumulator.get(key).unwrap();
         assert_eq!(key_value.0, key);
         assert_eq!(key_value.1.len(), quorum_size);
-        for response in key_value.1 { assert_eq!(response.value, value); };
+        for response in key_value.1 { assert_eq!(response, value); };
     }
 
     #[test]
@@ -178,10 +152,10 @@ mod test {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(quorum_size);
         let key = rand::random::<i32>();
         for _ in 0..quorum_size-1 {
-            assert!(accumulator.add(key, rand::random::<u32>(), Random::generate_random()).is_none());
+            assert!(accumulator.add(key, rand::random::<u32>()).is_none());
             assert_eq!(accumulator.is_quorum_reached(key), false);
         }
-        assert!(accumulator.add(key, rand::random::<u32>(), Random::generate_random()).is_some());
+        assert!(accumulator.add(key, rand::random::<u32>()).is_some());
         assert_eq!(accumulator.is_quorum_reached(key), true);
     }
 
@@ -196,21 +170,20 @@ mod test {
             if noise_key != key { noise_keys.push(noise_key); }; };
         for _ in 0..quorum_size-1 {
             for noise_key in noise_keys.iter() {
-                accumulator.add(noise_key.clone(), rand::random::<u32>(), Random::generate_random());
+                accumulator.add(noise_key.clone(), rand::random::<u32>());
             }
-            assert!(accumulator.add(key, rand::random::<u32>(), Random::generate_random()).is_none());
+            assert!(accumulator.add(key, rand::random::<u32>()).is_none());
             assert_eq!(accumulator.is_quorum_reached(key), false);
         }
-        assert!(accumulator.add(key, rand::random::<u32>(), Random::generate_random()).is_some());
+        assert!(accumulator.add(key, rand::random::<u32>()).is_some());
         assert_eq!(accumulator.is_quorum_reached(key), true);
     }
 
     #[test]
     fn delete() {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(2);
-        let address : NameType = Random::generate_random();
 
-        assert!(accumulator.add(1, 1, address.clone()).is_none());
+        assert!(accumulator.add(1, 1).is_none());
         assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), false);
 
@@ -218,8 +191,7 @@ mod test {
 
         assert_eq!(key, 1);
         assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].value, 1);
-        assert_eq!(responses[0].address, address.clone());
+        assert_eq!(responses[0], 1);
 
         accumulator.delete(1);
 
@@ -227,10 +199,10 @@ mod test {
 
         assert!(option.is_none());
 
-        assert!(accumulator.add(1, 1, address.clone()).is_none());
+        assert!(accumulator.add(1, 1).is_none());
         assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), false);
-        assert!(accumulator.add(1, 1, address.clone()).is_some());
+        assert!(accumulator.add(1, 1).is_some());
         assert_eq!(accumulator.have_name(1), true);
         assert_eq!(accumulator.is_quorum_reached(1), true);
 
@@ -238,10 +210,8 @@ mod test {
 
         assert_eq!(key, 1);
         assert_eq!(responses.len(), 2);
-        assert_eq!(responses[0].value, 1);
-        assert_eq!(responses[0].address, address.clone());
-        assert_eq!(responses[1].value, 1);
-        assert_eq!(responses[1].address, address.clone());
+        assert_eq!(responses[0], 1);
+        assert_eq!(responses[1], 1);
 
         accumulator.delete(1);
 
@@ -253,10 +223,9 @@ mod test {
     #[test]
     fn fill() {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(1);
-        let address : NameType = Random::generate_random();
 
         for count in 0..1000 {
-            assert!(accumulator.add(count, 1, address.clone()).is_some());
+            assert!(accumulator.add(count, 1).is_some());
             assert_eq!(accumulator.have_name(count), true);
             assert_eq!(accumulator.is_quorum_reached(count), true);
         }
@@ -266,18 +235,16 @@ mod test {
 
             assert_eq!(key, count);
             assert_eq!(responses.len(), 1);
-            assert_eq!(responses[0].value, 1);
-            assert_eq!(responses[0].address, address.clone());
+            assert_eq!(responses[0], 1);
         }
     }
 
     #[test]
     fn cache_removals() {
         let mut accumulator : Accumulator<i32, u32> = Accumulator::new(2);
-        let address : NameType = Random::generate_random();
 
         for count in 0..1000 {
-            assert!(accumulator.add(count, 1, address.clone()).is_none());
+            assert!(accumulator.add(count, 1).is_none());
             assert_eq!(accumulator.have_name(count), true);
             assert_eq!(accumulator.is_quorum_reached(count), false);
 
@@ -285,12 +252,11 @@ mod test {
 
             assert_eq!(key, count);
             assert_eq!(responses.len(), 1);
-            assert_eq!(responses[0].value, 1);
-            assert_eq!(responses[0].address, address.clone());
+            assert_eq!(responses[0], 1);
             assert_eq!(accumulator.cache_size(), count as usize + 1);
         }
 
-        assert!(accumulator.add(1000, 1, address.clone()).is_none());
+        assert!(accumulator.add(1000, 1).is_none());
         assert_eq!(accumulator.have_name(1000), true);
         assert_eq!(accumulator.is_quorum_reached(1000), false);
         assert_eq!(accumulator.cache_size(), 1000);
@@ -300,7 +266,7 @@ mod test {
 
             assert!(option.is_none());
 
-            assert!(accumulator.add(count + 1001, 1, address.clone()).is_none());
+            assert!(accumulator.add(count + 1001, 1).is_none());
             assert_eq!(accumulator.have_name(count + 1001), true);
             assert_eq!(accumulator.is_quorum_reached(count + 1001), false);
             assert_eq!(accumulator.cache_size(), 1000);
