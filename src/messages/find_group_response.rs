@@ -20,14 +20,14 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::Frequency;
-use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE, Mergable};
+use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE, Mergeable};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
   pub group : Vec<PublicPmid>
 }
 
-impl Mergable for FindGroupResponse {
+impl Mergeable for FindGroupResponse {
     fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
         let mut frequency = Frequency::new();
 
@@ -127,7 +127,7 @@ mod test {
             responses.push(response);
         }
 
-        let merged_obj = types::Mergable::merge(responses.iter());
+        let merged_obj = types::Mergeable::merge(responses.iter());
         assert!(merged_obj.is_some());
         let merged_response = merged_obj.unwrap();
         for i in 0..quorum_size {
