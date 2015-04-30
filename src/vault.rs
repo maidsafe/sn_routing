@@ -88,8 +88,12 @@ impl routing::node_interface::Interface for VaultFacade {
         Err(RoutingError::InvalidRequest)
     }
 
-    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
-        ;
+    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>, RoutingError>) -> routing::node_interface::RoutingNodeAction {
+        if response.is_ok() {
+            self.data_manager.handle_get_response(response.ok().unwrap())
+        } else {
+            routing::node_interface::RoutingNodeAction::None
+        }
     }
 
     fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
