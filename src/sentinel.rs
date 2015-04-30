@@ -1,20 +1,19 @@
-// Copyright 2015 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited.
 //
-// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the Safe Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://maidsafe.net/network-platform-licensing
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions and limitations relating to
-// use of the Safe Network Software.
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
 
 use std::collections::HashMap;
 use sodiumoxide::crypto;
@@ -24,7 +23,7 @@ use accumulator;
 use message_header;
 use NameType;
 use types;
-use types::{Mergable, QUORUM_SIZE};
+use types::{Mergeable, QUORUM_SIZE};
 use frequency::Frequency;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_client_key_response::GetClientKeyResponse;
@@ -33,7 +32,7 @@ use types::{PublicSignKey, SerialisedMessage, MessageTypeTag};
 use rustc_serialize::{Decodable, Encodable};
 
 pub type ResultType = (message_header::MessageHeader,
-                       MessageTypeTag, SerialisedMessage);
+                       MessageTypeTag, SerialisedMessage, types::Signature);
 
 type NodeKeyType = (types::NodeAddress, types::MessageId);
 type GroupKeyType = (types::GroupAddress, types::MessageId);
@@ -71,12 +70,14 @@ impl<'a> Sentinel<'a> {
     // pub fn get_send_get_keys(&'a mut self) -> &'a mut SendGetKeys { self.send_get_keys }
 
     pub fn add(&mut self, header: message_header::MessageHeader, type_tag: MessageTypeTag,
-               message : types::SerialisedMessage) -> Option<ResultType> {
+               message : types::SerialisedMessage, signature : types::Signature)
+               -> Option<ResultType> {
       match type_tag {
         MessageTypeTag::GetClientKeyResponse => {
           if header.is_from_group() {
             let keys = self.node_key_accumulator_.add(header.from_group().unwrap(),
-                                                      (header.clone(), type_tag, message));
+                                                      (header.clone(), type_tag,
+                                                       message, signature));
             if keys.is_some() {
               let key = (header.from_group().unwrap(), header.message_id());
               let messages = self.node_accumulator_.get(key.clone());
@@ -94,7 +95,8 @@ impl<'a> Sentinel<'a> {
         MessageTypeTag::GetGroupKeyResponse => {
           if header.is_from_group() {
             let keys = self.group_key_accumulator_.add(header.from_group().unwrap(),
-                                                       (header.clone(), type_tag, message));
+                                                       (header.clone(), type_tag,
+                                                        message, signature));
             if keys.is_some() {
               let key = (header.from_group().unwrap(), header.message_id());
               let messages = self.group_accumulator_.get(key.clone());
@@ -115,7 +117,8 @@ impl<'a> Sentinel<'a> {
             if !self.group_accumulator_.have_name(key.clone()) {
               self.send_get_keys_.get_group_key(header.from_group().unwrap()); };
             let messages = self.group_accumulator_.add(key.clone(),
-                                                       (header.clone(), type_tag, message));
+                                                       (header.clone(), type_tag,
+                                                        message, signature));
             if messages.is_some() {
               let keys = self.group_key_accumulator_.get(header.from_group().unwrap());
               if keys.is_some() {
@@ -132,7 +135,8 @@ impl<'a> Sentinel<'a> {
             if !self.node_accumulator_.have_name(key.clone()) {
               self.send_get_keys_.get_client_key(header.from_group().unwrap()); };
             let messages = self.node_accumulator_.add(key.clone(),
-                                                      (header.clone(), type_tag, message));
+                                                      (header.clone(), type_tag,
+                                                       message, signature));
             if messages.is_some() {
               let keys = self.node_key_accumulator_.get(header.from_group().unwrap());
               if keys.is_some() {
@@ -151,15 +155,13 @@ impl<'a> Sentinel<'a> {
     }
 
     fn check_signature(response: &ResultType, pub_key: &PublicSignKey) -> Option<ResultType> {
-        response.0.get_signature().and_then(|signature| {
-          let is_correct = crypto::sign::verify_detached(
-                             &signature.get_crypto_signature(),
-                             &response.2[..],
-                             &pub_key.get_crypto_public_sign_key());
+        let is_correct = crypto::sign::verify_detached(
+                           &response.3.get_crypto_signature(),
+                           &response.2[..],
+                           &pub_key.get_crypto_public_sign_key());
 
-          if !is_correct { return None; }
-          Some(response.clone())
-        })
+        if !is_correct { return None; }
+        Some(response.clone())
     }
 
     fn validate_node(messages: Vec<ResultType>,
@@ -202,7 +204,7 @@ impl<'a> Sentinel<'a> {
             return Vec::<ResultType>::new();
         }
 
-        let key_map = Mergable::merge(keys.iter())
+        let key_map = Mergeable::merge(keys.iter())
             .into_iter()
             .flat_map(|GetGroupKeyResponse{public_sign_keys: addr_key_pairs}| {
                 addr_key_pairs.into_iter()
@@ -239,10 +241,15 @@ impl<'a> Sentinel<'a> {
                 .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
                 .collect::<Vec<_>>();
 
-            Mergable::merge(decoded_responses.iter()).map(|merged| {
+            //FIXME(ben): after merging the messages the headers and the signature
+            //            have lost meaning; we should be returning less then this;
+            //            in particular will the signature no longer match
+            //            merged message
+            Mergeable::merge(decoded_responses.iter()).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
-                 Sentinel::encode(merged))
+                 Sentinel::encode(merged),
+                 verified_messages[0].3.clone())
             })
         } else if verified_messages[0].1 == MessageTypeTag::GetGroupKeyResponse {
             // TODO: GetGroupKeyResponse will probably never reach this function.(?)
@@ -250,21 +257,25 @@ impl<'a> Sentinel<'a> {
                 .filter_map(|msg_triple| { Sentinel::decode::<GetGroupKeyResponse>(&msg_triple.2) })
                 .collect::<Vec<_>>();
 
-            Mergable::merge(accounts.iter()).map(|merged| {
+            //FIXME(ben): see comment above
+            Mergeable::merge(accounts.iter()).map(|merged| {
                 (verified_messages[0].0.clone(),
                  verified_messages[0].1.clone(),
-                 Sentinel::encode(merged))
+                 Sentinel::encode(merged),
+                 verified_messages[0].3.clone())
             })
         } else {
             let header = verified_messages[0].0.clone();
             let tag    = verified_messages[0].1.clone();
+            //FIXME(ben): see comment above
+            let signature = verified_messages[0].3.clone();
 
             let msg_bodies = verified_messages.into_iter()
-                             .map(|(_, _, body)| body)
+                             .map(|(_, _, body, _)| body)
                              .collect::<Vec<_>>();
 
             take_most_frequent(&msg_bodies, QUORUM_SIZE as usize)
-                .map(|merged| { (header, tag, merged) })
+                .map(|merged| { (header, tag, merged, signature) })
         }
     }
 }
@@ -301,6 +312,7 @@ mod test {
     header : message_header::MessageHeader,
     tag : types::MessageTypeTag,
     serialised_message : Vec<u8>,
+    signature: types::Signature,
     index : u64
   }
 
@@ -346,23 +358,20 @@ mod test {
 
     pub fn get_headers(&self, destination_address : &types::DestinationAddress,
                message_id : &types::MessageId, serialised_message : &Vec<u8> )
-              -> Vec<message_header::MessageHeader> {
-        let mut headers : Vec<message_header::MessageHeader>
+              -> Vec<(message_header::MessageHeader, types::Signature)> {
+        let mut headers : Vec<(message_header::MessageHeader, types::Signature)>
             = Vec::with_capacity(self.group_size_);
       for node in &self.nodes_ {
-        headers.push(message_header::MessageHeader::new(message_id.clone(),
-                    destination_address.clone(),
-                    types::SourceAddress {
-                      from_node : node.get_name(),
-                      from_group : Some(self.group_address_.clone()),
-                      reply_to : None
-                    },
-                    self.authority_.clone(),
-                    Some(types::Signature {
-                                signature : crypto::sign::sign(&serialised_message[..],
-                                              &node.get_crypto_secret_sign_key())
-                    })
-        ));
+        headers.push((message_header::MessageHeader::new(message_id.clone(),
+                          destination_address.clone(),
+                          types::SourceAddress {
+                            from_node : node.get_name(),
+                            from_group : Some(self.group_address_.clone()),
+                            reply_to : None
+                          },
+                          self.authority_.clone()),
+                      types::Signature::new(crypto::sign::sign_detached(&serialised_message,
+                          &node.get_crypto_secret_sign_key()))));
       }
       headers
     }
@@ -439,23 +448,20 @@ mod test {
 
     pub fn get_headers(&self, destination_address : &types::DestinationAddress,
                message_id : &types::MessageId, serialised_message : &Vec<u8> )
-              -> Vec<message_header::MessageHeader> {
-      let mut headers : Vec<message_header::MessageHeader>
+              -> Vec<(message_header::MessageHeader, types::Signature)> {
+      let mut headers : Vec<(message_header::MessageHeader, types::Signature)>
           = Vec::with_capacity(self.group_size_);
       for node in &self.nodes_ {
-        headers.push(message_header::MessageHeader::new(message_id.clone(),
-                    destination_address.clone(),
-                    types::SourceAddress {
-                      from_node : node.get_name(),
-                      from_group : Some(self.group_address_.clone()),
-                      reply_to : None
-                    },
-                    self.authority_.clone(),
-                    Some(types::Signature {
-                                signature : crypto::sign::sign(&serialised_message[..],
-                                              &node.get_crypto_secret_sign_key())
-                    })
-        ));
+        headers.push((message_header::MessageHeader::new(message_id.clone(),
+                          destination_address.clone(),
+                          types::SourceAddress {
+                            from_node : node.get_name(),
+                            from_group : Some(self.group_address_.clone()),
+                            reply_to : None
+                          },
+                          self.authority_.clone()),
+                      types::Signature::new(crypto::sign::sign_detached(&serialised_message,
+                          &node.get_crypto_secret_sign_key()))));
       }
       headers
     }
@@ -502,15 +508,14 @@ mod test {
                       from_group : Some(self.group_address_.clone()),
                       reply_to : None
                     },
-                    self.authority_.clone(),
-                    Some(types::Signature {
-                                signature : crypto::sign::sign(&serialised_message_response[..],
-                                              &node.get_crypto_secret_sign_key())
-                    }));
+                    self.authority_.clone());
+        let signature = types::Signature::new(crypto::sign::sign_detached(
+            &serialised_message_response[..], &node.get_crypto_secret_sign_key()));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
                                 tag : types::MessageTypeTag::GetGroupKeyResponse,
                                 serialised_message : serialised_message_response,
+                                signature : signature,
                                 index : message_index.clone()
                               });
         *message_index += 1;
@@ -537,15 +542,14 @@ mod test {
                       from_group : Some(self.group_address_.clone()),
                       reply_to : None
                     },
-                    self.authority_.clone(),
-                    Some(types::Signature {
-                                signature : crypto::sign::sign(&serialised_message_response[..],
-                                              &node.get_crypto_secret_sign_key())
-                    }));
+                    self.authority_.clone());
+        let signature = types::Signature::new(crypto::sign::sign_detached(
+            &serialised_message_response[..], &node.get_crypto_secret_sign_key()));
         collect_messages.push(AddSentinelMessage{
                                 header : header.clone(),
                                 tag : types::MessageTypeTag::FindGroupResponse,
                                 serialised_message : serialised_message_response,
+                                signature : signature,
                                 index : message_index.clone()
                               });
         *message_index += 1;
@@ -589,15 +593,16 @@ mod test {
     }
   }
 
-  fn generate_messages(headers : Vec<message_header::MessageHeader>,
+  fn generate_messages(headers : Vec<(message_header::MessageHeader, types::Signature)>,
                tag : types::MessageTypeTag, message : &Vec<u8>,
                message_index : &mut u64)
                -> Vec<AddSentinelMessage> {
     let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(headers.len());
     for header in headers {
-      collect_messages.push(AddSentinelMessage{ header : header,
+      collect_messages.push(AddSentinelMessage{ header : header.0,
                             tag : tag.clone(),
                             serialised_message : message.clone(),
+                            signature : header.1,
                             index : message_index.clone()});
       *message_index += 1;
     }
@@ -697,7 +702,8 @@ mod test {
         sentinel_returns.push((message.index,
                                sentinel.add(message.header,
                                             message.tag,
-                                            message.serialised_message)));
+                                            message.serialised_message,
+                                            message.signature)));
       }
       assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
       assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
@@ -707,7 +713,8 @@ mod test {
         sentinel_returns.push((message.index,
                               sentinel.add(message.header,
                                            message.tag,
-                                           message.serialised_message)));
+                                           message.serialised_message,
+                                           message.signature)));
       }
       assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
       assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
@@ -755,7 +762,8 @@ mod test {
       sentinel_returns.push((message.index,
                              sentinel.add(message.header,
                                           message.tag,
-                                          message.serialised_message)));
+                                          message.serialised_message,
+                                          message.signature)));
     }
     assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
     assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
@@ -765,7 +773,8 @@ mod test {
       sentinel_returns.push((message.index,
                             sentinel.add(message.header,
                                          message.tag,
-                                         message.serialised_message)));
+                                         message.serialised_message,
+                                         message.signature)));
     }
     assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
     assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
@@ -806,7 +815,8 @@ mod test {
       sentinel_returns.push((message.index,
                              sentinel.add(message.header,
                                           message.tag,
-                                          message.serialised_message)));
+                                          message.serialised_message,
+                                          message.signature)));
     }
     assert_eq!(types::GROUP_SIZE as usize, sentinel_returns.len());
     assert_eq!(types::GROUP_SIZE as usize, count_none_sentinel_returns(&sentinel_returns));
@@ -816,7 +826,8 @@ mod test {
       sentinel_returns.push((message.index,
                             sentinel.add(message.header,
                                          message.tag,
-                                         message.serialised_message)));
+                                         message.serialised_message,
+                                         message.signature)));
     }
     assert_eq!(2 * types::GROUP_SIZE as usize, sentinel_returns.len());
     assert_eq!(2 * types::GROUP_SIZE as usize - 1, count_none_sentinel_returns(&sentinel_returns));
