@@ -586,40 +586,37 @@ impl<F> RoutingNode<F> where F: Interface {
         let from = header.from();
         let name = get_key.target_id.clone();
 
-        let mut action: Option<Action>;
+        let mut action: Action;
 
         {
             let mut interface = self.interface.lock().unwrap();
             action = match interface.handle_get_key(type_id, name, our_authority.clone(), from_authority, from) {
-                Ok(action) => Some(action),
+                Ok(action) => action,
                 Err(_) => return Err(())
             };
         }
 
         match action {
-            Some(action) => match action {
-                Action::Reply(data) => {
-                    let public_sign_key = self.decode::<types::PublicSignKey>(&data);
-                    match public_sign_key {
-                        Some(public_key) => {
-                            let create_reply_header = header.create_reply(&self.own_id, &our_authority);
-                            let routing_msg = self.construct_get_key_response_msg(create_reply_header, get_key.clone(), public_key);
-                            let encoded_msg = self.encode(&routing_msg);
-                            self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
-                        },
-                        None => {}
-                    }},
-                Action::SendOn(dest_nodes) => {
-                    for dest_node in dest_nodes {
-                        let send_on_header = header.create_send_on(&self.own_id, &our_authority, &dest_node);
-                        let routing_msg = RoutingMessage::new(MessageTypeTag::GetKey, send_on_header,
-                            get_key.clone(), &self.pmid.get_crypto_secret_sign_key());
+            Action::Reply(data) => {
+                let public_sign_key = self.decode::<types::PublicSignKey>(&data);
+                match public_sign_key {
+                    Some(public_key) => {
+                        let create_reply_header = header.create_reply(&self.own_id, &our_authority);
+                        let routing_msg = self.construct_get_key_response_msg(create_reply_header, get_key.clone(), public_key);
                         let encoded_msg = self.encode(&routing_msg);
-                        self.send_swarm_or_parallel(&dest_node, &encoded_msg);
-                    }
+                        self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
+                    },
+                    None => {}
+                }},
+            Action::SendOn(dest_nodes) => {
+                for dest_node in dest_nodes {
+                    let send_on_header = header.create_send_on(&self.own_id, &our_authority, &dest_node);
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::GetKey, send_on_header,
+                        get_key.clone(), &self.pmid.get_crypto_secret_sign_key());
+                    let encoded_msg = self.encode(&routing_msg);
+                    self.send_swarm_or_parallel(&dest_node, &encoded_msg);
                 }
-            },
-            None => return Err(())
+            }
         }
         Ok(())
     }
