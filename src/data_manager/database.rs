@@ -31,12 +31,18 @@ use routing::generic_sendable_type::GenericSendableType;
 use routing::node_interface::RoutingNodeAction;
 
 pub struct DataManagerDatabase {
-  storage : HashMap<Identity, PmidNodes>
+  storage : HashMap<Identity, PmidNodes>,
+  close_grp_from_churn: Vec<NameType>,
+  temp_storage_after_churn: HashMap<Identity, PmidNodes>,
 }
 
 impl DataManagerDatabase {
     pub fn new () -> DataManagerDatabase {
-        DataManagerDatabase { storage: HashMap::with_capacity(10000) }
+        DataManagerDatabase {
+            storage: HashMap::with_capacity(10000),
+            close_grp_from_churn: Vec::new(),
+            temp_storage_after_churn: HashMap::new(),
+        }
     }
 
     pub fn exist(&mut self, name : &Identity) -> bool {
@@ -77,6 +83,9 @@ impl DataManagerDatabase {
     }
 
     pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<RoutingNodeAction> {
+        assert!(close_group.len() >= 3);
+        let mut close_grp_already_stored = false;
+
         for it in self.storage.iter_mut() {
             let mut new_pmid_nodes = Vec::<NameType>::with_capacity(it.1.len());
             for vec_it in it.1.iter() {
@@ -86,38 +95,49 @@ impl DataManagerDatabase {
             }
 
             if new_pmid_nodes.len() < 3 {
-                assert!(close_group.len() >= 3);
-
-                close_group.sort_by(|a, b| {
-                    if routing::closer_to_target(&a, &b, &it.0) {
-                      cmp::Ordering::Less
-                    } else {
-                      cmp::Ordering::Greater
-                    }
-                });
-
-                while new_pmid_nodes.len() < 3 {
-                    for close_grp_it in close_group.iter() {
-                        if new_pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
-                            new_pmid_nodes.push(close_grp_it.clone());
-                        }
-                    }
+                if !close_grp_already_stored {
+                    self.close_grp_from_churn = close_group.clone();
+                    close_grp_already_stored = true;
                 }
-            }
 
-            *it.1 = new_pmid_nodes;
+                self.temp_storage_after_churn.entry(it.0.clone()).or_insert(new_pmid_nodes);
+
+                //close_group.sort_by(|a, b| {
+                //    if routing::closer_to_target(&a, &b, &it.0) {
+                //      cmp::Ordering::Less
+                //    } else {
+                //      cmp::Ordering::Greater
+                //    }
+                //});
+
+                //while new_pmid_nodes.len() < 3 {
+                //    for close_grp_it in close_group.iter() {
+                //        if new_pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
+                //            new_pmid_nodes.push(close_grp_it.clone());
+                //        }
+                //    }
+                //}
+            } else {
+                *it.1 = new_pmid_nodes;
+            }
         }
 
         let data: Vec<_> = self.storage.drain().collect();
         let mut actions = Vec::<RoutingNodeAction>::new();
         for element in data {
-            let mut e = cbor::Encoder::from_memory();
-            e.encode(&[&element.1]).unwrap();
-            let serialised_content = e.into_bytes();
-            let content = GenericSendableType::new(element.0.clone(), 1, serialised_content); //TODO Get type_tag correct
-            for destination in close_group.iter() {
-                actions.push(RoutingNodeAction::Put{destination: destination.clone(),
-                                                    content:     content.clone()});
+            if self.temp_storage_after_churn.contains_key(&element.0) {
+                actions.push(routing::node_interface::RoutingNodeAction::Get {
+                    type_id: 3, //TODO Get type_tag correct
+                    name: element.0,
+                });
+            } else {
+                let mut e = cbor::Encoder::from_memory();
+                e.encode(&[&element.1]).unwrap();
+                let serialised_content = e.into_bytes();
+                actions.push(routing::node_interface::RoutingNodeAction::Put {
+                    destination: element.0.clone(),
+                    content: GenericSendableType::new(element.0, 3, serialised_content), //TODO Get type_tag correct
+                });
             }
         }
         actions
