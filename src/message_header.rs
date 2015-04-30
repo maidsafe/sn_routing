@@ -118,6 +118,50 @@ impl MessageHeader {
     pub fn from_authority(&self) -> types::Authority {
         self.authority.clone()
     }
+
+    /// This creates a new header for Action::SendOn. It clones all the fields,
+    /// and then mutates the destination and source accordingly.
+    /// Authority is changed at this point as this method is called after
+    /// the interface has processed the message.
+    /// Note: this is not for XOR-forwarding; then the header is preserved!
+    pub fn create_send_on(&self, our_name : &NameType, our_authority : &types::Authority,
+                          destination : &NameType) -> MessageHeader {
+        // implicitly preserve all non-mutated fields.
+        let mut send_on_header = self.clone();
+        send_on_header.source = types::SourceAddress {
+            from_node : our_name.clone(),
+            from_group : self.destination.dest.clone(),
+            reply_to : self.source.reply_to.clone()
+        };
+        send_on_header.destination = types::DestinationAddress {
+            dest : destination.clone(),
+            reply_to : self.destination.reply_to.clone()
+        };
+        send_on_header.authority = our_authority.clone();
+        send_on_header
+    }
+
+    /// This creates a new header for Action::Reply. It clones all the fields,
+    /// and then mutates the destination and source accordingly.
+    /// Authority is changed at this point as this method is called after
+    /// the interface has processed the message.
+    /// Note: this is not for XOR-forwarding; then the header is preserved!
+    pub fn create_reply(&self, our_name : &NameType, our_authority : &types::Authority)
+                        -> MessageHeader {
+        // implicitly preserve all non-mutated fields.
+        let reply_header = self.clone();
+        reply_header.source = types::SourceAddress {
+            from_node : our_name.clone(),
+            from_group : self.destination.dest.clone(),
+            reply_to : None
+        };
+        reply_header.destination = types::DestinationAddress {
+            dest : self.source.from().clone(),
+            reply_to : self.source.reply_to.clone()
+        };
+        reply_header.authority = our_authority.clone();
+        reply_header
+    }
 }
 
 #[cfg(test)]
