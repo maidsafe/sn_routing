@@ -153,11 +153,11 @@ impl MessageHeader {
         reply_header.source = types::SourceAddress {
             from_node : our_name.clone(),
             from_group : self.destination.dest.clone(),
-            reply_to : self.source.reply_to.clone()
+            reply_to : None
         };
         reply_header.destination = types::DestinationAddress {
             dest : self.source.from().clone(),
-            reply_to : self.destination.reply_to.clone()
+            reply_to : self.source.reply_to.clone()
         };
         reply_header.authority = our_authority.clone();
         reply_header
