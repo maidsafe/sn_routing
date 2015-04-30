@@ -43,7 +43,7 @@ impl PmidManager {
     }
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<generic_sendable_type::GenericSendableType> {
+  pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::RoutingNodeAction> {
     self.db_.retrieve_all_and_reset(close_group)
   }
 }

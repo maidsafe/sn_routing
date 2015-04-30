@@ -101,15 +101,12 @@ impl routing::node_interface::Interface for VaultFacade {
     }
 
     fn handle_churn(&mut self, mut close_group: Vec<NameType>) -> Vec<RoutingNodeAction> {
-        let mut dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
         let mut mm = self.maid_manager.retrieve_all_and_reset();
-        dm.into_iter().chain(mm.into_iter()).collect()
+        let mut vh = self.version_handler.retrieve_all_and_reset();
+        let mut pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
+        let mut dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
 
-        // TODO
-        //let mut pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
-        //let mut vh = self.version_handler.retrieve_all_and_reset();
-
-        //dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
+        dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
     }
 
     fn handle_cache_get(&mut self,
