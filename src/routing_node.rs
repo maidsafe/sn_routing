@@ -597,13 +597,14 @@ impl<F> RoutingNode<F> where F: Interface {
         let post = try!(self.decode::<Post>(&body).ok_or(()));
         let our_authority = self.our_authority(&post.name, &header);
         let mut interface = self.interface.lock().unwrap();
-        let routing_action = match interface.handle_post(our_authority.clone(),
-                                                         header.authority.clone(),
-                                                         header.from(),
-                                                         post.name.clone(),
-                                                         post.data.clone()) {
+        let action_result : RecvResult
+            = match interface.handle_post(our_authority.clone(),
+                                          header.authority.clone(),
+                                          header.from(),
+                                          post.name.clone(),
+                                          post.data.clone()) {
             Ok(Action::Reply(data)) => {
-                unimplemented!(); // TODO: implement post_response
+                Ok(()) // TODO: implement post_response
             },
             Ok(Action::SendOn(destinations)) => {
                 for destination in destinations {
@@ -611,14 +612,20 @@ impl<F> RoutingNode<F> where F: Interface {
                         &our_authority, &destination);
                     let routing_msg = RoutingMessage::new(MessageTypeTag::Post,
                         send_on_header, post.clone(), &self.pmid.get_crypto_secret_sign_key());
-
-                    let sendon = self.send_swarm_or_parallel(&destination,
-                                 &self.encode(&routing_msg));
+                    self.send_swarm_or_parallel(&destination,
+                        &self.encode(&routing_msg));
                 }
+                Ok(())
             },
-            Err(_) => {;}
+            Err(e) => match e {
+                RoutingError::Success => Ok(()),           // Vault terminates message flow
+                RoutingError::IncorrectData(_) => Err(()), // TODO: reply with post_response
+                RoutingError::NoData => Err(()),
+                RoutingError::InvalidRequest => Err(()),
+                _ => Err(())
+            },
         };
-        Ok(())
+        action_result
     }
 
     fn handle_post_response(&self, header : MessageHeader, body : Bytes) -> RecvResult {
