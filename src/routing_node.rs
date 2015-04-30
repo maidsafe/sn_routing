@@ -597,16 +597,25 @@ impl<F> RoutingNode<F> where F: Interface {
         let post = try!(self.decode::<Post>(&body).ok_or(()));
         let our_authority = self.our_authority(&post.name, &header);
         let mut interface = self.interface.lock().unwrap();
-        let routing_action = match interface.handle_post(our_authority,
+        let routing_action = match interface.handle_post(our_authority.clone(),
                                                          header.authority.clone(),
                                                          header.from(),
                                                          post.name.clone(),
                                                          post.data.clone()) {
             Ok(Action::Reply(data)) => {
-                // TODO: implement post_response
-                ;},
+                unimplemented!(); // TODO: implement post_response
+            },
             Ok(Action::SendOn(destinations)) => {
-                ;},
+                for destination in destinations {
+                    let send_on_header = header.create_send_on(&self.own_id,
+                        &our_authority, &destination);
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::Post,
+                        send_on_header, post.clone(), &self.pmid.get_crypto_secret_sign_key());
+
+                    let sendon = self.send_swarm_or_parallel(&destination,
+                                 &self.encode(&routing_msg));
+                }
+            },
             Err(_) => {;}
         };
         Ok(())
