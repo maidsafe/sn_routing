@@ -17,96 +17,114 @@
 
 #![allow(dead_code)]
 
-use routing::generic_sendable_type;
 use routing;
-use lru_time_cache::LruCache;
+use std::collections::HashMap;
 use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Encodable};
 
 type Identity = routing::NameType; // name of the chunk
 use routing::types::PmidNode;
 use routing::types::PmidNodes;
 use routing::NameType;
-use routing::sendable::Sendable;
+use std::cmp;
+use routing::generic_sendable_type::GenericSendableType;
+use routing::node_interface::RoutingNodeAction;
 
 pub struct DataManagerDatabase {
-  storage : LruCache<Identity, PmidNodes>
+  storage : HashMap<Identity, PmidNodes>,
+  pub close_grp_from_churn: Vec<NameType>,
+  pub temp_storage_after_churn: HashMap<NameType, PmidNodes>,
 }
 
 impl DataManagerDatabase {
-  pub fn new () -> DataManagerDatabase {
-    DataManagerDatabase { storage: LruCache::with_capacity(10000) }
-  }
+    pub fn new () -> DataManagerDatabase {
+        DataManagerDatabase {
+            storage: HashMap::with_capacity(10000),
+            close_grp_from_churn: Vec::new(),
+            temp_storage_after_churn: HashMap::new(),
+        }
+    }
 
-  pub fn exist(&mut self, name : &Identity) -> bool {
-    self.storage.get(name.clone()).is_some()
-  }
+    pub fn exist(&mut self, name : &Identity) -> bool {
+        self.storage.contains_key(name)
+    }
 
-  pub fn put_pmid_nodes(&mut self, name : &Identity, pmid_nodes: PmidNodes) {
-    self.storage.add(name.clone(), pmid_nodes.clone());
-  }
+    pub fn put_pmid_nodes(&mut self, name : &Identity, pmid_nodes: PmidNodes) {
+        self.storage.entry(name.clone()).or_insert(pmid_nodes.clone());
+    }
 
-  pub fn add_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
-    let entry = self.storage.remove(name.clone());
-      if entry.is_some() {
-        let mut tmp = entry.unwrap();
-        for i in 0..tmp.len() {
-            if tmp[i] == pmid_node {
-              return;
+    pub fn add_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
+        let nodes = self.storage.entry(name.clone()).or_insert(vec![pmid_node.clone()]);
+        if !nodes.contains(&pmid_node) {
+            nodes.push(pmid_node);
+        }
+    }
+
+    pub fn remove_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
+        if !self.storage.contains_key(name) {
+            return;
+        }
+        let nodes = self.storage.entry(name.clone()).or_insert(vec![]);
+        for i in 0..nodes.len() {
+            if nodes[i] == pmid_node {
+              nodes.remove(i);
+              break;
             }
         }
-        tmp.push(pmid_node);
-      self.storage.add(name.clone(), tmp);
-      } else {
-      self.storage.add(name.clone(), vec![pmid_node]);
-      }
-  }
+    }
 
-  pub fn remove_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
-    let entry = self.storage.remove(name.clone());
-      if entry.is_some() {
-        let mut tmp = entry.unwrap();
-        for i in 0..tmp.len() {
-            if tmp[i] == pmid_node {
-              tmp.remove(i);
-          break;
-            }
+    pub fn get_pmid_nodes(&mut self, name : &Identity) -> PmidNodes {
+        let entry = self.storage.get(&name);
+        if entry.is_some() {
+            entry.unwrap().clone()
+        } else {
+            Vec::<PmidNode>::new()
         }
-      self.storage.add(name.clone(), tmp);
-      }
-  }
+    }
 
-  pub fn get_pmid_nodes(&mut self, name : &Identity) -> PmidNodes {
-    let entry = self.storage.get(name.clone());
-      if entry.is_some() {
-        entry.unwrap().clone()
-      } else {
-        Vec::<PmidNode>::new()
-      }
-  }
+    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<RoutingNodeAction> {
+        assert!(close_group.len() >= 3);
+        self.temp_storage_after_churn = self.storage.clone();
+        let mut close_grp_already_stored = false;
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
-        let data: Vec<(Identity, PmidNodes)> = self.storage.retrieve_all();
-        let mut sendable_data = Vec::<generic_sendable_type::GenericSendableType>::with_capacity(data.len());
+        for it in self.storage.iter_mut() {
+            let mut new_pmid_nodes = Vec::<NameType>::with_capacity(it.1.len());
+            for vec_it in it.1.iter() {
+                if close_group.iter().find(|a| **a == *vec_it).is_some() {
+                    new_pmid_nodes.push(vec_it.clone());
+                }
+            }
+
+            if new_pmid_nodes.len() < 3 && !close_grp_already_stored {
+                self.close_grp_from_churn = close_group.clone();
+                close_grp_already_stored = true;
+            }
+            *it.1 = new_pmid_nodes;
+        }
+
+        let data: Vec<_> = self.storage.drain().collect();
+        let mut actions = Vec::<RoutingNodeAction>::new();
         for element in data {
+            if self.temp_storage_after_churn.get(&element.0).unwrap().len() < 3 {
+                actions.push(routing::node_interface::RoutingNodeAction::Get {
+                    type_id: 3, //TODO Get type_tag correct
+                    name: element.0.clone(),
+                });
+            }
             let mut e = cbor::Encoder::from_memory();
             e.encode(&[&element.1]).unwrap();
             let serialised_content = e.into_bytes();
-            let sendable_type = generic_sendable_type::GenericSendableType::new(element.0.clone(), 1, serialised_content); //TODO Get type_tag correct
-            sendable_data.push(sendable_type);
+            actions.push(routing::node_interface::RoutingNodeAction::Put {
+                destination: element.0.clone(),
+                content: GenericSendableType::new(element.0, 3, serialised_content), //TODO Get type_tag correct
+            });
         }
-        self.storage = LruCache::with_capacity(10000);
-        sendable_data
+        actions
     }
 }
 
 #[cfg(test)]
 mod test {
-  use cbor;
-  use maidsafe_types;
-  use rand;
-  use routing;
   use super::*;
   use maidsafe_types::ImmutableData;
   use routing::NameType;
@@ -117,7 +135,6 @@ mod test {
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let mut pmid_nodes : Vec<NameType> = vec![];
@@ -135,7 +152,6 @@ mod test {
   #[test]
   fn put() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();
@@ -157,7 +173,6 @@ mod test {
   #[test]
   fn remove_pmid() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();
@@ -183,7 +198,6 @@ mod test {
   #[test]
   fn replace_pmids() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();

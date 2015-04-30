@@ -26,6 +26,7 @@ use routing::NameType;
 use maidsafe_types;
 use routing::sendable::Sendable;
 pub use self::database::MaidManagerAccount;
+use routing::node_interface::RoutingNodeAction;
 
 type Address = NameType;
 
@@ -64,7 +65,7 @@ impl MaidManager {
     Ok(routing::Action::SendOn(destinations))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<RoutingNodeAction> {
     self.db_.retrieve_all_and_reset()
   }
 

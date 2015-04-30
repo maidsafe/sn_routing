@@ -17,13 +17,10 @@
 
 #![allow(dead_code)]
 
-extern crate lru_time_cache;
-
 extern crate routing;
 
 use cbor;
 use routing::generic_sendable_type;
-use self::lru_time_cache::LruCache;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::collections;
 
@@ -122,7 +119,7 @@ impl PmidManagerDatabase {
       entry.put_data(size)
   }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<generic_sendable_type::GenericSendableType> {
+    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::RoutingNodeAction> {
       let data: Vec<_> = self.storage.drain().collect();
       let mut sendable_data = Vec::with_capacity(data.len());
       for element in data {
@@ -130,7 +127,10 @@ impl PmidManagerDatabase {
               let mut e = cbor::Encoder::from_memory();
               e.encode(&[&element.1]).unwrap();
               let serialised_content = e.into_bytes();
-              sendable_data.push(generic_sendable_type::GenericSendableType::new(element.0, 0, serialised_content)); //TODO Get type_tag correct
+              sendable_data.push(routing::node_interface::RoutingNodeAction::Put {
+                  destination: element.0.clone(),
+                  content: generic_sendable_type::GenericSendableType::new(element.0, 2, serialised_content), //TODO Get type_tag correct
+              });
           }
       }
       sendable_data
