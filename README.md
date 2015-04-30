@@ -38,25 +38,16 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [ ] Complete Post Flow
 - [ ] Handle Churn
     - [ ] Implement Account Transfer
-        - [ ] Handle churn for all Persona (except PN)(retrive account, move to lru, apply account)
+        - [x] Handle churn for all Persona (except PN)(retrive account, move to lru, apply account)
         - [ ] Before retrieving accounts, pass close_group (get from routing) to DM and remove down pmids
-        - [ ] Before retrieving accounts, pass close_group to PM and remove accounts of down pmids
+        - [x] Before retrieving accounts, pass close_group to PM and remove accounts of down pmids
         - [ ] Implement HandlePut for Account transfer data (call apply accounts for relevant persona)
         - [ ] Implement merge trait for accounts of MM
         - [ ] Implement merge trait for accounts of DM
         - [ ] Implement merge trait for accounts of PM
         - [ ] Implement merge trait for accounts of VH
     - [ ] Churn Test
-- [ ] Installers
-    - [ ] linux 32 bit .deb installer (oldest possible version)
-    - [ ] linux 64 bit .deb installer (oldest possible version)
-    - [ ] linux 32 bit .rpm installer (oldest possible version)
-    - [ ] linux 64 bit .rpm installer (oldest possible version)
-    - [ ] linux 32 bit .zip/gzip installer (oldest possible version)
-    - [ ] linux 64 bit .zip/gzip installer (oldest possible version)
-    - [ ] OS/X installer (fpm)
-    - [ ] Win32 installer (windows advanced installer)
-    - [ ] Win64 installer (windows advanced installer)
+- [x] Installers (linux deb/rpm 32/64 bit, Windows 32 / 64. OSX)
 - [ ] API version 0.0.9
 - [ ] Test with client having file system feature
 - [ ] Implement MpidManager

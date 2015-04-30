@@ -2,7 +2,7 @@
 
 name = "maidsafe_vault"
 version = "0.0.3"
-authors = ["David Irvine <david.irvine@maidsafe.net>"]
+authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
 documentation = "http://dirvine.github.io/maidsafe_vault/"
 repository = "https://github.com/dirvine/maidsafe_vault"
