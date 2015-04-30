@@ -130,7 +130,7 @@ impl MessageHeader {
         let mut send_on_header = self.clone();
         send_on_header.source = types::SourceAddress {
             from_node : our_name.clone(),
-            from_group : self.destination.dest.clone(),
+            from_group : Some(self.destination.dest.clone()),
             reply_to : self.source.reply_to.clone()
         };
         send_on_header.destination = types::DestinationAddress {
@@ -149,14 +149,14 @@ impl MessageHeader {
     pub fn create_reply(&self, our_name : &NameType, our_authority : &types::Authority)
                         -> MessageHeader {
         // implicitly preserve all non-mutated fields.
-        let reply_header = self.clone();
+        let mut reply_header = self.clone();
         reply_header.source = types::SourceAddress {
             from_node : our_name.clone(),
-            from_group : self.destination.dest.clone(),
+            from_group : Some(self.destination.dest.clone()),
             reply_to : None
         };
         reply_header.destination = types::DestinationAddress {
-            dest : self.source.from().clone(),
+            dest : self.from().clone(),
             reply_to : self.source.reply_to.clone()
         };
         reply_header.authority = our_authority.clone();
