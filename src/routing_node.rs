@@ -598,16 +598,14 @@ impl<F> RoutingNode<F> where F: Interface {
 
         match action {
             Action::Reply(data) => {
-                let public_sign_key = self.decode::<types::PublicSignKey>(&data);
-                match public_sign_key {
-                    Some(public_key) => {
-                        let create_reply_header = header.create_reply(&self.own_id, &our_authority);
-                        let routing_msg = self.construct_get_key_response_msg(create_reply_header, get_key.clone(), public_key);
-                        let encoded_msg = self.encode(&routing_msg);
-                        self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
-                    },
-                    None => {}
-                }},
+                let _: Option<types::PublicSignKey> = self.decode::<types::PublicSignKey>(&data).and_then(|public_key| {
+                    let create_reply_header = header.create_reply(&self.own_id, &our_authority);
+                    let routing_msg = self.construct_get_key_response_msg(create_reply_header, get_key.clone(), public_key);
+                    let encoded_msg = self.encode(&routing_msg);
+                    self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
+                    None
+                    });
+                },
             Action::SendOn(dest_nodes) => {
                 for dest_node in dest_nodes {
                     let send_on_header = header.create_send_on(&self.own_id, &our_authority, &dest_node);
