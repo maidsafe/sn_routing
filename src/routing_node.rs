@@ -598,12 +598,15 @@ impl<F> RoutingNode<F> where F: Interface {
         let our_authority = self.our_authority(&post.name, &header);
         let mut interface = self.interface.lock().unwrap();
         let routing_action = match interface.handle_post(our_authority,
-                                                              header.authority.clone(),
-                                                              header.from(),
-                                                              post.name.clone(),
-                                                              post.data.clone()) {
-            Ok(Action::Reply(data)) => {;},
-            Ok(Action::SendOn(destinations)) => {;},
+                                                         header.authority.clone(),
+                                                         header.from(),
+                                                         post.name.clone(),
+                                                         post.data.clone()) {
+            Ok(Action::Reply(data)) => {
+                // TODO: implement post_response
+                ;},
+            Ok(Action::SendOn(destinations)) => {
+                ;},
             Err(_) => {;}
         };
         Ok(())
