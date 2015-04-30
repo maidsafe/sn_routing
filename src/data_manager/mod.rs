@@ -19,7 +19,7 @@
 
 mod database;
 
-use routing::generic_sendable_type;
+use routing::node_interface::RoutingNodeAction;
 use std::cmp;
 use routing;
 use routing::NameType;
@@ -87,7 +87,7 @@ impl DataManager {
     Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<routing::NameType>) -> Vec<generic_sendable_type::GenericSendableType> {
+  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<RoutingNodeAction> {
     self.db_.retrieve_all_and_reset(close_group)
   }
 }

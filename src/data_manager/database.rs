@@ -17,19 +17,18 @@
 
 #![allow(dead_code)]
 
-use routing::generic_sendable_type;
 use routing;
 use std::collections::HashMap;
 use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Encodable};
 
 type Identity = routing::NameType; // name of the chunk
 use routing::types::PmidNode;
 use routing::types::PmidNodes;
 use routing::NameType;
-use routing::sendable::Sendable;
 use std::cmp;
+use routing::generic_sendable_type::GenericSendableType;
+use routing::node_interface::RoutingNodeAction;
 
 pub struct DataManagerDatabase {
   storage : HashMap<Identity, PmidNodes>
@@ -56,7 +55,7 @@ impl DataManagerDatabase {
     }
 
     pub fn remove_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
-        if(!self.storage.contains_key(name)) {
+        if !self.storage.contains_key(name) {
             return;
         }
         let nodes = self.storage.entry(name.clone()).or_insert(vec![]);
@@ -77,9 +76,9 @@ impl DataManagerDatabase {
         }
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<routing::NameType>) -> Vec<generic_sendable_type::GenericSendableType> {
+    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<RoutingNodeAction> {
         for it in self.storage.iter_mut() {
-            let mut new_pmid_nodes = Vec::<routing::NameType>::with_capacity(it.1.len());
+            let mut new_pmid_nodes = Vec::<NameType>::with_capacity(it.1.len());
             for vec_it in it.1.iter() {
                 if close_group.iter().find(|a| **a == *vec_it).is_some() {
                     new_pmid_nodes.push(vec_it.clone());
@@ -110,24 +109,23 @@ impl DataManagerDatabase {
         }
 
         let data: Vec<_> = self.storage.drain().collect();
-        let mut sendable_data = Vec::<generic_sendable_type::GenericSendableType>::with_capacity(data.len());
+        let mut actions = Vec::<RoutingNodeAction>::new();
         for element in data {
             let mut e = cbor::Encoder::from_memory();
             e.encode(&[&element.1]).unwrap();
             let serialised_content = e.into_bytes();
-            let sendable_type = generic_sendable_type::GenericSendableType::new(element.0.clone(), 1, serialised_content); //TODO Get type_tag correct
-            sendable_data.push(sendable_type);
+            let content = GenericSendableType::new(element.0.clone(), 1, serialised_content); //TODO Get type_tag correct
+            for destination in close_group.iter() {
+                actions.push(RoutingNodeAction::Put{destination: destination.clone(),
+                                                    content:     content.clone()});
+            }
         }
-        sendable_data
+        actions
     }
 }
 
 #[cfg(test)]
 mod test {
-  use cbor;
-  use maidsafe_types;
-  use rand;
-  use routing;
   use super::*;
   use maidsafe_types::ImmutableData;
   use routing::NameType;
@@ -138,7 +136,6 @@ mod test {
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let mut pmid_nodes : Vec<NameType> = vec![];
@@ -156,7 +153,6 @@ mod test {
   #[test]
   fn put() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();
@@ -178,7 +174,6 @@ mod test {
   #[test]
   fn remove_pmid() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();
@@ -204,7 +199,6 @@ mod test {
   #[test]
   fn replace_pmids() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();
