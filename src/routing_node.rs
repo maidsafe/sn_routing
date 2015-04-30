@@ -920,7 +920,7 @@ mod test {
             unimplemented!();
         }
         fn handle_churn(&mut self, close_group: Vec<NameType>)
-            -> ((RoutingNodeAction, Vec<generic_sendable_type::GenericSendableType>), (RoutingNodeAction, Vec<generic_sendable_type::GenericSendableType>)) {
+            -> SendableReturnType {
             unimplemented!();
         }
         fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,

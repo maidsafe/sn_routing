@@ -27,6 +27,8 @@ pub enum RoutingNodeAction {
     Post,
 }
 
+pub type SendableReturnType = Vec<(RoutingNodeAction, Vec<generic_sendable_type::GenericSendableType>)>;
+
 pub trait Interface : Sync + Send {
     /// if reply is data then we send back the response message (ie get_response )
     fn handle_get(&mut self,
@@ -64,7 +66,7 @@ pub trait Interface : Sync + Send {
                             from_address: NameType,
                             response: Result<Vec<u8>, RoutingError>);
 
-    fn handle_churn(&mut self, close_group: Vec<NameType>) -> ((RoutingNodeAction, Vec<generic_sendable_type::GenericSendableType>), (RoutingNodeAction, Vec<generic_sendable_type::GenericSendableType>));
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> SendableReturnType;
 
     fn handle_cache_get(&mut self,
                         type_id: u64,
