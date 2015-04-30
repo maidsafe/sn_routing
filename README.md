@@ -55,8 +55,8 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [ ] Split Messages and  handle message
   - [x] GetData HandleGetData
   - [x] GetDataResponse HandleGetDataResponse 
-  - [ ] GetClientKey HandleGetClientKey 
-  - [ ] GetClientKeyResponse HandleGetClientKeyResponse 
+  - [ ] GetKey HandleGetKey 
+  - [ ] GetKeyResponse HandleGetKeyResponse 
   - [ ] GetGroupKey HandleGetGroupKey 
   - [ ] GetGroupKeyResponse HandleGetGroupKeyResponse 
   - [ ] Post HandlePost 

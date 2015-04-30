@@ -48,6 +48,8 @@ use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_group_key::GetGroupKey;
 use messages::get_group_key_response::GetGroupKeyResponse;
+use messages::get_client_key::GetKey;
+use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action, RoutingError};
@@ -375,7 +377,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // pre-sentinel message handling
         match message.message_type {
-            // MessageTypeTag::GetClientKey =>
+            MessageTypeTag::GetKey => self.handle_get_key(header, body),
             MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
             _ => {
                 // Sentinel check
@@ -576,6 +578,52 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
+    fn handle_get_key(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
+        let get_key = try!(self.decode::<GetKey>(&body).ok_or(()));
+        let type_id = 106u64;
+        let our_authority = self.our_authority(&get_key.target_id, &header);
+        let from_authority = header.from_authority();
+        let from = header.from();
+        let name = get_key.target_id.clone();
+
+        let mut action: Option<Action>;
+
+        {
+            let mut interface = self.interface.lock().unwrap();
+            action = match interface.handle_get_key(type_id, name, our_authority.clone(), from_authority, from) {
+                Ok(action) => Some(action),
+                Err(_) => return Err(())
+            };
+        }
+
+        match action {
+            Some(action) => match action {
+                Action::Reply(data) => {
+                    let public_sign_key = self.decode::<types::PublicSignKey>(&data);
+                    match public_sign_key {
+                        Some(public_key) => {
+                            let create_reply_header = header.create_reply(&self.own_id, &our_authority);
+                            let routing_msg = self.construct_get_key_response_msg(create_reply_header, get_key.clone(), public_key);
+                            let encoded_msg = self.encode(&routing_msg);
+                            self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
+                        },
+                        None => {}
+                    }},
+                Action::SendOn(dest_nodes) => {
+                    for dest_node in dest_nodes {
+                        let send_on_header = header.create_send_on(&self.own_id, &our_authority, &dest_node);
+                        let routing_msg = RoutingMessage::new(MessageTypeTag::GetKey, send_on_header,
+                            get_key.clone(), &self.pmid.get_crypto_secret_sign_key());
+                        let encoded_msg = self.encode(&routing_msg);
+                        self.send_swarm_or_parallel(&dest_node, &encoded_msg);
+                    }
+                }
+            },
+            None => return Err(())
+        }
+        Ok(())
+    }
+
     fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
         let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
         let from = header.from();
@@ -688,6 +736,16 @@ impl<F> RoutingNode<F> where F: Interface {
 
         RoutingMessage::new(MessageTypeTag::GetGroupKeyResponse, header,
             GetGroupKeyResponse{ public_sign_keys  : group_keys },
+            &self.pmid.get_crypto_secret_sign_key()
+        )
+    }
+
+    fn construct_get_key_response_msg(&self, header : MessageHeader,
+                                      get_key : GetKey,
+                                      public_sign_key: types::PublicSignKey)
+                                      -> RoutingMessage {
+        RoutingMessage::new(MessageTypeTag::GetKeyResponse, header,
+            GetKeyResponse{ address : get_key.target_id.clone(), public_sign_key : public_sign_key },
             &self.pmid.get_crypto_secret_sign_key()
         )
     }
@@ -845,6 +903,7 @@ mod test {
     use messages::put_data_response::PutDataResponse;
     use messages::get_data::GetData;
     use messages::get_data_response::GetDataResponse;
+    use messages::get_client_key::GetKey;
     use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
     use types::{MessageId, NameAndTypeId};
@@ -888,6 +947,13 @@ mod test {
     }
 
     impl Interface for TestInterface {
+        fn handle_get_key(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
+                          from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
+            let stats = self.stats.clone();
+            let mut stats_value = stats.lock().unwrap();
+            stats_value.call_count += 1;
+            Ok(Action::Reply("handle_get_key called".to_string().into_bytes()))
+        }
         fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
                       from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
             let stats = self.stats.clone();
@@ -1110,6 +1176,12 @@ mod test {
     fn call_handle_get_data_response() {
         let get_data: GetDataResponse = Random::generate_random();
         assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse).call_count, 1u32);
+    }
+
+#[test]
+    fn call_handle_get_key() {
+        let get_key: GetKey = Random::generate_random();
+        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey).call_count, 1u32);
     }
 
 

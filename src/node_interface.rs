@@ -21,6 +21,14 @@ use types::{Authority, DestinationAddress};
 use super::{Action, RoutingError};
 
 pub trait Interface : Sync + Send {
+    /// the public key or address of the node store it is returned on success.
+    fn handle_get_key(&mut self,
+                      type_id: u64,
+                      name: NameType,
+                      our_authority: Authority,
+                      from_authority: Authority,
+                      from_address: NameType) -> Result<Action, RoutingError>;
+
     /// if reply is data then we send back the response message (ie get_response )
     fn handle_get(&mut self,
                   type_id: u64,
