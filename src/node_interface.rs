@@ -17,15 +17,15 @@
 
 use generic_sendable_type;
 use name_type::NameType;
-use types::{Authority, DestinationAddress};
+use types::{Authority, DestinationAddress, MyAuthority};
 use super::{Action, RoutingError};
 
 #[derive(Clone)]
 pub enum RoutingNodeAction {
     None,
-    Put { destination: NameType, content: generic_sendable_type::GenericSendableType, },
-    Get { type_id: u64, name: NameType, },
-    Post,
+    Put (NameType, generic_sendable_type::GenericSendableType, MyAuthority,),
+    Get (u64, NameType),
+    Post ,
 }
 
 pub trait Interface : Sync + Send {

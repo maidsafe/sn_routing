@@ -31,11 +31,11 @@ use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
 use name_type::closer_to_target;
-use node_interface::Interface;
+use node_interface::{Interface, RoutingNodeAction};
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
-use types::{MessageId, Authority, NameAndTypeId};
+use types::{MessageId, Authority, NameAndTypeId, MyAuthority};
 use message_header::MessageHeader;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
@@ -58,6 +58,7 @@ pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
 type RecvResult = Result<(), ()>;
+
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
@@ -135,7 +136,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, destination: NameType, content: T) where T: Sendable {
+    pub fn put<T>(&mut self, destination: NameType, content: T, my_authority: MyAuthority) where T: Sendable {
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: destination, reply_to: None };
         let source = self.our_source_address();
@@ -283,6 +284,27 @@ impl<F> RoutingNode<F> where F: Interface {
             self.all_connections.1.remove(&peer_id);
           // TODO : remove from the non routing list
           // handle_churn
+        }
+    }
+
+    //TODO(team) This method needs to be triggered when routing table close group changes
+    fn on_churn(&mut self, close_group: Vec<NameType>) {
+        let mut routing_actions: Vec<RoutingNodeAction> = Vec::new();
+        {
+            let mut interface = self.interface.lock().unwrap();
+            routing_actions.push_all(&interface.handle_churn(close_group));
+        }
+        self.invoke_routing_actions(routing_actions);
+    }
+
+    fn invoke_routing_actions(&mut self, routing_actions: Vec<RoutingNodeAction>) {
+        for routing_action in routing_actions {
+            match routing_action {
+                RoutingNodeAction::None => println!("none"),
+                RoutingNodeAction::Put(destination, content, my_authority) => self.put(destination, content, my_authority),
+                RoutingNodeAction::Get(type_id, name) => self.get(type_id, name),
+                RoutingNodeAction::Post => unimplemented!(),
+            }
         }
     }
 
@@ -844,7 +866,7 @@ mod test {
     use messages::put_data_response::PutDataResponse;
     use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
-    use types::{MessageId, NameAndTypeId};
+    use types::{MessageId, NameAndTypeId, MyAuthority};
     use std::sync::{Arc, mpsc, Mutex};
     use routing_table;
     use test_utils::{Random, xor};
@@ -1047,7 +1069,7 @@ mod test {
         let chunk = TestData::new(data);
         let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
         let name: NameType = Random::generate_random();
-        n1.put(name, chunk);
+        n1.put(name, chunk, MyAuthority::ManagedNode);
     }
 
 #[test]
