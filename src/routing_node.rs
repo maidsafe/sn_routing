@@ -48,8 +48,6 @@ use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_group_key::GetGroupKey;
 use messages::get_group_key_response::GetGroupKeyResponse;
-use messages::get_client_key::GetClientKey;
-use messages::get_client_key_response::GetClientKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action, RoutingError};
@@ -1069,7 +1067,7 @@ mod test {
 
         let serialised_msssage = n1.encode(&message);
 
-        n1.message_received(&header.source.from_node, serialised_msssage);
+        let _ = n1.message_received(&header.source.from_node, serialised_msssage);
         let stats = stats.clone();
         let stats_value = stats.lock().unwrap();
         stats_value.clone()
