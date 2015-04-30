@@ -24,22 +24,22 @@ use types;
 use NameType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct GetClientKeyResponse {
+pub struct GetKeyResponse {
   pub address : NameType,
   pub public_sign_key : types::PublicSignKey
 }
 
-impl Encodable for GetClientKeyResponse {
+impl Encodable for GetKeyResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.address, &self.public_sign_key)).encode(e)
   }
 }
 
-impl Decodable for GetClientKeyResponse {
-  fn decode<D: Decoder>(d: &mut D)->Result<GetClientKeyResponse, D::Error> {
+impl Decodable for GetKeyResponse {
+  fn decode<D: Decoder>(d: &mut D)->Result<GetKeyResponse, D::Error> {
     try!(d.read_u64());
     let (address, public_sign_key) = try!(Decodable::decode(d));
-    Ok(GetClientKeyResponse { address: address , public_sign_key: public_sign_key})
+    Ok(GetKeyResponse { address: address , public_sign_key: public_sign_key})
   }
 }
 
@@ -51,13 +51,13 @@ mod test {
 
     #[test]
     fn get_client_key_response_serialisation() {
-        let obj_before : GetClientKeyResponse = Random::generate_random();
+        let obj_before : GetKeyResponse = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: GetClientKeyResponse = d.decode().next().unwrap().unwrap();
+        let obj_after: GetKeyResponse = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
     }

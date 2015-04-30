@@ -102,18 +102,18 @@ impl Random for messages::find_group_response::FindGroupResponse {
     }
 }
 
-impl Random for messages::get_client_key::GetClientKey {
-    fn generate_random() -> messages::get_client_key::GetClientKey {
-        messages::get_client_key::GetClientKey {
+impl Random for messages::get_client_key::GetKey {
+    fn generate_random() -> messages::get_client_key::GetKey {
+        messages::get_client_key::GetKey {
             requester_id: Random::generate_random(),
             target_id: Random::generate_random(),
         }
     }
 }
 
-impl Random for messages::get_client_key_response::GetClientKeyResponse {
-    fn generate_random() -> messages::get_client_key_response::GetClientKeyResponse {
-        messages::get_client_key_response::GetClientKeyResponse {
+impl Random for messages::get_client_key_response::GetKeyResponse {
+    fn generate_random() -> messages::get_client_key_response::GetKeyResponse {
+        messages::get_client_key_response::GetKeyResponse {
             address: Random::generate_random(),
             public_sign_key: Random::generate_random(),
         }
