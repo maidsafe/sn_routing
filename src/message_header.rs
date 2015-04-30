@@ -118,6 +118,24 @@ impl MessageHeader {
     pub fn from_authority(&self) -> types::Authority {
         self.authority.clone()
     }
+
+    /// Only a node in a manager will send_on a routing message;
+    /// after this message is processed by the interface.
+    /// Note: this is not for XOR-forwarding; then the header is preserved!
+    pub fn create_send_on(&self, our_name : &NameType, our_authority : &types::Authority,
+                          destination : &NameType) -> MessageHeader {
+        let mut send_on_header = self.clone();
+        send_on_header.source = types::SourceAddress {
+            from_node : our_name,
+            from_group : self.destination.dest.clone(),
+            reply_to : self.source.reply_to.clone()
+        }
+        send_on_header.destination = types::DestinationAddress {
+            dest : destination.clone(),
+            reply_to : self.destination.reply_to.clone()
+        }
+        send_on_header
+    }
 }
 
 #[cfg(test)]
