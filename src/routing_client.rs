@@ -1,20 +1,19 @@
-// Copyright 2015 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited.
 //
-// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the Safe Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://maidsafe.net/network-platform-licensing
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions and limitations relating to
-// use of the Safe Network Software.
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
 
 use cbor;
 use rand;
@@ -87,8 +86,8 @@ impl ClientIdPacket {
         &self.public_keys
     }
 
-    pub fn sign(&self, data : &[u8]) -> Vec<u8> {
-        return crypto::sign::sign(&data, &self.secret_keys.0)
+    pub fn sign(&self, data : &[u8]) -> crypto::sign::Signature {
+        return crypto::sign::sign_detached(&data, &self.secret_keys.0)
     }
 
     pub fn encrypt(&self, data : &[u8], to : &crypto::asymmetricbox::PublicKey) -> (Vec<u8>, crypto::asymmetricbox::Nonce) {
@@ -197,8 +196,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 reply_to: None
             },
             get_data.requester.clone(),
-            types::Authority::Client,
-            None,
+            types::Authority::Client
         );
 
         self.message_id += 1;
@@ -208,6 +206,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             messages::MessageTypeTag::GetData,
             header,
             get_data,
+            &self.id_packet.secret_keys.0
         );
 
         // Serialise RoutingMessage
@@ -223,7 +222,6 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put<T>(&mut self, content: T) -> Result<u32, IoError> where T: Sendable {
-        use test_utils::Random;
         // Make PutData message
         let put_data = messages::put_data::PutData {
             name: content.name(),
@@ -242,8 +240,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 from_group: None,
                 reply_to: Some(self.id_packet.get_name()),
             },
-            types::Authority::Client,
-            Some(Random::generate_random()), // What is the signature -- see in c++ Secret - signing key
+            types::Authority::Client
         );
 
         self.message_id += 1;
@@ -253,6 +250,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             messages::MessageTypeTag::PutData,
             header,
             put_data,
+            &self.id_packet.secret_keys.0
         );
 
         // Serialise RoutingMessage

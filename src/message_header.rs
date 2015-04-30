@@ -1,20 +1,19 @@
-// Copyright 2015 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited.
 //
-// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the Safe Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://maidsafe.net/network-platform-licensing
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions and limitations relating to
-// use of the Safe Network Software.
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
@@ -28,24 +27,23 @@ pub struct MessageHeader {
     pub message_id: types::MessageId,
     pub destination: types::DestinationAddress,
     pub source: types::SourceAddress,
-    pub authority: types::Authority,
-    pub signature: Option<types::Signature>,
+    pub authority: types::Authority
 }
 
 impl Encodable for MessageHeader {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         CborTagEncode::new(5483_004,
                            &(&self.message_id, &self.destination, &self.source,
-                             &self.authority, &self.signature)).encode(e)
+                             &self.authority)).encode(e)
     }
 }
 
 impl Decodable for MessageHeader {
     fn decode<D: Decoder>(d: &mut D)->Result<MessageHeader, D::Error> {
         try!(d.read_u64());
-        let (message_id, destination, source, authority, signature) = try!(Decodable::decode(d));
+        let (message_id, destination, source, authority) = try!(Decodable::decode(d));
         Ok(MessageHeader{ message_id : message_id, destination : destination,
-            source : source, authority : authority, signature : signature })
+            source : source, authority : authority })
     }
 }
 
@@ -53,11 +51,10 @@ impl MessageHeader {
     pub fn new(message_id : types::MessageId,
                destination : types::DestinationAddress,
                source : types::SourceAddress,
-               authority : types::Authority,
-               signature : Option<types::Signature>) -> MessageHeader {
+               authority : types::Authority) -> MessageHeader {
         MessageHeader {
             message_id : message_id, destination : destination,
-            source : source, authority : authority, signature : signature
+            source : source, authority : authority
         }
     }
 
@@ -121,10 +118,6 @@ impl MessageHeader {
     pub fn from_authority(&self) -> types::Authority {
         self.authority.clone()
     }
-
-    pub fn get_signature(&self) -> Option<types::Signature> {
-        self.signature.clone()
-    }
 }
 
 #[cfg(test)]
@@ -153,7 +146,6 @@ mod test {
                                                      reply_to: None },
             source : types::SourceAddress { from_node : Random::generate_random(),
                                             from_group : None, reply_to: None },
-            authority : types::Authority::ManagedNode,
-            signature : Some(Random::generate_random())});
+            authority : types::Authority::ManagedNode });
     }
 }
