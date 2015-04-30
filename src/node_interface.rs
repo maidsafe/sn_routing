@@ -1,25 +1,32 @@
-// Copyright 2015 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited.
 //
-// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the Safe Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://maidsafe.net/network-platform-licensing
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions and limitations relating to
-// use of the Safe Network Software.
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
 
 use generic_sendable_type;
 use name_type::NameType;
 use types::{Authority, DestinationAddress};
 use super::{Action, RoutingError};
+
+#[derive(Clone)]
+pub enum RoutingNodeAction {
+    None,
+    Put { destination: NameType, content: generic_sendable_type::GenericSendableType, },
+    Get { type_id: u64, name: NameType, },
+    Post,
+}
 
 pub trait Interface : Sync + Send {
     /// if reply is data then we send back the response message (ie get_response )
@@ -46,7 +53,7 @@ pub trait Interface : Sync + Send {
 
     fn handle_get_response(&mut self,
                            from_address: NameType,
-                           response: Result<Vec<u8>, RoutingError>);
+                           response: Result<Vec<u8>, RoutingError>) -> RoutingNodeAction;
 
     fn handle_put_response(&mut self,
                            from_authority: Authority,
@@ -58,7 +65,7 @@ pub trait Interface : Sync + Send {
                             from_address: NameType,
                             response: Result<Vec<u8>, RoutingError>);
 
-    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<generic_sendable_type::GenericSendableType>;
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<RoutingNodeAction>;
 
     fn handle_cache_get(&mut self,
                         type_id: u64,
