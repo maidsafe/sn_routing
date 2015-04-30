@@ -26,6 +26,8 @@ use routing::generic_sendable_type;
 use self::lru_time_cache::LruCache;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::collections;
+use routing::types::{GROUP_SIZE};
+use utils::median;
 
 type Identity = self::routing::NameType; // pmidnode address
 
@@ -108,19 +110,37 @@ pub struct PmidManagerDatabase {
   storage : collections::HashMap<Identity, PmidManagerAccount>,
 }
 
+fn resolve(values: Vec<(Identity, PmidManagerAccount)>) -> PmidManagerAccount {
+    let size = values.len();
+    let mut offered_space: Vec<u64> = Vec::with_capacity(size);
+    let mut lost_total_size: Vec<u64> = Vec::with_capacity(size);
+    let mut stored_total_size: Vec<u64> = Vec::with_capacity(size);
+    assert!(size < (GROUP_SIZE as usize + 1) / 2);
+    for value in values.iter() {
+        offered_space.push(value.1.get_offered_space());
+        lost_total_size.push(value.1.get_lost_total_size());
+        stored_total_size.push(value.1.get_stored_total_size());
+    }
+    PmidManagerAccount {
+        offered_space : median(&offered_space),
+        lost_total_size: median(&lost_total_size),
+        stored_total_size: median(&stored_total_size)
+    }
+}
+
 impl PmidManagerDatabase {
-  pub fn new () -> PmidManagerDatabase {
-      PmidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
-  }
+    pub fn new () -> PmidManagerDatabase {
+        PmidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
+    }
 
-  pub fn exist(&mut self, name : &Identity) -> bool {
-      self.storage.contains_key(name)
-  }
+    pub fn exist(&mut self, name : &Identity) -> bool {
+        self.storage.contains_key(name)
+    }
 
-  pub fn put_data(&mut self, name : &Identity, size: u64) -> bool {
-      let entry = self.storage.entry(name.clone()).or_insert(PmidManagerAccount::new());
-      entry.put_data(size)
-  }
+    pub fn put_data(&mut self, name : &Identity, size: u64) -> bool {
+        let entry = self.storage.entry(name.clone()).or_insert(PmidManagerAccount::new());
+        entry.put_data(size)
+    }
 
     pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<generic_sendable_type::GenericSendableType> {
       let data: Vec<_> = self.storage.drain().collect();

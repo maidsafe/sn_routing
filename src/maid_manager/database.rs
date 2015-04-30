@@ -90,8 +90,8 @@ fn resolve(values: Vec<(Identity, MaidManagerAccount)>) -> MaidManagerAccount {
         space_available.push(value.1.get_available_space());
     }
     MaidManagerAccount {
-        data_stored : 0,
-        space_available: 10
+        data_stored : median(&data_stored),
+        space_available: median(&space_available)
     }
 }
 
