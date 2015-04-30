@@ -105,7 +105,7 @@ impl routing::node_interface::Interface for VaultFacade {
         let mut pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let mut vh = self.version_handler.retrieve_all_and_reset();
 
-        dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
+        dm//.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
     }
 
     fn handle_cache_get(&mut self,
@@ -339,15 +339,15 @@ impl VaultFacade {
         {// MaidManager - churn handling
             maid_manager_put(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
-            assert!(churn_data.len() == 1);
+            assert_eq!(churn_data.len(), 1);
             assert!(churn_data[0].name() == from);
             // MaidManagerAccount
             let sendable: GenericSendableType = churn_data[0].clone();
             assert_eq!(sendable.name(), from.clone());
 
             let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
-            let maid_manager: maid_manager::MaidManagerAccount = decoder.decode().next().unwrap().unwrap();
-            assert_eq!(maid_manager.get_data_stored(), 1024);
+            let maid_manager: maid_manager::MaidManagerAccountWrapper = decoder.decode().next().unwrap().unwrap();
+            assert_eq!(maid_manager.get_account().get_data_stored(), 1024);
 
             assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
         }

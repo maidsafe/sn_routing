@@ -25,7 +25,7 @@ use routing;
 use routing::NameType;
 use maidsafe_types;
 use routing::sendable::Sendable;
-pub use self::database::MaidManagerAccount;
+pub use self::database::MaidManagerAccountWrapper;
 
 type Address = NameType;
 
@@ -64,7 +64,7 @@ impl MaidManager {
     Ok(routing::Action::SendOn(destinations))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<MaidManagerAccountWrapper> {
     self.db_.retrieve_all_and_reset()
   }
 
@@ -96,7 +96,7 @@ mod test {
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
             routing::Action::SendOn(ref x) => {
-                assert_eq!(x.len(), 1);                
+                assert_eq!(x.len(), 1);
                 assert_eq!(x[0], data.name());
             }
             routing::Action::Reply(x) => panic!("Unexpected"),
