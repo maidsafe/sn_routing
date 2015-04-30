@@ -388,8 +388,8 @@ impl<F> RoutingNode<F> where F: Interface {
                     MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
                     MessageTypeTag::GetData => self.handle_get_data(header, body),
                     MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
-                    //Post,
-                    //PostResponse,
+                    MessageTypeTag::Post => self.handle_post(header, body),
+                    MessageTypeTag::PostResponse => self.handle_post_response(header, body),
                     MessageTypeTag::PutData => self.handle_put_data(header, body),
                     MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
                     MessageTypeTag::PutPublicPmid => self.handle_put_public_pmid(header, body),
@@ -589,6 +589,14 @@ impl<F> RoutingNode<F> where F: Interface {
 
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(from, response);
+        Ok(())
+    }
+
+    fn handle_post(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+        Ok(())
+    }
+
+    fn handle_post_response(&self, header : MessageHeader, body : Bytes) -> RecvResult {
         Ok(())
     }
 
