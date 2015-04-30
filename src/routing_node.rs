@@ -617,8 +617,19 @@ impl<F> RoutingNode<F> where F: Interface {
 
         let mut interface = self.interface.lock().unwrap();
         match interface.handle_put(our_authority, from_authority, from, to, put_data.data) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(())
+            Ok(Action::Reply(data)) => {
+                Ok(())
+            },
+            Ok(Action::SendOn(destinations)) => {
+                Ok(())
+            },
+            Err(e) => match e {
+                RoutingError::Success => Ok(()),  // Interface terminates message flow
+                RoutingError::NoData => Err(()),
+                RoutingError::InvalidRequest => Err(()),
+                RoutingError::IncorrectData(data) => Err(()),
+                _ => Err(())
+            }
         }
     }
 
