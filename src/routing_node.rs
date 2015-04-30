@@ -599,8 +599,9 @@ impl<F> RoutingNode<F> where F: Interface {
         match action {
             Action::Reply(data) => {
                 let _: Option<types::PublicSignKey> = self.decode::<types::PublicSignKey>(&data).and_then(|public_key| {
-                    let create_reply_header = header.create_reply(&self.own_id, &our_authority);
-                    let routing_msg = self.construct_get_key_response_msg(create_reply_header, get_key.clone(), public_key);
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::GetKeyResponse, header.create_reply(&self.own_id, &our_authority),
+                        GetKeyResponse{ address : get_key.target_id.clone(), public_sign_key : public_key },
+                        &self.pmid.get_crypto_secret_sign_key());
                     let encoded_msg = self.encode(&routing_msg);
                     self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
                     None
@@ -731,16 +732,6 @@ impl<F> RoutingNode<F> where F: Interface {
 
         RoutingMessage::new(MessageTypeTag::GetGroupKeyResponse, header,
             GetGroupKeyResponse{ public_sign_keys  : group_keys },
-            &self.pmid.get_crypto_secret_sign_key()
-        )
-    }
-
-    fn construct_get_key_response_msg(&self, header : MessageHeader,
-                                      get_key : GetKey,
-                                      public_sign_key: types::PublicSignKey)
-                                      -> RoutingMessage {
-        RoutingMessage::new(MessageTypeTag::GetKeyResponse, header,
-            GetKeyResponse{ address : get_key.target_id.clone(), public_sign_key : public_sign_key },
             &self.pmid.get_crypto_secret_sign_key()
         )
     }
