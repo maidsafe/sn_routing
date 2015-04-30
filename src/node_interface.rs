@@ -53,7 +53,7 @@ pub trait Interface : Sync + Send {
 
     fn handle_get_response(&mut self,
                            from_address: NameType,
-                           response: Result<Vec<u8>, RoutingError>);
+                           response: Result<Vec<u8>, RoutingError>) -> RoutingNodeAction;
 
     fn handle_put_response(&mut self,
                            from_authority: Authority,

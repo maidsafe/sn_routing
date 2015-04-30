@@ -901,7 +901,7 @@ mod test {
             Err(RoutingError::Success)
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                               RoutingError>) {
+                               RoutingError>) -> RoutingNodeAction {
             unimplemented!();
         }
         fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
