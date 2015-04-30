@@ -44,6 +44,7 @@ mod version_handler;
 mod chunk_store;
 mod pmid_node;
 mod vault;
+mod utils;
 
 use vault::VaultFacade;
 
@@ -52,11 +53,11 @@ pub fn always_true() -> bool { true }
 
 /// The Vault structure to hold the logical interface to provide behavioural logic to routing.
 pub struct Vault {
-  routing_node: routing::routing_node::RoutingNode<VaultFacade>,  
+  routing_node: routing::routing_node::RoutingNode<VaultFacade>,
 }
 
 impl Vault {
-  fn new() -> Vault {    
+  fn new() -> Vault {
     Vault {
       routing_node: routing::routing_node::RoutingNode::new(VaultFacade::new()),
     }

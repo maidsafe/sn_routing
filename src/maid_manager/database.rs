@@ -24,6 +24,8 @@ use routing::NameType;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use cbor;
+use routing::types::{GROUP_SIZE};
+use utils::median;
 
 type Identity = NameType; // maid node address
 
@@ -76,6 +78,21 @@ impl MaidManagerAccount {
         self.data_stored.clone()
     }
 
+}
+
+fn resolve(values: Vec<(Identity, MaidManagerAccount)>) -> MaidManagerAccount {
+    let size = values.len();
+    let mut data_stored: Vec<u64> = Vec::with_capacity(size);
+    let mut space_available: Vec<u64> = Vec::with_capacity(size);
+    assert!(size < (GROUP_SIZE as usize + 1) / 2);
+    for value in values.iter() {
+        data_stored.push(value.1.get_data_stored());
+        space_available.push(value.1.get_available_space());
+    }
+    MaidManagerAccount {
+        data_stored : 0,
+        space_available: 10
+    }
 }
 
 pub struct MaidManagerDatabase {
