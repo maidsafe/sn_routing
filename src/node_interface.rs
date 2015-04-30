@@ -41,6 +41,7 @@ pub trait Interface : Sync + Send {
                    our_authority: Authority,
                    from_authority: Authority,
                    from_address: NameType,
+                   name : NameType,
                    data: Vec<u8>) -> Result<Action, RoutingError>;
 
     fn handle_get_response(&mut self,

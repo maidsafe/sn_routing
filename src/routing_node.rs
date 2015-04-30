@@ -48,6 +48,7 @@ use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_group_key::GetGroupKey;
 use messages::get_group_key_response::GetGroupKeyResponse;
+use messages::post::Post;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action, RoutingError};
@@ -593,10 +594,23 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_post(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+        let post = try!(self.decode::<Post>(&body).ok_or(()));
+        let our_authority = self.our_authority(&post.name, &header);
+        let mut interface = self.interface.lock().unwrap();
+        let routing_action = match interface.handle_post(our_authority,
+                                                              header.authority.clone(),
+                                                              header.from(),
+                                                              post.name.clone(),
+                                                              post.data.clone()) {
+            Ok(Action::Reply(data)) => {;},
+            Ok(Action::SendOn(destinations)) => {;},
+            Err(_) => {;}
+        };
         Ok(())
     }
 
     fn handle_post_response(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+        // currently no post_response object; out of sprint (2015-04-30)
         Ok(())
     }
 
@@ -906,7 +920,7 @@ mod test {
             Ok(Action::Reply(data))
         }
         fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
-                       from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+                       from_address: NameType, name: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
