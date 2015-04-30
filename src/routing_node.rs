@@ -866,7 +866,6 @@ impl<F> RoutingNode<F> where F: Interface {
 
 #[cfg(test)]
 mod test {
-    use generic_sendable_type;
     use routing_node::{RoutingNode};
     use node_interface::*;
     use name_type::NameType;
@@ -936,7 +935,7 @@ mod test {
             Err(RoutingError::Success)
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                               RoutingError>) {
+                               RoutingError>) -> RoutingNodeAction {
             unimplemented!();
         }
         fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
@@ -954,7 +953,7 @@ mod test {
             unimplemented!();
         }
         fn handle_churn(&mut self, close_group: Vec<NameType>)
-            -> Vec<generic_sendable_type::GenericSendableType> {
+            -> Vec<RoutingNodeAction> {
             unimplemented!();
         }
         fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
