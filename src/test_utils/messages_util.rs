@@ -182,7 +182,7 @@ impl Random for messages::put_data::PutData {
 impl Random for messages::put_data_response::PutDataResponse {
      fn generate_random() -> messages::put_data_response::PutDataResponse {
         messages::put_data_response::PutDataResponse {
-            type_id: random::<u32>(),
+            name: Random::generate_random(),
             data: generate_random_vec_u8(99),
             error: generate_random_vec_u8(27),
         }

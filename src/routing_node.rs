@@ -618,7 +618,15 @@ impl<F> RoutingNode<F> where F: Interface {
         let mut interface = self.interface.lock().unwrap();
         match interface.handle_put(our_authority.clone(), from_authority, from,
                                    to, put_data.data.clone()) {
-            Ok(Action::Reply(data)) => {
+            Ok(Action::Reply(reply_data)) => {
+                let reply_header = header.create_reply(&self.own_id, &our_authority);
+                let put_data_response = PutDataResponse {
+                    name : put_data.name.clone(),
+                    data : reply_data,
+                    error : vec!()
+                };
+                // let routing_msg = RoutingMessage::new(MessageTypeTag::PutDataResponse,
+                //     reply_header, )
                 Ok(())
             },
             Ok(Action::SendOn(destinations)) => {
