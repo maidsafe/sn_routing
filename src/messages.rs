@@ -27,9 +27,9 @@ pub mod connect_success;
 pub mod find_group;
 #[path="messages/find_group_response.rs"]
 pub mod find_group_response;
-#[path="messages/get_client_key.rs"]
+#[path="messages/get_key.rs"]
 pub mod get_client_key;
-#[path="messages/get_client_key_response.rs"]
+#[path="messages/get_key_response.rs"]
 pub mod get_client_key_response;
 #[path="messages/get_data.rs"]
 pub mod get_data;

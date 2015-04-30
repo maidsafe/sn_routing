@@ -156,7 +156,7 @@ impl MessageHeader {
             reply_to : None
         };
         reply_header.destination = types::DestinationAddress {
-            dest : self.source.from_node.clone(),
+            dest : self.from().clone(),
             reply_to : self.source.reply_to.clone()
         };
         reply_header.authority = our_authority.clone();

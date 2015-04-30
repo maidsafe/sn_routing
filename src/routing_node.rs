@@ -975,11 +975,13 @@ mod test {
             Err(RoutingError::Success)
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                               RoutingError>) {
+                               RoutingError>) -> RoutingNodeAction {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
             stats_value.data = Some("handle_get_response called".to_string().into_bytes());
+            RoutingNodeAction::None
+
         }
         fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
                                response: Result<Vec<u8>, RoutingError>) {
@@ -996,7 +998,7 @@ mod test {
             unimplemented!();
         }
         fn handle_churn(&mut self, close_group: Vec<NameType>)
-            -> Vec<generic_sendable_type::GenericSendableType> {
+            -> Vec<RoutingNodeAction> {
             unimplemented!();
         }
         fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
@@ -1183,7 +1185,6 @@ mod test {
         let get_key: GetKey = Random::generate_random();
         assert_eq!(call_operation(get_key, MessageTypeTag::GetKey).call_count, 1u32);
     }
-
 
     //#[test]
     //fn test_routing_node() {

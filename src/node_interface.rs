@@ -20,6 +20,14 @@ use name_type::NameType;
 use types::{Authority, DestinationAddress};
 use super::{Action, RoutingError};
 
+#[derive(Clone)]
+pub enum RoutingNodeAction {
+    None,
+    Put { destination: NameType, content: generic_sendable_type::GenericSendableType, },
+    Get { type_id: u64, name: NameType, },
+    Post,
+}
+
 pub trait Interface : Sync + Send {
     /// the public key or address of the node store it is returned on success.
     fn handle_get_key(&mut self,
@@ -53,7 +61,7 @@ pub trait Interface : Sync + Send {
 
     fn handle_get_response(&mut self,
                            from_address: NameType,
-                           response: Result<Vec<u8>, RoutingError>);
+                           response: Result<Vec<u8>, RoutingError>) -> RoutingNodeAction;
 
     fn handle_put_response(&mut self,
                            from_authority: Authority,
@@ -65,7 +73,7 @@ pub trait Interface : Sync + Send {
                             from_address: NameType,
                             response: Result<Vec<u8>, RoutingError>);
 
-    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<generic_sendable_type::GenericSendableType>;
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<RoutingNodeAction>;
 
     fn handle_cache_get(&mut self,
                         type_id: u64,

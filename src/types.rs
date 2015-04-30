@@ -58,7 +58,7 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-pub static GROUP_SIZE: u32 = 23;
+pub static GROUP_SIZE: u32 = 32;
 pub static QUORUM_SIZE: u32 = 19;
 
 pub trait Mergeable {
