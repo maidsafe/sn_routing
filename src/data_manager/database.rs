@@ -99,22 +99,6 @@ impl DataManagerDatabase {
                 self.close_grp_from_churn = close_group.clone();
                 close_grp_already_stored = true;
             }
-
-                //close_group.sort_by(|a, b| {
-                //    if routing::closer_to_target(&a, &b, &it.0) {
-                //      cmp::Ordering::Less
-                //    } else {
-                //      cmp::Ordering::Greater
-                //    }
-                //});
-
-                //while new_pmid_nodes.len() < 3 {
-                //    for close_grp_it in close_group.iter() {
-                //        if new_pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
-                //            new_pmid_nodes.push(close_grp_it.clone());
-                //        }
-                //    }
-                //}
             *it.1 = new_pmid_nodes;
         }
 
