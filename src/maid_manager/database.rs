@@ -16,10 +16,11 @@
 #![allow(dead_code)]
 
 use std::collections;
-use routing::generic_sendable_type;
+use routing::generic_sendable_type::GenericSendableType;
 use routing::NameType;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use routing::node_interface::RoutingNodeAction;
 use cbor;
 
 type Identity = NameType; // maid node address
@@ -93,16 +94,19 @@ impl MaidManagerDatabase {
       entry.put_data(size)
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<RoutingNodeAction> {
       let data: Vec<_> = self.storage.drain().collect();
-      let mut sendable_data = Vec::with_capacity(data.len());
+      let mut actions = Vec::with_capacity(data.len());
       for element in data {
           let mut e = cbor::Encoder::from_memory();
           e.encode(&[&element.1]).unwrap();
           let serialised_content = e.into_bytes();
-          sendable_data.push(generic_sendable_type::GenericSendableType::new(element.0, 0, serialised_content)); //TODO Get type_tag correct
+          actions.push(RoutingNodeAction::Put{
+              destination: element.0.clone(),
+              content: GenericSendableType::new(element.0, 0, serialised_content) //TODO Get type_tag correct
+          });
       }
-      sendable_data
+      actions
   }
 
   pub fn delete_data(&mut self, name : &Identity, size: u64) {
