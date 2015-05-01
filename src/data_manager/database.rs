@@ -17,138 +17,64 @@
 
 #![allow(dead_code)]
 
-use routing::generic_sendable_type;
 use routing;
-use lru_time_cache::LruCache;
+use std::collections::HashMap;
 use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Encodable};
 
 type Identity = routing::NameType; // name of the chunk
 use routing::types::PmidNode;
 use routing::types::PmidNodes;
 use routing::NameType;
-use routing::sendable::Sendable;
-
-/// PmidManagerAccountWrapper implemets the sendable trait from routing, thus making it transporatble
-/// across through the routing layer
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
-pub struct DataManagerWrapper {
-    name: NameType,
-    tag: u64,
-    pmids: PmidNodes
-}
-
-impl DataManagerWrapper {
-    pub fn new(name: routing::NameType, account: PmidNodes) -> DataManagerWrapper {
-        DataManagerWrapper {
-            name: name,
-            tag: 202, // FIXME : Change once the tag is freezed
-            pmids: account
-        }
-    }
-
-    pub fn get_pmids(&self) -> PmidNodes {
-        self.pmids.clone()
-    }
-}
-
-impl Clone for DataManagerWrapper {
-    fn clone(&self) -> Self {
-        DataManagerWrapper::new(self.name.clone(), self.pmids.clone())
-    }
-}
-
-impl Sendable for DataManagerWrapper {
-    fn name(&self) -> NameType {
-        self.name.clone()
-    }
-
-    fn type_tag(&self) -> u64 {
-        self.tag.clone()
-    }
-
-    fn serialised_contents(&self) -> Vec<u8> {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
-        e.into_bytes()
-    }
-
-    fn refresh(&self)->bool {
-        true
-    }
-
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        // let mut tmp_wrapper: PmidManagerAccountWrapper;
-        // let mut offered_space: Vec<u64> = Vec::new();
-        // let mut lost_total_size: Vec<u64> = Vec::new();
-        // let mut stored_total_size: Vec<u64> = Vec::new();
-        // for value in responses {
-        //     let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
-        //     tmp_wrapper = d.decode().next().unwrap().unwrap();
-        //     offered_space.push(tmp_wrapper.get_account().get_offered_space());
-        //     lost_total_size.push(tmp_wrapper.get_account().get_lost_total_size());
-        //     stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
-        // }
-        // assert!(offered_space.len() < (GROUP_SIZE as usize + 1) / 2);
-        // Some(PmidManagerAccountWrapper::new(routing::NameType([0u8;64]), PmidManagerAccount {
-        //     offered_space : median(&offered_space),
-        //     lost_total_size: median(&lost_total_size),
-        //     stored_total_size: median(&stored_total_size)
-        // }))
-        None
-    }
-}
+use std::cmp;
+use routing::generic_sendable_type::GenericSendableType;
+use routing::node_interface::RoutingNodeAction;
 
 pub struct DataManagerDatabase {
-    storage : LruCache<Identity, PmidNodes>
+  storage : HashMap<Identity, PmidNodes>,
+  pub close_grp_from_churn: Vec<NameType>,
+  pub temp_storage_after_churn: HashMap<NameType, PmidNodes>,
 }
 
 impl DataManagerDatabase {
     pub fn new () -> DataManagerDatabase {
-        DataManagerDatabase { storage: LruCache::with_capacity(10000) }
+        DataManagerDatabase {
+            storage: HashMap::with_capacity(10000),
+            close_grp_from_churn: Vec::new(),
+            temp_storage_after_churn: HashMap::new(),
+        }
     }
 
     pub fn exist(&mut self, name : &Identity) -> bool {
-        self.storage.get(name.clone()).is_some()
+        self.storage.contains_key(name)
     }
 
     pub fn put_pmid_nodes(&mut self, name : &Identity, pmid_nodes: PmidNodes) {
-        self.storage.add(name.clone(), pmid_nodes.clone());
+        self.storage.entry(name.clone()).or_insert(pmid_nodes.clone());
     }
 
     pub fn add_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
-        let entry = self.storage.remove(name.clone());
-        if entry.is_some() {
-            let mut tmp = entry.unwrap();
-            for i in 0..tmp.len() {
-                if tmp[i] == pmid_node {
-                  return;
-                }
-            }
-            tmp.push(pmid_node);
-            self.storage.add(name.clone(), tmp);
-        } else {
-            self.storage.add(name.clone(), vec![pmid_node]);
+        let nodes = self.storage.entry(name.clone()).or_insert(vec![pmid_node.clone()]);
+        if !nodes.contains(&pmid_node) {
+            nodes.push(pmid_node);
         }
     }
 
     pub fn remove_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
-        let entry = self.storage.remove(name.clone());
-        if entry.is_some() {
-            let mut tmp = entry.unwrap();
-            for i in 0..tmp.len() {
-                if tmp[i] == pmid_node {
-                  tmp.remove(i);
+        if !self.storage.contains_key(name) {
+            return;
+        }
+        let nodes = self.storage.entry(name.clone()).or_insert(vec![]);
+        for i in 0..nodes.len() {
+            if nodes[i] == pmid_node {
+              nodes.remove(i);
               break;
-                }
-            }
-            self.storage.add(name.clone(), tmp);
+            }            
         }
     }
 
     pub fn get_pmid_nodes(&mut self, name : &Identity) -> PmidNodes {
-        let entry = self.storage.get(name.clone());
+        let entry = self.storage.get(&name);
         if entry.is_some() {
             entry.unwrap().clone()
         } else {
@@ -156,23 +82,49 @@ impl DataManagerDatabase {
         }
     }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<DataManagerWrapper> {
-        let data: Vec<(Identity, PmidNodes)> = self.storage.retrieve_all();
-        let mut sendable_data = Vec::<DataManagerWrapper>::with_capacity(data.len());
-        for element in data {
-            sendable_data.push(DataManagerWrapper::new(element.0, element.1));
+    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<RoutingNodeAction> {
+        assert!(close_group.len() >= 3);
+        self.temp_storage_after_churn = self.storage.clone();
+        let mut close_grp_already_stored = false;
+
+        for it in self.storage.iter_mut() {
+            let mut new_pmid_nodes = Vec::<NameType>::with_capacity(it.1.len());
+            for vec_it in it.1.iter() {
+                if close_group.iter().find(|a| **a == *vec_it).is_some() {
+                    new_pmid_nodes.push(vec_it.clone());
+                }
+            }
+
+            if new_pmid_nodes.len() < 3 && !close_grp_already_stored {
+                self.close_grp_from_churn = close_group.clone();
+                close_grp_already_stored = true;
+            }
+            *it.1 = new_pmid_nodes;
         }
-        self.storage = LruCache::with_capacity(10000);
-        sendable_data
+
+        let data: Vec<_> = self.storage.drain().collect();
+        let mut actions = Vec::<RoutingNodeAction>::new();
+        for element in data {
+            if self.temp_storage_after_churn.get(&element.0).unwrap().len() < 3 {
+                actions.push(routing::node_interface::RoutingNodeAction::Get {
+                    type_id: 3, //TODO Get type_tag correct
+                    name: element.0.clone(),
+                });
+            }
+            let mut e = cbor::Encoder::from_memory();
+            e.encode(&[&element.1]).unwrap();
+            let serialised_content = e.into_bytes();
+            actions.push(routing::node_interface::RoutingNodeAction::Put {
+                destination: element.0.clone(),
+                content: GenericSendableType::new(element.0, 3, serialised_content), //TODO Get type_tag correct
+            });
+        }
+        actions
     }
 }
 
 #[cfg(test)]
 mod test {
-  use cbor;
-  use maidsafe_types;
-  use rand;
-  use routing;
   use super::*;
   use maidsafe_types::ImmutableData;
   use routing::NameType;
@@ -183,7 +135,6 @@ mod test {
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let mut pmid_nodes : Vec<NameType> = vec![];
@@ -201,7 +152,6 @@ mod test {
   #[test]
   fn put() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();
@@ -223,7 +173,6 @@ mod test {
   #[test]
   fn remove_pmid() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();
@@ -249,7 +198,6 @@ mod test {
   #[test]
   fn replace_pmids() {
     let mut db = DataManagerDatabase::new();
-    let name = NameType([3u8; 64]);
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let data_name = data.name();

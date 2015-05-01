@@ -19,7 +19,7 @@
 
 mod database;
 
-use routing::generic_sendable_type;
+use routing::node_interface::RoutingNodeAction;
 use std::cmp;
 use routing;
 use routing::NameType;
@@ -27,7 +27,6 @@ use maidsafe_types;
 use cbor::{ Decoder };
 use routing::sendable::Sendable;
 type Address = NameType;
-use self::database::DataManagerWrapper;
 
 pub static PARALLELISM: usize = 4;
 
@@ -88,8 +87,56 @@ impl DataManager {
     Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<DataManagerWrapper> {
-    self.db_.retrieve_all_and_reset()
+  pub fn handle_get_response(&mut self, response: Vec<u8>) -> routing::node_interface::RoutingNodeAction {
+      let mut name: routing::NameType;
+      let mut d = Decoder::from_bytes(&response[..]);
+      let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+      match payload.get_type_tag() {
+        maidsafe_types::PayloadTypeTag::ImmutableData => {
+          name = payload.get_data::<maidsafe_types::ImmutableData>().name();
+        }
+        maidsafe_types::PayloadTypeTag::PublicMaid => {
+          name = payload.get_data::<maidsafe_types::PublicMaid>().name();
+        }
+        maidsafe_types::PayloadTypeTag::PublicAnMaid => {
+          name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
+        }
+        _ => return routing::node_interface::RoutingNodeAction::None,
+      }
+
+      match self.db_.temp_storage_after_churn.get(&name) {
+          Some(pmid_nodes) => {
+              if pmid_nodes.len() < 3 {
+                  self.db_.close_grp_from_churn.sort_by(|a, b| {
+                      if routing::closer_to_target(&a, &b, &name) {
+                        cmp::Ordering::Less
+                      } else {
+                        cmp::Ordering::Greater
+                      }
+                  });
+
+                  let mut close_grp_node_to_add = NameType::new([0u8; 64]);
+                  for close_grp_it in self.db_.close_grp_from_churn.iter() {
+                      if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
+                          close_grp_node_to_add = close_grp_it.clone();
+                          break;
+                      }
+                  }
+
+                  routing::node_interface::RoutingNodeAction::Put {
+                      destination: close_grp_node_to_add,
+                      content: routing::generic_sendable_type::GenericSendableType::new(name, 3, response), //TODO Get type_tag correct
+                  }
+              } else {
+                  routing::node_interface::RoutingNodeAction::None
+              }
+          },
+          None => routing::node_interface::RoutingNodeAction::None,
+      }
+  }
+
+  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<RoutingNodeAction> {
+    self.db_.retrieve_all_and_reset(close_group)
   }
 }
 

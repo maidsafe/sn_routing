@@ -35,7 +35,6 @@ extern crate time;
 extern crate routing;
 extern crate maidsafe_types;
 extern crate rand;
-extern crate lru_time_cache;
 
 mod data_manager;
 mod maid_manager;

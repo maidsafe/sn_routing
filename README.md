@@ -39,7 +39,7 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [ ] Handle Churn
     - [ ] Implement Account Transfer
         - [x] Handle churn for all Persona (except PN)(retrive account, move to lru, apply account)
-        - [ ] Before retrieving accounts, pass close_group (get from routing) to DM and remove down pmids
+        - [x] Before retrieving accounts, pass close_group (get from routing) to DM and remove down pmids
         - [x] Before retrieving accounts, pass close_group to PM and remove accounts of down pmids
         - [ ] Implement HandlePut for Account transfer data (call apply accounts for relevant persona)
         - [ ] Implement merge trait for accounts of MM
