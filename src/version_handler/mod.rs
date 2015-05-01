@@ -19,6 +19,7 @@
 use routing;
 use maidsafe_types;
 use routing::NameType;
+use routing::types::GROUP_SIZE;
 use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
 use cbor::{ Decoder, Encoder };
@@ -61,7 +62,16 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        unimplemented!()
+        // let mut tmp_wrapper: VersionHandlerSendable;
+        // let mut data: Vec<u64> = Vec::new();
+        // for value in responses {
+        //     for val in value.get_data().iter() {
+        //         data.push(*val as u64);
+        //     }
+        // }
+        // assert!(data.len() < (GROUP_SIZE as usize + 1) / 2);
+        // Some(VersionHandlerSendable::new(NameType([0u8;64]), vec![super::utils::median(&data) as u8]))
+        None
     }
 }
 
