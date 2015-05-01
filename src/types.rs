@@ -25,6 +25,7 @@ use rand::random;
 use sodiumoxide;
 use NameType;
 use std::fmt;
+use std::str;
 use RoutingError;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
@@ -441,7 +442,7 @@ impl Encodable for RoutingError {
             RoutingError::FailedToBootstrap => type_tag = "FailedToBootstrap",
             RoutingError::NoData => type_tag = "NoData",
             RoutingError::InvalidRequest => type_tag = "InvalidRequest",
-            RoutingError::IncorrectData(_) => type_tag = "IncorrectData",
+            RoutingError::IncorrectData(ref data) => type_tag = str::from_utf8(data.as_ref()).unwrap()
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
     }
@@ -457,8 +458,7 @@ impl Decodable for RoutingError {
             "FailedToBootstrap" => Ok(RoutingError::FailedToBootstrap),
             "NoData" => Ok(RoutingError::NoData),
             "InvalidRequest" => Ok(RoutingError::InvalidRequest),
-            "IncorrectData" => Ok(RoutingError::IncorrectData(vec![])),
-            _ => Ok(RoutingError::IncorrectData("unknown".to_string().into_bytes()))
+            data => Ok(RoutingError::IncorrectData(data.to_string().into_bytes()))
         }
     }
 }
