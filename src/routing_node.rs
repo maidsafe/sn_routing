@@ -35,7 +35,7 @@ use node_interface::{Interface, RoutingNodeAction};
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
-use types::{MessageId, Authority, NameAndTypeId, MyAuthority};
+use types::{MessageId, Authority, NameAndTypeId};
 use message_header::MessageHeader;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
@@ -136,11 +136,14 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, destination: NameType, content: T, my_authority: MyAuthority) where T: Sendable {
+    pub fn put<T>(&mut self, destination: NameType, content: T, client_authority: bool) where T: Sendable {
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: destination, reply_to: None };
         let source = self.our_source_address();
-        let authority = types::Authority::ManagedNode;
+        let authority = match client_authority {
+            true => types::Authority::Client,
+            false => types::Authority::ManagedNode,
+        };
         let signing_request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
@@ -866,7 +869,7 @@ mod test {
     use messages::put_data_response::PutDataResponse;
     use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
-    use types::{MessageId, NameAndTypeId, MyAuthority};
+    use types::{MessageId, NameAndTypeId};
     use std::sync::{Arc, mpsc, Mutex};
     use routing_table;
     use test_utils::{Random, xor};
@@ -1069,7 +1072,7 @@ mod test {
         let chunk = TestData::new(data);
         let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
         let name: NameType = Random::generate_random();
-        n1.put(name, chunk, MyAuthority::ManagedNode);
+        n1.put(name, chunk, false);
     }
 
 #[test]

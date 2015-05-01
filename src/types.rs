@@ -76,12 +76,6 @@ pub enum Authority {
   Unknown
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub enum MyAuthority {
-    Client,
-    ManagedNode,
-}
-
 impl Encodable for Authority {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     let mut authority = "";

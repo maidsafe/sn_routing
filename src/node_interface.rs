@@ -17,13 +17,13 @@
 
 use generic_sendable_type;
 use name_type::NameType;
-use types::{Authority, DestinationAddress, MyAuthority};
+use types::{Authority, DestinationAddress};
 use super::{Action, RoutingError};
 
 #[derive(Clone)]
 pub enum RoutingNodeAction {
     None,
-    Put (NameType, generic_sendable_type::GenericSendableType, MyAuthority,),
+    Put (NameType, generic_sendable_type::GenericSendableType, bool,),
     Get (u64, NameType),
     Post ,
 }
