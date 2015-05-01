@@ -171,7 +171,7 @@ fn main() {
 
     let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})),
                                                        ori_packets: Vec::<TestData>::new() });
-    let mutate_node = Arc::new(Mutex::new(ori_node));
+    let mutate_node = Arc::new(Mutex::new(test_node));
     let copied_node = mutate_node.clone();
     spawn(move || {
         loop {
