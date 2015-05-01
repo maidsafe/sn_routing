@@ -19,7 +19,6 @@
 
 mod database;
 
-use routing::node_interface::RoutingNodeAction;
 use std::cmp;
 use routing;
 use routing::NameType;
@@ -125,7 +124,7 @@ impl DataManager {
 
                   routing::node_interface::RoutingNodeAction::Put {
                       destination: close_grp_node_to_add,
-                      content: routing::generic_sendable_type::GenericSendableType::new(name, 3, response), //TODO Get type_tag correct
+                      content: Box::new(database::DataManagerSendable::with_content(name, response)),
                   }
               } else {
                   routing::node_interface::RoutingNodeAction::None
@@ -135,7 +134,7 @@ impl DataManager {
       }
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<RoutingNodeAction> {
+  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::RoutingNodeAction> {
     self.db_.retrieve_all_and_reset(close_group)
   }
 }

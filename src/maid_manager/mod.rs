@@ -63,7 +63,7 @@ impl MaidManager {
     Ok(routing::Action::SendOn(destinations))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<RoutingNodeAction> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::RoutingNodeAction> {
     self.db_.retrieve_all_and_reset()
   }
 

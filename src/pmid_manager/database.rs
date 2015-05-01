@@ -190,12 +190,12 @@ impl PmidManagerDatabase {
         entry.put_data(size)
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<RoutingNodeAction> {
+    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::RoutingNodeAction> {
         let data: Vec<_> = self.storage.drain().collect();
         let mut actions = Vec::with_capacity(data.len());
         for element in data {
             if close_group.iter().find(|a| **a == element.0).is_some() {
-                actions.push(RoutingNodeAction::Put {
+                actions.push(routing::node_interface::RoutingNodeAction::Put {
                     destination: element.0.clone(),
                     content: Box::new(PmidManagerAccountWrapper::new(element.0, element.1)),
                 });

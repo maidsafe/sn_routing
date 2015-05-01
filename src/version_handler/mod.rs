@@ -32,7 +32,7 @@ pub struct VersionHandlerSendable {
 
 impl VersionHandlerSendable {
     pub fn new(name: NameType, data: Vec<u8>) -> VersionHandlerSendable {
-        MaidManagerAccountWrapper {
+        VersionHandlerSendable {
             name: name,
             tag: 209, // FIXME : Change once the tag is freezed
             data: data,
@@ -54,6 +54,14 @@ impl Sendable for VersionHandlerSendable {
 
     fn serialised_contents(&self) -> Vec<u8> {
         self.data
+    }
+
+    fn refresh(&self) -> bool {
+        true
+    }
+
+    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+        unimplemented!()
     }
 }
 
