@@ -934,9 +934,7 @@ mod test {
             false
         }
 
-        fn merge<'a, I>(responses: I) -> Option<Box<Sendable>> where I: Iterator<Item=&'a Sendable> {
-            None
-        }
+        fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
     }
 
     impl Interface for TestInterface {
