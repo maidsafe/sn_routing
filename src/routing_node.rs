@@ -677,7 +677,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    /// Every node needs to republish its public key directly to PublicPmid.name every 10 minutes.
+    /// On bootstrapping a node can temporarily publish its PublicPmid in the group.
     /// Sentinel will query this pool.  No handle_get_public_pmid is needed.
     fn handle_put_public_pmid(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         // if data type is public pmid and our authority is nae then add to public_pmid_cache
