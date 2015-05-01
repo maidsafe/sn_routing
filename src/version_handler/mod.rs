@@ -22,9 +22,10 @@ use routing::NameType;
 use routing::types::GROUP_SIZE;
 use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
-use cbor::{ Decoder, Encoder };
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use cbor;
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Clone, Debug)]
 pub struct VersionHandlerSendable {
     name: NameType,
     tag: u64,
@@ -54,25 +55,28 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        self.data
+        self.data.clone()
     }
 
     fn refresh(&self) -> bool {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        // let mut tmp_wrapper: VersionHandlerSendable;
-        // let mut data: Vec<u64> = Vec::new();
-        // for value in responses {
-        //     for val in value.get_data().iter() {
-        //         data.push(*val as u64);
-        //     }
-        // }
-        // assert!(data.len() < (GROUP_SIZE as usize + 1) / 2);
-        // Some(VersionHandlerSendable::new(NameType([0u8;64]), vec![super::utils::median(&data) as u8]))
-        None
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
+        let mut tmp_wrapper: VersionHandlerSendable;
+        let mut data: Vec<u64> = Vec::new();
+        for value in responses {
+            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
+            tmp_wrapper = d.decode().next().unwrap().unwrap();
+            for val in tmp_wrapper.get_data().iter() {
+                data.push(*val as u64);
+            }
+        }
+        assert!(data.len() < (GROUP_SIZE as usize + 1) / 2);
+        Some(Box::new(VersionHandlerSendable::new(NameType([0u8;64]),
+            vec![super::utils::median(&data) as u8])))
     }
+
 }
 
 pub struct VersionHandler {
@@ -97,7 +101,7 @@ impl VersionHandler {
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
     let mut data_name : NameType;
-    let mut d = Decoder::from_bytes(&data[..]);
+    let mut d = cbor::Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::StructuredData => {

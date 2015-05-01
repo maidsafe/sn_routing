@@ -76,7 +76,7 @@ impl Sendable for MaidManagerAccountWrapper {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
         let mut tmp_wrapper: MaidManagerAccountWrapper;
         let mut data_stored: Vec<u64> = Vec::new();
         let mut space_available: Vec<u64> = Vec::new();
@@ -88,10 +88,10 @@ impl Sendable for MaidManagerAccountWrapper {
         }
         assert!(data_stored.len() < (GROUP_SIZE as usize + 1) / 2);
 
-        Some(MaidManagerAccountWrapper::new(NameType([0u8;64]), MaidManagerAccount {
+        Some(Box::new(MaidManagerAccountWrapper::new(NameType([0u8;64]), MaidManagerAccount {
             data_stored : median(&data_stored),
             space_available: median(&space_available)
-        }))
+        })))
     }
 }
 

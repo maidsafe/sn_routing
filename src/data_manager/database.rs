@@ -86,30 +86,31 @@ impl Sendable for DataManagerSendable {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        let mut values: Vec<DataManagerSendable> = Vec::new();
-        for response in responses {
-            values.push(*response);
-        }
-        if values.len() == GROUP_SIZE as usize - 1 {
-            // BOOST_THROW_EXCEPTION(MakeError(VaultErrors::failed_to_handle_request));
-            panic!("Failed to handle request");
-        }
-        let stats = Vec::<(PmidNodes, u64)>::new();
-        for it in values.iter() {
-            match stats.iter_mut().find(|a| a.0 == it.get_data_holders()) {
-                Some(x) => x.1 += 1,
-                None => stats.push((it.get_data_holders(), 1)),
-            }
-        }
-        stats.sort_by(|a, b| b.1.cmp(&a.1));
-        let (pmids, count) = stats[0];
-        if count < (GROUP_SIZE as u64 + 1) / 2 {
-            return Some(DataManagerSendable::new(NameType([0u8;64]), pmids));
-        }
-        //   BOOST_THROW_EXCEPTION(MakeError(VaultErrors::too_few_entries_to_resolve));
-        panic!("Too few entries to resolve");
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
+        // if responses.len() == GROUP_SIZE as usize - 1 {
+        //     // BOOST_THROW_EXCEPTION(MakeError(VaultErrors::failed_to_handle_request));
+        //     panic!("Failed to handle request");
+        // }
+        // let mut tmp_wrapper: DataManagerSendable;
+        // let stats = Vec::<(PmidNodes, u64)>::new();
+        // for it in responses.iter() {
+        //     let mut d = cbor::Decoder::from_bytes(it.serialised_contents());
+        //     tmp_wrapper = d.decode().next().unwrap().unwrap();
+        //     match stats.iter_mut().find(|a| a.0 == tmp_wrapper.get_data_holders()) {
+        //         Some(x) => x.1 += 1,
+        //         None => stats.push((tmp_wrapper.get_data_holders(), 1)),
+        //     }
+        // }
+        // stats.sort_by(|a, b| b.1.cmp(&a.1));
+        // let (pmids, count) = stats[0].clone();
+        // if count < (GROUP_SIZE as u64 + 1) / 2 {
+        //     return Some(Box::new(DataManagerSendable::new(NameType([0u8;64]), pmids)));
+        // }
+        // //   BOOST_THROW_EXCEPTION(MakeError(VaultErrors::too_few_entries_to_resolve));
+        // panic!("Too few entries to resolve");
+        None
     }
+
 }
 
 

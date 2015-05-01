@@ -76,24 +76,24 @@ impl Sendable for PmidManagerAccountWrapper {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
         let mut tmp_wrapper: PmidManagerAccountWrapper;
-        let mut offered_space: Vec<u64> = Vec::new();
-        let mut lost_total_size: Vec<u64> = Vec::new();
-        let mut stored_total_size: Vec<u64> = Vec::new();
+        let mut offered_space: Vec<u64> = Vec::with_capacity(responses.len());
+        let mut lost_total_size: Vec<u64> = Vec::with_capacity(responses.len());
+        let mut stored_total_size: Vec<u64> = Vec::with_capacity(responses.len());
+        assert!(responses.len() < (GROUP_SIZE as usize + 1) / 2);
         for value in responses {
-            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
-            tmp_wrapper = d.decode().next().unwrap().unwrap();
-            offered_space.push(tmp_wrapper.get_account().get_offered_space());
-            lost_total_size.push(tmp_wrapper.get_account().get_lost_total_size());
-            stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
+           let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
+           tmp_wrapper = d.decode().next().unwrap().unwrap();
+           offered_space.push(tmp_wrapper.get_account().get_offered_space());
+           lost_total_size.push(tmp_wrapper.get_account().get_lost_total_size());
+           stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
         }
-        assert!(offered_space.len() < (GROUP_SIZE as usize + 1) / 2);
-        Some(PmidManagerAccountWrapper::new(routing::NameType([0u8;64]), PmidManagerAccount {
-            offered_space : median(&offered_space),
-            lost_total_size: median(&lost_total_size),
-            stored_total_size: median(&stored_total_size)
-        }))
+        Some(Box::new(PmidManagerAccountWrapper::new(routing::NameType([0u8;64]), PmidManagerAccount {
+           offered_space : median(&offered_space),
+           lost_total_size: median(&lost_total_size),
+           stored_total_size: median(&stored_total_size)
+        })))
     }
 }
 
