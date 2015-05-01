@@ -24,8 +24,7 @@ use cbor;
 use rustc_serialize::{Encodable};
 
 type Identity = routing::NameType; // name of the chunk
-use routing::types::PmidNode;
-use routing::types::PmidNodes;
+use routing::types::{PmidNode, PmidNodes, GROUP_SIZE};
 use routing::NameType;
 use std::cmp;
 
@@ -58,6 +57,10 @@ impl DataManagerSendable {
             has_preserialised_content: true,
         }
     }
+
+    pub fn get_data_holders(&self) -> PmidNodes {
+        self.data_holders.clone()
+    }
 }
 
 impl Sendable for DataManagerSendable {
@@ -84,7 +87,28 @@ impl Sendable for DataManagerSendable {
     }
 
     fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        unimplemented!()
+        let mut values: Vec<DataManagerSendable> = Vec::new();
+        for response in responses {
+            values.push(*response);
+        }
+        if values.len() == GROUP_SIZE as usize - 1 {
+            // BOOST_THROW_EXCEPTION(MakeError(VaultErrors::failed_to_handle_request));
+            panic!("Failed to handle request");
+        }
+        let stats = Vec::<(PmidNodes, u64)>::new();
+        for it in values.iter() {
+            match stats.iter_mut().find(|a| a.0 == it.get_data_holders()) {
+                Some(x) => x.1 += 1,
+                None => stats.push((it.get_data_holders(), 1)),
+            }
+        }
+        stats.sort_by(|a, b| b.1.cmp(&a.1));
+        let (pmids, count) = stats[0];
+        if count < (GROUP_SIZE as u64 + 1) / 2 {
+            return Some(DataManagerSendable::new(NameType([0u8;64]), pmids));
+        }
+        //   BOOST_THROW_EXCEPTION(MakeError(VaultErrors::too_few_entries_to_resolve));
+        panic!("Too few entries to resolve");
     }
 }
 
@@ -128,7 +152,7 @@ impl DataManagerDatabase {
             if nodes[i] == pmid_node {
               nodes.remove(i);
               break;
-            }            
+            }
         }
     }
 

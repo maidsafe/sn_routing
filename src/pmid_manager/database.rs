@@ -22,7 +22,7 @@ extern crate routing;
 use cbor;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::collections;
-use routing::types::{GROUP_SIZE};
+use routing::types::GROUP_SIZE;
 use utils::median;
 use routing::sendable::Sendable;
 
