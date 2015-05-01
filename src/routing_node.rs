@@ -683,7 +683,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // if data type is public pmid and our authority is nae then add to public_pmid_cache
         // don't call upper layer if public pmid type
         let put_public_pmid = try!(self.decode::<PutPublicPmid>(&body).ok_or(()));
-        let our_authority = match self.our_authority(&put_public_pmid.public_pmid.name, &header) {
+        match self.our_authority(&put_public_pmid.public_pmid.name, &header) {
             Authority::NaeManager => {
                 // FIXME (prakash) signature check ?
                 // TODO (Ben): check whether to accept pmid into group;
@@ -695,8 +695,7 @@ impl<F> RoutingNode<F> where F: Interface {
             _ => {
                 Err(())
             }
-        };
-        Ok(())
+        }
     }
 
     // // for clients, below methods are required
@@ -975,6 +974,7 @@ mod test {
     use messages::get_data_response::GetDataResponse;
     use messages::get_client_key::GetKey;
     use messages::post::Post;
+    use messages::put_public_pmid::PutPublicPmid;
     use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
     use types::{MessageId, NameAndTypeId};
@@ -1270,6 +1270,68 @@ mod test {
 
     #[test]
     fn cache_public_pmid() {
+        // copy from our_authority_full_routing_table test
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
+
+        let mut count : usize = 0;
+        loop {
+            routing_node.routing_table.add_node(routing_table::NodeInfo::new(
+                                       PublicPmid::new(&Pmid::new()), true));
+            count += 1;
+            if routing_node.routing_table.size() >=
+                routing_table::RoutingTable::get_optimal_size() { break; }
+            if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
+                panic!("Routing table does not fill up."); }
+        }
+        let a_message_id : MessageId = random::<u32>();
+        let our_name = routing_node.own_id.clone();
+        // end copy from our_authority_full_routing_table
+
+        let total_inside : u32 = 50;
+        let limit_attempts : u32 = 200;
+
+        let mut count_inside : u32 = 0;
+        let mut count_total : u32 = 0;
+        loop {
+            let our_close_group : Vec<routing_table::NodeInfo>
+                = routing_node.routing_table.our_close_group();
+            let furthest_node_close_group : routing_table::NodeInfo
+                = our_close_group.last().unwrap().clone();
+            let put_public_pmid = PutPublicPmid{ public_pmid :  PublicPmid::new(&Pmid::new()) };
+            let put_public_pmid_header : MessageHeader = MessageHeader {
+                message_id : a_message_id.clone(),
+                destination : types::DestinationAddress {
+                    dest : put_public_pmid.public_pmid.name.clone(),
+                    reply_to : None },
+                source : types::SourceAddress {
+                    from_node : Random::generate_random(),  // Bootstrap node or ourself
+                    from_group : None,
+                    reply_to : None },
+                authority : types::Authority::ManagedNode
+            };
+            let serialised_msg = routing_node.encode(&put_public_pmid);
+            let result = routing_node.handle_put_public_pmid(put_public_pmid_header,
+                serialised_msg);
+            if closer_to_target(&put_public_pmid.public_pmid.name.clone(),
+                                &furthest_node_close_group.id,
+                                &our_name) {
+                assert_eq!(result, Ok(()));
+                count_inside += 1;
+            } else {
+                assert_eq!(result, Err(()));
+            }
+            count_total += 1;
+            if count_inside >= total_inside {
+                break; // succcess
+            }
+            if count_total >= limit_attempts {
+                if count_inside > 0 {
+                    println!("Could only verify {} successful public_pmids inside
+                            our group before limit reached.", count_inside);
+                    break;
+                } else { panic!("No PublicPmids were found inside our close group!"); }
+            }
+        }
 
     }
 
