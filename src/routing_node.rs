@@ -652,14 +652,16 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn our_source_address(&self) -> types::SourceAddress {
         if self.bootstrap_endpoint.is_some() {
-            return types::SourceAddress{ from_node: self.all_connections.0.get(&self.bootstrap_endpoint.clone().unwrap()).unwrap().clone(),
-                                         from_group: None,
-                                         reply_to: Some(self.own_id.clone()) }
-        } else {
-            return types::SourceAddress{ from_node: self.own_id.clone(),
-                                         from_group: None,
-                                         reply_to: None }
+            let id = self.all_connections.0.get(&self.bootstrap_endpoint.clone().unwrap());
+            if id.is_some() {
+                return types::SourceAddress{ from_node: id.unwrap().clone(),
+                                             from_group: None,
+                                             reply_to: Some(self.own_id.clone()) }
+            }
         }
+        return types::SourceAddress{ from_node: self.own_id.clone(),
+                                     from_group: None,
+                                     reply_to: None }
     }
 
     fn group_address_for_group(&self, group_address : &types::GroupAddress) -> types::SourceAddress {
