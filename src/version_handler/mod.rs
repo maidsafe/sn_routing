@@ -60,7 +60,7 @@ impl Sendable for VersionHandlerSendable {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+    fn merge<'a, I>(responses: I) -> Option<Box<Sendable>> where I: Iterator<Item=&'a Sendable> {
         unimplemented!()
     }
 }

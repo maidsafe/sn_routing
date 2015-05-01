@@ -76,24 +76,25 @@ impl Sendable for PmidManagerAccountWrapper {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        let mut tmp_wrapper: PmidManagerAccountWrapper;
-        let mut offered_space: Vec<u64> = Vec::new();
-        let mut lost_total_size: Vec<u64> = Vec::new();
-        let mut stored_total_size: Vec<u64> = Vec::new();
-        for value in responses {
-            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
-            tmp_wrapper = d.decode().next().unwrap().unwrap();
-            offered_space.push(tmp_wrapper.get_account().get_offered_space());
-            lost_total_size.push(tmp_wrapper.get_account().get_lost_total_size());
-            stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
-        }
-        assert!(offered_space.len() < (GROUP_SIZE as usize + 1) / 2);
-        Some(PmidManagerAccountWrapper::new(routing::NameType([0u8;64]), PmidManagerAccount {
-            offered_space : median(&offered_space),
-            lost_total_size: median(&lost_total_size),
-            stored_total_size: median(&stored_total_size)
-        }))
+    fn merge<'a, I>(responses: I) -> Option<Box<Sendable>> where I: Iterator<Item=&'a Sendable> {
+        unimplemented!()
+        //let mut tmp_wrapper: PmidManagerAccountWrapper;
+        //let mut offered_space: Vec<u64> = Vec::new();
+        //let mut lost_total_size: Vec<u64> = Vec::new();
+        //let mut stored_total_size: Vec<u64> = Vec::new();
+        //for value in responses {
+        //    let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
+        //    tmp_wrapper = d.decode().next().unwrap().unwrap();
+        //    offered_space.push(tmp_wrapper.get_account().get_offered_space());
+        //    lost_total_size.push(tmp_wrapper.get_account().get_lost_total_size());
+        //    stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
+        //}
+        //assert!(offered_space.len() < (GROUP_SIZE as usize + 1) / 2);
+        //Some(PmidManagerAccountWrapper::new(routing::NameType([0u8;64]), PmidManagerAccount {
+        //    offered_space : median(&offered_space),
+        //    lost_total_size: median(&lost_total_size),
+        //    stored_total_size: median(&stored_total_size)
+        //}))
     }
 }
 

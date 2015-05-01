@@ -76,22 +76,23 @@ impl Sendable for MaidManagerAccountWrapper {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        let mut tmp_wrapper: MaidManagerAccountWrapper;
-        let mut data_stored: Vec<u64> = Vec::new();
-        let mut space_available: Vec<u64> = Vec::new();
-        for value in responses {
-            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
-            tmp_wrapper = d.decode().next().unwrap().unwrap();
-            data_stored.push(tmp_wrapper.get_account().get_data_stored());
-            space_available.push(tmp_wrapper.get_account().get_available_space());
-        }
-        assert!(data_stored.len() < (GROUP_SIZE as usize + 1) / 2);
+    fn merge<'a, I>(responses: I) -> Option<Box<Sendable>> where I: Iterator<Item=&'a Sendable> {
+        unimplemented!()
+        // let mut tmp_wrapper: MaidManagerAccountWrapper;
+        // let mut data_stored: Vec<u64> = Vec::new();
+        // let mut space_available: Vec<u64> = Vec::new();
+        // for value in responses {
+        //     let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
+        //     tmp_wrapper = d.decode().next().unwrap().unwrap();
+        //     data_stored.push(tmp_wrapper.get_account().get_data_stored());
+        //     space_available.push(tmp_wrapper.get_account().get_available_space());
+        // }
+        // assert!(data_stored.len() < (GROUP_SIZE as usize + 1) / 2);
 
-        Some(MaidManagerAccountWrapper::new(NameType([0u8;64]), MaidManagerAccount {
-            data_stored : median(&data_stored),
-            space_available: median(&space_available)
-        }))
+        // Some(MaidManagerAccountWrapper::new(NameType([0u8;64]), MaidManagerAccount {
+        //     data_stored : median(&data_stored),
+        //     space_available: median(&space_available)
+        // }))
     }
 }
 
