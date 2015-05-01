@@ -798,7 +798,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Bytes) {
-        unimplemented!();
+        let _ = self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), serialised_message.clone());
     }
 
     fn send_swarm_or_parallel(&self, target: &NameType, serialised_message: &Bytes) {
