@@ -266,7 +266,7 @@ impl RoutingTable {
         if self.routing_table.len() < GROUP_SIZE {
             return true;
         }
-        let furthest_close_node = self.routing_table[GROUP_SIZE].clone();
+        let furthest_close_node = self.routing_table[GROUP_SIZE - 1].clone();
         closer_to_target(&id, &furthest_close_node.id, &self.our_id)
     }
 

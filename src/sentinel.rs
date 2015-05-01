@@ -26,7 +26,7 @@ use types;
 use types::{Mergeable, QUORUM_SIZE};
 use frequency::Frequency;
 use messages::find_group_response::FindGroupResponse;
-use messages::get_client_key_response::GetClientKeyResponse;
+use messages::get_client_key_response::GetKeyResponse;
 use messages::get_group_key_response::GetGroupKeyResponse;
 use messages::{MessageTypeTag};
 use types::{PublicSignKey, SerialisedMessage};
@@ -74,7 +74,7 @@ impl<'a> Sentinel<'a> {
                message : types::SerialisedMessage, signature : types::Signature)
                -> Option<ResultType> {
       match type_tag {
-        MessageTypeTag::GetClientKeyResponse => {
+        MessageTypeTag::GetKeyResponse => {
           if header.is_from_group() {
             let keys = self.node_key_accumulator_.add(header.from_group().unwrap(),
                                                       (header.clone(), type_tag,
@@ -182,7 +182,7 @@ impl<'a> Sentinel<'a> {
 
         take_most_frequent(&keys, QUORUM_SIZE as usize)
             .into_iter()
-            .flat_map(|GetClientKeyResponse{address: _, public_sign_key: pub_key}| {
+            .flat_map(|GetKeyResponse{address: _, public_sign_key: pub_key}| {
                 messages.iter().filter_map(move |response| {
                     Sentinel::check_signature(&response, &pub_key)
                 })

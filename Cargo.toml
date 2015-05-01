@@ -1,7 +1,7 @@
 [package]
 
 name = "routing"
-version = "0.1.31"
+version = "0.1.33"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A specialised storage DHT."
 documentation = "http://dirvine.github.io/routing/"
@@ -21,3 +21,9 @@ message_filter = "*"
 lru_time_cache = "0.1.4"
 crust = "0.0.51"
 docopt = "*"
+
+[[example]]
+name = "routing"
+path = "examples/routing.rs"
+test = false
+bench = false

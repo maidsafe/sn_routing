@@ -70,7 +70,6 @@ pub mod node_interface;
 pub mod routing_client;
 pub mod routing_node;
 pub mod sendable;
-pub mod generic_sendable_type;
 pub mod test_utils;
 pub mod types;
 
@@ -91,6 +90,7 @@ pub enum Action {
   SendOn(Vec<NameType>),
 }
 
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum RoutingError {
   Success,  // vault will also return a Success to indicate a dead end
   FailedToBootstrap,

@@ -19,25 +19,26 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct PutDataResponse {
-  pub type_id : u32,
+  pub name : NameType,
   pub data : Vec<u8>,  // len() == 0 indicates no data responsed
   pub error : Vec<u8>  //  TODO this shall be a serializable MaidSafeError type
 }
 
 impl Encodable for PutDataResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.type_id, &self.data, &self.error)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.name, &self.data, &self.error)).encode(e)
   }
 }
 
 impl Decodable for PutDataResponse {
   fn decode<D: Decoder>(d: &mut D)->Result<PutDataResponse, D::Error> {
     try!(d.read_u64());
-    let (type_id, data, error) = try!(Decodable::decode(d));
-    Ok(PutDataResponse { type_id: type_id, data: data, error: error })
+    let (name, data, error) = try!(Decodable::decode(d));
+    Ok(PutDataResponse { name: name, data: data, error: error })
   }
 }
 

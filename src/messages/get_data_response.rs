@@ -21,12 +21,13 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
+use RoutingError;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetDataResponse {
   pub name_and_type_id : types::NameAndTypeId,
   pub data : Vec<u8>,  // len() == 0 indicates no data fetched
-  pub error : Vec<u8>  //  TODO this shall be a serializable MaidSafeError type
+  pub error : RoutingError  //  TODO this shall be a serializable MaidSafeError type
 }
 
 impl Encodable for GetDataResponse {
