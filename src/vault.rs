@@ -46,6 +46,15 @@ impl Clone for VaultFacade {
 }
 
 impl routing::node_interface::Interface for VaultFacade {
+    fn handle_get_key(&mut self,
+                      type_id: u64,
+                      name: NameType,
+                      our_authority: Authority,
+                      from_authority: Authority,
+                      from_address: NameType) -> Result<Action, RoutingError> {
+        unimplemented!();
+    }
+
     fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
                 from_address: NameType)->Result<Action, RoutingError> {
         match our_authority {
@@ -369,7 +378,7 @@ impl VaultFacade {
     //        for i in 10..30 {
     //            close_group.push(available_nodes[i].clone());
     //        }
-    //        
+    //
     //        let churn_data = vault.handle_churn(close_group);
     //        assert_eq!(churn_data.len(), 1);
     //        assert!(churn_data[0].name() == data.name().clone());
