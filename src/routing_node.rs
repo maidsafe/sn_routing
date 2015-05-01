@@ -48,6 +48,7 @@ use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_group_key::GetGroupKey;
 use messages::get_group_key_response::GetGroupKeyResponse;
+use messages::post::Post;
 use messages::get_client_key::GetKey;
 use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
@@ -390,8 +391,8 @@ impl<F> RoutingNode<F> where F: Interface {
                     MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
                     MessageTypeTag::GetData => self.handle_get_data(header, body),
                     MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
-                    //Post,
-                    //PostResponse,
+                    MessageTypeTag::Post => self.handle_post(header, body),
+                    MessageTypeTag::PostResponse => self.handle_post_response(header, body),
                     MessageTypeTag::PutData => self.handle_put_data(header, body),
                     MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
                     MessageTypeTag::PutPublicPmid => self.handle_put_public_pmid(header, body),
@@ -660,6 +661,46 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
+    fn handle_post(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+        let post = try!(self.decode::<Post>(&body).ok_or(()));
+        let our_authority = self.our_authority(&post.name, &header);
+        let mut interface = self.interface.lock().unwrap();
+        let action_result : RecvResult
+            = match interface.handle_post(our_authority.clone(),
+                                          header.authority.clone(),
+                                          header.from(),
+                                          post.name.clone(),
+                                          post.data.clone()) {
+            Ok(Action::Reply(data)) => {
+                Ok(()) // TODO: implement post_response
+            },
+            Ok(Action::SendOn(destinations)) => {
+                for destination in destinations {
+                    let send_on_header = header.create_send_on(&self.own_id,
+                        &our_authority, &destination);
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::Post,
+                        send_on_header, post.clone(), &self.pmid.get_crypto_secret_sign_key());
+                    self.send_swarm_or_parallel(&destination,
+                        &self.encode(&routing_msg));
+                }
+                Ok(())
+            },
+            Err(e) => match e {
+                RoutingError::Success => Ok(()),           // Vault terminates message flow
+                RoutingError::IncorrectData(_) => Err(()), // TODO: reply with post_response
+                RoutingError::NoData => Err(()),
+                RoutingError::InvalidRequest => Err(()),
+                _ => Err(())
+            },
+        };
+        action_result
+    }
+
+    fn handle_post_response(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+        // currently no post_response object; out of sprint (2015-04-30)
+        Ok(())
+    }
+
     fn handle_put_public_pmid(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         // if data type is public pmid and our authority is nae then add to public_pmid_cache
         // don't call upper layer if public pmid type
@@ -684,11 +725,82 @@ impl<F> RoutingNode<F> where F: Interface {
         let to = header.send_to();
 
         let mut interface = self.interface.lock().unwrap();
-        match interface.handle_put(our_authority, from_authority, from, to, put_data.data) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(())
+        match interface.handle_put(our_authority.clone(), from_authority, from,
+                                   to, put_data.data.clone()) {
+            Ok(Action::Reply(reply_data)) => {
+                let reply_header = header.create_reply(&self.own_id, &our_authority);
+                let reply_to = match our_authority {
+                    Authority::ClientManager => match header.reply_to() {
+                        Some(client) => client,
+                        None => header.from()
+                    },
+                    _ => header.from()
+                };
+                let put_data_response = PutDataResponse {
+                    name : put_data.name.clone(),
+                    data : reply_data,
+                    error : vec![]
+                };
+                let routing_msg = RoutingMessage::new(MessageTypeTag::PutDataResponse,
+                    reply_header, put_data_response, &self.pmid.get_crypto_secret_sign_key());
+                self.send_swarm_or_parallel(&reply_to, &self.encode(&routing_msg));
+                Ok(())
+            },
+            Ok(Action::SendOn(destinations)) => {
+                for destination in destinations {
+                    let send_on_header = header.create_send_on(&self.own_id,
+                        &our_authority, &destination);
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::PutData,
+                        send_on_header, put_data.clone(), &self.pmid.get_crypto_secret_sign_key());
+                    self.send_swarm_or_parallel(&destination,
+                        &self.encode(&routing_msg));
+                }
+                Ok(())
+            },
+            Err(e) => match e {
+                RoutingError::Success => Ok(()),  // Interface terminates message flow
+                RoutingError::NoData => Err(()),
+                RoutingError::InvalidRequest => Err(()),
+                RoutingError::IncorrectData(data) => Err(()),
+                _ => Err(())
+            }
         }
     }
+
+    // fn handle_post(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+    //     let post = try!(self.decode::<Post>(&body).ok_or(()));
+    //     let our_authority = self.our_authority(&post.name, &header);
+    //     let mut interface = self.interface.lock().unwrap();
+    //     let action_result : RecvResult
+    //         = match interface.handle_post(our_authority.clone(),
+    //                                       header.authority.clone(),
+    //                                       header.from(),
+    //                                       post.name.clone(),
+    //                                       post.data.clone()) {
+    //         Ok(Action::Reply(data)) => {
+    //             Ok(()) // TODO: implement post_response
+    //         },
+    //         Ok(Action::SendOn(destinations)) => {
+    //             for destination in destinations {
+    //                 let send_on_header = header.create_send_on(&self.own_id,
+    //                     &our_authority, &destination);
+    //                 let routing_msg = RoutingMessage::new(MessageTypeTag::Post,
+    //                     send_on_header, post.clone(), &self.pmid.get_crypto_secret_sign_key());
+    //                 self.send_swarm_or_parallel(&destination,
+    //                     &self.encode(&routing_msg));
+    //             }
+    //             Ok(())
+    //         },
+    //         Err(e) => match e {
+    //             RoutingError::Success => Ok(()),           // Interface terminates message flow
+    //             RoutingError::IncorrectData(_) => Err(()), // TODO: reply with post_response
+    //             RoutingError::NoData => Err(()),
+    //             RoutingError::InvalidRequest => Err(()),
+    //             _ => Err(())
+    //         },
+    //     };
+    //     action_result
+    // }
 
     fn handle_put_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
         let put_data_response = try!(self.decode::<PutDataResponse>(&body).ok_or(()));
@@ -914,6 +1026,7 @@ mod test {
     use messages::get_data::GetData;
     use messages::get_data_response::GetDataResponse;
     use messages::get_client_key::GetKey;
+    use messages::post::Post;
     use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
     use types::{MessageId, NameAndTypeId};
@@ -954,6 +1067,14 @@ mod test {
         fn type_tag(&self)->u64 { unimplemented!() }
 
         fn serialised_contents(&self)->Vec<u8> { self.data.clone() }
+
+        fn refresh(&self)->bool {
+            false
+        }
+
+        fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+            None
+        }
     }
 
     impl Interface for TestInterface {
@@ -981,8 +1102,12 @@ mod test {
             Ok(Action::Reply(data))
         }
         fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
-                       from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
+                       from_address: NameType, name: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+            let stats = self.stats.clone();
+            let mut stats_value = stats.lock().unwrap();
+            stats_value.call_count += 1;
+            stats_value.data = Some(data.clone());
+            Ok(Action::Reply(data))
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
                                RoutingError>) -> RoutingNodeAction {
@@ -1163,7 +1288,8 @@ mod test {
 #[test]
     fn call_handle_put() {
         let put_data: PutData = Random::generate_random();
-        assert_eq!(call_operation(put_data, MessageTypeTag::PutData).call_count, 1u32);    }
+        assert_eq!(call_operation(put_data, MessageTypeTag::PutData).call_count, 1u32);
+    }
 
 #[test]
     fn call_handle_put_response() {
@@ -1194,6 +1320,12 @@ mod test {
     fn call_handle_get_key() {
         let get_key: GetKey = Random::generate_random();
         assert_eq!(call_operation(get_key, MessageTypeTag::GetKey).call_count, 1u32);
+    }
+
+#[test]
+    fn call_handle_post() {
+        let post: Post = Random::generate_random();
+        assert_eq!(call_operation(post, MessageTypeTag::Post).call_count, 1u32);
     }
 
     //#[test]
