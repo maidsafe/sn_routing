@@ -876,7 +876,6 @@ impl<F> RoutingNode<F> where F: Interface {
 
 #[cfg(test)]
 mod test {
-    use generic_sendable_type;
     use routing_node::{RoutingNode};
     use node_interface::*;
     use name_type::NameType;
