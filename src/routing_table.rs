@@ -1089,10 +1089,19 @@ mod test {
         let our_close_group : Vec<NodeInfo> = routing_table.our_close_group();
         assert_eq!(our_close_group.len(), RoutingTable::get_group_size() );
         let mut closer_name : NameType = our_pmid_name.clone();
-        for close_node in our_close_group {
+        for close_node in &our_close_group {
             assert!(closer_to_target(&closer_name, &close_node.id, &our_pmid_name));
             assert!(routing_table.address_in_our_close_group_range(&close_node.id));
             closer_name = close_node.id.clone();
+        }
+
+        for node in &routing_table.routing_table {
+            if our_close_group.iter().filter(|close_node| close_node.id == node.id)
+                              .count() > 0 {
+                assert!(routing_table.address_in_our_close_group_range(&node.id));
+            } else {
+                assert_eq!(false, routing_table.address_in_our_close_group_range(&node.id));
+            }
         }
     }
 
