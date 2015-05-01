@@ -23,6 +23,40 @@ use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
 use cbor::{ Decoder, Encoder };
 
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct VersionHandlerSendable {
+    name: NameType,
+    tag: u64,
+    data: Vec<u8>,
+}
+
+impl VersionHandlerSendable {
+    pub fn new(name: NameType, data: Vec<u8>) -> VersionHandlerSendable {
+        MaidManagerAccountWrapper {
+            name: name,
+            tag: 209, // FIXME : Change once the tag is freezed
+            data: data,
+        }
+    }
+
+    pub fn get_data(&self) -> &Vec<u8> {
+        &self.data
+    }
+}
+impl Sendable for VersionHandlerSendable {
+    fn name(&self) -> NameType {
+        self.name.clone()
+    }
+
+    fn type_tag(&self) -> u64 {
+        self.tag.clone()
+    }
+
+    fn serialised_contents(&self) -> Vec<u8> {
+        self.data
+    }
+}
+
 pub struct VersionHandler {
   // This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
   // If such assumption becomes in-valid, LruCache or Sqlite based persona specific database shall be used
@@ -60,16 +94,16 @@ impl VersionHandler {
 
   pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::RoutingNodeAction> {
        let names = self.chunk_store_.names();
-       let mut sendable = Vec::with_capacity(names.len());
+       let mut actions = Vec::with_capacity(names.len());
        for name in names {
             let data = self.chunk_store_.get(name.clone());
-            sendable.push(routing::node_interface::RoutingNodeAction::Put {
+            actions.push(routing::node_interface::RoutingNodeAction::Put {
                 destination: name.clone(),
-                content: generic_sendable_type::GenericSendableType::new(name, 1, data), //TODO Get type_tag correct
+                content: Box::new(VersionHandlerSendable::new(name, data)),
             });
        }
        self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
-       sendable
+       actions
   }
 
 }
