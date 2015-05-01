@@ -1155,10 +1155,11 @@ mod test {
             routing_node.routing_table.add_node(routing_table::NodeInfo::new(
                                        PublicPmid::new(&Pmid::new()), true));
             count += 1;
-            if routing_node.routing_table.size() >=
-                routing_table::RoutingTable::get_optimal_size() { break; }
-            if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
-                panic!("Routing table does not fill up."); }
+            if count > 100 { break; }
+            // if routing_node.routing_table.size() >=
+            //     routing_table::RoutingTable::get_optimal_size() { break; }
+            // if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
+            //     panic!("Routing table does not fill up."); }
         }
         let a_message_id : MessageId = random::<u32>();
         let our_name = routing_node.own_id.clone();
@@ -1185,6 +1186,12 @@ mod test {
         // invert to get a far away address outside of the close group
         let name_outside_close_group : NameType
             = xor(&furthest_node_close_group.id, &NameType::new([255u8; 64]));
+        // note: if the close group spans close to the whole address space,
+        // this construction actually inverts the address into the close group range;
+        // for group_size 32; 64 node in the network this intermittently fails at 41%
+        // for group_size 32; 80 nodes in the network this intermittently fails at 2%
+        // for group_size 32; 100 nodes in the network this intermittently fails
+        //     less than 1/8413 times, but should be exponentially less still.
         assert!(closer_to_target(&furthest_node_close_group.id,
                                  &name_outside_close_group,
                                  &our_name));
