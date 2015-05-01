@@ -83,9 +83,7 @@ impl Sendable for DataManagerSendable {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Box<Sendable>> where I: Iterator<Item=&'a Sendable> {
-        unimplemented!()
-    }
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
 }
 
 

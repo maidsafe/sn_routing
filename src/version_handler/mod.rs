@@ -53,16 +53,14 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        self.data
+        self.data.clone()
     }
 
     fn refresh(&self) -> bool {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Box<Sendable>> where I: Iterator<Item=&'a Sendable> {
-        unimplemented!()
-    }
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
 }
 
 pub struct VersionHandler {

@@ -76,7 +76,7 @@ impl Sendable for MaidManagerAccountWrapper {
         true
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Box<Sendable>> where I: Iterator<Item=&'a Sendable> {
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
         unimplemented!()
         // let mut tmp_wrapper: MaidManagerAccountWrapper;
         // let mut data_stored: Vec<u64> = Vec::new();
