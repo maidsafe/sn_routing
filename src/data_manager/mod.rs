@@ -125,6 +125,7 @@ impl DataManager {
                   routing::node_interface::RoutingNodeAction::Put {
                       destination: close_grp_node_to_add,
                       content: Box::new(database::DataManagerSendable::with_content(name, response)),
+                      is_client: false,
                   }
               } else {
                   routing::node_interface::RoutingNodeAction::None

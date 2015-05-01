@@ -195,8 +195,7 @@ impl PmidManagerDatabase {
         let mut actions = Vec::with_capacity(data.len());
         for element in data {
             if close_group.iter().find(|a| **a == element.0).is_some() {
-                actions.push(routing::node_interface::RoutingNodeAction::Put {
-                    destination: element.0.clone(),
+                actions.push(routing::node_interface::RoutingNodeAction::Refresh {
                     content: Box::new(PmidManagerAccountWrapper::new(element.0, element.1)),
                 });
             }

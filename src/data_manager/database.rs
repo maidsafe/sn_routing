@@ -201,8 +201,7 @@ impl DataManagerDatabase {
                     name: element.0.clone(),
                 });
             }
-            actions.push(routing::node_interface::RoutingNodeAction::Put {
-                destination: element.0.clone(),
+            actions.push(routing::node_interface::RoutingNodeAction::Refresh {
                 content: Box::new(DataManagerSendable::new(element.0, element.1)),
             });
         }

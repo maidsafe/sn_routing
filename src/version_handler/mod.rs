@@ -119,8 +119,7 @@ impl VersionHandler {
        let mut actions = Vec::with_capacity(names.len());
        for name in names {
             let data = self.chunk_store_.get(name.clone());
-            actions.push(routing::node_interface::RoutingNodeAction::Put {
-                destination: name.clone(),
+            actions.push(routing::node_interface::RoutingNodeAction::Refresh {
                 content: Box::new(VersionHandlerSendable::new(name, data)),
             });
        }
