@@ -30,71 +30,137 @@ use routing::types::PmidNodes;
 use routing::NameType;
 use routing::sendable::Sendable;
 
+/// PmidManagerAccountWrapper implemets the sendable trait from routing, thus making it transporatble
+/// across through the routing layer
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
+pub struct DataManagerWrapper {
+    name: NameType,
+    tag: u64,
+    pmids: PmidNodes
+}
+
+impl DataManagerWrapper {
+    pub fn new(name: routing::NameType, account: PmidNodes) -> DataManagerWrapper {
+        DataManagerWrapper {
+            name: name,
+            tag: 202, // FIXME : Change once the tag is freezed
+            pmids: account
+        }
+    }
+
+    pub fn get_pmids(&self) -> PmidNodes {
+        self.pmids.clone()
+    }
+}
+
+impl Clone for DataManagerWrapper {
+    fn clone(&self) -> Self {
+        DataManagerWrapper::new(self.name.clone(), self.pmids.clone())
+    }
+}
+
+impl Sendable for DataManagerWrapper {
+    fn name(&self) -> NameType {
+        self.name.clone()
+    }
+
+    fn type_tag(&self) -> u64 {
+        self.tag.clone()
+    }
+
+    fn serialised_contents(&self) -> Vec<u8> {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
+    }
+
+    fn refresh(&self)->bool {
+        true
+    }
+
+    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+        // let mut tmp_wrapper: PmidManagerAccountWrapper;
+        // let mut offered_space: Vec<u64> = Vec::new();
+        // let mut lost_total_size: Vec<u64> = Vec::new();
+        // let mut stored_total_size: Vec<u64> = Vec::new();
+        // for value in responses {
+        //     let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
+        //     tmp_wrapper = d.decode().next().unwrap().unwrap();
+        //     offered_space.push(tmp_wrapper.get_account().get_offered_space());
+        //     lost_total_size.push(tmp_wrapper.get_account().get_lost_total_size());
+        //     stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
+        // }
+        // assert!(offered_space.len() < (GROUP_SIZE as usize + 1) / 2);
+        // Some(PmidManagerAccountWrapper::new(routing::NameType([0u8;64]), PmidManagerAccount {
+        //     offered_space : median(&offered_space),
+        //     lost_total_size: median(&lost_total_size),
+        //     stored_total_size: median(&stored_total_size)
+        // }))
+        None
+    }
+}
+
 pub struct DataManagerDatabase {
-  storage : LruCache<Identity, PmidNodes>
+    storage : LruCache<Identity, PmidNodes>
 }
 
 impl DataManagerDatabase {
-  pub fn new () -> DataManagerDatabase {
-    DataManagerDatabase { storage: LruCache::with_capacity(10000) }
-  }
+    pub fn new () -> DataManagerDatabase {
+        DataManagerDatabase { storage: LruCache::with_capacity(10000) }
+    }
 
-  pub fn exist(&mut self, name : &Identity) -> bool {
-    self.storage.get(name.clone()).is_some()
-  }
+    pub fn exist(&mut self, name : &Identity) -> bool {
+        self.storage.get(name.clone()).is_some()
+    }
 
-  pub fn put_pmid_nodes(&mut self, name : &Identity, pmid_nodes: PmidNodes) {
-    self.storage.add(name.clone(), pmid_nodes.clone());
-  }
+    pub fn put_pmid_nodes(&mut self, name : &Identity, pmid_nodes: PmidNodes) {
+        self.storage.add(name.clone(), pmid_nodes.clone());
+    }
 
-  pub fn add_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
-    let entry = self.storage.remove(name.clone());
-      if entry.is_some() {
-        let mut tmp = entry.unwrap();
-        for i in 0..tmp.len() {
-            if tmp[i] == pmid_node {
-              return;
+    pub fn add_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
+        let entry = self.storage.remove(name.clone());
+        if entry.is_some() {
+            let mut tmp = entry.unwrap();
+            for i in 0..tmp.len() {
+                if tmp[i] == pmid_node {
+                  return;
+                }
             }
+            tmp.push(pmid_node);
+            self.storage.add(name.clone(), tmp);
+        } else {
+            self.storage.add(name.clone(), vec![pmid_node]);
         }
-        tmp.push(pmid_node);
-      self.storage.add(name.clone(), tmp);
-      } else {
-      self.storage.add(name.clone(), vec![pmid_node]);
-      }
-  }
+    }
 
-  pub fn remove_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
-    let entry = self.storage.remove(name.clone());
-      if entry.is_some() {
-        let mut tmp = entry.unwrap();
-        for i in 0..tmp.len() {
-            if tmp[i] == pmid_node {
-              tmp.remove(i);
-          break;
+    pub fn remove_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
+        let entry = self.storage.remove(name.clone());
+        if entry.is_some() {
+            let mut tmp = entry.unwrap();
+            for i in 0..tmp.len() {
+                if tmp[i] == pmid_node {
+                  tmp.remove(i);
+              break;
+                }
             }
+            self.storage.add(name.clone(), tmp);
         }
-      self.storage.add(name.clone(), tmp);
-      }
-  }
+    }
 
-  pub fn get_pmid_nodes(&mut self, name : &Identity) -> PmidNodes {
-    let entry = self.storage.get(name.clone());
-      if entry.is_some() {
-        entry.unwrap().clone()
-      } else {
-        Vec::<PmidNode>::new()
-      }
-  }
+    pub fn get_pmid_nodes(&mut self, name : &Identity) -> PmidNodes {
+        let entry = self.storage.get(name.clone());
+        if entry.is_some() {
+            entry.unwrap().clone()
+        } else {
+            Vec::<PmidNode>::new()
+        }
+    }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
+    pub fn retrieve_all_and_reset(&mut self) -> Vec<DataManagerWrapper> {
         let data: Vec<(Identity, PmidNodes)> = self.storage.retrieve_all();
-        let mut sendable_data = Vec::<generic_sendable_type::GenericSendableType>::with_capacity(data.len());
+        let mut sendable_data = Vec::<DataManagerWrapper>::with_capacity(data.len());
         for element in data {
-            let mut e = cbor::Encoder::from_memory();
-            e.encode(&[&element.1]).unwrap();
-            let serialised_content = e.into_bytes();
-            let sendable_type = generic_sendable_type::GenericSendableType::new(element.0.clone(), 1, serialised_content); //TODO Get type_tag correct
-            sendable_data.push(sendable_type);
+            sendable_data.push(DataManagerWrapper::new(element.0, element.1));
         }
         self.storage = LruCache::with_capacity(10000);
         sendable_data

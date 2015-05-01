@@ -27,6 +27,7 @@ use maidsafe_types;
 use cbor::{ Decoder };
 use routing::sendable::Sendable;
 type Address = NameType;
+use self::database::DataManagerWrapper;
 
 pub static PARALLELISM: usize = 4;
 
@@ -42,7 +43,7 @@ impl DataManager {
 	  if result.len() == 0 {
 	    return Err(routing::RoutingError::NoData);
 	  }
-      
+
 	  let mut dest_pmids : Vec<NameType> = Vec::new();
 	  for pmid in result.iter() {
         dest_pmids.push(pmid.clone());
@@ -50,7 +51,7 @@ impl DataManager {
 	  Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<routing::Action, routing::RoutingError> {    
+  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<routing::Action, routing::RoutingError> {
     let mut name : routing::NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -87,7 +88,7 @@ impl DataManager {
     Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<generic_sendable_type::GenericSendableType> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<DataManagerWrapper> {
     self.db_.retrieve_all_and_reset()
   }
 }

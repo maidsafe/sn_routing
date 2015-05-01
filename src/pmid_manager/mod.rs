@@ -22,7 +22,7 @@ use routing;
 use routing::NameType;
 use routing::types::DestinationAddress;
 use routing::generic_sendable_type;
-pub use self::database::PmidManagerAccount;
+pub use self::database::PmidManagerAccountWrapper;
 
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
@@ -43,7 +43,7 @@ impl PmidManager {
     }
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<generic_sendable_type::GenericSendableType> {
+  pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<PmidManagerAccountWrapper> {
     self.db_.retrieve_all_and_reset(close_group)
   }
 }
@@ -59,7 +59,7 @@ mod test {
   #[test]
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
-    let dest = DestinationAddress { dest: routing::test_utils::Random::generate_random(), reply_to: None };  
+    let dest = DestinationAddress { dest: routing::test_utils::Random::generate_random(), reply_to: None };
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
