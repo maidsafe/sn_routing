@@ -87,27 +87,33 @@ impl Sendable for DataManagerSendable {
     }
 
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
-        // if responses.len() == GROUP_SIZE as usize - 1 {
-        //     // BOOST_THROW_EXCEPTION(MakeError(VaultErrors::failed_to_handle_request));
-        //     panic!("Failed to handle request");
-        // }
-        // let mut tmp_wrapper: DataManagerSendable;
-        // let stats = Vec::<(PmidNodes, u64)>::new();
-        // for it in responses.iter() {
-        //     let mut d = cbor::Decoder::from_bytes(it.serialised_contents());
-        //     tmp_wrapper = d.decode().next().unwrap().unwrap();
-        //     match stats.iter_mut().find(|a| a.0 == tmp_wrapper.get_data_holders()) {
-        //         Some(x) => x.1 += 1,
-        //         None => stats.push((tmp_wrapper.get_data_holders(), 1)),
-        //     }
-        // }
-        // stats.sort_by(|a, b| b.1.cmp(&a.1));
-        // let (pmids, count) = stats[0].clone();
-        // if count < (GROUP_SIZE as u64 + 1) / 2 {
-        //     return Some(Box::new(DataManagerSendable::new(NameType([0u8;64]), pmids)));
-        // }
-        // //   BOOST_THROW_EXCEPTION(MakeError(VaultErrors::too_few_entries_to_resolve));
-        // panic!("Too few entries to resolve");
+        if responses.len() == GROUP_SIZE as usize - 1 {
+            return None;
+        }
+        let mut tmp_wrapper: DataManagerSendable;
+        let mut stats = Vec::<(PmidNodes, u64)>::new();
+        for it in responses.iter() {
+            let mut d = cbor::Decoder::from_bytes(it.serialised_contents());
+            tmp_wrapper = d.decode().next().unwrap().unwrap();
+            let mut push_in_vec = false;
+            {
+                let find_res = stats.iter_mut().find(|a| a.0 == tmp_wrapper.get_data_holders());
+                if find_res.is_some() {
+                    find_res.unwrap().1 += 1
+                } else {
+                    push_in_vec = true;
+                }
+            }
+
+            if push_in_vec {
+                stats.push((tmp_wrapper.get_data_holders(), 1));
+            }
+        }
+        stats.sort_by(|a, b| b.1.cmp(&a.1));
+        let (pmids, count) = stats[0].clone();
+        if count < (GROUP_SIZE as u64 + 1) / 2 {
+            return Some(Box::new(DataManagerSendable::new(NameType([0u8;64]), pmids)));
+        }
         None
     }
 
