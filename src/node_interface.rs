@@ -15,15 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use generic_sendable_type;
+use sendable::Sendable;
 use name_type::NameType;
 use types::{Authority, DestinationAddress};
 use super::{Action, RoutingError};
 
-#[derive(Clone)]
 pub enum RoutingNodeAction {
     None,
-    Put { destination: NameType, content: generic_sendable_type::GenericSendableType, },
+    Put { destination: NameType, content: Box<Sendable>, },
     Get { type_id: u64, name: NameType, },
     Post,
 }

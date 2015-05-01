@@ -35,7 +35,6 @@ use rand::random;
 use sodiumoxide::crypto;
 
 use crust::Endpoint;
-use routing::generic_sendable_type;
 use routing::NameType;
 use routing::node_interface::*;
 use routing::routing_node::{RoutingNode};
@@ -134,7 +133,7 @@ impl Interface for TestNode {
         Err(RoutingError::Success)
     }
     fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                           RoutingError>) {
+                           RoutingError>) -> routing::node_interface::RoutingNodeAction {
         unimplemented!();
     }
     fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
@@ -146,7 +145,7 @@ impl Interface for TestNode {
         unimplemented!();
     }
     fn handle_churn(&mut self, close_group: Vec<NameType>)
-        -> Vec<generic_sendable_type::GenericSendableType> {
+        -> Vec<routing::node_interface::RoutingNodeAction> {
         unimplemented!();
     }
     fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
@@ -156,6 +155,14 @@ impl Interface for TestNode {
     fn handle_cache_put(&mut self, from_authority: types::Authority, from_address: NameType,
                         data: Vec<u8>) -> Result<Action, RoutingError> {
         Err(RoutingError::Success)
+    }
+    fn handle_get_key(&mut self,
+                      type_id: u64,
+                      name: NameType,
+                      our_authority: routing::types::Authority,
+                      from_authority: routing::types::Authority,
+                      from_address: NameType) -> Result<Action, RoutingError> {
+        unimplemented!();
     }
 }
 
