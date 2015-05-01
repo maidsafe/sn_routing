@@ -1337,6 +1337,8 @@ mod test {
         for public_pmid in stored_public_pmids {
             assert!(routing_node.public_pmid_cache.check(&public_pmid.name));
         }
+        // assert no outside keys were cached
+        assert_eq!(routing_node.public_pmid_cache.len(), total_inside as usize);
     }
 
     //#[test]
