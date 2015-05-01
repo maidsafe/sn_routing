@@ -147,6 +147,7 @@ impl<F> RoutingNode<F> where F: Interface {
             true => types::Authority::Client,
             false => types::Authority::ManagedNode,
         };
+
         let signing_request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
@@ -155,6 +156,14 @@ impl<F> RoutingNode<F> where F: Interface {
 
         e.encode(&[message]).unwrap();
         self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
+    }
+
+    /// Refresh the content in the close group nodes of group address content::name.
+    /// This method needs to be called when churn is triggered.
+    /// all the group members need to call this, otherwise it will not be resolved as a valid
+    /// content.
+    pub fn refresh<T>(&mut self, content: T) where T: Sendable {
+        self.put::<T>(content.name(), content, false)
     }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
@@ -309,6 +318,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 RoutingNodeAction::None => println!("none"),
                 RoutingNodeAction::Put(destination, content, my_authority) => self.put(destination, content, my_authority),
                 RoutingNodeAction::Get(type_id, name) => self.get(type_id, name),
+                RoutingNodeAction::Refresh(content) => self.refresh(content),
                 RoutingNodeAction::Post => unimplemented!(),
             }
         }

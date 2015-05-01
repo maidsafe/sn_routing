@@ -25,7 +25,8 @@ pub enum RoutingNodeAction {
     None,
     Put (NameType, generic_sendable_type::GenericSendableType, bool,),
     Get (u64, NameType),
-    Post ,
+    Post,
+    Refresh (generic_sendable_type::GenericSendableType),
 }
 
 pub trait Interface : Sync + Send {
