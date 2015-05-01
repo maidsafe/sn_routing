@@ -138,11 +138,15 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, destination: NameType, content: Box<Sendable>, is_client: bool) {
+    pub fn put(&mut self, destination: NameType, content: Box<Sendable>, client_authority: bool) {
         let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: self.id(), reply_to: None };
+        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
         let source = self.our_source_address();
-        let authority = types::Authority::Client;
+        let authority = if client_authority {
+            types::Authority::Client
+        } else {
+            types::Authority::ManagedNode
+        };
         let signing_request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
