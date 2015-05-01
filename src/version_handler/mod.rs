@@ -22,7 +22,6 @@ use routing::NameType;
 use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
 use cbor::{ Decoder, Encoder };
-use routing::generic_sendable_type;
 
 pub struct VersionHandler {
   // This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable

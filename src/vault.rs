@@ -117,8 +117,7 @@ impl Interface for VaultFacade {
         let mut pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let mut dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
 
-        //dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
-        vec![RoutingNodeAction::None]
+        dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
     }
 
     fn handle_cache_get(&mut self,
@@ -153,14 +152,13 @@ impl VaultFacade {
     use cbor;
     use maidsafe_types;
     use maid_manager;
-    use pmid_manager::PmidManagerAccount;
+    use pmid_manager;
     use maidsafe_types::{PayloadTypeTag, Payload};
     use routing::types:: { Authority, DestinationAddress };
     use routing::NameType;
     use routing::test_utils::Random;
     use routing::node_interface::Interface;
     use routing::sendable::Sendable;
-    use routing::generic_sendable_type::GenericSendableType;
 
     fn array_as_vector_u8(array : [u8;64]) -> Vec<u8> {
         let mut vec = Vec::with_capacity(array.len());

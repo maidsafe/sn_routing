@@ -18,7 +18,6 @@
 #![allow(dead_code)]
 
 use std::collections;
-use routing::generic_sendable_type::GenericSendableType;
 use routing::NameType;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
@@ -166,13 +165,16 @@ impl MaidManagerDatabase {
       entry.put_data(size)
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<MaidManagerAccountWrapper> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<RoutingNodeAction> {
       let data: Vec<_> = self.storage.drain().collect();
-      let mut sendable_data = Vec::with_capacity(data.len());
+      let mut actions = Vec::with_capacity(data.len());
       for element in data {
-          sendable_data.push(MaidManagerAccountWrapper::new(element.0, element.1));
+          actions.push(RoutingNodeAction::Put {
+              destination: element.0.clone(),
+              content: Box::new(MaidManagerAccountWrapper::new(element.0, element.1)),
+          });
       }
-      sendable_data
+      actions
   }
 
   pub fn delete_data(&mut self, name : &Identity, size: u64) {

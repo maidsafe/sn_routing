@@ -19,7 +19,6 @@
 
 mod database;
 
-use routing::generic_sendable_type;
 use cbor::{ Decoder };
 use routing;
 use routing::NameType;
@@ -64,7 +63,7 @@ impl MaidManager {
     Ok(routing::Action::SendOn(destinations))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<MaidManagerAccountWrapper> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<RoutingNodeAction> {
     self.db_.retrieve_all_and_reset()
   }
 
