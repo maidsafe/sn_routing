@@ -1070,7 +1070,7 @@ mod test {
     }
 
     #[test]
-    fn our_close_group_assert_sorted() {
+    fn our_close_group_and_in_range() {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
         let our_pmid_name = types::Pmid::new().get_name();
@@ -1091,7 +1091,7 @@ mod test {
         let mut closer_name : NameType = our_pmid_name.clone();
         for close_node in our_close_group {
             assert!(closer_to_target(&closer_name, &close_node.id, &our_pmid_name));
-            assert!(routing_table.address_in_our_close_group_range(&closer_name));
+            assert!(routing_table.address_in_our_close_group_range(&close_node.id));
             closer_name = close_node.id.clone();
         }
     }
