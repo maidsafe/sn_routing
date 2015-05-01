@@ -1043,6 +1043,14 @@ mod test {
         fn type_tag(&self)->u64 { unimplemented!() }
 
         fn serialised_contents(&self)->Vec<u8> { self.data.clone() }
+
+        fn refresh(&self)->bool {
+            false
+        }
+
+        fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+            None
+        }
     }
 
     impl Interface for TestInterface {
