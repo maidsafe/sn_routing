@@ -1,84 +1,64 @@
-// Copyright 2015 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited.
 //
-// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the Safe Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://maidsafe.net/network-platform-licensing
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions and limitations relating to
-// use of the Safe Network Software.
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
 
 #![allow(unused_assignments)]
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::Frequency;
-use types::{PublicPmid, GROUP_SIZE};
-use NameType;
+use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE, Mergeable};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
-  pub target_id : NameType,
-  pub group     : Vec<PublicPmid>
+  pub group : Vec<PublicPmid>
 }
 
-impl FindGroupResponse {
+impl Mergeable for FindGroupResponse {
+    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+        let mut frequency = Frequency::new();
 
-    // TODO(ben 2015-04-09) to be replaced with a proper merge trait
-    //                      for every message type
-    pub fn merge(responses : &Vec<FindGroupResponse>) -> Option<FindGroupResponse> {
-        if responses.is_empty() {
-            return None;
-        }
-
-        let mut freq_target_id = Frequency::new();
         for response in responses {
-            freq_target_id.update(response.target_id.clone());
-        }
-        // first identify the target_ids;
-        let target_ids : Vec<NameType> = freq_target_id.sort_by_highest()
-                                       .iter()
-                                       .map(|&(ref id, _ )| id.clone())
-                                       .collect();
-        for target_id in target_ids {
-            let mut freq_public_pmid = Frequency::new();
-            for response in responses.iter()
-                                     .filter(|response| &response.target_id == &target_id) {
-                for public_pmid in &response.group {
-                    freq_public_pmid.update(public_pmid.clone());
-                }
+            for public_pmid in &response.group {
+                frequency.update(public_pmid.clone());
             }
-            let merged_group : Vec<PublicPmid>
-                             = freq_public_pmid.sort_by_highest().iter()
-                                               .take(GROUP_SIZE as usize)
-                                               .map(|&(ref k, _)| k.clone())
-                                               .collect();
-            if !merged_group.is_empty() {
-                return Some(FindGroupResponse{target_id : target_id, group : merged_group}); };
         }
-        return None;
+
+        let merged_group = frequency.sort_by_highest().into_iter()
+                           .filter(|&(_, ref count)| *count >= QUORUM_SIZE as usize)
+                           .take(GROUP_SIZE as usize)
+                           .map(|(k, _)| k)
+                           .collect::<Vec<_>>();
+
+        if merged_group.is_empty() { return None; }
+        Some(FindGroupResponse{ group: merged_group })
     }
 }
 
 impl Encodable for FindGroupResponse {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.target_id, &self.group)).encode(e)
+    CborTagEncode::new(5483_001, &self.group).encode(e)
   }
 }
 
 impl Decodable for FindGroupResponse {
   fn decode<D: Decoder>(d: &mut D)->Result<FindGroupResponse, D::Error> {
     try!(d.read_u64());
-    let (target_id, group) = try!(Decodable::decode(d));
-    Ok(FindGroupResponse { target_id: target_id, group: group})
+    let group = try!(Decodable::decode(d));
+    Ok(FindGroupResponse { group: group})
   }
 }
 
@@ -87,7 +67,11 @@ mod test {
     use super::*;
     use cbor;
     use types;
+    use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE};
     use test_utils::Random;
+    use rand::{thread_rng, Rng};
+    use rand::distributions::{IndependentSample, Range};
+
 
     #[test]
     fn find_group_response_serialisation() {
@@ -104,42 +88,47 @@ mod test {
 
     #[test]
     fn merge() {
-        let obj : FindGroupResponse = Random::generate_random();
-        assert!(obj.group.len() >= types::GROUP_SIZE as usize);
-        // if group size changes, reimplement the below
-        assert!(types::GROUP_SIZE >= 13);
+        let pmids: FindGroupResponse = Random::generate_random();
+        // pmids.group.len() == types::GROUP_SIZE + 20
+        assert!(pmids.group.len() >= GROUP_SIZE as usize);
 
-        // pick random keys
-        let mut keys = Vec::<types::PublicPmid>::with_capacity(7);
-        keys.push(obj.group[3].clone());
-        keys.push(obj.group[5].clone());
-        keys.push(obj.group[7].clone());
-        keys.push(obj.group[8].clone());
-        keys.push(obj.group[9].clone());
-        keys.push(obj.group[10].clone());
-        keys.push(obj.group[13].clone());
+        let group_size = GROUP_SIZE as usize;
+        let quorum_size = QUORUM_SIZE as usize;
 
-        let mut responses = Vec::<FindGroupResponse>::with_capacity(4);
-        let target_id = obj.target_id.clone();
-        responses.push(obj);
-        for _ in 0..4 {
-            let mut response : FindGroupResponse = Random::generate_random();
-            response.target_id = target_id.clone();
-            response.group[1] = keys[0].clone();
-            response.group[4] = keys[1].clone();
-            response.group[6] = keys[2].clone();
-            response.group[0] = keys[3].clone();
-            response.group[5] = keys[4].clone();
-            response.group[9] = keys[5].clone();
-            response.group[10] = keys[6].clone();
+        // get random GROUP_SIZE groups
+        let mut groups = Vec::<PublicPmid>::with_capacity(quorum_size);
+        let mut rng = thread_rng();
+        let range = Range::new(0, pmids.group.len());
+
+        loop {
+            let index = range.ind_sample(&mut rng);
+            if groups.contains(&pmids.group[index]) { continue; }
+            groups.push(pmids.group[index].clone());
+            if groups.len() == quorum_size { break; }
+        };
+
+        let mut responses = Vec::<FindGroupResponse>::with_capacity(quorum_size);
+
+        for _ in 0..quorum_size {
+            let mut response = FindGroupResponse{ group: Vec::new() };
+            // Take the first QUORUM_SIZE as common...
+            for i in 0..quorum_size {
+                response.group.push(groups[i].clone());
+            }
+            // ...and the remainder arbitrary
+            for _ in quorum_size..group_size {
+                response.group.push(PublicPmid::generate_random());
+            }
+
+            rng.shuffle(&mut response.group[..]);
             responses.push(response);
         }
 
-        let merged_obj = FindGroupResponse::merge(&responses);
-        assert!(merged_obj.is_some());
-        let merged_response = merged_obj.unwrap();
-        for i in 0..7 {
-            assert!(keys.iter().find(|a| **a == merged_response.group[i]).is_some());
+        let merged = types::Mergeable::merge(responses.iter());
+        assert!(merged.is_some());
+        let merged_response = merged.unwrap();
+        for i in 0..quorum_size {
+            assert!(groups.iter().find(|a| **a == merged_response.group[i]).is_some());
         }
     }
 }

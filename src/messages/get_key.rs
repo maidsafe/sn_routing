@@ -22,24 +22,23 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use NameType;
 
-
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct Post {
-  pub name : NameType,
-  pub data : Vec<u8>
+pub struct GetKey {
+  pub requester_id : NameType,
+  pub target_id : NameType,
 }
 
-impl Encodable for Post {
+impl Encodable for GetKey {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.name, &self.data)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.requester_id, &self.target_id)).encode(e)
   }
 }
 
-impl Decodable for Post {
-  fn decode<D: Decoder>(d: &mut D)->Result<Post, D::Error> {
+impl Decodable for GetKey {
+  fn decode<D: Decoder>(d: &mut D)->Result<GetKey, D::Error> {
     try!(d.read_u64());
-    let (name, data) = try!(Decodable::decode(d));
-    Ok(Post { name: name, data: data })
+    let (requester_id, target_id) = try!(Decodable::decode(d));
+    Ok(GetKey { requester_id: requester_id, target_id: target_id})
   }
 }
 
@@ -50,14 +49,14 @@ mod test {
     use test_utils::Random;
 
     #[test]
-    fn post_serialisation() {
-        let obj_before : Post = Random::generate_random();
+    fn get_client_serialisation() {
+        let obj_before : GetKey = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: Post = d.decode().next().unwrap().unwrap();
+        let obj_after: GetKey = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
     }

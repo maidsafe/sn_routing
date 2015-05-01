@@ -1,30 +1,32 @@
-// Copyright 2015 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited.
 //
-// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the Safe Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://maidsafe.net/network-platform-licensing
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions and limitations relating to
-// use of the Safe Network Software.
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
 
 #![allow(unused_assignments)]
 
 use sodiumoxide::crypto;
+use cbor;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
 use NameType;
 use std::fmt;
+use std::str;
+use RoutingError;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -58,8 +60,12 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-pub static GROUP_SIZE: u32 = 23;
+pub static GROUP_SIZE: u32 = 32;
 pub static QUORUM_SIZE: u32 = 19;
+
+pub trait Mergeable {
+    fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum Authority {
@@ -112,12 +118,6 @@ pub type SerialisedMessage = Vec<u8>;
 pub type PmidNode = NameType;
 pub type PmidNodes = Vec<PmidNode>;
 
-pub trait RoutingTrait {
-  fn get_name(&self)->NameType;
-  fn get_owner(&self)->Vec<u8>;
-  fn refresh(&self)->bool;
-}
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
   pub name : NameType,
@@ -147,7 +147,7 @@ pub struct Signature {
 
 impl Signature {
   pub fn new(signature : crypto::sign::Signature) -> Signature {
-    assert_eq!(signature.0.len(), 32);
+    assert_eq!(signature.0.len(), 64);
     Signature {
       signature : signature.0.to_vec()
     }
@@ -192,7 +192,7 @@ impl PublicSignKey {
 
 impl fmt::Debug for PublicSignKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PublicSignKey(...)")
+        write!(f, "PublicSignKey({:?})", self.public_sign_key.iter().take(6).collect::<Vec<_>>())
     }
 }
 
@@ -260,12 +260,11 @@ impl PublicPmid {
       }
     }
 
-}
-
-impl RoutingTrait for PublicPmid {
-  fn get_name(&self) -> NameType { self.name.clone() }
-  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-  fn refresh(&self)->bool { false } // TODO is this an account transfer type
+    pub fn serialised_contents(&self)->Vec<u8> {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
+    }
 }
 
 impl Encodable for PublicPmid {
@@ -297,12 +296,6 @@ pub struct Pmid {
   name: NameType
 }
 
-impl RoutingTrait for Pmid {
-  fn get_name(&self) -> NameType { self.name.clone() }
-  fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-  fn refresh(&self)->bool { false } // TODO is this an account transfer type
-}
-
 impl Pmid {
   pub fn new() -> Pmid {
     let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
@@ -330,6 +323,10 @@ impl Pmid {
       validation_token : validation_token,
       name : NameType::new(digest.0)
     }
+  }
+
+  pub fn get_name(&self) -> NameType {
+    self.name.clone()
   }
 
   pub fn get_public_key(&self) -> PublicKey {
@@ -372,12 +369,6 @@ impl Decodable for AccountTransferInfo {
     let name = try!(Decodable::decode(d));
     Ok(AccountTransferInfo { name: name })
   }
-}
-
-impl RoutingTrait for AccountTransferInfo {
-    fn get_name(&self)->NameType { self.name.clone() }
-    fn get_owner(&self)->Vec<u8> { Vec::<u8>::new() } // TODO owner
-    fn refresh(&self)->bool { true } // TODO is this an account transfer type
 }
 
 /// Address of the source of the message
@@ -431,8 +422,8 @@ pub enum MessageTypeTag {
   FindGroupResponse,
   GetData,
   GetDataResponse,
-  GetClientKey,
-  GetClientKeyResponse,
+  GetKey,
+  GetKeyResponse,
   GetGroupKey,
   GetGroupKeyResponse,
   Post,
@@ -443,6 +434,34 @@ pub enum MessageTypeTag {
   AccountTransfer
 }
 
+impl Encodable for RoutingError {
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        let mut type_tag;
+        match *self {
+            RoutingError::Success => type_tag = "Success",
+            RoutingError::FailedToBootstrap => type_tag = "FailedToBootstrap",
+            RoutingError::NoData => type_tag = "NoData",
+            RoutingError::InvalidRequest => type_tag = "InvalidRequest",
+            RoutingError::IncorrectData(ref data) => type_tag = str::from_utf8(data.as_ref()).unwrap()
+        };
+        CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
+    }
+}
+
+impl Decodable for RoutingError {
+    fn decode<D: Decoder>(d: &mut D)->Result<RoutingError, D::Error> {
+        try!(d.read_u64());
+        let mut type_tag : String;
+        type_tag = try!(Decodable::decode(d));
+        match &type_tag[..] {
+            "Success" => Ok(RoutingError::Success),
+            "FailedToBootstrap" => Ok(RoutingError::FailedToBootstrap),
+            "NoData" => Ok(RoutingError::NoData),
+            "InvalidRequest" => Ok(RoutingError::InvalidRequest),
+            data => Ok(RoutingError::IncorrectData(data.to_string().into_bytes()))
+        }
+    }
+}
 
 #[cfg(test)]
 #[allow(deprecated)]
@@ -492,4 +511,15 @@ mod test {
                                 reply_to: None });
   }
 
+#[test]
+    fn serialisation_public_pmid() {
+        let obj_before = PublicPmid::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: PublicPmid = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
+    }
 }

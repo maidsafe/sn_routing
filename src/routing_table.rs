@@ -1,27 +1,26 @@
-// Copyright 2015 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited.
 //
-// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the Safe Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://maidsafe.net/network-platform-licensing
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions and limitations relating to
-// use of the Safe Network Software.
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
 
 use common_bits::*;
 use sodiumoxide::crypto;
 use std::cmp;
 use std::usize;
 use NameType;
-use types::{PublicPmid, RoutingTrait};
+use types::PublicPmid;
 use name_type::closer_to_target;
 
 static BUCKET_SIZE: usize = 1;
@@ -50,7 +49,7 @@ impl NodeInfo {
   pub fn new(fob: PublicPmid, connected: bool)
          -> NodeInfo {
     NodeInfo {
-      id : fob.get_name(),
+      id : fob.name.clone(),
       fob : fob,
       connected : connected
     }
@@ -387,7 +386,7 @@ mod test {
     use std::cmp;
     use std::collections::BitVec;
     use std::net::*;
-    use types::{PublicPmid, RoutingTrait};
+    use types::PublicPmid;
     use name_type::closer_to_target;
     use types;
     use NameType;
@@ -557,7 +556,7 @@ mod test {
     fn create_random_node_info() -> NodeInfo {
         let public_pmid = types::PublicPmid::new(&types::Pmid::new());
         NodeInfo {
-            id : public_pmid.get_name(),
+            id : public_pmid.name.clone(),
             fob: public_pmid,
             connected: false,
         }
@@ -1071,6 +1070,32 @@ mod test {
     }
 
     #[test]
+    fn our_close_group_assert_sorted() {
+        // independent double verification of our_close_group()
+        // this test verifies that the close group is returned sorted
+        let our_pmid_name = types::Pmid::new().get_name();
+        let mut routing_table : RoutingTable = RoutingTable::new(our_pmid_name.clone());
+
+        let mut count : usize = 0;
+        loop {
+            routing_table.add_node(NodeInfo::new(
+                                   types::PublicPmid::new(&types::Pmid::new()), true));
+            count += 1;
+            if routing_table.size() >=
+                RoutingTable::get_optimal_size() { break; }
+            if count >= 2 * RoutingTable::get_optimal_size() {
+                panic!("Routing table does not fill up."); }
+        }
+        let our_close_group : Vec<NodeInfo> = routing_table.our_close_group();
+        assert_eq!(our_close_group.len(), RoutingTable::get_group_size() );
+        let mut closer_name : NameType = our_pmid_name.clone();
+        for close_node in our_close_group {
+            assert!(closer_to_target(&closer_name, &close_node.id, &our_pmid_name));
+            closer_name = close_node.id.clone();
+        }
+    }
+
+    #[test]
     fn our_close_group_test() {
         let mut table_unit_test = RoutingTableUnitTest::new();
         assert!(table_unit_test.table.our_close_group().is_empty());
@@ -1086,16 +1111,9 @@ mod test {
         table_unit_test.complete_filling_table();
         assert_eq!(RoutingTable::get_group_size(), table_unit_test.table.our_close_group().len());
 
-        table_unit_test.table.our_close_group().sort_by(
-            |a, b| if closer_to_target(&a.id, &b.id, &table_unit_test.our_id) {
-                cmp::Ordering::Less
-            } else {
-                cmp::Ordering::Greater
-            });
-
         for close_node in table_unit_test.table.our_close_group().iter() {
             assert!(table_unit_test.added_ids.iter().filter(
-                |&node| { node == &close_node.id }).count() > 0);
+                |&node| { node == &close_node.id }).count() == 1);
         }
     }
 

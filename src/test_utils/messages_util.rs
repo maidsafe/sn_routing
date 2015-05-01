@@ -1,26 +1,26 @@
-// Copyright 2015 MaidSafe.net limited
+// Copyright 2015 MaidSafe.net limited.
 //
-// This Safe Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the Safe Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0, found in the root
-// directory of this project at LICENSE, COPYING and CONTRIBUTOR respectively and also
-// available at: http://maidsafe.net/network-platform-licensing
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the Safe Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-// OF ANY KIND, either express or implied.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions and limitations relating to
-// use of the Safe Network Software.
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
 
 use rand::random;
 use messages;
 use types::*;
 use NameType;
 use super::random_trait::Random;
+use RoutingError;
 
 impl Random for messages::connect_request::ConnectRequest {
     fn generate_random() -> messages::connect_request::ConnectRequest {
@@ -93,31 +93,28 @@ impl Random for messages::find_group::FindGroup {
 impl Random for messages::find_group_response::FindGroupResponse {
     fn generate_random() -> messages::find_group_response::FindGroupResponse {
         let total = GROUP_SIZE as usize + 20;
-        let mut vec: Vec<PublicPmid> = Vec::with_capacity(total);
+        let mut vec = Vec::<PublicPmid>::with_capacity(total);
         for i in 0..total {
             let public_pmid : PublicPmid = Random::generate_random();
             vec.push(public_pmid);
         }
 
-        messages::find_group_response::FindGroupResponse {
-            target_id: Random::generate_random(),
-            group: vec,
-        }
+        messages::find_group_response::FindGroupResponse { group: vec }
     }
 }
 
-impl Random for messages::get_client_key::GetClientKey {
-    fn generate_random() -> messages::get_client_key::GetClientKey {
-        messages::get_client_key::GetClientKey {
+impl Random for messages::get_client_key::GetKey {
+    fn generate_random() -> messages::get_client_key::GetKey {
+        messages::get_client_key::GetKey {
             requester_id: Random::generate_random(),
             target_id: Random::generate_random(),
         }
     }
 }
 
-impl Random for messages::get_client_key_response::GetClientKeyResponse {
-    fn generate_random() -> messages::get_client_key_response::GetClientKeyResponse {
-        messages::get_client_key_response::GetClientKeyResponse {
+impl Random for messages::get_client_key_response::GetKeyResponse {
+    fn generate_random() -> messages::get_client_key_response::GetKeyResponse {
+        messages::get_client_key_response::GetKeyResponse {
             address: Random::generate_random(),
             public_sign_key: Random::generate_random(),
         }
@@ -138,7 +135,7 @@ impl Random for messages::get_data_response::GetDataResponse {
         messages::get_data_response::GetDataResponse {
             name_and_type_id: Random::generate_random(),
             data: generate_random_vec_u8(99),
-            error: generate_random_vec_u8(99),
+            error: RoutingError::Success,
         }
     }
 }
@@ -147,7 +144,6 @@ impl Random for messages::get_data_response::GetDataResponse {
 impl Random for messages::get_group_key::GetGroupKey {
     fn generate_random() -> messages::get_group_key::GetGroupKey {
         messages::get_group_key::GetGroupKey {
-            requester: Random::generate_random(),
             target_id: Random::generate_random(),
         }
     }
@@ -156,12 +152,11 @@ impl Random for messages::get_group_key::GetGroupKey {
 impl Random for messages::get_group_key_response::GetGroupKeyResponse {
     fn generate_random() -> messages::get_group_key_response::GetGroupKeyResponse {
         let total: usize = GROUP_SIZE as usize + 7;
-        let mut vec: Vec<(NameType, PublicSignKey)> = Vec::with_capacity(total);
+        let mut vec = Vec::<(NameType, PublicSignKey)>::with_capacity(total);
         for i in 0..total {
             vec.push((Random::generate_random(), Random::generate_random()));
         }
         messages::get_group_key_response::GetGroupKeyResponse {
-            target_id: Random::generate_random(),
             public_sign_keys: vec,
         }
     }
@@ -170,7 +165,7 @@ impl Random for messages::get_group_key_response::GetGroupKeyResponse {
 impl Random for messages::post::Post {
     fn generate_random() -> messages::post::Post {
         messages::post::Post {
-            name_and_type_id: Random::generate_random(),
+            name: Random::generate_random(),
             data: generate_random_vec_u8(99),
         }
     }
@@ -188,9 +183,18 @@ impl Random for messages::put_data::PutData {
 impl Random for messages::put_data_response::PutDataResponse {
      fn generate_random() -> messages::put_data_response::PutDataResponse {
         messages::put_data_response::PutDataResponse {
-            type_id: random::<u32>(),
+            name: Random::generate_random(),
             data: generate_random_vec_u8(99),
             error: generate_random_vec_u8(27),
+        }
+    }
+}
+
+impl Random for messages::put_public_pmid::PutPublicPmid {
+    fn generate_random() -> messages::put_public_pmid::PutPublicPmid {
+        let public_pmid : PublicPmid = Random::generate_random();
+        messages::put_public_pmid::PutPublicPmid {
+            public_pmid: public_pmid,
         }
     }
 }
