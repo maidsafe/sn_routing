@@ -70,7 +70,6 @@ pub mod node_interface;
 pub mod routing_client;
 pub mod routing_node;
 pub mod sendable;
-pub mod generic_sendable_type;
 pub mod test_utils;
 pub mod types;
 
