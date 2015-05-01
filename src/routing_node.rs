@@ -157,6 +157,10 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
     }
 
+    /// Refresh the content in the close group nodes of group address content::name.
+    /// This method needs to be called when churn is triggered.
+    /// all the group members need to call this, otherwise it will not be resolved as a valid
+    /// content.
     pub fn refresh(&mut self, content: Box<Sendable>) {
         self.put(content.name(), content, false);
     }
