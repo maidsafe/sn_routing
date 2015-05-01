@@ -1260,6 +1260,3 @@ mod test {
     //    assert!(t3.join().is_ok());
     //}
 }
-#[test]
-fn dummy_routing()  {
-}
