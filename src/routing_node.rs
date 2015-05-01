@@ -154,7 +154,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     pub fn refresh(&mut self, content: Box<Sendable>) {
-        ;
+        self.put(content.name(), content, false);
     }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
