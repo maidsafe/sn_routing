@@ -732,18 +732,24 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
+    /// On bootstrapping a node can temporarily publish its PublicPmid in the group.
+    /// Sentinel will query this pool.  No handle_get_public_pmid is needed.
     fn handle_put_public_pmid(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         // if data type is public pmid and our authority is nae then add to public_pmid_cache
         // don't call upper layer if public pmid type
         let put_public_pmid = try!(self.decode::<PutPublicPmid>(&body).ok_or(()));
-        let our_authority = self.our_authority(&put_public_pmid.public_pmid.name, &header);
-        if our_authority == Authority::NaeManager {
-            // FIXME (prakash) signature check ?
-            self.public_pmid_cache.add(put_public_pmid.public_pmid.name.clone(),
-                                       put_public_pmid.public_pmid);
-            Ok(())
-        } else {
-            Err(())
+        match self.our_authority(&put_public_pmid.public_pmid.name, &header) {
+            Authority::NaeManager => {
+                // FIXME (prakash) signature check ?
+                // TODO (Ben): check whether to accept pmid into group;
+                //             restrict on minimal similar number of leading bits.
+                self.public_pmid_cache.add(put_public_pmid.public_pmid.name.clone(),
+                                           put_public_pmid.public_pmid);
+                Ok(())
+            },
+            _ => {
+                Err(())
+            }
         }
     }
 
@@ -797,41 +803,6 @@ impl<F> RoutingNode<F> where F: Interface {
             }
         }
     }
-
-    // fn handle_post(&self, header : MessageHeader, body : Bytes) -> RecvResult {
-    //     let post = try!(self.decode::<Post>(&body).ok_or(()));
-    //     let our_authority = self.our_authority(&post.name, &header);
-    //     let mut interface = self.interface.lock().unwrap();
-    //     let action_result : RecvResult
-    //         = match interface.handle_post(our_authority.clone(),
-    //                                       header.authority.clone(),
-    //                                       header.from(),
-    //                                       post.name.clone(),
-    //                                       post.data.clone()) {
-    //         Ok(Action::Reply(data)) => {
-    //             Ok(()) // TODO: implement post_response
-    //         },
-    //         Ok(Action::SendOn(destinations)) => {
-    //             for destination in destinations {
-    //                 let send_on_header = header.create_send_on(&self.own_id,
-    //                     &our_authority, &destination);
-    //                 let routing_msg = RoutingMessage::new(MessageTypeTag::Post,
-    //                     send_on_header, post.clone(), &self.pmid.get_crypto_secret_sign_key());
-    //                 self.send_swarm_or_parallel(&destination,
-    //                     &self.encode(&routing_msg));
-    //             }
-    //             Ok(())
-    //         },
-    //         Err(e) => match e {
-    //             RoutingError::Success => Ok(()),           // Interface terminates message flow
-    //             RoutingError::IncorrectData(_) => Err(()), // TODO: reply with post_response
-    //             RoutingError::NoData => Err(()),
-    //             RoutingError::InvalidRequest => Err(()),
-    //             _ => Err(())
-    //         },
-    //     };
-    //     action_result
-    // }
 
     fn handle_put_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
         let put_data_response = try!(self.decode::<PutDataResponse>(&body).ok_or(()));
@@ -1057,6 +1028,7 @@ mod test {
     use messages::get_data_response::GetDataResponse;
     use messages::get_client_key::GetKey;
     use messages::post::Post;
+    use messages::put_public_pmid::PutPublicPmid;
     use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
     use types::{MessageId, NameAndTypeId};
@@ -1354,6 +1326,79 @@ mod test {
     fn call_handle_post() {
         let post: Post = Random::generate_random();
         assert_eq!(call_operation(post, MessageTypeTag::Post).call_count, 1u32);
+    }
+
+    #[test]
+    fn cache_public_pmid() {
+        // copy from our_authority_full_routing_table test
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
+
+        let mut count : usize = 0;
+        loop {
+            routing_node.routing_table.add_node(routing_table::NodeInfo::new(
+                                       PublicPmid::new(&Pmid::new()), true));
+            count += 1;
+            if routing_node.routing_table.size() >=
+                routing_table::RoutingTable::get_optimal_size() { break; }
+            if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
+                panic!("Routing table does not fill up."); }
+        }
+        let a_message_id : MessageId = random::<u32>();
+        let our_name = routing_node.own_id.clone();
+        let our_close_group : Vec<routing_table::NodeInfo>
+            = routing_node.routing_table.our_close_group();
+        let furthest_node_close_group : routing_table::NodeInfo
+            = our_close_group.last().unwrap().clone();
+        // end copy from our_authority_full_routing_table
+
+        let total_inside : u32 = 50;
+        let limit_attempts : u32 = 200;
+        let mut stored_public_pmids : Vec<PublicPmid> = Vec::with_capacity(total_inside as usize);
+
+        let mut count_inside : u32 = 0;
+        let mut count_total : u32 = 0;
+        loop {
+            let put_public_pmid = PutPublicPmid{ public_pmid :  PublicPmid::new(&Pmid::new()) };
+            let put_public_pmid_header : MessageHeader = MessageHeader {
+                message_id : a_message_id.clone(),
+                destination : types::DestinationAddress {
+                    dest : put_public_pmid.public_pmid.name.clone(),
+                    reply_to : None },
+                source : types::SourceAddress {
+                    from_node : Random::generate_random(),  // Bootstrap node or ourself
+                    from_group : None,
+                    reply_to : None },
+                authority : types::Authority::ManagedNode
+            };
+            let serialised_msg = routing_node.encode(&put_public_pmid);
+            let result = routing_node.handle_put_public_pmid(put_public_pmid_header,
+                serialised_msg);
+            if closer_to_target(&put_public_pmid.public_pmid.name.clone(),
+                                &furthest_node_close_group.id,
+                                &our_name) {
+                assert_eq!(result, Ok(()));
+                stored_public_pmids.push(put_public_pmid.public_pmid);
+                count_inside += 1;
+            } else {
+                assert_eq!(result, Err(()));
+            }
+            count_total += 1;
+            if count_inside >= total_inside {
+                break; // succcess
+            }
+            if count_total >= limit_attempts {
+                if count_inside > 0 {
+                    println!("Could only verify {} successful public_pmids inside
+                            our group before limit reached.", count_inside);
+                    break;
+                } else { panic!("No PublicPmids were found inside our close group!"); }
+            }
+        }
+        for public_pmid in stored_public_pmids {
+            assert!(routing_node.public_pmid_cache.check(&public_pmid.name));
+        }
+        // assert no outside keys were cached
+        assert_eq!(routing_node.public_pmid_cache.len(), total_inside as usize);
     }
 
     //#[test]
