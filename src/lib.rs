@@ -75,9 +75,12 @@ pub mod test_utils;
 pub mod types;
 
 use sodiumoxide::crypto;
+use cbor::CborTagEncode;
+
 
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
@@ -91,12 +94,43 @@ pub enum Action {
   SendOn(Vec<NameType>),
 }
 
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum RoutingError {
   Success,  // vault will also return a Success to indicate a dead end
   FailedToBootstrap,
   NoData,
   InvalidRequest,
   IncorrectData(Vec<u8>),
+}
+
+impl Encodable for RoutingError {
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        let mut type_tag;
+        match *self {
+            RoutingError::Success => type_tag = "Success",
+            RoutingError::FailedToBootstrap => type_tag = "FailedToBootstrap",
+            RoutingError::NoData => type_tag = "NoData",
+            RoutingError::InvalidRequest => type_tag = "InvalidRequest",
+            RoutingError::IncorrectData(_) => type_tag = "IncorrectData",
+        };
+        CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
+    }
+}
+
+impl Decodable for RoutingError {
+    fn decode<D: Decoder>(d: &mut D)->Result<RoutingError, D::Error> {
+        try!(d.read_u64());
+        let mut type_tag : String;
+        type_tag = try!(Decodable::decode(d));
+        match &type_tag[..] {
+            "Success" => Ok(RoutingError::Success),
+            "FailedToBootstrap" => Ok(RoutingError::FailedToBootstrap),
+            "NoData" => Ok(RoutingError::NoData),
+            "InvalidRequest" => Ok(RoutingError::InvalidRequest),
+            "IncorrectData" => Ok(RoutingError::IncorrectData(vec![])),
+            _ => Ok(RoutingError::IncorrectData("unknown".to_string().into_bytes()))
+        }
+    }
 }
 
 // #[test]
