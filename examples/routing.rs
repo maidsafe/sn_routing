@@ -35,7 +35,6 @@ use rand::random;
 use sodiumoxide::crypto;
 
 use crust::Endpoint;
-use routing::generic_sendable_type;
 use routing::NameType;
 use routing::node_interface::*;
 use routing::routing_node::{RoutingNode};
@@ -87,9 +86,7 @@ impl Sendable for TestData {
         false
     }
 
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        None
-    }
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
 }
 
 impl PartialEq for TestData {
@@ -142,8 +139,8 @@ impl Interface for TestNode {
                    from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
         Err(RoutingError::Success)
     }
-    fn handle_get_response(&mut self, from_address: NameType, 
-                        response: Result<Vec<u8>, RoutingError>) -> RoutingNodeAction {
+    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
+                           RoutingError>) -> routing::node_interface::RoutingNodeAction {
         unimplemented!();
     }
     fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
@@ -155,7 +152,7 @@ impl Interface for TestNode {
         unimplemented!();
     }
     fn handle_churn(&mut self, close_group: Vec<NameType>)
-        -> Vec<RoutingNodeAction> {
+        -> Vec<routing::node_interface::RoutingNodeAction> {
         unimplemented!();
     }
     fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
@@ -166,9 +163,13 @@ impl Interface for TestNode {
                         data: Vec<u8>) -> Result<Action, RoutingError> {
         Err(RoutingError::Success)
     }
-    fn handle_get_key(&mut self, type_id: u64, name: NameType, our_authority: types::Authority,
-                      from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
-                      unimplemented!()
+    fn handle_get_key(&mut self,
+                      type_id: u64,
+                      name: NameType,
+                      our_authority: routing::types::Authority,
+                      from_authority: routing::types::Authority,
+                      from_address: NameType) -> Result<Action, RoutingError> {
+        unimplemented!();
     }
 }
 
