@@ -31,6 +31,7 @@ use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
 use name_type::closer_to_target;
+use node_interface;
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
@@ -137,7 +138,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, destination: NameType, content: T) where T: Sendable {
+    pub fn put(&mut self, destination: NameType, content: Box<Sendable>, is_client: bool) {
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: self.id(), reply_to: None };
         let source = self.our_source_address();
@@ -150,6 +151,10 @@ impl<F> RoutingNode<F> where F: Interface {
 
         e.encode(&[message]).unwrap();
         self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
+    }
+
+    pub fn refresh(&mut self, content: Box<Sendable>) {
+        ;
     }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
@@ -285,6 +290,24 @@ impl<F> RoutingNode<F> where F: Interface {
             self.all_connections.1.remove(&peer_id);
           // TODO : remove from the non routing list
           // handle_churn
+        }
+    }
+
+    //TODO(team) This method needs to be triggered when routing table close group changes
+    fn on_churn(&mut self, close_group: Vec<NameType>) {
+        let actions = self.interface.lock().unwrap().handle_churn(close_group);
+        self.invoke_routing_actions(actions);
+    }
+
+    fn invoke_routing_actions(&mut self, routing_actions: Vec<node_interface::RoutingNodeAction>) {
+        for routing_action in routing_actions {
+            match routing_action {
+                node_interface::RoutingNodeAction::Put { destination: x, content: y, is_client: z, } => self.put(x, y, z),
+                node_interface::RoutingNodeAction::Get { type_id: x, name: y, } => self.get(x, y),
+                node_interface::RoutingNodeAction::Refresh { content: x, } => self.refresh(x),
+                node_interface::RoutingNodeAction::Post => unimplemented!(),
+                node_interface::RoutingNodeAction::None => (),
+            }
         }
     }
 
@@ -1135,10 +1158,10 @@ mod test {
 #[test]
     fn call_put() {
         let data = "this is a known string".to_string().into_bytes();
-        let chunk = TestData::new(data);
+        let chunk = Box::new(TestData::new(data));
         let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
         let name: NameType = Random::generate_random();
-        n1.put(name, chunk);
+        n1.put(name, chunk, true);
     }
 
 #[test]
