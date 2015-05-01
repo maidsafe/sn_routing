@@ -190,6 +190,3 @@ impl RoutingMessage {
         self.serialised_body = e.as_bytes().to_vec()
     }
 }
-#[test]
-fn dummy()  {
-}
