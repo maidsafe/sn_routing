@@ -1285,18 +1285,19 @@ mod test {
         }
         let a_message_id : MessageId = random::<u32>();
         let our_name = routing_node.own_id.clone();
+        let our_close_group : Vec<routing_table::NodeInfo>
+            = routing_node.routing_table.our_close_group();
+        let furthest_node_close_group : routing_table::NodeInfo
+            = our_close_group.last().unwrap().clone();
         // end copy from our_authority_full_routing_table
 
         let total_inside : u32 = 50;
         let limit_attempts : u32 = 200;
+        let mut stored_public_pmids : Vec<PublicPmid> = Vec::with_capacity(total_inside as usize);
 
         let mut count_inside : u32 = 0;
         let mut count_total : u32 = 0;
         loop {
-            let our_close_group : Vec<routing_table::NodeInfo>
-                = routing_node.routing_table.our_close_group();
-            let furthest_node_close_group : routing_table::NodeInfo
-                = our_close_group.last().unwrap().clone();
             let put_public_pmid = PutPublicPmid{ public_pmid :  PublicPmid::new(&Pmid::new()) };
             let put_public_pmid_header : MessageHeader = MessageHeader {
                 message_id : a_message_id.clone(),
@@ -1316,6 +1317,7 @@ mod test {
                                 &furthest_node_close_group.id,
                                 &our_name) {
                 assert_eq!(result, Ok(()));
+                stored_public_pmids.push(put_public_pmid.public_pmid);
                 count_inside += 1;
             } else {
                 assert_eq!(result, Err(()));
@@ -1332,7 +1334,9 @@ mod test {
                 } else { panic!("No PublicPmids were found inside our close group!"); }
             }
         }
-
+        for public_pmid in stored_public_pmids {
+            assert!(routing_node.public_pmid_cache.check(&public_pmid.name));
+        }
     }
 
     //#[test]
