@@ -701,11 +701,82 @@ impl<F> RoutingNode<F> where F: Interface {
         let to = header.send_to();
 
         let mut interface = self.interface.lock().unwrap();
-        match interface.handle_put(our_authority, from_authority, from, to, put_data.data) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(())
+        match interface.handle_put(our_authority.clone(), from_authority, from,
+                                   to, put_data.data.clone()) {
+            Ok(Action::Reply(reply_data)) => {
+                let reply_header = header.create_reply(&self.own_id, &our_authority);
+                let reply_to = match our_authority {
+                    Authority::ClientManager => match header.reply_to() {
+                        Some(client) => client,
+                        None => header.from()
+                    },
+                    _ => header.from()
+                };
+                let put_data_response = PutDataResponse {
+                    name : put_data.name.clone(),
+                    data : reply_data,
+                    error : vec![]
+                };
+                let routing_msg = RoutingMessage::new(MessageTypeTag::PutDataResponse,
+                    reply_header, put_data_response, &self.pmid.get_crypto_secret_sign_key());
+                self.send_swarm_or_parallel(&reply_to, &self.encode(&routing_msg));
+                Ok(())
+            },
+            Ok(Action::SendOn(destinations)) => {
+                for destination in destinations {
+                    let send_on_header = header.create_send_on(&self.own_id,
+                        &our_authority, &destination);
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::PutData,
+                        send_on_header, put_data.clone(), &self.pmid.get_crypto_secret_sign_key());
+                    self.send_swarm_or_parallel(&destination,
+                        &self.encode(&routing_msg));
+                }
+                Ok(())
+            },
+            Err(e) => match e {
+                RoutingError::Success => Ok(()),  // Interface terminates message flow
+                RoutingError::NoData => Err(()),
+                RoutingError::InvalidRequest => Err(()),
+                RoutingError::IncorrectData(data) => Err(()),
+                _ => Err(())
+            }
         }
     }
+
+    // fn handle_post(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+    //     let post = try!(self.decode::<Post>(&body).ok_or(()));
+    //     let our_authority = self.our_authority(&post.name, &header);
+    //     let mut interface = self.interface.lock().unwrap();
+    //     let action_result : RecvResult
+    //         = match interface.handle_post(our_authority.clone(),
+    //                                       header.authority.clone(),
+    //                                       header.from(),
+    //                                       post.name.clone(),
+    //                                       post.data.clone()) {
+    //         Ok(Action::Reply(data)) => {
+    //             Ok(()) // TODO: implement post_response
+    //         },
+    //         Ok(Action::SendOn(destinations)) => {
+    //             for destination in destinations {
+    //                 let send_on_header = header.create_send_on(&self.own_id,
+    //                     &our_authority, &destination);
+    //                 let routing_msg = RoutingMessage::new(MessageTypeTag::Post,
+    //                     send_on_header, post.clone(), &self.pmid.get_crypto_secret_sign_key());
+    //                 self.send_swarm_or_parallel(&destination,
+    //                     &self.encode(&routing_msg));
+    //             }
+    //             Ok(())
+    //         },
+    //         Err(e) => match e {
+    //             RoutingError::Success => Ok(()),           // Interface terminates message flow
+    //             RoutingError::IncorrectData(_) => Err(()), // TODO: reply with post_response
+    //             RoutingError::NoData => Err(()),
+    //             RoutingError::InvalidRequest => Err(()),
+    //             _ => Err(())
+    //         },
+    //     };
+    //     action_result
+    // }
 
     fn handle_put_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
         let put_data_response = try!(self.decode::<PutDataResponse>(&body).ok_or(()));
