@@ -164,7 +164,7 @@ impl Random for messages::get_group_key_response::GetGroupKeyResponse {
 impl Random for messages::post::Post {
     fn generate_random() -> messages::post::Post {
         messages::post::Post {
-            name_and_type_id: Random::generate_random(),
+            name: Random::generate_random(),
             data: generate_random_vec_u8(99),
         }
     }
