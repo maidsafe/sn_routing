@@ -22,9 +22,10 @@ use super::{Action, RoutingError};
 
 pub enum RoutingNodeAction {
     None,
-    Put { destination: NameType, content: Box<Sendable>, },
+    Put { destination: NameType, content: Box<Sendable>, is_client: bool, },
     Get { type_id: u64, name: NameType, },
     Post,
+    Refresh { content: Box<Sendable>, },
 }
 
 pub trait Interface : Sync + Send {
