@@ -172,27 +172,25 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     pub fn run(&mut self) {
-        loop {
-            let event = self.event_input.recv();
+        let event = self.event_input.try_recv();
 
-            if event.is_err() { return; }
+        if event.is_err() { return; }
 
-            match event.unwrap() {
-                crust::Event::NewMessage(endpoint, bytes) => {
-                    if self.all_connections.0.contains_key(&endpoint) {
-                        let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
-                        if self.message_received(&peer_id, bytes).is_err() {
-                            println!("failed to Parse message !!! check  from - {:?} ", peer_id);
-                            // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
-                        }
+        match event.unwrap() {
+            crust::Event::NewMessage(endpoint, bytes) => {
+                if self.all_connections.0.contains_key(&endpoint) {
+                    let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
+                    if self.message_received(&peer_id, bytes).is_err() {
+                        println!("failed to Parse message !!! check  from - {:?} ", peer_id);
+                        // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
                     }
-                },
-                crust::Event::NewConnection(endpoint) => {
-                    self.handle_connect(endpoint);
-                },
-                crust::Event::LostConnection(endpoint) => {
-                    self.handle_lost_connection(endpoint);
                 }
+            },
+            crust::Event::NewConnection(endpoint) => {
+                self.handle_connect(endpoint);
+            },
+            crust::Event::LostConnection(endpoint) => {
+                self.handle_lost_connection(endpoint);
             }
         }
     }
