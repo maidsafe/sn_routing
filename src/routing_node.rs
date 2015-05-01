@@ -1336,7 +1336,7 @@ mod test {
     #[test]
     fn cache_public_pmid() {
         // copy from our_authority_full_routing_table test
-        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
 
         let mut count : usize = 0;
         loop {
