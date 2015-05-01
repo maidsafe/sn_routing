@@ -24,7 +24,7 @@ use routing::NameType;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use cbor;
-use routing::types::{GROUP_SIZE};
+use routing::types::GROUP_SIZE;
 use utils::median;
 
 type Identity = NameType; // maid node address
@@ -50,22 +50,6 @@ impl MaidManagerAccountWrapper {
     pub fn get_account(&self) -> MaidManagerAccount {
         self.account.clone()
     }
-
-    fn merge_actual<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        let mut tmp_wrapper: MaidManagerAccountWrapper;
-        let mut data_stored: Vec<u64> = Vec::new();
-        let mut space_available: Vec<u64> = Vec::new();
-        for value in responses {
-            data_stored.push(value.get_account().get_data_stored());
-            space_available.push(value.get_account().get_available_space());
-        }
-        assert!(data_stored.len() < (GROUP_SIZE as usize + 1) / 2);
-
-        Some(MaidManagerAccountWrapper::new(NameType([0u8;64]), MaidManagerAccount {
-            data_stored : median(&data_stored),
-            space_available: median(&space_available)
-        }))
-    }
 }
 
 impl Clone for MaidManagerAccountWrapper {
@@ -89,16 +73,26 @@ impl Sendable for MaidManagerAccountWrapper {
         e.into_bytes()
     }
 
-    fn owner(&self)->Option<NameType> {
-        Option::None
-    }
-
     fn refresh(&self)->bool {
         true
     }
 
-    fn merge(&self)->bool {
-        true
+    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+        let mut tmp_wrapper: MaidManagerAccountWrapper;
+        let mut data_stored: Vec<u64> = Vec::new();
+        let mut space_available: Vec<u64> = Vec::new();
+        for value in responses {
+            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
+            tmp_wrapper = d.decode().next().unwrap().unwrap();
+            data_stored.push(tmp_wrapper.get_account().get_data_stored());
+            space_available.push(tmp_wrapper.get_account().get_available_space());
+        }
+        assert!(data_stored.len() < (GROUP_SIZE as usize + 1) / 2);
+
+        Some(MaidManagerAccountWrapper::new(NameType([0u8;64]), MaidManagerAccount {
+            data_stored : median(&data_stored),
+            space_available: median(&space_available)
+        }))
     }
 }
 

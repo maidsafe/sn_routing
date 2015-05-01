@@ -28,8 +28,78 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::collections;
 use routing::types::{GROUP_SIZE};
 use utils::median;
+use routing::sendable::Sendable;
 
 type Identity = self::routing::NameType; // pmidnode address
+
+/// PmidManagerAccountWrapper implemets the sendable trait from routing, thus making it transporatble
+/// across through the routing layer
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
+pub struct PmidManagerAccountWrapper {
+    name: Identity,
+    tag: u64,
+    account: PmidManagerAccount
+}
+
+impl PmidManagerAccountWrapper {
+    pub fn new(name: routing::NameType, account: PmidManagerAccount) -> PmidManagerAccountWrapper {
+        PmidManagerAccountWrapper {
+            name: name,
+            tag: 200, // FIXME : Change once the tag is freezed
+            account: account
+        }
+    }
+
+    pub fn get_account(&self) -> PmidManagerAccount {
+        self.account.clone()
+    }
+}
+
+impl Clone for PmidManagerAccountWrapper {
+    fn clone(&self) -> Self {
+        PmidManagerAccountWrapper::new(self.name.clone(), self.account.clone())
+    }
+}
+
+impl Sendable for PmidManagerAccountWrapper {
+    fn name(&self) -> Identity {
+        self.name.clone()
+    }
+
+    fn type_tag(&self) -> u64 {
+        self.tag.clone()
+    }
+
+    fn serialised_contents(&self) -> Vec<u8> {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
+    }
+
+    fn refresh(&self)->bool {
+        true
+    }
+
+    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+        let mut tmp_wrapper: PmidManagerAccountWrapper;
+        let mut offered_space: Vec<u64> = Vec::new();
+        let mut lost_total_size: Vec<u64> = Vec::new();
+        let mut stored_total_size: Vec<u64> = Vec::new();
+        for value in responses {
+            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
+            tmp_wrapper = d.decode().next().unwrap().unwrap();
+            offered_space.push(tmp_wrapper.get_account().get_offered_space());
+            lost_total_size.push(tmp_wrapper.get_account().get_lost_total_size());
+            stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
+        }
+        assert!(offered_space.len() < (GROUP_SIZE as usize + 1) / 2);
+        Some(PmidManagerAccountWrapper::new(routing::NameType([0u8;64]), PmidManagerAccount {
+            offered_space : median(&offered_space),
+            lost_total_size: median(&lost_total_size),
+            stored_total_size: median(&stored_total_size)
+        }))
+    }
+}
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
 pub struct PmidManagerAccount {
@@ -108,24 +178,6 @@ impl PmidManagerAccount {
 
 pub struct PmidManagerDatabase {
   storage : collections::HashMap<Identity, PmidManagerAccount>,
-}
-
-fn resolve(values: Vec<(Identity, PmidManagerAccount)>) -> PmidManagerAccount {
-    let size = values.len();
-    let mut offered_space: Vec<u64> = Vec::with_capacity(size);
-    let mut lost_total_size: Vec<u64> = Vec::with_capacity(size);
-    let mut stored_total_size: Vec<u64> = Vec::with_capacity(size);
-    assert!(size < (GROUP_SIZE as usize + 1) / 2);
-    for value in values.iter() {
-        offered_space.push(value.1.get_offered_space());
-        lost_total_size.push(value.1.get_lost_total_size());
-        stored_total_size.push(value.1.get_stored_total_size());
-    }
-    PmidManagerAccount {
-        offered_space : median(&offered_space),
-        lost_total_size: median(&lost_total_size),
-        stored_total_size: median(&stored_total_size)
-    }
 }
 
 impl PmidManagerDatabase {

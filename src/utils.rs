@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub fn median(values: &Vec<u64>) -> u64 {
     let size = values.len();
     let mut data: Vec<u64> = Vec::new();

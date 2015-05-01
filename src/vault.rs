@@ -27,6 +27,7 @@ use maid_manager::MaidManager;
 use pmid_manager::PmidManager;
 use pmid_node::PmidNode;
 use version_handler::VersionHandler;
+use routing::node_interface::{ Interface, RoutingNodeAction };
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -44,7 +45,7 @@ impl Clone for VaultFacade {
     }
 }
 
-impl routing::node_interface::Interface for VaultFacade {
+impl Interface for VaultFacade {
     fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
                 from_address: NameType)->Result<Action, RoutingError> {
         match our_authority {
@@ -60,6 +61,11 @@ impl routing::node_interface::Interface for VaultFacade {
             Authority::ManagedNode => { return self.pmid_node.handle_get(name); }
             _ => { return Err(RoutingError::InvalidRequest); }
         }
+    }
+
+    fn handle_get_key(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
+                from_address: NameType)->Result<Action, RoutingError> {
+        unimplemented!();
     }
 
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
@@ -87,8 +93,9 @@ impl routing::node_interface::Interface for VaultFacade {
         Err(RoutingError::InvalidRequest)
     }
 
-    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
-        ;
+    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
+         RoutingError>) -> RoutingNodeAction {
+             RoutingNodeAction::None
     }
 
     fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
@@ -99,13 +106,14 @@ impl routing::node_interface::Interface for VaultFacade {
         ;
     }
 
-    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<routing::generic_sendable_type::GenericSendableType> {
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<RoutingNodeAction> {
         let mut dm = self.data_manager.retrieve_all_and_reset();
         let mut mm = self.maid_manager.retrieve_all_and_reset();
         let mut pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let mut vh = self.version_handler.retrieve_all_and_reset();
 
-        dm//.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
+        //dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
+        vec![RoutingNodeAction::None]
     }
 
     fn handle_cache_get(&mut self,
