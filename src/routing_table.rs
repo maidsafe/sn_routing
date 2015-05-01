@@ -24,7 +24,7 @@ use types::PublicPmid;
 use name_type::closer_to_target;
 
 static BUCKET_SIZE: usize = 1;
-pub static GROUP_SIZE: usize = 23;
+pub static GROUP_SIZE: usize = 32;
 static QUORUM_SIZE: usize = 19;
 pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
