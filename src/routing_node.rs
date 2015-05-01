@@ -1000,7 +1000,11 @@ mod test {
         }
         fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
                        from_address: NameType, name: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
+            let stats = self.stats.clone();
+            let mut stats_value = stats.lock().unwrap();
+            stats_value.call_count += 1;
+            stats_value.data = Some(data.clone());
+            Ok(Action::Reply(data))
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
                                RoutingError>) -> RoutingNodeAction {
