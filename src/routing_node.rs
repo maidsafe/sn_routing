@@ -931,6 +931,7 @@ mod test {
     use messages::get_data::GetData;
     use messages::get_data_response::GetDataResponse;
     use messages::get_client_key::GetKey;
+    use messages::post::Post;
     use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
     use types::{MessageId, NameAndTypeId};
@@ -1180,7 +1181,8 @@ mod test {
 #[test]
     fn call_handle_put() {
         let put_data: PutData = Random::generate_random();
-        assert_eq!(call_operation(put_data, MessageTypeTag::PutData).call_count, 1u32);    }
+        assert_eq!(call_operation(put_data, MessageTypeTag::PutData).call_count, 1u32);
+    }
 
 #[test]
     fn call_handle_put_response() {
@@ -1211,6 +1213,12 @@ mod test {
     fn call_handle_get_key() {
         let get_key: GetKey = Random::generate_random();
         assert_eq!(call_operation(get_key, MessageTypeTag::GetKey).call_count, 1u32);
+    }
+
+#[test]
+    fn call_handle_post() {
+        let post: Post = Random::generate_random();
+        assert_eq!(call_operation(post, MessageTypeTag::Post).call_count, 1u32);
     }
 
     //#[test]
