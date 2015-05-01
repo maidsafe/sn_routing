@@ -26,8 +26,6 @@ pub trait Sendable {
     fn type_tag(&self)->u64;
     fn serialised_contents(&self)->Vec<u8>;
     fn owner(&self)->Option<name_type::NameType> { Option::None }
-    fn refresh(&self)->bool { false } // is this an account transfer type
-    fn merge<'a, I, T>(responses: I) -> Option<T> where I: Iterator<Item=&'a T>, T: Sendable {
-    	Option::None
-    } // how do we merge these
+    fn refresh(&self)->bool; // is this an account transfer type
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>>;
 }

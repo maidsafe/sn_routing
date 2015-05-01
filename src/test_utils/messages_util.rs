@@ -20,6 +20,7 @@ use messages;
 use types::*;
 use NameType;
 use super::random_trait::Random;
+use RoutingError;
 
 impl Random for messages::connect_request::ConnectRequest {
     fn generate_random() -> messages::connect_request::ConnectRequest {
@@ -134,7 +135,7 @@ impl Random for messages::get_data_response::GetDataResponse {
         messages::get_data_response::GetDataResponse {
             name_and_type_id: Random::generate_random(),
             data: generate_random_vec_u8(99),
-            error: generate_random_vec_u8(99),
+            error: RoutingError::Success,
         }
     }
 }
