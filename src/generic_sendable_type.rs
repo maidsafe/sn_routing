@@ -47,4 +47,12 @@ impl Sendable for GenericSendableType {
     fn serialised_contents(&self) -> Vec<u8> {
         self.serialised_contents.clone()
     }
+
+    fn refresh(&self)->bool {
+        false
+    }
+
+    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
+        None
+    }
 }
