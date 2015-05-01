@@ -1063,6 +1063,7 @@ mod test {
     use types;
     use types::{Pmid, PublicPmid, Authority};
     use rustc_serialize::{Encodable, Decodable};
+    use cbor::{Encoder};
 
     struct NullInterface;
 
@@ -1106,7 +1107,8 @@ mod test {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
-            Ok(Action::Reply("handle_get_key called".to_string().into_bytes()))
+            let data = stats_value.data.clone();
+            Ok(Action::Reply(data))
         }
         fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
                       from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
@@ -1346,6 +1348,15 @@ mod test {
     fn call_handle_get_key() {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let get_key: GetKey = Random::generate_random();
+        {
+            let stats = stats.clone();
+            let mut stats_value = stats.lock().unwrap();
+            let public_key: types::PublicSignKey = Random::generate_random();
+            let mut enc = Encoder::from_memory();
+            let _ = enc.encode(&[public_key]);
+            stats_value.data = enc.into_bytes()
+
+        }
         assert_eq!(call_operation(get_key, MessageTypeTag::GetKey, stats).call_count, 1u32);
     }
 
