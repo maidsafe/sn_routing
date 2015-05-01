@@ -140,10 +140,10 @@ impl<F> RoutingNode<F> where F: Interface {
         let destination = types::DestinationAddress{ dest: self.id(), reply_to: None };
         let source = self.our_source_address();
         let authority = types::Authority::Client;
-        let signing_request = PutData{ name: content.name(), data: content.serialised_contents() };
+        let request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
-            signing_request, &self.pmid.get_crypto_secret_sign_key());
+                request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
         e.encode(&[message]).unwrap();
