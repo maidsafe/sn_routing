@@ -677,19 +677,26 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
+    /// Every node needs to republish its public key directly to PublicPmid.name every 10 minutes.
+    /// Sentinel will query this pool.  No handle_get_public_pmid is needed.
     fn handle_put_public_pmid(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         // if data type is public pmid and our authority is nae then add to public_pmid_cache
         // don't call upper layer if public pmid type
         let put_public_pmid = try!(self.decode::<PutPublicPmid>(&body).ok_or(()));
-        let our_authority = self.our_authority(&put_public_pmid.public_pmid.name, &header);
-        if our_authority == Authority::NaeManager {
-            // FIXME (prakash) signature check ?
-            self.public_pmid_cache.add(put_public_pmid.public_pmid.name.clone(),
-                                       put_public_pmid.public_pmid);
-            Ok(())
-        } else {
-            Err(())
-        }
+        let our_authority = match self.our_authority(&put_public_pmid.public_pmid.name, &header) {
+            Authority::NaeManager => {
+                // FIXME (prakash) signature check ?
+                // TODO (Ben): check whether to accept pmid into group;
+                //             restrict on minimal similar number of leading bits.
+                self.public_pmid_cache.add(put_public_pmid.public_pmid.name.clone(),
+                                           put_public_pmid.public_pmid);
+                Ok(())
+            },
+            _ => {
+                Err(())
+            }
+        };
+        Ok(())
     }
 
     // // for clients, below methods are required
@@ -1294,6 +1301,11 @@ mod test {
     fn call_handle_post() {
         let post: Post = Random::generate_random();
         assert_eq!(call_operation(post, MessageTypeTag::Post).call_count, 1u32);
+    }
+
+    #[test]
+    fn cache_public_pmid() {
+
     }
 
     //#[test]
