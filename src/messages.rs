@@ -27,9 +27,9 @@ pub mod connect_success;
 pub mod find_group;
 #[path="messages/find_group_response.rs"]
 pub mod find_group_response;
-#[path="messages/get_client_key.rs"]
+#[path="messages/get_key.rs"]
 pub mod get_client_key;
-#[path="messages/get_client_key_response.rs"]
+#[path="messages/get_key_response.rs"]
 pub mod get_client_key_response;
 #[path="messages/get_data.rs"]
 pub mod get_data;
@@ -66,8 +66,8 @@ pub enum MessageTypeTag {
     FindGroupResponse,
     GetData,
     GetDataResponse,
-    GetClientKey,
-    GetClientKeyResponse,
+    GetKey,
+    GetKeyResponse,
     GetGroupKey,
     GetGroupKeyResponse,
     Post,
@@ -90,8 +90,8 @@ impl Encodable for MessageTypeTag {
             MessageTypeTag::FindGroupResponse => type_tag = "FindGroupResponse",
             MessageTypeTag::GetData => type_tag = "GetData",
             MessageTypeTag::GetDataResponse => type_tag = "GetDataResponse",
-            MessageTypeTag::GetClientKey => type_tag = "GetClientKey",
-            MessageTypeTag::GetClientKeyResponse => type_tag = "GetClientKeyResponse",
+            MessageTypeTag::GetKey => type_tag = "GetKey",
+            MessageTypeTag::GetKeyResponse => type_tag = "GetKeyResponse",
             MessageTypeTag::GetGroupKey => type_tag = "GetGroupKey",
             MessageTypeTag::GetGroupKeyResponse => type_tag = "GetGroupKeyResponse",
             MessageTypeTag::Post => type_tag = "Post",
@@ -119,8 +119,8 @@ impl Decodable for MessageTypeTag {
             "FindGroupResponse" => Ok(MessageTypeTag::FindGroupResponse),
             "GetData" => Ok(MessageTypeTag::GetData),
             "GetDataResponse" => Ok(MessageTypeTag::GetDataResponse),
-            "GetClientKey" => Ok(MessageTypeTag::GetClientKey),
-            "GetClientKeyResponse" => Ok(MessageTypeTag::GetClientKeyResponse),
+            "GetKey" => Ok(MessageTypeTag::GetKey),
+            "GetKeyResponse" => Ok(MessageTypeTag::GetKeyResponse),
             "GetGroupKey" => Ok(MessageTypeTag::GetGroupKey),
             "GetGroupKeyResponse" => Ok(MessageTypeTag::GetGroupKeyResponse),
             "Post" => Ok(MessageTypeTag::Post),
@@ -189,7 +189,4 @@ impl RoutingMessage {
         e.encode(&[&message]).unwrap();
         self.serialised_body = e.as_bytes().to_vec()
     }
-}
-#[test]
-fn dummy()  {
 }

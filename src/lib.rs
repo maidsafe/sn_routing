@@ -91,6 +91,7 @@ pub enum Action {
   SendOn(Vec<NameType>),
 }
 
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum RoutingError {
   Success,  // vault will also return a Success to indicate a dead end
   FailedToBootstrap,
