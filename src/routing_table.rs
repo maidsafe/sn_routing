@@ -1091,6 +1091,7 @@ mod test {
         let mut closer_name : NameType = our_pmid_name.clone();
         for close_node in our_close_group {
             assert!(closer_to_target(&closer_name, &close_node.id, &our_pmid_name));
+            assert!(routing_table.address_in_our_close_group_range(&closer_name));
             closer_name = close_node.id.clone();
         }
     }
