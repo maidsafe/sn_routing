@@ -111,6 +111,21 @@ pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bo
     false
 }
 
+/// Returns true if `lhs` is closer to `target` than `rhs`, or when `lhs == rhs`.
+/// "Closer" here is as per the Kademlia notion of XOR distance,
+/// i.e. the distance between two `NameType`s is the bitwise XOR of their values.
+pub fn closer_to_target_or_equal(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
+    for i in 0..lhs.0.len() {
+        let res_0 = lhs.0[i] ^ target.0[i];
+        let res_1 = rhs.0[i] ^ target.0[i];
+
+        if res_0 != res_1 {
+            return res_0 < res_1
+        }
+    }
+    true
+}
+
 /// The `NameType` can be ordered from zero as a normal Euclidean number
 impl Ord for NameType {
     #[inline]

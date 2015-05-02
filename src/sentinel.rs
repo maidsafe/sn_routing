@@ -1269,6 +1269,7 @@ mod test {
   }
 
   #[test]
+  #[ignore]
   fn fake_messages() {
     // network_size is the number of Pmid's created for test...
     let network_size = 1000usize;

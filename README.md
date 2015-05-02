@@ -69,3 +69,7 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [ ] Version 0.1.6 (crates.io)
 - [ ] Address re-location (security essential)
 - [ ] Implement routing connections management
+
+## FixMe items
+
+- [ ] Test: Sentinel::FakeMessages (refer to Brian)
