@@ -72,4 +72,4 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 ## FixMe items
 
-- [] Test: Sentinel::FakeMessages (refer to Brian)
+- [ ] Test: Sentinel::FakeMessages (refer to Brian)
