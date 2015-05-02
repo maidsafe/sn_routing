@@ -137,7 +137,7 @@ impl Interface for TestNode {
         Ok(Action::Reply(data_in))
     }
     fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
-                   from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+                   from_address: NameType, name : NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
         Err(RoutingError::Success)
     }
     fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
