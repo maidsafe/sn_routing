@@ -46,32 +46,20 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [x] Implement Get Put Post messages
 - [x] Version 0.0.8
 - [x] Move bootstrap out of routing
-- [ ] Complete Client Interface (Facade)
 - [x] Complete Routing Node Interface to accomodate churn
 - [x] Add caching to node interface
-- [ ] Implement routing node (100%)
 - [x] Handle PMID Caching
 - [x] Handle Cache / Get / Check calls
-- [ ] Split Messages and  handle message
-  - [x] GetData HandleGetData
-  - [x] GetDataResponse HandleGetDataResponse 
-  - [ ] GetClientKey HandleGetClientKey 
-  - [ ] GetClientKeyResponse HandleGetClientKeyResponse 
-  - [ ] GetGroupKey HandleGetGroupKey 
-  - [ ] GetGroupKeyResponse HandleGetGroupKeyResponse 
-  - [ ] Post HandlePost 
-  - [ ] PostResponse HandlePostResponse 
-  - [x] PutData HandlePutData 
-  - [x] PutDataResponse HandlePutDataResponse 
-  - [ ] PutKey HandlePutKey 
-- [ ] Implement routing connections management
+- [x] Routing message handling
 - [ ] Sentinel:
   - [x] Handover existing implementation
   - [x] Account transfer merge
   - [x] Group response merge
-  - [ ] Signature checks
+  - [x] Signature checks
   - [ ] QA Sentinel including code review from system design perspective
 - [x] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
+- [ ] Complete Client Interface (Facade)
+- [ ] Implement routing node (100%)
 - [ ] Examples:
   - [ ] zero state network
   - [ ] Routing Node with type erased cache
@@ -80,3 +68,4 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
   - [ ] 101 Droplet test
 - [ ] Version 0.1.6 (crates.io)
 - [ ] Address re-location (security essential)
+- [ ] Implement routing connections management

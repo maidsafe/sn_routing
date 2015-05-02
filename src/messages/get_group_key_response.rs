@@ -89,18 +89,15 @@ mod test {
 
     #[test]
     fn merge() {
-        let keys : GetGroupKeyResponse = Random::generate_random();
+        let keys: GetGroupKeyResponse = Random::generate_random();
         // keys.public_sign_keys.len() == types::GROUP_SIZE + 7
         assert!(keys.public_sign_keys.len() >= GROUP_SIZE as usize);
-        // if group or quorum size changes, redefine the following assertions
-        assert!(GROUP_SIZE == 23);
-        assert!(QUORUM_SIZE == 19);
 
-        let group_size: usize = GROUP_SIZE as usize;
-        let quorum_size: usize = QUORUM_SIZE as usize;
+        let group_size = GROUP_SIZE as usize;
+        let quorum_size = QUORUM_SIZE as usize;
 
         // get random GROUP_SIZE groups
-        let mut sign_keys = Vec::<(NameType, PublicSignKey)>::with_capacity(group_size);
+        let mut sign_keys = Vec::<(NameType, PublicSignKey)>::with_capacity(quorum_size);
         let mut rng = thread_rng();
         let range = Range::new(0, keys.public_sign_keys.len());
 
@@ -108,7 +105,7 @@ mod test {
             let index = range.ind_sample(&mut rng);
             if sign_keys.contains(&keys.public_sign_keys[index]) { continue; }
             sign_keys.push(keys.public_sign_keys[index].clone());
-            if sign_keys.len() == group_size { break; }
+            if sign_keys.len() == quorum_size { break; }
         };
 
         let mut responses = Vec::<GetGroupKeyResponse>::with_capacity(quorum_size);

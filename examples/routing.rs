@@ -36,7 +36,6 @@ use rand::random;
 use sodiumoxide::crypto;
 
 use crust::Endpoint;
-use routing::generic_sendable_type;
 use routing::NameType;
 use routing::node_interface::*;
 use routing::routing_node::{RoutingNode};
@@ -83,6 +82,12 @@ impl Sendable for TestData {
     fn type_tag(&self)->u64 { unimplemented!() }
 
     fn serialised_contents(&self)->Vec<u8> { self.data.clone() }
+
+    fn refresh(&self)->bool {
+        false
+    }
+
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
 }
 
 impl PartialEq for TestData {
@@ -108,8 +113,9 @@ struct TestNode {
 }
 
 impl Interface for TestNode {
-    fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
-                  from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
+    fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: types::Authority,
+                  from_authority: types::Authority, from_address: NameType)
+                   -> Result<Action, RoutingError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
@@ -135,7 +141,7 @@ impl Interface for TestNode {
         Err(RoutingError::Success)
     }
     fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                           RoutingError>) {
+                           RoutingError>) -> routing::node_interface::RoutingNodeAction {
         unimplemented!();
     }
     fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
@@ -147,7 +153,7 @@ impl Interface for TestNode {
         unimplemented!();
     }
     fn handle_churn(&mut self, close_group: Vec<NameType>)
-        -> Vec<generic_sendable_type::GenericSendableType> {
+        -> Vec<routing::node_interface::RoutingNodeAction> {
         unimplemented!();
     }
     fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
@@ -157,6 +163,14 @@ impl Interface for TestNode {
     fn handle_cache_put(&mut self, from_authority: types::Authority, from_address: NameType,
                         data: Vec<u8>) -> Result<Action, RoutingError> {
         Err(RoutingError::Success)
+    }
+    fn handle_get_key(&mut self,
+                      type_id: u64,
+                      name: NameType,
+                      our_authority: routing::types::Authority,
+                      from_authority: routing::types::Authority,
+                      from_address: NameType) -> Result<Action, RoutingError> {
+        unimplemented!();
     }
 }
 

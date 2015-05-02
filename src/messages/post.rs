@@ -20,34 +20,35 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
-use types;
+use NameType;
+
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Post {
-  pub name_and_type_id : types::NameAndTypeId,
+  pub name : NameType,
   pub data : Vec<u8>
 }
 
 impl Encodable for Post {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.name_and_type_id, &self.data)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.name, &self.data)).encode(e)
   }
 }
 
 impl Decodable for Post {
   fn decode<D: Decoder>(d: &mut D)->Result<Post, D::Error> {
     try!(d.read_u64());
-    let (name_and_type_id, data) = try!(Decodable::decode(d));
-    Ok(Post { name_and_type_id: name_and_type_id, data: data })
+    let (name, data) = try!(Decodable::decode(d));
+    Ok(Post { name: name, data: data })
   }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use cbor; 
+    use cbor;
     use test_utils::Random;
-    
+
     #[test]
     fn post_serialisation() {
         let obj_before : Post = Random::generate_random();

@@ -15,12 +15,28 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use generic_sendable_type;
+use sendable::Sendable;
 use name_type::NameType;
 use types::{Authority, DestinationAddress};
 use super::{Action, RoutingError};
 
+pub enum RoutingNodeAction {
+    None,
+    Put { destination: NameType, content: Box<Sendable>, is_client: bool, },
+    Get { type_id: u64, name: NameType, },
+    Post,
+    Refresh { content: Box<Sendable>, },
+}
+
 pub trait Interface : Sync + Send {
+    /// the public key or address of the node store it is returned on success.
+    fn handle_get_key(&mut self,
+                      type_id: u64,
+                      name: NameType,
+                      our_authority: Authority,
+                      from_authority: Authority,
+                      from_address: NameType) -> Result<Action, RoutingError>;
+
     /// if reply is data then we send back the response message (ie get_response )
     fn handle_get(&mut self,
                   type_id: u64,
@@ -41,11 +57,12 @@ pub trait Interface : Sync + Send {
                    our_authority: Authority,
                    from_authority: Authority,
                    from_address: NameType,
+                   name : NameType,
                    data: Vec<u8>) -> Result<Action, RoutingError>;
 
     fn handle_get_response(&mut self,
                            from_address: NameType,
-                           response: Result<Vec<u8>, RoutingError>);
+                           response: Result<Vec<u8>, RoutingError>) -> RoutingNodeAction;
 
     fn handle_put_response(&mut self,
                            from_authority: Authority,
@@ -57,7 +74,7 @@ pub trait Interface : Sync + Send {
                             from_address: NameType,
                             response: Result<Vec<u8>, RoutingError>);
 
-    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<generic_sendable_type::GenericSendableType>;
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<RoutingNodeAction>;
 
     fn handle_cache_get(&mut self,
                         type_id: u64,
