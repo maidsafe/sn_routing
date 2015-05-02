@@ -21,7 +21,7 @@ use std::cmp;
 use std::usize;
 use NameType;
 use types::PublicPmid;
-use name_type::closer_to_target;
+use name_type::{closer_to_target, closer_to_target_or_equal};
 
 static BUCKET_SIZE: usize = 1;
 pub static GROUP_SIZE: usize = 32;
@@ -262,12 +262,14 @@ impl RoutingTable {
     /// This returns true if the provided id is closer than the furthest node
     /// in our close group. If the routing table contains less than GroupSize
     /// nodes, then every address is considered to be in our close group range.
+    /// Note: the furthest close node address is considered the closure of our
+    ///       close group.
     pub fn address_in_our_close_group_range(&self, id : &NameType) -> bool {
         if self.routing_table.len() < GROUP_SIZE {
             return true;
         }
         let furthest_close_node = self.routing_table[GROUP_SIZE - 1].clone();
-        closer_to_target(&id, &furthest_close_node.id, &self.our_id)
+        closer_to_target_or_equal(&id, &furthest_close_node.id, &self.our_id)
     }
 
     fn find_candidate_for_removal(&self) -> usize {
@@ -1094,7 +1096,6 @@ mod test {
             assert!(routing_table.address_in_our_close_group_range(&close_node.id));
             closer_name = close_node.id.clone();
         }
-
         for node in &routing_table.routing_table {
             if our_close_group.iter().filter(|close_node| close_node.id == node.id)
                               .count() > 0 {
