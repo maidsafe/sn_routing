@@ -20,26 +20,25 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use types;
-use crust::Endpoint;
+use NameType;
 
-/// When firing the request, the requestor needs to put all its eps in the request so the receiver side can recognize
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct BootstrapIdRequest {
-  pub public_pmid: types::PublicPmid,
-  pub endpoints: Vec<Endpoint>
+  pub sender_id  : NameType,
+  pub sender_fob : types::PublicPmid,
 }
 
 impl Encodable for BootstrapIdRequest {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.public_pmid, &self.endpoints)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.sender_id, &self.sender_fob)).encode(e)
   }
 }
 
 impl Decodable for BootstrapIdRequest {
   fn decode<D: Decoder>(d: &mut D)->Result<BootstrapIdRequest, D::Error> {
     try!(d.read_u64());
-    let (public_pmid, endpoints) = try!(Decodable::decode(d));
-    Ok(BootstrapIdRequest { public_pmid: public_pmid, endpoints: endpoints })
+    let (sender_id, sender_fob) = try!(Decodable::decode(d));
+    Ok(BootstrapIdRequest { sender_id: sender_id, sender_fob: sender_fob })
   }
 }
 

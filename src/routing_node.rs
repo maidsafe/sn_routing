@@ -30,13 +30,15 @@ use crust::Endpoint::Tcp;
 use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
-use name_type::closer_to_target;
+use name_type::{closer_to_target, NAME_TYPE_LEN};
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
 use types::{MessageId, Authority, NameAndTypeId};
 use message_header::MessageHeader;
+use messages::bootstrap_id_request::BootstrapIdRequest;
+use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
@@ -162,7 +164,8 @@ impl<F> RoutingNode<F> where F: Interface {
             }
             Ok(bootstrapped_to) => {
                 self.bootstrap_endpoint = Some(bootstrapped_to);
-                // FIXME(team) need to populate bootstrap_node_id here
+                // starts swaping ID with the bootstrap peer
+                self.send_bootstrap_id_request();
                 // put our public pmid so that our connect requests are validated
                 self.put_own_public_pmid();
                 // connect to close group
@@ -184,6 +187,10 @@ impl<F> RoutingNode<F> where F: Interface {
                         println!("failed to Parse message !!! check  from - {:?} ", peer_id);
                         // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
                     }
+                } else if self.pending_connections.contains(&endpoint) {
+                    // reply with own_id if the incoming msg is BootstrapIdRequest
+                    // record the peer_id if the incoming msg is BootstrapIdResponse
+                    self.bootstrap_message_received(endpoint, bytes);
                 }
             },
             crust::Event::NewConnection(endpoint) => {
@@ -192,6 +199,65 @@ impl<F> RoutingNode<F> where F: Interface {
             crust::Event::LostConnection(endpoint) => {
                 self.handle_lost_connection(endpoint);
             }
+        }
+    }
+
+    fn send_bootstrap_id_request(&mut self) {
+        let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
+        let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None };
+        let authority = types::Authority::ManagedNode;
+        let request = BootstrapIdRequest { sender_id: self.id(), sender_fob: our_public_pmid };
+        let header = MessageHeader::new(message_id, destination, source, authority);
+        let message = RoutingMessage::new(MessageTypeTag::BootstrapIdRequest, header,
+            request, &self.pmid.get_crypto_secret_sign_key());
+        let mut e = Encoder::from_memory();
+        e.encode(&[message]).unwrap();
+        // need to send to bootstrap node as we are not yet connected to anyone else
+        self.send_to_bootstrap_node(&e.into_bytes());
+    }
+
+    fn send_bootstrap_id_response(&mut self) {
+        let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
+        let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None };
+        let authority = types::Authority::ManagedNode;
+        let request = BootstrapIdResponse { sender_id: self.id(), sender_fob: our_public_pmid };
+        let header = MessageHeader::new(message_id, destination, source, authority);
+        let message = RoutingMessage::new(MessageTypeTag::BootstrapIdResponse, header,
+            request, &self.pmid.get_crypto_secret_sign_key());
+        let mut e = Encoder::from_memory();
+        e.encode(&[message]).unwrap();
+        // need to send to bootstrap node as we are not yet connected to anyone else
+        self.send_to_bootstrap_node(&e.into_bytes());
+    }
+
+    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes) {
+        // println!("{} In handle bootstrap_id_response from {:?}", self.own_id,
+        //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
+        if self.all_connections.0.contains_key(&peer_endpoint) ||
+           !self.pending_connections.contains(&peer_endpoint) {
+            // ignore further request once added or not in sequence (not recorded as pending)
+            return;
+        }
+        let bootstrap_id_response_msg = self.decode::<BootstrapIdResponse>(&bytes);
+        if bootstrap_id_response_msg.is_none() {  // TODO handle non routing connection here
+            return;
+        }
+        let bootstrap_id_response_msg = bootstrap_id_response_msg.unwrap();
+
+        self.pending_connections.remove(&peer_endpoint);
+        self.all_connections.0.insert(peer_endpoint.clone(), bootstrap_id_response_msg.sender_id.clone());
+        self.all_connections.1.insert(bootstrap_id_response_msg.sender_id.clone(), peer_endpoint.clone());
+
+        let peer_node_info = NodeInfo::new(bootstrap_id_response_msg.sender_fob, true);
+        let result = self.routing_table.add_node(peer_node_info);
+        if result.0 {
+          println!("{:?} added {:?} <RT size:{}>", self.own_id, bootstrap_id_response_msg.sender_id, self.routing_table.size());
+        } else {
+           println!("{:?} failed to add {:?}", self.own_id, bootstrap_id_response_msg.sender_id);
         }
     }
 
@@ -232,6 +298,7 @@ impl<F> RoutingNode<F> where F: Interface {
             return;
         }
         self.pending_connections.insert(peer_endpoint.clone());
+        // assuming each new connection is a bootstrap attempt
         self.bootstrap_endpoint = Some(peer_endpoint.clone());
         // println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_id);
         // send find group
@@ -239,37 +306,6 @@ impl<F> RoutingNode<F> where F: Interface {
         let msg = self.encode(&msg);
         debug_assert!(self.bootstrap_endpoint.is_some());
         let _ = self.connection_manager.send(peer_endpoint, msg);
-    }
-
-    fn handle_accept(&mut self, peer_endpoint: Endpoint, peer_id: NameType, bytes: Bytes) {
-        // println!("In handle accept of {:?}", self.own_id);
-        if self.all_connections.0.contains_key(&peer_endpoint) ||
-           !self.pending_connections.contains(&peer_endpoint) {
-            // ignore further request once added or not in sequence (not recorded as pending)
-            return;
-        }
-        self.pending_connections.remove(&peer_endpoint);
-        self.all_connections.0.insert(peer_endpoint.clone(), peer_id.clone());
-        self.all_connections.1.insert(peer_id.clone(), peer_endpoint.clone());
-
-        let connect_succcess_msg = self.decode::<ConnectSuccess>(&bytes);
-
-        if connect_succcess_msg.is_none() {  // TODO handle non routing connection here
-            if self.bootstrap_endpoint.is_none() &&
-             (self.all_connections.0.len() == 1) && (self.all_connections.0.contains_key(&peer_endpoint)) { // zero state only`
-                self.bootstrap_endpoint = Some(peer_endpoint.clone());
-                // println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_endpoint);
-            }
-            return;
-        }
-        let connect_succcess_msg = connect_succcess_msg.unwrap();
-        let peer_node_info = NodeInfo::new(connect_succcess_msg.peer_fob, true);
-        let result = self.routing_table.add_node(peer_node_info);
-        if result.0 {
-          println!("{:?} added {:?} <RT size:{}>", self.own_id, connect_succcess_msg.peer_id, self.routing_table.size());
-        } else {
-           println!("{:?} failed to add {:?}", self.own_id, connect_succcess_msg.peer_id);
-        }
     }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
@@ -294,6 +330,13 @@ impl<F> RoutingNode<F> where F: Interface {
             },
             Some(msg) => msg,
         };
+
+        // bootstrap_id_request from peer may arrive later then the response from the same peer
+        if message.message_type == MessageTypeTag::BootstrapIdRequest {
+            // println!("{} received BootstrapIdRequest from {:?}", self.own_id, peer_id);
+            self.send_bootstrap_id_response();
+            return Ok(());
+        }
 
         let header = message.message_header;
         let body = message.serialised_body;
@@ -398,6 +441,32 @@ impl<F> RoutingNode<F> where F: Interface {
                     }
                 }
             }
+        }
+
+    }
+
+    fn bootstrap_message_received(&mut self, peer_endpoint: Endpoint, serialised_message: Bytes) {
+        let message = match self.decode::<RoutingMessage>(&serialised_message) {
+            None => {
+                println!("Problem parsing bootstrap message of size {} ", serialised_message.len());
+                return;
+            },
+            Some(msg) => msg,
+        };
+        // println!("{} received bootstrap msg from {:?}", self.own_id,
+        //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
+        if message.message_type == MessageTypeTag::BootstrapIdRequest {
+            // println!("{} sending bootstrap_id_response", self.own_id);
+            self.send_bootstrap_id_response();
+            if self.pending_connections.contains(&peer_endpoint) {
+                // println!("{} sending bootstrap_id_request", self.own_id);
+                self.send_bootstrap_id_request();
+            }
+            return;
+        }
+        if message.message_type == MessageTypeTag::BootstrapIdResponse {
+            self.handle_bootstrap_id_response(peer_endpoint, message.serialised_body);
+            return;
         }
 
     }
