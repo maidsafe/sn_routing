@@ -29,6 +29,7 @@ use std::net::{SocketAddr};
 use std::str::FromStr;
 use std::sync::{Arc, mpsc, Mutex};
 use std::thread;
+use std::thread::spawn;
 
 use docopt::Docopt;
 use rand::random;
@@ -136,7 +137,7 @@ impl Interface for TestNode {
         Ok(Action::Reply(data_in))
     }
     fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
-                   from_address: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+                   from_address: NameType, name : NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
         Err(RoutingError::Success)
     }
     fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
@@ -181,10 +182,18 @@ fn main() {
         println!("{:?}", args);
         // return;
     }
-    println!("constructing routing_node");
-    let mut testing_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})),
+
+    let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})),
                                                        ori_packets: Vec::<TestData>::new() });
-    println!("preparing interaction interface");
+    let mutate_node = Arc::new(Mutex::new(test_node));
+    let copied_node = mutate_node.clone();
+    spawn(move || {
+        loop {
+            thread::sleep_ms(10);
+            copied_node.lock().unwrap().run();
+        }
+    });
+
     let mut command = String::new();
     loop {
         command.clear();
@@ -205,7 +214,7 @@ fn main() {
                     Err(_) => continue
                 };
                 println!("bootstrapping to {} ", endpoint_address);
-                let _ = testing_node.bootstrap(Some(vec![Endpoint::Tcp(endpoint_address)]), None);
+                mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(endpoint_address)]), None);
             },
             _ => println!("Invalid Option")
         }
