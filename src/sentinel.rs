@@ -1233,7 +1233,7 @@ mod test {
           group_keys_index = 0usize;
         }
 
-        if (message_index % 2usize == 0) && !group_keys_responses_empty {
+        if (message_index % 2usize != 0) && !group_keys_responses_empty {
           let keys = group_keys_responses.remove(group_keys_index);
           resolved =
               sentinel.add(
@@ -1341,7 +1341,7 @@ mod test {
           group_keys_index = 0usize;
         }
 
-        if (message_index % 2usize == 0) && !fake_group_keys_responses_empty {
+        if (message_index % 2usize != 0) && !fake_group_keys_responses_empty {
           let keys = fake_group_keys_responses.remove(group_keys_index);
           resolved =
               sentinel.add(
