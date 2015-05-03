@@ -27,7 +27,7 @@ use std::fmt;
 use std::io;
 use std::net::{SocketAddr};
 use std::str::FromStr;
-use std::sync::{Arc, mpsc, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::spawn;
 
@@ -54,15 +54,25 @@ Options:
     -o, --origin     Startup the first testing node
 ";
 
-// cargo run --example routing -- GET -s 60
-
 #[derive(RustcDecodable, Debug)]
 struct Args {
     flag_origin : bool,
     flag_help : bool
 }
 
+
+// ==========================   Helper Function   =================================
+pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
+    let mut vec: Vec<u8> = Vec::with_capacity(size);
+    for _ in 0..size {
+        vec.push(random::<u8>());
+    }
+    vec
+}
+
+
 // ==========================   Test Data Structure   =================================
+#[derive(Clone)]
 struct TestData {
     data: Vec<u8>
 }
@@ -108,8 +118,7 @@ struct Stats {
 }
 
 struct TestNode {
-    pub stats: Arc<Mutex<Stats>>,
-    pub ori_packets: Vec<TestData>
+    pub stats: Arc<Mutex<Stats>>
 }
 
 impl Interface for TestNode {
@@ -129,6 +138,7 @@ impl Interface for TestNode {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         let in_coming_data = TestData::new(data_in.clone());
+        println!("testing node handle put request from {} of data {}", from_address, in_coming_data.name());
         for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
             data.0 += 1;
             return Ok(Action::Reply(data_in));
@@ -140,13 +150,26 @@ impl Interface for TestNode {
                    from_address: NameType, name : NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
         Err(RoutingError::Success)
     }
-    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                           RoutingError>) -> routing::node_interface::RoutingNodeAction {
-        unimplemented!();
+    fn handle_get_response(&mut self, from_address: NameType,
+                           response: Result<Vec<u8>, RoutingError>) -> routing::node_interface::RoutingNodeAction {
+        if response.is_ok() {
+            let response_data = TestData::new(response.unwrap());
+            println!("testing node received get_response from {} with data name as {}",
+                     from_address, response_data.name());
+        } else {
+            println!("testing node received error get_response from {}", from_address);
+        }
+        routing::node_interface::RoutingNodeAction::None
     }
     fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
                            response: Result<Vec<u8>, RoutingError>) {
-        unimplemented!();
+        if response.is_ok() {
+            let response_data = TestData::new(response.unwrap());
+            println!("testing node received put_response from {} with data name as {}",
+                     from_address, response_data.name());
+        } else {
+            println!("testing node received error put_response from {}", from_address);
+        }
     }
     fn handle_post_response(&mut self, from_authority: types::Authority, from_address: NameType,
                             response: Result<Vec<u8>, RoutingError>) {
@@ -183,8 +206,7 @@ fn main() {
         // return;
     }
 
-    let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})),
-                                                       ori_packets: Vec::<TestData>::new() });
+    let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) });
     let mutate_node = Arc::new(Mutex::new(test_node));
     let copied_node = mutate_node.clone();
     spawn(move || {
@@ -195,6 +217,7 @@ fn main() {
     });
 
     let mut command = String::new();
+    let mut ori_packets = Vec::<TestData>::new();
     loop {
         command.clear();
         println!("Input command (stop, put <msg_length>, get <index>, bootstrap <endpoint>)");
@@ -203,10 +226,20 @@ fn main() {
         match v[0].trim() {
             "stop" => break,
             "put" => {
-                println!("putting msg")
+                let length : usize = match v[1].trim().parse().ok() { Some(length) => length, _ => 1024 };
+                let data = TestData::new(generate_random_vec_u8(length));
+                ori_packets.push(data.clone());
+                println!("putting data {} to network ", data.name());             
+                mutate_node.lock().unwrap().put(data.name(), Box::new(data), false);
             },
             "get" => {
-                println!("getting msg")
+                let index : usize = match v[1].trim().parse().ok() { Some(index) => index, _ => 0 };
+                if index < ori_packets.len() {
+                    println!("getting chunk {} from network ", ori_packets[index].name());
+                    mutate_node.lock().unwrap().get(110, ori_packets[index].name());
+                } else {
+                    println!("only has {} packets in record ", ori_packets.len());
+                }
             },
             "bootstrap" => {
                 let endpoint_address = match SocketAddr::from_str(v[1].trim()) {
@@ -214,7 +247,7 @@ fn main() {
                     Err(_) => continue
                 };
                 println!("bootstrapping to {} ", endpoint_address);
-                mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(endpoint_address)]), None);
+                let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(endpoint_address)]), None);
             },
             _ => println!("Invalid Option")
         }
