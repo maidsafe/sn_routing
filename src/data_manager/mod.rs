@@ -27,6 +27,8 @@ use cbor::{ Decoder };
 use routing::sendable::Sendable;
 type Address = NameType;
 
+pub use self::database::DataManagerSendable;
+
 pub static PARALLELISM: usize = 4;
 
 pub struct DataManager {
@@ -124,7 +126,7 @@ impl DataManager {
 
                   routing::node_interface::RoutingNodeAction::Put {
                       destination: close_grp_node_to_add,
-                      content: Box::new(database::DataManagerSendable::with_content(name, response)),
+                      content: Box::new(DataManagerSendable::with_content(name, response)),
                       is_client: false,
                   }
               } else {
