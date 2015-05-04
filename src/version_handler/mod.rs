@@ -55,7 +55,9 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        self.data.clone()
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
     }
 
     fn refresh(&self) -> bool {
