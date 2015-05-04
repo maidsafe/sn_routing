@@ -350,7 +350,7 @@ impl VaultFacade {
 
         let from = available_nodes[0].clone();
         let dest = DestinationAddress{ dest : available_nodes[1].clone(), reply_to: None };
-        let data_as_vec = routing::types::array_as_vector(encoder.as_bytes());
+        let data_as_vec = encoder.into_bytes();
 
         let mut small_close_group = Vec::with_capacity(5);
         for i in 0..5 {
@@ -434,7 +434,7 @@ impl VaultFacade {
             let mut encoder = cbor::Encoder::from_memory();
             let encode_result = encoder.encode(&[&payload]);
             assert_eq!(encode_result.is_ok(), true);
-            let data_as_vec = routing::types::array_as_vector(encoder.as_bytes());
+            let data_as_vec: Vec<u8> = encoder.into_bytes();
 
             version_handler_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
@@ -444,10 +444,7 @@ impl VaultFacade {
                 RoutingNodeAction::Refresh {content: ref content} => {
                     let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
                     let mut decoder = cbor::Decoder::from_bytes(data);
-                    match decoder.decode().next().unwrap() {
-                        Ok(s) => s,
-                        _ => panic!("Err")
-                    }
+                    decoder.decode().next().unwrap().unwrap()
                 },
                 _ => panic!("Refresh type expected")
             };
