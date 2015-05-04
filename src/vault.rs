@@ -385,7 +385,7 @@ impl VaultFacade {
                 close_group.push(available_nodes[i].clone());
             }
 
-            let churn_data = vault.handle_churn(close_group);
+            let churn_data = vault.handle_churn(close_group.clone());
             assert_eq!(churn_data.len(), 1);
 
             let data_manager_sendable: data_manager::DataManagerSendable = match churn_data[0] {
@@ -401,7 +401,7 @@ impl VaultFacade {
 
             assert!(data_manager_sendable.get_data_holders().len() >= 3);
 
-            assert!(vault.data_manager.retrieve_all_and_reset(&mut Vec::new()).is_empty());
+            assert!(vault.data_manager.retrieve_all_and_reset(&mut close_group).is_empty());
         }
 
         {// PmidManager - churn handling
@@ -457,6 +457,5 @@ impl VaultFacade {
 
             assert!(vault.version_handler.retrieve_all_and_reset().is_empty());
         }
-
     }
 }
