@@ -65,7 +65,6 @@ type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
 type RecvResult = Result<(), ()>;
 
-
 /// DHT node
 pub struct RoutingNode<F: Interface> {
     interface: Arc<Mutex<F>>,
