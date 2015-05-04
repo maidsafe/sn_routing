@@ -153,11 +153,12 @@ impl VaultFacade {
     use maidsafe_types;
     use maid_manager;
     use pmid_manager;
+    use version_handler;
     use maidsafe_types::{PayloadTypeTag, Payload};
     use routing::types:: { Authority, DestinationAddress };
     use routing::NameType;
     use routing::test_utils::Random;
-    use routing::node_interface::Interface;
+    use routing::node_interface::{ Interface, RoutingNodeAction };
     use routing::sendable::Sendable;
 
     fn array_as_vector_u8(array : [u8;64]) -> Vec<u8> {
@@ -330,105 +331,127 @@ impl VaultFacade {
         }
     }
 
-    //#[test]
-    //fn churn_test() {
-    //    let mut vault = VaultFacade::new();
+    #[test]
+    fn churn_test() {
+        let mut vault = VaultFacade::new();
 
-    //    let mut available_nodes = Vec::with_capacity(30);
-    //    for _ in 0..30 {
-    //        available_nodes.push(NameType::generate_random());
-    //    }
+        let mut available_nodes = Vec::with_capacity(30);
+        for _ in 0..30 {
+            available_nodes.push(NameType::generate_random());
+        }
 
-    //    let value = routing::types::generate_random_vec_u8(1024);
-    //    let data = maidsafe_types::ImmutableData::new(value);
-    //    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+        let value = routing::types::generate_random_vec_u8(1024);
+        let data = maidsafe_types::ImmutableData::new(value);
+        let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
 
-    //    let mut encoder = cbor::Encoder::from_memory();
-    //    let encode_result = encoder.encode(&[&payload]);
-    //    assert_eq!(encode_result.is_ok(), true);
+        let mut encoder = cbor::Encoder::from_memory();
+        let encode_result = encoder.encode(&[&payload]);
+        assert_eq!(encode_result.is_ok(), true);
 
-    //    let from = available_nodes[0].clone();
-    //    let dest = DestinationAddress{ dest : available_nodes[1].clone(), reply_to: None };
-    //    let data_as_vec = routing::types::array_as_vector(encoder.as_bytes());
+        let from = available_nodes[0].clone();
+        let dest = DestinationAddress{ dest : available_nodes[1].clone(), reply_to: None };
+        let data_as_vec = encoder.into_bytes();
 
-    //    {// MaidManager - churn handling
-    //        maid_manager_put(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
-    //        let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
-    //        assert!(churn_data.len() == 1);
-    //        assert!(churn_data[0].name() == from);
-    //        // MaidManagerAccount
-    //        let sendable: GenericSendableType = churn_data[0].clone();
-    //        assert_eq!(sendable.name(), from.clone());
+        let mut small_close_group = Vec::with_capacity(5);
+        for i in 0..5 {
+            small_close_group.push(available_nodes[i].clone());
+        }
 
-    //        let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
-    //        let maid_manager: maid_manager::MaidManagerAccount = decoder.decode().next().unwrap().unwrap();
-    //        assert_eq!(maid_manager.get_data_stored(), 1024);
+        {// MaidManager - churn handling
+            maid_manager_put(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
+            let churn_data = vault.handle_churn(small_close_group.clone());
+            assert!(churn_data.len() == 1);
 
-    //        assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
-    //    }
+            // MaidManagerAccount
+            let maid_manager: maid_manager::MaidManagerAccountWrapper = match churn_data[0] {
+                RoutingNodeAction::Refresh {content: ref content} => {
+                    let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
+                    let mut decoder = cbor::Decoder::from_bytes(data);
+                    decoder.decode().next().unwrap().unwrap()
+                },
+                _ => panic!("Refresh type expected")
+            };
+            assert_eq!(maid_manager.name(), from.clone());
+            assert_eq!(maid_manager.get_account().get_data_stored(), 1024);
+            assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
+        }
 
-    //    add_nodes_to_table(&mut vault, &available_nodes);
+        add_nodes_to_table(&mut vault, &available_nodes);
 
-    //    {// DataManager - churn handling
-    //        data_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
-    //        let mut close_group = Vec::with_capacity(20);
-    //        for i in 10..30 {
-    //            close_group.push(available_nodes[i].clone());
-    //        }
-    //
-    //        let churn_data = vault.handle_churn(close_group);
-    //        assert_eq!(churn_data.len(), 1);
-    //        assert!(churn_data[0].name() == data.name().clone());
+        {// DataManager - churn handling
+            data_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            let mut close_group = Vec::with_capacity(20);
+            for i in 10..30 {
+                close_group.push(available_nodes[i].clone());
+            }
 
-    //        let sendable: GenericSendableType = churn_data[0].clone();
-    //        assert_eq!(sendable.name(), data.name().clone());
+            let churn_data = vault.handle_churn(close_group.clone());
+            assert_eq!(churn_data.len(), 1);
 
-    //        let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
-    //        let pmids: Vec<NameType> = decoder.decode().next().unwrap().unwrap();
-    //        assert!(pmids.len() >= 3);
+             match churn_data[0] {
+                RoutingNodeAction::Refresh {content: ref content} => {
+                    let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
+                    let mut decoder = cbor::Decoder::from_bytes(data0);
+                    let data_manager_sendable: data_manager::DataManagerSendable = decoder.decode().next().unwrap().unwrap();
+                    assert_eq!(data_manager_sendable.name(), data.name().clone());
+                },
+                RoutingNodeAction::Get { .. } => (),
+                _ => panic!("Refresh type expected")
+            };
 
-    //        assert!(vault.data_manager.retrieve_all_and_reset(&mut Vec::new()).is_empty());
-    //    }
+            assert!(vault.data_manager.retrieve_all_and_reset(&mut close_group).is_empty());
+        }
 
-    //    {// PmidManager - churn handling
-    //        pmid_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
-    //        let churn_data = vault.handle_churn(vec![dest.dest.clone()]);
-    //        assert_eq!(churn_data.len(), 1);
-    //        //assert_eq!(churn_data[0].0, from);
+        {// PmidManager - churn handling
+            pmid_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            let churn_data = vault.handle_churn(small_close_group.clone());
+            assert_eq!(churn_data.len(), 1);
+            //assert_eq!(churn_data[0].0, from);
 
-    //        let sendable: GenericSendableType = churn_data[0].clone();
-    //        assert_eq!(sendable.name(), dest.dest);
+            let pmid_manager: pmid_manager::PmidManagerAccountWrapper = match churn_data[0] {
+                RoutingNodeAction::Refresh {content: ref content} => {
+                    let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
+                    let mut decoder = cbor::Decoder::from_bytes(data);
+                    decoder.decode().next().unwrap().unwrap()
+                },
+                _ => panic!("Refresh type expected")
+            };
+            assert_eq!(pmid_manager.name(), dest.dest);
 
-    //        assert!(vault.pmid_manager.retrieve_all_and_reset(&Vec::new()).is_empty());
-    //    }
+            assert!(vault.pmid_manager.retrieve_all_and_reset(&Vec::new()).is_empty());
+        }
 
-    //    {// VersionHandler - churn handling
-    //        let name = NameType::generate_random();
-    //        let owner = NameType::generate_random();
-    //        let mut vec_name_types = Vec::<NameType>::with_capacity(10);
-    //        for i in 0..10 {
-    //            vec_name_types.push(NameType::generate_random());
-    //        }
-    //        let data = maidsafe_types::StructuredData::new(name, owner, vec![vec_name_types.clone()]);
-    //        let payload = Payload::new(PayloadTypeTag::StructuredData, &data);
+        {// VersionHandler - churn handling
+            let name = NameType::generate_random();
+            let owner = NameType::generate_random();
+            let mut vec_name_types = Vec::<NameType>::with_capacity(10);
+            for i in 0..10 {
+                vec_name_types.push(NameType::generate_random());
+            }
+            let data = maidsafe_types::StructuredData::new(name, owner, vec![vec_name_types.clone()]);
+            let payload = Payload::new(PayloadTypeTag::StructuredData, &data);
 
-    //        let mut encoder = cbor::Encoder::from_memory();
-    //        let encode_result = encoder.encode(&[&payload]);
-    //        assert_eq!(encode_result.is_ok(), true);
-    //        let data_as_vec = routing::types::array_as_vector(encoder.as_bytes());
+            let mut encoder = cbor::Encoder::from_memory();
+            let encode_result = encoder.encode(&[&payload]);
+            assert_eq!(encode_result.is_ok(), true);
+            let data_as_vec: Vec<u8> = encoder.into_bytes();
 
-    //        version_handler_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
-    //        let churn_data = vault.handle_churn(Vec::<NameType>::with_capacity(0));
-    //        assert_eq!(churn_data.len(), 1);
-    //        assert_eq!(churn_data[0].name(), data.name());
+            version_handler_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            let churn_data = vault.handle_churn(small_close_group.clone());
+            assert_eq!(churn_data.len(), 1);
 
-    //        let sendable: GenericSendableType = churn_data[0].clone();
-    //        assert_eq!(sendable.name(), data.name());
-    //        let mut decoder = cbor::Decoder::from_bytes(sendable.serialised_contents());
-    //        let decoded_data: Payload = decoder.decode().next().unwrap().unwrap();
-    //        assert_eq!(decoded_data, payload);
-    //        assert!(vault.version_handler.retrieve_all_and_reset().is_empty());
-    //    }
+            let sendable: version_handler::VersionHandlerSendable = match churn_data[0] {
+                RoutingNodeAction::Refresh {content: ref content} => {
+                    let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
+                    let mut decoder = cbor::Decoder::from_bytes(data);
+                    decoder.decode().next().unwrap().unwrap()
+                },
+                _ => panic!("Refresh type expected")
+            };
+            assert_eq!(sendable.name(), data.name());
 
-    //}
+            assert!(vault.version_handler.retrieve_all_and_reset().is_empty());
+        }
+
+    }
 }

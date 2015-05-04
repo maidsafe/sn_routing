@@ -55,7 +55,9 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        self.data.clone()
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
     }
 
     fn refresh(&self) -> bool {
@@ -179,4 +181,19 @@ mod test {
             }
         }
     }
+
+    #[test]
+    fn version_handler_sendable_serialisation() {
+        let obj_before = super::VersionHandlerSendable::new(NameType([1u8;64]), vec![2,3,45,5]);
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: super::VersionHandlerSendable = d.decode().next().unwrap().unwrap();
+
+        assert_eq!(obj_before, obj_after);
+    }
+
+
 }
