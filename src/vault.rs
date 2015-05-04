@@ -89,7 +89,7 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> {
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, name: NameType, data: Vec<u8>)->Result<Action, RoutingError> {
         ;
         Err(RoutingError::InvalidRequest)
     }
