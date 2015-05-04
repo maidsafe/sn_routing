@@ -133,7 +133,7 @@ impl Interface for TestNode {
                   from_authority: types::Authority, from_address: NameType)
                    -> Result<Action, RoutingError> {
         let stats = self.stats.clone();
-        let mut stats_value = stats.lock().unwrap();
+        let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
             return Ok(Action::Reply(data.1.serialised_contents().clone()));
         }
@@ -261,7 +261,15 @@ fn main() {
                 copied_node.lock().unwrap().run();
             }
         });
-
+        if args.arg_endpoint.is_some() {
+            match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
+                Ok(addr) => {
+                    println!("initial bootstrapping to {} ", addr);
+                    let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None); 
+                }
+                Err(_) => {}
+            };
+        }
         let mut ori_packets = Vec::<TestData>::new();
         loop {
             command.clear();
