@@ -32,6 +32,13 @@ use message_header;
 use name_type::NameType;
 use sendable::Sendable;
 use types;
+use RoutingError;
+use cbor::{Decoder, Encoder};
+use messages::bootstrap_id_request::BootstrapIdRequest;
+use name_type::{NAME_TYPE_LEN};
+use message_header::MessageHeader;
+use messages::{RoutingMessage, MessageTypeTag};
+use types::{MessageId};
 
 pub use crust::Endpoint;
 
@@ -84,6 +91,10 @@ impl ClientIdPacket {
 
     pub fn get_public_keys(&self) -> &(crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey){
         &self.public_keys
+    }
+
+    pub fn get_crypto_secret_sign_key(&self) -> crypto::sign::SecretKey {
+      self.secret_keys.0.clone()
     }
 
     pub fn sign(&self, data : &[u8]) -> crypto::sign::Signature {
@@ -145,7 +156,9 @@ pub struct RoutingClient<'a, F: Interface + 'a> {
     connection_manager: ConnectionManager,
     id_packet: ClientIdPacket,
     bootstrap_address: (NameType, Endpoint),
-    message_id: u32,
+    next_message_id: MessageId,
+    bootstrap_endpoint: Option<Endpoint>,
+    bootstrap_node_id: Option<NameType>,
     join_guard: thread::JoinGuard<'a, ()>,
 }
 
@@ -168,13 +181,15 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             connection_manager: crust::ConnectionManager::new(tx),
             id_packet: id_packet.clone(),
             bootstrap_address: bootstrap_add.clone(),
-            message_id: rand::random::<u32>(),
+            next_message_id: rand::random::<MessageId>(),
+            bootstrap_endpoint: None,
+            bootstrap_node_id: None,
             join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add.0, id_packet.get_name(), my_interface)),
         }
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, type_id: u64, name: NameType) -> Result<u32, IoError> {
+    pub fn get(&mut self, type_id: u64, name: NameType) -> Result<MessageId, IoError> {
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
@@ -188,9 +203,11 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             },
         };
 
+        let message_id = self.get_next_message_id();
+
         // Make MessageHeader
         let header = message_header::MessageHeader::new(
-            self.message_id,
+            message_id,
             types::DestinationAddress {
                 dest: name.clone(),
                 reply_to: None
@@ -198,8 +215,6 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             get_data.requester.clone(),
             types::Authority::Client
         );
-
-        self.message_id += 1;
 
         // Make RoutingMessage
         let routing_msg = messages::RoutingMessage::new(
@@ -215,22 +230,24 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 
         // Give Serialised RoutingMessage to connection manager
         match self.connection_manager.send(self.bootstrap_address.1.clone(), encoder_routingmsg.into_bytes()) {
-            Ok(_) => Ok(self.message_id - 1),
+            Ok(_) => Ok(message_id),
             Err(error) => Err(error),
         }
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, content: T) -> Result<u32, IoError> where T: Sendable {
+    pub fn put<T>(&mut self, content: T) -> Result<MessageId, IoError> where T: Sendable {
         // Make PutData message
         let put_data = messages::put_data::PutData {
             name: content.name(),
             data: content.serialised_contents(),
         };
 
+        let message_id = self.get_next_message_id();
+
         // Make MessageHeader
         let header = message_header::MessageHeader::new(
-            self.message_id,
+            message_id,
             types::DestinationAddress {
                 dest: self.id_packet.get_name(),
                 reply_to: None,
@@ -242,8 +259,6 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
             },
             types::Authority::Client
         );
-
-        self.message_id += 1;
 
         // Make RoutingMessage
         let routing_msg = messages::RoutingMessage::new(
@@ -259,7 +274,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 
         // Give Serialised RoutingMessage to connection manager
         match self.connection_manager.send(self.bootstrap_address.1.clone(), encoder_routingmsg.into_bytes()) {
-            Ok(_) => Ok(self.message_id - 1),
+            Ok(_) => Ok(message_id),
             Err(error) => Err(error),
         }
     }
@@ -292,6 +307,48 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
     }
 
     fn add_bootstrap(&self) { unimplemented!() }
+
+    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
+                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
+        match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
+            Err(reason) => {
+                println!("Failed to bootstrap: {:?}", reason);
+                Err(RoutingError::FailedToBootstrap)
+            }
+            Ok(bootstrapped_to) => {
+                self.bootstrap_endpoint = Some(bootstrapped_to);
+                // starts swaping ID with the bootstrap peer
+                self.send_bootstrap_id_request();
+                // put our public pmid so that our connect requests are validated
+                Ok(())
+            }
+        }
+    }
+
+    fn send_bootstrap_id_request(&mut self) {
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
+        let source = types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None };
+        let authority = types::Authority::Client;
+        let request = BootstrapIdRequest { sender_id: self.id_packet.get_name().clone() };
+        let header = MessageHeader::new(message_id, destination, source, authority);
+        let message = RoutingMessage::new(MessageTypeTag::BootstrapIdRequest, header,
+            request, &self.id_packet.get_crypto_secret_sign_key());
+        let mut e = Encoder::from_memory();
+        e.encode(&[message]).unwrap();
+        // need to send to bootstrap node as we are not yet connected to anyone else
+        self.send_to_bootstrap_node(&e.into_bytes());
+    }
+
+    fn send_to_bootstrap_node(&mut self, serialised_message: &Vec<u8>) {
+        let _ = self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), serialised_message.clone());
+    }
+
+    fn get_next_message_id(&mut self) -> MessageId {
+        let current = self.next_message_id;
+        self.next_message_id += 1;
+        current
+    }
 }
 
 // #[cfg(test)]

@@ -19,26 +19,23 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use types;
 use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct BootstrapIdRequest {
   pub sender_id  : NameType,
-  pub sender_fob : types::PublicPmid,
 }
 
 impl Encodable for BootstrapIdRequest {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.sender_id, &self.sender_fob)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.sender_id)).encode(e)
   }
 }
 
 impl Decodable for BootstrapIdRequest {
   fn decode<D: Decoder>(d: &mut D)->Result<BootstrapIdRequest, D::Error> {
     try!(d.read_u64());
-    let (sender_id, sender_fob) = try!(Decodable::decode(d));
-    Ok(BootstrapIdRequest { sender_id: sender_id, sender_fob: sender_fob })
+    let sender_id = try!(Decodable::decode(d));
+    Ok(BootstrapIdRequest { sender_id: sender_id })
   }
 }
-
