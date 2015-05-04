@@ -388,18 +388,16 @@ impl VaultFacade {
             let churn_data = vault.handle_churn(close_group.clone());
             assert_eq!(churn_data.len(), 1);
 
-            let data_manager_sendable: data_manager::DataManagerSendable = match churn_data[0] {
+             match churn_data[0] {
                 RoutingNodeAction::Refresh {content: ref content} => {
-                    let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
-                    let mut decoder = cbor::Decoder::from_bytes(data);
-                    decoder.decode().next().unwrap().unwrap()
+                    let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
+                    let mut decoder = cbor::Decoder::from_bytes(data0);
+                    let data_manager_sendable: data_manager::DataManagerSendable = decoder.decode().next().unwrap().unwrap();
+                    assert_eq!(data_manager_sendable.name(), data.name().clone());
                 },
+                RoutingNodeAction::Get { .. } => (),
                 _ => panic!("Refresh type expected")
             };
-
-            assert_eq!(data_manager_sendable.name(), data.name().clone());
-
-            assert!(data_manager_sendable.get_data_holders().len() >= 3);
 
             assert!(vault.data_manager.retrieve_all_and_reset(&mut close_group).is_empty());
         }
@@ -457,5 +455,6 @@ impl VaultFacade {
 
             assert!(vault.version_handler.retrieve_all_and_reset().is_empty());
         }
+
     }
 }
