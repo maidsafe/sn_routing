@@ -48,15 +48,22 @@ use routing::{Action, RoutingError};
 static USAGE: &'static str = "
 Usage: routing -h
        routing -o
+       routing -v <endpoint>
+       routing -c <endpoint>
 
 Options:
-    -h, --help       Display the help message.
+    -h, --help       Display the help message
     -o, --origin     Startup the first testing node
+    -c, --client     Node started as client, bootstrap to the specified endpoint
+    -v, --vault      Node started as vault, bootstrap to the specified endpoint
 ";
 
 #[derive(RustcDecodable, Debug)]
 struct Args {
+    arg_endpoint: Option<String>,
     flag_origin : bool,
+    flag_client : bool,
+    flag_vault : bool,
     flag_help : bool
 }
 
@@ -203,53 +210,84 @@ fn main() {
                      .unwrap_or_else(|e| e.exit());
     if args.flag_help {
         println!("{:?}", args);
-        // return;
+        return;
     }
 
-    let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) });
-    let mutate_node = Arc::new(Mutex::new(test_node));
-    let copied_node = mutate_node.clone();
-    spawn(move || {
-        loop {
-            thread::sleep_ms(10);
-            copied_node.lock().unwrap().run();
-        }
-    });
-
     let mut command = String::new();
-    let mut ori_packets = Vec::<TestData>::new();
-    loop {
-        command.clear();
-        println!("Input command (stop, put <msg_length>, get <index>, bootstrap <endpoint>)");
-        let _ = io::stdin().read_line(&mut command);
-        let v: Vec<&str> = command.split(' ').collect();
-        match v[0].trim() {
-            "stop" => break,
-            "put" => {
-                let length : usize = match v[1].trim().parse().ok() { Some(length) => length, _ => 1024 };
-                let data = TestData::new(generate_random_vec_u8(length));
-                ori_packets.push(data.clone());
-                println!("putting data {} to network ", data.name());             
-                mutate_node.lock().unwrap().put(data.name(), Box::new(data), false);
-            },
-            "get" => {
-                let index : usize = match v[1].trim().parse().ok() { Some(index) => index, _ => 0 };
-                if index < ori_packets.len() {
-                    println!("getting chunk {} from network ", ori_packets[index].name());
-                    mutate_node.lock().unwrap().get(110, ori_packets[index].name());
-                } else {
-                    println!("only has {} packets in record ", ori_packets.len());
+    if args.flag_origin || args.flag_vault {
+        let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) });
+        let mutate_node = Arc::new(Mutex::new(test_node));
+        let copied_node = mutate_node.clone();
+        spawn(move || {
+            loop {
+                thread::sleep_ms(10);
+                copied_node.lock().unwrap().run();
+            }
+        });
+        if args.arg_endpoint.is_some() {
+            match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
+                Ok(addr) => {
+                    println!("initial bootstrapping to {} ", addr);
+                    let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None); 
                 }
-            },
-            "bootstrap" => {
-                let endpoint_address = match SocketAddr::from_str(v[1].trim()) {
-                    Ok(addr) => addr,
-                    Err(_) => continue
-                };
-                println!("bootstrapping to {} ", endpoint_address);
-                let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(endpoint_address)]), None);
-            },
-            _ => println!("Invalid Option")
+                Err(_) => {}
+            };
+        }
+        loop {
+            command.clear();
+            println!("Input command (stop, bootstrap <endpoint>)");
+            let _ = io::stdin().read_line(&mut command);
+            let v: Vec<&str> = command.split(' ').collect();
+            match v[0].trim() {
+                "stop" => break,
+                "bootstrap" => {
+                    let endpoint_address = match SocketAddr::from_str(v[1].trim()) {
+                        Ok(addr) => addr,
+                        Err(_) => continue
+                    };
+                    println!("bootstrapping to {} ", endpoint_address);
+                    let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(endpoint_address)]), None);
+                },
+                _ => println!("Invalid Option")
+            }
+        }
+    } else if args.flag_client {
+        let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) });
+        let mutate_node = Arc::new(Mutex::new(test_node));
+        let copied_node = mutate_node.clone();
+        spawn(move || {
+            loop {
+                thread::sleep_ms(10);
+                copied_node.lock().unwrap().run();
+            }
+        });
+
+        let mut ori_packets = Vec::<TestData>::new();
+        loop {
+            command.clear();
+            println!("Input command (stop, put <msg_length>, get <index>)");
+            let _ = io::stdin().read_line(&mut command);
+            let v: Vec<&str> = command.split(' ').collect();
+            match v[0].trim() {
+                "stop" => break,
+                "put" => {
+                    let length : usize = match v[1].trim().parse().ok() { Some(length) => length, _ => 1024 };
+                    let data = TestData::new(generate_random_vec_u8(length));
+                    ori_packets.push(data.clone());
+                    println!("putting data {} to network ", data.name());             
+                    mutate_node.lock().unwrap().put(data.name(), Box::new(data), false);
+                },
+                "get" => {
+                    let index : usize = match v[1].trim().parse().ok() { Some(index) => index, _ => 0 };
+                    if index < ori_packets.len() {
+                        println!("getting chunk {} from network ", ori_packets[index].name());
+                        mutate_node.lock().unwrap().get(110, ori_packets[index].name());
+                    } else {
+                        println!("only has {} packets in record ", ori_packets.len());
+                    }
+                },
+                _ => println!("Invalid Option")
+            }
         }
     }
 }
