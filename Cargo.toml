@@ -26,5 +26,5 @@ docopt = "*"
 [[example]]
 name = "routing"
 path = "examples/routing.rs"
-test = false
+test = true
 bench = false
