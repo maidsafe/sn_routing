@@ -200,7 +200,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 if self.all_connections.0.contains_key(&endpoint) {
                     let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
                     if self.message_received(&peer_id, bytes).is_err() {
-                        println!("failed to Parse message !!! check  from - {:?} ", peer_id);
+                        // println!("failed to Parse message !!! check  from - {:?} ", peer_id);
                         // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
                     }
                 } else if self.pending_connections.contains(&endpoint) {
