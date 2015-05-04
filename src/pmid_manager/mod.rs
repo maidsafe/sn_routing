@@ -21,8 +21,7 @@ mod database;
 use routing;
 use routing::NameType;
 use routing::types::DestinationAddress;
-use routing::generic_sendable_type;
-pub use self::database::PmidManagerAccount;
+pub use self::database::PmidManagerAccountWrapper;
 
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
@@ -59,7 +58,7 @@ mod test {
   #[test]
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
-    let dest = DestinationAddress { dest: routing::test_utils::Random::generate_random(), reply_to: None };  
+    let dest = DestinationAddress { dest: routing::test_utils::Random::generate_random(), reply_to: None };
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);

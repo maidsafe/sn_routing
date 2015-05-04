@@ -19,7 +19,6 @@
 
 mod database;
 
-use routing::node_interface::RoutingNodeAction;
 use std::cmp;
 use routing;
 use routing::NameType;
@@ -42,7 +41,7 @@ impl DataManager {
 	  if result.len() == 0 {
 	    return Err(routing::RoutingError::NoData);
 	  }
-      
+
 	  let mut dest_pmids : Vec<NameType> = Vec::new();
 	  for pmid in result.iter() {
         dest_pmids.push(pmid.clone());
@@ -50,7 +49,7 @@ impl DataManager {
 	  Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<routing::Action, routing::RoutingError> {    
+  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<routing::Action, routing::RoutingError> {
     let mut name : routing::NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -125,7 +124,8 @@ impl DataManager {
 
                   routing::node_interface::RoutingNodeAction::Put {
                       destination: close_grp_node_to_add,
-                      content: routing::generic_sendable_type::GenericSendableType::new(name, 3, response), //TODO Get type_tag correct
+                      content: Box::new(database::DataManagerSendable::with_content(name, response)),
+                      is_client: false,
                   }
               } else {
                   routing::node_interface::RoutingNodeAction::None
@@ -135,7 +135,7 @@ impl DataManager {
       }
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<RoutingNodeAction> {
+  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::RoutingNodeAction> {
     self.db_.retrieve_all_and_reset(close_group)
   }
 }

@@ -27,7 +27,8 @@ use maid_manager::MaidManager;
 use pmid_manager::PmidManager;
 use pmid_node::PmidNode;
 use version_handler::VersionHandler;
-use routing::node_interface::RoutingNodeAction;
+use routing::node_interface::{ Interface, RoutingNodeAction };
+
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -45,7 +46,7 @@ impl Clone for VaultFacade {
     }
 }
 
-impl routing::node_interface::Interface for VaultFacade {
+impl Interface for VaultFacade {
     fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
                 from_address: NameType)->Result<Action, RoutingError> {
         match our_authority {
@@ -61,6 +62,11 @@ impl routing::node_interface::Interface for VaultFacade {
             Authority::ManagedNode => { return self.pmid_node.handle_get(name); }
             _ => { return Err(RoutingError::InvalidRequest); }
         }
+    }
+
+    fn handle_get_key(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
+                from_address: NameType)->Result<Action, RoutingError> {
+        unimplemented!();
     }
 
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
@@ -83,12 +89,13 @@ impl routing::node_interface::Interface for VaultFacade {
         }
     }
 
-    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> {
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, name: NameType, data: Vec<u8>)->Result<Action, RoutingError> {
         ;
         Err(RoutingError::InvalidRequest)
     }
 
-    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>, RoutingError>) -> routing::node_interface::RoutingNodeAction {
+    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
+         RoutingError>) -> RoutingNodeAction {
         if response.is_ok() {
             self.data_manager.handle_get_response(response.ok().unwrap())
         } else {
@@ -145,14 +152,13 @@ impl VaultFacade {
     use cbor;
     use maidsafe_types;
     use maid_manager;
-    use pmid_manager::PmidManagerAccount;
+    use pmid_manager;
     use maidsafe_types::{PayloadTypeTag, Payload};
     use routing::types:: { Authority, DestinationAddress };
     use routing::NameType;
     use routing::test_utils::Random;
     use routing::node_interface::Interface;
     use routing::sendable::Sendable;
-    use routing::generic_sendable_type::GenericSendableType;
 
     fn array_as_vector_u8(array : [u8;64]) -> Vec<u8> {
         let mut vec = Vec::with_capacity(array.len());
@@ -369,7 +375,7 @@ impl VaultFacade {
     //        for i in 10..30 {
     //            close_group.push(available_nodes[i].clone());
     //        }
-    //        
+    //
     //        let churn_data = vault.handle_churn(close_group);
     //        assert_eq!(churn_data.len(), 1);
     //        assert!(churn_data[0].name() == data.name().clone());

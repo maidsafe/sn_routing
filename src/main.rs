@@ -43,6 +43,7 @@ mod version_handler;
 mod chunk_store;
 mod pmid_node;
 mod vault;
+mod utils;
 
 use vault::VaultFacade;
 

@@ -18,17 +18,107 @@
 #![allow(dead_code)]
 
 use routing;
+use routing::sendable::Sendable;
 use std::collections::HashMap;
 use cbor;
 use rustc_serialize::{Encodable};
 
 type Identity = routing::NameType; // name of the chunk
-use routing::types::PmidNode;
-use routing::types::PmidNodes;
+use routing::types::{PmidNode, PmidNodes, GROUP_SIZE};
 use routing::NameType;
 use std::cmp;
-use routing::generic_sendable_type::GenericSendableType;
-use routing::node_interface::RoutingNodeAction;
+
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
+pub struct DataManagerSendable {
+    name: NameType,
+    tag: u64,
+    data_holders: PmidNodes,
+    preserialised_content: Vec<u8>,
+    has_preserialised_content: bool,
+}
+
+impl DataManagerSendable {
+    pub fn new(name: NameType, data_holders: PmidNodes) -> DataManagerSendable {
+        DataManagerSendable {
+            name: name,
+            tag: 206, // FIXME : Change once the tag is freezed
+            data_holders: data_holders,
+            preserialised_content: Vec::new(),
+            has_preserialised_content: false,
+        }
+    }
+
+    pub fn with_content(name: NameType, preserialised_content: Vec<u8>) -> DataManagerSendable {
+        DataManagerSendable {
+            name: name,
+            tag: 206, // FIXME : Change once the tag is freezed
+            data_holders: PmidNodes::new(),
+            preserialised_content: preserialised_content,
+            has_preserialised_content: true,
+        }
+    }
+
+    pub fn get_data_holders(&self) -> PmidNodes {
+        self.data_holders.clone()
+    }
+}
+
+impl Sendable for DataManagerSendable {
+    fn name(&self) -> NameType {
+        self.name.clone()
+    }
+
+    fn type_tag(&self) -> u64 {
+        self.tag.clone()
+    }
+
+    fn serialised_contents(&self) -> Vec<u8> {
+        if self.has_preserialised_content {
+            self.preserialised_content.clone()
+        } else {
+            let mut e = cbor::Encoder::from_memory();
+            e.encode(&[&self]).unwrap();
+            e.into_bytes()
+        }
+    }
+
+    fn refresh(&self)->bool {
+        true
+    }
+
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
+        if responses.len() == GROUP_SIZE as usize - 1 {
+            return None;
+        }
+        let mut tmp_wrapper: DataManagerSendable;
+        let mut stats = Vec::<(PmidNodes, u64)>::new();
+        for it in responses.iter() {
+            let mut d = cbor::Decoder::from_bytes(it.serialised_contents());
+            tmp_wrapper = d.decode().next().unwrap().unwrap();
+            let mut push_in_vec = false;
+            {
+                let find_res = stats.iter_mut().find(|a| a.0 == tmp_wrapper.get_data_holders());
+                if find_res.is_some() {
+                    find_res.unwrap().1 += 1
+                } else {
+                    push_in_vec = true;
+                }
+            }
+
+            if push_in_vec {
+                stats.push((tmp_wrapper.get_data_holders(), 1));
+            }
+        }
+        stats.sort_by(|a, b| b.1.cmp(&a.1));
+        let (pmids, count) = stats[0].clone();
+        if count < (GROUP_SIZE as u64 + 1) / 2 {
+            return Some(Box::new(DataManagerSendable::new(NameType([0u8;64]), pmids)));
+        }
+        None
+    }
+
+}
+
 
 pub struct DataManagerDatabase {
   storage : HashMap<Identity, PmidNodes>,
@@ -82,7 +172,7 @@ impl DataManagerDatabase {
         }
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<RoutingNodeAction> {
+    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::RoutingNodeAction> {
         assert!(close_group.len() >= 3);
         self.temp_storage_after_churn = self.storage.clone();
         let mut close_grp_already_stored = false;
@@ -103,20 +193,16 @@ impl DataManagerDatabase {
         }
 
         let data: Vec<_> = self.storage.drain().collect();
-        let mut actions = Vec::<RoutingNodeAction>::new();
+        let mut actions = Vec::<routing::node_interface::RoutingNodeAction>::new();
         for element in data {
             if self.temp_storage_after_churn.get(&element.0).unwrap().len() < 3 {
                 actions.push(routing::node_interface::RoutingNodeAction::Get {
-                    type_id: 3, //TODO Get type_tag correct
+                    type_id: 206, //TODO Get type_tag correct
                     name: element.0.clone(),
                 });
             }
-            let mut e = cbor::Encoder::from_memory();
-            e.encode(&[&element.1]).unwrap();
-            let serialised_content = e.into_bytes();
-            actions.push(routing::node_interface::RoutingNodeAction::Put {
-                destination: element.0.clone(),
-                content: GenericSendableType::new(element.0, 3, serialised_content), //TODO Get type_tag correct
+            actions.push(routing::node_interface::RoutingNodeAction::Refresh {
+                content: Box::new(DataManagerSendable::new(element.0, element.1)),
             });
         }
         actions
