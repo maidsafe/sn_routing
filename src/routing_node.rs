@@ -219,12 +219,11 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn send_bootstrap_id_request(&mut self) {
-        let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
         let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None };
         let authority = types::Authority::ManagedNode;
-        let request = BootstrapIdRequest { sender_id: self.id(), sender_fob: our_public_pmid };
+        let request = BootstrapIdRequest { sender_id: self.id() };
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::BootstrapIdRequest, header,
             request, &self.pmid.get_crypto_secret_sign_key());
@@ -502,7 +501,6 @@ impl<F> RoutingNode<F> where F: Interface {
             self.handle_bootstrap_id_response(peer_endpoint, message.serialised_body);
             return;
         }
-
     }
 
     /// This returns our calculated authority with regards

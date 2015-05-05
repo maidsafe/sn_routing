@@ -41,4 +41,3 @@ impl Decodable for BootstrapIdResponse {
     Ok(BootstrapIdResponse { sender_id: sender_id, sender_fob: sender_fob })
   }
 }
-
