@@ -23,10 +23,11 @@ use sodiumoxide;
 use sodiumoxide::crypto;
 use std::io::Error as IoError;
 use std::sync::{Mutex, Arc, mpsc};
-use std::thread;
+use std::sync::mpsc::Receiver;
 
 use client_interface::Interface;
 use crust;
+use crust::Endpoint::Tcp;
 use messages;
 use message_header;
 use name_type::NameType;
@@ -151,40 +152,33 @@ impl Decodable for ClientIdPacket {
     }
 }
 
-pub struct RoutingClient<'a, F: Interface + 'a> {
+pub struct RoutingClient<F: Interface> {
     interface: Arc<Mutex<F>>,
+    event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
     id_packet: ClientIdPacket,
-    bootstrap_address: (NameType, Endpoint),
-    next_message_id: MessageId,
-    bootstrap_endpoint: Option<Endpoint>,
-    bootstrap_node_id: Option<NameType>,
-    join_guard: thread::JoinGuard<'a, ()>,
+    bootstrap_address: (Option<NameType>, Option<Endpoint>),
+    next_message_id: MessageId
 }
 
-impl<'a, F> Drop for RoutingClient<'a, F> where F: Interface {
+impl<F> Drop for RoutingClient<F> where F: Interface {
     fn drop(&mut self) {
         // self.connection_manager.stop(); // TODO This should be coded in ConnectionManager once Peter
         // implements it.
     }
 }
 
-impl<'a, F> RoutingClient<'a, F> where F: Interface {
-    pub fn new(my_interface: Arc<Mutex<F>>,
-               id_packet: ClientIdPacket,
-               bootstrap_add: (NameType, crust::Endpoint)) -> RoutingClient<'a, F> {
+impl<F> RoutingClient<F> where F: Interface {
+    pub fn new(my_interface: F, id_packet: ClientIdPacket) -> RoutingClient<F> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
-
         RoutingClient {
-            interface: my_interface.clone(),
+            interface: Arc::new(Mutex::new(my_interface)),
+            event_input: rx,
             connection_manager: crust::ConnectionManager::new(tx),
             id_packet: id_packet.clone(),
-            bootstrap_address: bootstrap_add.clone(),
-            next_message_id: rand::random::<MessageId>(),
-            bootstrap_endpoint: None,
-            bootstrap_node_id: None,
-            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add.0, id_packet.get_name(), my_interface)),
+            bootstrap_address: (None, None),
+            next_message_id: rand::random::<MessageId>()
         }
     }
 
@@ -193,7 +187,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
         // Make GetData message
         let get_data = messages::get_data::GetData {
             requester: types::SourceAddress {
-                from_node: self.bootstrap_address.0.clone(),
+                from_node: self.bootstrap_address.0.clone().unwrap(),
                 from_group: None,
                 reply_to: Some(self.id_packet.get_name()),
             },
@@ -229,7 +223,8 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        match self.connection_manager.send(self.bootstrap_address.1.clone(), encoder_routingmsg.into_bytes()) {
+        match self.connection_manager.send(self.bootstrap_address.1.clone().unwrap(),
+                                           encoder_routingmsg.into_bytes()) {
             Ok(_) => Ok(message_id),
             Err(error) => Err(error),
         }
@@ -253,7 +248,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 reply_to: None,
             },
             types::SourceAddress {
-                from_node: self.bootstrap_address.0.clone(),
+                from_node: self.bootstrap_address.0.clone().unwrap(),
                 from_group: None,
                 reply_to: Some(self.id_packet.get_name()),
             },
@@ -273,40 +268,44 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
         encoder_routingmsg.encode(&[&routing_msg]).unwrap();
 
         // Give Serialised RoutingMessage to connection manager
-        match self.connection_manager.send(self.bootstrap_address.1.clone(), encoder_routingmsg.into_bytes()) {
+        match self.connection_manager.send(self.bootstrap_address.1.clone().unwrap(),
+                                           encoder_routingmsg.into_bytes()) {
             Ok(_) => Ok(message_id),
             Err(error) => Err(error),
         }
     }
 
-    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: NameType, own_address: NameType,
-             my_interface: Arc<Mutex<F>>) {
-        for it in rx.iter() {
-            match it {
-                crust::connection_manager::Event::NewMessage(id, bytes) => {
-                    // The received id is Endpoint(i.e. ip + socket) which is no use to upper layer
-                    let mut decode_routing_msg = cbor::Decoder::from_bytes(&bytes[..]);
-                    let routing_msg: messages::RoutingMessage = decode_routing_msg.decode().next().unwrap().unwrap();
+    pub fn run(&mut self) {
+        let event = self.event_input.try_recv();
 
-                    if routing_msg.message_header.destination.dest == bootstrap_add &&
-                       routing_msg.message_header.destination.reply_to.is_some() &&
-                       routing_msg.message_header.destination.reply_to.unwrap() == own_address {
+        if event.is_err() { return; }
+
+        match event.unwrap() {
+            crust::connection_manager::Event::NewMessage(endpoint, bytes) => {
+                // The received id is Endpoint(i.e. ip + socket) which is no use to upper layer
+                let mut decode_routing_msg = cbor::Decoder::from_bytes(&bytes[..]);
+                let routing_msg: messages::RoutingMessage = decode_routing_msg.decode().next().unwrap().unwrap();
+                if self.bootstrap_address.1 == Some(endpoint) {
+                    if routing_msg.message_type == messages::MessageTypeTag::BootstrapIdResponse {
+                        self.bootstrap_address.0 = Some(routing_msg.message_header.source.from_node);
+                    } else if routing_msg.message_header.destination.reply_to.is_some() &&
+                              routing_msg.message_header.destination.reply_to.unwrap() == self.id_packet.get_name() {
                         match routing_msg.message_type {
                             messages::MessageTypeTag::GetDataResponse => {
-                                let mut interface = my_interface.lock().unwrap();
+                                let mut interface = self.interface.lock().unwrap();
                                 interface.handle_get_response(routing_msg.message_header.message_id,
                                                               Ok(routing_msg.serialised_body));
                             }
                             _ => unimplemented!(),
                         }
                     }
-                },
-                _ => unimplemented!(),
-            };
+                }
+            },
+            _ => { // as a client, shall not handle any connection related change
+                   // TODO : try to re-bootstrap when lost the connection to the bootstrap node ?
+                 }
         }
     }
-
-    fn add_bootstrap(&self) { unimplemented!() }
 
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
                      beacon_port: Option<u16>) -> Result<(), RoutingError> {
@@ -316,10 +315,12 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
                 Err(RoutingError::FailedToBootstrap)
             }
             Ok(bootstrapped_to) => {
-                self.bootstrap_endpoint = Some(bootstrapped_to);
+                match bootstrapped_to.clone() {
+                        Tcp(socket) => println!("bootstrapped to {}", socket)
+                }
+                self.bootstrap_address.1 = Some(bootstrapped_to);
                 // starts swaping ID with the bootstrap peer
                 self.send_bootstrap_id_request();
-                // put our public pmid so that our connect requests are validated
                 Ok(())
             }
         }
@@ -341,7 +342,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Vec<u8>) {
-        let _ = self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), serialised_message.clone());
+        let _ = self.connection_manager.send(self.bootstrap_address.1.clone().unwrap(), serialised_message.clone());
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
