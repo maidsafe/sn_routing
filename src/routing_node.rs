@@ -125,13 +125,14 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) {
-        let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()), reply_to: None };
-        let source = self.our_source_address();
-        let authority = types::Authority::Client;
-        let header = MessageHeader::new(message_id, destination, source, authority);
-        let name_and_type_id = NameAndTypeId{ name: NameType::new(name.get_id()), type_id: type_id };
-        let request = GetData{ requester: self.our_source_address(),  name_and_type_id: name_and_type_id };
+        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()),
+                                                     reply_to: None };
+        let header = MessageHeader::new(self.get_next_message_id(), 
+                                        destination, self.our_source_address(), 
+                                        types::Authority::Client);
+        let request = GetData{ requester: self.our_source_address(),  
+                               name_and_type_id: NameAndTypeId{name: NameType::new(name.get_id()), 
+                                                               type_id: type_id} };
         let message = RoutingMessage::new(MessageTypeTag::GetData, header,
                                           request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
@@ -142,16 +143,15 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put(&mut self, destination: NameType, content: Box<Sendable>, client_authority: bool) {
-        let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: destination, reply_to: None };
-        let source = self.our_source_address();
         let authority = if client_authority {
             types::Authority::Client
         } else {
             types::Authority::ManagedNode
         };
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(message_id, destination, source, authority);
+        let header = MessageHeader::new(self.get_next_message_id(), 
+                                        destination, self.our_source_address(), authority);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
                 request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
