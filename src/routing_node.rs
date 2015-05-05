@@ -1064,9 +1064,8 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
-        let current = self.next_message_id;
         self.next_message_id += 1;
-        current
+        self.next_message_id
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Bytes) {
@@ -1237,6 +1236,12 @@ mod test {
                             data: Vec<u8>) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
+    }
+    
+    #[test]
+    fn check_next_id() {
+      let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+      assert_eq!(routing_node.get_next_message_id() + 1, routing_node.get_next_message_id());
     }
 
     #[test]
