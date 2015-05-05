@@ -160,6 +160,22 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
     }
 
+    /// Add something to the network
+    pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
+        let source = self.our_source_address();
+        let authority = Authority::Unknown;
+        let request = PutData{ name: content.name(), data: content.serialised_contents() };
+        let header = MessageHeader::new(message_id, destination, source, authority);
+        let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut, header,
+                request, &self.pmid.get_crypto_secret_sign_key());
+        let mut e = Encoder::from_memory();
+
+        e.encode(&[message]).unwrap();
+        self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
+    }
+
     /// Refresh the content in the close group nodes of group address content::name.
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
@@ -458,6 +474,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // pre-sentinel message handling
         match message.message_type {
+            MessageTypeTag::UnauthorisedPut => self.handle_put_data(header, body),
             MessageTypeTag::GetKey => self.handle_get_key(header, body),
             MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
             _ => {
@@ -1172,7 +1189,10 @@ mod test {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
-            stats_value.data = data.clone();
+            stats_value.data = match from_authority {
+                types::Authority::Unknown => "UnauthorisedPut".to_string().into_bytes(),
+                _   => "AuthorisedPut".to_string().into_bytes(),
+            };
             Ok(Action::Reply(data))
         }
         fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
@@ -1341,7 +1361,10 @@ mod test {
             message_id:  n1.get_next_message_id(),
             destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
             source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
-            authority:   Authority::NaeManager
+            authority:   match message_type {
+                MessageTypeTag::UnauthorisedPut => Authority::Unknown,
+                _ => Authority::NaeManager
+                }
         };
 
         let message = RoutingMessage::new( message_type, header.clone(),
@@ -1365,10 +1388,28 @@ mod test {
     }
 
 #[test]
+    fn call_unauthorised_put() {
+        let data = "this is a known string".to_string().into_bytes();
+        let chunk = Box::new(TestData::new(data));
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let name: NameType = Random::generate_random();
+        n1.unauthorised_put(name, chunk);
+    }
+
+#[test]
     fn call_handle_put() {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let put_data: PutData = Random::generate_random();
         assert_eq!(call_operation(put_data, MessageTypeTag::PutData, stats).call_count, 1u32);
+    }
+
+#[test]
+    fn call_handle_authorised_put() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
+        let unauthorised_put: PutData = Random::generate_random();
+        let result_stats = call_operation(unauthorised_put, MessageTypeTag::UnauthorisedPut, stats);
+        assert_eq!(result_stats.call_count, 1u32);
+        assert_eq!(result_stats.data, "UnauthorisedPut".to_string().into_bytes());
     }
 
 #[test]
