@@ -38,10 +38,11 @@ use cbor::{Decoder, Encoder};
 use messages::bootstrap_id_request::BootstrapIdRequest;
 use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data_response::GetDataResponse;
+use messages::put_data::PutData;
 use name_type::{NAME_TYPE_LEN};
 use message_header::MessageHeader;
 use messages::{RoutingMessage, MessageTypeTag};
-use types::{MessageId};
+use types::{MessageId, Authority};
 
 pub use crust::Endpoint;
 
@@ -276,6 +277,26 @@ impl<F> RoutingClient<F> where F: Interface {
             Ok(_) => Ok(message_id),
             Err(error) => Err(error),
         }
+    }
+
+    /// Add content to the network
+    pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
+        let source = types::SourceAddress {
+                        from_node: self.bootstrap_address.0.clone().unwrap(),
+                        from_group: None,
+                        reply_to: Some(self.id_packet.get_name()),
+                    };
+        let authority = Authority::Unknown;
+        let request = PutData{ name: content.name(), data: content.serialised_contents() };
+        let header = MessageHeader::new(message_id, destination, source, authority);
+        let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut, header,
+                request, &self.id_packet.secret_keys.0);
+        let mut e = Encoder::from_memory();
+
+        e.encode(&[message]).unwrap();
+        let _ = self.connection_manager.send(self.bootstrap_address.1.clone().unwrap(), e.into_bytes());
     }
 
     pub fn run(&mut self) {
