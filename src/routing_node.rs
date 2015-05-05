@@ -160,7 +160,7 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
     }
 
-    /// Add something to the network, will always go via ClientManager group
+    /// Add something to the network
     pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: destination, reply_to: None };
