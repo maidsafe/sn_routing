@@ -24,6 +24,8 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::Receiver;
 use time::Duration;
+use std::thread;
+use std::thread::spawn;
 
 use crust;
 use crust::Endpoint::Tcp;
@@ -79,7 +81,7 @@ pub struct RoutingNode<F: Interface> {
     listening_for_broadcasts_on_port: Option<u16>,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
-    bootstrap_node_id: Option<NameType>,
+    bootstrap_node_id: Arc<Mutex<Option<NameType>>>,
     filter: MessageFilter<types::FilterType>,
     public_pmid_cache: LruCache<NameType, types::PublicPmid>
 }
@@ -117,7 +119,7 @@ impl<F> RoutingNode<F> where F: Interface {
                       listening_for_broadcasts_on_port: listeners.1,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_endpoint: None,
-                      bootstrap_node_id: None,
+                      bootstrap_node_id: Arc::new(Mutex::new(None)),
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                       public_pmid_cache: LruCache::with_expiry_duration(Duration::minutes(10))
                     }
@@ -192,18 +194,25 @@ impl<F> RoutingNode<F> where F: Interface {
         match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
             Err(reason) => {
                 println!("Failed to bootstrap: {:?}", reason);
-                Err(RoutingError::FailedToBootstrap)
+                return Err(RoutingError::FailedToBootstrap);
             }
             Ok(bootstrapped_to) => {
                 self.bootstrap_endpoint = Some(bootstrapped_to);
                 // starts swaping ID with the bootstrap peer
                 self.send_bootstrap_id_request();
-                // put our public pmid so that our connect requests are validated
-                self.put_own_public_pmid();
-                // connect to close group
-                Ok(())
             }
         }
+        let bootstrap_node_id = self.bootstrap_node_id.clone();
+        let blocker = thread::spawn(move || {
+            while bootstrap_node_id.lock().unwrap().is_none() {
+                thread::sleep_ms(10);
+            }});
+
+        let _ = blocker.join();
+        // put our public pmid so that our connect requests are validated
+        self.put_own_public_pmid();
+        // connect to close group
+        Ok(())
     }
 
     pub fn run(&mut self) {
@@ -292,14 +301,18 @@ impl<F> RoutingNode<F> where F: Interface {
                println!("{:?} failed to add {:?}", self.own_id, bootstrap_id_response_msg.sender_id);
             }
         }
+        let bootstrap_node_id = self.bootstrap_node_id.clone();
+        let mut bootstrap_node_id = bootstrap_node_id.lock().unwrap();
+        *bootstrap_node_id = Some(bootstrap_id_response_msg.sender_id);
     }
 
     fn put_own_public_pmid(&mut self) {
         let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: our_public_pmid.name.clone(), reply_to: None };
+        let bootstrap_node_id = self.bootstrap_node_id.clone();
         let source = types::SourceAddress{ from_node: self.id(), from_group: None,
-                                            reply_to: self.bootstrap_node_id.clone() };
+                                            reply_to: bootstrap_node_id.lock().unwrap().clone() };
         let authority = types::Authority::ManagedNode;
         let request = PutPublicPmid{ public_pmid: our_public_pmid };
         let header = MessageHeader::new(message_id, destination, source, authority);
