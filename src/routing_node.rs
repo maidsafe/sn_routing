@@ -137,8 +137,8 @@ impl<F> RoutingNode<F> where F: Interface {
                                           request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
-        e.encode(&[message]).unwrap();
-        self.send_swarm_or_parallel(&name, &e.into_bytes());
+        if e.encode(&[message]).is_ok() {
+        self.send_swarm_or_parallel(&name, &e.into_bytes()); }
     }
 
     /// Add something to the network, will always go via ClientManager group
@@ -156,24 +156,22 @@ impl<F> RoutingNode<F> where F: Interface {
                 request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
-        e.encode(&[message]).unwrap();
-        self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
+        if e.encode(&[message]).is_ok() {
+        self.send_swarm_or_parallel(&self.id(), &e.into_bytes()); } 
     }
 
     /// Add something to the network
     pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: destination, reply_to: None };
-        let source = self.our_source_address();
-        let authority = Authority::Unknown;
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(message_id, destination, source, authority);
+        let header = MessageHeader::new(self.get_next_message_id(), destination, 
+                                        self.our_source_address(), types::Authority::Unknown);
         let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut, header,
                 request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
-        e.encode(&[message]).unwrap();
-        self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
+        if e.encode(&[message]).is_ok() {
+        self.send_swarm_or_parallel(&self.id(), &e.into_bytes()); }
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
