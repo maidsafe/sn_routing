@@ -414,26 +414,6 @@ impl Decodable for DestinationAddress {
   }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub enum MessageTypeTag {
-  Connect,
-  ConnectResponse,
-  FindGroup,
-  FindGroupResponse,
-  GetData,
-  GetDataResponse,
-  GetKey,
-  GetKeyResponse,
-  GetGroupKey,
-  GetGroupKeyResponse,
-  Post,
-  PostResponse,
-  PutData,
-  PutDataResponse,
-  PutKey,
-  AccountTransfer
-}
-
 impl Encodable for RoutingError {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let mut type_tag;
