@@ -327,13 +327,13 @@ fn main() {
                     let data = TestData::new(generate_random_vec_u8(length));
                     ori_packets.push(data.clone());
                     println!("putting data {} to network ", data.name());             
-                    mutate_client.lock().unwrap().put(data);
+                    let _ = mutate_client.lock().unwrap().put(data);
                 },
                 "get" => {
                     let index : usize = match v[1].trim().parse().ok() { Some(index) => index, _ => 0 };
                     if index < ori_packets.len() {
                         println!("getting chunk {} from network ", ori_packets[index].name());
-                        mutate_client.lock().unwrap().get(110, ori_packets[index].name());
+                        let _ = mutate_client.lock().unwrap().get(110, ori_packets[index].name());
                     } else {
                         println!("only has {} packets in record ", ori_packets.len());
                     }

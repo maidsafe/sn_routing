@@ -249,7 +249,7 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_to_bootstrap_node(&e.into_bytes());
     }
 
-    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes) {
+    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
         // println!("{} In handle bootstrap_id_response from {:?}", self.own_id,
         //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
         if self.all_connections.0.contains_key(&peer_endpoint) ||
@@ -267,12 +267,14 @@ impl<F> RoutingNode<F> where F: Interface {
         self.all_connections.0.insert(peer_endpoint.clone(), bootstrap_id_response_msg.sender_id.clone());
         self.all_connections.1.insert(bootstrap_id_response_msg.sender_id.clone(), peer_endpoint.clone());
 
-        let peer_node_info = NodeInfo::new(bootstrap_id_response_msg.sender_fob, true);
-        let result = self.routing_table.add_node(peer_node_info);
-        if result.0 {
-          println!("{:?} added {:?} <RT size:{}>", self.own_id, bootstrap_id_response_msg.sender_id, self.routing_table.size());
-        } else {
-           println!("{:?} failed to add {:?}", self.own_id, bootstrap_id_response_msg.sender_id);
+        if !is_client {
+            let peer_node_info = NodeInfo::new(bootstrap_id_response_msg.sender_fob, true);
+            let result = self.routing_table.add_node(peer_node_info);
+            if result.0 {
+               println!("{:?} added {:?} <RT size:{}>", self.own_id, bootstrap_id_response_msg.sender_id, self.routing_table.size());
+            } else {
+               println!("{:?} failed to add {:?}", self.own_id, bootstrap_id_response_msg.sender_id);
+            }
         }
     }
 
@@ -315,7 +317,6 @@ impl<F> RoutingNode<F> where F: Interface {
         self.pending_connections.insert(peer_endpoint.clone());
         // assuming each new connection is a bootstrap attempt
         self.bootstrap_endpoint = Some(peer_endpoint.clone());
-        // println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_id);
         // send find group
         let msg = self.construct_find_group_msg();
         let msg = self.encode(&msg);
@@ -423,16 +424,24 @@ impl<F> RoutingNode<F> where F: Interface {
         }
 
         self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);
-        // handle relay request/response
 
+        // handle relay request/response
         let relay_response = header.destination.reply_to.is_some() &&
                              header.destination.dest == self.own_id;
         if relay_response {
-            println!("{:?} relay response sent to nrt {:?}", self.own_id, header.destination.reply_to);
-            // TODO : what shall happen to relaying message ? routing_node choosing a closest node ?
-            for key in self.all_connections.0.keys() {
-                let _ = self.connection_manager.send(key.clone(), serialised_message);
-                return Ok(());
+            if self.all_connections.1.contains_key(&header.destination.reply_to.clone().unwrap()) {
+                // TODO : or shall have a separate nrt table recording all clients connecting to this node?
+                let relay_to = self.all_connections.1.get(&header.destination.reply_to.clone().unwrap()).unwrap().clone();
+                // println!("{:?} relay response sent to nrt {:?} {}", self.own_id, header.destination.reply_to,
+                //          match relay_to.clone() { Tcp(socket_addr) => socket_addr } );
+                let _ = self.connection_manager.send(relay_to, serialised_message);
+            } else {
+                // TODO : what shall happen to relaying message ? routing_node choosing a closest node ?
+                for key in self.all_connections.0.keys() {
+                    println!("relaying response to {}", match key.clone() { Tcp(socket_addr) => socket_addr });
+                    let _ = self.connection_manager.send(key.clone(), serialised_message);
+                    return Ok(());
+                }
             }
         }
 
@@ -498,7 +507,8 @@ impl<F> RoutingNode<F> where F: Interface {
             return;
         }
         if message.message_type == MessageTypeTag::BootstrapIdResponse {
-            self.handle_bootstrap_id_response(peer_endpoint, message.serialised_body);
+            self.handle_bootstrap_id_response(peer_endpoint, message.serialised_body,
+                                              message.message_header.authority == Authority::Client);
             return;
         }
     }
