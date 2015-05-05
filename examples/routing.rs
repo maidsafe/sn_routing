@@ -36,12 +36,12 @@ use rand::random;
 use sodiumoxide::crypto;
 
 use crust::Endpoint;
-use routing::NameType;
 use routing::node_interface::*;
+use routing::routing_client::{ClientIdPacket, RoutingClient};
 use routing::routing_node::{RoutingNode};
 use routing::sendable::Sendable;
 use routing::types;
-use routing::{Action, RoutingError};
+use routing::{Action, NameType, RoutingError};
 
 
 // ==========================   Program Options   =================================
@@ -122,6 +122,29 @@ impl fmt::Debug for TestData {
 // ==========================   Implement traits   =================================
 struct Stats {
     pub stats : Vec<(u32, TestData)>
+}
+
+struct TestClient {
+    pub stats: Arc<Mutex<Stats>>
+}
+
+impl routing::client_interface::Interface for TestClient {
+    fn handle_get_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, RoutingError>) {
+        if response.is_ok() {
+            let response_data = TestData::new(response.unwrap());
+            println!("testing client received get_response with data name as {}", response_data.name());
+        } else {
+            println!("testing client received error get_response");
+        }
+    }
+    fn handle_put_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, RoutingError>) {
+        if response.is_ok() {
+            let response_data = TestData::new(response.unwrap());
+            println!("testing client received put_response with data name as {}", response_data.name());
+        } else {
+            println!("testing client received error put_response");
+        }
+    }
 }
 
 struct TestNode {
@@ -270,20 +293,23 @@ fn main() {
             }
         }
     } else if args.flag_client {
-        let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) });
-        let mutate_node = Arc::new(Mutex::new(test_node));
-        let copied_node = mutate_node.clone();
+        let sign_keypair = crypto::sign::gen_keypair();
+        let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
+        let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
+        let test_client = RoutingClient::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }, client_id_packet);
+        let mutate_client = Arc::new(Mutex::new(test_client));
+        let copied_client = mutate_client.clone();
         spawn(move || {
             loop {
                 thread::sleep_ms(10);
-                copied_node.lock().unwrap().run();
+                copied_client.lock().unwrap().run();
             }
         });
         if args.arg_endpoint.is_some() {
             match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
                 Ok(addr) => {
                     println!("initial bootstrapping to {} ", addr);
-                    let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None); 
+                    let _ = mutate_client.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None); 
                 }
                 Err(_) => {}
             };
@@ -301,13 +327,13 @@ fn main() {
                     let data = TestData::new(generate_random_vec_u8(length));
                     ori_packets.push(data.clone());
                     println!("putting data {} to network ", data.name());             
-                    mutate_node.lock().unwrap().put(data.name(), Box::new(data), false);
+                    let _ = mutate_client.lock().unwrap().put(data);
                 },
                 "get" => {
                     let index : usize = match v[1].trim().parse().ok() { Some(index) => index, _ => 0 };
                     if index < ori_packets.len() {
                         println!("getting chunk {} from network ", ori_packets[index].name());
-                        mutate_node.lock().unwrap().get(110, ori_packets[index].name());
+                        let _ = mutate_client.lock().unwrap().get(110, ori_packets[index].name());
                     } else {
                         println!("only has {} packets in record ", ori_packets.len());
                     }
