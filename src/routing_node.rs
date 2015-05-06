@@ -127,55 +127,53 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) {
-        let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()), reply_to: None };
-        let source = self.our_source_address();
-        let authority = types::Authority::Client;
-        let header = MessageHeader::new(message_id, destination, source, authority);
-        let name_and_type_id = NameAndTypeId{ name: NameType::new(name.get_id()), type_id: type_id };
-        let request = GetData{ requester: self.our_source_address(),  name_and_type_id: name_and_type_id };
+        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()),
+                                                     reply_to: None };
+        let header = MessageHeader::new(self.get_next_message_id(), 
+                                        destination, self.our_source_address(), 
+                                        types::Authority::Client);
+        let request = GetData{ requester: self.our_source_address(),  
+                               name_and_type_id: NameAndTypeId{name: NameType::new(name.get_id()), 
+                                                               type_id: type_id} };
         let message = RoutingMessage::new(MessageTypeTag::GetData, header,
                                           request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
-        e.encode(&[message]).unwrap();
-        self.send_swarm_or_parallel(&name, &e.into_bytes());
+        if e.encode(&[message]).is_ok() {
+        self.send_swarm_or_parallel(&name, &e.into_bytes()); }
     }
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put(&mut self, destination: NameType, content: Box<Sendable>, client_authority: bool) {
-        let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: destination, reply_to: None };
-        let source = self.our_source_address();
         let authority = if client_authority {
             types::Authority::Client
         } else {
             types::Authority::ManagedNode
         };
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(message_id, destination, source, authority);
+        let header = MessageHeader::new(self.get_next_message_id(), 
+                                        destination, self.our_source_address(), authority);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
                 request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
-        e.encode(&[message]).unwrap();
-        self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
+        if e.encode(&[message]).is_ok() {
+        self.send_swarm_or_parallel(&self.id(), &e.into_bytes()); } 
     }
 
     /// Add something to the network
     pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: destination, reply_to: None };
-        let source = self.our_source_address();
-        let authority = Authority::Unknown;
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(message_id, destination, source, authority);
+        let header = MessageHeader::new(self.get_next_message_id(), destination, 
+                                        self.our_source_address(), types::Authority::Unknown);
         let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut, header,
                 request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
-        e.encode(&[message]).unwrap();
-        self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
+        if e.encode(&[message]).is_ok() {
+        self.send_swarm_or_parallel(&self.id(), &e.into_bytes()); }
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -1077,9 +1075,8 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
-        let current = self.next_message_id;
         self.next_message_id += 1;
-        current
+        self.next_message_id
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Bytes) {
@@ -1250,6 +1247,12 @@ mod test {
                             data: Vec<u8>) -> Result<Action, RoutingError> {
             Err(RoutingError::Success)
         }
+    }
+    
+    #[test]
+    fn check_next_id() {
+      let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+      assert_eq!(routing_node.get_next_message_id() + 1, routing_node.get_next_message_id());
     }
 
     #[test]
