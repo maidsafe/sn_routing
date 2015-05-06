@@ -22,10 +22,9 @@ use std::usize;
 use NameType;
 use types::PublicPmid;
 use name_type::{closer_to_target, closer_to_target_or_equal};
+use types;
 
 static BUCKET_SIZE: usize = 1;
-pub static GROUP_SIZE: usize = 32;
-static QUORUM_SIZE: usize = 19;
 pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
@@ -82,9 +81,9 @@ impl RoutingTable {
 
     pub fn get_optimal_size() -> usize { OPTIMAL_SIZE }
 
-    pub fn get_group_size() -> usize { GROUP_SIZE }
+    pub fn get_group_size() -> usize { types::GROUP_SIZE }
 
-    pub fn get_quorum_size() -> usize { QUORUM_SIZE }
+    pub fn get_quorum_size() -> usize { types::QUORUM_SIZE }
 
     /// Adds a contact to the routing table.  If the contact is added, the first return arg
     /// is true, otherwise false.  If adding the contact caused another contact to be dropped, the
@@ -265,10 +264,10 @@ impl RoutingTable {
     /// Note: the furthest close node address is considered the closure of our
     ///       close group.
     pub fn address_in_our_close_group_range(&self, id : &NameType) -> bool {
-        if self.routing_table.len() < GROUP_SIZE {
+        if self.routing_table.len() < types::GROUP_SIZE {
             return true;
         }
-        let furthest_close_node = self.routing_table[GROUP_SIZE - 1].clone();
+        let furthest_close_node = self.routing_table[types::GROUP_SIZE - 1].clone();
         closer_to_target_or_equal(&id, &furthest_close_node.id, &self.our_id)
     }
 
