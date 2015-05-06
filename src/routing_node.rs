@@ -21,7 +21,9 @@ use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::{Arc, mpsc, Mutex};
+use std::sync::mpsc;
+use std::boxed::Box;
+use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
 use time::Duration;
 
@@ -67,7 +69,7 @@ type RecvResult = Result<(), ()>;
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
-    interface: Arc<Mutex<F>>,
+    interface: Box<F>,
     pmid: types::Pmid,
     own_id: NameType,
     event_input: Receiver<Event>,
@@ -103,7 +105,7 @@ impl<F> RoutingNode<F> where F: Interface {
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
 
-        RoutingNode { interface: Arc::new(Mutex::new(my_interface)),
+        RoutingNode { interface: Box::new(my_interface),
                       pmid : pmid,
                       own_id : own_id.clone(),
                       event_input: event_input,
@@ -344,7 +346,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     //TODO(team) This method needs to be triggered when routing table close group changes
     fn on_churn(&mut self, close_group: Vec<NameType>) {
-        let actions = self.interface.lock().unwrap().handle_churn(close_group);
+        let actions = self.interface.handle_churn(close_group);
         self.invoke_routing_actions(actions);
     }
 
@@ -392,12 +394,8 @@ impl<F> RoutingNode<F> where F: Interface {
         if message.message_type == MessageTypeTag::GetDataResponse {
             let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
             if get_data_response.data.len() != 0 {
-                let mut self_interface = match self.interface.lock() {
-                    Err(_) => return Err(()),
-                    Ok(interface) => interface,
-                };
-                let _ = self_interface.handle_cache_put(header.from_authority(), header.from(),
-                                                        get_data_response.data);
+                let _ = self.interface.deref_mut().handle_cache_put(
+                    header.from_authority(), header.from(), get_data_response.data);
             }
         }
 
@@ -405,16 +403,10 @@ impl<F> RoutingNode<F> where F: Interface {
         if message.message_type == MessageTypeTag::GetData {
             let get_data = try!(self.decode::<GetData>(&body).ok_or(()));
             let mut retrieved_data: Result<Action, RoutingError>;
-            {
-                let mut self_interface = match self.interface.lock() {
-                    Err(_) => return Err(()),
-                    Ok(interface) => interface,
-                };
-                let get_data_copy = get_data.clone();
-                retrieved_data = self_interface.handle_cache_get(
-                    get_data_copy.name_and_type_id.type_id as u64,
-                    get_data_copy.name_and_type_id.name, header.from_authority(), header.from());
-            }
+            let get_data_copy = get_data.clone();
+            retrieved_data = self.interface.deref_mut().handle_cache_get(
+                get_data_copy.name_and_type_id.type_id as u64,
+                get_data_copy.name_and_type_id.name, header.from_authority(), header.from());
             match retrieved_data {
                 Err(_) => (),
                 Ok(action) => match action {
@@ -675,7 +667,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let get_data = try!(self.decode::<GetData>(&body).ok_or(()));
         let type_id = get_data.name_and_type_id.type_id.clone();
         let our_authority = self.our_authority(&get_data.name_and_type_id.name, &header);
@@ -683,8 +675,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let from = header.from();
         let name = get_data.name_and_type_id.name.clone();
 
-        let mut interface = self.interface.lock().unwrap();
-        match interface.handle_get(type_id, name, our_authority.clone(), from_authority, from) {
+        match self.interface.deref_mut().handle_get(type_id, name, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
                 Action::Reply(data) => {
                     let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_id, &our_authority),
@@ -724,13 +715,10 @@ impl<F> RoutingNode<F> where F: Interface {
 
         let mut action: Action;
 
-        {
-            let mut interface = self.interface.lock().unwrap();
-            action = match interface.handle_get_key(type_id, name, our_authority.clone(), from_authority, from) {
-                Ok(action) => action,
-                Err(_) => return Err(())
-            };
-        }
+        action = match self.interface.deref_mut().handle_get_key(type_id, name, our_authority.clone(), from_authority, from) {
+            Ok(action) => action,
+            Err(_) => return Err(())
+        };
 
         match action {
             Action::Reply(data) => {
@@ -754,7 +742,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
         let from = header.from();
         let response;
@@ -765,21 +753,19 @@ impl<F> RoutingNode<F> where F: Interface {
             response = Ok(get_data_response.data);
         }
 
-        let mut interface = self.interface.lock().unwrap();
-        interface.handle_get_response(from, response);
+        self.interface.deref_mut().handle_get_response(from, response);
         Ok(())
     }
 
-    fn handle_post(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+    fn handle_post(&mut self, header : MessageHeader, body : Bytes) -> RecvResult {
         let post = try!(self.decode::<Post>(&body).ok_or(()));
         let our_authority = self.our_authority(&post.name, &header);
-        let mut interface = self.interface.lock().unwrap();
         let action_result : RecvResult
-            = match interface.handle_post(our_authority.clone(),
-                                          header.authority.clone(),
-                                          header.from(),
-                                          post.name.clone(),
-                                          post.data.clone()) {
+            = match self.interface.deref_mut().handle_post(our_authority.clone(),
+                                                           header.authority.clone(),
+                                                           header.from(),
+                                                           post.name.clone(),
+                                                           post.data.clone()) {
             Ok(Action::Reply(data)) => {
                 Ok(()) // TODO: implement post_response
             },
@@ -832,16 +818,15 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     // // for clients, below methods are required
-    fn handle_put_data(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_put_data(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let put_data = try!(self.decode::<PutData>(&body).ok_or(()));
         let our_authority = self.our_authority(&put_data.name, &header);
         let from_authority = header.from_authority();
         let from = header.from();
         let to = header.send_to();
 
-        let mut interface = self.interface.lock().unwrap();
-        match interface.handle_put(our_authority.clone(), from_authority, from,
-                                   to, put_data.data.clone()) {
+        match self.interface.deref_mut().handle_put(our_authority.clone(), from_authority, from,
+                                                    to, put_data.data.clone()) {
             Ok(Action::Reply(reply_data)) => {
                 let reply_header = header.create_reply(&self.own_id, &our_authority);
                 let reply_to = match our_authority {
@@ -882,7 +867,7 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn handle_put_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let put_data_response = try!(self.decode::<PutDataResponse>(&body).ok_or(()));
         let from_authority = header.from_authority();
         let from = header.from();
@@ -894,8 +879,7 @@ impl<F> RoutingNode<F> where F: Interface {
             response = Err(RoutingError::IncorrectData(put_data_response.error));
         }
 
-        let mut interface = self.interface.lock().unwrap();
-        interface.handle_put_response(from_authority, from, response);
+        self.interface.deref_mut().handle_put_response(from_authority, from, response);
         Ok(())
     }
 
