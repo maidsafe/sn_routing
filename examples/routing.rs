@@ -14,16 +14,15 @@
 //
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
-
-//! usage example (using bootstrap):
+//! usage example (using default methods of connecting to the network):
+//!      starting first node : routing -n
+//!      starting later on nodes : routing -n
+//!      starting a client : routing
+//! usage example (using explicit list of peer endpoints and overriding default methods to connect to the network):
 //!      starting first node : routing -n
 //!      (127.0.0.0:7364 to be the socket address the first node listening on)
 //!      starting later on nodes : routing -n 127.0.0.0:7364
 //!      starting a client : routing 127.0.0.0:7364
-//! usage example (using beacon):
-//!      starting first node : routing -n
-//!      starting later on nodes : routing -n
-//!      starting a client : routing
 
 extern crate cbor;
 extern crate docopt;
