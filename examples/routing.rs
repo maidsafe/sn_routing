@@ -50,25 +50,33 @@ use routing::{Action, NameType, RoutingError};
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage: routing -h
-       routing -o
-       routing -v <endpoint>
-       routing -c <endpoint>
+       routing <endpoint>
+       routing -n [<endpoint>]
+
+default started as client and try to bootstrap from the specified endpoint
 
 Options:
     -h, --help       Display the help message
-    -o, --origin     Startup the first testing node
-    -c, --client     Node started as client, bootstrap to the specified endpoint
-    -v, --vault      Node started as vault, bootstrap to the specified endpoint
+    -n, --node       Started as a node and bootstrap to the specified endpoint
 ";
 
 #[derive(RustcDecodable, Debug)]
 struct Args {
     arg_endpoint: Option<String>,
-    flag_origin : bool,
-    flag_client : bool,
-    flag_vault : bool,
+    flag_node : bool,
     flag_help : bool
 }
+
+// usage example (using bootstrap):
+//      starting first node : routing -n
+//      (127.0.0.0:7364 to be the socket address the first node listening on)
+//      starting later on nodes : routing -n 127.0.0.0:7364
+//      starting a client : routing 127.0.0.0:7364
+
+// usage example (using beacon):
+//      starting first node : routing -n
+//      starting later on nodes : routing -n
+//      starting a client : routing
 
 
 // ==========================   Helper Function   =================================
@@ -283,13 +291,12 @@ fn main() {
     let args : Args = Docopt::new(USAGE)
                      .and_then(|d| d.decode())
                      .unwrap_or_else(|e| e.exit());
-    if args.flag_help {
+    if args.flag_help && !args.arg_endpoint.is_some() {
         println!("{:?}", args);
         return;
     }
-
     let mut command = String::new();
-    if args.flag_origin || args.flag_vault {
+    if args.flag_node {
         let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) });
         let mutate_node = Arc::new(Mutex::new(test_node));
         let copied_node = mutate_node.clone();
@@ -307,6 +314,9 @@ fn main() {
                 }
                 Err(_) => {}
             };
+        } else {
+            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+            let _ = mutate_node.lock().unwrap().bootstrap(None, None);
         }
         loop {
             command.clear();
@@ -315,18 +325,10 @@ fn main() {
             let v: Vec<&str> = command.split(' ').collect();
             match v[0].trim() {
                 "stop" => break,
-                "bootstrap" => {
-                    let endpoint_address = match SocketAddr::from_str(v[1].trim()) {
-                        Ok(addr) => addr,
-                        Err(_) => continue
-                    };
-                    println!("bootstrapping to {} ", endpoint_address);
-                    let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(endpoint_address)]), None);
-                },
                 _ => println!("Invalid Option")
             }
         }
-    } else if args.flag_client {
+    } else {
         let sign_keypair = crypto::sign::gen_keypair();
         let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
         let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
@@ -347,6 +349,9 @@ fn main() {
                 }
                 Err(_) => {}
             };
+        }else {
+            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+            let _ = mutate_client.lock().unwrap().bootstrap(None, None);
         }
         loop {
             command.clear();
