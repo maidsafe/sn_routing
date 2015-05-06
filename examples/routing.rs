@@ -67,6 +67,11 @@ struct Args {
     flag_help : bool
 }
 
+// usage example :
+//      starting first node : routing -n
+//      starting later on nodes : routing -n 127.0.0.0:7364
+//      starting a client : routing 127.0.0.0:7364
+
 
 // ==========================   Helper Function   =================================
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
