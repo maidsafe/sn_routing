@@ -235,46 +235,49 @@ impl<'a> Sentinel<'a> {
             return None;
         }
 
-        match verified_messages[0].1 /* = type tag */ {
-            MessageTypeTag::FindGroupResponse =>
-                Sentinel::merge::<FindGroupResponse>(verified_messages),
-            MessageTypeTag::GetGroupKeyResponse =>
-                Sentinel::merge::<GetGroupKeyResponse>(verified_messages),
-            _ => {
-                let header    = verified_messages[0].0.clone();
-                let tag       = verified_messages[0].1.clone();
-                let signature = verified_messages[0].3.clone();
-
-                let msg_bodies = verified_messages.into_iter()
-                                 .map(|(_, _, body, _)| body)
-                                 .collect::<Vec<_>>();
-
-                take_most_frequent(&msg_bodies, QUORUM_SIZE as usize)
-                    .map(|merged| { (header, tag, merged, signature) })
-            }
-        }
-    }
-
-    fn merge<T: Decodable + Encodable + Mergeable>(messages: Vec<ResultType>) -> Option<ResultType> {
         // TODO: Make sure the header is used from a message that belongs to the quorum.
-        // xor
-        // FIXME(ben): after merging the messages the headers and the signature
-        //             have lost meaning; we should be returning less then this;
-        //             in particular will the signature no longer match
-        //             merged message
 
-        if messages.is_empty() { return None; }
+        return if verified_messages[0].1 == MessageTypeTag::FindGroupResponse {
+            let decoded_responses = verified_messages.iter()
+                .filter_map(|msg| Sentinel::decode::<FindGroupResponse>(&msg.2))
+                .collect::<Vec<_>>();
 
-        let decoded = messages.iter()
-            .filter_map(|msg| Sentinel::decode::<T>(&msg.2))
-            .collect::<Vec<_>>();
+            //FIXME(ben): after merging the messages the headers and the signature
+            //            have lost meaning; we should be returning less then this;
+            //            in particular will the signature no longer match
+            //            merged message
+            Mergeable::merge(decoded_responses.iter()).map(|merged| {
+                (verified_messages[0].0.clone(),
+                 verified_messages[0].1.clone(),
+                 Sentinel::encode(merged),
+                 verified_messages[0].3.clone())
+            })
+        } else if verified_messages[0].1 == MessageTypeTag::GetGroupKeyResponse {
+            // TODO: GetGroupKeyResponse will probably never reach this function.(?)
+            let accounts = verified_messages.iter()
+                .filter_map(|msg_triple| { Sentinel::decode::<GetGroupKeyResponse>(&msg_triple.2) })
+                .collect::<Vec<_>>();
 
-        Mergeable::merge(decoded.iter()).map(|merged| {
-            (messages[0].0.clone(),
-             messages[0].1.clone(),
-             Sentinel::encode(merged),
-             messages[0].3.clone())
-        })
+            //FIXME(ben): see comment above
+            Mergeable::merge(accounts.iter()).map(|merged| {
+                (verified_messages[0].0.clone(),
+                 verified_messages[0].1.clone(),
+                 Sentinel::encode(merged),
+                 verified_messages[0].3.clone())
+            })
+        } else {
+            let header = verified_messages[0].0.clone();
+            let tag    = verified_messages[0].1.clone();
+            //FIXME(ben): see comment above
+            let signature = verified_messages[0].3.clone();
+
+            let msg_bodies = verified_messages.into_iter()
+                             .map(|(_, _, body, _)| body)
+                             .collect::<Vec<_>>();
+
+            take_most_frequent(&msg_bodies, QUORUM_SIZE as usize)
+                .map(|merged| { (header, tag, merged, signature) })
+        }
     }
 }
 
