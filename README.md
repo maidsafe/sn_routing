@@ -58,7 +58,7 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
   - [x] Signature checks
   - [ ] QA Sentinel including code review from system design perspective
 - [x] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
-- [ ] Implement unauthorised_put in routing_node and routing_client (this skips Sentinel checks)
+- [x] Implement unauthorised_put in routing_node and routing_client (this skips Sentinel checks)
 - [ ] Complete Client Interface (Facade)
 - [ ] Implement routing node (100%)
 - [ ] Examples:
