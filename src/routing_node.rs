@@ -1062,8 +1062,9 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
+        let temp = self.next_message_id;
         self.next_message_id += 1;
-        self.next_message_id
+        return temp;
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Bytes) {
