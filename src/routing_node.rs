@@ -75,7 +75,7 @@ pub struct RoutingNode<F: Interface> {
     pending_connections: HashSet<Endpoint>,
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
     routing_table: RoutingTable,
-    accepting_on: Option<Vec<Endpoint>>,
+    accepting_on: Vec<Endpoint>,
     listening_for_broadcasts_on_port: Option<u16>,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
@@ -98,11 +98,9 @@ impl<F> RoutingNode<F> where F: Interface {
         let listeners = match cm.start_listening(ports_and_protocols, beacon_port) {
             Err(reason) => {
                 println!("Failed to start listening: {:?}", reason);
-                (None, None)
+                (vec![], None)
             }
-            Ok(listeners_and_beacon) => {
-                (Some(listeners_and_beacon.0), listeners_and_beacon.1)
-            }
+            Ok(listeners_and_beacon) => listeners_and_beacon
         };
 
         RoutingNode { interface: Arc::new(Mutex::new(my_interface)),
@@ -310,10 +308,10 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_to_bootstrap_node(&e.into_bytes());
     }
 
-    fn next_endpoint_pair(&self) -> Option<(Vec<Endpoint>, Vec<Endpoint>)> {
+    fn next_endpoint_pair(&self) -> (Vec<Endpoint>, Vec<Endpoint>) {
         // FIXME: Set the second argument to 'external' address
         // when known.
-        self.accepting_on.clone().map(|addr| (addr.clone(), addr))
+        (self.accepting_on.clone(), self.accepting_on.clone())
     }
 
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
@@ -998,14 +996,19 @@ impl<F> RoutingNode<F> where F: Interface {
             types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
             self.our_source_address(), types::Authority::ManagedNode);
 
-        let invalid_addr = vec![Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0)))];
-        let (requester_local, requester_external)
-            = self.next_endpoint_pair().unwrap_or((invalid_addr.clone(), invalid_addr));  // FIXME
+        let (requester_local, requester_external) = self.next_endpoint_pair();
 
+        // FIXME: Discuss how to use other eps from the list.
+        let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
+            if eps.is_empty() {
+                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
+            }
+            else { match eps[0] { Tcp(ep) => ep.clone() } }
+        };
 
         let connect_request = ConnectRequest {
-            local:          match requester_local[0] { Tcp(local) => local },
-            external:       match requester_external[0] { Tcp(local) => local },
+            local:          first_or_invalid(requester_local),
+            external:       first_or_invalid(requester_external),
             requester_id:   self.own_id.clone(),
             receiver_id:    peer_id.clone(),
             requester_fob:  types::PublicPmid::new(&self.pmid),
@@ -1024,15 +1027,21 @@ impl<F> RoutingNode<F> where F: Interface {
             original_header.send_to(), self.our_source_address(),
             types::Authority::ManagedNode);
 
-        let invalid_addr = vec![Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0)))];
-        let (receiver_local, receiver_external)
-            = self.next_endpoint_pair().unwrap_or((invalid_addr.clone(), invalid_addr));  // FIXME
+        let (receiver_local, receiver_external) = self.next_endpoint_pair();
+
+        // FIXME: Discuss how to use other eps from the list.
+        let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
+            if eps.is_empty() {
+                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
+            }
+            else { match eps[0] { Tcp(ep) => ep.clone() } }
+        };
 
         let connect_response = ConnectResponse {
             requester_local:    connect_request.local,
             requester_external: connect_request.external,
-            receiver_local:     match receiver_local[0] { Tcp(local) => local },
-            receiver_external:  match receiver_external[0] { Tcp(local) => local },
+            receiver_local:     first_or_invalid(receiver_local),
+            receiver_external:  first_or_invalid(receiver_external),
             requester_id:       connect_request.requester_id.clone(),
             receiver_id:        self.own_id.clone(),
             receiver_fob:       types::PublicPmid::new(&self.pmid) };
