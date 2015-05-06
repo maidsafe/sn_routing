@@ -67,10 +67,16 @@ struct Args {
     flag_help : bool
 }
 
-// usage example :
+// usage example (using bootstrap):
 //      starting first node : routing -n
+//      (127.0.0.0:7364 to be the socket address the first node listening on)
 //      starting later on nodes : routing -n 127.0.0.0:7364
 //      starting a client : routing 127.0.0.0:7364
+
+// usage example (using beacon):
+//      starting first node : routing -n
+//      starting later on nodes : routing -n
+//      starting a client : routing
 
 
 // ==========================   Helper Function   =================================
