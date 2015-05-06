@@ -17,6 +17,10 @@
 
 #![allow(unused_assignments)]
 
+#[path="messages/bootstrap_id_request.rs"]
+pub mod bootstrap_id_request;
+#[path="messages/bootstrap_id_response.rs"]
+pub mod bootstrap_id_response;
 #[path="messages/connect_request.rs"]
 pub mod connect_request;
 #[path="messages/connect_response.rs"]
@@ -60,6 +64,8 @@ use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum MessageTypeTag {
+    BootstrapIdRequest,
+    BootstrapIdResponse,
     ConnectRequest,
     ConnectResponse,
     FindGroup,
@@ -74,6 +80,7 @@ pub enum MessageTypeTag {
     PostResponse,
     PutData,
     PutDataResponse,
+    UnauthorisedPut,
     PutKey,
     AccountTransfer,
     PutPublicPmid,
@@ -84,6 +91,8 @@ impl Encodable for MessageTypeTag {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let mut type_tag = "";
         match *self {
+            MessageTypeTag::BootstrapIdRequest => type_tag = "BootstrapIdRequest",
+            MessageTypeTag::BootstrapIdResponse => type_tag = "BootstrapIdResponse",
             MessageTypeTag::ConnectRequest => type_tag = "ConnectRequest",
             MessageTypeTag::ConnectResponse => type_tag = "ConnectResponse",
             MessageTypeTag::FindGroup => type_tag = "FindGroup",
@@ -98,6 +107,7 @@ impl Encodable for MessageTypeTag {
             MessageTypeTag::PostResponse => type_tag = "PostResponse",
             MessageTypeTag::PutData => type_tag = "PutData",
             MessageTypeTag::PutDataResponse => type_tag = "PutDataResponse",
+            MessageTypeTag::UnauthorisedPut => type_tag = "UnauthorisedPut",
             MessageTypeTag::PutKey => type_tag = "PutKey",
             MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
             MessageTypeTag::PutPublicPmid => type_tag = "PutPublicPmid",
@@ -113,6 +123,8 @@ impl Decodable for MessageTypeTag {
         let mut type_tag : String = String::new();
         type_tag = try!(Decodable::decode(d));
         match &type_tag[..] {
+            "BootstrapIdRequest" => Ok(MessageTypeTag::BootstrapIdRequest),
+            "BootstrapIdResponse" => Ok(MessageTypeTag::BootstrapIdResponse),
             "ConnectRequest" => Ok(MessageTypeTag::ConnectRequest),
             "ConnectResponse" => Ok(MessageTypeTag::ConnectResponse),
             "FindGroup" => Ok(MessageTypeTag::FindGroup),
@@ -127,6 +139,7 @@ impl Decodable for MessageTypeTag {
             "PostResponse" => Ok(MessageTypeTag::PostResponse),
             "PutData" => Ok(MessageTypeTag::PutData),
             "PutDataResponse" => Ok(MessageTypeTag::PutDataResponse),
+            "UnauthorisedPut" => Ok(MessageTypeTag::UnauthorisedPut),
             "PutKey" => Ok(MessageTypeTag::PutKey),
             "PutPublicPmid" => Ok(MessageTypeTag::PutPublicPmid),
             "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),

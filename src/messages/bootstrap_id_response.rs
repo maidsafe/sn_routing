@@ -15,17 +15,29 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use name_type;
+#![allow(unused_assignments)]
 
-/// This trait is required for any type of message to be
-/// passed to routing, refresh / account transfer is optional
-/// The name will let routing know its a NaeManager and the owner will allow routing to hash
-/// the requesters ID with this name (by hashing the requesters ID) for put and post messages
-pub trait Sendable {
-    fn name(&self)->name_type::NameType;
-    fn type_tag(&self)->u64;
-    fn serialised_contents(&self)->Vec<u8>;
-    fn owner(&self)->Option<name_type::NameType> { Option::None }
-    fn refresh(&self)->bool; // is this an account transfer type
-    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>>;
+use cbor::CborTagEncode;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use types;
+use NameType;
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct BootstrapIdResponse {
+  pub sender_id  : NameType,
+  pub sender_fob : types::PublicPmid,
+}
+
+impl Encodable for BootstrapIdResponse {
+  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+    CborTagEncode::new(5483_001, &(&self.sender_id, &self.sender_fob)).encode(e)
+  }
+}
+
+impl Decodable for BootstrapIdResponse {
+  fn decode<D: Decoder>(d: &mut D)->Result<BootstrapIdResponse, D::Error> {
+    try!(d.read_u64());
+    let (sender_id, sender_fob) = try!(Decodable::decode(d));
+    Ok(BootstrapIdResponse { sender_id: sender_id, sender_fob: sender_fob })
+  }
 }

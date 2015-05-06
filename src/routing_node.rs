@@ -30,13 +30,16 @@ use crust::Endpoint::Tcp;
 use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
-use name_type::closer_to_target;
+use name_type::{closer_to_target, NAME_TYPE_LEN};
+use node_interface;
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
 use types::{MessageId, Authority, NameAndTypeId};
 use message_header::MessageHeader;
+use messages::bootstrap_id_request::BootstrapIdRequest;
+use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
@@ -122,35 +125,61 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) {
-        let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()), reply_to: None };
-        let source = self.our_source_address();
-        let authority = types::Authority::Client;
-        let header = MessageHeader::new(message_id, destination, source, authority);
-        let name_and_type_id = NameAndTypeId{ name: NameType::new(name.get_id()), type_id: type_id };
-        let request = GetData{ requester: self.our_source_address(),  name_and_type_id: name_and_type_id };
+        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()),
+                                                     reply_to: None };
+        let header = MessageHeader::new(self.get_next_message_id(), 
+                                        destination, self.our_source_address(), 
+                                        types::Authority::Client);
+        let request = GetData{ requester: self.our_source_address(),  
+                               name_and_type_id: NameAndTypeId{name: NameType::new(name.get_id()), 
+                                                               type_id: type_id} };
         let message = RoutingMessage::new(MessageTypeTag::GetData, header,
                                           request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
-        e.encode(&[message]).unwrap();
-        self.send_swarm_or_parallel(&name, &e.into_bytes());
+        if e.encode(&[message]).is_ok() {
+        self.send_swarm_or_parallel(&name, &e.into_bytes()); }
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, destination: NameType, content: T) where T: Sendable {
-        let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: self.id(), reply_to: None };
-        let source = self.our_source_address();
-        let authority = types::Authority::Client;
-        let signing_request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(message_id, destination, source, authority);
+    pub fn put(&mut self, destination: NameType, content: Box<Sendable>, client_authority: bool) {
+        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
+        let authority = if client_authority {
+            types::Authority::Client
+        } else {
+            types::Authority::ManagedNode
+        };
+        let request = PutData{ name: content.name(), data: content.serialised_contents() };
+        let header = MessageHeader::new(self.get_next_message_id(), 
+                                        destination, self.our_source_address(), authority);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
-            signing_request, &self.pmid.get_crypto_secret_sign_key());
+                request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
-        e.encode(&[message]).unwrap();
-        self.send_swarm_or_parallel(&self.id(), &e.into_bytes());
+        if e.encode(&[message]).is_ok() {
+        self.send_swarm_or_parallel(&self.id(), &e.into_bytes()); } 
+    }
+
+    /// Add something to the network
+    pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
+        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
+        let request = PutData{ name: content.name(), data: content.serialised_contents() };
+        let header = MessageHeader::new(self.get_next_message_id(), destination, 
+                                        self.our_source_address(), types::Authority::Unknown);
+        let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut, header,
+                request, &self.pmid.get_crypto_secret_sign_key());
+        let mut e = Encoder::from_memory();
+
+        if e.encode(&[message]).is_ok() {
+        self.send_swarm_or_parallel(&self.id(), &e.into_bytes()); }
+    }
+
+    /// Refresh the content in the close group nodes of group address content::name.
+    /// This method needs to be called when churn is triggered.
+    /// all the group members need to call this, otherwise it will not be resolved as a valid
+    /// content.
+    pub fn refresh(&mut self, content: Box<Sendable>) {
+        self.put(content.name(), content, false);
     }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
@@ -160,12 +189,13 @@ impl<F> RoutingNode<F> where F: Interface {
                      beacon_port: Option<u16>) -> Result<(), RoutingError> {
         match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
             Err(reason) => {
-                println!("Failed to bootstrap: {:?}", reason);
+                println!("Failed to connect to network (this might be the first node)\nDetails: {:?}", reason);
                 Err(RoutingError::FailedToBootstrap)
             }
             Ok(bootstrapped_to) => {
                 self.bootstrap_endpoint = Some(bootstrapped_to);
-                // FIXME(team) need to populate bootstrap_node_id here
+                // starts swaping ID with the bootstrap peer
+                self.send_bootstrap_id_request();
                 // put our public pmid so that our connect requests are validated
                 self.put_own_public_pmid();
                 // connect to close group
@@ -175,27 +205,89 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     pub fn run(&mut self) {
-        loop {
-            let event = self.event_input.recv();
+        let event = self.event_input.try_recv();
 
-            if event.is_err() { return; }
+        if event.is_err() { return; }
 
-            match event.unwrap() {
-                crust::Event::NewMessage(endpoint, bytes) => {
-                    if self.all_connections.0.contains_key(&endpoint) {
-                        let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
-                        if self.message_received(&peer_id, bytes).is_err() {
-                            println!("failed to Parse message !!! check  from - {:?} ", peer_id);
-                            // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
-                        }
+        match event.unwrap() {
+            crust::Event::NewMessage(endpoint, bytes) => {
+                if self.all_connections.0.contains_key(&endpoint) {
+                    let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
+                    if self.message_received(&peer_id, bytes).is_err() {
+                        // println!("failed to Parse message !!! check  from - {:?} ", peer_id);
+                        // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
                     }
-                },
-                crust::Event::NewConnection(endpoint) => {
-                    self.handle_connect(endpoint);
-                },
-                crust::Event::LostConnection(endpoint) => {
-                    self.handle_lost_connection(endpoint);
+                } else if self.pending_connections.contains(&endpoint) {
+                    // reply with own_id if the incoming msg is BootstrapIdRequest
+                    // record the peer_id if the incoming msg is BootstrapIdResponse
+                    self.bootstrap_message_received(endpoint, bytes);
                 }
+            },
+            crust::Event::NewConnection(endpoint) => {
+                self.handle_connect(endpoint);
+            },
+            crust::Event::LostConnection(endpoint) => {
+                self.handle_lost_connection(endpoint);
+            }
+        }
+    }
+
+    fn send_bootstrap_id_request(&mut self) {
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
+        let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None };
+        let authority = types::Authority::ManagedNode;
+        let request = BootstrapIdRequest { sender_id: self.id() };
+        let header = MessageHeader::new(message_id, destination, source, authority);
+        let message = RoutingMessage::new(MessageTypeTag::BootstrapIdRequest, header,
+            request, &self.pmid.get_crypto_secret_sign_key());
+        let mut e = Encoder::from_memory();
+        e.encode(&[message]).unwrap();
+        // need to send to bootstrap node as we are not yet connected to anyone else
+        self.send_to_bootstrap_node(&e.into_bytes());
+    }
+
+    fn send_bootstrap_id_response(&mut self) {
+        let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
+        let message_id = self.get_next_message_id();
+        let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
+        let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None };
+        let authority = types::Authority::ManagedNode;
+        let request = BootstrapIdResponse { sender_id: self.id(), sender_fob: our_public_pmid };
+        let header = MessageHeader::new(message_id, destination, source, authority);
+        let message = RoutingMessage::new(MessageTypeTag::BootstrapIdResponse, header,
+            request, &self.pmid.get_crypto_secret_sign_key());
+        let mut e = Encoder::from_memory();
+        e.encode(&[message]).unwrap();
+        // need to send to bootstrap node as we are not yet connected to anyone else
+        self.send_to_bootstrap_node(&e.into_bytes());
+    }
+
+    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
+        // println!("{} In handle bootstrap_id_response from {:?}", self.own_id,
+        //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
+        if self.all_connections.0.contains_key(&peer_endpoint) ||
+           !self.pending_connections.contains(&peer_endpoint) {
+            // ignore further request once added or not in sequence (not recorded as pending)
+            return;
+        }
+        let bootstrap_id_response_msg = self.decode::<BootstrapIdResponse>(&bytes);
+        if bootstrap_id_response_msg.is_none() {  // TODO handle non routing connection here
+            return;
+        }
+        let bootstrap_id_response_msg = bootstrap_id_response_msg.unwrap();
+
+        self.pending_connections.remove(&peer_endpoint);
+        self.all_connections.0.insert(peer_endpoint.clone(), bootstrap_id_response_msg.sender_id.clone());
+        self.all_connections.1.insert(bootstrap_id_response_msg.sender_id.clone(), peer_endpoint.clone());
+
+        if !is_client {
+            let peer_node_info = NodeInfo::new(bootstrap_id_response_msg.sender_fob, true);
+            let result = self.routing_table.add_node(peer_node_info);
+            if result.0 {
+               println!("{:?} added {:?} <RT size:{}>", self.own_id, bootstrap_id_response_msg.sender_id, self.routing_table.size());
+            } else {
+               println!("{:?} failed to add {:?}", self.own_id, bootstrap_id_response_msg.sender_id);
             }
         }
     }
@@ -237,44 +329,13 @@ impl<F> RoutingNode<F> where F: Interface {
             return;
         }
         self.pending_connections.insert(peer_endpoint.clone());
+        // assuming each new connection is a bootstrap attempt
         self.bootstrap_endpoint = Some(peer_endpoint.clone());
-        // println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_id);
         // send find group
         let msg = self.construct_find_group_msg();
         let msg = self.encode(&msg);
         debug_assert!(self.bootstrap_endpoint.is_some());
         let _ = self.connection_manager.send(peer_endpoint, msg);
-    }
-
-    fn handle_accept(&mut self, peer_endpoint: Endpoint, peer_id: NameType, bytes: Bytes) {
-        // println!("In handle accept of {:?}", self.own_id);
-        if self.all_connections.0.contains_key(&peer_endpoint) ||
-           !self.pending_connections.contains(&peer_endpoint) {
-            // ignore further request once added or not in sequence (not recorded as pending)
-            return;
-        }
-        self.pending_connections.remove(&peer_endpoint);
-        self.all_connections.0.insert(peer_endpoint.clone(), peer_id.clone());
-        self.all_connections.1.insert(peer_id.clone(), peer_endpoint.clone());
-
-        let connect_succcess_msg = self.decode::<ConnectSuccess>(&bytes);
-
-        if connect_succcess_msg.is_none() {  // TODO handle non routing connection here
-            if self.bootstrap_endpoint.is_none() &&
-             (self.all_connections.0.len() == 1) && (self.all_connections.0.contains_key(&peer_endpoint)) { // zero state only`
-                self.bootstrap_endpoint = Some(peer_endpoint.clone());
-                // println!("{:?} bootstrap_node_id added : {:?}", self.own_id, peer_endpoint);
-            }
-            return;
-        }
-        let connect_succcess_msg = connect_succcess_msg.unwrap();
-        let peer_node_info = NodeInfo::new(connect_succcess_msg.peer_fob, true);
-        let result = self.routing_table.add_node(peer_node_info);
-        if result.0 {
-          println!("{:?} added {:?} <RT size:{}>", self.own_id, connect_succcess_msg.peer_id, self.routing_table.size());
-        } else {
-           println!("{:?} failed to add {:?}", self.own_id, connect_succcess_msg.peer_id);
-        }
     }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
@@ -289,6 +350,24 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
+    //TODO(team) This method needs to be triggered when routing table close group changes
+    fn on_churn(&mut self, close_group: Vec<NameType>) {
+        let actions = self.interface.lock().unwrap().handle_churn(close_group);
+        self.invoke_routing_actions(actions);
+    }
+
+    fn invoke_routing_actions(&mut self, routing_actions: Vec<node_interface::RoutingNodeAction>) {
+        for routing_action in routing_actions {
+            match routing_action {
+                node_interface::RoutingNodeAction::Put { destination: x, content: y, is_client: z, } => self.put(x, y, z),
+                node_interface::RoutingNodeAction::Get { type_id: x, name: y, } => self.get(x, y),
+                node_interface::RoutingNodeAction::Refresh { content: x, } => self.refresh(x),
+                node_interface::RoutingNodeAction::Post => unimplemented!(),
+                node_interface::RoutingNodeAction::None => (),
+            }
+        }
+    }
+
     fn message_received(&mut self, peer_id: &NameType, serialised_message: Bytes) -> RecvResult {
         // Parse
         let message = match self.decode::<RoutingMessage>(&serialised_message) {
@@ -299,6 +378,13 @@ impl<F> RoutingNode<F> where F: Interface {
             },
             Some(msg) => msg,
         };
+
+        // bootstrap_id_request from peer may arrive later then the response from the same peer
+        if message.message_type == MessageTypeTag::BootstrapIdRequest {
+            // println!("{} received BootstrapIdRequest from {:?}", self.own_id, peer_id);
+            self.send_bootstrap_id_response();
+            return Ok(());
+        }
 
         let header = message.message_header;
         let body = message.serialised_body;
@@ -352,16 +438,24 @@ impl<F> RoutingNode<F> where F: Interface {
         }
 
         self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);
-        // handle relay request/response
 
+        // handle relay request/response
         let relay_response = header.destination.reply_to.is_some() &&
                              header.destination.dest == self.own_id;
         if relay_response {
-            println!("{:?} relay response sent to nrt {:?}", self.own_id, header.destination.reply_to);
-            // TODO : what shall happen to relaying message ? routing_node choosing a closest node ?
-            for key in self.all_connections.0.keys() {
-                let _ = self.connection_manager.send(key.clone(), serialised_message);
-                return Ok(());
+            if self.all_connections.1.contains_key(&header.destination.reply_to.clone().unwrap()) {
+                // TODO : or shall have a separate nrt table recording all clients connecting to this node?
+                let relay_to = self.all_connections.1.get(&header.destination.reply_to.clone().unwrap()).unwrap().clone();
+                // println!("{:?} relay response sent to nrt {:?} {}", self.own_id, header.destination.reply_to,
+                //          match relay_to.clone() { Tcp(socket_addr) => socket_addr } );
+                let _ = self.connection_manager.send(relay_to, serialised_message);
+            } else {
+                // TODO : what shall happen to relaying message ? routing_node choosing a closest node ?
+                for key in self.all_connections.0.keys() {
+                    println!("relaying response to {}", match key.clone() { Tcp(socket_addr) => socket_addr });
+                    let _ = self.connection_manager.send(key.clone(), serialised_message);
+                    return Ok(());
+                }
             }
         }
 
@@ -378,6 +472,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // pre-sentinel message handling
         match message.message_type {
+            MessageTypeTag::UnauthorisedPut => self.handle_put_data(header, body),
             MessageTypeTag::GetKey => self.handle_get_key(header, body),
             MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
             _ => {
@@ -405,6 +500,32 @@ impl<F> RoutingNode<F> where F: Interface {
             }
         }
 
+    }
+
+    fn bootstrap_message_received(&mut self, peer_endpoint: Endpoint, serialised_message: Bytes) {
+        let message = match self.decode::<RoutingMessage>(&serialised_message) {
+            None => {
+                println!("Problem parsing bootstrap message of size {} ", serialised_message.len());
+                return;
+            },
+            Some(msg) => msg,
+        };
+        // println!("{} received bootstrap msg from {:?}", self.own_id,
+        //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
+        if message.message_type == MessageTypeTag::BootstrapIdRequest {
+            // println!("{} sending bootstrap_id_response", self.own_id);
+            self.send_bootstrap_id_response();
+            if self.pending_connections.contains(&peer_endpoint) {
+                // println!("{} sending bootstrap_id_request", self.own_id);
+                self.send_bootstrap_id_request();
+            }
+            return;
+        }
+        if message.message_type == MessageTypeTag::BootstrapIdResponse {
+            self.handle_bootstrap_id_response(peer_endpoint, message.serialised_body,
+                                              message.message_header.authority == Authority::Client);
+            return;
+        }
     }
 
     /// This returns our calculated authority with regards
@@ -587,8 +708,8 @@ impl<F> RoutingNode<F> where F: Interface {
                         let send_on_header = header.create_send_on(&self.own_id, &our_authority, &dest_node);
                         let routing_msg = RoutingMessage::new(MessageTypeTag::GetData, send_on_header,
                             get_data.clone(), &self.pmid.get_crypto_secret_sign_key());
-                            let encoded_msg = self.encode(&routing_msg);
-                            self.send_swarm_or_parallel(&dest_node, &encoded_msg);
+                        let encoded_msg = self.encode(&routing_msg);
+                        self.send_swarm_or_parallel(&dest_node, &encoded_msg);
                     }
                 }
             },
@@ -623,14 +744,12 @@ impl<F> RoutingNode<F> where F: Interface {
 
         match action {
             Action::Reply(data) => {
-                let _: Option<types::PublicSignKey> = self.decode::<types::PublicSignKey>(&data).and_then(|public_key| {
-                    let routing_msg = RoutingMessage::new(MessageTypeTag::GetKeyResponse, header.create_reply(&self.own_id, &our_authority),
-                        GetKeyResponse{ address : get_key.target_id.clone(), public_sign_key : public_key },
-                        &self.pmid.get_crypto_secret_sign_key());
-                    let encoded_msg = self.encode(&routing_msg);
-                    self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
-                    None
-                    });
+                let public_key = try!(self.decode::<types::PublicSignKey>(&data).ok_or(()));
+                let routing_msg = RoutingMessage::new(MessageTypeTag::GetKeyResponse, header.create_reply(&self.own_id, &our_authority),
+                    GetKeyResponse{ address : get_key.target_id.clone(), public_sign_key : public_key },
+                    &self.pmid.get_crypto_secret_sign_key());
+                let encoded_msg = self.encode(&routing_msg);
+                self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
                 },
             Action::SendOn(dest_nodes) => {
                 for dest_node in dest_nodes {
@@ -701,18 +820,24 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
+    /// On bootstrapping a node can temporarily publish its PublicPmid in the group.
+    /// Sentinel will query this pool.  No handle_get_public_pmid is needed.
     fn handle_put_public_pmid(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         // if data type is public pmid and our authority is nae then add to public_pmid_cache
         // don't call upper layer if public pmid type
         let put_public_pmid = try!(self.decode::<PutPublicPmid>(&body).ok_or(()));
-        let our_authority = self.our_authority(&put_public_pmid.public_pmid.name, &header);
-        if our_authority == Authority::NaeManager {
-            // FIXME (prakash) signature check ?
-            self.public_pmid_cache.add(put_public_pmid.public_pmid.name.clone(),
-                                       put_public_pmid.public_pmid);
-            Ok(())
-        } else {
-            Err(())
+        match self.our_authority(&put_public_pmid.public_pmid.name, &header) {
+            Authority::NaeManager => {
+                // FIXME (prakash) signature check ?
+                // TODO (Ben): check whether to accept pmid into group;
+                //             restrict on minimal similar number of leading bits.
+                self.public_pmid_cache.add(put_public_pmid.public_pmid.name.clone(),
+                                           put_public_pmid.public_pmid);
+                Ok(())
+            },
+            _ => {
+                Err(())
+            }
         }
     }
 
@@ -767,41 +892,6 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    // fn handle_post(&self, header : MessageHeader, body : Bytes) -> RecvResult {
-    //     let post = try!(self.decode::<Post>(&body).ok_or(()));
-    //     let our_authority = self.our_authority(&post.name, &header);
-    //     let mut interface = self.interface.lock().unwrap();
-    //     let action_result : RecvResult
-    //         = match interface.handle_post(our_authority.clone(),
-    //                                       header.authority.clone(),
-    //                                       header.from(),
-    //                                       post.name.clone(),
-    //                                       post.data.clone()) {
-    //         Ok(Action::Reply(data)) => {
-    //             Ok(()) // TODO: implement post_response
-    //         },
-    //         Ok(Action::SendOn(destinations)) => {
-    //             for destination in destinations {
-    //                 let send_on_header = header.create_send_on(&self.own_id,
-    //                     &our_authority, &destination);
-    //                 let routing_msg = RoutingMessage::new(MessageTypeTag::Post,
-    //                     send_on_header, post.clone(), &self.pmid.get_crypto_secret_sign_key());
-    //                 self.send_swarm_or_parallel(&destination,
-    //                     &self.encode(&routing_msg));
-    //             }
-    //             Ok(())
-    //         },
-    //         Err(e) => match e {
-    //             RoutingError::Success => Ok(()),           // Interface terminates message flow
-    //             RoutingError::IncorrectData(_) => Err(()), // TODO: reply with post_response
-    //             RoutingError::NoData => Err(()),
-    //             RoutingError::InvalidRequest => Err(()),
-    //             _ => Err(())
-    //         },
-    //     };
-    //     action_result
-    // }
-
     fn handle_put_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
         let put_data_response = try!(self.decode::<PutDataResponse>(&body).ok_or(()));
         let from_authority = header.from_authority();
@@ -832,14 +922,16 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn our_source_address(&self) -> types::SourceAddress {
         if self.bootstrap_endpoint.is_some() {
-            return types::SourceAddress{ from_node: self.all_connections.0.get(&self.bootstrap_endpoint.clone().unwrap()).unwrap().clone(),
-                                         from_group: None,
-                                         reply_to: Some(self.own_id.clone()) }
-        } else {
-            return types::SourceAddress{ from_node: self.own_id.clone(),
-                                         from_group: None,
-                                         reply_to: None }
+            let id = self.all_connections.0.get(&self.bootstrap_endpoint.clone().unwrap());
+            if id.is_some() {
+                return types::SourceAddress{ from_node: id.unwrap().clone(),
+                                             from_group: None,
+                                             reply_to: Some(self.own_id.clone()) }
+            }
         }
+        return types::SourceAddress{ from_node: self.own_id.clone(),
+                                     from_group: None,
+                                     reply_to: None }
     }
 
     fn group_address_for_group(&self, group_address : &types::GroupAddress) -> types::SourceAddress {
@@ -970,13 +1062,13 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
-        let current = self.next_message_id;
+        let temp = self.next_message_id;
         self.next_message_id += 1;
-        current
+        return temp;
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Bytes) {
-        unimplemented!();
+        let _ = self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), serialised_message.clone());
     }
 
     fn send_swarm_or_parallel(&self, target: &NameType, serialised_message: &Bytes) {
@@ -1012,14 +1104,10 @@ impl<F> RoutingNode<F> where F: Interface {
 
 #[cfg(test)]
 mod test {
-    use generic_sendable_type;
     use routing_node::{RoutingNode};
     use node_interface::*;
     use name_type::NameType;
     use super::super::{Action, RoutingError};
-    use std::thread;
-    use std::net::{SocketAddr};
-    use std::str::FromStr;
     use sendable::Sendable;
     use messages::put_data::PutData;
     use messages::put_data_response::PutDataResponse;
@@ -1027,10 +1115,11 @@ mod test {
     use messages::get_data_response::GetDataResponse;
     use messages::get_client_key::GetKey;
     use messages::post::Post;
+    use messages::put_public_pmid::PutPublicPmid;
     use messages::{RoutingMessage, MessageTypeTag};
     use message_header::MessageHeader;
-    use types::{MessageId, NameAndTypeId};
-    use std::sync::{Arc, mpsc, Mutex};
+    use types::{MessageId};
+    use std::sync::{Arc, Mutex};
     use routing_table;
     use test_utils::{Random, xor};
     use rand::random;
@@ -1038,13 +1127,14 @@ mod test {
     use types;
     use types::{Pmid, PublicPmid, Authority};
     use rustc_serialize::{Encodable, Decodable};
+    use cbor::{Encoder};
 
     struct NullInterface;
 
     #[derive(Clone)]
     struct Stats {
         call_count: u32,
-        data: Option<Vec<u8>>
+        data: Vec<u8>
     }
 
     struct TestInterface {
@@ -1072,9 +1162,7 @@ mod test {
             false
         }
 
-        fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-            None
-        }
+        fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
     }
 
     impl Interface for TestInterface {
@@ -1083,7 +1171,8 @@ mod test {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
-            Ok(Action::Reply("handle_get_key called".to_string().into_bytes()))
+            let data = stats_value.data.clone();
+            Ok(Action::Reply(data))
         }
         fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
                       from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
@@ -1098,7 +1187,10 @@ mod test {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
-            stats_value.data = Some(data.clone());
+            stats_value.data = match from_authority {
+                types::Authority::Unknown => "UnauthorisedPut".to_string().into_bytes(),
+                _   => "AuthorisedPut".to_string().into_bytes(),
+            };
             Ok(Action::Reply(data))
         }
         fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
@@ -1106,7 +1198,7 @@ mod test {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
-            stats_value.data = Some(data.clone());
+            stats_value.data = data.clone();
             Ok(Action::Reply(data))
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
@@ -1114,9 +1206,8 @@ mod test {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
-            stats_value.data = Some("handle_get_response called".to_string().into_bytes());
+            stats_value.data = "handle_get_response called".to_string().into_bytes();
             RoutingNodeAction::None
-
         }
         fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
                                response: Result<Vec<u8>, RoutingError>) {
@@ -1124,8 +1215,8 @@ mod test {
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
             stats_value.data = match response {
-               Ok(data) => Some(data),
-                Err(_) => None
+               Ok(data) => data,
+                Err(_) => vec![]
             };
         }
         fn handle_post_response(&mut self, from_authority: types::Authority, from_address: NameType,
@@ -1145,20 +1236,27 @@ mod test {
             Err(RoutingError::Success)
         }
     }
+    
+    #[test]
+    fn check_next_id() {
+      let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+      assert_eq!(routing_node.get_next_message_id() + 1, routing_node.get_next_message_id());
+    }
 
     #[test]
     fn our_authority_full_routing_table() {
-        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
 
         let mut count : usize = 0;
         loop {
             routing_node.routing_table.add_node(routing_table::NodeInfo::new(
                                        PublicPmid::new(&Pmid::new()), true));
             count += 1;
-            if routing_node.routing_table.size() >=
-                routing_table::RoutingTable::get_optimal_size() { break; }
-            if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
-                panic!("Routing table does not fill up."); }
+            if count > 100 { break; }
+            // if routing_node.routing_table.size() >=
+            //     routing_table::RoutingTable::get_optimal_size() { break; }
+            // if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
+            //     panic!("Routing table does not fill up."); }
         }
         let a_message_id : MessageId = random::<u32>();
         let our_name = routing_node.own_id.clone();
@@ -1185,6 +1283,12 @@ mod test {
         // invert to get a far away address outside of the close group
         let name_outside_close_group : NameType
             = xor(&furthest_node_close_group.id, &NameType::new([255u8; 64]));
+        // note: if the close group spans close to the whole address space,
+        // this construction actually inverts the address into the close group range;
+        // for group_size 32; 64 node in the network this intermittently fails at 41%
+        // for group_size 32; 80 nodes in the network this intermittently fails at 2%
+        // for group_size 32; 100 nodes in the network this intermittently fails
+        //     less than 1/8413 times, but should be exponentially less still.
         assert!(closer_to_target(&furthest_node_close_group.id,
                                  &name_outside_close_group,
                                  &our_name));
@@ -1254,15 +1358,17 @@ mod test {
                    types::Authority::ManagedNode);
     }
 
-    fn call_operation<T>(operation: T, message_type: MessageTypeTag) -> Stats where T: Encodable, T: Decodable {
-        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: None}));
+    fn call_operation<T>(operation: T, message_type: MessageTypeTag, stats: Arc<Mutex<Stats>>) -> Stats where T: Encodable, T: Decodable {
         let stats_copy = stats.clone();
         let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
         let header = MessageHeader {
             message_id:  n1.get_next_message_id(),
             destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
             source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
-            authority:   Authority::NaeManager
+            authority:   match message_type {
+                MessageTypeTag::UnauthorisedPut => Authority::Unknown,
+                _ => Authority::NaeManager
+                }
         };
 
         let message = RoutingMessage::new( message_type, header.clone(),
@@ -1279,53 +1385,154 @@ mod test {
 #[test]
     fn call_put() {
         let data = "this is a known string".to_string().into_bytes();
-        let chunk = TestData::new(data);
-        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
+        let chunk = Box::new(TestData::new(data));
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
         let name: NameType = Random::generate_random();
-        n1.put(name, chunk);
+        n1.put(name, chunk, true);
+    }
+
+#[test]
+    fn call_unauthorised_put() {
+        let data = "this is a known string".to_string().into_bytes();
+        let chunk = Box::new(TestData::new(data));
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let name: NameType = Random::generate_random();
+        n1.unauthorised_put(name, chunk);
     }
 
 #[test]
     fn call_handle_put() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let put_data: PutData = Random::generate_random();
-        assert_eq!(call_operation(put_data, MessageTypeTag::PutData).call_count, 1u32);
+        assert_eq!(call_operation(put_data, MessageTypeTag::PutData, stats).call_count, 1u32);
+    }
+
+#[test]
+    fn call_handle_authorised_put() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
+        let unauthorised_put: PutData = Random::generate_random();
+        let result_stats = call_operation(unauthorised_put, MessageTypeTag::UnauthorisedPut, stats);
+        assert_eq!(result_stats.call_count, 1u32);
+        assert_eq!(result_stats.data, "UnauthorisedPut".to_string().into_bytes());
     }
 
 #[test]
     fn call_handle_put_response() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let put_data_response: PutDataResponse = Random::generate_random();
-        assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse).call_count, 1u32);
+        assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse, stats).call_count, 1u32);
     }
 
 #[test]
     fn call_get() {
-        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: None})) });
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
         let name: NameType = Random::generate_random();
         n1.get(100u64, name);
     }
 
 #[test]
     fn call_handle_get_data() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let get_data: GetData = Random::generate_random();
-        assert_eq!(call_operation(get_data, MessageTypeTag::GetData).call_count, 1u32);
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetData, stats).call_count, 1u32);
     }
 
 #[test]
     fn call_handle_get_data_response() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let get_data: GetDataResponse = Random::generate_random();
-        assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse).call_count, 1u32);
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse, stats).call_count, 1u32);
     }
 
 #[test]
     fn call_handle_get_key() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let get_key: GetKey = Random::generate_random();
-        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey).call_count, 1u32);
+        let public_key: types::PublicSignKey = Random::generate_random();
+        let mut enc = Encoder::from_memory();
+        let _ = enc.encode(&[public_key]);
+        stats.lock().unwrap().data = enc.into_bytes();
+        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey, stats).call_count, 1u32);
     }
 
 #[test]
     fn call_handle_post() {
+        let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let post: Post = Random::generate_random();
-        assert_eq!(call_operation(post, MessageTypeTag::Post).call_count, 1u32);
+        assert_eq!(call_operation(post, MessageTypeTag::Post, stats).call_count, 1u32);
+    }
+
+    #[test]
+    fn cache_public_pmid() {
+        // copy from our_authority_full_routing_table test
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+
+        let mut count : usize = 0;
+        loop {
+            routing_node.routing_table.add_node(routing_table::NodeInfo::new(
+                                       PublicPmid::new(&Pmid::new()), true));
+            count += 1;
+            if routing_node.routing_table.size() >=
+                routing_table::RoutingTable::get_optimal_size() { break; }
+            if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
+                panic!("Routing table does not fill up."); }
+        }
+        let a_message_id : MessageId = random::<u32>();
+        let our_name = routing_node.own_id.clone();
+        let our_close_group : Vec<routing_table::NodeInfo>
+            = routing_node.routing_table.our_close_group();
+        let furthest_node_close_group : routing_table::NodeInfo
+            = our_close_group.last().unwrap().clone();
+        // end copy from our_authority_full_routing_table
+
+        let total_inside : u32 = 50;
+        let limit_attempts : u32 = 200;
+        let mut stored_public_pmids : Vec<PublicPmid> = Vec::with_capacity(total_inside as usize);
+
+        let mut count_inside : u32 = 0;
+        let mut count_total : u32 = 0;
+        loop {
+            let put_public_pmid = PutPublicPmid{ public_pmid :  PublicPmid::new(&Pmid::new()) };
+            let put_public_pmid_header : MessageHeader = MessageHeader {
+                message_id : a_message_id.clone(),
+                destination : types::DestinationAddress {
+                    dest : put_public_pmid.public_pmid.name.clone(),
+                    reply_to : None },
+                source : types::SourceAddress {
+                    from_node : Random::generate_random(),  // Bootstrap node or ourself
+                    from_group : None,
+                    reply_to : None },
+                authority : types::Authority::ManagedNode
+            };
+            let serialised_msg = routing_node.encode(&put_public_pmid);
+            let result = routing_node.handle_put_public_pmid(put_public_pmid_header,
+                serialised_msg);
+            if closer_to_target(&put_public_pmid.public_pmid.name.clone(),
+                                &furthest_node_close_group.id,
+                                &our_name) {
+                assert_eq!(result, Ok(()));
+                stored_public_pmids.push(put_public_pmid.public_pmid);
+                count_inside += 1;
+            } else {
+                assert_eq!(result, Err(()));
+            }
+            count_total += 1;
+            if count_inside >= total_inside {
+                break; // succcess
+            }
+            if count_total >= limit_attempts {
+                if count_inside > 0 {
+                    println!("Could only verify {} successful public_pmids inside
+                            our group before limit reached.", count_inside);
+                    break;
+                } else { panic!("No PublicPmids were found inside our close group!"); }
+            }
+        }
+        for public_pmid in stored_public_pmids {
+            assert!(routing_node.public_pmid_cache.check(&public_pmid.name));
+        }
+        // assert no outside keys were cached
+        assert_eq!(routing_node.public_pmid_cache.len(), total_inside as usize);
     }
 
     //#[test]

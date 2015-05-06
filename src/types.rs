@@ -60,8 +60,8 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-pub static GROUP_SIZE: u32 = 32;
-pub static QUORUM_SIZE: u32 = 19;
+pub static GROUP_SIZE: usize = 32;
+pub static QUORUM_SIZE: usize = 19;
 
 pub trait Mergeable {
     fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
@@ -412,26 +412,6 @@ impl Decodable for DestinationAddress {
     let (dest, reply_to) = try!(Decodable::decode(d));
     Ok(DestinationAddress { dest: dest, reply_to: reply_to })
   }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub enum MessageTypeTag {
-  Connect,
-  ConnectResponse,
-  FindGroup,
-  FindGroupResponse,
-  GetData,
-  GetDataResponse,
-  GetKey,
-  GetKeyResponse,
-  GetGroupKey,
-  GetGroupKeyResponse,
-  Post,
-  PostResponse,
-  PutData,
-  PutDataResponse,
-  PutKey,
-  AccountTransfer
 }
 
 impl Encodable for RoutingError {
