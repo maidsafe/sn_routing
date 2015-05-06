@@ -200,6 +200,16 @@ impl Interface for TestNode {
     fn handle_put(&mut self, our_authority: types::Authority, from_authority: types::Authority,
                 from_address: NameType, dest_address: types::DestinationAddress,
                 data_in: Vec<u8>) -> Result<Action, RoutingError> {
+        if our_authority != types::Authority::NaeManager {
+            if our_authority == types::Authority::ClientManager {
+                let mut d = cbor::Decoder::from_bytes(data_in);
+                let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
+                println!("ClientManager forwarding data to DataManager around {:?} ", in_coming_data.name());
+                return Ok(Action::SendOn(vec![in_coming_data.name()]));
+            }
+            println!("returning as our_authority is {:?} which is not supposed to handle_put", our_authority);
+            return Err(RoutingError::Success);
+        }
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         let mut d = cbor::Decoder::from_bytes(data_in);
