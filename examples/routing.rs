@@ -308,6 +308,9 @@ fn main() {
                 }
                 Err(_) => {}
             };
+        } else {
+            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+            let _ = mutate_node.lock().unwrap().bootstrap(None, None);
         }
         loop {
             command.clear();
@@ -340,6 +343,9 @@ fn main() {
                 }
                 Err(_) => {}
             };
+        }else {
+            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+            let _ = mutate_client.lock().unwrap().bootstrap(None, None);
         }
         loop {
             command.clear();
