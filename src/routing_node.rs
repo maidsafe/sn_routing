@@ -310,16 +310,10 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_to_bootstrap_node(&e.into_bytes());
     }
 
-    fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
-        self.accepting_on.clone().and_then(|endpoints| {
-            Some(endpoints)
-        })
-    }
-
     fn next_endpoint_pair(&self) -> Option<(Vec<Endpoint>, Vec<Endpoint>)> {
         // FIXME: Set the second argument to 'external' address
         // when known.
-        self.accepting_on().and_then(|addr| Some((addr.clone(), addr)))
+        self.accepting_on.clone().map(|addr| (addr.clone(), addr))
     }
 
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
@@ -560,8 +554,7 @@ impl<F> RoutingNode<F> where F: Interface {
            && header.destination.dest != self.own_id {
             return Authority::NodeManager; }
         else if header.from_group()
-                      .and_then(|group| Some(self.routing_table
-                                                 .address_in_our_close_group_range(&group)))
+                      .map(|group| self.routing_table.address_in_our_close_group_range(&group))
                       .unwrap_or(false)
            && header.destination.dest == self.own_id {
             return Authority::ManagedNode; }
@@ -587,8 +580,7 @@ impl<F> RoutingNode<F> where F: Interface {
                                                                     group_keys);
         let encoded_msg = self.encode(&routing_msg);
         let original_group = original_header.from_group();
-        original_group.and_then(|group| Some(self.send_swarm_or_parallel(&group,
-                                                                         &encoded_msg)));
+        original_group.map(|group| self.send_swarm_or_parallel(&group, &encoded_msg));
         Ok(())
     }
 
