@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+extern crate cbor;
 extern crate docopt;
 extern crate rand;
 extern crate rustc_serialize;
@@ -31,8 +32,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::spawn;
 
+use cbor::CborTagEncode;
 use docopt::Docopt;
 use rand::random;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto;
 
 use crust::Endpoint;
@@ -47,25 +50,33 @@ use routing::{Action, NameType, RoutingError};
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage: routing -h
-       routing -o
-       routing -v <endpoint>
-       routing -c <endpoint>
+       routing <endpoint>
+       routing -n [<endpoint>]
+
+default started as client and try to bootstrap from the specified endpoint
 
 Options:
     -h, --help       Display the help message
-    -o, --origin     Startup the first testing node
-    -c, --client     Node started as client, bootstrap to the specified endpoint
-    -v, --vault      Node started as vault, bootstrap to the specified endpoint
+    -n, --node       Started as a node and bootstrap to the specified endpoint
 ";
 
 #[derive(RustcDecodable, Debug)]
 struct Args {
     arg_endpoint: Option<String>,
-    flag_origin : bool,
-    flag_client : bool,
-    flag_vault : bool,
+    flag_node : bool,
     flag_help : bool
 }
+
+// usage example (using bootstrap):
+//      starting first node : routing -n
+//      (127.0.0.0:7364 to be the socket address the first node listening on)
+//      starting later on nodes : routing -n 127.0.0.0:7364
+//      starting a client : routing 127.0.0.0:7364
+
+// usage example (using beacon):
+//      starting first node : routing -n
+//      starting later on nodes : routing -n
+//      starting a client : routing
 
 
 // ==========================   Helper Function   =================================
@@ -81,24 +92,38 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 // ==========================   Test Data Structure   =================================
 #[derive(Clone)]
 struct TestData {
-    data: Vec<u8>
+    key: Vec<u8>,
+    value: Vec<u8>
 }
 
 impl TestData {
-    fn new(in_data: Vec<u8>) -> TestData {
-        TestData { data: in_data }
+    fn new(key: Vec<u8>, value: Vec<u8>) -> TestData {
+        TestData { key: key, value: value }
     }
+
+    pub fn get_name_from_key(key: &Vec<u8>) -> NameType {
+        let digest = crypto::hash::sha512::hash(key);
+        NameType(digest.0)        
+    }
+
+    pub fn get_key(&self) -> Vec<u8> { self.key.clone() }
+
+    pub fn get_value(&self) -> Vec<u8> { self.value.clone() }
 }
 
 impl Sendable for TestData {
     fn name(&self) -> NameType {
-        let digest = crypto::hash::sha512::hash(&self.data);
+        let digest = crypto::hash::sha512::hash(&self.key);
         NameType(digest.0)
     }
 
-    fn type_tag(&self)->u64 { unimplemented!() }
+    fn type_tag(&self)->u64 { 201 }
 
-    fn serialised_contents(&self)->Vec<u8> { self.data.clone() }
+    fn serialised_contents(&self)->Vec<u8> {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()     
+    }
 
     fn refresh(&self)->bool {
         false
@@ -107,15 +132,32 @@ impl Sendable for TestData {
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
 }
 
+impl Encodable for TestData {
+    fn encode<E: Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
+        CborTagEncode::new(5483_002, &(&self.key, &self.value)).encode(e)
+    }
+}
+
+impl Decodable for TestData {
+    fn decode<D: Decoder>(d: &mut D) -> Result<TestData, D::Error> {
+        try!(d.read_u64());
+        let (key, value) = try!(Decodable::decode(d));
+        let test_data = TestData { key: key, value: value };
+        Ok(test_data)
+    }
+}
+
 impl PartialEq for TestData {
     fn eq(&self, other: &TestData) -> bool {
-        self.data == other.data
+        self.key == other.key && self.value == other.value
     }
 }
 
 impl fmt::Debug for TestData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "TestData( name: {:?} )", self.name())
+        let key_string = std::string::String::from_utf8(self.get_key()).unwrap();
+        let value_string = std::string::String::from_utf8(self.get_value()).unwrap();
+        write!(f, "TestData( key: {:?} , value: {:?} )", key_string, value_string)
     }
 }
 
@@ -131,16 +173,16 @@ struct TestClient {
 impl routing::client_interface::Interface for TestClient {
     fn handle_get_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, RoutingError>) {
         if response.is_ok() {
-            let response_data = TestData::new(response.unwrap());
-            println!("testing client received get_response with data name as {}", response_data.name());
+            let mut d = cbor::Decoder::from_bytes(response.unwrap());
+            let response_data: TestData = d.decode().next().unwrap().unwrap();
+            println!("testing client received get_response with testdata {:?}", response_data);
         } else {
             println!("testing client received error get_response");
         }
     }
     fn handle_put_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, RoutingError>) {
         if response.is_ok() {
-            let response_data = TestData::new(response.unwrap());
-            println!("testing client received put_response with data name as {}", response_data.name());
+            println!("testing client shall not receive a success put_response");
         } else {
             println!("testing client received error put_response");
         }
@@ -155,7 +197,7 @@ impl Interface for TestNode {
     fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: types::Authority,
                   from_authority: types::Authority, from_address: NameType)
                    -> Result<Action, RoutingError> {
-        println!("testing node handle get request from {} of data {}", from_address, name);
+        println!("testing node handle get request from {} of chunk {}", from_address, name);
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
@@ -168,14 +210,15 @@ impl Interface for TestNode {
                 data_in: Vec<u8>) -> Result<Action, RoutingError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
-        let in_coming_data = TestData::new(data_in.clone());
-        println!("testing node handle put request from {} of data {}", from_address, in_coming_data.name());
+        let mut d = cbor::Decoder::from_bytes(data_in);
+        let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
+        println!("testing node handle put request from {} of data {:?}", from_address, in_coming_data);
         for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
             data.0 += 1;
             // return with success to terminate the flow
             return Err(RoutingError::Success);
         }
-        stats_value.stats.push((1, TestData::new(data_in.clone())));
+        stats_value.stats.push((1, in_coming_data));
         // return with success to terminate the flow
         Err(RoutingError::Success)
     }
@@ -186,9 +229,9 @@ impl Interface for TestNode {
     fn handle_get_response(&mut self, from_address: NameType,
                            response: Result<Vec<u8>, RoutingError>) -> routing::node_interface::RoutingNodeAction {
         if response.is_ok() {
-            let response_data = TestData::new(response.unwrap());
-            println!("testing node received get_response from {} with data name as {}",
-                     from_address, response_data.name());
+            let mut d = cbor::Decoder::from_bytes(response.unwrap());
+            let response_data: TestData = d.decode().next().unwrap().unwrap();
+            println!("testing node received get_response from {} with data as {:?}", from_address, response_data);
         } else {
             println!("testing node received error get_response from {}", from_address);
         }
@@ -197,9 +240,7 @@ impl Interface for TestNode {
     fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
                            response: Result<Vec<u8>, RoutingError>) {
         if response.is_ok() {
-            let response_data = TestData::new(response.unwrap());
-            println!("testing node received put_response from {} with data name as {}",
-                     from_address, response_data.name());
+            println!("testing node shall not receive a put_response in case of success");
         } else {
             println!("testing node received error put_response from {}", from_address);
         }
@@ -226,13 +267,14 @@ impl Interface for TestNode {
                         data: Vec<u8>) -> Result<Action, RoutingError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
-        let in_coming_data = TestData::new(data.clone());
-        for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
-            println!("testing node already have data {} in cache", in_coming_data.name());
+        let mut d = cbor::Decoder::from_bytes(data);
+        let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
+        for _ in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
+            println!("testing node already have data {:?} in cache", in_coming_data);
             return Err(RoutingError::Success);
         }
-        println!("testing node inserted data {} into cache", in_coming_data.name());
-        stats_value.stats.push((0, TestData::new(data.clone())));
+        println!("testing node inserted data {:?} into cache", in_coming_data);
+        stats_value.stats.push((0, in_coming_data));
         Err(RoutingError::Success)
     }
     fn handle_get_key(&mut self,
@@ -249,13 +291,12 @@ fn main() {
     let args : Args = Docopt::new(USAGE)
                      .and_then(|d| d.decode())
                      .unwrap_or_else(|e| e.exit());
-    if args.flag_help {
+    if args.flag_help && !args.arg_endpoint.is_some() {
         println!("{:?}", args);
         return;
     }
-
     let mut command = String::new();
-    if args.flag_origin || args.flag_vault {
+    if args.flag_node {
         let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) });
         let mutate_node = Arc::new(Mutex::new(test_node));
         let copied_node = mutate_node.clone();
@@ -273,6 +314,9 @@ fn main() {
                 }
                 Err(_) => {}
             };
+        } else {
+            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+            let _ = mutate_node.lock().unwrap().bootstrap(None, None);
         }
         loop {
             command.clear();
@@ -281,18 +325,10 @@ fn main() {
             let v: Vec<&str> = command.split(' ').collect();
             match v[0].trim() {
                 "stop" => break,
-                "bootstrap" => {
-                    let endpoint_address = match SocketAddr::from_str(v[1].trim()) {
-                        Ok(addr) => addr,
-                        Err(_) => continue
-                    };
-                    println!("bootstrapping to {} ", endpoint_address);
-                    let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(endpoint_address)]), None);
-                },
                 _ => println!("Invalid Option")
             }
         }
-    } else if args.flag_client {
+    } else {
         let sign_keypair = crypto::sign::gen_keypair();
         let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
         let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
@@ -313,30 +349,30 @@ fn main() {
                 }
                 Err(_) => {}
             };
+        }else {
+            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+            let _ = mutate_client.lock().unwrap().bootstrap(None, None);
         }
-        let mut ori_packets = Vec::<TestData>::new();
         loop {
             command.clear();
-            println!("Input command (stop, put <msg_length>, get <index>)");
+            println!("Input command (stop, put <key> <value>, get <key>)");
             let _ = io::stdin().read_line(&mut command);
             let v: Vec<&str> = command.split(' ').collect();
             match v[0].trim() {
                 "stop" => break,
                 "put" => {
-                    let length : usize = match v[1].trim().parse().ok() { Some(length) => length, _ => 1024 };
-                    let data = TestData::new(generate_random_vec_u8(length));
-                    ori_packets.push(data.clone());
-                    println!("putting data {} to network ", data.name());             
+                    let key: Vec<u8> = v[1].trim().bytes().collect();
+                    let value: Vec<u8> = v[2].trim().bytes().collect();
+                    let data = TestData::new(key, value);
+                    println!("putting data {:?} to network with name as {}", data, data.name());             
                     let _ = mutate_client.lock().unwrap().put(data);
                 },
                 "get" => {
-                    let index : usize = match v[1].trim().parse().ok() { Some(index) => index, _ => 0 };
-                    if index < ori_packets.len() {
-                        println!("getting chunk {} from network ", ori_packets[index].name());
-                        let _ = mutate_client.lock().unwrap().get(110, ori_packets[index].name());
-                    } else {
-                        println!("only has {} packets in record ", ori_packets.len());
-                    }
+                    let key: Vec<u8> = v[1].trim().bytes().collect();
+                    let name = TestData::get_name_from_key(&key);
+                    let key_string = std::string::String::from_utf8(key).unwrap();
+                    println!("getting data having key {} from network using name as {}", key_string, name);
+                    let _ = mutate_client.lock().unwrap().get(201, name);
                 },
                 _ => println!("Invalid Option")
             }
