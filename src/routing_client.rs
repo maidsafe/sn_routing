@@ -340,7 +340,7 @@ impl<F> RoutingClient<F> where F: Interface {
                      beacon_port: Option<u16>) -> Result<(), RoutingError> {
         match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
             Err(reason) => {
-                println!("Failed to bootstrap: {:?}", reason);
+                println!("Failed to connect to network (this might be the first node)\nDetails: {:?}", reason);
                 Err(RoutingError::FailedToBootstrap)
             }
             Ok(bootstrapped_to) => {
