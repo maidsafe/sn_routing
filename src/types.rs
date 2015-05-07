@@ -418,7 +418,7 @@ impl Encodable for RoutingError {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let mut type_tag;
         match *self {
-            RoutingError::Success => type_tag = "Success",
+            RoutingError::Abort => type_tag = "Abort",
             RoutingError::FailedToBootstrap => type_tag = "FailedToBootstrap",
             RoutingError::NoData => type_tag = "NoData",
             RoutingError::InvalidRequest => type_tag = "InvalidRequest",
@@ -434,7 +434,7 @@ impl Decodable for RoutingError {
         let mut type_tag : String;
         type_tag = try!(Decodable::decode(d));
         match &type_tag[..] {
-            "Success" => Ok(RoutingError::Success),
+            "Abort" => Ok(RoutingError::Abort),
             "FailedToBootstrap" => Ok(RoutingError::FailedToBootstrap),
             "NoData" => Ok(RoutingError::NoData),
             "InvalidRequest" => Ok(RoutingError::InvalidRequest),

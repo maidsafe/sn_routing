@@ -92,7 +92,7 @@ pub enum Action {
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum RoutingError {
-  Success,  // vault will also return a Success to indicate a dead end
+  Abort,  // vault will also return a Abort to indicate a dead end
   FailedToBootstrap,
   NoData,
   InvalidRequest,

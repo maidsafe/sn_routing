@@ -216,7 +216,7 @@ impl Interface for TestNode {
                 return Ok(Action::SendOn(vec![in_coming_data.name()]));
             }
             println!("returning as our_authority is {:?} which is not supposed to handle_put", our_authority);
-            return Err(RoutingError::Success);
+            return Err(RoutingError::Abort);
         }
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
@@ -225,16 +225,16 @@ impl Interface for TestNode {
         println!("testing node handle put request from {} of data {:?}", from_address, in_coming_data);
         for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
             data.0 += 1;
-            // return with success to terminate the flow
-            return Err(RoutingError::Success);
+            // return with abort to terminate the flow
+            return Err(RoutingError::Abort);
         }
         stats_value.stats.push((1, in_coming_data));
-        // return with success to terminate the flow
-        Err(RoutingError::Success)
+        // return with abort to terminate the flow
+        Err(RoutingError::Abort)
     }
     fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
                    from_address: NameType, name : NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
-        Err(RoutingError::Success)
+        Err(RoutingError::Abort)
     }
     fn handle_get_response(&mut self, from_address: NameType,
                            response: Result<Vec<u8>, RoutingError>) -> routing::node_interface::RoutingNodeAction {
@@ -271,7 +271,7 @@ impl Interface for TestNode {
             println!("testing node find data {} in cache", name);
             return Ok(Action::Reply(data.1.serialised_contents().clone()));
         }
-        Err(RoutingError::Success)
+        Err(RoutingError::Abort)
     }
     fn handle_cache_put(&mut self, from_authority: types::Authority, from_address: NameType,
                         data: Vec<u8>) -> Result<Action, RoutingError> {
@@ -281,11 +281,11 @@ impl Interface for TestNode {
         let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
         for _ in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
             println!("testing node already have data {:?} in cache", in_coming_data);
-            return Err(RoutingError::Success);
+            return Err(RoutingError::Abort);
         }
         println!("testing node inserted data {:?} into cache", in_coming_data);
         stats_value.stats.push((0, in_coming_data));
-        Err(RoutingError::Success)
+        Err(RoutingError::Abort)
     }
     fn handle_get_key(&mut self,
                       type_id: u64,

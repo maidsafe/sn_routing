@@ -779,7 +779,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 Ok(())
             },
             Err(e) => match e {
-                RoutingError::Success => Ok(()),           // Vault terminates message flow
+                RoutingError::Abort => Ok(()),           // Vault terminates message flow
                 RoutingError::IncorrectData(_) => Err(()), // TODO: reply with post_response
                 RoutingError::NoData => Err(()),
                 RoutingError::InvalidRequest => Err(()),
@@ -856,7 +856,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 Ok(())
             },
             Err(e) => match e {
-                RoutingError::Success => Ok(()),  // Interface terminates message flow
+                RoutingError::Abort => Ok(()),  // Interface terminates message flow
                 RoutingError::NoData => Err(()),
                 RoutingError::InvalidRequest => Err(()),
                 RoutingError::IncorrectData(data) => Err(()),
@@ -1212,11 +1212,11 @@ mod test {
         }
         fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
                             from_address: NameType) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
+            Err(RoutingError::Abort)
         }
         fn handle_cache_put(&mut self, from_authority: types::Authority, from_address: NameType,
                             data: Vec<u8>) -> Result<Action, RoutingError> {
-            Err(RoutingError::Success)
+            Err(RoutingError::Abort)
         }
     }
     
