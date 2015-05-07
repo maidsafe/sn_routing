@@ -347,13 +347,13 @@ fn main() {
             match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
                 Ok(addr) => {
                     println!("initial bootstrapping to {} ", addr);
-                    let _ = test_client.bootstrap(Some(vec![Endpoint::Tcp(addr)])); 
+                    let _ = test_client.join(Some(vec![Endpoint::Tcp(addr)])); 
                 }
                 Err(_) => {}
             };
         } else {
             // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
-            let _ = test_client.bootstrap(None);
+            let _ = test_client.join(None);
         }
         loop {
             command.clear();

@@ -158,7 +158,7 @@ impl Decodable for ClientIdPacket {
     }
 }
 
-pub struct RoutingClientState<F: Interface> {
+struct RoutingClientState<F: Interface> {
     interface: Arc<Mutex<F>>,
     connection_manager: ConnectionManager,
     id_packet: ClientIdPacket,
@@ -214,10 +214,10 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
         state.unauthorised_put(destination, content)
     }
 
-    /// bootstrap to the network
-    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
+    /// join the network
+    pub fn join(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
         let mut state = self.state.lock().unwrap();
-        state.bootstrap(bootstrap_list)
+        state.join(bootstrap_list)
     }
 
     fn run(rx: mpsc::Receiver<Event>, state: Arc<Mutex<RoutingClientState<F>>>) {
@@ -351,7 +351,7 @@ impl<F> RoutingClientState<F> where F: Interface {
         let _ = self.connection_manager.send(self.bootstrap_address.1.clone().unwrap(), e.into_bytes());
     }
 
-    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
+    pub fn join(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
         match self.connection_manager.bootstrap(bootstrap_list, None) {
             Err(reason) => {
                 println!("Failed to connect to network (this might be the first node)\nDetails: {:?}", reason);
