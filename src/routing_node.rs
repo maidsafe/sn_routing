@@ -211,17 +211,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         match event.unwrap() {
             crust::Event::NewMessage(endpoint, bytes) => {
-                let message = match self.decode::<RoutingMessage>(&bytes) {
-                    None => {
-                        println!("Problem parsing message of size from" );
-                        return;
-                    },
-                    Some(msg) => msg,
-                };
-
-                println!("message id {:?}", &message.message_header.message_id);
                 if self.all_connections.0.contains_key(&endpoint) {
-                    println!("message id2 {:?}", &message.message_header.message_id);                    
                     let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
                     if self.message_received(&peer_id, bytes).is_err() {
                         // println!("failed to Parse message !!! check  from - {:?} ", peer_id);
@@ -288,13 +278,11 @@ impl<F> RoutingNode<F> where F: Interface {
         self.pending_connections.remove(&peer_endpoint);
         self.all_connections.0.insert(peer_endpoint.clone(), bootstrap_id_response_msg.sender_id.clone());
         self.all_connections.1.insert(bootstrap_id_response_msg.sender_id.clone(), peer_endpoint.clone());
-        println!("self.send_find_group_to_endpoint: ");
         self.send_find_group_to_endpoint(peer_endpoint.clone());
     }
 
     fn send_find_group_to_endpoint(&mut self, endpoint: Endpoint) {
         let id = self.get_next_message_id();
-        println!("find_group_to_endpoint id {}", id.clone());
         let message = RoutingMessage::new(
             MessageTypeTag::FindGroup,
             MessageHeader::new(
@@ -310,10 +298,7 @@ impl<F> RoutingNode<F> where F: Interface {
             &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
         e.encode(&[message]).unwrap();
-        match self.connection_manager.send(endpoint, e.into_bytes()) {
-            Ok(_) => println!("self.connection_manager sent"),
-            Err(_) => println!("self.connection_manager failed"),
-        };
+        let _ = self.connection_manager.send(endpoint, e.into_bytes());
     }
 
     fn put_own_public_pmid(&mut self) {
@@ -353,13 +338,6 @@ impl<F> RoutingNode<F> where F: Interface {
             return;
         }
         self.pending_connections.insert(peer_endpoint.clone());
-        // assuming each new connection is a bootstrap attempt
-        self.bootstrap_endpoint = Some(peer_endpoint.clone());
-        // send find group
-        let msg = self.construct_find_group_msg();
-        let msg = self.encode(&msg);
-        debug_assert!(self.bootstrap_endpoint.is_some());
-        let _ = self.connection_manager.send(peer_endpoint, msg);
     }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
@@ -487,7 +465,6 @@ impl<F> RoutingNode<F> where F: Interface {
         // and this node is in the group but the message destination is another group member node.
         // "not for me"
 
-        println!("message.message_type {:?}", &message.message_type);
         // pre-sentinel message handling
         match message.message_type {
             MessageTypeTag::UnauthorisedPut => self.handle_put_data(header, body),
@@ -533,8 +510,10 @@ impl<F> RoutingNode<F> where F: Interface {
         if message.message_type == MessageTypeTag::BootstrapIdRequest {
             if self.bootstrap_node_id.is_none() {
                 let request = try!(self.decode::<BootstrapIdRequest>(&message.serialised_body).ok_or(()));
-                self.bootstrap_node_id = Some(request.sender_id);
+                self.bootstrap_node_id = Some(request.sender_id.clone());
                 self.bootstrap_endpoint = Some(peer_endpoint.clone());
+                self.all_connections.0.insert(peer_endpoint.clone(), request.sender_id.clone());
+                self.all_connections.1.insert(request.sender_id.clone(), peer_endpoint.clone());
             }
             self.send_bootstrap_id_response(peer_endpoint);
             return Ok(());
@@ -661,7 +640,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
-        println!("{:?} received FindGroup", self.own_id);
+        println!("{:?} received FindGroup {:?}", self.own_id, original_header.message_id);
         let find_group = try!(self.decode::<FindGroup>(&body).ok_or(()));
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> = vec![];
