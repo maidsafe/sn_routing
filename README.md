@@ -35,20 +35,12 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [x] Test Get Flow
 - [ ] Test with client having simple put and get ability
 - [ ] Integration Test
-- [ ] Complete Post Flow
 - [ ] Handle Churn
-    - [ ] Implement Account Transfer
-        - [x] Handle churn for all Persona (except PN)(retrive account, move to lru, apply account)
-        - [x] Before retrieving accounts, pass close_group (get from routing) to DM and remove down pmids
-        - [x] Before retrieving accounts, pass close_group to PM and remove accounts of down pmids
-        - [ ] Implement HandlePut for Account transfer data (call apply accounts for relevant persona)
-        - [ ] Implement merge trait for accounts of MM
-        - [ ] Implement merge trait for accounts of DM
-        - [ ] Implement merge trait for accounts of PM
-        - [ ] Implement merge trait for accounts of VH
+    - [x] Implement Account Transfer
     - [ ] Churn Test
 - [x] Installers (linux deb/rpm 32/64 bit, Windows 32 / 64. OSX)
 - [ ] API version 0.0.9
+- [ ] Complete Post Flow
 - [ ] Test with client having file system feature
 - [ ] Implement MpidManager
     - [ ] Complete the put route (sending message)
