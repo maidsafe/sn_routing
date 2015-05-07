@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor::{Decoder, Encoder};
+use cbor::{Decoder, Encoder, CborError};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
@@ -69,9 +69,12 @@ pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+//#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(Debug)]
 enum RecvError {
     DontKnow,
+    Io(io::Error),
+    CborError(CborError),
     RoutingError(RoutingError),
 }
 
@@ -83,6 +86,14 @@ impl From<()> for RecvError {
 
 impl From<RoutingError> for RecvError {
     fn from(e: RoutingError) -> RecvError { RecvError::RoutingError(e) }
+}
+
+impl From<CborError> for RecvError {
+    fn from(e: CborError) -> RecvError { RecvError::CborError(e) }
+}
+
+impl From<io::Error> for RecvError {
+    fn from(e: io::Error) -> RecvError { RecvError::Io(e) }
 }
 
 /// DHT node
@@ -154,7 +165,8 @@ impl<F> RoutingNode<F> where F: Interface {
         let message = RoutingMessage::new(MessageTypeTag::GetData, header,
                                           request, &self.pmid.get_crypto_secret_sign_key());
 
-        self.send_swarm_or_parallel(&name, &encode(&message));
+        // FIXME: We might want to return the result.
+        let _ = encode(&message).map(|msg| self.send_swarm_or_parallel(&name, &msg));
     }
 
     /// Add something to the network, will always go via ClientManager group
@@ -171,7 +183,8 @@ impl<F> RoutingNode<F> where F: Interface {
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
                 request, &self.pmid.get_crypto_secret_sign_key());
 
-        self.send_swarm_or_parallel(&self.id(), &encode(&message));
+        // FIXME: We might want to return the result.
+        let _ = encode(&message).map(|msg| self.send_swarm_or_parallel(&self.id(), &msg));
     }
 
     /// Add something to the network
@@ -183,7 +196,8 @@ impl<F> RoutingNode<F> where F: Interface {
         let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut, header,
                 request, &self.pmid.get_crypto_secret_sign_key());
 
-        self.send_swarm_or_parallel(&self.id(), &encode(&message));
+        // FIXME: We might want to return the result.
+        let _ = encode(&message).map(|msg| self.send_swarm_or_parallel(&self.id(), &msg));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -199,21 +213,15 @@ impl<F> RoutingNode<F> where F: Interface {
 
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
                      beacon_port: Option<u16>) -> Result<(), RoutingError> {
-        match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
-            Err(reason) => {
-                println!("Failed to connect to network (this might be the first node)\nDetails: {:?}", reason);
-                Err(RoutingError::FailedToBootstrap)
-            }
-            Ok(bootstrapped_to) => {
-                self.bootstrap_endpoint = Some(bootstrapped_to);
-                // starts swaping ID with the bootstrap peer
-                self.send_bootstrap_id_request();
-                // put our public pmid so that our connect requests are validated
-                self.put_own_public_pmid();
-                // connect to close group
-                Ok(())
-            }
-        }
+        let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
+                                   .map_err(|_|RoutingError::FailedToBootstrap));
+        self.bootstrap_endpoint = Some(bootstrapped_to);
+        // starts swaping ID with the bootstrap peer
+        self.send_bootstrap_id_request();
+        // put our public pmid so that our connect requests are validated
+        self.put_own_public_pmid();
+        // connect to close group
+        Ok(())
     }
 
     pub fn run(&mut self) {
@@ -255,7 +263,7 @@ impl<F> RoutingNode<F> where F: Interface {
             request, &self.pmid.get_crypto_secret_sign_key());
 
         // need to send to bootstrap node as we are not yet connected to anyone else
-        self.send_to_bootstrap_node(&encode(&message));
+        let _ = encode(&message).map(|m| self.send_to_bootstrap_node(&m));
     }
 
     fn send_bootstrap_id_response(&mut self) {
@@ -270,7 +278,7 @@ impl<F> RoutingNode<F> where F: Interface {
             request, &self.pmid.get_crypto_secret_sign_key());
 
         // need to send to bootstrap node as we are not yet connected to anyone else
-        self.send_to_bootstrap_node(&encode(&message));
+        let _ = encode(&message).map(|m| self.send_to_bootstrap_node(&m));
     }
 
     fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
@@ -315,7 +323,7 @@ impl<F> RoutingNode<F> where F: Interface {
             request, &self.pmid.get_crypto_secret_sign_key());
 
         // need to send to bootstrap node as we are not yet connected to anyone else
-        self.send_to_bootstrap_node(&encode(&message));
+        let _ = encode(&message).map(|m| self.send_to_bootstrap_node(&m));
     }
 
     fn next_endpoint_pair(&self) -> (Vec<Endpoint>, Vec<Endpoint>) {
@@ -335,9 +343,10 @@ impl<F> RoutingNode<F> where F: Interface {
         self.bootstrap_endpoint = Some(peer_endpoint.clone());
         // send find group
         let msg = self.construct_find_group_msg();
-        let msg = encode(&msg);
-        debug_assert!(self.bootstrap_endpoint.is_some());
-        let _ = self.connection_manager.send(peer_endpoint, msg);
+        let _ = encode(&msg).map(|msg| {
+          debug_assert!(self.bootstrap_endpoint.is_some());
+          let _ = self.connection_manager.send(peer_endpoint, msg);
+        });
     }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
@@ -414,9 +423,9 @@ impl<F> RoutingNode<F> where F: Interface {
                 Ok(action) => match action {
                     Action::Reply(data) => {
                         let reply = self.construct_get_data_response_msg(&header, &get_data, data);
-                        let serialised_reply = encode(&reply);
-                        self.send_swarm_or_parallel(&header.send_to().dest, &serialised_reply);
-                        return Ok(());
+                        return encode(&reply).map(|reply| {
+                            self.send_swarm_or_parallel(&header.send_to().dest, &reply);
+                        }).map_err(From::from);
                     },
                     _ => (),
                 },
@@ -570,7 +579,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let routing_msg = self.construct_get_group_key_response_msg(&original_header,
                                                                     &get_group_key,
                                                                     group_keys);
-        let encoded_msg = encode(&routing_msg);
+        let encoded_msg = try!(encode(&routing_msg));
         let original_group = original_header.from_group();
         original_group.map(|group| self.send_swarm_or_parallel(&group, &encoded_msg));
         Ok(())
@@ -591,8 +600,9 @@ impl<F> RoutingNode<F> where F: Interface {
         if original_header.source.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.unwrap();
             if self.all_connections.1.contains_key(&reply_to_address) {
-                let _ = self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(),
-                                                     encode(&routing_msg));
+                let msg = try!(encode(&routing_msg));
+                return self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(), msg)
+                    .map_err(From::from);
             } else {
                 return Err(RecvError::DontKnow);
             }
@@ -643,8 +653,9 @@ impl<F> RoutingNode<F> where F: Interface {
         if original_header.source.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.unwrap();
             if self.all_connections.1.contains_key(&reply_to_address) {
-                let _ = self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(),
-                                                     encode(&routing_msg));
+                let msg = try!(encode(&routing_msg));
+                return self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(), msg)
+                    .map_err(From::from);
             } else {
                 return Err(RecvError::DontKnow);
             }
@@ -662,7 +673,8 @@ impl<F> RoutingNode<F> where F: Interface {
             let routing_msg = self.construct_connect_request_msg(&peer.name);
             if self.bootstrap_endpoint.is_some() {
                 let bootstrap_endpoint = self.bootstrap_endpoint.clone();
-                let _ = self.connection_manager.send(bootstrap_endpoint.unwrap(), encode(&routing_msg));
+                let _ = encode(&routing_msg)
+                    .map(|msg| self.connection_manager.send(bootstrap_endpoint.unwrap(), msg));
             }
             // SendSwarmOrParallel  // FIXME
         }
@@ -683,7 +695,7 @@ impl<F> RoutingNode<F> where F: Interface {
                     let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_id, &our_authority),
                         GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Ok(data) },
                         &self.pmid.get_crypto_secret_sign_key());
-                    let encoded_msg = encode(&routing_msg);
+                    let encoded_msg = try!(encode(&routing_msg));
                     self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
                 },
                 Action::SendOn(dest_nodes) => {
@@ -691,7 +703,7 @@ impl<F> RoutingNode<F> where F: Interface {
                         let send_on_header = header.create_send_on(&self.own_id, &our_authority, &dest_node);
                         let routing_msg = RoutingMessage::new(MessageTypeTag::GetData, send_on_header,
                             get_data.clone(), &self.pmid.get_crypto_secret_sign_key());
-                        let encoded_msg = encode(&routing_msg);
+                        let encoded_msg = try!(encode(&routing_msg));
                         self.send_swarm_or_parallel(&dest_node, &encoded_msg);
                     }
                 }
@@ -700,7 +712,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_id, &our_authority),
                     GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Err(error) },
                     &self.pmid.get_crypto_secret_sign_key());
-                let encoded_msg = encode(&routing_msg);
+                let encoded_msg = try!(encode(&routing_msg));
                 self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
             }
         }
@@ -728,7 +740,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 let routing_msg = RoutingMessage::new(MessageTypeTag::GetKeyResponse, header.create_reply(&self.own_id, &our_authority),
                     GetKeyResponse{ address : get_key.target_id.clone(), public_sign_key : public_key },
                     &self.pmid.get_crypto_secret_sign_key());
-                let encoded_msg = encode(&routing_msg);
+                let encoded_msg = try!(encode(&routing_msg));
                 self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
                 },
             Action::SendOn(dest_nodes) => {
@@ -736,7 +748,7 @@ impl<F> RoutingNode<F> where F: Interface {
                     let send_on_header = header.create_send_on(&self.own_id, &our_authority, &dest_node);
                     let routing_msg = RoutingMessage::new(MessageTypeTag::GetKey, send_on_header,
                         get_key.clone(), &self.pmid.get_crypto_secret_sign_key());
-                    let encoded_msg = encode(&routing_msg);
+                    let encoded_msg = try!(encode(&routing_msg));
                     self.send_swarm_or_parallel(&dest_node, &encoded_msg);
                 }
             }
@@ -773,8 +785,7 @@ impl<F> RoutingNode<F> where F: Interface {
                         &our_authority, &destination);
                     let routing_msg = RoutingMessage::new(MessageTypeTag::Post,
                         send_on_header, post.clone(), &self.pmid.get_crypto_secret_sign_key());
-                    self.send_swarm_or_parallel(&destination,
-                        &encode(&routing_msg));
+                    self.send_swarm_or_parallel(&destination, &try!(encode(&routing_msg)));
                 }
                 Ok(())
             },
@@ -840,7 +851,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 };
                 let routing_msg = RoutingMessage::new(MessageTypeTag::PutDataResponse,
                     reply_header, put_data_response, &self.pmid.get_crypto_secret_sign_key());
-                self.send_swarm_or_parallel(&reply_to, &encode(&routing_msg));
+                self.send_swarm_or_parallel(&reply_to, &try!(encode(&routing_msg)));
                 Ok(())
             },
             Ok(Action::SendOn(destinations)) => {
@@ -849,8 +860,7 @@ impl<F> RoutingNode<F> where F: Interface {
                         &our_authority, &destination);
                     let routing_msg = RoutingMessage::new(MessageTypeTag::PutData,
                         send_on_header, put_data.clone(), &self.pmid.get_crypto_secret_sign_key());
-                    self.send_swarm_or_parallel(&destination,
-                        &encode(&routing_msg));
+                    self.send_swarm_or_parallel(&destination, &try!(encode(&routing_msg)));
                 }
                 Ok(())
             },
@@ -1073,10 +1083,10 @@ impl<F> RoutingNode<F> where F: Interface {
     pub fn id(&self) -> NameType { self.own_id.clone() }
 }
 
-fn encode<T>(value: &T) -> Bytes where T: Encodable {
+fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
     let mut enc = Encoder::from_memory();
-    let _ = enc.encode(&[value]);
-    enc.into_bytes()
+    try!(enc.encode(&[value]));
+    Ok(enc.into_bytes())
 }
 
 fn decode<T>(bytes: &Bytes) -> Option<T> where T: Decodable {
@@ -1357,7 +1367,7 @@ mod test {
         let message = RoutingMessage::new( message_type, header.clone(),
             operation, &n1.pmid.get_crypto_secret_sign_key());
 
-        let serialised_msssage = encode(&message);
+        let serialised_msssage = encode(&message).unwrap();
 
         let _ = n1.message_received(&header.source.from_node, serialised_msssage);
         let stats = stats.clone();
@@ -1487,17 +1497,17 @@ mod test {
                     reply_to : None },
                 authority : types::Authority::ManagedNode
             };
-            let serialised_msg = encode(&put_public_pmid);
+            let serialised_msg = encode(&put_public_pmid).unwrap();
             let result = routing_node.handle_put_public_pmid(put_public_pmid_header,
                 serialised_msg);
             if closer_to_target(&put_public_pmid.public_pmid.name.clone(),
                                 &furthest_node_close_group.id,
                                 &our_name) {
-                assert_eq!(result, Ok(()));
+                assert!(result.is_ok());
                 stored_public_pmids.push(put_public_pmid.public_pmid);
                 count_inside += 1;
             } else {
-                assert_eq!(result, Err(RecvError::DontKnow));
+                assert!(result.is_err());
             }
             count_total += 1;
             if count_inside >= total_inside {
