@@ -60,12 +60,30 @@ use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action, RoutingError};
 
+use std::io;
+use std::convert::From;
+
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
-type RecvResult = Result<(), ()>;
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+enum RecvError {
+    DontKnow,
+    RoutingError(RoutingError),
+}
+
+type RecvResult = Result<(), RecvError>;
+
+impl From<()> for RecvError {
+    fn from(e: ()) -> RecvError { RecvError::DontKnow }
+}
+
+impl From<RoutingError> for RecvError {
+    fn from(e: RoutingError) -> RecvError { RecvError::RoutingError(e) }
+}
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
@@ -364,14 +382,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn message_received(&mut self, peer_id: &NameType, serialised_message: Bytes) -> RecvResult {
         // Parse
-        let message = match self.decode::<RoutingMessage>(&serialised_message) {
-            None => {
-                println!("Problem parsing message of size {} from {:?}",
-                         serialised_message.len(), peer_id);
-                return Err(());
-            },
-            Some(msg) => msg,
-        };
+        let message = try!(self.decode::<RoutingMessage>(&serialised_message).ok_or(()));
 
         // bootstrap_id_request from peer may arrive later then the response from the same peer
         if message.message_type == MessageTypeTag::BootstrapIdRequest {
@@ -385,7 +396,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // filter check
         if self.filter.check(&header.get_filter()) {
             // should just return quietly
-            return Err(());
+            return Err(RecvError::DontKnow);
         }
         // add to filter
         self.filter.add(header.get_filter());
@@ -479,7 +490,7 @@ impl<F> RoutingNode<F> where F: Interface {
                     //PutKey,
                     _ => {
                         println!("unhandled message from {:?}", peer_id);
-                        Err(())
+                        Err(RecvError::DontKnow)
                     }
                 }
             }
@@ -579,7 +590,7 @@ impl<F> RoutingNode<F> where F: Interface {
         println!("{:?} received ConnectRequest ", self.own_id);
         let connect_request = try!(self.decode::<ConnectRequest>(&body).ok_or(()));
         if !(self.routing_table.check_node(&connect_request.requester_id)) {
-           return Err(());
+           return Err(RecvError::DontKnow);
         }
         //let (receiver_local, receiver_external) = try!(self.next_endpoint_pair().ok_or(()));  //FIXME this is correct place
 
@@ -593,7 +604,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 let _ = self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(),
                                                      self.encode(&routing_msg));
             } else {
-                return Err(());
+                return Err(RecvError::DontKnow);
             }
         }
         Ok(())
@@ -645,7 +656,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 let _ = self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(),
                                                      self.encode(&routing_msg));
             } else {
-                return Err(());
+                return Err(RecvError::DontKnow);
             }
         }
         Ok(())
@@ -718,7 +729,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         action = match self.interface.deref_mut().handle_get_key(type_id, name, our_authority.clone(), from_authority, from) {
             Ok(action) => action,
-            Err(_) => return Err(())
+            Err(_) => return Err(RecvError::DontKnow)
         };
 
         match action {
@@ -779,10 +790,10 @@ impl<F> RoutingNode<F> where F: Interface {
             },
             Err(e) => match e {
                 RoutingError::Abort => Ok(()),           // Vault terminates message flow
-                RoutingError::IncorrectData(_) => Err(()), // TODO: reply with post_response
-                RoutingError::NoData => Err(()),
-                RoutingError::InvalidRequest => Err(()),
-                _ => Err(())
+                RoutingError::IncorrectData(_) => Err(RecvError::DontKnow), // TODO: reply with post_response
+                RoutingError::NoData => Err(RecvError::DontKnow),
+                RoutingError::InvalidRequest => Err(RecvError::DontKnow),
+                _ => Err(RecvError::DontKnow)
             },
         }
     }
@@ -808,7 +819,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 Ok(())
             },
             _ => {
-                Err(())
+                Err(RecvError::DontKnow)
             }
         }
     }
@@ -855,10 +866,10 @@ impl<F> RoutingNode<F> where F: Interface {
             },
             Err(e) => match e {
                 RoutingError::Abort => Ok(()),  // Interface terminates message flow
-                RoutingError::NoData => Err(()),
-                RoutingError::InvalidRequest => Err(()),
-                RoutingError::IncorrectData(data) => Err(()),
-                _ => Err(())
+                RoutingError::NoData => Err(RecvError::DontKnow),
+                RoutingError::InvalidRequest => Err(RecvError::DontKnow),
+                RoutingError::IncorrectData(data) => Err(RecvError::DontKnow),
+                _ => Err(RecvError::DontKnow)
             }
         }
     }
@@ -1088,6 +1099,7 @@ mod test {
     use routing_node::{RoutingNode};
     use node_interface::*;
     use name_type::NameType;
+    use super::RecvError;
     use super::super::{Action, RoutingError};
     use sendable::Sendable;
     use messages::put_data::PutData;
@@ -1495,7 +1507,7 @@ mod test {
                 stored_public_pmids.push(put_public_pmid.public_pmid);
                 count_inside += 1;
             } else {
-                assert_eq!(result, Err(()));
+                assert_eq!(result, Err(RecvError::DontKnow));
             }
             count_total += 1;
             if count_inside >= total_inside {
