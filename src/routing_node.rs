@@ -211,7 +211,17 @@ impl<F> RoutingNode<F> where F: Interface {
 
         match event.unwrap() {
             crust::Event::NewMessage(endpoint, bytes) => {
+                let message = match self.decode::<RoutingMessage>(&bytes) {
+                    None => {
+                        println!("Problem parsing message of size from" );
+                        return;
+                    },
+                    Some(msg) => msg,
+                };
+
+                println!("message id {:?}", &message.message_header.message_id);
                 if self.all_connections.0.contains_key(&endpoint) {
+                    println!("message id2 {:?}", &message.message_header.message_id);                    
                     let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
                     if self.message_received(&peer_id, bytes).is_err() {
                         // println!("failed to Parse message !!! check  from - {:?} ", peer_id);
@@ -271,10 +281,39 @@ impl<F> RoutingNode<F> where F: Interface {
             return;
         }
         let bootstrap_id_response_msg = bootstrap_id_response_msg.unwrap();
+        assert!(self.bootstrap_node_id.is_none());
+        assert_eq!(self.bootstrap_endpoint, Some(peer_endpoint.clone()));
+        self.bootstrap_node_id = Some(bootstrap_id_response_msg.sender_id.clone());
 
         self.pending_connections.remove(&peer_endpoint);
         self.all_connections.0.insert(peer_endpoint.clone(), bootstrap_id_response_msg.sender_id.clone());
         self.all_connections.1.insert(bootstrap_id_response_msg.sender_id.clone(), peer_endpoint.clone());
+        println!("self.send_find_group_to_endpoint: ");
+        self.send_find_group_to_endpoint(peer_endpoint.clone());
+    }
+
+    fn send_find_group_to_endpoint(&mut self, endpoint: Endpoint) {
+        let id = self.get_next_message_id();
+        println!("find_group_to_endpoint id {}", id.clone());
+        let message = RoutingMessage::new(
+            MessageTypeTag::FindGroup,
+            MessageHeader::new(
+                id,
+                types::DestinationAddress {
+                     dest:     self.own_id.clone(),
+                     reply_to: Some(self.own_id.clone()),
+                },
+                self.our_source_address(),
+                types::Authority::ManagedNode),
+            FindGroup{ requester_id: self.own_id.clone(),
+                       target_id:    self.own_id.clone()},
+            &self.pmid.get_crypto_secret_sign_key());
+        let mut e = Encoder::from_memory();
+        e.encode(&[message]).unwrap();
+        match self.connection_manager.send(endpoint, e.into_bytes()) {
+            Ok(_) => println!("self.connection_manager sent"),
+            Err(_) => println!("self.connection_manager failed"),
+        };
     }
 
     fn put_own_public_pmid(&mut self) {
@@ -448,6 +487,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // and this node is in the group but the message destination is another group member node.
         // "not for me"
 
+        println!("message.message_type {:?}", &message.message_type);
         // pre-sentinel message handling
         match message.message_type {
             MessageTypeTag::UnauthorisedPut => self.handle_put_data(header, body),
@@ -621,7 +661,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
-        //println!("{:?} received FindGroup", self.own_id);
+        println!("{:?} received FindGroup", self.own_id);
         let find_group = try!(self.decode::<FindGroup>(&body).ok_or(()));
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> = vec![];
@@ -633,7 +673,8 @@ impl<F> RoutingNode<F> where F: Interface {
         let routing_msg = self.construct_find_group_response_msg(&original_header, &find_group, group);
 
         // FIXME(Peter) below method is needed
-        // send_swarm_or_parallel();
+        self.send_swarm_or_parallel(&original_header.send_to().dest, &self.encode(&routing_msg));
+
         // if node in my group && in non routing list send it to non_routnig list as well
         if original_header.source.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.unwrap();
