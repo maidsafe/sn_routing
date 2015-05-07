@@ -398,12 +398,10 @@ impl<F> RoutingClient<F> where F: Interface {
 
     fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) {
         let get_data_response = self.decode::<GetDataResponse>(&body).unwrap();
-        let response;
-        if get_data_response.error != RoutingError::Success {
-            response = Err(RoutingError::NoData);
-        } else {
-            response = Ok(get_data_response.data);
-        }
+        let response = match get_data_response.data {
+            Ok(data) => Ok(data),
+            Err(_)   => Err(RoutingError::NoData)
+        };
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(header.message_id, response);
     }

@@ -393,9 +393,10 @@ impl<F> RoutingNode<F> where F: Interface {
         // add to cache
         if message.message_type == MessageTypeTag::GetDataResponse {
             let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
-            if get_data_response.data.len() != 0 {
+            let data = try!(get_data_response.data.map_err(|_|()));
+            if data.len() != 0 {
                 let _ = self.interface.deref_mut().handle_cache_put(
-                    header.from_authority(), header.from(), get_data_response.data);
+                    header.from_authority(), header.from(), data);
             }
         }
 
@@ -679,7 +680,7 @@ impl<F> RoutingNode<F> where F: Interface {
             Ok(action) => match action {
                 Action::Reply(data) => {
                     let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_id, &our_authority),
-                        GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: data, error: RoutingError::Success },
+                        GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Ok(data) },
                         &self.pmid.get_crypto_secret_sign_key());
                     let encoded_msg = self.encode(&routing_msg);
                     self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
@@ -696,7 +697,7 @@ impl<F> RoutingNode<F> where F: Interface {
             },
             Err(error) => {
                 let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_id, &our_authority),
-                    GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: vec![], error: error },
+                    GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Err(error) },
                     &self.pmid.get_crypto_secret_sign_key());
                 let encoded_msg = self.encode(&routing_msg);
                 self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
@@ -745,13 +746,10 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
         let from = header.from();
-        let response;
-
-        if get_data_response.error != RoutingError::Success {
-            response = Err(RoutingError::NoData);
-        } else {
-            response = Ok(get_data_response.data);
-        }
+        let response = match get_data_response.data {
+            Err(error) => Err(RoutingError::NoData),
+            Ok(data) => Ok(data),
+        };
 
         self.interface.deref_mut().handle_get_response(from, response);
         Ok(())
@@ -1040,7 +1038,7 @@ impl<F> RoutingNode<F> where F: Interface {
             original_header.send_to(), self.our_source_address(),
             types::Authority::ManagedNode);
         let get_data_response = GetDataResponse {
-            name_and_type_id: get_data.name_and_type_id.clone(), data: data, error: RoutingError::Success
+            name_and_type_id: get_data.name_and_type_id.clone(), data: Ok(data)
         };
         RoutingMessage::new(MessageTypeTag::GetDataResponse, header,
             get_data_response, &self.pmid.get_crypto_secret_sign_key())

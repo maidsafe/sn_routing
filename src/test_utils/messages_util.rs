@@ -134,8 +134,7 @@ impl Random for messages::get_data_response::GetDataResponse {
     fn generate_random() -> messages::get_data_response::GetDataResponse {
         messages::get_data_response::GetDataResponse {
             name_and_type_id: Random::generate_random(),
-            data: generate_random_vec_u8(99),
-            error: RoutingError::Success,
+            data: Ok(generate_random_vec_u8(99)),
         }
     }
 }
