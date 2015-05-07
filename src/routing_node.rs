@@ -193,7 +193,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 Err(RoutingError::FailedToBootstrap)
             }
             Ok(bootstrapped_to) => {
-                println!("bootstrap endpoint {:?}", bootstrapped_to);
                 self.bootstrap_endpoint = Some(bootstrapped_to);
                 // starts swaping ID with the bootstrap peer
                 self.send_bootstrap_id_request();
@@ -234,7 +233,6 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn send_bootstrap_id_request(&mut self) {
-        println!("send_bootstrap_id_request: ");
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
         let source = types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None };
@@ -250,7 +248,6 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn send_bootstrap_id_response(&mut self) {
-        println!("send_bootstrap_id_response: ");
         let our_public_pmid: types::PublicPmid = types::PublicPmid::new(&self.pmid);
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
@@ -269,7 +266,6 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
         // println!("{} In handle bootstrap_id_response from {:?}", self.own_id,
         //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
-        println!("handle_bootstrap_id_response: {:?}", peer_endpoint);
         if self.all_connections.0.contains_key(&peer_endpoint) ||
            !self.pending_connections.contains(&peer_endpoint) {
             // ignore further request once added or not in sequence (not recorded as pending)
@@ -1072,7 +1068,6 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Bytes) {
-        println!("send_to_bootstrap_node {:?}", self.bootstrap_endpoint.clone().unwrap());
         let _ = self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), serialised_message.clone());
     }
 
@@ -1470,19 +1465,25 @@ mod test {
 
 #[test]
     fn network() {
-        let n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
-        let listening_endpoints = n1.accepting_on.clone();
-        println!("network: {:?}", listening_endpoints);
-        let mut n2 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
-        match n2.bootstrap(listening_endpoints, None) {
-            Ok(_) => { println!("Joined "); assert!(true) },
-            Err(_)  => { println!("Failed to joined "); assert!(false); }
+        let networ_size = 10usize;
+        let mut network = vec![];
+        network.push(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) }));
+        let listening_endpoints = network[0].accepting_on.clone();
+        println!("network: {:?}", &listening_endpoints);
+        for _ in 0..(networ_size - 1) {
+            let mut node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+            match node.bootstrap(listening_endpoints.clone(), None) {
+                Ok(_) => { assert!(true) },
+                Err(_)  => { assert!(false); }
+            }
+            network.push(node);
+            thread::sleep_ms(1000);
         }
-        thread::sleep_ms(5000);
-        assert_eq!(n1.routing_table.our_close_group().len(), 1);
-        assert_eq!(n2.routing_table.our_close_group().len(), 1);
-        assert_eq!(n1.all_connections.0.len(), 1);
-        assert_eq!(n2.all_connections.0.len(), 1);
+
+        for node in network {
+            assert_eq!(node.routing_table.our_close_group().len(), networ_size - 1);
+            assert_eq!(node.routing_table.our_close_group().len(), networ_size - 1);
+        }
     }
 
 
