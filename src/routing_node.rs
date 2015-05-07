@@ -1467,12 +1467,25 @@ mod test {
     fn network() {
         let networ_size = 10usize;
         let mut network = vec![];
-        network.push(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) }));
-        let listening_endpoints = network[0].accepting_on.clone();
+        let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
+        let use_node = node.clone();
+        let runner = thread::spawn(move || loop {
+                let mut use_node = use_node.lock().unwrap();
+                use_node.run();
+            });
+        let listening_endpoints = node.lock().unwrap().accepting_on.clone();
+        network.push(node.clone());
         println!("network: {:?}", &listening_endpoints);
         for _ in 0..(networ_size - 1) {
-            let mut node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
-            match node.bootstrap(listening_endpoints.clone(), None) {
+            let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
+            let use_node = node.clone();
+            let runner = thread::spawn(move || loop {
+                    let mut use_node = use_node.lock().unwrap();
+                    use_node.run();
+                });
+            let use_node2 = node.clone();
+            let mut use_node2 = use_node2.lock().unwrap();
+            match use_node2.bootstrap(listening_endpoints.clone(), None) {
                 Ok(_) => { assert!(true) },
                 Err(_)  => { assert!(false); }
             }
@@ -1480,9 +1493,12 @@ mod test {
             thread::sleep_ms(1000);
         }
 
+        while node.lock().unwrap().routing_table.our_close_group().len() <  networ_size - 1 {
+            thread::sleep_ms(10);
+        }
+
         for node in network {
-            assert_eq!(node.routing_table.our_close_group().len(), networ_size - 1);
-            assert_eq!(node.routing_table.our_close_group().len(), networ_size - 1);
+            assert_eq!(node.lock().unwrap().routing_table.our_close_group().len(), networ_size - 1);
         }
     }
 
