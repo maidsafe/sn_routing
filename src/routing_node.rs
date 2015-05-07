@@ -758,8 +758,7 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_post(&mut self, header : MessageHeader, body : Bytes) -> RecvResult {
         let post = try!(self.decode::<Post>(&body).ok_or(()));
         let our_authority = self.our_authority(&post.name, &header);
-        let action_result : RecvResult
-            = match self.interface.deref_mut().handle_post(our_authority.clone(),
+        match self.interface.deref_mut().handle_post(our_authority.clone(),
                                                            header.authority.clone(),
                                                            header.from(),
                                                            post.name.clone(),
@@ -785,8 +784,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 RoutingError::InvalidRequest => Err(()),
                 _ => Err(())
             },
-        };
-        action_result
+        }
     }
 
     fn handle_post_response(&self, header : MessageHeader, body : Bytes) -> RecvResult {
