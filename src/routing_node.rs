@@ -282,22 +282,9 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn send_find_group_to_endpoint(&mut self, endpoint: Endpoint) {
-        let id = self.get_next_message_id();
-        let message = RoutingMessage::new(
-            MessageTypeTag::FindGroup,
-            MessageHeader::new(
-                id,
-                types::DestinationAddress {
-                     dest:     self.own_id.clone(),
-                     reply_to: Some(self.own_id.clone()),
-                },
-                self.our_source_address(),
-                types::Authority::ManagedNode),
-            FindGroup{ requester_id: self.own_id.clone(),
-                       target_id:    self.own_id.clone()},
-            &self.pmid.get_crypto_secret_sign_key());
+        let own_id = Some(self.id());
         let mut e = Encoder::from_memory();
-        e.encode(&[message]).unwrap();
+        e.encode(&[self.construct_find_group_msg(own_id)]).unwrap();
         let _ = self.connection_manager.send(endpoint, e.into_bytes());
     }
 
@@ -508,13 +495,13 @@ impl<F> RoutingNode<F> where F: Interface {
         // println!("{} received bootstrap msg from {:?}", self.own_id,
         //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
         if message.message_type == MessageTypeTag::BootstrapIdRequest {
+            let request = try!(self.decode::<BootstrapIdRequest>(&message.serialised_body).ok_or(()));
             if self.bootstrap_node_id.is_none() {
-                let request = try!(self.decode::<BootstrapIdRequest>(&message.serialised_body).ok_or(()));
                 self.bootstrap_node_id = Some(request.sender_id.clone());
                 self.bootstrap_endpoint = Some(peer_endpoint.clone());
-                self.all_connections.0.insert(peer_endpoint.clone(), request.sender_id.clone());
-                self.all_connections.1.insert(request.sender_id.clone(), peer_endpoint.clone());
             }
+            self.all_connections.0.insert(peer_endpoint.clone(), request.sender_id.clone());
+            self.all_connections.1.insert(request.sender_id.clone(), peer_endpoint.clone());
             self.send_bootstrap_id_response(peer_endpoint);
             return Ok(());
         }
@@ -647,6 +634,7 @@ impl<F> RoutingNode<F> where F: Interface {
         for x in close_group {
             group.push(x.fob);
         }
+
         // add ourselves
         group.push(types::PublicPmid::new(&self.pmid));
         let routing_msg = self.construct_find_group_response_msg(&original_header, &find_group, group);
@@ -668,7 +656,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
-        //println!("{:?} received FindGroupResponse", self.own_id);
+        println!("{:?} received FindGroupResponse", self.own_id);
         let find_group_response = try!(self.decode::<FindGroupResponse>(&body).ok_or(()));
         for peer in find_group_response.group {
             if !self.routing_table.check_node(&peer.name) {
@@ -963,17 +951,17 @@ impl<F> RoutingNode<F> where F: Interface {
         )
     }
 
-    fn construct_find_group_msg(&mut self) -> RoutingMessage {
+    fn construct_find_group_msg(&mut self, reply_to: Option<NameType>) -> RoutingMessage {
         let header = MessageHeader::new(
             self.get_next_message_id(),
             types::DestinationAddress {
                  dest:     self.own_id.clone(),
-                 reply_to: None
+                 reply_to: reply_to
             },
             self.our_source_address(),
             types::Authority::ManagedNode);
 
-        RoutingMessage::new( MessageTypeTag::FindGroup, header,
+        RoutingMessage::new(MessageTypeTag::FindGroup, header,
             FindGroup{ requester_id: self.own_id.clone(),
                        target_id:    self.own_id.clone()},
             &self.pmid.get_crypto_secret_sign_key())
