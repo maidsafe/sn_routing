@@ -290,7 +290,7 @@ impl<F> RoutingNode<F> where F: Interface {
             return;
         }
         let bootstrap_id_response_msg = decode::<BootstrapIdResponse>(&bytes);
-        if bootstrap_id_response_msg.is_none() {  // TODO handle non routing connection here
+        if bootstrap_id_response_msg.is_err() {  // TODO handle non routing connection here
             return;
         }
         let bootstrap_id_response_msg = bootstrap_id_response_msg.unwrap();
@@ -381,7 +381,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn message_received(&mut self, peer_id: &NameType, serialised_message: Bytes) -> RecvResult {
         // Parse
-        let message = try!(decode::<RoutingMessage>(&serialised_message).ok_or(()));
+        let message = try!(decode::<RoutingMessage>(&serialised_message));
 
         // bootstrap_id_request from peer may arrive later then the response from the same peer
         if message.message_type == MessageTypeTag::BootstrapIdRequest {
@@ -402,7 +402,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // add to cache
         if message.message_type == MessageTypeTag::GetDataResponse {
-            let get_data_response = try!(decode::<GetDataResponse>(&body).ok_or(()));
+            let get_data_response = try!(decode::<GetDataResponse>(&body));
             let data = try!(get_data_response.data.map_err(|_|()));
             if data.len() != 0 {
                 let _ = self.interface.deref_mut().handle_cache_put(
@@ -412,7 +412,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // cache check / response
         if message.message_type == MessageTypeTag::GetData {
-            let get_data = try!(decode::<GetData>(&body).ok_or(()));
+            let get_data = try!(decode::<GetData>(&body));
             let mut retrieved_data: Result<Action, RoutingError>;
             let get_data_copy = get_data.clone();
             retrieved_data = self.interface.deref_mut().handle_cache_get(
@@ -499,11 +499,11 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn bootstrap_message_received(&mut self, peer_endpoint: Endpoint, serialised_message: Bytes) {
         let message = match decode::<RoutingMessage>(&serialised_message) {
-            None => {
-                println!("Problem parsing bootstrap message of size {} ", serialised_message.len());
+            Err(err) => {
+                println!("Problem parsing bootstrap message: {} ", err);
                 return;
             },
-            Some(msg) => msg,
+            Ok(msg) => msg,
         };
         // println!("{} received bootstrap msg from {:?}", self.own_id,
         //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
@@ -566,7 +566,7 @@ impl<F> RoutingNode<F> where F: Interface {
     /// It collects and replies with all the public signature keys from its close group.
     fn handle_get_group_key(&mut self, original_header : MessageHeader, body : Bytes) -> RecvResult {
         println!("{:?} received GetGroupKey ", self.own_id);
-        let get_group_key = try!(decode::<GetGroupKey>(&body).ok_or(()));
+        let get_group_key = try!(decode::<GetGroupKey>(&body));
         let close_group = self.routing_table.our_close_group();
         let mut group_keys : Vec<(NameType, types::PublicSignKey)>
             = Vec::with_capacity(close_group.len());
@@ -587,7 +587,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectRequest ", self.own_id);
-        let connect_request = try!(decode::<ConnectRequest>(&body).ok_or(()));
+        let connect_request = try!(decode::<ConnectRequest>(&body));
         if !(self.routing_table.check_node(&connect_request.requester_id)) {
            return Err(RecvError::DontKnow);
         }
@@ -612,7 +612,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn handle_connect_response(&mut self, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectResponse", self.own_id);
-        let connect_response = try!(decode::<ConnectResponse>(&body).ok_or(()));
+        let connect_response = try!(decode::<ConnectResponse>(&body));
         if !(self.routing_table.check_node(&connect_response.receiver_id)) {
            return Ok(())
         }
@@ -637,7 +637,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         //println!("{:?} received FindGroup", self.own_id);
-        let find_group = try!(decode::<FindGroup>(&body).ok_or(()));
+        let find_group = try!(decode::<FindGroup>(&body));
         let close_group = self.routing_table.our_close_group();
         let mut group: Vec<types::PublicPmid> = vec![];
         for x in close_group {
@@ -665,7 +665,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         //println!("{:?} received FindGroupResponse", self.own_id);
-        let find_group_response = try!(decode::<FindGroupResponse>(&body).ok_or(()));
+        let find_group_response = try!(decode::<FindGroupResponse>(&body));
         for peer in find_group_response.group {
             if !self.routing_table.check_node(&peer.name) {
                 continue;
@@ -682,7 +682,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
-        let get_data = try!(decode::<GetData>(&body).ok_or(()));
+        let get_data = try!(decode::<GetData>(&body));
         let type_id = get_data.name_and_type_id.type_id.clone();
         let our_authority = self.our_authority(&get_data.name_and_type_id.name, &header);
         let from_authority = header.from_authority();
@@ -720,7 +720,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_get_key(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
-        let get_key = try!(decode::<GetKey>(&body).ok_or(()));
+        let get_key = try!(decode::<GetKey>(&body));
         let type_id = 106u64;
         let our_authority = self.our_authority(&get_key.target_id, &header);
         let from_authority = header.from_authority();
@@ -736,7 +736,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         match action {
             Action::Reply(data) => {
-                let public_key = try!(decode::<types::PublicSignKey>(&data).ok_or(()));
+                let public_key = try!(decode::<types::PublicSignKey>(&data));
                 let routing_msg = RoutingMessage::new(MessageTypeTag::GetKeyResponse, header.create_reply(&self.own_id, &our_authority),
                     GetKeyResponse{ address : get_key.target_id.clone(), public_sign_key : public_key },
                     &self.pmid.get_crypto_secret_sign_key());
@@ -757,7 +757,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
-        let get_data_response = try!(decode::<GetDataResponse>(&body).ok_or(()));
+        let get_data_response = try!(decode::<GetDataResponse>(&body));
         let from = header.from();
         let response = match get_data_response.data {
             Err(error) => Err(RoutingError::NoData),
@@ -769,7 +769,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_post(&mut self, header : MessageHeader, body : Bytes) -> RecvResult {
-        let post = try!(decode::<Post>(&body).ok_or(()));
+        let post = try!(decode::<Post>(&body));
         let our_authority = self.our_authority(&post.name, &header);
         match self.interface.deref_mut().handle_post(our_authority.clone(),
                                                            header.authority.clone(),
@@ -809,7 +809,7 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_put_public_pmid(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         // if data type is public pmid and our authority is nae then add to public_pmid_cache
         // don't call upper layer if public pmid type
-        let put_public_pmid = try!(decode::<PutPublicPmid>(&body).ok_or(()));
+        let put_public_pmid = try!(decode::<PutPublicPmid>(&body));
         match self.our_authority(&put_public_pmid.public_pmid.name, &header) {
             Authority::NaeManager => {
                 // FIXME (prakash) signature check ?
@@ -827,7 +827,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     // // for clients, below methods are required
     fn handle_put_data(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
-        let put_data = try!(decode::<PutData>(&body).ok_or(()));
+        let put_data = try!(decode::<PutData>(&body));
         let our_authority = self.our_authority(&put_data.name, &header);
         let from_authority = header.from_authority();
         let from = header.from();
@@ -875,7 +875,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
-        let put_data_response = try!(decode::<PutDataResponse>(&body).ok_or(()));
+        let put_data_response = try!(decode::<PutDataResponse>(&body));
         let from_authority = header.from_authority();
         let from = header.from();
         let response;
@@ -1089,9 +1089,13 @@ fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
     Ok(enc.into_bytes())
 }
 
-fn decode<T>(bytes: &Bytes) -> Option<T> where T: Decodable {
+fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
     let mut dec = Decoder::from_bytes(&bytes[..]);
-    dec.decode().next().and_then(|result| result.ok())
+    match dec.decode().next() {
+        Some(result) => result,
+        None => Err(CborError::UnexpectedEOF)
+    }
+    //dec.decode().next().and_then(|result| result.ok())
 }
 
 #[cfg(test)]
@@ -1099,7 +1103,7 @@ mod test {
     use routing_node::{RoutingNode};
     use node_interface::*;
     use name_type::NameType;
-    use super::{RecvError, encode};
+    use super::encode;
     use super::super::{Action, RoutingError};
     use sendable::Sendable;
     use messages::put_data::PutData;
