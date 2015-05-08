@@ -19,7 +19,7 @@ use cbor::{Decoder, Encoder};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::Receiver;
@@ -72,7 +72,6 @@ pub struct RoutingNode<F: Interface> {
     own_id: NameType,
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
-    pending_connections: HashSet<Endpoint>,
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
     routing_table: RoutingTable,
     accepting_on: Option<Vec<Endpoint>>,
@@ -110,7 +109,6 @@ impl<F> RoutingNode<F> where F: Interface {
                       own_id : own_id.clone(),
                       event_input: event_input,
                       connection_manager: cm,
-                      pending_connections : HashSet::new(),
                       all_connections: (HashMap::new(), BTreeMap::new()),
                       routing_table : RoutingTable::new(own_id),
                       accepting_on: listeners.0,
@@ -217,7 +215,7 @@ impl<F> RoutingNode<F> where F: Interface {
                         // println!("failed to Parse message !!! check  from - {:?} ", peer_id);
                         // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
                     }
-                } else if self.pending_connections.contains(&endpoint) {
+                } else {
                     // reply with own_id if the incoming msg is BootstrapIdRequest
                     // record the peer_id if the incoming msg is BootstrapIdResponse
                     let _ = self.bootstrap_message_received(endpoint, bytes);
@@ -261,8 +259,7 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
         // println!("{} In handle bootstrap_id_response from {:?}", self.own_id,
         //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
-        if self.all_connections.0.contains_key(&peer_endpoint) ||
-           !self.pending_connections.contains(&peer_endpoint) {
+        if self.all_connections.0.contains_key(&peer_endpoint) {
             // ignore further request once added or not in sequence (not recorded as pending)
             return;
         }
@@ -275,7 +272,6 @@ impl<F> RoutingNode<F> where F: Interface {
         assert_eq!(self.bootstrap_endpoint, Some(peer_endpoint.clone()));
         self.bootstrap_node_id = Some(bootstrap_id_response_msg.sender_id.clone());
 
-        self.pending_connections.remove(&peer_endpoint);
         self.all_connections.0.insert(peer_endpoint.clone(), bootstrap_id_response_msg.sender_id.clone());
         self.all_connections.1.insert(bootstrap_id_response_msg.sender_id.clone(), peer_endpoint.clone());
         self.send_find_group_to_endpoint(peer_endpoint.clone());
@@ -319,16 +315,13 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
-        if self.all_connections.0.contains_key(&peer_endpoint) ||
-           self.pending_connections.contains(&peer_endpoint) {
+        if self.all_connections.0.contains_key(&peer_endpoint) {
             // ignore further request once received request or has added
             return;
         }
-        self.pending_connections.insert(peer_endpoint.clone());
     }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
-        self.pending_connections.remove(&peer_endpoint);
         let removed_entry = self.all_connections.0.remove(&peer_endpoint);
         if removed_entry.is_some() {
             let peer_id = removed_entry.unwrap();
@@ -1452,7 +1445,7 @@ mod test {
 /*
 #[test]
     fn network() {
-        let networ_size = 2usize;
+        let network_size = 2usize;
         let mut network = vec![];
         let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
         let use_node = node.clone();
@@ -1463,7 +1456,7 @@ mod test {
         let listening_endpoints = node.lock().unwrap().accepting_on.clone();
         network.push(node.clone());
         println!("network: {:?},    {:?}", &listening_endpoints, node.lock().unwrap().id());
-        for _ in 0..(networ_size - 1) {
+        for _ in 0..(network_size - 1) {
             let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
             let use_node = node.clone();
             let runner = thread::spawn(move || loop {
@@ -1480,12 +1473,12 @@ mod test {
             thread::sleep_ms(1000);
         }
 
-        while node.lock().unwrap().routing_table.our_close_group().len() <  networ_size - 1 {
+        while node.lock().unwrap().routing_table.our_close_group().len() <  network_size - 1 {
             thread::sleep_ms(10);
         }
 
         for node in network {
-            assert_eq!(node.lock().unwrap().routing_table.our_close_group().len(), networ_size - 1);
+            assert_eq!(node.lock().unwrap().routing_table.our_close_group().len(), network_size - 1);
         }
     }
 */
