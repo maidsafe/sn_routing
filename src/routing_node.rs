@@ -1,5 +1,6 @@
 // Copyright 2015 MaidSafe.net limited.
 //
+//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -58,7 +59,7 @@ use messages::get_client_key::GetKey;
 use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
-use super::{Action, RoutingError};
+use super::{Action, RoutingError, InterfaceError};
 
 use std::io;
 use std::convert::From;
@@ -73,6 +74,7 @@ type Bytes = Vec<u8>;
 #[derive(Debug)]
 enum RecvError {
     DontKnow,
+    Interface(InterfaceError),
     Io(io::Error),
     CborError(CborError),
     RoutingError(RoutingError),
@@ -94,6 +96,10 @@ impl From<CborError> for RecvError {
 
 impl From<io::Error> for RecvError {
     fn from(e: io::Error) -> RecvError { RecvError::Io(e) }
+}
+
+impl From<InterfaceError> for RecvError {
+    fn from(e: InterfaceError) -> RecvError { RecvError::Interface(e) }
 }
 
 /// DHT node
@@ -785,13 +791,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
                 Ok(())
             },
-            Err(e) => match e {
-                RoutingError::Abort => Ok(()),           // Vault terminates message flow
-                RoutingError::IncorrectData(_) => Err(RecvError::DontKnow), // TODO: reply with post_response
-                RoutingError::NoData => Err(RecvError::DontKnow),
-                RoutingError::InvalidRequest => Err(RecvError::DontKnow),
-                _ => Err(RecvError::DontKnow)
-            },
+            Err(e) => Err(From::from(e))
         }
     }
 
@@ -860,13 +860,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
                 Ok(())
             },
-            Err(e) => match e {
-                RoutingError::Abort => Ok(()),  // Interface terminates message flow
-                RoutingError::NoData => Err(RecvError::DontKnow),
-                RoutingError::InvalidRequest => Err(RecvError::DontKnow),
-                RoutingError::IncorrectData(data) => Err(RecvError::DontKnow),
-                _ => Err(RecvError::DontKnow)
-            }
+            Err(e) => Err(From::from(e))
         }
     }
 
@@ -1105,7 +1099,7 @@ mod test {
     use node_interface::*;
     use name_type::NameType;
     use super::encode;
-    use super::super::{Action, RoutingError};
+    use super::super::{Action, RoutingError, InterfaceError};
     use sendable::Sendable;
     use messages::put_data::PutData;
     use messages::put_data_response::PutDataResponse;
@@ -1165,7 +1159,7 @@ mod test {
 
     impl Interface for TestInterface {
         fn handle_get_key(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
-                          from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
+                          from_authority: types::Authority, from_address: NameType) -> Result<Action, InterfaceError> {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1173,7 +1167,7 @@ mod test {
             Ok(Action::Reply(data))
         }
         fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: types::Authority,
-                      from_authority: types::Authority, from_address: NameType) -> Result<Action, RoutingError> {
+                      from_authority: types::Authority, from_address: NameType) -> Result<Action, InterfaceError> {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1181,7 +1175,7 @@ mod test {
         }
         fn handle_put(&mut self, our_authority: types::Authority, from_authority: types::Authority,
                     from_address: NameType, dest_address: types::DestinationAddress,
-                    data: Vec<u8>) -> Result<Action, RoutingError> {
+                    data: Vec<u8>) -> Result<Action, InterfaceError> {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1192,7 +1186,7 @@ mod test {
             Ok(Action::Reply(data))
         }
         fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
-                       from_address: NameType, name: NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
+                       from_address: NameType, name: NameType, data: Vec<u8>) -> Result<Action, InterfaceError> {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1226,12 +1220,12 @@ mod test {
             unimplemented!();
         }
         fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
-                            from_address: NameType) -> Result<Action, RoutingError> {
-            Err(RoutingError::Abort)
+                            from_address: NameType) -> Result<Action, InterfaceError> {
+            Err(InterfaceError::Abort)
         }
         fn handle_cache_put(&mut self, from_authority: types::Authority, from_address: NameType,
-                            data: Vec<u8>) -> Result<Action, RoutingError> {
-            Err(RoutingError::Abort)
+                            data: Vec<u8>) -> Result<Action, InterfaceError> {
+            Err(InterfaceError::Abort)
         }
     }
     

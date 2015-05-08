@@ -25,8 +25,7 @@ use rand::random;
 use sodiumoxide;
 use NameType;
 use std::fmt;
-use std::str;
-use RoutingError;
+use InterfaceError;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -414,31 +413,28 @@ impl Decodable for DestinationAddress {
   }
 }
 
-impl Encodable for RoutingError {
+impl Encodable for InterfaceError {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let mut type_tag;
         match *self {
-            RoutingError::Abort => type_tag = "Abort",
-            RoutingError::FailedToBootstrap => type_tag = "FailedToBootstrap",
-            RoutingError::NoData => type_tag = "NoData",
-            RoutingError::InvalidRequest => type_tag = "InvalidRequest",
-            RoutingError::IncorrectData(ref data) => type_tag = str::from_utf8(data.as_ref()).unwrap()
+            InterfaceError::Abort => type_tag = "Abort",
+            InterfaceError::NoData => type_tag = "NoData",
+            InterfaceError::InvalidRequest => type_tag = "InvalidRequest",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
     }
 }
 
-impl Decodable for RoutingError {
-    fn decode<D: Decoder>(d: &mut D)->Result<RoutingError, D::Error> {
+impl Decodable for InterfaceError {
+    fn decode<D: Decoder>(d: &mut D)->Result<InterfaceError, D::Error> {
         try!(d.read_u64());
         let mut type_tag : String;
         type_tag = try!(Decodable::decode(d));
         match &type_tag[..] {
-            "Abort" => Ok(RoutingError::Abort),
-            "FailedToBootstrap" => Ok(RoutingError::FailedToBootstrap),
-            "NoData" => Ok(RoutingError::NoData),
-            "InvalidRequest" => Ok(RoutingError::InvalidRequest),
-            data => Ok(RoutingError::IncorrectData(data.to_string().into_bytes()))
+            "Abort" => Ok(InterfaceError::Abort),
+            "NoData" => Ok(InterfaceError::NoData),
+            "InvalidRequest" => Ok(InterfaceError::InvalidRequest),
+            _ => Err(d.error("Unrecognised InterfaceError"))
         }
     }
 }

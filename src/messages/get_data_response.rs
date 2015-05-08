@@ -21,17 +21,17 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
-use RoutingError;
+use InterfaceError;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetDataResponse {
   pub name_and_type_id : types::NameAndTypeId,
-  pub data : Result<Vec<u8>, RoutingError>,
+  pub data : Result<Vec<u8>, InterfaceError>,
 }
 
 impl Encodable for GetDataResponse {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let error : Option<&RoutingError> = match &self.data {
+        let error : Option<&InterfaceError> = match &self.data {
             &Ok(_) => None,
             &Err(ref e) => Some(e),
         };

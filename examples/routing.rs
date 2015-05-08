@@ -53,7 +53,7 @@ use routing::routing_client::{ClientIdPacket, RoutingClient};
 use routing::routing_node::{RoutingNode};
 use routing::sendable::Sendable;
 use routing::types;
-use routing::{Action, NameType, RoutingError};
+use routing::{Action, NameType, RoutingError, InterfaceError};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -196,18 +196,18 @@ struct TestNode {
 impl Interface for TestNode {
     fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: types::Authority,
                   from_authority: types::Authority, from_address: NameType)
-                   -> Result<Action, RoutingError> {
+                   -> Result<Action, InterfaceError> {
         println!("testing node handle get request from {} of chunk {}", from_address, name);
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
             return Ok(Action::Reply(data.1.serialised_contents().clone()));
         }
-        Err(RoutingError::NoData)
+        Err(InterfaceError::NoData)
     }
     fn handle_put(&mut self, our_authority: types::Authority, from_authority: types::Authority,
                 from_address: NameType, dest_address: types::DestinationAddress,
-                data_in: Vec<u8>) -> Result<Action, RoutingError> {
+                data_in: Vec<u8>) -> Result<Action, InterfaceError> {
         if our_authority != types::Authority::NaeManager {
             if our_authority == types::Authority::ClientManager {
                 let mut d = cbor::Decoder::from_bytes(data_in);
@@ -216,7 +216,7 @@ impl Interface for TestNode {
                 return Ok(Action::SendOn(vec![in_coming_data.name()]));
             }
             println!("returning as our_authority is {:?} which is not supposed to handle_put", our_authority);
-            return Err(RoutingError::Abort);
+            return Err(InterfaceError::Abort);
         }
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
@@ -226,15 +226,15 @@ impl Interface for TestNode {
         for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
             data.0 += 1;
             // return with abort to terminate the flow
-            return Err(RoutingError::Abort);
+            return Err(InterfaceError::Abort);
         }
         stats_value.stats.push((1, in_coming_data));
         // return with abort to terminate the flow
-        Err(RoutingError::Abort)
+        Err(InterfaceError::Abort)
     }
     fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
-                   from_address: NameType, name : NameType, data: Vec<u8>) -> Result<Action, RoutingError> {
-        Err(RoutingError::Abort)
+                   from_address: NameType, name : NameType, data: Vec<u8>) -> Result<Action, InterfaceError> {
+        Err(InterfaceError::Abort)
     }
     fn handle_get_response(&mut self, from_address: NameType,
                            response: Result<Vec<u8>, RoutingError>) -> routing::node_interface::RoutingNodeAction {
@@ -264,35 +264,35 @@ impl Interface for TestNode {
         unimplemented!();
     }
     fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
-                        from_address: NameType) -> Result<Action, RoutingError> {
+                        from_address: NameType) -> Result<Action, InterfaceError> {
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
             println!("testing node find data {} in cache", name);
             return Ok(Action::Reply(data.1.serialised_contents().clone()));
         }
-        Err(RoutingError::Abort)
+        Err(InterfaceError::Abort)
     }
     fn handle_cache_put(&mut self, from_authority: types::Authority, from_address: NameType,
-                        data: Vec<u8>) -> Result<Action, RoutingError> {
+                        data: Vec<u8>) -> Result<Action, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         let mut d = cbor::Decoder::from_bytes(data);
         let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
         for _ in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
             println!("testing node already have data {:?} in cache", in_coming_data);
-            return Err(RoutingError::Abort);
+            return Err(InterfaceError::Abort);
         }
         println!("testing node inserted data {:?} into cache", in_coming_data);
         stats_value.stats.push((0, in_coming_data));
-        Err(RoutingError::Abort)
+        Err(InterfaceError::Abort)
     }
     fn handle_get_key(&mut self,
                       type_id: u64,
                       name: NameType,
                       our_authority: routing::types::Authority,
                       from_authority: routing::types::Authority,
-                      from_address: NameType) -> Result<Action, RoutingError> {
+                      from_address: NameType) -> Result<Action, InterfaceError> {
         unimplemented!();
     }
 }
