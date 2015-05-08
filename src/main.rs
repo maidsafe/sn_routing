@@ -81,7 +81,33 @@ fn main () {
     let _ = thread_guard.join();
 }
 
-#[test]
-fn it_works() {
-  assert_eq!(always_true(), true);
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::thread::spawn;
+
+    #[test]
+    fn it_works() {
+        let run_vault = |vault: Vault| {
+            spawn(move || {
+                let mutate_vault = Arc::new(Mutex::new(vault));
+                let copied_vault = mutate_vault.clone();
+                let thread_guard = spawn(move || {
+                    loop {
+                        thread::sleep_ms(10);
+                        let _ = copied_vault.lock().unwrap().routing_node.run();
+                    }
+                });
+                let _ = mutate_vault.lock().unwrap().routing_node.bootstrap(None, None);
+                let _ = thread_guard.join();
+            })
+        };
+        for _ in 0..40 {
+            let _ = run_vault(Vault::new());
+            thread::sleep_ms(1000);
+        }
+        thread::sleep_ms(3000);
+    }
 }
