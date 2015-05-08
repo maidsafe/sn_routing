@@ -26,13 +26,13 @@ use super::random_trait::Random;
 use types::*;
 
 // TODO: Use IPv6 and non-TCP
-fn random_endpoint() -> Endpoint {
+pub fn random_endpoint() -> Endpoint {
     use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
     Endpoint::Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
         random::<u8>(), random::<u8>(),random::<u8>()), random::<u16>())))
 }
 
-fn random_endpoints() -> Vec<Endpoint> {
+pub fn random_endpoints() -> Vec<Endpoint> {
     let range = Range::new(1, 10);
     let mut rng = thread_rng();
     let count = range.ind_sample(&mut rng);
