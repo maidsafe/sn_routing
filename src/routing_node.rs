@@ -1455,20 +1455,27 @@ mod test {
         let mut network = vec![];
         let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
         let use_node = node.clone();
-        let runner = thread::spawn(move || loop {
+        let mut runners = Vec::new();
+        runners.push(thread::spawn(move || loop {
                 let mut use_node = use_node.lock().unwrap();
                 use_node.run();
-            });
+                if use_node.routing_table.size() == network_size - 1 {
+                    break;
+                }
+            }));
         let listening_endpoints = node.lock().unwrap().accepting_on.clone();
         network.push(node.clone());
         println!("network: {:?},    {:?}", &listening_endpoints, node.lock().unwrap().id());
         for _ in 0..(network_size - 1) {
             let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
             let use_node = node.clone();
-            let runner = thread::spawn(move || loop {
+            runners.push(thread::spawn(move || loop {
                     let mut use_node = use_node.lock().unwrap();
                     use_node.run();
-                });
+                    if use_node.routing_table.size() == network_size - 1 {
+                        break;
+                    }
+                }));
             let use_node2 = node.clone();
             let mut use_node2 = use_node2.lock().unwrap();
             match use_node2.bootstrap(Some(listening_endpoints.clone()), None) {
@@ -1479,12 +1486,8 @@ mod test {
             thread::sleep_ms(1000);
         }
 
-        while node.lock().unwrap().routing_table.our_close_group().len() <  network_size - 1 {
-            thread::sleep_ms(10);
-        }
-
-        for node in network {
-            assert_eq!(node.lock().unwrap().routing_table.our_close_group().len(), network_size - 1);
+        for runner in runners {
+            runner.join();
         }
     }
 
