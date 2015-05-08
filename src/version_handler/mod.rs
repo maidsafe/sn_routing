@@ -19,6 +19,7 @@
 use routing;
 use maidsafe_types;
 use routing::NameType;
+use routing::error::{ResponseError, InterfaceError};
 use routing::types::GROUP_SIZE;
 use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
@@ -93,15 +94,15 @@ impl VersionHandler {
     VersionHandler { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
   }
 
-  pub fn handle_get(&self, name: NameType) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_get(&self, name: NameType) ->Result<routing::Action, InterfaceError> {
     let data = self.chunk_store_.get(name);
     if data.len() == 0 {
-      return Err(routing::RoutingError::NoData);
+      return Err(From::from(ResponseError::NoData));
     }
     Ok(routing::Action::Reply(data))
   }
 
-  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, InterfaceError> {
     let mut data_name : NameType;
     let mut d = cbor::Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -109,11 +110,11 @@ impl VersionHandler {
       maidsafe_types::PayloadTypeTag::StructuredData => {
         data_name = payload.get_data::<maidsafe_types::StructuredData>().name();
       }
-       _ => return Err(routing::RoutingError::InvalidRequest)
+       _ => return Err(From::from(ResponseError::InvalidRequest))
     }
     // the type_tag needs to be stored as well, ChunkStore::put is overwritable
     self.chunk_store_.put(data_name, data);
-    return Err(routing::RoutingError::Success);
+    return Err(InterfaceError::Abort);
   }
 
   pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::RoutingNodeAction> {
@@ -139,6 +140,7 @@ mod test {
  use super::*;
  use maidsafe_types::*;
  use routing::types::*;
+ use routing::error::InterfaceError;
  use routing::NameType;
  use routing::sendable::Sendable;
 
@@ -158,7 +160,7 @@ mod test {
     let put_result = version_handler.handle_put(array_as_vector(encoder.as_bytes()));
     assert_eq!(put_result.is_err(), true);
     match put_result.err().unwrap() {
-        routing::RoutingError::Success => assert_eq!(true, true),
+        InterfaceError::Abort => assert_eq!(true, true),
         _ => assert_eq!(true, false),
     }
 

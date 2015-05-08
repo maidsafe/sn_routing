@@ -25,6 +25,7 @@ use routing::NameType;
 use maidsafe_types;
 use cbor::{ Decoder };
 use routing::sendable::Sendable;
+use routing::error::{InterfaceError, ResponseError};
 type Address = NameType;
 
 pub use self::database::DataManagerSendable;
@@ -38,10 +39,10 @@ pub struct DataManager {
 impl DataManager {
   pub fn new() -> DataManager { DataManager { db_: database::DataManagerDatabase::new() } }
 
-  pub fn handle_get(&mut self, name : &NameType) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_get(&mut self, name : &NameType) ->Result<routing::Action, InterfaceError> {
 	  let result = self.db_.get_pmid_nodes(name);
 	  if result.len() == 0 {
-	    return Err(routing::RoutingError::NoData);
+	    return Err(From::from(ResponseError::NoData));
 	  }
 
 	  let mut dest_pmids : Vec<NameType> = Vec::new();
@@ -51,7 +52,7 @@ impl DataManager {
 	  Ok(routing::Action::SendOn(dest_pmids))
   }
 
-  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<routing::Action, InterfaceError> {
     let mut name : routing::NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -65,12 +66,12 @@ impl DataManager {
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
         name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
       }
-      _ => return Err(routing::RoutingError::InvalidRequest)
+      _ => return Err(From::from(ResponseError::InvalidRequest))
     }
 
     let data_name = NameType::new(name.get_id());
     if self.db_.exist(&data_name) {
-      return Err(routing::RoutingError::Success);
+      return Err(InterfaceError::Abort);
     }
 
     nodes_in_table.sort_by(|a, b|

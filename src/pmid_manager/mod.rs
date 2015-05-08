@@ -20,6 +20,7 @@
 mod database;
 use routing;
 use routing::NameType;
+use routing::error::{ResponseError, InterfaceError};
 use routing::types::DestinationAddress;
 pub use self::database::PmidManagerAccountWrapper;
 
@@ -32,13 +33,13 @@ impl PmidManager {
     PmidManager { db_: database::PmidManagerDatabase::new() }
   }
 
-  pub fn handle_put(&mut self, dest_address: &DestinationAddress, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, dest_address: &DestinationAddress, data : &Vec<u8>) ->Result<routing::Action, InterfaceError> {
     if self.db_.put_data(&dest_address.dest, data.len() as u64) {
       let mut destinations : Vec<NameType> = Vec::new();
       destinations.push(dest_address.dest.clone());
       Ok(routing::Action::SendOn(destinations))
     } else {
-      Err(routing::RoutingError::InvalidRequest)
+      Err(From::from(ResponseError::InvalidRequest))
     }
   }
 
