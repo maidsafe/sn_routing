@@ -36,6 +36,10 @@ extern crate routing;
 extern crate maidsafe_types;
 extern crate rand;
 
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::thread::spawn;
+
 mod data_manager;
 mod maid_manager;
 mod pmid_manager;
@@ -64,8 +68,17 @@ impl Vault {
 }
 
 fn main () {
-  let mut vault = Vault::new();
-  vault.routing_node.run();
+    let vault = Vault::new();
+    let mutate_vault = Arc::new(Mutex::new(vault));
+    let copied_vault = mutate_vault.clone();
+    let thread_guard = spawn(move || {
+        loop {
+            thread::sleep_ms(10);
+            let _ = copied_vault.lock().unwrap().routing_node.run();
+        }
+    });
+    let _ = mutate_vault.lock().unwrap().routing_node.bootstrap(None, None);
+    let _ = thread_guard.join();
 }
 
 #[test]
