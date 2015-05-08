@@ -204,7 +204,7 @@ impl Interface for TestNode {
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
             return Ok(Action::Reply(data.1.serialised_contents().clone()));
         }
-        Err(InterfaceError::NoData)
+        Err(InterfaceError::Response(ResponseError::NoData))
     }
     fn handle_put(&mut self, our_authority: types::Authority, from_authority: types::Authority,
                 from_address: NameType, dest_address: types::DestinationAddress,

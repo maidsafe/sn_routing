@@ -25,7 +25,7 @@ use rand::random;
 use sodiumoxide;
 use NameType;
 use std::fmt;
-use error::InterfaceError;
+use error::ResponseError;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -413,28 +413,28 @@ impl Decodable for DestinationAddress {
   }
 }
 
-impl Encodable for InterfaceError {
+impl Encodable for ResponseError {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let mut type_tag;
         match *self {
-            InterfaceError::Abort => type_tag = "Abort",
-            InterfaceError::NoData => type_tag = "NoData",
-            InterfaceError::InvalidRequest => type_tag = "InvalidRequest",
+            ResponseError::NoData => type_tag = "NoData",
+            ResponseError::InvalidRequest => type_tag = "InvalidRequest",
+            ResponseError::IncorrectData(_) => type_tag = "IncorrectData",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
     }
 }
 
-impl Decodable for InterfaceError {
-    fn decode<D: Decoder>(d: &mut D)->Result<InterfaceError, D::Error> {
+impl Decodable for ResponseError {
+    fn decode<D: Decoder>(d: &mut D)->Result<ResponseError, D::Error> {
         try!(d.read_u64());
         let mut type_tag : String;
         type_tag = try!(Decodable::decode(d));
         match &type_tag[..] {
-            "Abort" => Ok(InterfaceError::Abort),
-            "NoData" => Ok(InterfaceError::NoData),
-            "InvalidRequest" => Ok(InterfaceError::InvalidRequest),
-            _ => Err(d.error("Unrecognised InterfaceError"))
+            "NoData" => Ok(ResponseError::NoData),
+            "InvalidRequest" => Ok(ResponseError::InvalidRequest),
+            "IncorrectData" => Ok(ResponseError::IncorrectData(vec![])),
+            _ => Err(d.error("Unrecognised ResponseError"))
         }
     }
 }

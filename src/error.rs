@@ -6,13 +6,13 @@ use cbor::CborError;
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum InterfaceError {
     Abort,
-    NoData,
-    InvalidRequest,
+    Response(ResponseError),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum ResponseError {
     NoData,
+    InvalidRequest,
     IncorrectData(Vec<u8>),
 }
 

@@ -60,7 +60,7 @@ use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action};
-use error::{ResponseError, RoutingError};
+use error::{ResponseError, RoutingError, InterfaceError};
 
 use std::io;
 use std::convert::From;
@@ -681,7 +681,8 @@ impl<F> RoutingNode<F> where F: Interface {
                     }
                 }
             },
-            Err(error) => {
+            Err(InterfaceError::Abort) => {;},
+            Err(InterfaceError::Response(error)) => {
                 let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_id, &our_authority),
                     GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Err(error) },
                     &self.pmid.get_crypto_secret_sign_key());
