@@ -15,58 +15,62 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused_assignments)]
-
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use std::net::{SocketAddr};
-use NameType;
 
+use crust::Endpoint;
+use NameType;
 use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectResponse {
-  pub requester_local    : SocketAddr,
-  pub requester_external : SocketAddr,
-  pub receiver_local     : SocketAddr,
-  pub receiver_external  : SocketAddr,
-  pub requester_id       : NameType,
-  pub receiver_id        : NameType,
-  pub receiver_fob       : types::PublicPmid
+    pub requester_local_endpoints: Vec<Endpoint>,
+    pub requester_external_endpoints: Vec<Endpoint>,
+    pub receiver_local_endpoints: Vec<Endpoint>,
+    pub receiver_external_endpoints: Vec<Endpoint>,
+    pub requester_id: NameType,
+    pub receiver_id: NameType,
+    pub receiver_fob: types::PublicPmid
 }
 
 impl Encodable for ConnectResponse {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    // FIXME: Implement Encodable/Decodable for SocketAddr
-    let requester_local    = format!("{}", self.requester_local);
-    let requester_external = format!("{}", self.requester_external);
-    let receiver_local     = format!("{}", self.receiver_local);
-    let receiver_external  = format!("{}", self.receiver_external);
-
-    CborTagEncode::new(5483_001, &(&requester_local, &requester_external,
-                                   &receiver_local, &receiver_external,
-                                   &self.requester_id, &self.receiver_id,
-                                   &self.receiver_fob)).encode(e)
-  }
+    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
+        CborTagEncode::new(5483_001, &(&self.requester_local_endpoints,
+                                       &self.requester_external_endpoints,
+                                       &self.receiver_local_endpoints,
+                                       &self.receiver_external_endpoints,
+                                       &self.requester_id,
+                                       &self.receiver_id,
+                                       &self.receiver_fob)).encode(encoder)
+    }
 }
 
 impl Decodable for ConnectResponse {
-  fn decode<D: Decoder>(d: &mut D)->Result<ConnectResponse, D::Error> {
-    try!(d.read_u64());
-    let (requester_local, requester_external, receiver_local, receiver_external,
-         requester_id, receiver_id, receiver_fob):
-        (String, String, String, String, NameType, NameType, types::PublicPmid)
-        = try!(Decodable::decode(d));
-
-    let req_local    = try!(requester_local   .parse().or(Err(d.error("can't parse req_local addr"))));
-    let req_external = try!(requester_external.parse().or(Err(d.error("can't parse req_external addr"))));
-    let rec_local    = try!(receiver_local    .parse().or(Err(d.error("can't parse rec_local addr"))));
-    let rec_external = try!(receiver_external .parse().or(Err(d.error("can't parse rec_external addr"))));
-
-    Ok(ConnectResponse { requester_local: req_local, requester_external: req_external,
-                         receiver_local: rec_local, receiver_external: rec_external,
-                         requester_id: requester_id, receiver_id: receiver_id, receiver_fob: receiver_fob})
-  }
+    fn decode<D: Decoder>(decoder: &mut D)->Result<ConnectResponse, D::Error> {
+        let _ = try!(decoder.read_u64());
+        let (requester_local,
+             requester_external,
+             receiver_local,
+             receiver_external,
+             requester_id,
+             receiver_id,
+             receiver_fob):
+                 (Vec<Endpoint>,
+                  Vec<Endpoint>,
+                  Vec<Endpoint>,
+                  Vec<Endpoint>,
+                  NameType,
+                  NameType,
+                  types::PublicPmid) = try!(Decodable::decode(decoder));
+        Ok(ConnectResponse { requester_local_endpoints: requester_local,
+                             requester_external_endpoints: requester_external,
+                             receiver_local_endpoints: receiver_local,
+                             receiver_external_endpoints: receiver_external,
+                             requester_id: requester_id,
+                             receiver_id: receiver_id,
+                             receiver_fob: receiver_fob
+                           })
+    }
 }
 
 #[cfg(test)]
