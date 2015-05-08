@@ -1452,7 +1452,6 @@ mod test {
 #[test]
     fn network() {
         let network_size = 2usize;
-        let mut network = vec![];
         let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
         let use_node = node.clone();
         let mut runners = Vec::new();
@@ -1464,10 +1463,9 @@ mod test {
                 }
             }));
         let listening_endpoints = node.lock().unwrap().accepting_on.clone();
-        network.push(node.clone());
         println!("network: {:?},    {:?}", &listening_endpoints, node.lock().unwrap().id());
         for _ in 0..(network_size - 1) {
-            let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
+            let mut node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
             let use_node = node.clone();
             runners.push(thread::spawn(move || loop {
                     let mut use_node = use_node.lock().unwrap();
@@ -1476,13 +1474,11 @@ mod test {
                         break;
                     }
                 }));
-            let use_node2 = node.clone();
-            let mut use_node2 = use_node2.lock().unwrap();
+            let mut use_node2 = node.lock().unwrap();
             match use_node2.bootstrap(Some(listening_endpoints.clone()), None) {
                 Ok(_) => { assert!(true) },
                 Err(_)  => { assert!(false); }
             }
-            network.push(node);
             thread::sleep_ms(1000);
         }
 
