@@ -60,7 +60,7 @@ use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action};
-use error::{ResponseError, RoutingError, InterfaceError};
+use error::{RoutingError, InterfaceError};
 
 use std::io;
 use std::convert::From;
@@ -372,7 +372,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // filter check
         if self.filter.check(&header.get_filter()) {
             // should just return quietly
-            return Err(RoutingError::DontKnow);
+            return Err(RoutingError::FilterCheckFailed);
         }
         // add to filter
         self.filter.add(header.get_filter());
@@ -469,7 +469,7 @@ impl<F> RoutingNode<F> where F: Interface {
                     //PutKey,
                     _ => {
                         println!("unhandled message from {:?}", peer_id);
-                        Err(RoutingError::DontKnow)
+                        Err(RoutingError::UnknownMessageType)
                     }
                 }
             }
@@ -561,7 +561,7 @@ impl<F> RoutingNode<F> where F: Interface {
         println!("{:?} received ConnectRequest ", self.own_id);
         let connect_request = try!(decode::<ConnectRequest>(&body));
         if !(self.routing_table.check_node(&connect_request.requester_id)) {
-           return Err(RoutingError::DontKnow);
+           return Err(RoutingError::AlreadyConnected);
         }
         //let (receiver_local, receiver_external) = try!(self.next_endpoint_pair().ok_or(()));  //FIXME this is correct place
 
@@ -571,12 +571,13 @@ impl<F> RoutingNode<F> where F: Interface {
 
         if original_header.source.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.unwrap();
+            // FIXME: Discuss: Might be the case that we want to ignore these errors?
             return match self.all_connections.1.get(&reply_to_address) {
                 Some(reply_to) => {
                     let msg = try!(encode(&routing_msg));
                     self.send_to(&reply_to, msg).map_err(From::from)
                 },
-                None => Err(RoutingError::DontKnow)
+                None => Err(RoutingError::Other)
             }
         }
 
@@ -622,15 +623,17 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // FIXME(Peter) below method is needed
         // send_swarm_or_parallel();
+
         // if node in my group && in non routing list send it to non_routnig list as well
         if original_header.source.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.unwrap();
+            // FIXME: Discuss: Might be the case that we want to ignore these errors?
             return match self.all_connections.1.get(&reply_to_address) {
                 Some(reply_to) => {
                     let msg = try!(encode(&routing_msg));
                     self.send_to(&reply_to, msg).map_err(From::from)
                 },
-                None => Err(RoutingError::DontKnow)
+                None => Err(RoutingError::Other)
             }
         }
         Ok(())
@@ -703,10 +706,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         let mut action: Action;
 
-        action = match self.mut_interface().handle_get_key(type_id, name, our_authority.clone(), from_authority, from) {
-            Ok(action) => action,
-            Err(_) => return Err(RoutingError::DontKnow)
-        };
+        action = try!(self.mut_interface().handle_get_key(type_id, name, our_authority.clone(), from_authority, from));
 
         match action {
             Action::Reply(data) => {
@@ -733,27 +733,22 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let get_data_response = try!(decode::<GetDataResponse>(&body));
         let from = header.from();
-        let response = match get_data_response.data {
-            Err(error) => Err(ResponseError::NoData),
-            Ok(data) => Ok(data),
-        };
-
-        self.mut_interface().handle_get_response(from, response);
+        self.mut_interface().handle_get_response(from, get_data_response.data);
         Ok(())
     }
 
     fn handle_post(&mut self, header : MessageHeader, body : Bytes) -> RecvResult {
         let post = try!(decode::<Post>(&body));
         let our_authority = self.our_authority(&post.name, &header);
-        match self.mut_interface().handle_post(our_authority.clone(),
-                                               header.authority.clone(),
-                                               header.from(),
-                                               post.name.clone(),
-                                               post.data.clone()) {
-            Ok(Action::Reply(data)) => {
+        match try!(self.mut_interface().handle_post(our_authority.clone(),
+                                                    header.authority.clone(),
+                                                    header.from(),
+                                                    post.name.clone(),
+                                                    post.data.clone())) {
+            Action::Reply(data) => {
                 Ok(()) // TODO: implement post_response
             },
-            Ok(Action::SendOn(destinations)) => {
+            Action::SendOn(destinations) => {
                 for destination in destinations {
                     let send_on_header = header.create_send_on(&self.own_id,
                         &our_authority, &destination);
@@ -763,7 +758,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
                 Ok(())
             },
-            Err(e) => Err(From::from(e))
         }
     }
 
@@ -788,7 +782,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 Ok(())
             },
             _ => {
-                Err(RoutingError::DontKnow)
+                Err(RoutingError::BadAuthority)
             }
         }
     }
@@ -801,9 +795,9 @@ impl<F> RoutingNode<F> where F: Interface {
         let from = header.from();
         let to = header.send_to();
 
-        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from,
-                                              to, put_data.data.clone()) {
-            Ok(Action::Reply(reply_data)) => {
+        match try!(self.mut_interface().handle_put(our_authority.clone(), from_authority, from,
+                                                   to, put_data.data.clone())) {
+            Action::Reply(reply_data) => {
                 let reply_header = header.create_reply(&self.own_id, &our_authority);
                 let reply_to = match our_authority {
                     Authority::ClientManager => match header.reply_to() {
@@ -821,7 +815,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 self.send_swarm_or_parallel(&reply_to, &try!(encode(&routing_msg)));
                 Ok(())
             },
-            Ok(Action::SendOn(destinations)) => {
+            Action::SendOn(destinations) => {
                 for destination in destinations {
                     let send_on_header = header.create_send_on(&self.own_id,
                         &our_authority, &destination);
@@ -831,7 +825,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
                 Ok(())
             },
-            Err(e) => Err(From::from(e))
         }
     }
 

@@ -26,17 +26,16 @@ impl From<ResponseError> for InterfaceError {
 //------------------------------------------------------------------------------
 #[derive(Debug)]
 pub enum RoutingError {
-    DontKnow,
+    Other, // TODO: Discuss: we probably don't need this error
+    BadAuthority,
+    AlreadyConnected,
+    UnknownMessageType,
+    FilterCheckFailed,
     FailedToBootstrap,
     Interface(InterfaceError),
     Io(io::Error),
     CborError(CborError),
     Response(ResponseError),
-}
-
-
-impl From<()> for RoutingError {
-    fn from(e: ()) -> RoutingError { RoutingError::DontKnow }
 }
 
 impl From<ResponseError> for RoutingError {
