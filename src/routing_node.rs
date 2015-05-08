@@ -263,7 +263,7 @@ impl<F> RoutingNode<F> where F: Interface {
             request, &self.pmid.get_crypto_secret_sign_key());
 
         // need to send to bootstrap node as we are not yet connected to anyone else
-        let _ = encode(&message).map(|m| self.send_to_bootstrap_node(&m));
+        let _ = encode(&message).map(|m| self.send_to_bootstrap_node(m));
     }
 
     fn send_bootstrap_id_response(&mut self) {
@@ -278,7 +278,7 @@ impl<F> RoutingNode<F> where F: Interface {
             request, &self.pmid.get_crypto_secret_sign_key());
 
         // need to send to bootstrap node as we are not yet connected to anyone else
-        let _ = encode(&message).map(|m| self.send_to_bootstrap_node(&m));
+        let _ = encode(&message).map(|m| self.send_to_bootstrap_node(m));
     }
 
     fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
@@ -323,7 +323,7 @@ impl<F> RoutingNode<F> where F: Interface {
             request, &self.pmid.get_crypto_secret_sign_key());
 
         // need to send to bootstrap node as we are not yet connected to anyone else
-        let _ = encode(&message).map(|m| self.send_to_bootstrap_node(&m));
+        let _ = encode(&message).map(|m| self.send_to_bootstrap_node(m));
     }
 
     fn next_endpoint_pair(&self) -> (Vec<Endpoint>, Vec<Endpoint>) {
@@ -345,7 +345,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let msg = self.construct_find_group_msg();
         let _ = encode(&msg).map(|msg| {
           debug_assert!(self.bootstrap_endpoint.is_some());
-          let _ = self.connection_manager.send(peer_endpoint, msg);
+          let _ = self.send_to(&peer_endpoint, msg);
         });
     }
 
@@ -446,12 +446,12 @@ impl<F> RoutingNode<F> where F: Interface {
                 let relay_to = self.all_connections.1.get(&header.destination.reply_to.clone().unwrap()).unwrap().clone();
                 // println!("{:?} relay response sent to nrt {:?} {}", self.own_id, header.destination.reply_to,
                 //          match relay_to.clone() { Tcp(socket_addr) => socket_addr } );
-                let _ = self.connection_manager.send(relay_to, serialised_message);
+                let _ = self.send_to(&relay_to, serialised_message);
             } else {
                 // TODO : what shall happen to relaying message ? routing_node choosing a closest node ?
-                for key in self.all_connections.0.keys() {
-                    println!("relaying response to {}", match key.clone() { Tcp(socket_addr) => socket_addr });
-                    let _ = self.connection_manager.send(key.clone(), serialised_message);
+                for endpoint in self.all_connections.0.keys() {
+                    println!("relaying response to {}", match endpoint.clone() { Tcp(socket_addr) => socket_addr });
+                    let _ = self.send_to(&endpoint, serialised_message);
                     return Ok(());
                 }
             }
@@ -597,7 +597,7 @@ impl<F> RoutingNode<F> where F: Interface {
             return match self.all_connections.1.get(&reply_to_address) {
                 Some(reply_to) => {
                     let msg = try!(encode(&routing_msg));
-                    self.connection_manager.send(reply_to.clone(), msg).map_err(From::from)
+                    self.send_to(&reply_to, msg).map_err(From::from)
                 },
                 None => Err(RecvError::DontKnow)
             }
@@ -651,7 +651,7 @@ impl<F> RoutingNode<F> where F: Interface {
             return match self.all_connections.1.get(&reply_to_address) {
                 Some(reply_to) => {
                     let msg = try!(encode(&routing_msg));
-                    self.connection_manager.send(reply_to.clone(), msg).map_err(From::from)
+                    self.send_to(&reply_to, msg).map_err(From::from)
                 },
                 None => Err(RecvError::DontKnow)
             }
@@ -670,7 +670,7 @@ impl<F> RoutingNode<F> where F: Interface {
             if self.bootstrap_endpoint.is_some() {
                 let bootstrap_endpoint = self.bootstrap_endpoint.clone();
                 let _ = encode(&routing_msg)
-                    .map(|msg| self.connection_manager.send(bootstrap_endpoint.unwrap(), msg));
+                    .map(|msg| self.send_to(&bootstrap_endpoint.unwrap(), msg));
             }
             // SendSwarmOrParallel  // FIXME
         }
@@ -1042,18 +1042,24 @@ impl<F> RoutingNode<F> where F: Interface {
         return temp;
     }
 
-    fn send_to_bootstrap_node(&mut self, serialised_message: &Bytes) {
-        let _ = self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), serialised_message.clone());
+    fn send_to(&self, endpoint: &Endpoint, serialised_message: Bytes) -> Result<(), io::Error> {
+        // FIXME: The send function of FM should take endpoint reference.
+        self.connection_manager.send(endpoint.clone(), serialised_message)
+    }
+
+    fn send_to_bootstrap_node(&mut self, serialised_message: Bytes) {
+        let _ = self.send_to(&self.bootstrap_endpoint.clone().unwrap(), serialised_message);
     }
 
     fn send_swarm_or_parallel(&self, target: &NameType, serialised_message: &Bytes) {
         for peer in self.get_connected_target(target) {
-            if self.all_connections.1.contains_key(&peer.id) {
-                let res = self.connection_manager.send(self.all_connections.1.get(&peer.id).unwrap().clone(),
-                                                       serialised_message.clone());
-                if res.is_err() {
-                    println!("{:?} failed to send to {:?}", self.own_id, peer.id);
+            match self.all_connections.1.get(&peer.id) {
+                Some(peer_ep) => {
+                    if self.send_to(&peer_ep, serialised_message.clone()).is_err() {
+                        println!("{:?} failed to send to {:?}", self.own_id, peer.id);
+                    }
                 }
+                None => {;}
             }
         }
     }
