@@ -1141,6 +1141,7 @@ mod test {
     use types::{Pmid, PublicPmid, Authority};
     use rustc_serialize::{Encodable, Decodable};
     use cbor::{Encoder};
+    use test_utils::{random_endpoint, random_endpoints};
 
     struct NullInterface;
 
@@ -1263,7 +1264,8 @@ mod test {
         let mut count : usize = 0;
         loop {
             routing_node.routing_table.add_node(routing_table::NodeInfo::new(
-                                       PublicPmid::new(&Pmid::new()), true));
+                                       PublicPmid::new(&Pmid::new()), random_endpoints(),
+                                       Some(random_endpoint())));
             count += 1;
             if count > 100 { break; }
             // if routing_node.routing_table.size() >=
@@ -1483,7 +1485,8 @@ mod test {
         let mut count : usize = 0;
         loop {
             routing_node.routing_table.add_node(routing_table::NodeInfo::new(
-                                       PublicPmid::new(&Pmid::new()), true));
+                                       PublicPmid::new(&Pmid::new()), random_endpoints(),
+                                       Some(random_endpoint())));
             count += 1;
             if routing_node.routing_table.size() >=
                 routing_table::RoutingTable::get_optimal_size() { break; }
