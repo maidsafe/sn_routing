@@ -375,8 +375,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
         let source = types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None };
         let authority = types::Authority::Client;
-        let request = BootstrapIdResponse { sender_id: self.id_packet.get_name().clone(),
-                                            sender_fob: types::PublicPmid::new(&types::Pmid::new()) };
+        let request = BootstrapIdResponse { sender_id: self.id_packet.get_name().clone() };
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::BootstrapIdResponse, header,
             request, &self.id_packet.get_crypto_secret_sign_key());

@@ -15,55 +15,43 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused_assignments)]
-
 extern crate rand;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use std::net::{SocketAddr};
 
-use types;
+use crust::Endpoint;
 use NameType;
+use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectRequest {
-  pub local         : SocketAddr,
-  pub external      : SocketAddr,
-  pub requester_id  : NameType,
-  pub receiver_id   : NameType,
-  pub requester_fob : types::PublicPmid
+    pub local_endpoints: Vec<Endpoint>,
+    pub external_endpoints: Vec<Endpoint>,
+    pub requester_id: NameType,
+    pub receiver_id: NameType,
+    pub requester_fob: types::PublicPmid
 }
 
 impl Encodable for ConnectRequest {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-      // FIXME: Implement Encodable/Decodable for SocketAddr
-      let local_str    = format!("{}", self.local);
-      let external_str = format!("{}", self.external);
-      CborTagEncode::new(5483_001, &(&local_str,
-                                     &external_str,
-                                     &self.requester_id,
-                                     &self.receiver_id,
-                                     &self.requester_fob)).encode(e)
-  }
+    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
+        CborTagEncode::new(5483_001, &(&self.local_endpoints, &self.external_endpoints,
+                                       &self.requester_id, &self.receiver_id, &self.requester_fob))
+                      .encode(encoder)
+    }
 }
 
 impl Decodable for ConnectRequest {
-  fn decode<D: Decoder>(d: &mut D)->Result<ConnectRequest, D::Error> {
-
-    try!(d.read_u64());
-
-    let (local_str, external_str, requester_id, receiver_id, requester_fob):
-        (String, String, NameType, NameType, types::PublicPmid) = try!(Decodable::decode(d));
-
-    let local    = try!(local_str   .parse().or(Err(d.error("can't parse local addr"))));
-    let external = try!(external_str.parse().or(Err(d.error("can't parse external addr"))));
-
-    Ok(ConnectRequest { local: local,
-                        external: external,
-                        requester_id: requester_id,
-                        receiver_id: receiver_id,
-                        requester_fob: requester_fob})
-  }
+    fn decode<D: Decoder>(decoder: &mut D)->Result<ConnectRequest, D::Error> {
+        let _ = try!(decoder.read_u64());
+        let (local_endpoints, external_endpoints, requester_id, receiver_id, requester_fob):
+            (Vec<Endpoint>, Vec<Endpoint>, NameType, NameType, types::PublicPmid) =
+                try!(Decodable::decode(decoder));
+        Ok(ConnectRequest { local_endpoints: local_endpoints,
+                            external_endpoints: external_endpoints,
+                            requester_id: requester_id,
+                            receiver_id: receiver_id,
+                            requester_fob: requester_fob})
+    }
 }
 
 #[cfg(test)]
