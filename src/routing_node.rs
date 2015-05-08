@@ -585,6 +585,9 @@ impl<F> RoutingNode<F> where F: Interface {
            return Err(());
         }
 
+        let endpoints =  Vec::new(); //FIXME Fraser (fill the vector with requester's endpoint)
+        self.connection_manager.connect(endpoints);
+
         let routing_msg = self.construct_connect_response_msg(&original_header, &connect_request);
         let serialised_message = self.encode(&routing_msg);
 
@@ -609,15 +612,18 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_connect_response(&mut self, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectResponse", self.own_id);
         let connect_response = try!(self.decode::<ConnectResponse>(&body).ok_or(()));
-        if !(self.routing_table.check_node(&connect_response.receiver_id)) {
-           return Ok(())
+        let peer_node_info = NodeInfo::new(connect_response.receiver_fob.clone(), false);
+
+        let (added, _) = self.routing_table.add_node(peer_node_info);
+
+        if !added {  // no need to do anything if we don't add the peer in to routing table
+           return Err(());
         }
 
-        // The following code block is no longer required due to the changes in crust
-        // let success_msg = self.construct_success_msg();
-        // let msg = self.encode(&success_msg);
-        // let _ = self.connection_manager.connect(msg);
+        let endpoints =  Vec::new(); //FIXME Fraser (fill the vector with requester's endpoint)
+        self.connection_manager.connect(endpoints);
 
+// FIXME(Prakash) this can be deleted
         // workaround for zero state
         if (self.all_connections.0.len() == 1) && (self.all_connections.1.contains_key(&connect_response.receiver_id)) {
             let peer_node_info = NodeInfo::new(connect_response.receiver_fob, true);
