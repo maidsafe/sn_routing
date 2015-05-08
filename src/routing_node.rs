@@ -127,11 +127,11 @@ impl<F> RoutingNode<F> where F: Interface {
     pub fn get(&mut self, type_id: u64, name: NameType) {
         let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()),
                                                      reply_to: None };
-        let header = MessageHeader::new(self.get_next_message_id(), 
-                                        destination, self.our_source_address(), 
+        let header = MessageHeader::new(self.get_next_message_id(),
+                                        destination, self.our_source_address(),
                                         types::Authority::Client);
-        let request = GetData{ requester: self.our_source_address(),  
-                               name_and_type_id: NameAndTypeId{name: NameType::new(name.get_id()), 
+        let request = GetData{ requester: self.our_source_address(),
+                               name_and_type_id: NameAndTypeId{name: NameType::new(name.get_id()),
                                                                type_id: type_id} };
         let message = RoutingMessage::new(MessageTypeTag::GetData, header,
                                           request, &self.pmid.get_crypto_secret_sign_key());
@@ -150,21 +150,21 @@ impl<F> RoutingNode<F> where F: Interface {
             types::Authority::ManagedNode
         };
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(self.get_next_message_id(), 
+        let header = MessageHeader::new(self.get_next_message_id(),
                                         destination, self.our_source_address(), authority);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
                 request, &self.pmid.get_crypto_secret_sign_key());
         let mut e = Encoder::from_memory();
 
         if e.encode(&[message]).is_ok() {
-        self.send_swarm_or_parallel(&self.id(), &e.into_bytes()); } 
+        self.send_swarm_or_parallel(&self.id(), &e.into_bytes()); }
     }
 
     /// Add something to the network
     pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
         let destination = types::DestinationAddress{ dest: destination, reply_to: None };
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(self.get_next_message_id(), destination, 
+        let header = MessageHeader::new(self.get_next_message_id(), destination,
                                         self.our_source_address(), types::Authority::Unknown);
         let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut, header,
                 request, &self.pmid.get_crypto_secret_sign_key());
@@ -577,14 +577,22 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectRequest ", self.own_id);
         let connect_request = try!(self.decode::<ConnectRequest>(&body).ok_or(()));
-        if !(self.routing_table.check_node(&connect_request.requester_id)) {
+        let peer_node_info = NodeInfo::new(connect_request.requester_fob.clone(), false);
+
+        let (added, _) = self.routing_table.add_node(peer_node_info);
+
+        if !added {  // no need to do anything if we don't add the peer in to routing table
            return Err(());
         }
-        //let (receiver_local, receiver_external) = try!(self.next_endpoint_pair().ok_or(()));  //FIXME this is correct place
 
         let routing_msg = self.construct_connect_response_msg(&original_header, &connect_request);
-        // FIXME(Peter) below method is needed
-        // send_swarm_or_parallel();
+        let serialised_message = self.encode(&routing_msg);
+
+        self.send_swarm_or_parallel(&connect_request.requester_id, &serialised_message);
+
+        if self.bootstrap_endpoint.is_some() {
+            self.send_to_bootstrap_node(&serialised_message);
+        }
 
         if original_header.source.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.unwrap();
@@ -654,17 +662,25 @@ impl<F> RoutingNode<F> where F: Interface {
         //println!("{:?} received FindGroupResponse", self.own_id);
         let find_group_response = try!(self.decode::<FindGroupResponse>(&body).ok_or(()));
         for peer in find_group_response.group {
-            if !self.routing_table.check_node(&peer.name) {
-                continue;
-            }
-            let routing_msg = self.construct_connect_request_msg(&peer.name);
-            if self.bootstrap_endpoint.is_some() {
-                let bootstrap_endpoint = self.bootstrap_endpoint.clone();
-                let _ = self.connection_manager.send(bootstrap_endpoint.unwrap(), self.encode(&routing_msg));
-            }
-            // SendSwarmOrParallel  // FIXME
+            self.check_and_send_connect_request_msg(&peer.name);
         }
         Ok(())
+    }
+
+    //FIXME  not sure if we need to return a RecvResult or a generic error
+    fn check_and_send_connect_request_msg(&mut self, peer_id: &NameType) {
+        if !self.routing_table.check_node(&peer_id) {
+            return;
+        }
+        let routing_msg = self.construct_connect_request_msg(&peer_id);
+        let serialised_message = self.encode(&routing_msg);
+
+        self.send_swarm_or_parallel(peer_id, &serialised_message);
+
+        if self.bootstrap_endpoint.is_some() {
+            self.send_to_bootstrap_node(&serialised_message);
+        }
+        // Ok(())
     }
 
     fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
@@ -982,7 +998,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         let (requester_local, requester_external) = self.next_endpoint_pair();
 
-        // FIXME: Discuss how to use other eps from the list.
+        // FIXME: Discuss how to use other eps from the list. // FIXME prakash
         let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
             if eps.is_empty() {
                 SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
@@ -1052,6 +1068,7 @@ impl<F> RoutingNode<F> where F: Interface {
         return temp;
     }
 
+    // FIXME(Peter) handle return err if required
     fn send_to_bootstrap_node(&mut self, serialised_message: &Bytes) {
         let _ = self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), serialised_message.clone());
     }
@@ -1221,7 +1238,7 @@ mod test {
             Err(RoutingError::Success)
         }
     }
-    
+
     #[test]
     fn check_next_id() {
       let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
