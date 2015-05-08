@@ -20,7 +20,6 @@ use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
 use std::collections::{BTreeMap, HashMap};
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::mpsc;
 use std::boxed::Box;
 use std::ops::DerefMut;
@@ -293,11 +292,11 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
-        if self.all_connections.0.contains_key(&peer_endpoint) {
-            // ignore further request once received request or has added
+        if self.routing_table.mark_as_connected(&peer_endpoint) {
             return;
         }
-    }
+        // FIXME
+   }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
         let removed_entry = self.all_connections.0.remove(&peer_endpoint);
