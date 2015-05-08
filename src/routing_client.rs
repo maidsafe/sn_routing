@@ -33,7 +33,7 @@ use message_header;
 use name_type::NameType;
 use sendable::Sendable;
 use types;
-use error::RoutingError;
+use error::ResponseError;
 use cbor::{Decoder, Encoder};
 use messages::bootstrap_id_request::BootstrapIdRequest;
 use messages::bootstrap_id_response::BootstrapIdResponse;
@@ -337,11 +337,11 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
-                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
+                     beacon_port: Option<u16>) -> Result<(), ResponseError> {
         match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
             Err(reason) => {
                 println!("Failed to connect to network (this might be the first node)\nDetails: {:?}", reason);
-                Err(RoutingError::FailedToBootstrap)
+                Err(ResponseError::FailedToBootstrap)
             }
             Ok(bootstrapped_to) => {
                 match bootstrapped_to.clone() {
@@ -400,7 +400,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let get_data_response = self.decode::<GetDataResponse>(&body).unwrap();
         let response = match get_data_response.data {
             Ok(data) => Ok(data),
-            Err(_)   => Err(RoutingError::NoData)
+            Err(_)   => Err(ResponseError::NoData)
         };
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(header.message_id, response);
@@ -422,20 +422,20 @@ impl<F> RoutingClient<F> where F: Interface {
 //     use types::*;
 //     use client_interface::Interface;
 //     use Action;
-//     use RoutingError;
+//     use ResponseError;
 //     use maidsafe_types::Random;
 //     use maidsafe_types::Maid;
 //
 //     struct TestInterface;
 //
 //     impl Interface for TestInterface {
-//         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: NameType , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+//         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: NameType , data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
 //         fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-//                       from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-//         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-//         fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
-//         fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-//         fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+//                       from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
+//         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
+//         fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!() }
+//         fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
+//         fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
 //         fn add_node(&mut self, node: NameType) { unimplemented!(); }
 //         fn drop_node(&mut self, node: NameType) { unimplemented!(); }
 //     }

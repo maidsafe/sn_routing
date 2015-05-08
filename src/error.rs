@@ -11,7 +11,7 @@ pub enum InterfaceError {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub enum RoutingError {
+pub enum ResponseError {
   FailedToBootstrap,
   NoData,
   IncorrectData(Vec<u8>),
@@ -23,7 +23,7 @@ pub enum RecvError {
     Interface(InterfaceError),
     Io(io::Error),
     CborError(CborError),
-    RoutingError(RoutingError),
+    ResponseError(ResponseError),
 }
 
 
@@ -31,8 +31,8 @@ impl From<()> for RecvError {
     fn from(e: ()) -> RecvError { RecvError::DontKnow }
 }
 
-impl From<RoutingError> for RecvError {
-    fn from(e: RoutingError) -> RecvError { RecvError::RoutingError(e) }
+impl From<ResponseError> for RecvError {
+    fn from(e: ResponseError) -> RecvError { RecvError::ResponseError(e) }
 }
 
 impl From<CborError> for RecvError {

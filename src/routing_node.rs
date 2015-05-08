@@ -60,7 +60,7 @@ use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action};
-use error::{RoutingError, RecvError};
+use error::{ResponseError, RecvError};
 
 use std::io;
 use std::convert::From;
@@ -189,9 +189,9 @@ impl<F> RoutingNode<F> where F: Interface {
     pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
 
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
-                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
+                     beacon_port: Option<u16>) -> Result<(), ResponseError> {
         let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
-                                   .map_err(|_|RoutingError::FailedToBootstrap));
+                                   .map_err(|_|ResponseError::FailedToBootstrap));
         self.bootstrap_endpoint = Some(bootstrapped_to);
         // starts swaping ID with the bootstrap peer
         self.send_bootstrap_id_request();
@@ -733,7 +733,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let get_data_response = try!(decode::<GetDataResponse>(&body));
         let from = header.from();
         let response = match get_data_response.data {
-            Err(error) => Err(RoutingError::NoData),
+            Err(error) => Err(ResponseError::NoData),
             Ok(data) => Ok(data),
         };
 
@@ -842,7 +842,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let response = if put_data_response.data.len() != 0 {
                            Ok(put_data_response.data)
                        } else {
-                           Err(RoutingError::IncorrectData(put_data_response.error))
+                           Err(ResponseError::IncorrectData(put_data_response.error))
                        };
 
         self.mut_interface().handle_put_response(from_authority, from, response);
@@ -1071,7 +1071,7 @@ mod test {
     use name_type::NameType;
     use super::encode;
     use super::super::Action;
-    use error::{RoutingError, InterfaceError};
+    use error::{ResponseError, InterfaceError};
     use sendable::Sendable;
     use messages::put_data::PutData;
     use messages::put_data_response::PutDataResponse;
@@ -1166,7 +1166,7 @@ mod test {
             Ok(Action::Reply(data))
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                               RoutingError>) -> RoutingNodeAction {
+                               ResponseError>) -> RoutingNodeAction {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1174,7 +1174,7 @@ mod test {
             RoutingNodeAction::None
         }
         fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
-                               response: Result<Vec<u8>, RoutingError>) {
+                               response: Result<Vec<u8>, ResponseError>) {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1184,7 +1184,7 @@ mod test {
             };
         }
         fn handle_post_response(&mut self, from_authority: types::Authority, from_address: NameType,
-                                response: Result<Vec<u8>, RoutingError>) {
+                                response: Result<Vec<u8>, ResponseError>) {
             unimplemented!();
         }
         fn handle_churn(&mut self, close_group: Vec<NameType>)

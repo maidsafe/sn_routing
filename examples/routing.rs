@@ -54,7 +54,7 @@ use routing::routing_node::{RoutingNode};
 use routing::sendable::Sendable;
 use routing::types;
 use routing::{Action, NameType};
-use routing::error::{RoutingError, InterfaceError};
+use routing::error::{ResponseError, InterfaceError};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -172,7 +172,7 @@ struct TestClient {
 }
 
 impl routing::client_interface::Interface for TestClient {
-    fn handle_get_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, RoutingError>) {
+    fn handle_get_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, ResponseError>) {
         if response.is_ok() {
             let mut d = cbor::Decoder::from_bytes(response.unwrap());
             let response_data: TestData = d.decode().next().unwrap().unwrap();
@@ -181,7 +181,7 @@ impl routing::client_interface::Interface for TestClient {
             println!("testing client received error get_response");
         }
     }
-    fn handle_put_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, RoutingError>) {
+    fn handle_put_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, ResponseError>) {
         if response.is_ok() {
             println!("testing client shall not receive a success put_response");
         } else {
@@ -238,7 +238,7 @@ impl Interface for TestNode {
         Err(InterfaceError::Abort)
     }
     fn handle_get_response(&mut self, from_address: NameType,
-                           response: Result<Vec<u8>, RoutingError>) -> routing::node_interface::RoutingNodeAction {
+                           response: Result<Vec<u8>, ResponseError>) -> routing::node_interface::RoutingNodeAction {
         if response.is_ok() {
             let mut d = cbor::Decoder::from_bytes(response.unwrap());
             let response_data: TestData = d.decode().next().unwrap().unwrap();
@@ -249,7 +249,7 @@ impl Interface for TestNode {
         routing::node_interface::RoutingNodeAction::None
     }
     fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
-                           response: Result<Vec<u8>, RoutingError>) {
+                           response: Result<Vec<u8>, ResponseError>) {
         if response.is_ok() {
             println!("testing node shall not receive a put_response in case of success");
         } else {
@@ -257,7 +257,7 @@ impl Interface for TestNode {
         }
     }
     fn handle_post_response(&mut self, from_authority: types::Authority, from_address: NameType,
-                            response: Result<Vec<u8>, RoutingError>) {
+                            response: Result<Vec<u8>, ResponseError>) {
         unimplemented!();
     }
     fn handle_churn(&mut self, close_group: Vec<NameType>)

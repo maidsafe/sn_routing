@@ -19,7 +19,7 @@ use sendable::Sendable;
 use name_type::NameType;
 use types::{Authority, DestinationAddress};
 use super::Action;
-use error::{InterfaceError, RoutingError};
+use error::{InterfaceError, ResponseError};
 
 pub enum RoutingNodeAction {
     None,
@@ -63,17 +63,17 @@ pub trait Interface : Sync + Send {
 
     fn handle_get_response(&mut self,
                            from_address: NameType,
-                           response: Result<Vec<u8>, RoutingError>) -> RoutingNodeAction;
+                           response: Result<Vec<u8>, ResponseError>) -> RoutingNodeAction;
 
     fn handle_put_response(&mut self,
                            from_authority: Authority,
                            from_address: NameType,
-                           response: Result<Vec<u8>, RoutingError>);
+                           response: Result<Vec<u8>, ResponseError>);
 
     fn handle_post_response(&mut self,
                             from_authority: Authority,
                             from_address: NameType,
-                            response: Result<Vec<u8>, RoutingError>);
+                            response: Result<Vec<u8>, ResponseError>);
 
     fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<RoutingNodeAction>;
 
