@@ -59,7 +59,8 @@ use messages::get_client_key::GetKey;
 use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
-use super::{Action, RoutingError, InterfaceError};
+use super::{Action};
+use error::{RoutingError, RecvError};
 
 use std::io;
 use std::convert::From;
@@ -70,37 +71,7 @@ pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
 
-//#[derive(PartialEq, Eq, Clone, Debug)]
-#[derive(Debug)]
-enum RecvError {
-    DontKnow,
-    Interface(InterfaceError),
-    Io(io::Error),
-    CborError(CborError),
-    RoutingError(RoutingError),
-}
-
 type RecvResult = Result<(), RecvError>;
-
-impl From<()> for RecvError {
-    fn from(e: ()) -> RecvError { RecvError::DontKnow }
-}
-
-impl From<RoutingError> for RecvError {
-    fn from(e: RoutingError) -> RecvError { RecvError::RoutingError(e) }
-}
-
-impl From<CborError> for RecvError {
-    fn from(e: CborError) -> RecvError { RecvError::CborError(e) }
-}
-
-impl From<io::Error> for RecvError {
-    fn from(e: io::Error) -> RecvError { RecvError::Io(e) }
-}
-
-impl From<InterfaceError> for RecvError {
-    fn from(e: InterfaceError) -> RecvError { RecvError::Interface(e) }
-}
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
@@ -1099,7 +1070,8 @@ mod test {
     use node_interface::*;
     use name_type::NameType;
     use super::encode;
-    use super::super::{Action, RoutingError, InterfaceError};
+    use super::super::Action;
+    use error::{RoutingError, InterfaceError};
     use sendable::Sendable;
     use messages::put_data::PutData;
     use messages::put_data_response::PutDataResponse;

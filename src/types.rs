@@ -25,7 +25,7 @@ use rand::random;
 use sodiumoxide;
 use NameType;
 use std::fmt;
-use InterfaceError;
+use error::InterfaceError;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();

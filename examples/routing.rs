@@ -53,7 +53,8 @@ use routing::routing_client::{ClientIdPacket, RoutingClient};
 use routing::routing_node::{RoutingNode};
 use routing::sendable::Sendable;
 use routing::types;
-use routing::{Action, NameType, RoutingError, InterfaceError};
+use routing::{Action, NameType};
+use routing::error::{RoutingError, InterfaceError};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "

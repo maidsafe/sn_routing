@@ -72,6 +72,7 @@ pub mod routing_node;
 pub mod sendable;
 pub mod test_utils;
 pub mod types;
+pub mod error;
 
 use sodiumoxide::crypto;
 
@@ -88,19 +89,5 @@ struct SignedKey {
 pub enum Action {
   Reply(Vec<u8>),
   SendOn(Vec<NameType>),
-}
-
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub enum InterfaceError {
-  Abort,
-  NoData,
-  InvalidRequest,
-}
-
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub enum RoutingError {
-  FailedToBootstrap,
-  NoData,
-  IncorrectData(Vec<u8>),
 }
 

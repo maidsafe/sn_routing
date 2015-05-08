@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use types::MessageId;
-use super::RoutingError;
+use error::RoutingError;
 
 pub trait Interface : Sync + Send {
     fn handle_get_response(&mut self,

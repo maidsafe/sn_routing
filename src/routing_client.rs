@@ -33,7 +33,7 @@ use message_header;
 use name_type::NameType;
 use sendable::Sendable;
 use types;
-use RoutingError;
+use error::RoutingError;
 use cbor::{Decoder, Encoder};
 use messages::bootstrap_id_request::BootstrapIdRequest;
 use messages::bootstrap_id_response::BootstrapIdResponse;

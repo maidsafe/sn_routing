@@ -21,7 +21,7 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
-use InterfaceError;
+use error::InterfaceError;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetDataResponse {
