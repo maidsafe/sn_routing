@@ -33,7 +33,7 @@ use message_header;
 use name_type::NameType;
 use sendable::Sendable;
 use types;
-use error::ResponseError;
+use error::{RoutingError, ResponseError};
 use cbor::{Decoder, Encoder};
 use messages::bootstrap_id_request::BootstrapIdRequest;
 use messages::bootstrap_id_response::BootstrapIdResponse;
@@ -337,11 +337,11 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
-                     beacon_port: Option<u16>) -> Result<(), ResponseError> {
+                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
         match self.connection_manager.bootstrap(bootstrap_list, beacon_port) {
             Err(reason) => {
                 println!("Failed to connect to network (this might be the first node)\nDetails: {:?}", reason);
-                Err(ResponseError::FailedToBootstrap)
+                Err(RoutingError::FailedToBootstrap)
             }
             Ok(bootstrapped_to) => {
                 match bootstrapped_to.clone() {

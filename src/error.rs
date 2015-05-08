@@ -5,21 +5,21 @@ use cbor::CborError;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum InterfaceError {
-  Abort,
-  NoData,
-  InvalidRequest,
+    Abort,
+    NoData,
+    InvalidRequest,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum ResponseError {
-  FailedToBootstrap,
-  NoData,
-  IncorrectData(Vec<u8>),
+    NoData,
+    IncorrectData(Vec<u8>),
 }
 
 #[derive(Debug)]
 pub enum RoutingError {
     DontKnow,
+    FailedToBootstrap,
     Interface(InterfaceError),
     Io(io::Error),
     CborError(CborError),

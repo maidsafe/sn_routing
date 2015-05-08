@@ -189,9 +189,9 @@ impl<F> RoutingNode<F> where F: Interface {
     pub fn post(&self, destination: NameType, content: Vec<u8>) { unimplemented!() }
 
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
-                     beacon_port: Option<u16>) -> Result<(), ResponseError> {
+                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
         let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
-                                   .map_err(|_|ResponseError::FailedToBootstrap));
+                                   .map_err(|_|RoutingError::FailedToBootstrap));
         self.bootstrap_endpoint = Some(bootstrapped_to);
         // starts swaping ID with the bootstrap peer
         self.send_bootstrap_id_request();
