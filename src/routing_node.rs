@@ -21,7 +21,9 @@ use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::{Arc, mpsc, Mutex};
+use std::sync::mpsc;
+use std::boxed::Box;
+use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
 use time::Duration;
 
@@ -67,7 +69,7 @@ type RecvResult = Result<(), ()>;
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
-    interface: Arc<Mutex<F>>,
+    interface: Box<F>,
     pmid: types::Pmid,
     own_id: NameType,
     event_input: Receiver<Event>,
@@ -75,7 +77,7 @@ pub struct RoutingNode<F: Interface> {
     pending_connections: HashSet<Endpoint>,
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
     routing_table: RoutingTable,
-    accepting_on: Option<Vec<Endpoint>>,
+    accepting_on: Vec<Endpoint>,
     listening_for_broadcasts_on_port: Option<u16>,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
@@ -98,14 +100,12 @@ impl<F> RoutingNode<F> where F: Interface {
         let listeners = match cm.start_listening(ports_and_protocols, beacon_port) {
             Err(reason) => {
                 println!("Failed to start listening: {:?}", reason);
-                (None, None)
+                (vec![], None)
             }
-            Ok(listeners_and_beacon) => {
-                (Some(listeners_and_beacon.0), listeners_and_beacon.1)
-            }
+            Ok(listeners_and_beacon) => listeners_and_beacon
         };
 
-        RoutingNode { interface: Arc::new(Mutex::new(my_interface)),
+        RoutingNode { interface: Box::new(my_interface),
                       pmid : pmid,
                       own_id : own_id.clone(),
                       event_input: event_input,
@@ -310,16 +310,10 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_to_bootstrap_node(&e.into_bytes());
     }
 
-    fn accepting_on(&self) -> Option<Vec<crust::Endpoint>> {
-        self.accepting_on.clone().and_then(|endpoints| {
-            Some(endpoints)
-        })
-    }
-
-    fn next_endpoint_pair(&self) -> Option<(Vec<Endpoint>, Vec<Endpoint>)> {
+    fn next_endpoint_pair(&self) -> (Vec<Endpoint>, Vec<Endpoint>) {
         // FIXME: Set the second argument to 'external' address
         // when known.
-        self.accepting_on().and_then(|addr| Some((addr.clone(), addr)))
+        (self.accepting_on.clone(), self.accepting_on.clone())
     }
 
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
@@ -352,7 +346,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     //TODO(team) This method needs to be triggered when routing table close group changes
     fn on_churn(&mut self, close_group: Vec<NameType>) {
-        let actions = self.interface.lock().unwrap().handle_churn(close_group);
+        let actions = self.interface.handle_churn(close_group);
         self.invoke_routing_actions(actions);
     }
 
@@ -400,12 +394,8 @@ impl<F> RoutingNode<F> where F: Interface {
         if message.message_type == MessageTypeTag::GetDataResponse {
             let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
             if get_data_response.data.len() != 0 {
-                let mut self_interface = match self.interface.lock() {
-                    Err(_) => return Err(()),
-                    Ok(interface) => interface,
-                };
-                let _ = self_interface.handle_cache_put(header.from_authority(), header.from(),
-                                                        get_data_response.data);
+                let _ = self.interface.deref_mut().handle_cache_put(
+                    header.from_authority(), header.from(), get_data_response.data);
             }
         }
 
@@ -413,16 +403,10 @@ impl<F> RoutingNode<F> where F: Interface {
         if message.message_type == MessageTypeTag::GetData {
             let get_data = try!(self.decode::<GetData>(&body).ok_or(()));
             let mut retrieved_data: Result<Action, RoutingError>;
-            {
-                let mut self_interface = match self.interface.lock() {
-                    Err(_) => return Err(()),
-                    Ok(interface) => interface,
-                };
-                let get_data_copy = get_data.clone();
-                retrieved_data = self_interface.handle_cache_get(
-                    get_data_copy.name_and_type_id.type_id as u64,
-                    get_data_copy.name_and_type_id.name, header.from_authority(), header.from());
-            }
+            let get_data_copy = get_data.clone();
+            retrieved_data = self.interface.deref_mut().handle_cache_get(
+                get_data_copy.name_and_type_id.type_id as u64,
+                get_data_copy.name_and_type_id.name, header.from_authority(), header.from());
             match retrieved_data {
                 Err(_) => (),
                 Ok(action) => match action {
@@ -560,8 +544,7 @@ impl<F> RoutingNode<F> where F: Interface {
            && header.destination.dest != self.own_id {
             return Authority::NodeManager; }
         else if header.from_group()
-                      .and_then(|group| Some(self.routing_table
-                                                 .address_in_our_close_group_range(&group)))
+                      .map(|group| self.routing_table.address_in_our_close_group_range(&group))
                       .unwrap_or(false)
            && header.destination.dest == self.own_id {
             return Authority::ManagedNode; }
@@ -587,8 +570,7 @@ impl<F> RoutingNode<F> where F: Interface {
                                                                     group_keys);
         let encoded_msg = self.encode(&routing_msg);
         let original_group = original_header.from_group();
-        original_group.and_then(|group| Some(self.send_swarm_or_parallel(&group,
-                                                                         &encoded_msg)));
+        original_group.map(|group| self.send_swarm_or_parallel(&group, &encoded_msg));
         Ok(())
     }
 
@@ -685,7 +667,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let get_data = try!(self.decode::<GetData>(&body).ok_or(()));
         let type_id = get_data.name_and_type_id.type_id.clone();
         let our_authority = self.our_authority(&get_data.name_and_type_id.name, &header);
@@ -693,8 +675,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let from = header.from();
         let name = get_data.name_and_type_id.name.clone();
 
-        let mut interface = self.interface.lock().unwrap();
-        match interface.handle_get(type_id, name, our_authority.clone(), from_authority, from) {
+        match self.interface.deref_mut().handle_get(type_id, name, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
                 Action::Reply(data) => {
                     let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_id, &our_authority),
@@ -734,13 +715,10 @@ impl<F> RoutingNode<F> where F: Interface {
 
         let mut action: Action;
 
-        {
-            let mut interface = self.interface.lock().unwrap();
-            action = match interface.handle_get_key(type_id, name, our_authority.clone(), from_authority, from) {
-                Ok(action) => action,
-                Err(_) => return Err(())
-            };
-        }
+        action = match self.interface.deref_mut().handle_get_key(type_id, name, our_authority.clone(), from_authority, from) {
+            Ok(action) => action,
+            Err(_) => return Err(())
+        };
 
         match action {
             Action::Reply(data) => {
@@ -764,7 +742,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let get_data_response = try!(self.decode::<GetDataResponse>(&body).ok_or(()));
         let from = header.from();
         let response;
@@ -775,21 +753,19 @@ impl<F> RoutingNode<F> where F: Interface {
             response = Ok(get_data_response.data);
         }
 
-        let mut interface = self.interface.lock().unwrap();
-        interface.handle_get_response(from, response);
+        self.interface.deref_mut().handle_get_response(from, response);
         Ok(())
     }
 
-    fn handle_post(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+    fn handle_post(&mut self, header : MessageHeader, body : Bytes) -> RecvResult {
         let post = try!(self.decode::<Post>(&body).ok_or(()));
         let our_authority = self.our_authority(&post.name, &header);
-        let mut interface = self.interface.lock().unwrap();
         let action_result : RecvResult
-            = match interface.handle_post(our_authority.clone(),
-                                          header.authority.clone(),
-                                          header.from(),
-                                          post.name.clone(),
-                                          post.data.clone()) {
+            = match self.interface.deref_mut().handle_post(our_authority.clone(),
+                                                           header.authority.clone(),
+                                                           header.from(),
+                                                           post.name.clone(),
+                                                           post.data.clone()) {
             Ok(Action::Reply(data)) => {
                 Ok(()) // TODO: implement post_response
             },
@@ -842,16 +818,15 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     // // for clients, below methods are required
-    fn handle_put_data(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_put_data(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let put_data = try!(self.decode::<PutData>(&body).ok_or(()));
         let our_authority = self.our_authority(&put_data.name, &header);
         let from_authority = header.from_authority();
         let from = header.from();
         let to = header.send_to();
 
-        let mut interface = self.interface.lock().unwrap();
-        match interface.handle_put(our_authority.clone(), from_authority, from,
-                                   to, put_data.data.clone()) {
+        match self.interface.deref_mut().handle_put(our_authority.clone(), from_authority, from,
+                                                    to, put_data.data.clone()) {
             Ok(Action::Reply(reply_data)) => {
                 let reply_header = header.create_reply(&self.own_id, &our_authority);
                 let reply_to = match our_authority {
@@ -892,7 +867,7 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn handle_put_data_response(&self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
         let put_data_response = try!(self.decode::<PutDataResponse>(&body).ok_or(()));
         let from_authority = header.from_authority();
         let from = header.from();
@@ -904,8 +879,7 @@ impl<F> RoutingNode<F> where F: Interface {
             response = Err(RoutingError::IncorrectData(put_data_response.error));
         }
 
-        let mut interface = self.interface.lock().unwrap();
-        interface.handle_put_response(from_authority, from, response);
+        self.interface.deref_mut().handle_put_response(from_authority, from, response);
         Ok(())
     }
 
@@ -1006,14 +980,19 @@ impl<F> RoutingNode<F> where F: Interface {
             types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
             self.our_source_address(), types::Authority::ManagedNode);
 
-        let invalid_addr = vec![Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0)))];
-        let (requester_local, requester_external)
-            = self.next_endpoint_pair().unwrap_or((invalid_addr.clone(), invalid_addr));  // FIXME
+        let (requester_local, requester_external) = self.next_endpoint_pair();
 
+        // FIXME: Discuss how to use other eps from the list.
+        let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
+            if eps.is_empty() {
+                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
+            }
+            else { match eps[0] { Tcp(ep) => ep.clone() } }
+        };
 
         let connect_request = ConnectRequest {
-            local:          match requester_local[0] { Tcp(local) => local },
-            external:       match requester_external[0] { Tcp(local) => local },
+            local:          first_or_invalid(requester_local),
+            external:       first_or_invalid(requester_external),
             requester_id:   self.own_id.clone(),
             receiver_id:    peer_id.clone(),
             requester_fob:  types::PublicPmid::new(&self.pmid),
@@ -1032,15 +1011,21 @@ impl<F> RoutingNode<F> where F: Interface {
             original_header.send_to(), self.our_source_address(),
             types::Authority::ManagedNode);
 
-        let invalid_addr = vec![Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0)))];
-        let (receiver_local, receiver_external)
-            = self.next_endpoint_pair().unwrap_or((invalid_addr.clone(), invalid_addr));  // FIXME
+        let (receiver_local, receiver_external) = self.next_endpoint_pair();
+
+        // FIXME: Discuss how to use other eps from the list.
+        let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
+            if eps.is_empty() {
+                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
+            }
+            else { match eps[0] { Tcp(ep) => ep.clone() } }
+        };
 
         let connect_response = ConnectResponse {
             requester_local:    connect_request.local,
             requester_external: connect_request.external,
-            receiver_local:     match receiver_local[0] { Tcp(local) => local },
-            receiver_external:  match receiver_external[0] { Tcp(local) => local },
+            receiver_local:     first_or_invalid(receiver_local),
+            receiver_external:  first_or_invalid(receiver_external),
             requester_id:       connect_request.requester_id.clone(),
             receiver_id:        self.own_id.clone(),
             receiver_fob:       types::PublicPmid::new(&self.pmid) };
