@@ -33,7 +33,7 @@ use message_header;
 use name_type::NameType;
 use sendable::Sendable;
 use types;
-use RoutingError;
+use error::{RoutingError, ResponseError};
 use cbor::{Decoder, Encoder};
 use messages::bootstrap_id_request::BootstrapIdRequest;
 use messages::bootstrap_id_response::BootstrapIdResponse;
@@ -397,12 +397,10 @@ impl<F> RoutingClient<F> where F: Interface {
 
     fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) {
         let get_data_response = self.decode::<GetDataResponse>(&body).unwrap();
-        let response;
-        if get_data_response.error != RoutingError::Success {
-            response = Err(RoutingError::NoData);
-        } else {
-            response = Ok(get_data_response.data);
-        }
+        let response = match get_data_response.data {
+            Ok(data) => Ok(data),
+            Err(_)   => Err(ResponseError::NoData)
+        };
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(header.message_id, response);
     }
@@ -423,20 +421,20 @@ impl<F> RoutingClient<F> where F: Interface {
 //     use types::*;
 //     use client_interface::Interface;
 //     use Action;
-//     use RoutingError;
+//     use ResponseError;
 //     use maidsafe_types::Random;
 //     use maidsafe_types::Maid;
 //
 //     struct TestInterface;
 //
 //     impl Interface for TestInterface {
-//         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: NameType , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+//         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: NameType , data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
 //         fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-//                       from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-//         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-//         fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
-//         fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-//         fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+//                       from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
+//         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
+//         fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!() }
+//         fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
+//         fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
 //         fn add_node(&mut self, node: NameType) { unimplemented!(); }
 //         fn drop_node(&mut self, node: NameType) { unimplemented!(); }
 //     }
