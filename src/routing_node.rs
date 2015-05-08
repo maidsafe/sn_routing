@@ -237,10 +237,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None },
                 types::Authority::ManagedNode),
             BootstrapIdRequest { sender_id: self.id() }, &self.pmid.get_crypto_secret_sign_key());
-        let mut e = Encoder::from_memory();
-        e.encode(&[message]).unwrap();
-        // need to send to bootstrap node as we are not yet connected to anyone else
-        self.send_to_bootstrap_node(&e.into_bytes());
+        self.send_to_bootstrap_node(&message);
     }
 
     fn send_bootstrap_id_response(&mut self, peer_endpoint: Endpoint) {
@@ -274,14 +271,10 @@ impl<F> RoutingNode<F> where F: Interface {
 
         self.all_connections.0.insert(peer_endpoint.clone(), bootstrap_id_response_msg.sender_id.clone());
         self.all_connections.1.insert(bootstrap_id_response_msg.sender_id.clone(), peer_endpoint.clone());
-        self.send_find_group_to_endpoint(peer_endpoint.clone());
-    }
 
-    fn send_find_group_to_endpoint(&mut self, endpoint: Endpoint) {
         let own_id = Some(self.id());
-        let mut e = Encoder::from_memory();
-        e.encode(&[self.construct_find_group_msg(own_id)]).unwrap();
-        let _ = self.connection_manager.send(endpoint, e.into_bytes());
+        let messsge = self.construct_find_group_msg(own_id);
+        self.send_to_bootstrap_node(&messsge);
     }
 
     fn put_own_public_pmid(&mut self) {
@@ -295,11 +288,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::PutPublicPmid, header,
             request, &self.pmid.get_crypto_secret_sign_key());
-        let mut e = Encoder::from_memory();
-
-        e.encode(&[message]).unwrap();
-        // need to send to bootstrap node as we are not yet connected to anyone else
-        self.send_to_bootstrap_node(&e.into_bytes());
+        self.send_to_bootstrap_node(&message);
     }
 
     fn next_endpoint_pair(&self) -> (Vec<Endpoint>, Vec<Endpoint>) {
@@ -1055,8 +1044,10 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     // FIXME(Peter) handle return err if required
-    fn send_to_bootstrap_node(&mut self, serialised_message: &Bytes) {
-        let _ = self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), serialised_message.clone());
+    fn send_to_bootstrap_node(&mut self, routing_message: &RoutingMessage) {
+        let mut e = Encoder::from_memory();
+        e.encode(&[routing_message]).unwrap();
+        let _ = self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), e.into_bytes());
     }
 
     fn send_swarm_or_parallel(&self, target: &NameType, serialised_message: &Bytes) {
