@@ -194,9 +194,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 self.bootstrap_endpoint = Some(bootstrapped_to);
                 // starts swaping ID with the bootstrap peer
                 self.send_bootstrap_id_request();
-                // put our public pmid so that our connect requests are validated
-                self.put_own_public_pmid();
-                // connect to close group
                 Ok(())
             }
         }
@@ -272,6 +269,10 @@ impl<F> RoutingNode<F> where F: Interface {
         self.all_connections.0.insert(peer_endpoint.clone(), bootstrap_id_response_msg.sender_id.clone());
         self.all_connections.1.insert(bootstrap_id_response_msg.sender_id.clone(), peer_endpoint.clone());
 
+        // put our public pmid so that our connect requests are validated
+        //self.put_own_public_pmid(); // FIXME enable this with sentinel
+
+        // connect to close group
         let own_id = Some(self.id());
         let messsge = self.construct_find_group_msg(own_id);
         self.send_to_bootstrap_node(&messsge);
@@ -561,7 +562,7 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_swarm_or_parallel(&connect_request.requester_id, &serialised_message);
 
         if self.bootstrap_endpoint.is_some() {
-            self.send_to_bootstrap_node(&serialised_message);
+            self.send_to_bootstrap_node(&routing_msg);
         }
 
         if original_header.source.reply_to.is_some() {
@@ -653,7 +654,7 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_swarm_or_parallel(peer_id, &serialised_message);
 
         if self.bootstrap_endpoint.is_some() {
-            self.send_to_bootstrap_node(&serialised_message);
+            self.send_to_bootstrap_node(&routing_msg);
         }
         // Ok(())
     }
@@ -1441,7 +1442,7 @@ mod test {
         let post: Post = Random::generate_random();
         assert_eq!(call_operation(post, MessageTypeTag::Post, stats).call_count, 1u32);
     }
-/*
+
 #[test]
     fn network() {
         let network_size = 2usize;
@@ -1464,7 +1465,7 @@ mod test {
                 });
             let use_node2 = node.clone();
             let mut use_node2 = use_node2.lock().unwrap();
-            match use_node2.bootstrap(listening_endpoints.clone(), None) {
+            match use_node2.bootstrap(Some(listening_endpoints.clone()), None) {
                 Ok(_) => { assert!(true) },
                 Err(_)  => { assert!(false); }
             }
@@ -1480,7 +1481,7 @@ mod test {
             assert_eq!(node.lock().unwrap().routing_table.our_close_group().len(), network_size - 1);
         }
     }
-*/
+
     #[test]
     fn cache_public_pmid() {
         // copy from our_authority_full_routing_table test
