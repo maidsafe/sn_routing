@@ -34,7 +34,7 @@ use NameType;
 use name_type::{closer_to_target, NAME_TYPE_LEN};
 use node_interface;
 use node_interface::Interface;
-use routing_table::{RoutingTable, NodeInfo, EndpointAndStatus};
+use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
 use types::{MessageId, Authority, NameAndTypeId};
@@ -282,7 +282,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         if !is_client {
             let peer_node_info = NodeInfo::new(bootstrap_id_response_msg.sender_fob,
-                                               vec![EndpointAndStatus::new(peer_endpoint, true)]);
+                                               vec![peer_endpoint.clone()], Some(peer_endpoint));
             let result = self.routing_table.add_node(peer_node_info);
             if result.0 {
                println!("{:?} added {:?} <RT size:{}>", self.own_id, bootstrap_id_response_msg.sender_id, self.routing_table.size());
@@ -571,14 +571,11 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectRequest ", self.own_id);
         let connect_request = try!(self.decode::<ConnectRequest>(&body).ok_or(()));
-        // Convert peer's list of endpoints to a vector of EndpointAndStatus with all marked
-        // as not connected.
-        let mut peer_endpoints: Vec<EndpointAndStatus> = connect_request.local_endpoints.iter().map(
-            |endpoint| EndpointAndStatus::new(endpoint.clone(), false) ).collect();
-        for endpoint in connect_request.external_endpoints.iter() {
-            peer_endpoints.push(EndpointAndStatus::new(endpoint.clone(), false))
-        }
-        let peer_node_info = NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints);
+        // Collect the local and external endpoints into a single vector to construct a NodeInfo
+        let mut peer_endpoints = connect_request.local_endpoints.clone();
+        peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
+        let peer_node_info =
+            NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
 
         // Try to add to the routing table.  If unsuccessful, no need to continue.
         let (added, _) = self.routing_table.add_node(peer_node_info);
@@ -615,16 +612,11 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_connect_response(&mut self, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectResponse", self.own_id);
         let connect_response = try!(self.decode::<ConnectResponse>(&body).ok_or(()));
-        // Convert peer's list of endpoints to a vector of EndpointAndStatus with all marked
-        // as not connected.
-        let mut peer_endpoints: Vec<EndpointAndStatus> =
-            connect_response.receiver_local_endpoints.iter().map(
-                |endpoint| EndpointAndStatus::new(endpoint.clone(), false)).collect();
-        for endpoint in connect_response.receiver_external_endpoints.iter() {
-            peer_endpoints.push(EndpointAndStatus::new(endpoint.clone(), false))
-        }
+        // Collect the local and external endpoints into a single vector to construct a NodeInfo
+        let mut peer_endpoints = connect_response.receiver_local_endpoints.clone();
+        peer_endpoints.extend(connect_response.receiver_external_endpoints.clone().into_iter());
         let peer_node_info =
-            NodeInfo{ fob: connect_response.receiver_fob, endpoints: peer_endpoints};
+            NodeInfo::new(connect_response.receiver_fob.clone(), peer_endpoints, None);
 
         // Try to add to the routing table.  If unsuccessful, no need to continue.
         let (added, _) = self.routing_table.add_node(peer_node_info.clone());
@@ -1107,15 +1099,7 @@ impl<F> RoutingNode<F> where F: Interface {
     fn get_connected_target(&self, target: &NameType) -> Vec<NodeInfo> {
         let mut nodes = self.routing_table.target_nodes(target.clone());
         //println!("{:?} get_connected_target routing_table.size:{} target:{:?} -> {:?}", self.own_id, self.routing_table.size(), target, nodes);
-        nodes.retain(|ref candidate| {
-            let ref endpoints: Vec<EndpointAndStatus> = candidate.endpoints;
-            for endpoint in endpoints {
-                if endpoint.connected {
-                    return true;
-                }
-            };
-            false
-        });
+        nodes.retain(|ref candidate| candidate.connected_endpoint.is_some());
         nodes
     }
 

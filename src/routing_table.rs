@@ -39,28 +39,19 @@ pub struct KeyFob {
 }
 
 #[derive(Clone, Debug)]
-pub struct EndpointAndStatus {
-    pub endpoint: Endpoint,
-    pub connected: bool,
-}
-
-impl EndpointAndStatus {
-    pub fn new(endpoint: Endpoint, connected: bool) -> EndpointAndStatus {
-        EndpointAndStatus{ endpoint: endpoint, connected: connected, }
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub fob: PublicPmid,
-    pub endpoints: Vec<EndpointAndStatus>,
+    pub endpoints: Vec<Endpoint>,
+    pub connected_endpoint: Option<Endpoint>,
 }
 
 impl NodeInfo {
-    pub fn new(fob: PublicPmid, endpoints: Vec<EndpointAndStatus>) -> NodeInfo {
+    pub fn new(fob: PublicPmid, endpoints: Vec<Endpoint>,
+               connected_endpoint: Option<Endpoint>) -> NodeInfo {
         NodeInfo {
             fob: fob,
             endpoints: endpoints,
+            connected_endpoint: connected_endpoint,
         }
     }
     pub fn id(&self) -> NameType {
@@ -89,20 +80,19 @@ impl RoutingTable {
 
     pub fn get_quorum_size() -> usize { types::QUORUM_SIZE }
 
-    /// Adds a contact to the routing table.  If the contact is added, the first return arg
-    /// is true, otherwise false.  If adding the contact caused another contact to be dropped, the
-    /// dropped one is returned in the second field, otherwise the optional field is empty.  The
-    /// following steps are used to determine whether to add the new contact or not:
+    /// Adds a contact to the routing table.  If the contact is added, the first return arg is true,
+    /// otherwise false.  If adding the contact caused another contact to be dropped, the dropped
+    /// one is returned in the second field, otherwise the optional field is empty.  The following
+    /// steps are used to determine whether to add the new contact or not:
     ///
-    /// 1 - if the contact is ourself, or doesn't have a valid public key, or is already in the table,
-    ///     it will not be added
+    /// 1 - if the contact is ourself, or doesn't have a valid public key, or is already in the
+    ///     table, it will not be added
     /// 2 - if the routing table is not full (size < OptimalSize()), the contact will be added
     /// 3 - if the contact is within our close group, it will be added
-    /// 4 - if we can find a candidate for removal (a contact in a bucket with more than 'BucketSize()'
-    ///     contacts, which is also not within our close group), and if the new contact will fit in a
-    ///     bucket closer to our own bucket, then we add the new contact.
+    /// 4 - if we can find a candidate for removal (a contact in a bucket with more than BUCKET_SIZE
+    ///     contacts, which is also not within our close group), and if the new contact will fit in
+    ///     a bucket closer to our own bucket, then we add the new contact.
     pub fn add_node(&mut self, their_info: NodeInfo)->(bool, Option<NodeInfo>) {
-
         if self.our_id == their_info.id() {
             return (false, None);
         }
@@ -116,7 +106,9 @@ impl RoutingTable {
             return (true, None);
         }
 
-        if closer_to_target(&their_info.id(), &self.routing_table[RoutingTable::get_group_size()].id(), &self.our_id) {
+        if closer_to_target(&their_info.id(),
+                            &self.routing_table[RoutingTable::get_group_size()].id(),
+                            &self.our_id) {
             self.push_back_then_sort(their_info);
             let removal_node_index = self.find_candidate_for_removal();
             if removal_node_index == usize::MAX {
@@ -139,11 +131,31 @@ impl RoutingTable {
         (false, None)
     }
 
-    /// This is used to check whether it is worth while retrieving a contact's public key from the PKI with a
-    /// view to adding the contact to our routing table.  The checking procedure is the same as for
-    /// 'AddNode' above, except for the lack of a public key to check in step 1.
-    pub fn check_node(&self, their_id: &NameType)->bool {
+    /// This changes the connected status of the peer from false to true.  Only one connection is
+    /// allowed per node, so this returns false if the endpoint doesn't exist anywhere in the table
+    /// or if the peer already has a connected endpoint
+    pub fn mark_as_connected(&mut self, endpoint: &Endpoint) -> bool {
+        let has_endpoint = |ref node_info: &NodeInfo| {
+            for ref candidate_endpoint in &node_info.endpoints {
+                if **candidate_endpoint == *endpoint {
+                    return true;
+                }
+            }
+            false
+        };
+        match self.routing_table.iter().position(has_endpoint) {
+            None => false,
+            Some(index) => {
+                self.routing_table[index].connected_endpoint = Some(endpoint.clone());
+                true
+            },
+        }
+    }
 
+    /// This is used to check whether it is worth while retrieving a contact's public key from the
+    /// PKI with a view to adding the contact to our routing table.  The checking procedure is the
+    /// same as for 'AddNode' above, except for the lack of a public key to check in step 1.
+    pub fn check_node(&self, their_id: &NameType)->bool {
         if self.our_id == *their_id {
             return false;
         }
