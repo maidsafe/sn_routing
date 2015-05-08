@@ -562,17 +562,15 @@ impl<F> RoutingNode<F> where F: Interface {
     /// This method sends a GetGroupKeyResponse message on receiving the GetGroupKey request.
     /// It collects and replies with all the public signature keys from its close group.
     fn handle_get_group_key(&mut self, original_header : MessageHeader, body : Bytes) -> RecvResult {
-        println!("{:?} received GetGroupKey ", self.own_id);
         let get_group_key = try!(decode::<GetGroupKey>(&body));
-        let close_group = self.routing_table.our_close_group();
-        let mut group_keys : Vec<(NameType, types::PublicSignKey)>
-            = Vec::with_capacity(close_group.len());
-        for close_node in close_group {
-            group_keys.push((close_node.fob.name.clone(),
-                             close_node.fob.public_sign_key.clone()));
-        }
-        // add our own signature key
-        group_keys.push((self.pmid.get_name(),self.pmid.get_public_sign_key()));
+
+        let group_keys = self.routing_table.our_close_group()
+                         .into_iter()
+                         .map(|node| (node.fob.name, node.fob.public_sign_key))
+                         // add our own signature key
+                         .chain(Some((self.pmid.get_name(),self.pmid.get_public_sign_key())).into_iter())
+                         .collect::<Vec<_>>();
+
         let routing_msg = self.construct_get_group_key_response_msg(&original_header,
                                                                     &get_group_key,
                                                                     group_keys);
@@ -596,14 +594,15 @@ impl<F> RoutingNode<F> where F: Interface {
 
         if original_header.source.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.unwrap();
-            if self.all_connections.1.contains_key(&reply_to_address) {
-                let msg = try!(encode(&routing_msg));
-                return self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(), msg)
-                    .map_err(From::from);
-            } else {
-                return Err(RecvError::DontKnow);
+            return match self.all_connections.1.get(&reply_to_address) {
+                Some(reply_to) => {
+                    let msg = try!(encode(&routing_msg));
+                    self.connection_manager.send(reply_to.clone(), msg).map_err(From::from)
+                },
+                None => Err(RecvError::DontKnow)
             }
         }
+
         Ok(())
     }
 
@@ -635,13 +634,13 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         //println!("{:?} received FindGroup", self.own_id);
         let find_group = try!(decode::<FindGroup>(&body));
-        let close_group = self.routing_table.our_close_group();
-        let mut group: Vec<types::PublicPmid> = vec![];
-        for x in close_group {
-            group.push(x.fob);
-        }
-        // add ourselves
-        group.push(types::PublicPmid::new(&self.pmid));
+
+        let group = self.routing_table.our_close_group().into_iter()
+                    .map(|x|x.fob)
+                    // add ourselves
+                    .chain(Some(types::PublicPmid::new(&self.pmid)).into_iter())
+                    .collect::<Vec<_>>();
+
         let routing_msg = self.construct_find_group_response_msg(&original_header, &find_group, group);
 
         // FIXME(Peter) below method is needed
@@ -649,12 +648,12 @@ impl<F> RoutingNode<F> where F: Interface {
         // if node in my group && in non routing list send it to non_routnig list as well
         if original_header.source.reply_to.is_some() {
             let reply_to_address = original_header.source.reply_to.unwrap();
-            if self.all_connections.1.contains_key(&reply_to_address) {
-                let msg = try!(encode(&routing_msg));
-                return self.connection_manager.send(self.all_connections.1.get(&reply_to_address).unwrap().clone(), msg)
-                    .map_err(From::from);
-            } else {
-                return Err(RecvError::DontKnow);
+            return match self.all_connections.1.get(&reply_to_address) {
+                Some(reply_to) => {
+                    let msg = try!(encode(&routing_msg));
+                    self.connection_manager.send(reply_to.clone(), msg).map_err(From::from)
+                },
+                None => Err(RecvError::DontKnow)
             }
         }
         Ok(())
