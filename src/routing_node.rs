@@ -60,7 +60,7 @@ use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_pmid::PutPublicPmid;
 use messages::{RoutingMessage, MessageTypeTag};
 use super::{Action};
-use error::{ResponseError, RecvError};
+use error::{ResponseError, RoutingError};
 
 use std::io;
 use std::convert::From;
@@ -71,7 +71,7 @@ pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
 
-type RecvResult = Result<(), RecvError>;
+type RecvResult = Result<(), RoutingError>;
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
@@ -372,7 +372,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // filter check
         if self.filter.check(&header.get_filter()) {
             // should just return quietly
-            return Err(RecvError::DontKnow);
+            return Err(RoutingError::DontKnow);
         }
         // add to filter
         self.filter.add(header.get_filter());
@@ -469,7 +469,7 @@ impl<F> RoutingNode<F> where F: Interface {
                     //PutKey,
                     _ => {
                         println!("unhandled message from {:?}", peer_id);
-                        Err(RecvError::DontKnow)
+                        Err(RoutingError::DontKnow)
                     }
                 }
             }
@@ -561,7 +561,7 @@ impl<F> RoutingNode<F> where F: Interface {
         println!("{:?} received ConnectRequest ", self.own_id);
         let connect_request = try!(decode::<ConnectRequest>(&body));
         if !(self.routing_table.check_node(&connect_request.requester_id)) {
-           return Err(RecvError::DontKnow);
+           return Err(RoutingError::DontKnow);
         }
         //let (receiver_local, receiver_external) = try!(self.next_endpoint_pair().ok_or(()));  //FIXME this is correct place
 
@@ -576,7 +576,7 @@ impl<F> RoutingNode<F> where F: Interface {
                     let msg = try!(encode(&routing_msg));
                     self.send_to(&reply_to, msg).map_err(From::from)
                 },
-                None => Err(RecvError::DontKnow)
+                None => Err(RoutingError::DontKnow)
             }
         }
 
@@ -630,7 +630,7 @@ impl<F> RoutingNode<F> where F: Interface {
                     let msg = try!(encode(&routing_msg));
                     self.send_to(&reply_to, msg).map_err(From::from)
                 },
-                None => Err(RecvError::DontKnow)
+                None => Err(RoutingError::DontKnow)
             }
         }
         Ok(())
@@ -704,7 +704,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         action = match self.mut_interface().handle_get_key(type_id, name, our_authority.clone(), from_authority, from) {
             Ok(action) => action,
-            Err(_) => return Err(RecvError::DontKnow)
+            Err(_) => return Err(RoutingError::DontKnow)
         };
 
         match action {
@@ -787,7 +787,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 Ok(())
             },
             _ => {
-                Err(RecvError::DontKnow)
+                Err(RoutingError::DontKnow)
             }
         }
     }

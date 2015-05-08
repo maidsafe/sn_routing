@@ -18,7 +18,7 @@ pub enum ResponseError {
 }
 
 #[derive(Debug)]
-pub enum RecvError {
+pub enum RoutingError {
     DontKnow,
     Interface(InterfaceError),
     Io(io::Error),
@@ -27,23 +27,23 @@ pub enum RecvError {
 }
 
 
-impl From<()> for RecvError {
-    fn from(e: ()) -> RecvError { RecvError::DontKnow }
+impl From<()> for RoutingError {
+    fn from(e: ()) -> RoutingError { RoutingError::DontKnow }
 }
 
-impl From<ResponseError> for RecvError {
-    fn from(e: ResponseError) -> RecvError { RecvError::ResponseError(e) }
+impl From<ResponseError> for RoutingError {
+    fn from(e: ResponseError) -> RoutingError { RoutingError::ResponseError(e) }
 }
 
-impl From<CborError> for RecvError {
-    fn from(e: CborError) -> RecvError { RecvError::CborError(e) }
+impl From<CborError> for RoutingError {
+    fn from(e: CborError) -> RoutingError { RoutingError::CborError(e) }
 }
 
-impl From<io::Error> for RecvError {
-    fn from(e: io::Error) -> RecvError { RecvError::Io(e) }
+impl From<io::Error> for RoutingError {
+    fn from(e: io::Error) -> RoutingError { RoutingError::Io(e) }
 }
 
-impl From<InterfaceError> for RecvError {
-    fn from(e: InterfaceError) -> RecvError { RecvError::Interface(e) }
+impl From<InterfaceError> for RoutingError {
+    fn from(e: InterfaceError) -> RoutingError { RoutingError::Interface(e) }
 }
 
