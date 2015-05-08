@@ -20,7 +20,7 @@ use messages;
 use types::*;
 use NameType;
 use super::random_trait::Random;
-use RoutingError;
+use error::ResponseError;
 
 impl Random for messages::connect_request::ConnectRequest {
     fn generate_random() -> messages::connect_request::ConnectRequest {
@@ -134,8 +134,7 @@ impl Random for messages::get_data_response::GetDataResponse {
     fn generate_random() -> messages::get_data_response::GetDataResponse {
         messages::get_data_response::GetDataResponse {
             name_and_type_id: Random::generate_random(),
-            data: generate_random_vec_u8(99),
-            error: RoutingError::Success,
+            data: Ok(generate_random_vec_u8(99)),
         }
     }
 }
@@ -182,11 +181,16 @@ impl Random for messages::put_data::PutData {
 
 impl Random for messages::put_data_response::PutDataResponse {
      fn generate_random() -> messages::put_data_response::PutDataResponse {
-        messages::put_data_response::PutDataResponse {
-            name: Random::generate_random(),
-            data: generate_random_vec_u8(99),
-            error: generate_random_vec_u8(27),
-        }
+         let data = if random::<bool>() {
+             Ok(generate_random_vec_u8(99))
+         } else {
+             Err(ResponseError::NoData)
+         };
+
+         messages::put_data_response::PutDataResponse {
+             name: Random::generate_random(),
+             data: data,
+         }
     }
 }
 
