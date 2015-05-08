@@ -419,7 +419,6 @@ impl Encodable for ResponseError {
         match *self {
             ResponseError::NoData => type_tag = "NoData",
             ResponseError::InvalidRequest => type_tag = "InvalidRequest",
-            ResponseError::IncorrectData(_) => type_tag = "IncorrectData",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
     }
@@ -433,7 +432,6 @@ impl Decodable for ResponseError {
         match &type_tag[..] {
             "NoData" => Ok(ResponseError::NoData),
             "InvalidRequest" => Ok(ResponseError::InvalidRequest),
-            "IncorrectData" => Ok(ResponseError::IncorrectData(vec![])),
             _ => Err(d.error("Unrecognised ResponseError"))
         }
     }

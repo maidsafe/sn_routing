@@ -3,19 +3,27 @@ use std::io;
 use std::convert::From;
 use cbor::CborError;
 
+//------------------------------------------------------------------------------
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub enum ResponseError {
+    NoData,
+    InvalidRequest,
+}
+
+//------------------------------------------------------------------------------
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum InterfaceError {
     Abort,
     Response(ResponseError),
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub enum ResponseError {
-    NoData,
-    InvalidRequest,
-    IncorrectData(Vec<u8>),
+impl From<ResponseError> for InterfaceError {
+    fn from(e: ResponseError) -> InterfaceError {
+        InterfaceError::Response(e)
+    }
 }
 
+//------------------------------------------------------------------------------
 #[derive(Debug)]
 pub enum RoutingError {
     DontKnow,
@@ -23,7 +31,7 @@ pub enum RoutingError {
     Interface(InterfaceError),
     Io(io::Error),
     CborError(CborError),
-    ResponseError(ResponseError),
+    Response(ResponseError),
 }
 
 
@@ -32,7 +40,7 @@ impl From<()> for RoutingError {
 }
 
 impl From<ResponseError> for RoutingError {
-    fn from(e: ResponseError) -> RoutingError { RoutingError::ResponseError(e) }
+    fn from(e: ResponseError) -> RoutingError { RoutingError::Response(e) }
 }
 
 impl From<CborError> for RoutingError {

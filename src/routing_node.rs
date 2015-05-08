@@ -814,8 +814,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 };
                 let put_data_response = PutDataResponse {
                     name : put_data.name.clone(),
-                    data : reply_data,
-                    error : vec![]
+                    data : Ok(reply_data),
                 };
                 let routing_msg = RoutingMessage::new(MessageTypeTag::PutDataResponse,
                     reply_header, put_data_response, &self.pmid.get_crypto_secret_sign_key());
@@ -840,13 +839,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let put_data_response = try!(decode::<PutDataResponse>(&body));
         let from_authority = header.from_authority();
         let from = header.from();
-        let response = if put_data_response.data.len() != 0 {
-                           Ok(put_data_response.data)
-                       } else {
-                           Err(ResponseError::IncorrectData(put_data_response.error))
-                       };
-
-        self.mut_interface().handle_put_response(from_authority, from, response);
+        self.mut_interface().handle_put_response(from_authority, from, put_data_response.data);
         Ok(())
     }
 
