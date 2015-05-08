@@ -15,30 +15,39 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rand::random;
+use rand::{random, thread_rng};
+use rand::distributions::{IndependentSample, Range};
+
+use crust::Endpoint;
 use messages;
-use types::*;
 use NameType;
-use super::random_trait::Random;
 use RoutingError;
+use super::random_trait::Random;
+use types::*;
+
+// TODO: Use IPv6 and non-TCP
+pub fn random_endpoint() -> Endpoint {
+    use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
+    Endpoint::Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
+        random::<u8>(), random::<u8>(),random::<u8>()), random::<u16>())))
+}
+
+pub fn random_endpoints() -> Vec<Endpoint> {
+    let range = Range::new(1, 10);
+    let mut rng = thread_rng();
+    let count = range.ind_sample(&mut rng);
+    let mut endpoints = vec![];
+    for _ in 0..count {
+        endpoints.push(random_endpoint());
+    }
+    endpoints
+}
 
 impl Random for messages::connect_request::ConnectRequest {
     fn generate_random() -> messages::connect_request::ConnectRequest {
-        use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
-
-
-        // TODO: IPv6
-        let random_addr = || -> SocketAddr {
-            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>()),
-                                             random::<u16>()))
-        };
-
         messages::connect_request::ConnectRequest {
-            local: random_addr(),
-            external: random_addr(),
+            local_endpoints: random_endpoints(),
+            external_endpoints: random_endpoints(),
             requester_id: Random::generate_random(),
             receiver_id: Random::generate_random(),
             requester_fob: Random::generate_random(),
@@ -51,20 +60,20 @@ impl Random for messages::connect_response::ConnectResponse {
     fn generate_random() -> messages::connect_response::ConnectResponse {
         use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
 
-        // TODO: IPv6
-        let random_addr = || -> SocketAddr {
-            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
+        // TODO: IPv6 and non-TCP
+        let random_endpoint = || -> Endpoint {
+            Endpoint::Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
                                                            random::<u8>(),
                                                            random::<u8>(),
                                                            random::<u8>()),
-                                            random::<u16>()))
+                                             random::<u16>())))
         };
 
         messages::connect_response::ConnectResponse {
-            requester_local: random_addr(),
-            requester_external: random_addr(),
-            receiver_local: random_addr(),
-            receiver_external: random_addr(),
+            requester_local_endpoints: random_endpoints(),
+            requester_external_endpoints: random_endpoints(),
+            receiver_local_endpoints: random_endpoints(),
+            receiver_external_endpoints: random_endpoints(),
             requester_id: Random::generate_random(),
             receiver_id: Random::generate_random(),
             receiver_fob: Random::generate_random(),
