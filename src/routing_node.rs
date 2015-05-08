@@ -1449,7 +1449,7 @@ mod test {
         let post: Post = Random::generate_random();
         assert_eq!(call_operation(post, MessageTypeTag::Post, stats).call_count, 1u32);
     }
-
+/*
 #[test]
     fn network() {
         let networ_size = 2usize;
@@ -1488,7 +1488,7 @@ mod test {
             assert_eq!(node.lock().unwrap().routing_table.our_close_group().len(), networ_size - 1);
         }
     }
-
+*/
     #[test]
     fn cache_public_pmid() {
         // copy from our_authority_full_routing_table test
