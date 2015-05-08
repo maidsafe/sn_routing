@@ -292,12 +292,6 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_to_bootstrap_node(&message);
     }
 
-    fn next_endpoint_pair(&self) -> (Vec<Endpoint>, Vec<Endpoint>) {
-        // FIXME: Set the second argument to 'external' address
-        // when known.
-        (self.accepting_on.clone(), self.accepting_on.clone())
-    }
-
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
         if self.all_connections.0.contains_key(&peer_endpoint) {
             // ignore further request once received request or has added
@@ -545,17 +539,23 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectRequest ", self.own_id);
         let connect_request = try!(self.decode::<ConnectRequest>(&body).ok_or(()));
-        let peer_node_info = NodeInfo::new(connect_request.requester_fob.clone(), false);
+        // Collect the local and external endpoints into a single vector to construct a NodeInfo
+        let mut peer_endpoints = connect_request.local_endpoints.clone();
+        peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
+        let peer_node_info =
+            NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
 
+        // Try to add to the routing table.  If unsuccessful, no need to continue.
         let (added, _) = self.routing_table.add_node(peer_node_info);
-
-        if !added {  // no need to do anything if we don't add the peer in to routing table
+        if !added {
            return Err(());
         }
 
-        let endpoints =  Vec::new(); //FIXME Fraser (fill the vector with requester's endpoint)
-        self.connection_manager.connect(endpoints);
+        // Try to connect to the peer.
+        self.connection_manager.connect(connect_request.local_endpoints.clone());
+        self.connection_manager.connect(connect_request.external_endpoints.clone());
 
+        // Send the response containing out details.
         let routing_msg = self.construct_connect_response_msg(&original_header, &connect_request);
         let serialised_message = self.encode(&routing_msg);
 
@@ -580,28 +580,33 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_connect_response(&mut self, body: Bytes) -> RecvResult {
         println!("{:?} received ConnectResponse", self.own_id);
         let connect_response = try!(self.decode::<ConnectResponse>(&body).ok_or(()));
-        let peer_node_info = NodeInfo::new(connect_response.receiver_fob.clone(), false);
+        // Collect the local and external endpoints into a single vector to construct a NodeInfo
+        let mut peer_endpoints = connect_response.receiver_local_endpoints.clone();
+        peer_endpoints.extend(connect_response.receiver_external_endpoints.clone().into_iter());
+        let peer_node_info =
+            NodeInfo::new(connect_response.receiver_fob.clone(), peer_endpoints, None);
 
-        let (added, _) = self.routing_table.add_node(peer_node_info);
-
-        if !added {  // no need to do anything if we don't add the peer in to routing table
+        // Try to add to the routing table.  If unsuccessful, no need to continue.
+        let (added, _) = self.routing_table.add_node(peer_node_info.clone());
+        if !added {
            return Err(());
         }
 
-        let endpoints =  Vec::new(); //FIXME Fraser (fill the vector with requester's endpoint)
-        self.connection_manager.connect(endpoints);
+        // Try to connect to the peer.
+        self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
+        self.connection_manager.connect(connect_response.receiver_external_endpoints.clone());
 
 // FIXME(Prakash) this can be deleted
         // workaround for zero state
-        if (self.all_connections.0.len() == 1) && (self.all_connections.1.contains_key(&connect_response.receiver_id)) {
-            let peer_node_info = NodeInfo::new(connect_response.receiver_fob, true);
-            let result = self.routing_table.add_node(peer_node_info);
-            if result.0 {
-                println!("{:?} added {:?} <RT size:{}>", self.own_id, connect_response.receiver_id, self.routing_table.size());
-            } else {
-                println!("{:?} failed to add {:?}", self.own_id, connect_response.receiver_id);
-            }
-        }
+        // if self.all_connections.0.len() == 1 &&
+        //         self.all_connections.1.contains_key(&connect_response.receiver_id) {
+        //     let result = self.routing_table.add_node(peer_node_info);
+        //     if result.0 {
+        //         println!("{:?} added {:?} <RT size:{}>", self.own_id, connect_response.receiver_id, self.routing_table.size());
+        //     } else {
+        //         println!("{:?} failed to add {:?}", self.own_id, connect_response.receiver_id);
+        //     }
+        // }
         Ok(())
     }
 
@@ -972,22 +977,22 @@ impl<F> RoutingNode<F> where F: Interface {
             types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
             self.our_source_address(), types::Authority::ManagedNode);
 
-        let (requester_local, requester_external) = self.next_endpoint_pair();
+        // // FIXME: Discuss how to use other eps from the list. // FIXME prakash
+        // let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
+        //     if eps.is_empty() {
+        //         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
+        //     }
+        //     else { match eps[0] { Tcp(ep) => ep.clone() } }
+        // };
 
-        // FIXME: Discuss how to use other eps from the list. // FIXME prakash
-        let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
-            if eps.is_empty() {
-                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
-            }
-            else { match eps[0] { Tcp(ep) => ep.clone() } }
-        };
-
+        // FIXME: We're sending all accepting connections as local since we don't differentiate
+        // between local and external yet.
         let connect_request = ConnectRequest {
-            local:          first_or_invalid(requester_local),
-            external:       first_or_invalid(requester_external),
-            requester_id:   self.own_id.clone(),
-            receiver_id:    peer_id.clone(),
-            requester_fob:  types::PublicPmid::new(&self.pmid),
+            local_endpoints: self.accepting_on.clone(),
+            external_endpoints: vec![],
+            requester_id: self.own_id.clone(),
+            receiver_id: peer_id.clone(),
+            requester_fob: types::PublicPmid::new(&self.pmid),
         };
 
         RoutingMessage::new(MessageTypeTag::ConnectRequest, header, connect_request,
@@ -1003,24 +1008,24 @@ impl<F> RoutingNode<F> where F: Interface {
             original_header.send_to(), self.our_source_address(),
             types::Authority::ManagedNode);
 
-        let (receiver_local, receiver_external) = self.next_endpoint_pair();
+        // // FIXME: Discuss how to use other eps from the list.
+        // let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
+        //     if eps.is_empty() {
+        //         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
+        //     }
+        //     else { match eps[0] { Tcp(ep) => ep.clone() } }
+        // };
 
-        // FIXME: Discuss how to use other eps from the list.
-        let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
-            if eps.is_empty() {
-                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
-            }
-            else { match eps[0] { Tcp(ep) => ep.clone() } }
-        };
-
+        // FIXME: We're sending all accepting connections as local since we don't differentiate
+        // between local and external yet.
         let connect_response = ConnectResponse {
-            requester_local:    connect_request.local,
-            requester_external: connect_request.external,
-            receiver_local:     first_or_invalid(receiver_local),
-            receiver_external:  first_or_invalid(receiver_external),
-            requester_id:       connect_request.requester_id.clone(),
-            receiver_id:        self.own_id.clone(),
-            receiver_fob:       types::PublicPmid::new(&self.pmid) };
+            requester_local_endpoints: connect_request.local_endpoints.clone(),
+            requester_external_endpoints: connect_request.external_endpoints.clone(),
+            receiver_local_endpoints: self.accepting_on.clone(),
+            receiver_external_endpoints: vec![],
+            requester_id: connect_request.requester_id.clone(),
+            receiver_id: self.own_id.clone(),
+            receiver_fob: types::PublicPmid::new(&self.pmid) };
 
         RoutingMessage::new(MessageTypeTag::ConnectResponse, header,
             connect_response, &self.pmid.get_crypto_secret_sign_key())
@@ -1053,11 +1058,11 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn send_swarm_or_parallel(&self, target: &NameType, serialised_message: &Bytes) {
         for peer in self.get_connected_target(target) {
-            if self.all_connections.1.contains_key(&peer.id) {
-                let res = self.connection_manager.send(self.all_connections.1.get(&peer.id).unwrap().clone(),
+            if self.all_connections.1.contains_key(&peer.id()) {
+                let res = self.connection_manager.send(self.all_connections.1.get(&peer.id()).unwrap().clone(),
                                                        serialised_message.clone());
                 if res.is_err() {
-                    println!("{:?} failed to send to {:?}", self.own_id, peer.id);
+                    println!("{:?} failed to send to {:?}", self.own_id, peer.id());
                 }
             }
         }
@@ -1066,7 +1071,7 @@ impl<F> RoutingNode<F> where F: Interface {
     fn get_connected_target(&self, target: &NameType) -> Vec<NodeInfo> {
         let mut nodes = self.routing_table.target_nodes(target.clone());
         //println!("{:?} get_connected_target routing_table.size:{} target:{:?} -> {:?}", self.own_id, self.routing_table.size(), target, nodes);
-        nodes.retain(|x| { x.connected });
+        nodes.retain(|ref candidate| candidate.connected_endpoint.is_some());
         nodes
     }
 
@@ -1076,7 +1081,7 @@ impl<F> RoutingNode<F> where F: Interface {
         }
 
         let close_group = self.routing_table.our_close_group();
-        closer_to_target(&address, &self.routing_table.our_close_group().pop().unwrap().id, &self.own_id)
+        closer_to_target(&address, &self.routing_table.our_close_group().pop().unwrap().id(), &self.own_id)
     }
 
     pub fn id(&self) -> NameType { self.own_id.clone() }
