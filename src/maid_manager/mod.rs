@@ -22,6 +22,7 @@ mod database;
 use cbor::{ Decoder };
 use routing;
 use routing::NameType;
+use routing::error::{ResponseError, InterfaceError};
 use maidsafe_types;
 use routing::sendable::Sendable;
 pub use self::database::MaidManagerAccountWrapper;
@@ -37,7 +38,7 @@ impl MaidManager {
     MaidManager { db_: database::MaidManagerDatabase::new() }
   }
 
-  pub fn handle_put(&mut self, from : &NameType, data : &Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, from : &NameType, data : &Vec<u8>) ->Result<routing::Action, InterfaceError> {
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     let mut destinations : Vec<NameType> = Vec::new();
@@ -46,7 +47,7 @@ impl MaidManager {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
         let data_name = routing::types::array_as_vector(&immutable_data.name().get_id());
         if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
-          return Err(routing::RoutingError::InvalidRequest);
+          return Err(From::from(ResponseError::InvalidRequest));
         }
         destinations.push(NameType::new(immutable_data.name().get_id()));
       }
@@ -58,7 +59,7 @@ impl MaidManager {
         // PublicAnMaid doesn't use any allowance
         destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicAnMaid>().name().get_id()));
       }
-      _ => return Err(routing::RoutingError::InvalidRequest)
+      _ => return Err(From::from(ResponseError::InvalidRequest))
     }
     Ok(routing::Action::SendOn(destinations))
   }

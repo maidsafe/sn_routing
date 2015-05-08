@@ -19,7 +19,8 @@
 #![deny(missing_docs)]
 
 use routing;
-use routing::{Action, RoutingError, NameType};
+use routing::{Action, NameType};
+use routing::error::{ResponseError, InterfaceError};
 use routing::types::{Authority, DestinationAddress};
 
 use data_manager::DataManager;
@@ -48,7 +49,7 @@ impl Clone for VaultFacade {
 
 impl Interface for VaultFacade {
     fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
-                from_address: NameType)->Result<Action, RoutingError> {
+                from_address: NameType)->Result<Action, InterfaceError> {
         match our_authority {
             Authority::NaeManager => {
                 // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
@@ -60,17 +61,17 @@ impl Interface for VaultFacade {
                 return self.version_handler.handle_get(name);
             }
             Authority::ManagedNode => { return self.pmid_node.handle_get(name); }
-            _ => { return Err(RoutingError::InvalidRequest); }
+            _ => { return Err(From::from(ResponseError::InvalidRequest)); }
         }
     }
 
     fn handle_get_key(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
-                from_address: NameType)->Result<Action, RoutingError> {
+                from_address: NameType)->Result<Action, InterfaceError> {
         unimplemented!();
     }
 
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> {
+                from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, InterfaceError> {
         match our_authority {
             Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
             Authority::NaeManager => {
@@ -80,22 +81,21 @@ impl Interface for VaultFacade {
                 match from_authority {
                   Authority::ClientManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
                   Authority::ManagedNode => { return self.version_handler.handle_put(data); }
-                  _ => { return Err(RoutingError::InvalidRequest); }
+                  _ => { return Err(From::from(ResponseError::InvalidRequest)); }
                 }
             }
             Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
             Authority::ManagedNode => { return self.pmid_node.handle_put(data); }
-            _ => { return Err(RoutingError::InvalidRequest); }
+            _ => { return Err(From::from(ResponseError::InvalidRequest)); }
         }
     }
 
-    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, name: NameType, data: Vec<u8>)->Result<Action, RoutingError> {
-        ;
-        Err(RoutingError::InvalidRequest)
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, name: NameType, data: Vec<u8>)->Result<Action, InterfaceError> {
+        Err(From::from(ResponseError::InvalidRequest))
     }
 
     fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-         RoutingError>) -> RoutingNodeAction {
+         ResponseError>) -> RoutingNodeAction {
         if response.is_ok() {
             self.data_manager.handle_get_response(response.ok().unwrap())
         } else {
@@ -103,11 +103,11 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
+    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, ResponseError>) {
         ;
     }
 
-    fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, RoutingError>) {
+    fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, ResponseError>) {
         ;
     }
 
@@ -124,12 +124,12 @@ impl Interface for VaultFacade {
                         type_id: u64,
                         name: NameType,
                         from_authority: Authority,
-                        from_address: NameType) -> Result<Action, RoutingError> { unimplemented!() }
+                        from_address: NameType) -> Result<Action, InterfaceError> { unimplemented!() }
 
     fn handle_cache_put(&mut self,
                         from_authority: routing::types::Authority,
                         from_address: routing::NameType,
-                        data: Vec<u8>) -> Result<Action, RoutingError> { unimplemented!() }
+                        data: Vec<u8>) -> Result<Action, InterfaceError> { unimplemented!() }
 }
 
 impl VaultFacade {
@@ -157,6 +157,7 @@ impl VaultFacade {
     use maidsafe_types::{PayloadTypeTag, Payload};
     use routing::types:: { Authority, DestinationAddress };
     use routing::NameType;
+    use routing::error::InterfaceError;
     use routing::test_utils::Random;
     use routing::node_interface::{ Interface, RoutingNodeAction };
     use routing::sendable::Sendable;
@@ -251,7 +252,7 @@ impl VaultFacade {
                                              routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), true);
             match put_result.err().unwrap() {
-             routing::RoutingError::Success => { }
+             InterfaceError::Abort => { }
              _ => panic!("Unexpected"),
             }
             let from = NameType::new([7u8; 64]);
@@ -326,7 +327,7 @@ impl VaultFacade {
             from.clone(), dest, payload);
         assert_eq!(put_result.is_err(), true);
         match put_result.err().unwrap() {
-             routing::RoutingError::Success => { },
+             InterfaceError::Abort => { },
              _ => panic!("Unexpected"),
         }
     }

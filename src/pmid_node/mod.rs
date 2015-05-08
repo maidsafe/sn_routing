@@ -19,10 +19,11 @@
 
 use chunk_store::ChunkStore;
 use routing::NameType;
+use routing::error::{ResponseError, InterfaceError};
 use routing;
 use maidsafe_types;
 use routing::sendable::Sendable;
-use cbor::{ Decoder};
+use cbor::Decoder;
 
 
 pub struct PmidNode {
@@ -34,15 +35,15 @@ impl PmidNode {
     PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
   }
 
-  pub fn handle_get(&self, name: NameType) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_get(&self, name: NameType) ->Result<routing::Action, InterfaceError> {
     let data = self.chunk_store_.get(name);
     if data.len() == 0 {
-      return Err(routing::RoutingError::NoData);
+      return Err(From::from(ResponseError::NoData));
     }
     Ok(routing::Action::Reply(data))
   }
 
-  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, routing::RoutingError> {
+  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, InterfaceError> {
     let mut data_name : NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -56,11 +57,11 @@ impl PmidNode {
       maidsafe_types::PayloadTypeTag::PublicAnMaid => {
         data_name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
       }
-      _ => return Err(routing::RoutingError::InvalidRequest)
+      _ => return Err(From::from(ResponseError::InvalidRequest))
     }
     // the type_tag needs to be stored as well    
     self.chunk_store_.put(data_name, data);
-    Err(routing::RoutingError::Success)
+    Err(InterfaceError::Abort)
   }
 
 }
@@ -69,6 +70,7 @@ mod test {
   use cbor;
   use maidsafe_types;
   use routing;
+  use routing::error::InterfaceError;
   use super::*;
   use maidsafe_types::*;
   use routing::NameType;
@@ -89,7 +91,7 @@ mod test {
     let put_result = pmid_node.handle_put(array_as_vector(encoder.as_bytes()));
     assert_eq!(put_result.is_err(), true);
     match put_result.err().unwrap() {
-      routing::RoutingError::Success => { }
+      InterfaceError::Abort => { }
       _ => panic!("Unexpected"),
     }
     let get_result = pmid_node.handle_get(data.name());
