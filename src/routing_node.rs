@@ -76,7 +76,7 @@ type RecvResult = Result<(), RoutingError>;
 pub struct RoutingNode<F: Interface> {
     interface: Box<F>,
     id: types::Id,
-    own_id: NameType,
+    own_name: NameType,
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
@@ -95,7 +95,7 @@ impl<F> RoutingNode<F> where F: Interface {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let id = types::Id::new();
-        let own_id = id.get_name();
+        let own_name = id.get_name();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
@@ -111,11 +111,11 @@ impl<F> RoutingNode<F> where F: Interface {
 
         RoutingNode { interface: Box::new(my_interface),
                       id : id,
-                      own_id : own_id.clone(),
+                      own_name : own_name.clone(),
                       event_input: event_input,
                       connection_manager: cm,
                       all_connections: (HashMap::new(), BTreeMap::new()),
-                      routing_table : RoutingTable::new(own_id),
+                      routing_table : RoutingTable::new(own_name),
                       accepting_on: listeners.0,
                       listening_for_broadcasts_on_port: listeners.1,
                       next_message_id: rand::random::<MessageId>(),
@@ -209,7 +209,7 @@ impl<F> RoutingNode<F> where F: Interface {
                         // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
                     }
                 } else {
-                    // reply with own_id if the incoming msg is BootstrapIdRequest
+                    // reply with own_name if the incoming msg is BootstrapIdRequest
                     // record the peer_id if the incoming msg is BootstrapIdResponse
                     let _ = self.bootstrap_message_received(endpoint, bytes);
                 }
@@ -246,7 +246,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
-        // println!("{} In handle bootstrap_id_response from {:?}", self.own_id,
+        // println!("{} In handle bootstrap_id_response from {:?}", self.own_name,
         //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
         if self.all_connections.0.contains_key(&peer_endpoint) {
             // ignore further request once added or not in sequence (not recorded as pending)
@@ -268,8 +268,8 @@ impl<F> RoutingNode<F> where F: Interface {
         //self.put_own_public_id(); // FIXME enable this with sentinel
 
         // connect to close group
-        let own_id = Some(self.id());
-        let messsge = self.construct_find_group_msg(own_id);
+        let own_name = Some(self.id());
+        let messsge = self.construct_find_group_msg(own_name);
         self.send_to_bootstrap_node(&messsge);
     }
 
@@ -376,12 +376,12 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // handle relay request/response
         let relay_response = header.destination.reply_to.is_some() &&
-                             header.destination.dest == self.own_id;
+                             header.destination.dest == self.own_name;
         if relay_response {
             if self.all_connections.1.contains_key(&header.destination.reply_to.clone().unwrap()) {
                 // TODO : or shall have a separate nrt table recording all clients connecting to this node?
                 let relay_to = self.all_connections.1.get(&header.destination.reply_to.clone().unwrap()).unwrap().clone();
-                // println!("{:?} relay response sent to nrt {:?} {}", self.own_id, header.destination.reply_to,
+                // println!("{:?} relay response sent to nrt {:?} {}", self.own_name, header.destination.reply_to,
                 //          match relay_to.clone() { Tcp(socket_addr) => socket_addr } );
                 let _ = self.send_to(&relay_to, serialised_message);
             } else {
@@ -397,7 +397,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // TODO(prakash)
 
         if !self.address_in_close_group_range(&header.destination.dest) {
-            println!("{:?} not for us ", self.own_id);
+            println!("{:?} not for us ", self.own_name);
             return Ok(());
         }
 
@@ -491,12 +491,12 @@ impl<F> RoutingNode<F> where F: Interface {
             return Authority::NaeManager; }
         else if header.is_from_group()
            && self.routing_table.address_in_our_close_group_range(&header.destination.dest)
-           && header.destination.dest != self.own_id {
+           && header.destination.dest != self.own_name {
             return Authority::NodeManager; }
         else if header.from_group()
                       .map(|group| self.routing_table.address_in_our_close_group_range(&group))
                       .unwrap_or(false)
-           && header.destination.dest == self.own_id {
+           && header.destination.dest == self.own_name {
             return Authority::ManagedNode; }
         return Authority::Unknown;
     }
@@ -523,7 +523,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
-        println!("{:?} received ConnectRequest ", self.own_id);
+        println!("{:?} received ConnectRequest ", self.own_name);
         let connect_request = try!(decode::<ConnectRequest>(&body));
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
         let mut peer_endpoints = connect_request.local_endpoints.clone();
@@ -567,7 +567,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_connect_response(&mut self, body: Bytes) -> RecvResult {
-        println!("{:?} received ConnectResponse", self.own_id);
+        println!("{:?} received ConnectResponse", self.own_name);
         let connect_response = try!(decode::<ConnectResponse>(&body));
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
         let mut peer_endpoints = connect_response.receiver_local_endpoints.clone();
@@ -591,16 +591,16 @@ impl<F> RoutingNode<F> where F: Interface {
         //         self.all_connections.1.contains_key(&connect_response.receiver_id) {
         //     let result = self.routing_table.add_node(peer_node_info);
         //     if result.0 {
-        //         println!("{:?} added {:?} <RT size:{}>", self.own_id, connect_response.receiver_id, self.routing_table.size());
+        //         println!("{:?} added {:?} <RT size:{}>", self.own_name, connect_response.receiver_id, self.routing_table.size());
         //     } else {
-        //         println!("{:?} failed to add {:?}", self.own_id, connect_response.receiver_id);
+        //         println!("{:?} failed to add {:?}", self.own_name, connect_response.receiver_id);
         //     }
         // }
         Ok(())
     }
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
-        println!("{:?} received FindGroup {:?}", self.own_id, original_header.message_id);
+        println!("{:?} received FindGroup {:?}", self.own_name, original_header.message_id);
         let find_group = try!(decode::<FindGroup>(&body));
 
         let group = self.routing_table.our_close_group().into_iter()
@@ -631,7 +631,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
-        println!("{:?} received FindGroupResponse", self.own_id);
+        println!("{:?} received FindGroupResponse", self.own_name);
         let find_group_response = try!(decode::<FindGroupResponse>(&body));
         for peer in find_group_response.group {
             self.check_and_send_connect_request_msg(&peer.name);
@@ -669,7 +669,7 @@ impl<F> RoutingNode<F> where F: Interface {
         match self.mut_interface().handle_get(type_id, name, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
                 Action::Reply(data) => {
-                    let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_id, &our_authority),
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_name, &our_authority),
                         GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Ok(data) },
                         &self.id.get_crypto_secret_sign_key());
                     let encoded_msg = try!(encode(&routing_msg));
@@ -677,7 +677,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 },
                 Action::SendOn(dest_nodes) => {
                     for dest_node in dest_nodes {
-                        let send_on_header = header.create_send_on(&self.own_id, &our_authority, &dest_node);
+                        let send_on_header = header.create_send_on(&self.own_name, &our_authority, &dest_node);
                         let routing_msg = RoutingMessage::new(MessageTypeTag::GetData, send_on_header,
                             get_data.clone(), &self.id.get_crypto_secret_sign_key());
                         let encoded_msg = try!(encode(&routing_msg));
@@ -687,7 +687,7 @@ impl<F> RoutingNode<F> where F: Interface {
             },
             Err(InterfaceError::Abort) => {;},
             Err(InterfaceError::Response(error)) => {
-                let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_id, &our_authority),
+                let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_name, &our_authority),
                     GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Err(error) },
                     &self.id.get_crypto_secret_sign_key());
                 let encoded_msg = try!(encode(&routing_msg));
@@ -712,7 +712,7 @@ impl<F> RoutingNode<F> where F: Interface {
         match action {
             Action::Reply(data) => {
                 let public_key = try!(decode::<types::PublicSignKey>(&data));
-                let routing_msg = RoutingMessage::new(MessageTypeTag::GetKeyResponse, header.create_reply(&self.own_id, &our_authority),
+                let routing_msg = RoutingMessage::new(MessageTypeTag::GetKeyResponse, header.create_reply(&self.own_name, &our_authority),
                     GetKeyResponse{ address : get_key.target_id.clone(), public_sign_key : public_key },
                     &self.id.get_crypto_secret_sign_key());
                 let encoded_msg = try!(encode(&routing_msg));
@@ -720,7 +720,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 },
             Action::SendOn(dest_nodes) => {
                 for dest_node in dest_nodes {
-                    let send_on_header = header.create_send_on(&self.own_id, &our_authority, &dest_node);
+                    let send_on_header = header.create_send_on(&self.own_name, &our_authority, &dest_node);
                     let routing_msg = RoutingMessage::new(MessageTypeTag::GetKey, send_on_header,
                         get_key.clone(), &self.id.get_crypto_secret_sign_key());
                     let encoded_msg = try!(encode(&routing_msg));
@@ -751,7 +751,7 @@ impl<F> RoutingNode<F> where F: Interface {
             },
             Action::SendOn(destinations) => {
                 for destination in destinations {
-                    let send_on_header = header.create_send_on(&self.own_id,
+                    let send_on_header = header.create_send_on(&self.own_name,
                         &our_authority, &destination);
                     let routing_msg = RoutingMessage::new(MessageTypeTag::Post,
                         send_on_header, post.clone(), &self.id.get_crypto_secret_sign_key());
@@ -799,7 +799,7 @@ impl<F> RoutingNode<F> where F: Interface {
         match try!(self.mut_interface().handle_put(our_authority.clone(), from_authority, from,
                                                    to, put_data.data.clone())) {
             Action::Reply(reply_data) => {
-                let reply_header = header.create_reply(&self.own_id, &our_authority);
+                let reply_header = header.create_reply(&self.own_name, &our_authority);
                 let reply_to = match our_authority {
                     Authority::ClientManager => match header.reply_to() {
                         Some(client) => client,
@@ -818,7 +818,7 @@ impl<F> RoutingNode<F> where F: Interface {
             },
             Action::SendOn(destinations) => {
                 for destination in destinations {
-                    let send_on_header = header.create_send_on(&self.own_id,
+                    let send_on_header = header.create_send_on(&self.own_name,
                         &our_authority, &destination);
                     let routing_msg = RoutingMessage::new(MessageTypeTag::PutData,
                         send_on_header, put_data.clone(), &self.id.get_crypto_secret_sign_key());
@@ -843,24 +843,24 @@ impl<F> RoutingNode<F> where F: Interface {
             if id.is_some() {
                 return types::SourceAddress{ from_node: id.unwrap().clone(),
                                              from_group: None,
-                                             reply_to: Some(self.own_id.clone()) }
+                                             reply_to: Some(self.own_name.clone()) }
             }
         }
-        return types::SourceAddress{ from_node: self.own_id.clone(),
+        return types::SourceAddress{ from_node: self.own_name.clone(),
                                      from_group: None,
                                      reply_to: None }
     }
 
     fn group_address_for_group(&self, group_address : &types::GroupAddress) -> types::SourceAddress {
         types::SourceAddress {
-          from_node : self.own_id.clone(),
+          from_node : self.own_name.clone(),
           from_group : Some(group_address.clone()),
           reply_to : None
         }
     }
 
     fn our_group_address(&self, group_id: NameType) -> types::SourceAddress {
-        types::SourceAddress{ from_node: self.own_id.clone(), from_group: Some(group_id.clone()),
+        types::SourceAddress{ from_node: self.own_name.clone(), from_group: Some(group_id.clone()),
                                 reply_to: None }
     }
 
@@ -885,15 +885,15 @@ impl<F> RoutingNode<F> where F: Interface {
         let header = MessageHeader::new(
             self.get_next_message_id(),
             types::DestinationAddress {
-                 dest:     self.own_id.clone(),
+                 dest:     self.own_name.clone(),
                  reply_to: reply_to
             },
             self.our_source_address(),
             types::Authority::ManagedNode);
 
         RoutingMessage::new(MessageTypeTag::FindGroup, header,
-            FindGroup{ requester_id: self.own_id.clone(),
-                       target_id:    self.own_id.clone()},
+            FindGroup{ requester_id: self.own_name.clone(),
+                       target_id:    self.own_name.clone()},
             &self.id.get_crypto_secret_sign_key())
     }
 
@@ -912,7 +912,7 @@ impl<F> RoutingNode<F> where F: Interface {
     // TODO(Ben): this function breaks consistency and does not return RoutingMessage
     fn construct_success_msg(&mut self) -> ConnectSuccess {
         let connect_success = ConnectSuccess {
-                                                peer_id: self.own_id.clone(),
+                                                peer_id: self.own_name.clone(),
                                                 peer_fob: types::PublicId::new(&self.id),
                                               };
         return connect_success
@@ -936,7 +936,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let connect_request = ConnectRequest {
             local_endpoints: self.accepting_on.clone(),
             external_endpoints: vec![],
-            requester_id: self.own_id.clone(),
+            requester_id: self.own_name.clone(),
             receiver_id: peer_id.clone(),
             requester_fob: types::PublicId::new(&self.id),
         };
@@ -947,8 +947,8 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn construct_connect_response_msg(&mut self, original_header : &MessageHeader,
                                       connect_request: &ConnectRequest) -> RoutingMessage {
-        println!("{:?} construct_connect_response_msg ", self.own_id);
-        debug_assert!(connect_request.receiver_id == self.own_id, format!("{:?} == {:?} failed", self.own_id, connect_request.receiver_id));
+        println!("{:?} construct_connect_response_msg ", self.own_name);
+        debug_assert!(connect_request.receiver_id == self.own_name, format!("{:?} == {:?} failed", self.own_name, connect_request.receiver_id));
 
         let header = MessageHeader::new(self.get_next_message_id(),
             original_header.send_to(), self.our_source_address(),
@@ -970,7 +970,7 @@ impl<F> RoutingNode<F> where F: Interface {
             receiver_local_endpoints: self.accepting_on.clone(),
             receiver_external_endpoints: vec![],
             requester_id: connect_request.requester_id.clone(),
-            receiver_id: self.own_id.clone(),
+            receiver_id: self.own_name.clone(),
             receiver_fob: types::PublicId::new(&self.id) };
 
         RoutingMessage::new(MessageTypeTag::ConnectResponse, header,
@@ -1011,7 +1011,7 @@ impl<F> RoutingNode<F> where F: Interface {
             match self.all_connections.1.get(&peer.id()) {
                 Some(peer_ep) => {
                     if self.send_to(&peer_ep, serialised_message.clone()).is_err() {
-                        println!("{:?} failed to send to {:?}", self.own_id, peer.id());
+                        println!("{:?} failed to send to {:?}", self.own_name, peer.id());
                     }
                 }
                 None => {;}
@@ -1021,7 +1021,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn get_connected_target(&self, target: &NameType) -> Vec<NodeInfo> {
         let mut nodes = self.routing_table.target_nodes(target.clone());
-        //println!("{:?} get_connected_target routing_table.size:{} target:{:?} -> {:?}", self.own_id, self.routing_table.size(), target, nodes);
+        //println!("{:?} get_connected_target routing_table.size:{} target:{:?} -> {:?}", self.own_name, self.routing_table.size(), target, nodes);
         nodes.retain(|ref candidate| candidate.connected_endpoint.is_some());
         nodes
     }
@@ -1032,10 +1032,10 @@ impl<F> RoutingNode<F> where F: Interface {
         }
 
         let close_group = self.routing_table.our_close_group();
-        closer_to_target(&address, &self.routing_table.our_close_group().pop().unwrap().id(), &self.own_id)
+        closer_to_target(&address, &self.routing_table.our_close_group().pop().unwrap().id(), &self.own_name)
     }
 
-    pub fn id(&self) -> NameType { self.own_id.clone() }
+    pub fn id(&self) -> NameType { self.own_name.clone() }
 
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 }
@@ -1216,7 +1216,7 @@ mod test {
             //     panic!("Routing table does not fill up."); }
         }
         let a_message_id : MessageId = random::<u32>();
-        let our_name = routing_node.own_id.clone();
+        let our_name = routing_node.own_name.clone();
         let our_close_group : Vec<routing_table::NodeInfo>
             = routing_node.routing_table.our_close_group();
         let furthest_node_close_group : routing_table::NodeInfo
@@ -1320,7 +1320,7 @@ mod test {
         let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
         let header = MessageHeader {
             message_id:  n1.get_next_message_id(),
-            destination: types::DestinationAddress { dest: n1.own_id.clone(), reply_to: None },
+            destination: types::DestinationAddress { dest: n1.own_name.clone(), reply_to: None },
             source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
             authority:   match message_type {
                 MessageTypeTag::UnauthorisedPut => Authority::Unknown,
@@ -1474,7 +1474,7 @@ mod test {
                 panic!("Routing table does not fill up."); }
         }
         let a_message_id : MessageId = random::<u32>();
-        let our_name = routing_node.own_id.clone();
+        let our_name = routing_node.own_name.clone();
         let our_close_group : Vec<routing_table::NodeInfo>
             = routing_node.routing_table.our_close_group();
         let furthest_node_close_group : routing_table::NodeInfo
