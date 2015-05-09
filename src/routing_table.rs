@@ -22,7 +22,7 @@ use sodiumoxide::crypto;
 use crust::Endpoint;
 
 use common_bits::*;
-use types::PublicPmid;
+use types::PublicId;
 use name_type::{closer_to_target, closer_to_target_or_equal, NameType};
 use types;
 //use NameType;
@@ -40,7 +40,7 @@ pub struct KeyFob {
 
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
-    pub fob: PublicPmid,
+    pub fob: PublicId,
     pub endpoints: Vec<Endpoint>,
     pub connected_endpoint: Option<Endpoint>,
     #[cfg(test)]
@@ -49,7 +49,7 @@ pub struct NodeInfo {
 
 impl NodeInfo {
     #[cfg(not(test))]
-    pub fn new(fob: PublicPmid, endpoints: Vec<Endpoint>,
+    pub fn new(fob: PublicId, endpoints: Vec<Endpoint>,
                connected_endpoint: Option<Endpoint>) -> NodeInfo {
         NodeInfo {
             fob: fob,
@@ -63,7 +63,7 @@ impl NodeInfo {
     }
 
     #[cfg(test)]
-    pub fn new(fob: PublicPmid, endpoints: Vec<Endpoint>,
+    pub fn new(fob: PublicId, endpoints: Vec<Endpoint>,
                connected_endpoint: Option<Endpoint>) -> NodeInfo {
         let id = fob.name.clone();
         NodeInfo {
@@ -421,7 +421,7 @@ mod test {
     use std::cmp;
     use std::collections::BitVec;
     use std::net::*;
-    use types::PublicPmid;
+    use types::PublicId;
     use name_type::closer_to_target;
     use types;
     use NameType;
@@ -577,10 +577,10 @@ mod test {
     // }
 
     fn create_random_node_info() -> NodeInfo {
-        let public_pmid = types::PublicPmid::new(&types::Pmid::new());
+        let public_id = types::PublicId::new(&types::Id::new());
         NodeInfo {
-            id: public_pmid.name.clone(),
-            fob: public_pmid,
+            id: public_id.name.clone(),
+            fob: public_id,
             endpoints: random_endpoints(),
             connected_endpoint: None,
         }
@@ -1097,13 +1097,13 @@ mod test {
     fn our_close_group_and_in_range() {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
-        let our_pmid_name = types::Pmid::new().get_name();
-        let mut routing_table: RoutingTable = RoutingTable::new(our_pmid_name.clone());
+        let our_id_name = types::Id::new().get_name();
+        let mut routing_table: RoutingTable = RoutingTable::new(our_id_name.clone());
 
         let mut count: usize = 0;
         loop {
             routing_table.add_node(
-                NodeInfo::new(types::PublicPmid::new(&types::Pmid::new()), random_endpoints(),
+                NodeInfo::new(types::PublicId::new(&types::Id::new()), random_endpoints(),
                               None));
             count += 1;
             if routing_table.size() >=
@@ -1113,9 +1113,9 @@ mod test {
         }
         let our_close_group: Vec<NodeInfo> = routing_table.our_close_group();
         assert_eq!(our_close_group.len(), RoutingTable::get_group_size() );
-        let mut closer_name: NameType = our_pmid_name.clone();
+        let mut closer_name: NameType = our_id_name.clone();
         for close_node in &our_close_group {
-            assert!(closer_to_target(&closer_name, &close_node.id(), &our_pmid_name));
+            assert!(closer_to_target(&closer_name, &close_node.id(), &our_id_name));
             assert!(routing_table.address_in_our_close_group_range(&close_node.id()));
             closer_name = close_node.id().clone();
         }

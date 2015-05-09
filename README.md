@@ -48,7 +48,7 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 - [x] Move bootstrap out of routing
 - [x] Complete Routing Node Interface to accomodate churn
 - [x] Add caching to node interface
-- [x] Handle PMID Caching
+- [x] Handle ID Caching
 - [x] Handle Cache / Get / Check calls
 - [x] Routing message handling
 - [ ] Sentinel:

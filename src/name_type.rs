@@ -232,12 +232,12 @@ mod test {
     }
 
     #[test]
-    fn format_pmid_nametype() {
-        // test for Pmids
-        use types::Pmid;
+    fn format_id_nametype() {
+        // test for Ids
+        use types::Id;
         for _ in 0..5 {
-            let my_pmid = Pmid::new();
-            let my_name = my_pmid.get_name();
+            let my_id = Id::new();
+            let my_name = my_id.get_name();
             let debug_id = my_name.get_debug_id();
             let full_id = my_name.get_full_id();
             assert_eq!(debug_id.len(), 14);

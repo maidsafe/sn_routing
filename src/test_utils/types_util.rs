@@ -47,9 +47,9 @@ impl Random for PublicKey {
     }
 }
 
-impl Random for PublicPmid {
-    fn generate_random() -> PublicPmid {
-        PublicPmid::new(&Pmid::new())
+impl Random for PublicId {
+    fn generate_random() -> PublicId {
+        PublicId::new(&Id::new())
     }
 }
 

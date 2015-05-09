@@ -30,7 +30,7 @@ pub struct ConnectResponse {
     pub receiver_external_endpoints: Vec<Endpoint>,
     pub requester_id: NameType,
     pub receiver_id: NameType,
-    pub receiver_fob: types::PublicPmid
+    pub receiver_fob: types::PublicId
 }
 
 impl Encodable for ConnectResponse {
@@ -61,7 +61,7 @@ impl Decodable for ConnectResponse {
                   Vec<Endpoint>,
                   NameType,
                   NameType,
-                  types::PublicPmid) = try!(Decodable::decode(decoder));
+                  types::PublicId) = try!(Decodable::decode(decoder));
         Ok(ConnectResponse { requester_local_endpoints: requester_local,
                              requester_external_endpoints: requester_external,
                              receiver_local_endpoints: receiver_local,

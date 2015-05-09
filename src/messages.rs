@@ -49,8 +49,8 @@ pub mod post;
 pub mod put_data;
 #[path="messages/put_data_response.rs"]
 pub mod put_data_response;
-#[path="messages/put_public_pmid.rs"]
-pub mod put_public_pmid;
+#[path="messages/put_public_id.rs"]
+pub mod put_public_id;
 
 
 
@@ -83,7 +83,7 @@ pub enum MessageTypeTag {
     UnauthorisedPut,
     PutKey,
     AccountTransfer,
-    PutPublicPmid,
+    PutPublicId,
     Unknown,
 }
 
@@ -110,7 +110,7 @@ impl Encodable for MessageTypeTag {
             MessageTypeTag::UnauthorisedPut => type_tag = "UnauthorisedPut",
             MessageTypeTag::PutKey => type_tag = "PutKey",
             MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
-            MessageTypeTag::PutPublicPmid => type_tag = "PutPublicPmid",
+            MessageTypeTag::PutPublicId => type_tag = "PutPublicId",
             MessageTypeTag::Unknown => type_tag = "Unknown",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
@@ -141,7 +141,7 @@ impl Decodable for MessageTypeTag {
             "PutDataResponse" => Ok(MessageTypeTag::PutDataResponse),
             "UnauthorisedPut" => Ok(MessageTypeTag::UnauthorisedPut),
             "PutKey" => Ok(MessageTypeTag::PutKey),
-            "PutPublicPmid" => Ok(MessageTypeTag::PutPublicPmid),
+            "PutPublicId" => Ok(MessageTypeTag::PutPublicId),
             "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),
             _ => Ok(MessageTypeTag::Unknown)
         }
