@@ -311,7 +311,7 @@ mod test {
   use messages::{RoutingMessage, MessageTypeTag};
   use messages::put_data::PutData;
   use messages::get_group_key_response::GetGroupKeyResponse;
-  use types::{MessageId, Pmid, PublicPmid, GroupAddress, NodeAddress, DestinationAddress,
+  use types::{MessageId, Id, PublicId, GroupAddress, NodeAddress, DestinationAddress,
               SourceAddress, Authority, PublicSignKey, GROUP_SIZE, vector_as_u8_64_array};
   use sodiumoxide::crypto::hash::sha512::hash;
   use rand::{thread_rng, Rng};
@@ -348,15 +348,15 @@ mod test {
     group_address_ : types::GroupAddress,
     group_size_ : usize,
     authority_ : types::Authority,
-    nodes_ : Vec<types::Pmid>
+    nodes_ : Vec<types::Id>
   }
 
   impl SignatureGroup {
     pub fn new(group_size : usize, authority : types::Authority) -> SignatureGroup {
       let group_address : NameType = Random::generate_random();
-      let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
+      let mut nodes : Vec<types::Id> = Vec::with_capacity(group_size);
       for _ in 0..group_size {
-        nodes.push(types::Pmid::new());
+        nodes.push(types::Id::new());
       }
       SignatureGroup {
         group_address_ : group_address,
@@ -403,22 +403,22 @@ mod test {
     group_address_ : types::GroupAddress,
     group_size_ : usize,
     authority_ : types::Authority,
-    nodes_ : Vec<types::Pmid>,
+    nodes_ : Vec<types::Id>,
     // store the close nodes according
     // to the close group of original group_address
-    nodes_of_nodes_ : Vec<(NameType, Vec<types::Pmid>)>
+    nodes_of_nodes_ : Vec<(NameType, Vec<types::Id>)>
   }
 
   impl EmbeddedSignatureGroup {
     pub fn new(group_size : usize, authority : types::Authority)
               -> EmbeddedSignatureGroup {
       let network_size = 10 * group_size;
-      let mut all_nodes : Vec<types::Pmid> = Vec::with_capacity(network_size);
-      let mut nodes : Vec<types::Pmid> = Vec::with_capacity(group_size);
-      let mut nodes_of_nodes : Vec<(NameType, Vec<types::Pmid>)>
+      let mut all_nodes : Vec<types::Id> = Vec::with_capacity(network_size);
+      let mut nodes : Vec<types::Id> = Vec::with_capacity(group_size);
+      let mut nodes_of_nodes : Vec<(NameType, Vec<types::Id>)>
                                 = Vec::with_capacity(group_size);
       for _ in 0..network_size {
-        all_nodes.push(types::Pmid::new()); // generates two keys !
+        all_nodes.push(types::Id::new()); // generates two keys !
                                             // can be optimised for larger scaled
       }
       let group_address : NameType = Random::generate_random();
@@ -443,7 +443,7 @@ mod test {
         );
         // add ourselves (at 0) and group_size closest
         assert_eq!(all_nodes[0].get_name(), node.get_name());
-        let mut nodes_of_node : Vec<types::Pmid> = Vec::with_capacity(group_size + 1);
+        let mut nodes_of_node : Vec<types::Id> = Vec::with_capacity(group_size + 1);
         for i in 0..group_size + 1 { nodes_of_node.push(all_nodes[i].clone()); };
         nodes_of_nodes.push((node.get_name(), nodes_of_node));
       };
@@ -491,14 +491,14 @@ mod test {
       public_keys
     }
 
-    pub fn get_public_pmids(&self, node_name : NameType) -> Vec<types::PublicPmid> {
+    pub fn get_public_ids(&self, node_name : NameType) -> Vec<types::PublicId> {
       let nodes_of_node = &self.nodes_of_nodes_.iter().find(|x| x.0 == node_name).unwrap();
-      let mut public_pmids : Vec<types::PublicPmid>
+      let mut public_ids : Vec<types::PublicId>
         = Vec::with_capacity(nodes_of_node.1.len());
       for node in &nodes_of_node.1 {
-        public_pmids.push(types::PublicPmid::new(&node));
+        public_ids.push(types::PublicId::new(&node));
       }
-      public_pmids
+      public_ids
     }
 
     pub fn generate_get_group_key_response_messages(&self,
@@ -542,7 +542,7 @@ mod test {
       let mut collect_messages : Vec<AddSentinelMessage> = Vec::with_capacity(self.group_size_);
       for node in &self.nodes_ {
         let find_group_response = messages::find_group_response::FindGroupResponse {
-          group : self.get_public_pmids(node.get_name())
+          group : self.get_public_ids(node.get_name())
         };
         let mut e = cbor::Encoder::from_memory();
         let _ = e.encode(&[&find_group_response]);
@@ -673,9 +673,9 @@ mod test {
 
   #[test]
   fn simple_add_put_data() {
-    let our_pmid = types::Pmid::new();
+    let our_id = types::Id::new();
     let our_destination = types::DestinationAddress {
-      dest : our_pmid.get_name(),
+      dest : our_id.get_name(),
       reply_to : None
     };
     let signature_group = SignatureGroup::new(types::GROUP_SIZE as usize,
@@ -741,9 +741,9 @@ mod test {
 
   #[test]
   fn embedded_add_put_data() {
-    let our_pmid = types::Pmid::new();
+    let our_id = types::Id::new();
     let our_destination = types::DestinationAddress {
-      dest : our_pmid.get_name(),
+      dest : our_id.get_name(),
       reply_to : None
     };
     let embedded_signature_group = EmbeddedSignatureGroup::new(types::GROUP_SIZE as usize,
@@ -801,9 +801,9 @@ mod test {
   #[test]
   fn embedded_find_group_response() {
     // this sentinel is now the destination
-    let our_pmid = types::Pmid::new();
+    let our_id = types::Id::new();
     let our_destination = types::DestinationAddress {
-      dest : our_pmid.get_name(),
+      dest : our_id.get_name(),
       reply_to : None
     };
     let embedded_signature_group = EmbeddedSignatureGroup::new(types::GROUP_SIZE as usize,
@@ -856,36 +856,36 @@ mod test {
   // SentinelMessages
 
   pub struct SentinelMessages {
-    pmids: Vec<Pmid>,
-    extras: Vec<Pmid>,
-    random: Pmid,
-    group_keys: Vec<Vec<PublicPmid>>,
-    client_keys: Vec<PublicPmid>
+    ids: Vec<Id>,
+    extras: Vec<Id>,
+    random: Id,
+    group_keys: Vec<Vec<PublicId>>,
+    client_keys: Vec<PublicId>
   }
 
   impl SentinelMessages {
     pub fn new(size: usize)-> SentinelMessages {
       assert!(size >= GROUP_SIZE as usize);
-      let mut pmids = Vec::new();
+      let mut ids = Vec::new();
       for _ in 0..size {
-        pmids.push(Pmid::new());
+        ids.push(Id::new());
       }
       let mut extras = Vec::new();
       for _ in 1..GROUP_SIZE as usize {
-        extras.push(Pmid::new());
+        extras.push(Id::new());
       }
 
       SentinelMessages {
-        pmids: pmids,
+        ids: ids,
         extras: extras,
-        random: Pmid::new(),
+        random: Id::new(),
         group_keys: Vec::new(),
         client_keys: Vec::new()
       }
     }
 
-    fn sort_pmids(&mut self, target: GroupAddress) {
-      self.pmids.sort_by(
+    fn sort_ids(&mut self, target: GroupAddress) {
+      self.ids.sort_by(
           |a, b| if closer_to_target(&a.get_name(), &b.get_name(), &target) {
                     cmp::Ordering::Less
                  } else {
@@ -893,18 +893,18 @@ mod test {
                  });
     }
 
-    fn get_pmids(&self, size: usize) -> Vec<Pmid> {
-      assert!(self.pmids.len() >= size);
+    fn get_ids(&self, size: usize) -> Vec<Id> {
+      assert!(self.ids.len() >= size);
       let mut result = Vec::new();
       for i in 0..size {
-        result.push(self.pmids[i].clone());
+        result.push(self.ids[i].clone());
       }
       result
     }
 
-    fn get_sorted_pmids(&mut self, target: GroupAddress, size: usize) -> Vec<Pmid> {
-      self.sort_pmids(target);
-      self.get_pmids(size)
+    fn get_sorted_ids(&mut self, target: GroupAddress, size: usize) -> Vec<Id> {
+      self.sort_ids(target);
+      self.get_ids(size)
     }
 
     pub fn group_messages<T>(&mut self, request: T,
@@ -915,17 +915,17 @@ mod test {
                                         source: GroupAddress) -> Vec<RoutingMessage>
           where T: Encodable + Decodable + Clone {
       let group_size = GROUP_SIZE as usize;
-      self.sort_pmids(source.clone());
+      self.sort_ids(source.clone());
 
       let mut messages = Vec::new();
 
       for i in 0..group_size {
         let destination = DestinationAddress{ dest: destination.clone(), reply_to: None };
-        let node = self.pmids[i].get_name().clone();
+        let node = self.ids[i].get_name().clone();
         let group = source.clone();
         let source = SourceAddress{ from_node: node, from_group: Some(group), reply_to: None };
         let header = MessageHeader::new(message_id, destination, source, authority.clone());
-        let sign_key = self.pmids[i].get_crypto_secret_sign_key();
+        let sign_key = self.ids[i].get_crypto_secret_sign_key();
 
         messages.push(RoutingMessage::new(tag.clone(), header, request.clone(), &sign_key));
       }
@@ -941,24 +941,24 @@ mod test {
                                        source: GroupAddress) -> Vec<RoutingMessage>
           where T: Encodable + Decodable + Clone {
       let group_size = GROUP_SIZE as usize;
-      self.sort_pmids(source.clone());
+      self.sort_ids(source.clone());
 
       let mut messages = Vec::new();
 
       let mut rng = thread_rng();
       let range = Range::new(0, group_size);
       {
-        // choose random Pmid from first GROUP_SIZE sorted Pmids...
+        // choose random Id from first GROUP_SIZE sorted Ids...
         let index = range.ind_sample(&mut rng);
 
         let destination = DestinationAddress{ dest: destination.clone(), reply_to: None };
-        let node = self.pmids[index].get_name().clone();
+        let node = self.ids[index].get_name().clone();
         let group = source.clone();
         let source = SourceAddress{ from_node: node, from_group: Some(group), reply_to: None };
         let header = MessageHeader::new(message_id, destination, source, authority.clone());
-        let sign_key = self.pmids[index].get_crypto_secret_sign_key();
+        let sign_key = self.ids[index].get_crypto_secret_sign_key();
 
-        self.random = self.pmids[index].clone();  // ...set 'random' to chosen Pmid
+        self.random = self.ids[index].clone();  // ...set 'random' to chosen Id
 
         messages.push(RoutingMessage::new(tag.clone(), header, request.clone(), &sign_key));
       }
@@ -982,16 +982,16 @@ mod test {
                                           destination: GroupAddress,
                                           source: GroupAddress) -> Vec<RoutingMessage> {
       let group_size = GROUP_SIZE as usize;
-      assert!(self.pmids.len() >= group_size);
-      let sorted = self.get_sorted_pmids(source.clone(), group_size);
+      assert!(self.ids.len() >= group_size);
+      let sorted = self.get_sorted_ids(source.clone(), group_size);
       self.group_keys.clear();
       for i in 0..sorted.len() {
-        let closest = self.get_sorted_pmids(sorted[i].get_name(), group_size);
-        let mut public_pmids = Vec::new();
+        let closest = self.get_sorted_ids(sorted[i].get_name(), group_size);
+        let mut public_ids = Vec::new();
         for j in 0..closest.len() {
-            public_pmids.push(PublicPmid::new(&closest[j]));
+            public_ids.push(PublicId::new(&closest[j]));
         }
-        self.group_keys.push(public_pmids.clone());
+        self.group_keys.push(public_ids.clone());
       }
 
       let mut messages = Vec::new();
@@ -1010,7 +1010,7 @@ mod test {
         let source = SourceAddress{ from_node: node, from_group: Some(group), reply_to: None };
         let tag = MessageTypeTag::GetGroupKeyResponse;
         let header = MessageHeader::new(message_id, destination, source, authority.clone());
-        let sign_key = self.pmids[i].get_crypto_secret_sign_key();
+        let sign_key = self.ids[i].get_crypto_secret_sign_key();
 
         messages.push(RoutingMessage::new(tag, header, group_key_response.clone(), &sign_key));
       }
@@ -1023,26 +1023,26 @@ mod test {
                                                 destination: GroupAddress,
                                                 source: GroupAddress) -> Vec<RoutingMessage> {
       let group_size = GROUP_SIZE as usize;
-      assert!(self.pmids.len() >= group_size);
-      let sorted = self.get_sorted_pmids(source.clone(), group_size);
+      assert!(self.ids.len() >= group_size);
+      let sorted = self.get_sorted_ids(source.clone(), group_size);
       self.group_keys.clear();
       for i in 0..sorted.len() {
-        let closest = self.get_sorted_pmids(sorted[i].get_name(), group_size);
-        let mut public_pmids = Vec::new();
+        let closest = self.get_sorted_ids(sorted[i].get_name(), group_size);
+        let mut public_ids = Vec::new();
         for j in 0..closest.len() {
-            public_pmids.push(PublicPmid::new(&closest[j]));
+            public_ids.push(PublicId::new(&closest[j]));
         }
-        self.group_keys.push(public_pmids.clone());
+        self.group_keys.push(public_ids.clone());
       }
 
-      // append 'extras' and 'random' PublicPmids' GROUP_SIZE times...
+      // append 'extras' and 'random' PublicIds' GROUP_SIZE times...
       for i in 0..group_size {
-        let mut public_pmids = Vec::new();
+        let mut public_ids = Vec::new();
         for j in 0..self.extras.len() {
-            public_pmids.push(PublicPmid::new(&self.extras[j]));
+            public_ids.push(PublicId::new(&self.extras[j]));
         }
-        public_pmids.push(PublicPmid::new(&self.random));
-        self.group_keys.push(public_pmids.clone());
+        public_ids.push(PublicId::new(&self.random));
+        self.group_keys.push(public_ids.clone());
       }
 
       let mut messages = Vec::new();
@@ -1061,7 +1061,7 @@ mod test {
         let source = SourceAddress{ from_node: node, from_group: Some(group), reply_to: None };
         let tag = MessageTypeTag::GetGroupKeyResponse;
         let header = MessageHeader::new(message_id, destination, source, authority.clone());
-        let sign_key = self.pmids[i].get_crypto_secret_sign_key();
+        let sign_key = self.ids[i].get_crypto_secret_sign_key();
 
         messages.push(RoutingMessage::new(tag, header, group_key_response.clone(), &sign_key));
       }
@@ -1101,7 +1101,7 @@ mod test {
 
   #[test]
   fn ordered_group_messages() {
-    // network_size is the number of Pmid's created for test...
+    // network_size is the number of Id's created for test...
     let network_size = 1000usize;
     let mut sentinel_messages = SentinelMessages::new(network_size);
     let data = generate_data(64usize);
@@ -1162,7 +1162,7 @@ mod test {
 
   #[test]
   fn unordered_group_messages() {
-    // network_size is the number of Pmid's created for test...
+    // network_size is the number of Id's created for test...
     let network_size = 1000usize;
     let mut sentinel_messages = SentinelMessages::new(network_size);
     let data = generate_data(64usize);
@@ -1271,7 +1271,7 @@ mod test {
   #[test]
   #[ignore]
   fn fake_messages() {
-    // network_size is the number of Pmid's created for test...
+    // network_size is the number of Id's created for test...
     let network_size = 1000usize;
     let mut sentinel_messages = SentinelMessages::new(network_size);
     let data = generate_data(64usize);

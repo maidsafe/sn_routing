@@ -27,7 +27,7 @@ use NameType;
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectSuccess {
   pub peer_id   : NameType,
-  pub peer_fob : types::PublicPmid
+  pub peer_fob : types::PublicId
 }
 
 impl Encodable for ConnectSuccess {
@@ -43,7 +43,7 @@ impl Decodable for ConnectSuccess {
 
     try!(d.read_u64());
 
-    let (peer_id, peer_fob): (NameType, types::PublicPmid) = try!(Decodable::decode(d));
+    let (peer_id, peer_fob): (NameType, types::PublicId) = try!(Decodable::decode(d));
 
     Ok(ConnectSuccess { peer_id: peer_id,
                         peer_fob: peer_fob})

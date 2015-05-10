@@ -114,8 +114,8 @@ pub type MessageId = u32;
 pub type NodeAddress = NameType; // (Address, NodeTag)
 pub type GroupAddress = NameType; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
-pub type PmidNode = NameType;
-pub type PmidNodes = Vec<PmidNode>;
+pub type IdNode = NameType;
+pub type IdNodes = Vec<IdNode>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
@@ -242,20 +242,20 @@ impl Decodable for PublicKey {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct PublicPmid {
+pub struct PublicId {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
   pub validation_token: Signature,
   pub name: NameType
 }
 
-impl PublicPmid {
-    pub fn new(pmid : &Pmid) -> PublicPmid {
-      PublicPmid {
-        public_key : pmid.get_public_key(),
-        public_sign_key : pmid.get_public_sign_key(),
-        validation_token : pmid.get_validation_token(),
-        name : pmid.get_name()
+impl PublicId {
+    pub fn new(id : &Id) -> PublicId {
+      PublicId {
+        public_key : id.get_public_key(),
+        public_sign_key : id.get_public_sign_key(),
+        validation_token : id.get_validation_token(),
+        name : id.get_name()
       }
     }
 
@@ -266,7 +266,7 @@ impl PublicPmid {
     }
 }
 
-impl Encodable for PublicPmid {
+impl Encodable for PublicId {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.public_key,
                                    &self.public_sign_key,
@@ -274,12 +274,12 @@ impl Encodable for PublicPmid {
   }
 }
 
-impl Decodable for PublicPmid {
-  fn decode<D: Decoder>(d: &mut D)->Result<PublicPmid, D::Error> {
+impl Decodable for PublicId {
+  fn decode<D: Decoder>(d: &mut D)->Result<PublicId, D::Error> {
     try!(d.read_u64());
     let (public_key, public_sign_key,
          validation_token, name) = try!(Decodable::decode(d));
-    Ok(PublicPmid { public_key: public_key,
+    Ok(PublicId { public_key: public_key,
                     public_sign_key : public_sign_key,
                     validation_token: validation_token, name : name })
   }
@@ -288,15 +288,15 @@ impl Decodable for PublicPmid {
 // #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 // TODO (ben 2015-04-01) : implement order based on name
 #[derive(Clone)]
-pub struct Pmid {
+pub struct Id {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
   validation_token: Signature,
   name: NameType
 }
 
-impl Pmid {
-  pub fn new() -> Pmid {
+impl Id {
+  pub fn new() -> Id {
     let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
     let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::asymmetricbox::gen_keypair();
 
@@ -316,7 +316,7 @@ impl Pmid {
       crypto::sign::sign(&arr_combined, &sec_sign_key)};
     let digest = crypto::hash::sha512::hash(&arr_combined);
 
-    Pmid {
+    Id {
       public_keys : (pub_sign_key, pub_asym_key),
       secret_keys : (sec_sign_key, sec_asym_key),
       validation_token : validation_token,
@@ -486,14 +486,14 @@ mod test {
   }
 
 #[test]
-    fn serialisation_public_pmid() {
-        let obj_before = PublicPmid::generate_random();
+    fn serialisation_public_id() {
+        let obj_before = PublicId::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: PublicPmid = d.decode().next().unwrap().unwrap();
+        let obj_after: PublicId = d.decode().next().unwrap().unwrap();
         assert_eq!(obj_before, obj_after);
     }
 }

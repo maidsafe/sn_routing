@@ -22,21 +22,21 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct PutPublicPmid {
-  pub public_pmid: types::PublicPmid,
+pub struct PutPublicId {
+  pub public_id: types::PublicId,
 }
 
-impl Encodable for PutPublicPmid {
+impl Encodable for PutPublicId {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.public_pmid)).encode(e)
+    CborTagEncode::new(5483_001, &(&self.public_id)).encode(e)
   }
 }
 
-impl Decodable for PutPublicPmid {
-  fn decode<D: Decoder>(d: &mut D)->Result<PutPublicPmid, D::Error> {
+impl Decodable for PutPublicId {
+  fn decode<D: Decoder>(d: &mut D)->Result<PutPublicId, D::Error> {
     try!(d.read_u64());
-    let public_pmid = try!(Decodable::decode(d));
-    Ok(PutPublicPmid { public_pmid: public_pmid })
+    let public_id = try!(Decodable::decode(d));
+    Ok(PutPublicId { public_id: public_id })
   }
 }
 
@@ -47,14 +47,14 @@ mod test {
     use test_utils::Random;
 
     #[test]
-    fn put_public_pmid_serialisation() {
-        let obj_before : PutPublicPmid = Random::generate_random();
+    fn put_public_id_serialisation() {
+        let obj_before : PutPublicId = Random::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: PutPublicPmid = d.decode().next().unwrap().unwrap();
+        let obj_after: PutPublicId = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
     }

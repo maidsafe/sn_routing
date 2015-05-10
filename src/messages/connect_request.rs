@@ -29,7 +29,7 @@ pub struct ConnectRequest {
     pub external_endpoints: Vec<Endpoint>,
     pub requester_id: NameType,
     pub receiver_id: NameType,
-    pub requester_fob: types::PublicPmid
+    pub requester_fob: types::PublicId
 }
 
 impl Encodable for ConnectRequest {
@@ -44,7 +44,7 @@ impl Decodable for ConnectRequest {
     fn decode<D: Decoder>(decoder: &mut D)->Result<ConnectRequest, D::Error> {
         let _ = try!(decoder.read_u64());
         let (local_endpoints, external_endpoints, requester_id, receiver_id, requester_fob):
-            (Vec<Endpoint>, Vec<Endpoint>, NameType, NameType, types::PublicPmid) =
+            (Vec<Endpoint>, Vec<Endpoint>, NameType, NameType, types::PublicId) =
                 try!(Decodable::decode(decoder));
         Ok(ConnectRequest { local_endpoints: local_endpoints,
                             external_endpoints: external_endpoints,

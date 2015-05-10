@@ -102,10 +102,10 @@ impl Random for messages::find_group::FindGroup {
 impl Random for messages::find_group_response::FindGroupResponse {
     fn generate_random() -> messages::find_group_response::FindGroupResponse {
         let total = GROUP_SIZE as usize + 20;
-        let mut vec = Vec::<PublicPmid>::with_capacity(total);
+        let mut vec = Vec::<PublicId>::with_capacity(total);
         for i in 0..total {
-            let public_pmid : PublicPmid = Random::generate_random();
-            vec.push(public_pmid);
+            let public_id : PublicId = Random::generate_random();
+            vec.push(public_id);
         }
 
         messages::find_group_response::FindGroupResponse { group: vec }
@@ -203,11 +203,11 @@ impl Random for messages::put_data_response::PutDataResponse {
     }
 }
 
-impl Random for messages::put_public_pmid::PutPublicPmid {
-    fn generate_random() -> messages::put_public_pmid::PutPublicPmid {
-        let public_pmid : PublicPmid = Random::generate_random();
-        messages::put_public_pmid::PutPublicPmid {
-            public_pmid: public_pmid,
+impl Random for messages::put_public_id::PutPublicId {
+    fn generate_random() -> messages::put_public_id::PutPublicId {
+        let public_id : PublicId = Random::generate_random();
+        messages::put_public_id::PutPublicId {
+            public_id: public_id,
         }
     }
 }
