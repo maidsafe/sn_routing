@@ -82,7 +82,6 @@ pub struct RoutingNode<F: Interface> {
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
     routing_table: RoutingTable,
     accepting_on: Vec<Endpoint>,
-    listening_for_broadcasts_on_port: Option<u16>,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
     bootstrap_node_id: Option<NameType>,
@@ -117,7 +116,6 @@ impl<F> RoutingNode<F> where F: Interface {
                       all_connections: (HashMap::new(), BTreeMap::new()),
                       routing_table : RoutingTable::new(own_name),
                       accepting_on: listeners.0,
-                      listening_for_broadcasts_on_port: listeners.1,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_endpoint: None,
                       bootstrap_node_id: None,
@@ -206,7 +204,6 @@ impl<F> RoutingNode<F> where F: Interface {
                     let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
                     if self.message_received(&peer_id, bytes).is_err() {
                         // println!("failed to Parse message !!! check  from - {:?} ", peer_id);
-                        // let _ = self.connection_manager.drop_node(id);  // discuss : no need to drop
                     }
                 } else {
                     // reply with own_name if the incoming msg is BootstrapIdRequest
@@ -269,8 +266,8 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // connect to close group
         let own_name = Some(self.id());
-        let messsge = self.construct_find_group_msg(own_name);
-        self.send_to_bootstrap_node(&messsge);
+        let find_group_msg = self.construct_find_group_msg(own_name);
+        self.send_to_bootstrap_node(&find_group_msg);
     }
 
     fn put_own_public_id(&mut self) {
@@ -291,7 +288,6 @@ impl<F> RoutingNode<F> where F: Interface {
         if self.routing_table.mark_as_connected(&peer_endpoint) {
             return;
         }
-        // FIXME
    }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
@@ -301,7 +297,7 @@ impl<F> RoutingNode<F> where F: Interface {
             self.routing_table.drop_node(&peer_id);
             self.all_connections.1.remove(&peer_id);
           // TODO : remove from the non routing list
-          // handle_churn
+          // FIXME call handle_churn here
         }
     }
 
@@ -323,12 +319,12 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn message_received(&mut self, peer_id: &NameType, serialised_message: Bytes) -> RecvResult {
+    fn message_received(&mut self, peer_id: &NameType, serialised_msg: Bytes) -> RecvResult {
         // Parse
-        let message = try!(decode::<RoutingMessage>(&serialised_message));
-
+        let message = try!(decode::<RoutingMessage>(&serialised_msg));
         let header = message.message_header;
         let body = message.serialised_body;
+
         // filter check
         if self.filter.check(&header.get_filter()) {
             // should just return quietly
@@ -336,6 +332,9 @@ impl<F> RoutingNode<F> where F: Interface {
         }
         // add to filter
         self.filter.add(header.get_filter());
+
+        // check if we can add source to rt
+        // self.check_and_send_connect_request_msg();  // FIXME
 
         // add to cache
         if message.message_type == MessageTypeTag::GetDataResponse {
@@ -372,29 +371,15 @@ impl<F> RoutingNode<F> where F: Interface {
             };
         }
 
-        self.send_swarm_or_parallel(&header.destination.dest, &serialised_message);
+        self.send_swarm_or_parallel(&header.destination.dest, &serialised_msg);
 
         // handle relay request/response
         let relay_response = header.destination.reply_to.is_some() &&
                              header.destination.dest == self.own_name;
         if relay_response {
-            if self.all_connections.1.contains_key(&header.destination.reply_to.clone().unwrap()) {
-                // TODO : or shall have a separate nrt table recording all clients connecting to this node?
-                let relay_to = self.all_connections.1.get(&header.destination.reply_to.clone().unwrap()).unwrap().clone();
-                // println!("{:?} relay response sent to nrt {:?} {}", self.own_name, header.destination.reply_to,
-                //          match relay_to.clone() { Tcp(socket_addr) => socket_addr } );
-                let _ = self.send_to(&relay_to, serialised_message);
-            } else {
-                // TODO : what shall happen to relaying message ? routing_node choosing a closest node ?
-                for endpoint in self.all_connections.0.keys() {
-                    println!("relaying response to {}", match endpoint.clone() { Tcp(socket_addr) => socket_addr });
-                    let _ = self.send_to(&endpoint, serialised_message);
-                    return Ok(());
-                }
-            }
+            self.send_to_non_routing_list(&header.destination.reply_to.clone().unwrap(),
+                                          serialised_msg);
         }
-
-        // TODO(prakash)
 
         if !self.address_in_close_group_range(&header.destination.dest) {
             println!("{:?} not for us ", self.own_name);
@@ -437,8 +422,8 @@ impl<F> RoutingNode<F> where F: Interface {
 
     }
 
-    fn bootstrap_message_received(&mut self, peer_endpoint: Endpoint, serialised_message: Bytes) -> RecvResult {
-        let message = match decode::<RoutingMessage>(&serialised_message) {
+    fn bootstrap_message_received(&mut self, peer_endpoint: Endpoint, serialised_msg: Bytes) -> RecvResult {
+        let message = match decode::<RoutingMessage>(&serialised_msg) {
             Err(err) => {
                 println!("Problem parsing bootstrap message: {} ", err);
                 return Err(RoutingError::UnknownMessageType);
@@ -534,7 +519,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // Try to add to the routing table.  If unsuccessful, no need to continue.
         let (added, _) = self.routing_table.add_node(peer_node_info);
         if !added {
-           return Err(RoutingError::AlreadyConnected);
+            return Err(RoutingError::AlreadyConnected);  // FIXME can also be not added to rt
         }
 
         // Try to connect to the peer.
@@ -552,17 +537,9 @@ impl<F> RoutingNode<F> where F: Interface {
         }
 
         if original_header.source.reply_to.is_some() {
-            let reply_to_address = original_header.source.reply_to.unwrap();
-            // FIXME: Discuss: Might be the case that we want to ignore these errors?
-            return match self.all_connections.1.get(&reply_to_address) {
-                Some(reply_to) => {
-                    let msg = try!(encode(&routing_msg));
-                    self.send_to(&reply_to, msg).map_err(From::from)
-                },
-                None => Err(RoutingError::Other)
-            }
+            self.send_to_non_routing_list(&original_header.source.reply_to.unwrap(),
+                                          serialised_message);
         }
-
         Ok(())
     }
 
@@ -584,18 +561,6 @@ impl<F> RoutingNode<F> where F: Interface {
         // Try to connect to the peer.
         self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
         self.connection_manager.connect(connect_response.receiver_external_endpoints.clone());
-
-// FIXME(Prakash) this can be deleted
-        // workaround for zero state
-        // if self.all_connections.0.len() == 1 &&
-        //         self.all_connections.1.contains_key(&connect_response.receiver_id) {
-        //     let result = self.routing_table.add_node(peer_node_info);
-        //     if result.0 {
-        //         println!("{:?} added {:?} <RT size:{}>", self.own_name, connect_response.receiver_id, self.routing_table.size());
-        //     } else {
-        //         println!("{:?} failed to add {:?}", self.own_name, connect_response.receiver_id);
-        //     }
-        // }
         Ok(())
     }
 
@@ -611,21 +576,13 @@ impl<F> RoutingNode<F> where F: Interface {
 
         let routing_msg = self.construct_find_group_response_msg(&original_header, &find_group, group);
 
-        // FIXME(Peter) below method is needed
-        self.send_swarm_or_parallel(&original_header.send_to().dest, &try!(encode(&routing_msg)));
+        let serialised_msg = try!(encode(&routing_msg));
 
+        self.send_swarm_or_parallel(&original_header.send_to().dest, &serialised_msg);
 
         // if node in my group && in non routing list send it to non_routnig list as well
         if original_header.source.reply_to.is_some() {
-            let reply_to_address = original_header.source.reply_to.unwrap();
-            // FIXME: Discuss: Might be the case that we want to ignore these errors?
-            return match self.all_connections.1.get(&reply_to_address) {
-                Some(reply_to) => {
-                    let msg = try!(encode(&routing_msg));
-                    self.send_to(&reply_to, msg).map_err(From::from)
-                },
-                None => Err(RoutingError::Other)
-            }
+            self.send_to_non_routing_list(&original_header.source.reply_to.unwrap(), serialised_msg);
         }
         Ok(())
     }
@@ -923,14 +880,6 @@ impl<F> RoutingNode<F> where F: Interface {
             types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
             self.our_source_address(), types::Authority::ManagedNode);
 
-        // // FIXME: Discuss how to use other eps from the list. // FIXME prakash
-        // let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
-        //     if eps.is_empty() {
-        //         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
-        //     }
-        //     else { match eps[0] { Tcp(ep) => ep.clone() } }
-        // };
-
         // FIXME: We're sending all accepting connections as local since we don't differentiate
         // between local and external yet.
         let connect_request = ConnectRequest {
@@ -953,14 +902,6 @@ impl<F> RoutingNode<F> where F: Interface {
         let header = MessageHeader::new(self.get_next_message_id(),
             original_header.send_to(), self.our_source_address(),
             types::Authority::ManagedNode);
-
-        // // FIXME: Discuss how to use other eps from the list.
-        // let first_or_invalid = |eps: Vec<Endpoint>| -> SocketAddr {
-        //     if eps.is_empty() {
-        //         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0), 0))
-        //     }
-        //     else { match eps[0] { Tcp(ep) => ep.clone() } }
-        // };
 
         // FIXME: We're sending all accepting connections as local since we don't differentiate
         // between local and external yet.
@@ -995,22 +936,26 @@ impl<F> RoutingNode<F> where F: Interface {
         return temp;
     }
 
-    fn send_to(&self, endpoint: &Endpoint, serialised_message: Bytes) -> Result<(), io::Error> {
-        // FIXME: The send function of FM should take endpoint reference.
-        self.connection_manager.send(endpoint.clone(), serialised_message)
+    fn send_to_non_routing_list(&self, peer: &NameType, serialised_msg: Bytes) {
+        match self.all_connections.1.get(&peer) {
+            Some(peer_endpoint) => {
+                self.connection_manager.send(peer_endpoint.clone(), serialised_msg);
+            },
+            None => ()  // FIXME handle error
+        }
     }
 
-    fn send_to_bootstrap_node(&mut self, routing_message: &RoutingMessage) {
+    fn send_to_bootstrap_node(&mut self, routing_msg: &RoutingMessage) {
         // FIXME - remove unwrap
-        let _ = encode(&routing_message).map(
-            |msg| self.send_to(&self.bootstrap_endpoint.clone().unwrap(), msg));
+        let _ = encode(&routing_msg).map(
+            |msg| self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), msg));
     }
 
-    fn send_swarm_or_parallel(&self, target: &NameType, serialised_message: &Bytes) {
+    fn send_swarm_or_parallel(&self, target: &NameType, msg: &Bytes) {
         for peer in self.get_connected_target(target) {
             match self.all_connections.1.get(&peer.id()) {
                 Some(peer_ep) => {
-                    if self.send_to(&peer_ep, serialised_message.clone()).is_err() {
+                    if self.connection_manager.send(peer_ep.clone(), msg.clone()).is_err() {
                         println!("{:?} failed to send to {:?}", self.own_name, peer.id());
                     }
                 }
