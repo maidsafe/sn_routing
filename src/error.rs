@@ -52,7 +52,7 @@ impl error::Error for InterfaceError {
     fn description(&self) -> &str {
         match *self {
             InterfaceError::Abort => "Aborted",
-            InterfaceError::Response(ResponseError) => "Invalid response",
+            InterfaceError::Response(ref err) => "Invalid response",
         }
     }
     
@@ -78,7 +78,6 @@ impl fmt::Display for InterfaceError {
 //------------------------------------------------------------------------------
 #[derive(Debug)]
 pub enum RoutingError {
-    Other, // TODO: Discuss: we probably don't need this error
     BadAuthority,
     AlreadyConnected,
     UnknownMessageType,
@@ -114,10 +113,10 @@ impl error::Error for RoutingError {
             RoutingError::UnknownMessageType => "Invalid message type",
             RoutingError::FilterCheckFailed => "Filter check failure",
             RoutingError::FailedToBootstrap => "Could not bootstrap",
-            RoutingError::Interface(e) => "Interface error",
-            RoutingError::Io(err) => "I/O error",
-            RoutingError::Cbor(err) => "Serialisation error",
-            RoutingError::Response(err) => "Response error",
+            RoutingError::Interface(ref e) => "Interface error",
+            RoutingError::Io(ref err) => "I/O error",
+            RoutingError::Cbor(ref err) => "Serialisation error",
+            RoutingError::Response(ref err) => "Response error",
         }
     }
     
@@ -125,7 +124,7 @@ impl error::Error for RoutingError {
         match *self {
             RoutingError::Interface(ref err) => Some(err as &error::Error),
             RoutingError::Io(ref err) => Some(err as &error::Error),
-            RoutingError::Cbor(ref err) => Some(err as &error::Error),
+            // RoutingError::Cbor(ref err) => Some(err as &error::Error),
             RoutingError::Response(ref err) => Some(err as &error::Error),
             _ => None,
         }
@@ -135,6 +134,11 @@ impl error::Error for RoutingError {
 impl fmt::Display for RoutingError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            RoutingError::BadAuthority => fmt::Display::fmt("Bad authority", f),
+            RoutingError::AlreadyConnected => fmt::Display::fmt("already connected", f),
+            RoutingError::UnknownMessageType => fmt::Display::fmt("Unknown message", f),
+            RoutingError::FilterCheckFailed => fmt::Display::fmt("filter check failed", f),
+            RoutingError::FailedToBootstrap => fmt::Display::fmt("could not bootstrap", f),
             RoutingError::Interface(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Cbor(ref err) => fmt::Display::fmt(err, f),

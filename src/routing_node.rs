@@ -559,7 +559,7 @@ impl<F> RoutingNode<F> where F: Interface {
                     let msg = try!(encode(&routing_msg));
                     self.send_to(&reply_to, msg).map_err(From::from)
                 },
-                None => Err(RoutingError::Other)
+                None => Err(RoutingError::AlreadyConnected)
             }
         }
 
@@ -624,7 +624,7 @@ impl<F> RoutingNode<F> where F: Interface {
                     let msg = try!(encode(&routing_msg));
                     self.send_to(&reply_to, msg).map_err(From::from)
                 },
-                None => Err(RoutingError::Other)
+                None => Err(RoutingError::AlreadyConnected),
             }
         }
         Ok(())
