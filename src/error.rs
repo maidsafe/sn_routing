@@ -28,8 +28,8 @@ impl error::Error for ResponseError {
 impl fmt::Display for ResponseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ResponseError::NoData => fmt::Display::fmt("No Data", f),
-            ResponseError::InvalidRequest => fmt::Display::fmt("Invalid request", f),
+            ResponseError::NoData => fmt::Display::fmt("ResponsError::NoData", f),
+            ResponseError::InvalidRequest => fmt::Display::fmt("ResponsError::InvalidRequest", f),
         }
     }
 }
@@ -67,7 +67,7 @@ impl error::Error for InterfaceError {
 impl fmt::Display for InterfaceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            InterfaceError::Abort => fmt::Display::fmt("Aborted", f),
+            InterfaceError::Abort => fmt::Display::fmt("InterfaceError::Abort", f),
             InterfaceError::Response(ref err) => fmt::Display::fmt(err, f)
         }
     }
