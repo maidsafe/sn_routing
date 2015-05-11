@@ -1197,13 +1197,12 @@ mod test {
       rng.shuffle(&mut group_messages[..]);
       rng.shuffle(&mut group_keys_responses[..]);
 
-      let mut resolved = None;
       let mut sentinel = Sentinel::new(&mut sentinel_messages);
       let mut rand: usize = rng.gen();
       let mut message_index = rand % group_messages.len();
 
       let msg = group_messages.remove(message_index);
-      resolved =
+      let mut resolved =
           sentinel.add(
               msg.message_header,
               msg.message_type,
@@ -1306,13 +1305,12 @@ mod test {
       rng.shuffle(&mut fake_messages[..]);
       rng.shuffle(&mut fake_group_keys_responses[..]);
 
-      let mut resolved = None;
       let mut sentinel = Sentinel::new(&mut sentinel_messages);
       let mut rand: usize = rng.gen();
       let mut message_index = rand % fake_messages.len();
 
       let msg = fake_messages.remove(message_index);
-      resolved =
+      let mut resolved =
           sentinel.add(
               msg.message_header,
               msg.message_type,
