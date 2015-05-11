@@ -19,48 +19,47 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use NameType;
 
-#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Challenge {
-  pub challenge: Vec<u8>,  // can be my id + peer endpoint ?
+    pub name: NameType,  // can be my id + peer endpoint or a timestamp?
 }
 
 impl Encodable for Challenge {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.challenge)).encode(e)
-  }
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        CborTagEncode::new(5483_001, &(&self.challenge)).encode(e)
+    }
 }
 
 impl Decodable for Challenge {
-  fn decode<D: Decoder>(d: &mut D)->Result<Challenge, D::Error> {
-    try!(d.read_u64());
-    let challenge = try!(Decodable::decode(d));
-    Ok(Challenge { challenge: challenge })
-  }
+    fn decode<D: Decoder>(d: &mut D)->Result<Challenge, D::Error> {
+        try!(d.read_u64());
+        let challenge = try!(Decodable::decode(d));
+        Ok(Challenge { challenge: challenge })
+    }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ChallengeResponse {
-  pub name : NameType,
-  pub challenge_response: Vec<u8>,
+    pub name: NameType,
+    pub signature : crypto::sign::Signature,
+    pub request: ChallengeRequest,
 }
 
-pub fn validate(challenge: &Challenge, challenge_response: &ChallengeResponse) -> bool {
+pub fn validate(public_sign_key: &crypto::sign::PublicKey,
+                challenge_response: &ChallengeResponse) -> bool {
     true  // FIXME validation
 }
 
-
 impl Encodable for ChallengeResponse {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.name, &self.challenge_response)).encode(e)
-  }
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        CborTagEncode::new(5483_001, &(&self.name, &self.challenge_response)).encode(e)
+    }
 }
 
 impl Decodable for ChallengeResponse {
-  fn decode<D: Decoder>(d: &mut D)->Result<ChallengeResponse, D::Error> {
-    try!(d.read_u64());
-    let (name, challenge_response) = try!(Decodable::decode(d));
-    Ok(ChallengeResponse { name: name,  challenge_response: challenge_response})
-  }
+    fn decode<D: Decoder>(d: &mut D)->Result<ChallengeResponse, D::Error> {
+        try!(d.read_u64());
+        let (name, challenge_response) = try!(Decodable::decode(d));
+        Ok(ChallengeResponse { name: name,  challenge_response: challenge_response})
+    }
 }
 
 #[cfg(test)]
