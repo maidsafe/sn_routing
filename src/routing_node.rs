@@ -1001,7 +1001,8 @@ mod test {
     }
 
     struct TestInterface {
-        stats: Arc<Mutex<Stats>>
+        stats: Arc<Mutex<Stats>>,
+        running: bool
     }
 
     struct TestData {
@@ -1100,15 +1101,26 @@ mod test {
         }
     }
 
+    impl TestInterface {
+        pub fn stop(&mut self) {
+            self.running = false;
+        }
+
+        pub fn running(&mut self) -> bool {
+            self.running.clone()
+        }
+    }
+
+
     #[test]
     fn check_next_id() {
-      let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+      let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
       assert_eq!(routing_node.get_next_message_id() + 1, routing_node.get_next_message_id());
     }
 
     fn call_operation<T>(operation: T, message_type: MessageTypeTag, stats: Arc<Mutex<Stats>>) -> Stats where T: Encodable, T: Decodable {
         let stats_copy = stats.clone();
-        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
+        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy, running: true });
         let header = MessageHeader {
             message_id:  n1.get_next_message_id(),
             destination: types::DestinationAddress { dest: n1.own_name.clone(), reply_to: None },
@@ -1134,7 +1146,7 @@ mod test {
     fn call_put() {
         let data = "this is a known string".to_string().into_bytes();
         let chunk = Box::new(TestData::new(data));
-        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
         let name: NameType = Random::generate_random();
         n1.put(name, chunk, true);
     }
@@ -1143,7 +1155,7 @@ mod test {
     fn call_unauthorised_put() {
         let data = "this is a known string".to_string().into_bytes();
         let chunk = Box::new(TestData::new(data));
-        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
         let name: NameType = Random::generate_random();
         n1.unauthorised_put(name, chunk);
     }
@@ -1173,7 +1185,7 @@ mod test {
 
 #[test]
     fn call_get() {
-        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
         let name: NameType = Random::generate_random();
         n1.get(100u64, name);
     }
@@ -1211,18 +1223,16 @@ mod test {
     }
 
     type TestNode = Arc<Mutex<RoutingNode<TestInterface>>>;
-    static TERMINATION_CODE: usize = 999;
 
     fn create_network(network_size: usize) -> Vec<TestNode> {
         let mut network = Vec::new();
-        let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
+        let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true })));
         let use_node = node.clone();
         thread::spawn(move || {
             loop {
                 let mut use_node = use_node.lock().unwrap();
                 use_node.run();
-                let stats = use_node.interface.stats.clone();
-                if stats.lock().unwrap().call_count == TERMINATION_CODE {
+                if !use_node.interface.running() {
                     break;
                 }
             }
@@ -1232,14 +1242,13 @@ mod test {
         println!("network: {:?},    {:?}", &listening_endpoints, node.lock().unwrap().id());
         network.push(node);
         for _ in 0..(network_size - 1) {
-            let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
+            let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true })));
             let use_node = node.clone();
             thread::spawn(move || {
                 loop {
                     let mut use_node = use_node.lock().unwrap();
                     use_node.run();
-                    let stats = use_node.interface.stats.clone();
-                    if stats.lock().unwrap().call_count == TERMINATION_CODE {
+                    if !use_node.interface.running() {
                         break;
                     }
                 }
@@ -1259,9 +1268,9 @@ mod test {
     }
 
     fn terminate_node(node: &TestNode) {
-        let node = node.lock().unwrap();
-        let stats = node.interface.stats.clone();
-        stats.lock().unwrap().call_count = TERMINATION_CODE;
+        let mut node = node.lock().unwrap();
+        node.interface.stop();
+
     }
 
     fn routing_table_size(node: &TestNode) -> usize {
@@ -1287,7 +1296,7 @@ mod test {
     #[test]
     fn cache_public_id() {
         // copy from our_authority_full_routing_table test
-        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
 
         let mut count : usize = 0;
         loop {
