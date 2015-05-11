@@ -214,6 +214,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 self.handle_connect(endpoint);
             },
             crust::Event::LostConnection(endpoint) => {
+                println!("lost connection");
                 self.handle_lost_connection(endpoint);
             }
         }
@@ -469,6 +470,9 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         println!("{:?} received ConnectRequest ", self.own_name);
+        if original_header.destination.dest != self.own_name {
+            return Err(RoutingError::Other);
+        }
         let connect_request = try!(decode::<ConnectRequest>(&body));
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
         let mut peer_endpoints = connect_request.local_endpoints.clone();
@@ -590,16 +594,14 @@ impl<F> RoutingNode<F> where F: Interface {
                     let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_name, &our_authority),
                         GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Ok(data) },
                         &self.id.get_crypto_secret_sign_key());
-                    let encoded_msg = try!(encode(&routing_msg));
-                    self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
+                    let _ = encode(&routing_msg).map(|msg| self.send_swarm_or_parallel(&header.send_to().dest, &msg));
                 },
                 Action::SendOn(dest_nodes) => {
                     for dest_node in dest_nodes {
                         let send_on_header = header.create_send_on(&self.own_name, &our_authority, &dest_node);
                         let routing_msg = RoutingMessage::new(MessageTypeTag::GetData, send_on_header,
                             get_data.clone(), &self.id.get_crypto_secret_sign_key());
-                        let encoded_msg = try!(encode(&routing_msg));
-                        self.send_swarm_or_parallel(&dest_node, &encoded_msg);
+                        let _ = encode(&routing_msg).map(|msg| self.send_swarm_or_parallel(&dest_node, &msg));
                     }
                 }
             },
@@ -608,8 +610,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_name, &our_authority),
                     GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Err(error) },
                     &self.id.get_crypto_secret_sign_key());
-                let encoded_msg = try!(encode(&routing_msg));
-                self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
+                let _ = encode(&routing_msg).map(|msg| self.send_swarm_or_parallel(&header.send_to().dest, &msg));
             }
         }
         Ok(())
@@ -818,7 +819,7 @@ impl<F> RoutingNode<F> where F: Interface {
     fn construct_find_group_response_msg(&mut self, original_header : &MessageHeader,
                                          find_group: &FindGroup,
                                          group: Vec<types::PublicId>) -> RoutingMessage {
-        let header = MessageHeader::new(self.get_next_message_id(),
+        let header = MessageHeader::new(original_header.message_id,
             original_header.send_to(),
             self.our_group_address(find_group.target_id.clone()),
             Authority::NaeManager);
@@ -907,7 +908,6 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn send_to_bootstrap_node(&mut self, routing_msg: &RoutingMessage) {
-        // FIXME - remove unwrap
         let _ = encode(&routing_msg).map(
             |msg| self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), msg));
     }
@@ -996,12 +996,13 @@ mod test {
 
     #[derive(Clone)]
     struct Stats {
-        call_count: u32,
+        call_count: usize,
         data: Vec<u8>
     }
 
     struct TestInterface {
-        stats: Arc<Mutex<Stats>>
+        stats: Arc<Mutex<Stats>>,
+        running: bool
     }
 
     struct TestData {
@@ -1100,15 +1101,26 @@ mod test {
         }
     }
 
+    impl TestInterface {
+        pub fn stop(&mut self) {
+            self.running = false;
+        }
+
+        pub fn running(&mut self) -> bool {
+            self.running.clone()
+        }
+    }
+
+
     #[test]
     fn check_next_id() {
-      let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+      let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
       assert_eq!(routing_node.get_next_message_id() + 1, routing_node.get_next_message_id());
     }
 
     fn call_operation<T>(operation: T, message_type: MessageTypeTag, stats: Arc<Mutex<Stats>>) -> Stats where T: Encodable, T: Decodable {
         let stats_copy = stats.clone();
-        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
+        let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy, running: true });
         let header = MessageHeader {
             message_id:  n1.get_next_message_id(),
             destination: types::DestinationAddress { dest: n1.own_name.clone(), reply_to: None },
@@ -1134,7 +1146,7 @@ mod test {
     fn call_put() {
         let data = "this is a known string".to_string().into_bytes();
         let chunk = Box::new(TestData::new(data));
-        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
         let name: NameType = Random::generate_random();
         n1.put(name, chunk, true);
     }
@@ -1143,7 +1155,7 @@ mod test {
     fn call_unauthorised_put() {
         let data = "this is a known string".to_string().into_bytes();
         let chunk = Box::new(TestData::new(data));
-        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
         let name: NameType = Random::generate_random();
         n1.unauthorised_put(name, chunk);
     }
@@ -1152,7 +1164,7 @@ mod test {
     fn call_handle_put() {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let put_data: PutData = Random::generate_random();
-        assert_eq!(call_operation(put_data, MessageTypeTag::PutData, stats).call_count, 1u32);
+        assert_eq!(call_operation(put_data, MessageTypeTag::PutData, stats).call_count, 1usize);
     }
 
 #[test]
@@ -1160,7 +1172,7 @@ mod test {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let unauthorised_put: PutData = Random::generate_random();
         let result_stats = call_operation(unauthorised_put, MessageTypeTag::UnauthorisedPut, stats);
-        assert_eq!(result_stats.call_count, 1u32);
+        assert_eq!(result_stats.call_count, 1usize);
         assert_eq!(result_stats.data, "UnauthorisedPut".to_string().into_bytes());
     }
 
@@ -1168,12 +1180,12 @@ mod test {
     fn call_handle_put_response() {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let put_data_response: PutDataResponse = Random::generate_random();
-        assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse, stats).call_count, 1u32);
+        assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse, stats).call_count, 1usize);
     }
 
 #[test]
     fn call_get() {
-        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
         let name: NameType = Random::generate_random();
         n1.get(100u64, name);
     }
@@ -1182,14 +1194,14 @@ mod test {
     fn call_handle_get_data() {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let get_data: GetData = Random::generate_random();
-        assert_eq!(call_operation(get_data, MessageTypeTag::GetData, stats).call_count, 1u32);
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetData, stats).call_count, 1usize);
     }
 
 #[test]
     fn call_handle_get_data_response() {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let get_data: GetDataResponse = Random::generate_random();
-        assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse, stats).call_count, 1u32);
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse, stats).call_count, 1usize);
     }
 
 #[test]
@@ -1200,58 +1212,91 @@ mod test {
         let mut enc = Encoder::from_memory();
         let _ = enc.encode(&[public_key]);
         stats.lock().unwrap().data = enc.into_bytes();
-        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey, stats).call_count, 1u32);
+        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey, stats).call_count, 1usize);
     }
 
 #[test]
     fn call_handle_post() {
         let stats = Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]}));
         let post: Post = Random::generate_random();
-        assert_eq!(call_operation(post, MessageTypeTag::Post, stats).call_count, 1u32);
+        assert_eq!(call_operation(post, MessageTypeTag::Post, stats).call_count, 1usize);
     }
 
-#[test]
-    fn network() {
-        let network_size = 2usize;
-        let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
+    type TestNode = Arc<Mutex<RoutingNode<TestInterface>>>;
+
+    fn create_network(network_size: usize) -> Vec<TestNode> {
+        let mut network = Vec::new();
+        let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true })));
         let use_node = node.clone();
-        let mut runners = Vec::new();
-        runners.push(thread::spawn(move || loop {
+        thread::spawn(move || {
+            loop {
                 let mut use_node = use_node.lock().unwrap();
                 use_node.run();
-                if use_node.routing_table.size() == network_size - 1 {
+                if !use_node.interface.running() {
                     break;
                 }
-            }));
+            }
+            println!("node terminated");
+            });
         let listening_endpoints = node.lock().unwrap().accepting_on.clone();
         println!("network: {:?},    {:?}", &listening_endpoints, node.lock().unwrap().id());
+        network.push(node);
         for _ in 0..(network_size - 1) {
-            let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
+            let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true })));
             let use_node = node.clone();
-            runners.push(thread::spawn(move || loop {
+            thread::spawn(move || {
+                loop {
                     let mut use_node = use_node.lock().unwrap();
                     use_node.run();
-                    if use_node.routing_table.size() == network_size - 1 {
+                    if !use_node.interface.running() {
                         break;
                     }
-                }));
+                }
+                println!("node terminated");
+            });
             let mut use_node2 = node.lock().unwrap();
             match use_node2.bootstrap(Some(listening_endpoints.clone()), None) {
                 Ok(_) => { assert!(true) },
                 Err(_)  => { assert!(false); }
             }
+            network.push(node.clone());
             thread::sleep_ms(1000);
         }
+        thread::sleep_ms(1000);
+        println!("network created");
+        network
+    }
 
-        for runner in runners {
-            runner.join();
+    fn terminate_node(node: &TestNode) {
+        let mut node = node.lock().unwrap();
+        node.interface.stop();
+
+    }
+
+    fn routing_table_size(node: &TestNode) -> usize {
+        node.lock().unwrap().routing_table.size().clone()
+    }
+
+
+    #[test]
+    fn connection_lost() {
+        let mut network = create_network(2);
+        match routing_table_size(&network[0])  {
+            1 => {
+                terminate_node(&network[0]);
+                network.remove(0);
+                thread::sleep_ms(10);
+                assert_eq!(network[0].lock().unwrap().routing_table.size(), 0usize);
+            }
+            _ => { println!("connection was lost. failed to test"); }
         }
     }
+
 
     #[test]
     fn cache_public_id() {
         // copy from our_authority_full_routing_table test
-        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})), running: true });
 
         let mut count : usize = 0;
         loop {
