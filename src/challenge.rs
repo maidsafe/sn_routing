@@ -16,34 +16,35 @@
 // relating to use of the SAFE Network Software.
 
 use cbor::CborTagEncode;
-use sodiumoxide::crypto;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use sodiumoxide::crypto;
+
 use NameType;
 use types::PublicSignKey;
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ChallengeRequest {
     pub name: NameType,  // can be my id + peer endpoint or a timestamp?
 }
 
 impl Encodable for ChallengeRequest {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_001, &(&self.name)).encode(e)
+    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
+        CborTagEncode::new(5483_001, &(&self.name)).encode(encoder)
     }
 }
 
 impl Decodable for ChallengeRequest {
-    fn decode<D: Decoder>(d: &mut D)->Result<ChallengeRequest, D::Error> {
-        try!(d.read_u64());
-        let name = try!(Decodable::decode(d));
+    fn decode<D: Decoder>(decoder: &mut D)->Result<ChallengeRequest, D::Error> {
+        try!(decoder.read_u64());
+        let name = try!(Decodable::decode(decoder));
         Ok(ChallengeRequest { name: name })
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ChallengeResponse {
     pub name: NameType,
-    pub signature: PublicSignKey,
+    pub signature: Vec<u8>,
     pub request: ChallengeRequest,
 }
 
@@ -61,10 +62,10 @@ impl Encodable for ChallengeResponse {
 }
 
 impl Decodable for ChallengeResponse {
-    fn decode<D: Decoder>(d: &mut D)->Result<ChallengeResponse, D::Error> {
-        try!(d.read_u64());
-        let (name, signature, request) = try!(Decodable::decode(d));
-        Ok(ChallengeResponse { name: name,  signature: signature, request: request })
+    fn decode<D: Decoder>(decoder: &mut D)->Result<ChallengeResponse, D::Error> {
+        try!(decoder.read_u64());
+        let (name, signature, request) = try!(Decodable::decode(decoder));
+        Ok(ChallengeResponse { name: name, signature: signature, request: request })
     }
 }
 

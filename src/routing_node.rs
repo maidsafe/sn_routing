@@ -27,6 +27,7 @@ use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
 use time::Duration;
 
+use challenge::{ChallengeRequest, ChallengeResponse, validate};
 use crust;
 use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
@@ -194,9 +195,9 @@ impl<F> RoutingNode<F> where F: Interface {
 
     pub fn run(&mut self) {
         let event = self.event_input.try_recv();
-
-        if event.is_err() { return; }
-
+        if event.is_err() {
+            return;
+        }
         match event.unwrap() {
             crust::Event::NewMessage(endpoint, bytes) => {
                 if self.all_connections.0.contains_key(&endpoint) {
@@ -204,11 +205,17 @@ impl<F> RoutingNode<F> where F: Interface {
                     if self.message_received(&peer_id, bytes).is_err() {
                         // println!("failed to Parse message !!! check  from - {:?} ", peer_id);
                     }
-                } else {
-                    // reply with own_name if the incoming msg is BootstrapIdRequest
-                    // record the peer_id if the incoming msg is BootstrapIdResponse
-                    let _ = self.bootstrap_message_received(endpoint, bytes);
+                    return;
                 }
+                if self.handle_challenge_request(&endpoint, &bytes) {
+                    return;
+                }
+                if self.handle_challenge_response(&endpoint, &bytes) {
+                    return;
+                }
+                // reply with own_name if the incoming msg is BootstrapIdRequest
+                // record the peer_id if the incoming msg is BootstrapIdResponse
+                self.bootstrap_message_received(endpoint, bytes);
             },
             crust::Event::NewConnection(endpoint) => {
                 self.handle_connect(endpoint);
@@ -218,6 +225,54 @@ impl<F> RoutingNode<F> where F: Interface {
             }
         }
     }
+
+    fn handle_challenge_request(&mut self, peer_endpoint: &Endpoint,
+                                serialised_message: &Bytes) -> bool {
+        let message = match decode::<ChallengeRequest>(serialised_message) {
+            Err(err) => return false,
+            Ok(message) => message,
+        };
+        let signature = sodiumoxide::crypto::sign::sign(serialised_message,
+                                                        &self.id.get_crypto_secret_sign_key());
+        let response = ChallengeResponse{ name: self.own_name.clone(), signature: signature,
+                                          request: message };
+        let _ = encode(&response).map(
+            |serialised_message| self.connection_manager.send(peer_endpoint.clone(),
+                                                              serialised_message));
+        true
+    }
+
+    fn handle_challenge_response(&mut self, peer_endpoint: &Endpoint,
+                                 serialised_message: &Bytes) -> bool {
+        let message = match decode::<ChallengeResponse>(serialised_message) {
+            Err(err) => return false,
+            Ok(message) => message,
+        };
+        if let Some(peer_public_id) = self.routing_table.public_id(&message.name) {
+            if !validate(&peer_public_id.public_sign_key.get_crypto_public_sign_key(), &message) {
+                // Even though this fails, we should return true as this has parsed as a
+                // ChallengeResponse.
+                return true;
+            }
+            self.all_connections.0.insert(peer_endpoint.clone(), peer_public_id.name.clone());
+            let found = if let Some(peer_endpoints) =
+                    self.all_connections.1.get_mut(&peer_public_id.name) {
+                assert!(!peer_endpoints.is_empty());
+                peer_endpoints.push(peer_endpoint.clone());
+                true
+            } else {
+                false
+            };
+            if !found {
+                self.all_connections.1.insert(peer_public_id.name, vec![peer_endpoint.clone()]);
+            }
+            true
+        } else {
+            // TODO - handle client response here maybe?
+            false
+        }
+    }
+
 
     fn send_bootstrap_id_request(&mut self) {
         let message = RoutingMessage::new(MessageTypeTag::BootstrapIdRequest,
@@ -286,6 +341,8 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
         match self.routing_table.mark_as_connected(&peer_endpoint) {
             Some(peer_id) => {
+                // If the peer is already in our routing table, just add its endpoint to
+                // `all_connections`
                 self.all_connections.0.insert(peer_endpoint.clone(), peer_id.clone());
                 let found = if let Some(peer_endpoints) = self.all_connections.1.get_mut(&peer_id) {
                     assert!(!peer_endpoints.is_empty());
@@ -299,11 +356,14 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
             },
             None => {
-                // TODO - Send ID exchange request.  Add the peer to all_connections when respose arrives and is validated
+                // This is an unexpected connection - send a challenge_request to get the peer's ID
+                let challenge_request = ChallengeRequest{ name: self.own_name.clone() };
+                let _ = encode(&challenge_request).map(
+                    |serialised_message| self.connection_manager.send(peer_endpoint,
+                                                                      serialised_message));
             },
         }
-
-   }
+    }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
         let removed_entry = self.all_connections.0.remove(&peer_endpoint);
@@ -442,7 +502,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
             }
         }
-
     }
 
     fn bootstrap_message_received(&mut self, peer_endpoint: Endpoint, serialised_msg: Bytes) -> RoutingResult {

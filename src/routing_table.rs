@@ -271,19 +271,13 @@ impl RoutingTable {
     }
 
     /// This returns the public key for the given node if the node is in our table.
-    pub fn get_public_key(&self, their_id: &NameType)->Option<crypto::asymmetricbox::PublicKey> {
-
-        //std::lock_guard<std::mutex> lock(mutex_);
+    pub fn public_id(&self, their_id: &NameType)->Option<PublicId> {
         if !self.is_nodes_sorted() {
             panic!("Nodes are not sorted");
         }
-        let found_node_option = self.routing_table.iter().find(
-            |&node_info| {
-                node_info.id() == *their_id
-            });
-        match found_node_option {
-            Some(node) => { Some(node.fob.public_key.get_crypto_public_key()) }
-            None => {None}
+        match self.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
+            Some(node) => Some(node.fob.clone()),
+            None => None,
         }
     }
 
@@ -1267,8 +1261,8 @@ mod test {
     #[test]
     fn trivial_functions_test() {
         let mut table_unit_test = RoutingTableUnitTest::new();
-        match table_unit_test.table.get_public_key(&table_unit_test.buckets[0].mid_contact) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
+        match table_unit_test.table.public_id(&table_unit_test.buckets[0].mid_contact) {
+            Some(_) => panic!("PublicId Exits"),
             None => {},
         }
         assert!(table_unit_test.our_id == table_unit_test.table.our_id);
@@ -1280,16 +1274,16 @@ mod test {
         table_unit_test.node_info = test_node.clone();
         assert!(table_unit_test.table.add_node(table_unit_test.node_info.clone()).0);
 
-        match table_unit_test.table.get_public_key(&table_unit_test.node_info.id()) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => {},
-            None => panic!("PublicKey None"),
+        match table_unit_test.table.public_id(&table_unit_test.node_info.id()) {
+            Some(_) => {},
+            None => panic!("PublicId None"),
         }
         // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(),
         //                                 *table_.GetPublicKey(info_.id())));
-        match table_unit_test.table.get_public_key(
+        match table_unit_test.table.public_id(
                 &table_unit_test.buckets[table_unit_test.buckets.len() - 1].far_contact) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
-            None => {}
+            Some(_) => panic!("PublicId Exits"),
+            None => {},
         }
         assert!(table_unit_test.our_id == table_unit_test.table.our_id);
         assert_eq!(table_unit_test.initial_count + 1, table_unit_test.table.routing_table.len());
@@ -1301,14 +1295,14 @@ mod test {
         table_unit_test.node_info = test_node.clone();
         assert!(table_unit_test.table.add_node(table_unit_test.node_info.clone()).0);
 
-        match table_unit_test.table.get_public_key(&table_unit_test.node_info.id()) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => {},
-            None => panic!("PublicKey None"),
+        match table_unit_test.table.public_id(&table_unit_test.node_info.id()) {
+            Some(_) => {},
+            None => panic!("PublicId None"),
         }
-        match table_unit_test.table.get_public_key(
+        match table_unit_test.table.public_id(
                 &table_unit_test.buckets[table_unit_test.buckets.len() - 1].far_contact) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
-            None => {}
+            Some(_) => panic!("PublicId Exits"),
+            None => {},
         }
         // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(),
         //                                 *table_.GetPublicKey(info_.id())));
