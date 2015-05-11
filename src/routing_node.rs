@@ -78,7 +78,7 @@ pub struct RoutingNode<F: Interface> {
     own_name: NameType,
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
-    all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Endpoint>),
+    all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Vec<Endpoint>>),
     routing_table: RoutingTable,
     accepting_on: Vec<Endpoint>,
     next_message_id: MessageId,
@@ -241,9 +241,8 @@ impl<F> RoutingNode<F> where F: Interface {
         let _ = encode(&message).map(|msg| self.connection_manager.send(peer_endpoint, msg));
     }
 
-    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
-        // println!("{} In handle bootstrap_id_response from {:?}", self.own_name,
-        //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
+    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes,
+                                    is_client: bool) {
         if self.all_connections.0.contains_key(&peer_endpoint) {
             // ignore further request once added or not in sequence (not recorded as pending)
             return;
@@ -257,8 +256,9 @@ impl<F> RoutingNode<F> where F: Interface {
         assert_eq!(self.bootstrap_endpoint, Some(peer_endpoint.clone()));
         self.bootstrap_node_id = Some(bootstrap_id_response_msg.sender_id.clone());
 
-        self.all_connections.0.insert(peer_endpoint.clone(), bootstrap_id_response_msg.sender_id.clone());
-        self.all_connections.1.insert(bootstrap_id_response_msg.sender_id.clone(), peer_endpoint.clone());
+        self.all_connections.0.insert(peer_endpoint.clone(),
+                                      bootstrap_id_response_msg.sender_id.clone());
+        self.all_connections.1.insert(bootstrap_id_response_msg.sender_id, vec![peer_endpoint]);
 
         // put our public id so that our connect requests are validated
         //self.put_own_public_id(); // FIXME enable this with sentinel
@@ -284,9 +284,25 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
-        if self.routing_table.mark_as_connected(&peer_endpoint) {
-            return;
+        match self.routing_table.mark_as_connected(&peer_endpoint) {
+            Some(peer_id) => {
+                self.all_connections.0.insert(peer_endpoint.clone(), peer_id.clone());
+                let found = if let Some(peer_endpoints) = self.all_connections.1.get_mut(&peer_id) {
+                    assert!(!peer_endpoints.is_empty());
+                    peer_endpoints.push(peer_endpoint.clone());
+                    true
+                } else {
+                    false
+                };
+                if !found {
+                    self.all_connections.1.insert(peer_id, vec![peer_endpoint]);
+                }
+            },
+            None => {
+                // TODO - Send ID exchange request.  Add the peer to all_connections when respose arrives and is validated
+            },
         }
+
    }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
@@ -294,8 +310,16 @@ impl<F> RoutingNode<F> where F: Interface {
         if removed_entry.is_some() {
             let peer_id = removed_entry.unwrap();
             self.routing_table.drop_node(&peer_id);
+            match self.all_connections.1.get(&peer_id) {
+                Some(peer_endpoints) => {
+                    for endpoint in peer_endpoints {
+                        let _ = self.all_connections.0.remove(&endpoint);
+                        self.connection_manager.drop_node(endpoint.clone());
+                    }
+                }
+                None => (),
+            }
             self.all_connections.1.remove(&peer_id);
-          // TODO : remove from the non routing list
           // FIXME call handle_churn here
         }
     }
@@ -437,11 +461,11 @@ impl<F> RoutingNode<F> where F: Interface {
                 self.bootstrap_endpoint = Some(peer_endpoint.clone());
             }
             self.all_connections.0.insert(peer_endpoint.clone(), request.sender_id.clone());
-            self.all_connections.1.insert(request.sender_id.clone(), peer_endpoint.clone());
+            self.all_connections.1.insert(request.sender_id, vec![peer_endpoint.clone()]);
             self.send_bootstrap_id_response(peer_endpoint);
         } else if message.message_type == MessageTypeTag::BootstrapIdResponse {
             self.handle_bootstrap_id_response(peer_endpoint, message.serialised_body,
-                                              message.message_header.authority == Authority::Client);
+                message.message_header.authority == Authority::Client);
         }
         Ok(())
     }
@@ -881,7 +905,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn construct_get_data_response_msg(&mut self, original_header: &MessageHeader,
                                        get_data: &GetData, data: Vec<u8>) -> RoutingMessage {
-        let header = MessageHeader::new( self.get_next_message_id(),
+        let header = MessageHeader::new(self.get_next_message_id(),
             original_header.send_to(), self.our_source_address(),
             Authority::ManagedNode);
         let get_data_response = GetDataResponse {
@@ -899,8 +923,9 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn send_to_non_routing_list(&self, peer: &NameType, serialised_msg: Bytes) {
         match self.all_connections.1.get(&peer) {
-            Some(peer_endpoint) => {
-                let _ = self.connection_manager.send(peer_endpoint.clone(), serialised_msg);
+            Some(peer_endpoints) => {
+                assert!(!peer_endpoints.is_empty());
+                let _ = self.connection_manager.send(peer_endpoints[0].clone(), serialised_msg);
             },
             None => ()  // FIXME handle error
         }
@@ -913,23 +938,18 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn send_swarm_or_parallel(&self, target: &NameType, msg: &Bytes) {
-        for peer in self.get_connected_target(target) {
+        for peer in self.routing_table.target_nodes(target) {
             match self.all_connections.1.get(&peer.id()) {
-                Some(peer_ep) => {
-                    if self.connection_manager.send(peer_ep.clone(), msg.clone()).is_err() {
+                Some(peer_endpoints) => {
+                    assert!(!peer_endpoints.is_empty());
+                    if self.connection_manager.send(peer_endpoints[0].clone(),
+                                                    msg.clone()).is_err() {
                         println!("{:?} failed to send to {:?}", self.own_name, peer.id());
                     }
                 }
-                None => {;}
+                None => ()
             }
         }
-    }
-
-    fn get_connected_target(&self, target: &NameType) -> Vec<NodeInfo> {
-        let mut nodes = self.routing_table.target_nodes(target.clone());
-        //println!("{:?} get_connected_target routing_table.size:{} target:{:?} -> {:?}", self.own_name, self.routing_table.size(), target, nodes);
-        nodes.retain(|ref candidate| candidate.connected_endpoint.is_some());
-        nodes
     }
 
     fn address_in_close_group_range(&self, address: &NameType) -> bool {
