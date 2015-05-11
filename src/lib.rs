@@ -64,6 +64,7 @@ mod frequency;
 mod name_type;
 mod routing_table;
 mod sentinel;
+mod challenge;
 
 pub mod client_interface;
 pub mod node_interface;
