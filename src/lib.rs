@@ -73,6 +73,7 @@ pub mod sendable;
 pub mod test_utils;
 pub mod types;
 pub mod error;
+pub mod authority;
 
 use sodiumoxide::crypto;
 

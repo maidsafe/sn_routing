@@ -17,7 +17,8 @@
 
 use sendable::Sendable;
 use name_type::NameType;
-use types::{Authority, DestinationAddress};
+use types::DestinationAddress;
+use authority::Authority;
 use super::Action;
 use error::{InterfaceError, ResponseError};
 
