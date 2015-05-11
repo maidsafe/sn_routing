@@ -69,7 +69,7 @@ pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
 type Bytes = Vec<u8>;
 
-type RecvResult = Result<(), RoutingError>;
+type RoutingResult = Result<(), RoutingError>;
 
 /// DHT node
 pub struct RoutingNode<F: Interface> {
@@ -318,7 +318,7 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn message_received(&mut self, peer_id: &NameType, serialised_msg: Bytes) -> RecvResult {
+    fn message_received(&mut self, peer_id: &NameType, serialised_msg: Bytes) -> RoutingResult {
         // Parse
         let message = try!(decode::<RoutingMessage>(&serialised_msg));
         let header = message.message_header;
@@ -421,7 +421,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     }
 
-    fn bootstrap_message_received(&mut self, peer_endpoint: Endpoint, serialised_msg: Bytes) -> RecvResult {
+    fn bootstrap_message_received(&mut self, peer_endpoint: Endpoint, serialised_msg: Bytes) -> RoutingResult {
         let message = match decode::<RoutingMessage>(&serialised_msg) {
             Err(err) => {
                 println!("Problem parsing bootstrap message: {} ", err);
@@ -448,7 +448,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// This method sends a GetGroupKeyResponse message on receiving the GetGroupKey request.
     /// It collects and replies with all the public signature keys from its close group.
-    fn handle_get_group_key(&mut self, original_header : MessageHeader, body : Bytes) -> RecvResult {
+    fn handle_get_group_key(&mut self, original_header : MessageHeader, body : Bytes) -> RoutingResult {
         let get_group_key = try!(decode::<GetGroupKey>(&body));
 
         let group_keys = self.routing_table.our_close_group()
@@ -467,7 +467,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         println!("{:?} received ConnectRequest ", self.own_name);
         let connect_request = try!(decode::<ConnectRequest>(&body));
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
@@ -503,7 +503,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_connect_response(&mut self, body: Bytes) -> RecvResult {
+    fn handle_connect_response(&mut self, body: Bytes) -> RoutingResult {
         println!("{:?} received ConnectResponse", self.own_name);
         let connect_response = try!(decode::<ConnectResponse>(&body));
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
@@ -524,7 +524,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         println!("{:?} received FindGroup {:?}", self.own_name, original_header.message_id);
         let find_group = try!(decode::<FindGroup>(&body));
 
@@ -547,7 +547,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         println!("{:?} received FindGroupResponse", self.own_name);
         let find_group_response = try!(decode::<FindGroupResponse>(&body));
         for peer in find_group_response.group {
@@ -556,7 +556,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    //FIXME  not sure if we need to return a RecvResult or a generic error
+    //FIXME  not sure if we need to return a RoutingResult or a generic error
     fn check_and_send_connect_request_msg(&mut self, peer_id: &NameType) {
         if !self.routing_table.check_node(&peer_id) {
             return;
@@ -575,7 +575,7 @@ impl<F> RoutingNode<F> where F: Interface {
         // Ok(())
     }
 
-    fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let get_data = try!(decode::<GetData>(&body));
         let type_id = get_data.name_and_type_id.type_id.clone();
         let our_authority = our_authority(&get_data.name_and_type_id.name, &header,
@@ -615,7 +615,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_key(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_get_key(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let get_key = try!(decode::<GetKey>(&body));
         let type_id = 106u64;
         let our_authority = our_authority(&get_key.target_id, &header, &self.routing_table);
@@ -649,14 +649,14 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let get_data_response = try!(decode::<GetDataResponse>(&body));
         let from = header.from();
         self.mut_interface().handle_get_response(from, get_data_response.data);
         Ok(())
     }
 
-    fn handle_post(&mut self, header : MessageHeader, body : Bytes) -> RecvResult {
+    fn handle_post(&mut self, header : MessageHeader, body : Bytes) -> RoutingResult {
         let post = try!(decode::<Post>(&body));
         let our_authority = our_authority(&post.name, &header, &self.routing_table);
         match try!(self.mut_interface().handle_post(our_authority.clone(),
@@ -680,14 +680,14 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn handle_post_response(&self, header : MessageHeader, body : Bytes) -> RecvResult {
+    fn handle_post_response(&self, header : MessageHeader, body : Bytes) -> RoutingResult {
         // currently no post_response object; out of sprint (2015-04-30)
         Ok(())
     }
 
     /// On bootstrapping a node can temporarily publish its PublicId in the group.
     /// Sentinel will query this pool.  No handle_get_public_id is needed.
-    fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         // if data type is public id and our authority is nae then add to public_id_cache
         // don't call upper layer if public id type
         let put_public_id = try!(decode::<PutPublicId>(&body));
@@ -707,7 +707,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     // // for clients, below methods are required
-    fn handle_put_data(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_put_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let put_data = try!(decode::<PutData>(&body));
         let our_authority = our_authority(&put_data.name, &header, &self.routing_table);
         let from_authority = header.from_authority();
@@ -747,7 +747,7 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RecvResult {
+    fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let put_data_response = try!(decode::<PutDataResponse>(&body));
         let from_authority = header.from_authority();
         let from = header.from();
