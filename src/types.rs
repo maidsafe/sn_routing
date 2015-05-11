@@ -66,49 +66,49 @@ pub trait Mergeable {
     fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub enum Authority {
-  ClientManager,  // from a node in our range but not routing table
-  NaeManager,     // target (name()) is in the group we are in
-  NodeManager,    // received from a node in our routing table (handle refresh here)
-  ManagedNode,    // in our group and routing table
-  ManagedClient,  // in our group
-  Client,         // detached
-  Unknown
-}
+// #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+// pub enum Authority {
+//   ClientManager,  // from a node in our range but not routing table
+//   NaeManager,     // target (name()) is in the group we are in
+//   NodeManager,    // received from a node in our routing table (handle refresh here)
+//   ManagedNode,    // in our group and routing table
+//   ManagedClient,  // in our group
+//   Client,         // detached
+//   Unknown
+// }
 
-impl Encodable for Authority {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    let mut authority = "";
-    match *self {
-      Authority::ClientManager => authority = "ClientManager",
-      Authority::NaeManager => authority = "NaeManager",
-      Authority::NodeManager => authority = "NodeManager",
-      Authority::ManagedNode => authority = "ManagedNode",
-      Authority::ManagedClient => authority = "ManagedClient",
-      Authority::Client => authority = "Client",
-      Authority::Unknown => authority = "Unknown",
-    };
-    CborTagEncode::new(5483_100, &(&authority)).encode(e)
-  }
-}
+// impl Encodable for Authority {
+//   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+//     let mut authority = "";
+//     match *self {
+//       Authority::ClientManager => authority = "ClientManager",
+//       Authority::NaeManager => authority = "NaeManager",
+//       Authority::NodeManager => authority = "NodeManager",
+//       Authority::ManagedNode => authority = "ManagedNode",
+//       Authority::ManagedClient => authority = "ManagedClient",
+//       Authority::Client => authority = "Client",
+//       Authority::Unknown => authority = "Unknown",
+//     };
+//     CborTagEncode::new(5483_100, &(&authority)).encode(e)
+//   }
+// }
 
-impl Decodable for Authority {
-  fn decode<D: Decoder>(d: &mut D)->Result<Authority, D::Error> {
-    try!(d.read_u64());
-    let mut authority : String = String::new();
-    authority = try!(Decodable::decode(d));
-    match &authority[..] {
-      "ClientManager" => Ok(Authority::ClientManager),
-      "NaeManager" => Ok(Authority::NaeManager),
-      "NodeManager" => Ok(Authority::NodeManager),
-      "ManagedNode" => Ok(Authority::ManagedNode),
-      "ManagedClient" => Ok(Authority::ManagedClient),
-      "Client" => Ok(Authority::Client),
-      _ => Ok(Authority::Unknown)
-    }
-  }
-}
+// impl Decodable for Authority {
+//   fn decode<D: Decoder>(d: &mut D)->Result<Authority, D::Error> {
+//     try!(d.read_u64());
+//     let mut authority : String = String::new();
+//     authority = try!(Decodable::decode(d));
+//     match &authority[..] {
+//       "ClientManager" => Ok(Authority::ClientManager),
+//       "NaeManager" => Ok(Authority::NaeManager),
+//       "NodeManager" => Ok(Authority::NodeManager),
+//       "ManagedNode" => Ok(Authority::ManagedNode),
+//       "ManagedClient" => Ok(Authority::ManagedClient),
+//       "Client" => Ok(Authority::Client),
+//       _ => Ok(Authority::Unknown)
+//     }
+//   }
+// }
 
 pub type MessageId = u32;
 pub type NodeAddress = NameType; // (Address, NodeTag)
@@ -445,6 +445,7 @@ mod test {
   use rand::random;
   use rustc_serialize::{Decodable, Encodable};
   use test_utils::Random;
+  use authority::Authority;
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];

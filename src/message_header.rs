@@ -20,6 +20,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
 use NameType;
+use authority::Authority;
 
 /// Header of various message types used on routing level
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -27,7 +28,7 @@ pub struct MessageHeader {
     pub message_id: types::MessageId,
     pub destination: types::DestinationAddress,
     pub source: types::SourceAddress,
-    pub authority: types::Authority
+    pub authority: Authority
 }
 
 impl Encodable for MessageHeader {
@@ -51,7 +52,7 @@ impl MessageHeader {
     pub fn new(message_id : types::MessageId,
                destination : types::DestinationAddress,
                source : types::SourceAddress,
-               authority : types::Authority) -> MessageHeader {
+               authority : Authority) -> MessageHeader {
         MessageHeader {
             message_id : message_id, destination : destination,
             source : source, authority : authority
@@ -115,7 +116,7 @@ impl MessageHeader {
         (self.source.from_node.clone(), self.message_id)
     }
 
-    pub fn from_authority(&self) -> types::Authority {
+    pub fn from_authority(&self) -> Authority {
         self.authority.clone()
     }
 
@@ -124,7 +125,7 @@ impl MessageHeader {
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_send_on(&self, our_name : &NameType, our_authority : &types::Authority,
+    pub fn create_send_on(&self, our_name : &NameType, our_authority : &Authority,
                           destination : &NameType) -> MessageHeader {
         // implicitly preserve all non-mutated fields.
         let mut send_on_header = self.clone();
@@ -146,7 +147,7 @@ impl MessageHeader {
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_reply(&self, our_name : &NameType, our_authority : &types::Authority)
+    pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)
                         -> MessageHeader {
         // implicitly preserve all non-mutated fields.
         let mut reply_header = self.clone();
@@ -173,6 +174,7 @@ mod test {
     use types;
     use cbor;
     use test_utils::Random;
+    use authority::Authority;
 
     fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
         let mut e = cbor::Encoder::from_memory();
@@ -190,6 +192,6 @@ mod test {
                                                      reply_to: None },
             source : types::SourceAddress { from_node : Random::generate_random(),
                                             from_group : None, reply_to: None },
-            authority : types::Authority::ManagedNode });
+            authority : Authority::ManagedNode });
     }
 }

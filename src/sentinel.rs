@@ -312,7 +312,8 @@ mod test {
   use messages::put_data::PutData;
   use messages::get_group_key_response::GetGroupKeyResponse;
   use types::{MessageId, Id, PublicId, GroupAddress, NodeAddress, DestinationAddress,
-              SourceAddress, Authority, PublicSignKey, GROUP_SIZE, vector_as_u8_64_array};
+              SourceAddress, PublicSignKey, GROUP_SIZE, vector_as_u8_64_array};
+  use authority::Authority;
   use sodiumoxide::crypto::hash::sha512::hash;
   use rand::{thread_rng, Rng};
   use rand::distributions::{IndependentSample, Range};
@@ -347,12 +348,12 @@ mod test {
   struct SignatureGroup {
     group_address_ : types::GroupAddress,
     group_size_ : usize,
-    authority_ : types::Authority,
+    authority_ : Authority,
     nodes_ : Vec<types::Id>
   }
 
   impl SignatureGroup {
-    pub fn new(group_size : usize, authority : types::Authority) -> SignatureGroup {
+    pub fn new(group_size : usize, authority : Authority) -> SignatureGroup {
       let group_address : NameType = Random::generate_random();
       let mut nodes : Vec<types::Id> = Vec::with_capacity(group_size);
       for _ in 0..group_size {
@@ -402,7 +403,7 @@ mod test {
   struct EmbeddedSignatureGroup {
     group_address_ : types::GroupAddress,
     group_size_ : usize,
-    authority_ : types::Authority,
+    authority_ : Authority,
     nodes_ : Vec<types::Id>,
     // store the close nodes according
     // to the close group of original group_address
@@ -410,7 +411,7 @@ mod test {
   }
 
   impl EmbeddedSignatureGroup {
-    pub fn new(group_size : usize, authority : types::Authority)
+    pub fn new(group_size : usize, authority : Authority)
               -> EmbeddedSignatureGroup {
       let network_size = 10 * group_size;
       let mut all_nodes : Vec<types::Id> = Vec::with_capacity(network_size);
@@ -655,7 +656,7 @@ mod test {
 
   fn verify_match_sentinel_return(sentinel_return : &ResultType,
                                   original_message_id : types::MessageId,
-                                  original_authority : types::Authority,
+                                  original_authority : Authority,
                                   original_destination : types::DestinationAddress,
                                   original_source_group : types::GroupAddress,
                                   original_message_type_tag : messages::MessageTypeTag,
@@ -679,7 +680,7 @@ mod test {
       reply_to : None
     };
     let signature_group = SignatureGroup::new(types::GROUP_SIZE as usize,
-               types::Authority::NaeManager);
+                                              Authority::NaeManager);
     let mut trace_get_keys = TraceGetKeys::new();
     let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
     let mut message_tracker : u64 = 0;
@@ -747,7 +748,7 @@ mod test {
       reply_to : None
     };
     let embedded_signature_group = EmbeddedSignatureGroup::new(types::GROUP_SIZE as usize,
-               types::Authority::NaeManager);
+                                      Authority::NaeManager);
     let mut trace_get_keys = TraceGetKeys::new();
     let mut sentinel_returns = Vec::<(u64, Option<ResultType>)>::new();
     let mut message_tracker : u64 = 0;
@@ -807,7 +808,7 @@ mod test {
       reply_to : None
     };
     let embedded_signature_group = EmbeddedSignatureGroup::new(types::GROUP_SIZE as usize,
-               types::Authority::NaeManager);
+                                      Authority::NaeManager);
     let mut trace_get_keys = TraceGetKeys::new();
     let mut sentinel_returns : Vec<(u64, Option<ResultType>)> = Vec::new();
     let mut message_tracker : u64 = 0;

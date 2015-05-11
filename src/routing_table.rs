@@ -293,6 +293,9 @@ impl RoutingTable {
         self.routing_table.len()
     }
 
+    pub fn our_name(&self) -> NameType {
+        self.our_id.clone()
+    }
 
     /// This returns true if the provided id is closer than or equal to the furthest node in our
     /// close group. If the routing table contains less than GroupSize nodes, then every address is
@@ -420,7 +423,6 @@ mod test {
     use sodiumoxide::crypto;
     use std::cmp;
     use std::collections::BitVec;
-    use std::net::*;
     use types::PublicId;
     use name_type::closer_to_target;
     use types;
