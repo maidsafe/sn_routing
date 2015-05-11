@@ -20,7 +20,6 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto;
 
 use NameType;
-use types::PublicSignKey;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ChallengeRequest {
@@ -71,9 +70,9 @@ impl Decodable for ChallengeResponse {
 
 #[cfg(test)]
 mod test {
-    use cbor;
     use super::*;
-    use NameType;
+    use cbor;
+    use sodiumoxide::crypto;
     use test_utils::Random;
 
     #[test]
@@ -85,13 +84,15 @@ mod test {
         encoded_request.encode(&[&orginal_request]).unwrap();
 
         // parse
-         let mut decoded_request = cbor::Decoder::from_bytes(encoded_request.as_bytes());
-         let request: ChallengeRequest = decoded_request.decode().next().unwrap().unwrap();
-         assert_eq!(orginal_request, request);
+        let mut decoded_request = cbor::Decoder::from_bytes(encoded_request.as_bytes());
+        let request: ChallengeRequest = decoded_request.decode().next().unwrap().unwrap();
+        assert_eq!(orginal_request, request);
 
-         // response
+        // response
+        let (pub_sign_key, sec_sign_key) = crypto::sign::gen_keypair();
+        let signature: Vec<u8> = crypto::sign::sign(&encoded_request.as_bytes(), &sec_sign_key);
         let orginal_response = ChallengeResponse{ name: Random::generate_random(),
-                                                  signature: Random::generate_random(),
+                                                  signature: signature,
                                                   request: request };
         // serialise response
         let mut encoded_response = cbor::Encoder::from_memory();
@@ -102,12 +103,12 @@ mod test {
          let response: ChallengeResponse = decoded_response.decode().next().unwrap().unwrap();
          assert_eq!(orginal_response, response);
 
-        // let mut e = cbor::Encoder::from_memory();
-        // e.encode(&[&obj_before]).unwrap();
+         // validate
+         assert!(validate(&pub_sign_key, &response));
 
-        // let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        // let obj_after: ConnectRequest = d.decode().next().unwrap().unwrap();
+         // invalid response
+         // FIXME(prakash)
+         // assert!(!validate(&pub_sign_key, &invalid_response));
 
-        // assert_eq!(obj_before, obj_after);
     }
 }

@@ -414,7 +414,6 @@ impl RoutingTable {
 #[cfg(test)]
 mod test {
     use super::*;
-    use sodiumoxide::crypto;
     use std::cmp;
     use std::collections::BitVec;
     use types::PublicId;
