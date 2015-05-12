@@ -332,7 +332,7 @@ fn main() {
         }
         loop {
             command.clear();
-            println!("Input command (stop, bootstrap <endpoint>)");
+            println!("Input command (stop)");
             let _ = io::stdin().read_line(&mut command);
             let v: Vec<&str> = command.split(' ').collect();
             match v[0].trim() {
