@@ -339,10 +339,12 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
+        println!("handle new connection peer_ep : {:?}", peer_endpoint);
         match self.routing_table.mark_as_connected(&peer_endpoint) {
             Some(peer_id) => {
                 // If the peer is already in our routing table, just add its endpoint to
                 // `all_connections`
+                println!("RT marked connected peer_id : {:?} , peer_ep : {:?}", peer_id, peer_endpoint);
                 self.all_connections.0.insert(peer_endpoint.clone(), peer_id.clone());
                 let found = if let Some(peer_endpoints) = self.all_connections.1.get_mut(&peer_id) {
                     assert!(!peer_endpoints.is_empty());
@@ -566,10 +568,11 @@ impl<F> RoutingNode<F> where F: Interface {
             NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
 
         // Try to add to the routing table.  If unsuccessful, no need to continue.
-        let (added, _) = self.routing_table.add_node(peer_node_info);
+        let (added, _) = self.routing_table.add_node(peer_node_info.clone());
         if !added {
             return Err(RoutingError::AlreadyConnected);  // FIXME can also be not added to rt
         }
+        println!("RT added {:?}", peer_node_info.fob.name);
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_request.local_endpoints.clone());
@@ -606,6 +609,7 @@ impl<F> RoutingNode<F> where F: Interface {
         if !added {
            return Ok(());
         }
+        println!("RT added {:?}", peer_node_info.fob.name);
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
