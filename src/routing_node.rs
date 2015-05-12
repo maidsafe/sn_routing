@@ -107,7 +107,7 @@ impl<F> RoutingNode<F> where F: Interface {
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
-
+        println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
         RoutingNode { interface: Box::new(my_interface),
                       id : id,
                       own_name : own_name.clone(),
@@ -185,8 +185,12 @@ impl<F> RoutingNode<F> where F: Interface {
 
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
                      beacon_port: Option<u16>) -> Result<(), RoutingError> {
+        println!("[ CRUST ] bootstrap with list {:?}", bootstrap_list);
+
         let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
                                    .map_err(|_|RoutingError::FailedToBootstrap));
+        println!("[ CRUST ] bootstrap {:?}", bootstrapped_to);
+
         self.bootstrap_endpoint = Some(bootstrapped_to);
         // starts swapping ID with the bootstrap peer
         self.send_bootstrap_id_request();
@@ -218,10 +222,10 @@ impl<F> RoutingNode<F> where F: Interface {
                 self.handle_bootstrap_message(endpoint, bytes);
             },
             crust::Event::NewConnection(endpoint) => {
-                self.handle_connect(endpoint);
+                self.handle_new_connect_event(endpoint);
             },
             crust::Event::LostConnection(endpoint) => {
-                self.handle_lost_connection(endpoint);
+                self.handle_lost_connection_event(endpoint);
             }
         }
     }
@@ -338,8 +342,8 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_to_bootstrap_node(&message);
     }
 
-    fn handle_connect(&mut self, peer_endpoint: Endpoint) {
-        println!("handle new connection peer_ep : {:?}", peer_endpoint);
+    fn handle_new_connect_event(&mut self, peer_endpoint: Endpoint) {
+        println!("[ CRUST ] handle_new_connect_event peer_ep : {:?}", peer_endpoint);
         match self.routing_table.mark_as_connected(&peer_endpoint) {
             Some(peer_id) => {
                 // If the peer is already in our routing table, just add its endpoint to
@@ -367,7 +371,8 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
+    fn handle_lost_connection_event(&mut self, peer_endpoint: Endpoint) {
+        println!("[ CRUST ]handle_lost_connection_event peer_ep : {:?}", peer_endpoint);
         let removed_entry = self.all_connections.0.remove(&peer_endpoint);
         if removed_entry.is_some() {
             let peer_id = removed_entry.unwrap();
@@ -572,7 +577,10 @@ impl<F> RoutingNode<F> where F: Interface {
         if !added {
             return Err(RoutingError::AlreadyConnected);  // FIXME can also be not added to rt
         }
-        println!("RT added {:?}", peer_node_info.fob.name);
+        println!("[ CRUST ] connect {:?} {:?} -- RT add {:?} -- ",
+            connect_request.local_endpoints.clone(),
+            connect_request.external_endpoints.clone(),
+            peer_node_info.fob.name);
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_request.local_endpoints.clone());
@@ -609,7 +617,10 @@ impl<F> RoutingNode<F> where F: Interface {
         if !added {
            return Ok(());
         }
-        println!("RT added {:?}", peer_node_info.fob.name);
+        println!("[ CRUST ] connect {:?} {:?} -- RT add {:?}",
+            connect_response.receiver_local_endpoints.clone(),
+            connect_response.receiver_external_endpoints.clone(),
+            peer_node_info.fob.name);
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
