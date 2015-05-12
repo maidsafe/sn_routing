@@ -215,7 +215,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 }
                 // reply with own_name if the incoming msg is BootstrapIdRequest
                 // record the peer_id if the incoming msg is BootstrapIdResponse
-                self.bootstrap_message_received(endpoint, bytes);
+                self.handle_bootstrap_message(endpoint, bytes);
             },
             crust::Event::NewConnection(endpoint) => {
                 self.handle_connect(endpoint);
@@ -471,7 +471,13 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
         // and this node is in the group but the message destination is another group member node.
-        // "not for me"
+        if message.message_type == MessageTypeTag::ConnectRequest || message.message_type == MessageTypeTag::ConnectResponse {
+            if header.destination.dest != self.own_name &&
+                (header.destination.reply_to.is_none() ||
+                 header.destination.reply_to != Some(self.own_name.clone())) { // "not for me"
+                return Ok(());
+            }
+        }
 
         // pre-sentinel message handling
         match message.message_type {
@@ -504,7 +510,7 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn bootstrap_message_received(&mut self, peer_endpoint: Endpoint, serialised_msg: Bytes) -> RoutingResult {
+    fn handle_bootstrap_message(&mut self, peer_endpoint: Endpoint, serialised_msg: Bytes) -> RoutingResult {
         let message = match decode::<RoutingMessage>(&serialised_msg) {
             Err(err) => {
                 println!("Problem parsing bootstrap message: {} ", err);
