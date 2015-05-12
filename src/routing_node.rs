@@ -371,10 +371,8 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_swarm_or_parallel(&header.destination.dest, &serialised_msg);
 
         // handle relay request/response
-        let relay_response = header.destination.reply_to.is_some() &&
-                             header.destination.dest == self.own_name;
-        if relay_response {
-            self.send_by_name(&header.destination.reply_to.clone().unwrap(), serialised_msg);
+        if header.destination.dest == self.own_name {
+            self.send_by_name(header.destination.reply_to.iter(), serialised_msg);
         }
 
         if !self.address_in_close_group_range(&header.destination.dest) {
@@ -482,15 +480,9 @@ impl<F> RoutingNode<F> where F: Interface {
         let serialised_message = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(&connect_request.requester_id, &serialised_message);
+        self.send_to_bootstrap_node(&routing_msg);
+        self.send_by_name(original_header.source.reply_to.iter(), serialised_message);
 
-        if self.bootstrap_endpoint.is_some() {
-            self.send_to_bootstrap_node(&routing_msg);
-        }
-
-        if original_header.source.reply_to.is_some() {
-            self.send_by_name(&original_header.source.reply_to.unwrap(),
-                              serialised_message);
-        }
         Ok(())
     }
 
@@ -530,11 +522,9 @@ impl<F> RoutingNode<F> where F: Interface {
         let serialised_msg = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(&original_header.send_to().dest, &serialised_msg);
+        // if node is in my group && in non routing list send it to non_routing list as well
+        self.send_by_name(original_header.source.reply_to.iter(), serialised_msg);
 
-        // if node in my group && in non routing list send it to non_routnig list as well
-        if original_header.source.reply_to.is_some() {
-            self.send_by_name(&original_header.source.reply_to.unwrap(), serialised_msg);
-        }
         Ok(())
     }
 
@@ -559,10 +549,7 @@ impl<F> RoutingNode<F> where F: Interface {
         };
 
         self.send_swarm_or_parallel(peer_id, &serialised_message);
-
-        if self.bootstrap_endpoint.is_some() {
-            self.send_to_bootstrap_node(&routing_msg);
-        }
+        self.send_to_bootstrap_node(&routing_msg);
         // Ok(())
     }
 
@@ -894,8 +881,10 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
-    fn send_by_name(&self, peer: &NameType, serialised_msg: Bytes) {
-        self.send(self.name_to_endpoint(&peer).into_iter(), &serialised_msg);
+    fn send_by_name<'a, I>(&self, peers: I, serialised_msg: Bytes) where I: Iterator<Item=&'a NameType> {
+        for peer in peers {
+            self.send(self.name_to_endpoint(peer).into_iter(), &serialised_msg);
+        }
     }
 
     fn name_to_endpoint(&self, name: &NameType) -> Option<&Endpoint> {
@@ -1238,7 +1227,7 @@ mod test {
         }
 
         for runner in runners {
-            runner.join();
+            assert!(runner.join().is_ok());
         }
     }
 
