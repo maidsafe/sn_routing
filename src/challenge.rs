@@ -18,8 +18,8 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto;
-
 use NameType;
+use utils::decode;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ChallengeRequest {
@@ -49,7 +49,15 @@ pub struct ChallengeResponse {
 
 pub fn validate(public_sign_key: &crypto::sign::PublicKey,
                 challenge_response: &ChallengeResponse) -> bool {
-    true  // FIXME validation
+    match crypto::sign::verify(&challenge_response.signature, &public_sign_key) {
+        Some(x) => {
+            match decode::<ChallengeRequest>(&x) {
+                Err(_) => false,
+                Ok(request) => challenge_response.request == request,
+            }
+        },
+        None => false
+    }
 }
 
 impl Encodable for ChallengeResponse {
@@ -71,44 +79,46 @@ impl Decodable for ChallengeResponse {
 #[cfg(test)]
 mod test {
     use super::*;
-    use cbor;
     use sodiumoxide::crypto;
     use test_utils::Random;
+    use utils::{decode, encode};
 
     #[test]
     fn challenge_validation() {
         let orginal_request = ChallengeRequest{ name: Random::generate_random() };
 
         // serialise
-        let mut encoded_request = cbor::Encoder::from_memory();
-        encoded_request.encode(&[&orginal_request]).unwrap();
+        let encoded_request = encode(&orginal_request).unwrap();
 
         // parse
-        let mut decoded_request = cbor::Decoder::from_bytes(encoded_request.as_bytes());
-        let request: ChallengeRequest = decoded_request.decode().next().unwrap().unwrap();
+        let request = decode::<ChallengeRequest>(&encoded_request).unwrap();
         assert_eq!(orginal_request, request);
 
         // response
         let (pub_sign_key, sec_sign_key) = crypto::sign::gen_keypair();
-        let signature: Vec<u8> = crypto::sign::sign(&encoded_request.as_bytes(), &sec_sign_key);
+        let signature: Vec<u8> = crypto::sign::sign(&encoded_request, &sec_sign_key);
         let orginal_response = ChallengeResponse{ name: Random::generate_random(),
                                                   signature: signature,
                                                   request: request };
+
         // serialise response
-        let mut encoded_response = cbor::Encoder::from_memory();
-        encoded_response.encode(&[&orginal_response]).unwrap();
+        let encoded_response = encode(&orginal_response).unwrap();
 
         // parse
-         let mut decoded_response = cbor::Decoder::from_bytes(encoded_request.as_bytes());
-         let response: ChallengeResponse = decoded_response.decode().next().unwrap().unwrap();
-         assert_eq!(orginal_response, response);
+        let response = decode::<ChallengeResponse>(&encoded_response).unwrap();
+        assert_eq!(orginal_response, response);
 
-         // validate
-         assert!(validate(&pub_sign_key, &response));
+        // validate
+        assert!(validate(&pub_sign_key, &response));
 
-         // invalid response
-         // FIXME(prakash)
-         // assert!(!validate(&pub_sign_key, &invalid_response));
+        // invalid response using different sign key
+        let (other_pub_sign_key, other_sec_sign_key) = crypto::sign::gen_keypair();
+        let other_signature = crypto::sign::sign(&encoded_request, &other_sec_sign_key);
+        let invalid_response = ChallengeResponse{ name: Random::generate_random(),
+                                                  signature: other_signature,
+                                                  request: orginal_request };
 
+        // validate invalid_response
+        assert!(!validate(&pub_sign_key, &invalid_response));
     }
 }
