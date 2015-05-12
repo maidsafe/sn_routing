@@ -216,32 +216,39 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
+    fn generate_bootstrap_header(&self, message_id: MessageId) -> MessageHeader {
+        MessageHeader::new( message_id,
+                            types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]),
+                                                       reply_to: None },
+                            types::SourceAddress{ from_node: self.id(),
+                                                  from_group: None,
+                                                  reply_to: None },
+                            Authority::ManagedNode)
+    }
+
     fn send_bootstrap_id_request(&mut self) -> RoutingResult {
+        let message_id = self.get_next_message_id();
         let message = RoutingMessage::new(MessageTypeTag::BootstrapIdRequest,
-            MessageHeader::new(self.get_next_message_id(),
-                types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
-                types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None },
-                Authority::ManagedNode),
-            BootstrapIdRequest { sender_id: self.id() }, &self.id.get_crypto_secret_sign_key());
+                                          self.generate_bootstrap_header(message_id),
+                                          BootstrapIdRequest { sender_id: self.id() },
+                                          &self.id.get_crypto_secret_sign_key());
+
         self.send_to_bootstrap_node(&message);
         Ok(())
     }
 
     fn send_bootstrap_id_response(&mut self, peer_endpoint: Endpoint) {
+        let message_id = self.get_next_message_id();
         let message = RoutingMessage::new(MessageTypeTag::BootstrapIdResponse,
-            MessageHeader::new(self.get_next_message_id(),
-                types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
-                types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None },
-                Authority::ManagedNode),
-            BootstrapIdResponse { sender_id: self.id() }, &self.id.get_crypto_secret_sign_key());
+                                          self.generate_bootstrap_header(message_id),
+                                          BootstrapIdResponse { sender_id: self.id() },
+                                          &self.id.get_crypto_secret_sign_key());
 
         // need to send to bootstrap node as we are not yet connected to anyone else
-        let _ = encode(&message).map(|msg| self.connection_manager.send(peer_endpoint, msg));
+        ignore(encode(&message).map(|msg| self.send(Some(peer_endpoint).iter(), &msg)));
     }
 
     fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
-        // println!("{} In handle bootstrap_id_response from {:?}", self.own_name,
-        //          match peer_endpoint.clone() { Tcp(socket_addr) => socket_addr });
         if self.all_connections.0.contains_key(&peer_endpoint) {
             // ignore further request once added or not in sequence (not recorded as pending)
             return;
@@ -531,26 +538,24 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         println!("{:?} received FindGroupResponse", self.own_name);
         let find_group_response = try!(decode::<FindGroupResponse>(&body));
+
         for peer in find_group_response.group {
-            self.check_and_send_connect_request_msg(&peer.name);
+            if self.routing_table.check_node(&peer.name) {
+                ignore(self.send_connect_request_msg(&peer.name));
+            }
         }
+
         Ok(())
     }
 
     //FIXME  not sure if we need to return a RoutingResult or a generic error
-    fn check_and_send_connect_request_msg(&mut self, peer_id: &NameType) {
-        if !self.routing_table.check_node(&peer_id) {
-            return;
-        }
+    fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
         let routing_msg = self.construct_connect_request_msg(&peer_id);
-        let serialised_message = match encode(&routing_msg) {
-            Ok(message) => message,
-            Err(_) => return,
-        };
+        let serialised_message = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(peer_id, &serialised_message);
         self.send_to_bootstrap_node(&routing_msg);
-        // Ok(())
+        Ok(())
     }
 
     fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
