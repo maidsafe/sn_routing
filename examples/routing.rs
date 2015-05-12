@@ -53,6 +53,7 @@ use routing::routing_client::{ClientIdPacket, RoutingClient};
 use routing::routing_node::{RoutingNode};
 use routing::sendable::Sendable;
 use routing::types;
+use routing::authority::Authority;
 use routing::{Action, NameType};
 use routing::error::{ResponseError, InterfaceError};
 
@@ -104,7 +105,7 @@ impl TestData {
 
     pub fn get_name_from_key(key: &Vec<u8>) -> NameType {
         let digest = crypto::hash::sha512::hash(key);
-        NameType(digest.0)        
+        NameType(digest.0)
     }
 
     pub fn get_key(&self) -> Vec<u8> { self.key.clone() }
@@ -123,7 +124,7 @@ impl Sendable for TestData {
     fn serialised_contents(&self)->Vec<u8> {
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&self]).unwrap();
-        e.into_bytes()     
+        e.into_bytes()
     }
 
     fn refresh(&self)->bool {
@@ -195,8 +196,8 @@ struct TestNode {
 }
 
 impl Interface for TestNode {
-    fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: types::Authority,
-                  from_authority: types::Authority, from_address: NameType)
+    fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority,
+                  from_authority: Authority, from_address: NameType)
                    -> Result<Action, InterfaceError> {
         println!("testing node handle get request from {} of chunk {}", from_address, name);
         let stats = self.stats.clone();
@@ -206,11 +207,11 @@ impl Interface for TestNode {
         }
         Err(InterfaceError::Response(ResponseError::NoData))
     }
-    fn handle_put(&mut self, our_authority: types::Authority, from_authority: types::Authority,
+    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: types::DestinationAddress,
                 data_in: Vec<u8>) -> Result<Action, InterfaceError> {
-        if our_authority != types::Authority::NaeManager {
-            if our_authority == types::Authority::ClientManager {
+        if our_authority != Authority::NaeManager {
+            if our_authority == Authority::ClientManager {
                 let mut d = cbor::Decoder::from_bytes(data_in);
                 let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
                 println!("ClientManager forwarding data to DataManager around {:?} ", in_coming_data.name());
@@ -233,7 +234,7 @@ impl Interface for TestNode {
         // return with abort to terminate the flow
         Err(InterfaceError::Abort)
     }
-    fn handle_post(&mut self, our_authority: types::Authority, from_authority: types::Authority,
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
                    from_address: NameType, name : NameType, data: Vec<u8>) -> Result<Action, InterfaceError> {
         Err(InterfaceError::Abort)
     }
@@ -248,7 +249,7 @@ impl Interface for TestNode {
         }
         routing::node_interface::RoutingNodeAction::None
     }
-    fn handle_put_response(&mut self, from_authority: types::Authority, from_address: NameType,
+    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) {
         if response.is_ok() {
             println!("testing node shall not receive a put_response in case of success");
@@ -256,7 +257,7 @@ impl Interface for TestNode {
             println!("testing node received error put_response from {}", from_address);
         }
     }
-    fn handle_post_response(&mut self, from_authority: types::Authority, from_address: NameType,
+    fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
                             response: Result<Vec<u8>, ResponseError>) {
         unimplemented!();
     }
@@ -264,7 +265,7 @@ impl Interface for TestNode {
         -> Vec<routing::node_interface::RoutingNodeAction> {
         unimplemented!();
     }
-    fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: types::Authority,
+    fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
                         from_address: NameType) -> Result<Action, InterfaceError> {
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
@@ -274,7 +275,7 @@ impl Interface for TestNode {
         }
         Err(InterfaceError::Abort)
     }
-    fn handle_cache_put(&mut self, from_authority: types::Authority, from_address: NameType,
+    fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
                         data: Vec<u8>) -> Result<Action, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
@@ -291,8 +292,8 @@ impl Interface for TestNode {
     fn handle_get_key(&mut self,
                       type_id: u64,
                       name: NameType,
-                      our_authority: routing::types::Authority,
-                      from_authority: routing::types::Authority,
+                      our_authority: Authority,
+                      from_authority: Authority,
                       from_address: NameType) -> Result<Action, InterfaceError> {
         unimplemented!();
     }
@@ -321,7 +322,7 @@ fn main() {
             match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
                 Ok(addr) => {
                     println!("initial bootstrapping to {} ", addr);
-                    let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None); 
+                    let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
                 }
                 Err(_) => {}
             };
@@ -356,7 +357,7 @@ fn main() {
             match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
                 Ok(addr) => {
                     println!("initial bootstrapping to {} ", addr);
-                    let _ = mutate_client.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None); 
+                    let _ = mutate_client.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
                 }
                 Err(_) => {}
             };
@@ -375,7 +376,7 @@ fn main() {
                     let key: Vec<u8> = v[1].trim().bytes().collect();
                     let value: Vec<u8> = v[2].trim().bytes().collect();
                     let data = TestData::new(key, value);
-                    println!("putting data {:?} to network with name as {}", data, data.name());             
+                    println!("putting data {:?} to network with name as {}", data, data.name());
                     let _ = mutate_client.lock().unwrap().put(data);
                 },
                 "get" => {

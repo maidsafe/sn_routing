@@ -173,11 +173,6 @@ impl Decodable for RoutingMessage {
 }
 
 impl RoutingMessage {
-    // pub fn dummy_new(message_type: MessageTypeTag,
-    //                  message_header: message_header::MessageHeader) -> RoutingMessage {
-    //     RoutingMessage { message_type: message_type, message_header: message_header, serialised_body: Vec::<u8>::new() }
-    // }
-
     pub fn new<T>(message_type: MessageTypeTag, message_header: message_header::MessageHeader,
                   message : T, private_sign_key : &crypto::sign::SecretKey) -> RoutingMessage where T: for<'a> Encodable + Decodable {
         let mut e = cbor::Encoder::from_memory();
@@ -189,17 +184,5 @@ impl RoutingMessage {
             message_header: message_header,
             serialised_body: types::array_as_vector(e.as_bytes()),
             signature: signature }
-    }
-
-    pub fn get_message_body<T>(&self) -> T where T: for<'a> Encodable + Decodable {
-        let mut d = cbor::Decoder::from_bytes(&self.serialised_body[..]);
-        let obj: T = d.decode().next().unwrap().unwrap();
-        obj
-    }
-
-    pub fn set_message_body<T>(&mut self, message: T) where T: for<'a> Encodable + Decodable {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&message]).unwrap();
-        self.serialised_body = e.as_bytes().to_vec()
     }
 }

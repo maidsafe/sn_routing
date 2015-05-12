@@ -42,7 +42,8 @@ use messages::put_data::PutData;
 use name_type::{NAME_TYPE_LEN};
 use message_header::MessageHeader;
 use messages::{RoutingMessage, MessageTypeTag};
-use types::{MessageId, Authority};
+use types::MessageId;
+use authority::Authority;
 
 pub use crust::Endpoint;
 
@@ -211,7 +212,7 @@ impl<F> RoutingClient<F> where F: Interface {
                 reply_to: None
             },
             get_data.requester.clone(),
-            types::Authority::Client
+            Authority::Client
         );
 
         // Make RoutingMessage
@@ -256,7 +257,7 @@ impl<F> RoutingClient<F> where F: Interface {
                 from_group: None,
                 reply_to: Some(self.id_packet.get_name()),
             },
-            types::Authority::Client
+            Authority::Client
         );
 
         // Make RoutingMessage
@@ -359,7 +360,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
         let source = types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None };
-        let authority = types::Authority::Client;
+        let authority = Authority::Client;
         let request = BootstrapIdRequest { sender_id: self.id_packet.get_name().clone() };
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::BootstrapIdRequest, header,
@@ -374,7 +375,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let message_id = self.get_next_message_id();
         let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
         let source = types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None };
-        let authority = types::Authority::Client;
+        let authority = Authority::Client;
         let request = BootstrapIdResponse { sender_id: self.id_packet.get_name().clone() };
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::BootstrapIdResponse, header,
