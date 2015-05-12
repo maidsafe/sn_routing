@@ -233,7 +233,7 @@ impl<F> RoutingNode<F> where F: Interface {
                                           BootstrapIdRequest { sender_id: self.id() },
                                           &self.id.get_crypto_secret_sign_key());
 
-        self.send_to_bootstrap_node(&message);
+        self.send_to_bootstrap_node(&try!(encode(&message)));
         Ok(())
     }
 
@@ -269,9 +269,8 @@ impl<F> RoutingNode<F> where F: Interface {
         //self.put_own_public_id(); // FIXME enable this with sentinel
 
         // connect to close group
-        let own_name = Some(self.id());
-        let find_group_msg = self.construct_find_group_msg(own_name);
-        self.send_to_bootstrap_node(&find_group_msg);
+        let find_group_msg = self.construct_find_group_msg();
+        ignore(encode(&find_group_msg).map(|msg|self.send_to_bootstrap_node(&msg)));
     }
 
     fn put_own_public_id(&mut self) {
@@ -285,14 +284,14 @@ impl<F> RoutingNode<F> where F: Interface {
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::PutPublicId, header,
             request, &self.id.get_crypto_secret_sign_key());
-        self.send_to_bootstrap_node(&message);
+        ignore(encode(&message).map(|msg|self.send_to_bootstrap_node(&msg)));
     }
 
     fn handle_connect(&mut self, peer_endpoint: Endpoint) {
         if self.routing_table.mark_as_connected(&peer_endpoint) {
             return;
         }
-   }
+    }
 
     fn handle_lost_connection(&mut self, peer_endpoint: Endpoint) {
         let removed_entry = self.all_connections.0.remove(&peer_endpoint);
@@ -487,7 +486,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let serialised_message = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(&connect_request.requester_id, &serialised_message);
-        self.send_to_bootstrap_node(&routing_msg);
+        self.send_to_bootstrap_node(&serialised_message);
         self.send_by_name(original_header.source.reply_to.iter(), serialised_message);
 
         Ok(())
@@ -554,7 +553,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let serialised_message = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(peer_id, &serialised_message);
-        self.send_to_bootstrap_node(&routing_msg);
+        self.send_to_bootstrap_node(&serialised_message);
         Ok(())
     }
 
@@ -606,9 +605,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let from = header.from();
         let name = get_key.target_id.clone();
 
-        let mut action: Action;
-
-        action = try!(self.mut_interface().handle_get_key(type_id, name, our_authority.clone(), from_authority, from));
+        let action = try!(self.mut_interface().handle_get_key(type_id, name, our_authority.clone(), from_authority, from));
 
         match action {
             Action::Reply(data) => {
@@ -782,12 +779,12 @@ impl<F> RoutingNode<F> where F: Interface {
         )
     }
 
-    fn construct_find_group_msg(&mut self, reply_to: Option<NameType>) -> RoutingMessage {
+    fn construct_find_group_msg(&mut self) -> RoutingMessage {
         let header = MessageHeader::new(
             self.get_next_message_id(),
             types::DestinationAddress {
                  dest:     self.own_name.clone(),
-                 reply_to: reply_to
+                 reply_to: Some(self.id())
             },
             self.our_source_address(),
             Authority::ManagedNode);
@@ -900,8 +897,8 @@ impl<F> RoutingNode<F> where F: Interface {
         self.all_connections.0.get(&endpoint)
     }
 
-    fn send_to_bootstrap_node(&mut self, routing_msg: &RoutingMessage) {
-        ignore(encode(&routing_msg).map(|msg| self.send(self.bootstrap_endpoint.iter(), &msg)));
+    fn send_to_bootstrap_node(&mut self, msg: &Bytes) {
+        self.send(self.bootstrap_endpoint.iter(), &msg);
     }
 
     fn send_swarm_or_parallel(&self, target: &NameType, msg: &Bytes) {
