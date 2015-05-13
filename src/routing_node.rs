@@ -430,7 +430,10 @@ impl<F> RoutingNode<F> where F: Interface {
         self.filter.add(header.get_filter());
 
         // check if we can add source to rt
-        // self.check_and_send_connect_request_msg();  // FIXME
+        if self.routing_table.check_node(&header.source.from_node) {
+            ignore(self.send_connect_request_msg(&header.source.from_node));
+         }
+
 
         // add to cache
         if message.message_type == MessageTypeTag::GetDataResponse {
