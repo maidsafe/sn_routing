@@ -152,9 +152,9 @@ impl RoutingTable {
     }
 
     /// This changes the connected status of the peer from false to true.  Only one connection is
-    /// allowed per node, so this returns false if the endpoint doesn't exist anywhere in the table
-    /// or if the peer already has a connected endpoint
-    pub fn mark_as_connected(&mut self, endpoint: &Endpoint) -> bool {
+    /// allowed per node, so this returns None if the endpoint doesn't exist anywhere in the table
+    /// or if the peer already has a connected endpoint.  Otherwise it returns the peer's ID.
+    pub fn mark_as_connected(&mut self, endpoint: &Endpoint) -> Option<NameType> {
         let has_endpoint = |ref node_info: &NodeInfo| {
             for ref candidate_endpoint in &node_info.endpoints {
                 if **candidate_endpoint == *endpoint {
@@ -164,10 +164,10 @@ impl RoutingTable {
             false
         };
         match self.routing_table.iter().position(has_endpoint) {
-            None => false,
+            None => None,
             Some(index) => {
                 self.routing_table[index].connected_endpoint = Some(endpoint.clone());
-                true
+                Some(self.routing_table[index].id())
             },
         }
     }
@@ -214,7 +214,7 @@ impl RoutingTable {
     /// return all of our close group (comprising 'GroupSize' contacts) if the closest one to the
     /// target is within our close group.  If not, it will return the 'Parallelism()' closest
     /// contacts to the target.
-    pub fn target_nodes(&self, target: NameType)->Vec<NodeInfo> {
+    pub fn target_nodes(&self, target: &NameType)->Vec<NodeInfo> {
         let mut our_close_group = Vec::new();
         let mut closest_to_target = Vec::new();
         let mut result: Vec<NodeInfo> = Vec::new();
@@ -271,19 +271,13 @@ impl RoutingTable {
     }
 
     /// This returns the public key for the given node if the node is in our table.
-    pub fn get_public_key(&self, their_id: NameType)->Option<crypto::asymmetricbox::PublicKey> {
-
-        //std::lock_guard<std::mutex> lock(mutex_);
+    pub fn public_id(&self, their_id: &NameType)->Option<PublicId> {
         if !self.is_nodes_sorted() {
             panic!("Nodes are not sorted");
         }
-        let found_node_option = self.routing_table.iter().find(
-            |&node_info| {
-                node_info.id() == their_id
-            });
-        match found_node_option {
-            Some(node) => { Some(node.fob.public_key.get_crypto_public_key()) }
-            None => {None}
+        match self.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
+            Some(node) => Some(node.fob.clone()),
+            None => None,
         }
     }
 
@@ -420,7 +414,6 @@ impl RoutingTable {
 #[cfg(test)]
 mod test {
     use super::*;
-    use sodiumoxide::crypto;
     use std::cmp;
     use std::collections::BitVec;
     use types::PublicId;
@@ -1085,7 +1078,7 @@ mod test {
                 });
             // if target is in close group return the whole close group excluding target
             for j in 1..(RoutingTable::get_group_size() - RoutingTable::get_quorum_size()) {
-                let target_close_group = tables[i].target_nodes(addresses[j].clone());
+                let target_close_group = tables[i].target_nodes(&addresses[j]);
                 assert_eq!(RoutingTable::get_group_size(), target_close_group.len());
                 // should contain our close group
                 for k in 0..target_close_group.len() {
@@ -1158,14 +1151,14 @@ mod test {
         let mut routing_table_utest = RoutingTableUnitTest::new();
 
         // Check on empty table
-        let mut target_nodes_ = routing_table_utest.table.target_nodes(Random::generate_random());
+        let mut target_nodes_ = routing_table_utest.table.target_nodes(&Random::generate_random());
         assert_eq!(target_nodes_.len(), 0);
 
         // Partially fill the table with < GroupSize contacts
         routing_table_utest.partially_fill_table();
 
         // Check we get all contacts returnedta
-        target_nodes_ = routing_table_utest.table.target_nodes(Random::generate_random());
+        target_nodes_ = routing_table_utest.table.target_nodes(&Random::generate_random());
         assert_eq!(routing_table_utest.initial_count, target_nodes_.len());
 
         for i in 0..routing_table_utest.initial_count {
@@ -1184,7 +1177,7 @@ mod test {
 
         // Try with our ID (should return closest to us, i.e. buckets 63 to 32)
         target_nodes_ =
-            routing_table_utest.table.target_nodes(routing_table_utest.table.our_id.clone());
+            routing_table_utest.table.target_nodes(&routing_table_utest.table.our_id);
         assert_eq!(RoutingTable::get_group_size(), target_nodes_.len());
 
         for i in ((RoutingTable::get_optimal_size() - RoutingTable::get_group_size())..
@@ -1209,7 +1202,7 @@ mod test {
                 } else {
                     routing_table_utest.buckets[i].mid_contact.clone()
                 };
-                target_nodes_ = routing_table_utest.table.target_nodes(target);
+                target_nodes_ = routing_table_utest.table.target_nodes(&target);
                 assert_eq!(RoutingTable::get_parallelism(), target_nodes_.len());
                 routing_table_utest.table.our_close_group().sort_by(
                     |a, b| if closer_to_target(&a.id(), &b.id(), &routing_table_utest.our_id) {
@@ -1241,7 +1234,7 @@ mod test {
                 } else {
                     routing_table_utest.buckets[i].mid_contact.clone()
                 };
-                target_nodes_ = routing_table_utest.table.target_nodes(target);
+                target_nodes_ = routing_table_utest.table.target_nodes(&target);
                 assert_eq!(RoutingTable::get_group_size(), target_nodes_.len());
                 routing_table_utest.table.our_close_group().sort_by(
                     |a, b| if closer_to_target(&a.id(), &b.id(), &routing_table_utest.our_id) {
@@ -1267,8 +1260,8 @@ mod test {
     #[test]
     fn trivial_functions_test() {
         let mut table_unit_test = RoutingTableUnitTest::new();
-        match table_unit_test.table.get_public_key(table_unit_test.buckets[0].mid_contact.clone()) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
+        match table_unit_test.table.public_id(&table_unit_test.buckets[0].mid_contact) {
+            Some(_) => panic!("PublicId Exits"),
             None => {},
         }
         assert!(table_unit_test.our_id == table_unit_test.table.our_id);
@@ -1280,16 +1273,16 @@ mod test {
         table_unit_test.node_info = test_node.clone();
         assert!(table_unit_test.table.add_node(table_unit_test.node_info.clone()).0);
 
-        match table_unit_test.table.get_public_key(table_unit_test.node_info.id().clone()) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => {},
-            None => panic!("PublicKey None"),
+        match table_unit_test.table.public_id(&table_unit_test.node_info.id()) {
+            Some(_) => {},
+            None => panic!("PublicId None"),
         }
         // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(),
         //                                 *table_.GetPublicKey(info_.id())));
-        match table_unit_test.table.get_public_key(
-                table_unit_test.buckets[table_unit_test.buckets.len() - 1].far_contact.clone()) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
-            None => {}
+        match table_unit_test.table.public_id(
+                &table_unit_test.buckets[table_unit_test.buckets.len() - 1].far_contact) {
+            Some(_) => panic!("PublicId Exits"),
+            None => {},
         }
         assert!(table_unit_test.our_id == table_unit_test.table.our_id);
         assert_eq!(table_unit_test.initial_count + 1, table_unit_test.table.routing_table.len());
@@ -1301,14 +1294,14 @@ mod test {
         table_unit_test.node_info = test_node.clone();
         assert!(table_unit_test.table.add_node(table_unit_test.node_info.clone()).0);
 
-        match table_unit_test.table.get_public_key(table_unit_test.node_info.id().clone()) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => {},
-            None => panic!("PublicKey None"),
+        match table_unit_test.table.public_id(&table_unit_test.node_info.id()) {
+            Some(_) => {},
+            None => panic!("PublicId None"),
         }
-        match table_unit_test.table.get_public_key(
-                table_unit_test.buckets[table_unit_test.buckets.len() - 1].far_contact.clone()) {
-            Some(crypto::asymmetricbox::PublicKey(p)) => panic!("PublicKey Exits"),
-            None => {}
+        match table_unit_test.table.public_id(
+                &table_unit_test.buckets[table_unit_test.buckets.len() - 1].far_contact) {
+            Some(_) => panic!("PublicId Exits"),
+            None => {},
         }
         // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(),
         //                                 *table_.GetPublicKey(info_.id())));
