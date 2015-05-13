@@ -24,7 +24,7 @@ use error::{InterfaceError, ResponseError};
 
 pub enum RoutingNodeAction {
     None,
-    Put { destination: NameType, content: Box<Sendable>, is_client: bool, },
+    Put { destination: NameType, content: Box<Sendable>, },
     Get { type_id: u64, name: NameType, },
     Post,
     Refresh { content: Box<Sendable>, },

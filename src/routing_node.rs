@@ -141,16 +141,12 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, destination: NameType, content: Box<Sendable>, client_authority: bool) {
+    pub fn put(&mut self, destination: NameType, content: Box<Sendable>) {
         let destination = types::DestinationAddress{ dest: destination, reply_to: None };
-        let authority = if client_authority {
-            Authority::Client
-        } else {
-            Authority::ManagedNode
-        };
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(self.get_next_message_id(),
-                                        destination, self.our_source_address(), authority);
+                                        destination, self.our_source_address(),
+                                        Authority::ManagedNode);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
                 request, &self.id.get_crypto_secret_sign_key());
 
@@ -176,7 +172,7 @@ impl<F> RoutingNode<F> where F: Interface {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
     pub fn refresh(&mut self, content: Box<Sendable>) {
-        self.put(content.name(), content, false);
+        self.put(content.name(), content);
     }
 
     /// Mutate something on the network (you must prove ownership) - Direct call
@@ -313,7 +309,7 @@ impl<F> RoutingNode<F> where F: Interface {
     fn invoke_routing_actions(&mut self, routing_actions: Vec<node_interface::RoutingNodeAction>) {
         for routing_action in routing_actions {
             match routing_action {
-                node_interface::RoutingNodeAction::Put { destination: x, content: y, is_client: z, } => self.put(x, y, z),
+                node_interface::RoutingNodeAction::Put { destination: x, content: y, } => self.put(x, y),
                 node_interface::RoutingNodeAction::Get { type_id: x, name: y, } => self.get(x, y),
                 node_interface::RoutingNodeAction::Refresh { content: x, } => self.refresh(x),
                 node_interface::RoutingNodeAction::Post => unimplemented!(),
@@ -1121,7 +1117,7 @@ mod test {
         let chunk = Box::new(TestData::new(data));
         let mut n1 = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
         let name: NameType = Random::generate_random();
-        n1.put(name, chunk, true);
+        n1.put(name, chunk);
     }
 
 #[test]
