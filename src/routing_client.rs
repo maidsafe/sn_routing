@@ -265,13 +265,14 @@ impl<F> RoutingClient<F> where F: Interface {
                 // The received id is Endpoint(i.e. ip + socket) which is no use to upper layer
                 // println!("received a new message from {}",
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
-                let mut decode_routing_msg = cbor::Decoder::from_bytes(&bytes[..]);
-                let routing_msg: messages::RoutingMessage = decode_routing_msg.decode().next().unwrap().unwrap();
+                let routing_msg = match decode::<RoutingMessage>(&bytes) {
+                    Ok(routing_msg) => routing_msg,
+                    Err(_) => return
+                };
                 // println!("received a {:?} from {}", routing_msg.message_type,
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
                 if self.bootstrap_address.1 == Some(endpoint.clone()) {
                     if routing_msg.message_type == messages::MessageTypeTag::BootstrapIdResponse {
-                //         println!("set bootstrap node to {:?} ", routing_msg.message_header.source.from_node.clone());
                         self.handle_bootstrap_id_response(endpoint, routing_msg.serialised_body);
                     } else if routing_msg.message_header.destination.reply_to.is_some() &&
                               routing_msg.message_header.destination.reply_to.clone().unwrap() == self.id_packet.get_name() {
