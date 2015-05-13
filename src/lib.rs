@@ -77,20 +77,5 @@ pub mod types;
 pub mod error;
 pub mod authority;
 
-use sodiumoxide::crypto;
-
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
-
-//#[derive(RustcEncodable, RustcDecodable)]
-struct SignedKey {
-  sign_public_key: crypto::sign::PublicKey,
-  encrypt_public_key: crypto::asymmetricbox::PublicKey,
-  signature: crypto::sign::Signature, // detached signature
-}
-
-pub enum Action {
-  Reply(Vec<u8>),
-  SendOn(Vec<NameType>),
-}
-

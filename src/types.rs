@@ -73,6 +73,18 @@ pub type SerialisedMessage = Vec<u8>;
 pub type IdNode = NameType;
 pub type IdNodes = Vec<IdNode>;
 
+//#[derive(RustcEncodable, RustcDecodable)]
+struct SignedKey {
+  sign_public_key: crypto::sign::PublicKey,
+  encrypt_public_key: crypto::asymmetricbox::PublicKey,
+  signature: crypto::sign::Signature, // detached signature
+}
+
+pub enum Action {
+  Reply(Vec<u8>),
+  SendOn(Vec<NameType>),
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
   pub name : NameType,

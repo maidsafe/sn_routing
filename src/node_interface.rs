@@ -19,7 +19,7 @@ use sendable::Sendable;
 use name_type::NameType;
 use types::DestinationAddress;
 use authority::Authority;
-use super::Action;
+use types::Action;
 use error::{InterfaceError, ResponseError};
 
 pub enum RoutingNodeAction {
