@@ -137,7 +137,7 @@ impl<F> RoutingNode<F> where F: Interface {
                                           request, &self.id.get_crypto_secret_sign_key());
 
         // FIXME: We might want to return the result.
-        let _ = encode(&message).map(|msg| self.send_swarm_or_parallel(&name, &msg));
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&name, &msg)));
     }
 
     /// Add something to the network, will always go via ClientManager group
