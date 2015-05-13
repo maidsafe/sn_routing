@@ -33,7 +33,7 @@ use name_type::NameType;
 use sendable::Sendable;
 use types;
 use error::{RoutingError, ResponseError};
-use cbor::{Decoder, Encoder, CborError};
+use cbor::{Decoder, Encoder};
 use messages::bootstrap_id_request::BootstrapIdRequest;
 use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data_response::GetDataResponse;
@@ -44,6 +44,7 @@ use message_header::MessageHeader;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::MessageId;
 use authority::Authority;
+use utils::*;
 
 pub use crust::Endpoint;
 
@@ -341,20 +342,6 @@ impl<F> RoutingClient<F> where F: Interface {
         };
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(header.message_id, response);
-    }
-}
-
-fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
-    let mut enc = Encoder::from_memory();
-    try!(enc.encode(&[value]));
-    Ok(enc.into_bytes())
-}
-
-fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
-    let mut dec = Decoder::from_bytes(&bytes[..]);
-    match dec.decode().next() {
-        Some(result) => result,
-        None => Err(CborError::UnexpectedEOF)
     }
 }
 
