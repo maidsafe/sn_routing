@@ -33,7 +33,7 @@ use name_type::NameType;
 use sendable::Sendable;
 use types;
 use error::{RoutingError, ResponseError};
-use cbor::{Decoder, Encoder, CborError};
+use cbor::{Decoder, Encoder};
 use messages::bootstrap_id_request::BootstrapIdRequest;
 use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data_response::GetDataResponse;
@@ -44,6 +44,7 @@ use message_header::MessageHeader;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::MessageId;
 use authority::Authority;
+use utils::*;
 
 pub use crust::Endpoint;
 
@@ -264,13 +265,14 @@ impl<F> RoutingClient<F> where F: Interface {
                 // The received id is Endpoint(i.e. ip + socket) which is no use to upper layer
                 // println!("received a new message from {}",
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
-                let mut decode_routing_msg = cbor::Decoder::from_bytes(&bytes[..]);
-                let routing_msg: messages::RoutingMessage = decode_routing_msg.decode().next().unwrap().unwrap();
+                let routing_msg = match decode::<RoutingMessage>(&bytes) {
+                    Ok(routing_msg) => routing_msg,
+                    Err(_) => return
+                };
                 // println!("received a {:?} from {}", routing_msg.message_type,
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
                 if self.bootstrap_address.1 == Some(endpoint.clone()) {
                     if routing_msg.message_type == messages::MessageTypeTag::BootstrapIdResponse {
-                //         println!("set bootstrap node to {:?} ", routing_msg.message_header.source.from_node.clone());
                         self.handle_bootstrap_id_response(endpoint, routing_msg.serialised_body);
                     } else if routing_msg.message_header.destination.reply_to.is_some() &&
                               routing_msg.message_header.destination.reply_to.clone().unwrap() == self.id_packet.get_name() {
@@ -341,20 +343,6 @@ impl<F> RoutingClient<F> where F: Interface {
         };
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(header.message_id, response);
-    }
-}
-
-fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
-    let mut enc = Encoder::from_memory();
-    try!(enc.encode(&[value]));
-    Ok(enc.into_bytes())
-}
-
-fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
-    let mut dec = Decoder::from_bytes(&bytes[..]);
-    match dec.decode().next() {
-        Some(result) => result,
-        None => Err(CborError::UnexpectedEOF)
     }
 }
 
