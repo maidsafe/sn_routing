@@ -352,7 +352,8 @@ impl<F> RoutingNode<F> where F: Interface {
             Some(peer_id) => {
                 // If the peer is already in our routing table, just add its endpoint to
                 // `all_connections`
-                println!("RT marked connected peer_id : {:?} , peer_ep : {:?}", peer_id, peer_endpoint);
+                println!("RT (size : {:?}) Marked connected peer_id : {:?} , peer_ep : {:?}",
+                         self.routing_table.size(), peer_id, peer_endpoint);
                 self.all_connections.0.insert(peer_endpoint.clone(), peer_id.clone());
                 let found = if let Some(peer_endpoints) = self.all_connections.1.get_mut(&peer_id) {
                     assert!(!peer_endpoints.is_empty());
@@ -381,6 +382,7 @@ impl<F> RoutingNode<F> where F: Interface {
         if removed_entry.is_some() {
             let peer_id = removed_entry.unwrap();
             self.routing_table.drop_node(&peer_id);
+            println!("RT (size : {:?})", self.routing_table.size());
             match self.all_connections.1.get(&peer_id) {
                 Some(peer_endpoints) => {
                     for endpoint in peer_endpoints {
@@ -572,7 +574,7 @@ impl<F> RoutingNode<F> where F: Interface {
         if !added {
             return Err(RoutingError::AlreadyConnected);  // FIXME can also be not added to rt
         }
-        println!("RT add {:?} -- ", peer_node_info.fob.name);
+        println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name);
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_request.local_endpoints.clone());
@@ -603,7 +605,7 @@ impl<F> RoutingNode<F> where F: Interface {
         if !added {
            return Ok(());
         }
-        println!("[ RT add {:?}", peer_node_info.fob.name);
+        println!("RT (size : {:?}) added {:?}", self.routing_table.size(), peer_node_info.fob.name);
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
