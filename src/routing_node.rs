@@ -185,16 +185,13 @@ impl<F> RoutingNode<F> where F: Interface {
 
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
                      beacon_port: Option<u16>) -> Result<(), RoutingError> {
-        println!("[ CRUST ] bootstrap with list {:?}", bootstrap_list);
-
         let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
                                    .map_err(|_|RoutingError::FailedToBootstrap));
-        println!("[ CRUST ] bootstrap {:?}", bootstrapped_to);
+        println!("bootstrap {:?}", bootstrapped_to);
 
         self.bootstrap_endpoint = Some(bootstrapped_to);
         // starts swapping ID with the bootstrap peer
-        self.send_bootstrap_id_request();
-        Ok(())
+        self.send_bootstrap_id_request()
     }
 
     pub fn run(&mut self) {
@@ -204,22 +201,20 @@ impl<F> RoutingNode<F> where F: Interface {
         }
         match event.unwrap() {
             crust::Event::NewMessage(endpoint, bytes) => {
-                if self.all_connections.0.contains_key(&endpoint) {
-                    let peer_id = self.all_connections.0.get(&endpoint).unwrap().clone();
-                    if self.message_received(&peer_id, bytes).is_err() {
-                        // println!("failed to Parse message !!! check  from - {:?} ", peer_id);
+                match self.endpoint_to_name(&endpoint).map(|n|n.clone()) {
+                    Some(name) => {
+                        ignore(self.message_received(&name, bytes));
+                    },
+                    None => {
+                        if self.handle_challenge_request(&endpoint, &bytes) {
+                            return;
+                        }
+                        if self.handle_challenge_response(&endpoint, &bytes) {
+                            return;
+                        }
+                        ignore(self.handle_bootstrap_message(endpoint, bytes));
                     }
-                    return;
                 }
-                if self.handle_challenge_request(&endpoint, &bytes) {
-                    return;
-                }
-                if self.handle_challenge_response(&endpoint, &bytes) {
-                    return;
-                }
-                // reply with own_name if the incoming msg is BootstrapIdRequest
-                // record the peer_id if the incoming msg is BootstrapIdResponse
-                self.handle_bootstrap_message(endpoint, bytes);
             },
             crust::Event::NewConnection(endpoint) => {
                 self.handle_new_connect_event(endpoint);
@@ -278,30 +273,40 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
 
-    fn send_bootstrap_id_request(&mut self) {
+    fn generate_bootstrap_header(&self, message_id: MessageId) -> MessageHeader {
+        MessageHeader::new( message_id,
+                            types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]),
+                                                       reply_to: None },
+                            types::SourceAddress{ from_node: self.id(),
+                                                  from_group: None,
+                                                  reply_to: None },
+                            Authority::ManagedNode)
+    }
+
+    fn send_bootstrap_id_request(&mut self) -> RoutingResult {
+        let message_id = self.get_next_message_id();
         let message = RoutingMessage::new(MessageTypeTag::BootstrapIdRequest,
-            MessageHeader::new(self.get_next_message_id(),
-                types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
-                types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None },
-                Authority::ManagedNode),
-            BootstrapIdRequest { sender_id: self.id() }, &self.id.get_crypto_secret_sign_key());
-        self.send_to_bootstrap_node(&message);
+                                          self.generate_bootstrap_header(message_id),
+                                          BootstrapIdRequest { sender_id: self.id() },
+                                          &self.id.get_crypto_secret_sign_key());
+
+        self.send_to_bootstrap_node(&try!(encode(&message)));
+        Ok(())
     }
 
     fn send_bootstrap_id_response(&mut self, peer_endpoint: Endpoint) {
+        let message_id = self.get_next_message_id();
         let message = RoutingMessage::new(MessageTypeTag::BootstrapIdResponse,
-            MessageHeader::new(self.get_next_message_id(),
-                types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
-                types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None },
-                Authority::ManagedNode),
-            BootstrapIdResponse { sender_id: self.id() }, &self.id.get_crypto_secret_sign_key());
+                                          self.generate_bootstrap_header(message_id),
+                                          BootstrapIdResponse { sender_id: self.id() },
+                                          &self.id.get_crypto_secret_sign_key());
 
         // need to send to bootstrap node as we are not yet connected to anyone else
-        let _ = encode(&message).map(|msg| self.connection_manager.send(peer_endpoint, msg));
+        ignore(encode(&message).map(|msg| self.send(Some(peer_endpoint).iter(), &msg)));
     }
 
-    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes,
-                                    is_client: bool) {
+
+    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes, is_client: bool) {
         if self.all_connections.0.contains_key(&peer_endpoint) {
             // ignore further request once added or not in sequence (not recorded as pending)
             return;
@@ -323,9 +328,8 @@ impl<F> RoutingNode<F> where F: Interface {
         //self.put_own_public_id(); // FIXME enable this with sentinel
 
         // connect to close group
-        let own_name = Some(self.id());
-        let find_group_msg = self.construct_find_group_msg(own_name);
-        self.send_to_bootstrap_node(&find_group_msg);
+        let find_group_msg = self.construct_find_group_msg();
+        ignore(encode(&find_group_msg).map(|msg|self.send_to_bootstrap_node(&msg)));
     }
 
     fn put_own_public_id(&mut self) {
@@ -339,11 +343,11 @@ impl<F> RoutingNode<F> where F: Interface {
         let header = MessageHeader::new(message_id, destination, source, authority);
         let message = RoutingMessage::new(MessageTypeTag::PutPublicId, header,
             request, &self.id.get_crypto_secret_sign_key());
-        self.send_to_bootstrap_node(&message);
+        ignore(encode(&message).map(|msg|self.send_to_bootstrap_node(&msg)));
     }
 
     fn handle_new_connect_event(&mut self, peer_endpoint: Endpoint) {
-        println!("[ CRUST ] handle_new_connect_event peer_ep : {:?}", peer_endpoint);
+        println!(" handle_new_connect_event peer_ep : {:?}", peer_endpoint);
         match self.routing_table.mark_as_connected(&peer_endpoint) {
             Some(peer_id) => {
                 // If the peer is already in our routing table, just add its endpoint to
@@ -372,7 +376,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_lost_connection_event(&mut self, peer_endpoint: Endpoint) {
-        println!("[ CRUST ]handle_lost_connection_event peer_ep : {:?}", peer_endpoint);
+        println!(" handle_lost_connection_event peer_ep : {:?}", peer_endpoint);
         let removed_entry = self.all_connections.0.remove(&peer_endpoint);
         if removed_entry.is_some() {
             let peer_id = removed_entry.unwrap();
@@ -464,11 +468,8 @@ impl<F> RoutingNode<F> where F: Interface {
         self.send_swarm_or_parallel(&header.destination.dest, &serialised_msg);
 
         // handle relay request/response
-        let relay_response = header.destination.reply_to.is_some() &&
-                             header.destination.dest == self.own_name;
-        if relay_response {
-            self.send_to_non_routing_list(&header.destination.reply_to.clone().unwrap(),
-                                          serialised_msg);
+        if header.destination.dest == self.own_name {
+            self.send_by_name(header.destination.reply_to.iter(), serialised_msg);
         }
 
         if !self.address_in_close_group_range(&header.destination.dest) {
@@ -518,13 +519,7 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_bootstrap_message(&mut self, peer_endpoint: Endpoint, serialised_msg: Bytes) -> RoutingResult {
-        let message = match decode::<RoutingMessage>(&serialised_msg) {
-            Err(err) => {
-                println!("Problem parsing bootstrap message: {} ", err);
-                return Err(RoutingError::UnknownMessageType);
-            },
-            Ok(msg) => msg,
-        };
+        let message = try!(decode::<RoutingMessage>(&serialised_msg));
 
         if message.message_type == MessageTypeTag::BootstrapIdRequest {
             let request = try!(decode::<BootstrapIdRequest>(&message.serialised_body));
@@ -577,10 +572,7 @@ impl<F> RoutingNode<F> where F: Interface {
         if !added {
             return Err(RoutingError::AlreadyConnected);  // FIXME can also be not added to rt
         }
-        println!("[ CRUST ] connect {:?} {:?} -- RT add {:?} -- ",
-            connect_request.local_endpoints.clone(),
-            connect_request.external_endpoints.clone(),
-            peer_node_info.fob.name);
+        println!("RT add {:?} -- ", peer_node_info.fob.name);
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_request.local_endpoints.clone());
@@ -591,15 +583,9 @@ impl<F> RoutingNode<F> where F: Interface {
         let serialised_message = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(&connect_request.requester_id, &serialised_message);
+        self.send_to_bootstrap_node(&serialised_message);
+        self.send_by_name(original_header.source.reply_to.iter(), serialised_message);
 
-        if self.bootstrap_endpoint.is_some() {
-            self.send_to_bootstrap_node(&routing_msg);
-        }
-
-        if original_header.source.reply_to.is_some() {
-            self.send_to_non_routing_list(&original_header.source.reply_to.unwrap(),
-                                          serialised_message);
-        }
         Ok(())
     }
 
@@ -617,10 +603,7 @@ impl<F> RoutingNode<F> where F: Interface {
         if !added {
            return Ok(());
         }
-        println!("[ CRUST ] connect {:?} {:?} -- RT add {:?}",
-            connect_response.receiver_local_endpoints.clone(),
-            connect_response.receiver_external_endpoints.clone(),
-            peer_node_info.fob.name);
+        println!("[ RT add {:?}", peer_node_info.fob.name);
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
@@ -643,40 +626,33 @@ impl<F> RoutingNode<F> where F: Interface {
         let serialised_msg = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(&original_header.send_to().dest, &serialised_msg);
+        // if node is in my group && in non routing list send it to non_routing list as well
+        self.send_by_name(original_header.source.reply_to.iter(), serialised_msg);
 
-        // if node in my group && in non routing list send it to non_routnig list as well
-        if original_header.source.reply_to.is_some() {
-            self.send_to_non_routing_list(&original_header.source.reply_to.unwrap(), serialised_msg);
-        }
         Ok(())
     }
 
     fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         println!("{:?} received FindGroupResponse", self.own_name);
         let find_group_response = try!(decode::<FindGroupResponse>(&body));
+
         for peer in find_group_response.group {
-            self.check_and_send_connect_request_msg(&peer.name);
+            if self.routing_table.check_node(&peer.name) {
+                ignore(self.send_connect_request_msg(&peer.name));
+            }
         }
+
         Ok(())
     }
 
     //FIXME  not sure if we need to return a RoutingResult or a generic error
-    fn check_and_send_connect_request_msg(&mut self, peer_id: &NameType) {
-        if !self.routing_table.check_node(&peer_id) {
-            return;
-        }
+    fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
         let routing_msg = self.construct_connect_request_msg(&peer_id);
-        let serialised_message = match encode(&routing_msg) {
-            Ok(message) => message,
-            Err(_) => return,
-        };
+        let serialised_message = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(peer_id, &serialised_message);
-
-        if self.bootstrap_endpoint.is_some() {
-            self.send_to_bootstrap_node(&routing_msg);
-        }
-        // Ok(())
+        self.send_to_bootstrap_node(&serialised_message);
+        Ok(())
     }
 
     fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
@@ -727,9 +703,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let from = header.from();
         let name = get_key.target_id.clone();
 
-        let mut action: Action;
-
-        action = try!(self.mut_interface().handle_get_key(type_id, name, our_authority.clone(), from_authority, from));
+        let action = try!(self.mut_interface().handle_get_key(type_id, name, our_authority.clone(), from_authority, from));
 
         match action {
             Action::Reply(data) => {
@@ -903,12 +877,12 @@ impl<F> RoutingNode<F> where F: Interface {
         )
     }
 
-    fn construct_find_group_msg(&mut self, reply_to: Option<NameType>) -> RoutingMessage {
+    fn construct_find_group_msg(&mut self) -> RoutingMessage {
         let header = MessageHeader::new(
             self.get_next_message_id(),
             types::DestinationAddress {
                  dest:     self.own_name.clone(),
-                 reply_to: reply_to
+                 reply_to: Some(self.id())
             },
             self.our_source_address(),
             Authority::ManagedNode);
@@ -1001,20 +975,34 @@ impl<F> RoutingNode<F> where F: Interface {
         return temp;
     }
 
-    fn send_to_non_routing_list(&self, peer: &NameType, serialised_msg: Bytes) {
-        match self.all_connections.1.get(&peer) {
-            Some(peer_endpoints) => {
-                assert!(!peer_endpoints.is_empty());
-                let _ = self.connection_manager.send(peer_endpoints[0].clone(), serialised_msg);
-            },
-            None => ()  // FIXME handle error
+    fn send<'a, I>(&self, targets: I, message: &Bytes) where I: Iterator<Item=&'a Endpoint> {
+        for target in targets {
+            ignore(self.connection_manager.send(target.clone(), message.clone()));
         }
     }
 
-    fn send_to_bootstrap_node(&mut self, routing_msg: &RoutingMessage) {
-        // FIXME - remove unwrap
-        let _ = encode(&routing_msg).map(
-            |msg| self.connection_manager.send(self.bootstrap_endpoint.clone().unwrap(), msg));
+    fn send_by_name<'a, I>(&self, peers: I, serialised_msg: Bytes) where I: Iterator<Item=&'a NameType> {
+        for peer in peers {
+            self.send(self.name_to_endpoint(peer).into_iter(), &serialised_msg);
+        }
+    }
+
+    fn name_to_endpoint(&self, name: &NameType) -> Option<&Endpoint> {
+        match self.all_connections.1.get(name) {
+            Some(endpoints) => {
+                                   assert!(!endpoints.is_empty());
+                                   Some(&endpoints[0])
+                               },
+            None => None
+        }
+    }
+
+    fn endpoint_to_name(&self, endpoint: &Endpoint) -> Option<&NameType> {
+        self.all_connections.0.get(&endpoint)
+    }
+
+    fn send_to_bootstrap_node(&mut self, msg: &Bytes) {
+        self.send(self.bootstrap_endpoint.iter(), &msg);
     }
 
     fn send_swarm_or_parallel(&self, target: &NameType, msg: &Bytes) {
@@ -1030,6 +1018,8 @@ impl<F> RoutingNode<F> where F: Interface {
                 None => ()
             }
         }
+        //FIXME (prakash) use this
+//      self.send(self.routing_table.target_nodes(target).iter().filter_map(|node_info|self.name_to_endpoint(node_info.id)), msg);
     }
 
     fn address_in_close_group_range(&self, address: &NameType) -> bool {
@@ -1059,6 +1049,8 @@ fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
         None => Err(CborError::UnexpectedEOF)
     }
 }
+
+fn ignore<R,E>(_: Result<R,E>) {}
 
 #[cfg(test)]
 mod test {
@@ -1344,7 +1336,7 @@ mod test {
         }
 
         for runner in runners {
-            runner.join();
+            assert!(runner.join().is_ok());
         }
     }
 
