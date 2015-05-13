@@ -54,7 +54,8 @@ use routing::routing_node::{RoutingNode};
 use routing::sendable::Sendable;
 use routing::types;
 use routing::authority::Authority;
-use routing::{Action, NameType};
+use routing::{NameType};
+use routing::types::Action;
 use routing::error::{ResponseError, InterfaceError};
 
 // ==========================   Program Options   =================================

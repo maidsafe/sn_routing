@@ -58,7 +58,7 @@ use messages::get_client_key::GetKey;
 use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_id::PutPublicId;
 use messages::{RoutingMessage, MessageTypeTag};
-use super::{Action};
+use types::{Action};
 use error::{RoutingError, InterfaceError};
 
 use std::convert::From;
@@ -951,7 +951,7 @@ mod test {
     use node_interface::*;
     use name_type::NameType;
     use super::encode;
-    use super::super::Action;
+    use types::Action;
     use error::{ResponseError, InterfaceError};
     use sendable::Sendable;
     use messages::put_data::PutData;
