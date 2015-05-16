@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use name_type;
+use sodiumoxide::crypto;
 
 /// This trait is required for any type of message to be
 /// passed to routing, refresh / account transfer is optional
@@ -25,7 +26,7 @@ pub trait Sendable {
     fn name(&self)->name_type::NameType;
     fn type_tag(&self)->u64;
     fn serialised_contents(&self)->Vec<u8>;
-    fn owner(&self)->Option<name_type::NameType> { Option::None }
+    fn owner_sign_public_key(&self)->Option<crypto::sign::PublicKey> { Option::None }
     fn refresh(&self)->bool; // is this an account transfer type
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>>;
 }
