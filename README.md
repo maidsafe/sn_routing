@@ -14,6 +14,7 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 
 #Todo
 
+- [x] Vault version 0.0.3
 - [ ] Documentation
     - [ ] Personas
         - [ ] ClientManager : MaidManager, MpidManager
