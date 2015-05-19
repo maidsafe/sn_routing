@@ -19,12 +19,17 @@
   - [ ] block messages at filter once Sentinel has resolved
   - [ ] update construction of message_header (original header lost after Sentinel)
 - [ ] Message Handling
-    - [ ] proper (double) event loop in routing for
+    - [ ] move all handler functions to separate module
+        - [ ] finish implementation of handle get_data (and verify all others)
+    - [ ] make event loop in routing internal for
         - receiving messages from CRUST
-        - receiving resolved claims from Sentinels
-        - hosting Sentinels in their own thread
+        - resolved claims from Sentinels (keep Optional return type for now)
+        - possibly host Sentinels in their own thread
+    - [ ] rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
+    - [ ] Interface handle Result < Option < Action >, >
 - [ ] new authority "our_close_group" for account transfer; source_group = element = destination
-- [ ] replace MessageTypeTag with full enum. POC first and move UnauthorisedPut into explicit message structure.
+- [ ] replace MessageTypeTag with full enum.
+    - [ ] POC first and move UnauthorisedPut into explicit message structure.
 - [ ] correct name calculation of pure Id; hash should include signature
 - [ ] limit swarm to targeted group (ie, add target to send_swarm_or_parallel or extract from header)
 
