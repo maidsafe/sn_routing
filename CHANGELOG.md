@@ -4,14 +4,28 @@
 
 - [ ] Address relocation
 
-    < new node ABC | routing at ABC { mutate name to PQR } | >
+    < new node ABC | routing at ABC { mutate name to PQR } | routing at PQR {cache PublicId} >
   - [ ] add optional 'relocated' name field to put_public_id message
   - [ ] put_public_id handler
     - on from node; node_sentinel; SendOn with new name, signed
-    - on from group; group_sentinel; Cache PublicId
-  - [ ] update Id, PublicId and NodeInfo with 
-------------
+    - on from group; group_sentinel is crucial here; Cache PublicId
+    - put_public_id_response message; only return relocated name
+  - [ ] enable Id, PublicId and NodeInfo with 'relocated' name
+- [ ] new authority "our_close_group" for account transfer; source_group = element = destination
+- [ ] replace MessageTypeTag with full enum. POC first and move UnauthorisedPut into explicit message structure.
+- [ ] correct name calculation of pure Id; hash should include signature
+- [ ] limit swarm to targeted group (ie, add target to send_swarm_or_parallel or extract from header)
+- [ ] Sentinel
+    - [ ] remove old sentinel (archive in sentinel crate until tests are carried over)
+    - [ ] plug in Sentinel crate into Routing [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
+    - [ ] break down (header, body) into correct (request, claim) and dispatch
+    - [ ] update signature of handler functions to request and claim
+    - [ ] block messages at filter once Sentinel has resolved
+    - [ ] update construction of message_header
 
+
+------------
+### carry over
 - [ ] Implement relay id exchange for client node
 - [ ] Complete Client Interface (Facade)
 - [ ] Implement routing node (100%)
@@ -22,8 +36,7 @@
   - [x] Local Network Test. 12 Linux, 2 OSX, 2 WIN
   - [ ] 101 Droplet test
 - [ ] Version 0.1.6 (crates.io)
-- [ ] Address re-location (security essential)
-- [ ] Implement routing connections management
+
 
 ## [0.0.9 - 0.1.4]
 
@@ -41,6 +54,7 @@
   - [ ] QA Sentinel including code review from system design perspective
 - [x] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
 - [x] Implement unauthorised_put in routing_node and routing_client (this skips Sentinel checks)
+- [x] Implement routing connections management
 
 
 ## [0.0.7 - 0.0.8]
