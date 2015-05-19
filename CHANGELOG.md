@@ -11,18 +11,22 @@
     - on from group; group_sentinel is crucial here; Cache PublicId
     - put_public_id_response message; only return relocated name
   - [ ] enable Id, PublicId and NodeInfo with 'relocated' name
+- [ ] Sentinel
+  - [ ] remove old sentinel (archive in sentinel crate until tests are carried over)
+  - [ ] plug in Sentinel crate into Routing [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
+  - [ ] break down (header, body) into correct (request, claim) and dispatch
+  - [ ] update signature of handler functions to request and claim
+  - [ ] block messages at filter once Sentinel has resolved
+  - [ ] update construction of message_header (original header lost after Sentinel)
+- [ ] Message Handling
+    - [ ] proper (double) event loop in routing for
+        - receiving messages from CRUST
+        - receiving resolved claims from Sentinels
+        - hosting Sentinels in their own thread
 - [ ] new authority "our_close_group" for account transfer; source_group = element = destination
 - [ ] replace MessageTypeTag with full enum. POC first and move UnauthorisedPut into explicit message structure.
 - [ ] correct name calculation of pure Id; hash should include signature
 - [ ] limit swarm to targeted group (ie, add target to send_swarm_or_parallel or extract from header)
-- [ ] Sentinel
-    - [ ] remove old sentinel (archive in sentinel crate until tests are carried over)
-    - [ ] plug in Sentinel crate into Routing [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
-    - [ ] break down (header, body) into correct (request, claim) and dispatch
-    - [ ] update signature of handler functions to request and claim
-    - [ ] block messages at filter once Sentinel has resolved
-    - [ ] update construction of message_header
-
 
 ------------
 ### carry over
