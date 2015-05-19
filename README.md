@@ -14,41 +14,52 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 
 #Todo
 
-- [x] Implement VaultFacade
-    - [x] Follow the interface design with routing (already in place as first go)
-    - [x] Implement VaultFacade initally (provide a guide line for later on persona implementation)
-- [x] Implement chunkstore
-- [x] Test chunkstore
-- [x] Implement MaidManager
-- [x] Implement DataManager
-- [x] Implement PmidManager
-- [x] Implement PmidNode
-- [x] Implement VersionHandler
-- [x] Test MaidManager
-- [x] Test DataManager
-- [x] Test PmidManager
-- [x] Test PmidNode
-- [x] Complete Put Flow
-- [x] Complete Get Flow
-- [x] Complete Create Maid Account Flow  // may not be required for a simple implementation
-- [x] Test Put Flow
-- [x] Test Get Flow
-- [ ] Test with client having simple put and get ability
-- [ ] Integration Test
-- [ ] Handle Churn
-    - [x] Implement Account Transfer
-    - [ ] Churn Test
-- [x] Installers (linux deb/rpm 32/64 bit, Windows 32 / 64. OSX)
-- [ ] API version 0.0.9
-- [ ] Complete Post Flow
-- [ ] Test with client having file system feature
-- [ ] Implement MpidManager
-    - [ ] Complete the put route (sending message)
-    - [ ] Complete the get route (checking message)
-- [ ] Test with client having messaging ability
-- [ ] Performance Test
-- [x] Coverage analysis
-- [ ] API version 0.1.0
+- [ ] Documentation
+    - [ ] Personas
+        - [ ] ClientManager : MaidManager, MpidManager
+        - [ ] NodeManager : PmidManager
+        - [ ] Node : PmidNode
+        - [ ] NAE : DataManager, VersionHandler
+    - [ ] Flows
+        - [ ] PutData / PutResponse
+        - [ ] GetData / GetResponse
+        - [ ] PostData
+    - [ ] Accounting
+        - [ ] MaidAccount : create, update and monitor
+        - [ ] PmidAccount : create, update and monitor
+    - [ ] MpidMessaging
+        - [ ] Send Message
+        - [ ] Notification to the receiver
+        - [ ] Retrieving Message
+        - [ ] Withdraw Message
+    - [ ] SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ )
+        - [ ] farming
+        - [ ] account notification and verification
+        - [ ] account update
+- [ ] Complete unfinished code (if it will be covered by the later-on tasks in this sprint, explicitly mention it as in-code TODO comment), especially in vault.rs
+    - [ ] handle_get_key
+    - [ ] handle_post
+    - [ ] handle_put_response
+    - [ ] handle_post_response
+    - [ ] handle_cache_get
+    - [ ] handle_cache_put
+- [ ] Integration test with new routing and crust (vaults bootstrap and network setup)
+    - [ ] bootstrap procedure (allowing droplet setup)
+    - [ ] network setup (nodes populating)
+    - [ ] churn (account transfer when nodes join or leave)
+- [ ] Vaults’ handling put/get with MaidsafeClient 
+    - [ ] functional test (Client Account / Node Account management, complete put/ get flow among medium sized network)
+    - [ ] performance evaluation (need to define what criterias to be used)
+- [ ] Implement handling for Safecoin farming rate
+    - [ ] For DM handling Put request, store 2 copies and pick a new group based on XOR distance being ½ the address space away from the data name (i.e. XOR with 100000…).  This group repeats, using XOR of full address space away (XOR with 111111…).  
+    - [ ] Farming rate drops when more copies are available and rises when less copies are available.
+    - [ ] Although the rate is managed by DM, it needs to be available for PM to read.
+- [ ] Implement MPID handling
+    - [ ] Add MPID Manager files
+    - [ ] Implement handling for MPID account creation (sets up outbox size)
+    - [ ] Implement handling for sending/receiving and storing/deleting MpidAlerts
+    - [ ] Implement handling for sending/receiving and storing/deleting MpidMessages
+
 #Detailed documentation
 
 ### Overview
