@@ -21,7 +21,7 @@
 - [ ] Message Handling
     - [ ] move all handler functions to separate module
         - [ ] finish implementation of handle get_data (and verify all others)
-    - [ ] make event loop in routing internal for
+    - [ ] make event loop in routing_node internal for
         - receiving messages from CRUST
         - resolved claims from Sentinels (keep Optional return type for now)
         - possibly host Sentinels in their own thread
@@ -30,12 +30,21 @@
 - [ ] new authority "our_close_group" for account transfer; source_group = element = destination
 - [ ] replace MessageTypeTag with full enum.
     - [ ] POC first and move UnauthorisedPut into explicit message structure.
+- [ ] drop_bootstrap in coordination with CRUST
+- [ ] extract all_connections into a module
 - [ ] correct name calculation of pure Id; hash should include signature
 - [ ] limit swarm to targeted group (ie, add target to send_swarm_or_parallel or extract from header)
+- [ ] Implement relay id exchange for client node
+- [ ] ConnectResponse needs to include original signed ConnectRequest
+- [ ] Remove merge from Sendable
+- [ ] Churn: make single Account Transfer message with Orderable trait
+- [ ] Return Result for Put Get Post
+- [ ] Routing Example : update to internal event loop
+- [ ] Integration test : spawn ten nodes and two clients. Put and Get data.
 
 ------------
 ### carry over
-- [ ] Implement relay id exchange for client node
+
 - [ ] Complete Client Interface (Facade)
 - [ ] Implement routing node (100%)
 - [ ] Examples:
