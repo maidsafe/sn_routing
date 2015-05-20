@@ -77,3 +77,4 @@ correct name calculation of pure Id
 - [ ] [MAID-1070](https://maidsafe.atlassian.net/browse/MAID-1070) drop_bootstrap in coordination with CRUST
 - [ ] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
 - [ ] [MAID-1072](https://maidsafe.atlassian.net/browse/MAID-1072) Integration test
+- [ ] [MAID-1076](https://maidsafe.atlassian.net/browse/MAID-1076) implement Network Visualiser
