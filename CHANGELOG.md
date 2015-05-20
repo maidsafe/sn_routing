@@ -1,6 +1,13 @@
 # Routing - Change Log
 
-## [0.0.9 - 0.1.4]
+## [0.1.1]
+- Remove FailedToConnect Event
+
+## [0.1.0]
+
+-  Re-expose crust::Endpoint as routing::routing_client::Endpoint
+
+## [0.0.9]
 
 -  Move bootstrap out of routing
 -  Complete Routing Node Interface to accomodate churn
@@ -16,7 +23,9 @@
 -  Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
 -  Implement unauthorised_put in routing_node and routing_client (this skips Sentinel checks)
 -  Implement routing connections management
+-  Added encodable/decodable for ClientIdPacket
 
+Version 0.1.1
 
 ## [0.0.7 - 0.0.8]
 
