@@ -30,31 +30,29 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 ##Todo Items
 
 ## [0.1.5] - essential logical corrections
-- [ ] limit swarm to targeted group (ie, add target to send_swarm_or_parallel or extract from header)
-- [ ] correct name calculation of pure Id; hash needs to include signature
-- [ ] ConnectResponse needs to include original signed ConnectRequest
+- [ ] [MAID-1007](https://maidsafe.atlassian.net/browse/MAID-1007) limit swarm to targeted group
+- [ ] [MAID-1032](https://maidsafe.atlassian.net/browse/MAID-1032)
+correct name calculation of pure Id
+- [ ] [MAID-1034](https://maidsafe.atlassian.net/browse/MAID-1034) ConnectResponse needs to include original signed ConnectRequest
 
 ## [0.1.6] - activate security features
 
-- [ ] Address relocation
-    < new node ABC | routing at ABC { mutate name to PQR } | routing at PQR {cache PublicId} >
-  - [ ] add optional 'relocated' name field to put_public_id message
-  - [ ] put_public_id handler
-    - on from node; node_sentinel; SendOn with new name, signed
-    - on from group; group_sentinel is crucial here; Cache PublicId
-    - put_public_id_response message; only return relocated name
-  - [ ] enable Id, PublicId and NodeInfo with 'relocated' name
-- [ ] Sentinel
-    - [ ] remove old sentinel (archive in sentinel crate until tests are carried over)
-    - [ ] plug in Sentinel crate into Routing [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
-    - [ ] break down (header, body) into correct (request, claim) and dispatch
-    - [ ] update signature of handler functions to request and claim
-    - [ ] block messages at filter once Sentinel has resolved
-    - [ ] update construction of message_header (original header lost after Sentinel)
+- [ ] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
+  - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) add optional 'relocated' name field to put_public_id message
+  - [ ] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
+  - [ ] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
+- [ ] [MAID-1042](https://maidsafe.atlassian.net/browse/MAID-1042) Sentinel
+    - [ ] [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
+    - [ ] [MAID-1045](https://maidsafe.atlassian.net/browse/MAID-1045) plug in Sentinel [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
+    - [ ] [MAID-1046](https://maidsafe.atlassian.net/browse/MAID-1046) break down (header, body) into correct (request, claim) and dispatch
+    - [ ] [MAID-1048](https://maidsafe.atlassian.net/browse/MAID-1048) Ensure correct dispatch of GetGroupKeyResponse
+    - [ ] [MAID-1049](https://maidsafe.atlassian.net/browse/MAID-1049) update signature of handler functions to request and claim
+    - [ ] [MAID-1050](https://maidsafe.atlassian.net/browse/MAID-1050) block messages at filter once Sentinel has resolved
+    - [ ] [MAID-1051](https://maidsafe.atlassian.net/browse/MAID-1051) update construction of message_header
 
 ## [0.1.7] - restructure core of routing
 
-- [ ] Message Handling
+- [ ] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
     - [ ] move all handler functions to separate module
         - [ ] finish implementation of handle get_data (and verify all others)
     - [ ] make event loop in routing_node internal for

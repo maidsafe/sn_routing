@@ -2,45 +2,44 @@
 
 ## [0.0.9 - 0.1.4]
 
-- [x] Move bootstrap out of routing
-- [x] Complete Routing Node Interface to accomodate churn
-- [x] Add caching to node interface
-- [x] Handle ID Caching
-- [x] Handle Cache / Get / Check calls
-- [x] Routing message handling
-- [ ] Sentinel:
-  - [x] Handover existing implementation
-  - [x] Account transfer merge
-  - [x] Group response merge
-  - [x] Signature checks
-  - [ ] QA Sentinel including code review from system design perspective
-- [x] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
-- [x] Implement unauthorised_put in routing_node and routing_client (this skips Sentinel checks)
-- [x] Implement routing connections management
+-  Move bootstrap out of routing
+-  Complete Routing Node Interface to accomodate churn
+-  Add caching to node interface
+-  Handle ID Caching
+-  Handle Cache / Get / Check calls
+-  Routing message handling
+-  Sentinel:
+  -  Handover existing implementation
+  -  Account transfer merge
+  -  Group response merge
+  -  Signature checks
+-  Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
+-  Implement unauthorised_put in routing_node and routing_client (this skips Sentinel checks)
+-  Implement routing connections management
 
 
 ## [0.0.7 - 0.0.8]
 
-- [x] Bootstrap handler implementation
-- [x] Bootstrap handler test
-- [x] Create sort and bucket index methods
-- [x] Implement routing table
-- [x] Test routing table
-- [x] Implement sentinel (initial)
-- [x] Finalise sentinel in line with tests
-- [x] Implement client node
-- [x] Test sentinel
-- [x] Implement routing message types (Connect FindNode)
-- [x] Test message types
-- [x] Implement Get Put Post messages
-- [x] Version 0.0.8
+-  Bootstrap handler implementation
+-  Bootstrap handler test
+-  Create sort and bucket index methods
+-  Implement routing table
+-  Test routing table
+-  Implement sentinel (initial)
+-  Finalise sentinel in line with tests
+-  Implement client node
+-  Test sentinel
+-  Implement routing message types (Connect FindNode)
+-  Test message types
+-  Implement Get Put Post messages
+-  Version 0.0.8
 
 ## [0.0.6]
 
-- [x] Set up facade design pattern
-- [x] Test facade pattern
-- [x] Set up accumulator
-- [x] Accumulator tests
-- [x] Message header
-- [x] Message header tests
-- [x] API version 0.0.6
+-  Set up facade design pattern
+-  Test facade pattern
+-  Set up accumulator
+-  Accumulator tests
+-  Message header
+-  Message header tests
+-  API version 0.0.6
