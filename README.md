@@ -66,12 +66,12 @@ correct name calculation of pure Id
 
 ## [0.1.8] - activate account transfer
 
-- [ ] Remove merge from Sendable
-- [ ] Churn: make single Account Transfer message with Orderable trait
-- [ ] new authority "our_close_group" for account transfer; source_group = element = destination
+- [ ] [MAID-1067](https://maidsafe.atlassian.net/browse/MAID-1067) Remove merge from Sendable
+- [ ] [MAID-1068](https://maidsafe.atlassian.net/browse/MAID-1068) Account Transfer message
+- [ ] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
 
 ## [0.1.9] Finish sprint
 
-- [ ] drop_bootstrap in coordination with CRUST
-- [ ] Implement relay id exchange for client node
-- [ ] Integration test : spawn ten nodes and two clients. Put and Get data.
+- [ ] [MAID-1070](https://maidsafe.atlassian.net/browse/MAID-1070) drop_bootstrap in coordination with CRUST
+- [ ] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
+- [ ] [MAID-1072](https://maidsafe.atlassian.net/browse/MAID-1072) Integration test
