@@ -53,19 +53,16 @@ correct name calculation of pure Id
 ## [0.1.7] - restructure core of routing
 
 - [ ] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
-    - [ ] move all handler functions to separate module
-        - [ ] finish implementation of handle get_data (and verify all others)
-    - [ ] make event loop in routing_node internal for
-        - receiving messages from CRUST
-        - resolved claims from Sentinels (keep Optional return type for now)
-        - possibly host Sentinels in their own thread
-    - [ ] rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
-    - [ ] Interface handle Result < Option < Action >, >
-- [ ] extract all_connections into a module
-- [ ] replace MessageTypeTag with full enum.
-    - [ ] POC first and move UnauthorisedPut into explicit message structure.
-- [ ] Return Result for Put Get Post
-- [ ] Routing Example : update to internal event loop
+    - [ ] [MAID-1054](https://maidsafe.atlassian.net/browse/MAID-1054) move all handler functions to separate module
+    - [ ] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
+    - [ ] [MAID-1057](https://maidsafe.atlassian.net/browse/MAID-1057) make event loop in routing_node internal
+    - [ ] [MAID-1059](https://maidsafe.atlassian.net/browse/MAID-1059) rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
+    - [ ] [MAID-1060](https://maidsafe.atlassian.net/browse/MAID-1060) Interface handle Result < Option < Action >, >
+- [ ] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
+- [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
+    - [ ] [MAID-1064](https://maidsafe.atlassian.net/browse/MAID-1064) POC first and move UnauthorisedPut into explicit message structure.
+- [ ] [MAID-1065](https://maidsafe.atlassian.net/browse/MAID-1065) Return Result for Put Get Post
+- [ ] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
 
 ## [0.1.8] - activate account transfer
 
