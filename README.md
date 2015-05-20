@@ -12,9 +12,9 @@
 An autonomous network capable of data storage/publishing/sharing as well as computation, value transfer (crypto currency support) and more. Please see below for a more detailed description of the operations involved in data storage.
 
 
-#Todo
+#Todo Items
 
-- [x] Vault version 0.0.3
+## [0.0.4] - integrate with routing
 - [ ] Documentation
     - [ ] Personas
         - [ ] ClientManager : MaidManager
@@ -28,10 +28,6 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
     - [ ] Accounting
         - [ ] MaidAccount : create, update and monitor
         - [ ] PmidAccount : create, update and monitor
-    - [ ] SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ )
-        - [ ] farming
-        - [ ] account notification and verification
-        - [ ] account update
 - [ ] Complete unfinished code (if it will be covered by the later-on tasks in this sprint, explicitly mention it as in-code TODO comment), especially in vault.rs
     - [ ] handle_get_key
     - [ ] handle_post
@@ -46,6 +42,13 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [ ] Vaults’ handling put/get with MaidsafeClient 
     - [ ] functional test (Client Account / Node Account management, complete put/ get flow among medium sized network)
     - [ ] performance evaluation (need to define what criterias to be used)
+
+## [0.0.5] - safecoin farming initial work
+- [ ] Documentation
+    - [ ] SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ )
+        - [ ] farming
+        - [ ] account notification and verification
+        - [ ] account update
 - [ ] Implement handling for Safecoin farming rate
     - [ ] For DM handling Put request, store 2 copies and pick a new group based on XOR distance being ½ the address space away from the data name (i.e. XOR with 100000…).  This group repeats, using XOR of full address space away (XOR with 111111…).  
     - [ ] Farming rate drops when more copies are available and rises when less copies are available.
