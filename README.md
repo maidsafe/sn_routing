@@ -29,6 +29,8 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 ##Todo Items
 
+General note: always document code you touch, and introduce property-based unit tests where applicable.
+
 ## [0.1.5] - essential logical corrections
 - [ ] [MAID-1007](https://maidsafe.atlassian.net/browse/MAID-1007) limit swarm to targeted group
 - [ ] [MAID-1032](https://maidsafe.atlassian.net/browse/MAID-1032)
