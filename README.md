@@ -17,7 +17,7 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [x] Vault version 0.0.3
 - [ ] Documentation
     - [ ] Personas
-        - [ ] ClientManager : MaidManager, MpidManager
+        - [ ] ClientManager : MaidManager
         - [ ] NodeManager : PmidManager
         - [ ] Node : PmidNode
         - [ ] NAE : DataManager, VersionHandler
@@ -28,11 +28,6 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
     - [ ] Accounting
         - [ ] MaidAccount : create, update and monitor
         - [ ] PmidAccount : create, update and monitor
-    - [ ] MpidMessaging
-        - [ ] Send Message
-        - [ ] Notification to the receiver
-        - [ ] Retrieving Message
-        - [ ] Withdraw Message
     - [ ] SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ )
         - [ ] farming
         - [ ] account notification and verification
@@ -55,11 +50,7 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
     - [ ] For DM handling Put request, store 2 copies and pick a new group based on XOR distance being ½ the address space away from the data name (i.e. XOR with 100000…).  This group repeats, using XOR of full address space away (XOR with 111111…).  
     - [ ] Farming rate drops when more copies are available and rises when less copies are available.
     - [ ] Although the rate is managed by DM, it needs to be available for PM to read.
-- [ ] Implement MPID handling
-    - [ ] Add MPID Manager files
-    - [ ] Implement handling for MPID account creation (sets up outbox size)
-    - [ ] Implement handling for sending/receiving and storing/deleting MpidAlerts
-    - [ ] Implement handling for sending/receiving and storing/deleting MpidMessages
+
 
 #Detailed documentation
 
