@@ -29,53 +29,51 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 ##Todo Items
 
-- [x] Set up facade design pattern
-- [x] Test facade pattern
-- [x] Set up accumulator
-- [x] Accumulator tests
-- [x] Message header
-- [x] Message header tests
-- [x] API version 0.0.6
-- [x] Bootstrap handler implementation
-- [x] Bootstrap handler test
-- [x] Create sort and bucket index methods
-- [x] Implement routing table
-- [x] Test routing table
-- [x] Implement sentinel (initial)
-- [x] Finalise sentinel in line with tests
-- [x] Implement client node
-- [x] Test sentinel
-- [x] Implement routing message types (Connect FindNode)
-- [x] Test message types
-- [x] Implement Get Put Post messages
-- [x] Version 0.0.8
-- [x] Move bootstrap out of routing
-- [x] Complete Routing Node Interface to accomodate churn
-- [x] Add caching to node interface
-- [x] Handle ID Caching
-- [x] Handle Cache / Get / Check calls
-- [x] Routing message handling
-- [ ] Sentinel:
-  - [x] Handover existing implementation
-  - [x] Account transfer merge
-  - [x] Group response merge
-  - [x] Signature checks
-  - [ ] QA Sentinel including code review from system design perspective
-- [x] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
-- [x] Implement unauthorised_put in routing_node and routing_client (this skips Sentinel checks)
-- [ ] Implement relay id exchange for client node
-- [ ] Complete Client Interface (Facade)
-- [ ] Implement routing node (100%)
-- [ ] Examples:
-  - [ ] zero state network
-  - [ ] Routing Node with type erased cache
-  - [ ] Routing Client accepting key, value as string for GET/PUT
-  - [ ] Local Network Test. 12 Linux, 2 OSX, 2 WIN
-  - [ ] 101 Droplet test
-- [ ] Version 0.1.6 (crates.io)
-- [ ] Address re-location (security essential)
-- [ ] Implement routing connections management
+General note: please document code you touch, and introduce property-based unit tests where applicable.
 
-## FixMe items
+## [0.1.5] - essential logical corrections
+- [ ] [MAID-1007](https://maidsafe.atlassian.net/browse/MAID-1007) limit swarm to targeted group
+- [ ] [MAID-1032](https://maidsafe.atlassian.net/browse/MAID-1032)
+correct name calculation of pure Id
+- [ ] [MAID-1034](https://maidsafe.atlassian.net/browse/MAID-1034) ConnectResponse needs to include original signed ConnectRequest
 
-- [ ] Test: Sentinel::FakeMessages (refer to Brian)
+## [0.1.6] - activate security features
+
+- [ ] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
+  - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) add optional 'relocated' name field to put_public_id message
+  - [ ] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
+  - [ ] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
+- [ ] [MAID-1042](https://maidsafe.atlassian.net/browse/MAID-1042) Sentinel
+    - [ ] [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
+    - [ ] [MAID-1045](https://maidsafe.atlassian.net/browse/MAID-1045) plug in Sentinel [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
+    - [ ] [MAID-1046](https://maidsafe.atlassian.net/browse/MAID-1046) break down (header, body) into correct (request, claim) and dispatch
+    - [ ] [MAID-1048](https://maidsafe.atlassian.net/browse/MAID-1048) Ensure correct dispatch of GetGroupKeyResponse
+    - [ ] [MAID-1049](https://maidsafe.atlassian.net/browse/MAID-1049) update signature of handler functions to request and claim
+    - [ ] [MAID-1050](https://maidsafe.atlassian.net/browse/MAID-1050) block messages at filter once Sentinel has resolved
+    - [ ] [MAID-1051](https://maidsafe.atlassian.net/browse/MAID-1051) update construction of message_header
+
+## [0.1.7] - restructure core of routing
+
+- [ ] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
+    - [ ] [MAID-1054](https://maidsafe.atlassian.net/browse/MAID-1054) move all handler functions to separate module
+    - [ ] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
+    - [ ] [MAID-1057](https://maidsafe.atlassian.net/browse/MAID-1057) make event loop in routing_node internal
+    - [ ] [MAID-1059](https://maidsafe.atlassian.net/browse/MAID-1059) rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
+    - [ ] [MAID-1060](https://maidsafe.atlassian.net/browse/MAID-1060) Interface handle Result < Option < Action >, >
+- [ ] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
+- [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
+    - [ ] [MAID-1064](https://maidsafe.atlassian.net/browse/MAID-1064) POC first and move UnauthorisedPut into explicit message structure.
+- [ ] [MAID-1065](https://maidsafe.atlassian.net/browse/MAID-1065) Return Result for Put Get Post
+- [ ] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
+
+## [0.1.8] - activate account transfer
+
+- [ ] [MAID-1067](https://maidsafe.atlassian.net/browse/MAID-1067) Remove merge from Sendable
+- [ ] [MAID-1068](https://maidsafe.atlassian.net/browse/MAID-1068) Account Transfer message
+- [ ] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
+
+## [0.1.9] Finish sprint
+
+- [ ] [MAID-1070](https://maidsafe.atlassian.net/browse/MAID-1070) drop_bootstrap in coordination with CRUST
+- [ ] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
+- [ ] [MAID-1072](https://maidsafe.atlassian.net/browse/MAID-1072) Integration test
