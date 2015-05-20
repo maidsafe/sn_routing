@@ -1,23 +1,19 @@
 # Routing - Change Log
 
-## [0.1.5]
+## [0.1.9] Finish sprint
 
-- [ ] Address relocation
+- [ ] drop_bootstrap in coordination with CRUST
+- [ ] Implement relay id exchange for client node
+- [ ] Integration test : spawn ten nodes and two clients. Put and Get data.
 
-    < new node ABC | routing at ABC { mutate name to PQR } | routing at PQR {cache PublicId} >
-  - [ ] add optional 'relocated' name field to put_public_id message
-  - [ ] put_public_id handler
-    - on from node; node_sentinel; SendOn with new name, signed
-    - on from group; group_sentinel is crucial here; Cache PublicId
-    - put_public_id_response message; only return relocated name
-  - [ ] enable Id, PublicId and NodeInfo with 'relocated' name
-- [ ] Sentinel
-  - [ ] remove old sentinel (archive in sentinel crate until tests are carried over)
-  - [ ] plug in Sentinel crate into Routing [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
-  - [ ] break down (header, body) into correct (request, claim) and dispatch
-  - [ ] update signature of handler functions to request and claim
-  - [ ] block messages at filter once Sentinel has resolved
-  - [ ] update construction of message_header (original header lost after Sentinel)
+## [0.1.8] - activate account transfer
+
+- [ ] Remove merge from Sendable
+- [ ] Churn: make single Account Transfer message with Orderable trait
+- [ ] new authority "our_close_group" for account transfer; source_group = element = destination
+
+## [0.1.7] - restructure core of routing
+
 - [ ] Message Handling
     - [ ] move all handler functions to separate module
         - [ ] finish implementation of handle get_data (and verify all others)
@@ -27,34 +23,34 @@
         - possibly host Sentinels in their own thread
     - [ ] rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
     - [ ] Interface handle Result < Option < Action >, >
-- [ ] new authority "our_close_group" for account transfer; source_group = element = destination
+- [ ] extract all_connections into a module
 - [ ] replace MessageTypeTag with full enum.
     - [ ] POC first and move UnauthorisedPut into explicit message structure.
-- [ ] drop_bootstrap in coordination with CRUST
-- [ ] extract all_connections into a module
-- [ ] correct name calculation of pure Id; hash should include signature
-- [ ] limit swarm to targeted group (ie, add target to send_swarm_or_parallel or extract from header)
-- [ ] Implement relay id exchange for client node
-- [ ] ConnectResponse needs to include original signed ConnectRequest
-- [ ] Remove merge from Sendable
-- [ ] Churn: make single Account Transfer message with Orderable trait
 - [ ] Return Result for Put Get Post
 - [ ] Routing Example : update to internal event loop
-- [ ] Integration test : spawn ten nodes and two clients. Put and Get data.
 
-------------
-### carry over
+## [0.1.6] - activate security features
 
-- [ ] Complete Client Interface (Facade)
-- [ ] Implement routing node (100%)
-- [ ] Examples:
-  - [ ] zero state network
-  - [ ] Routing Node with type erased cache
-  - [x] Routing Client accepting key, value as string for GET/PUT
-  - [x] Local Network Test. 12 Linux, 2 OSX, 2 WIN
-  - [ ] 101 Droplet test
-- [ ] Version 0.1.6 (crates.io)
+- [ ] Address relocation
+    < new node ABC | routing at ABC { mutate name to PQR } | routing at PQR {cache PublicId} >
+  - [ ] add optional 'relocated' name field to put_public_id message
+  - [ ] put_public_id handler
+    - on from node; node_sentinel; SendOn with new name, signed
+    - on from group; group_sentinel is crucial here; Cache PublicId
+    - put_public_id_response message; only return relocated name
+  - [ ] enable Id, PublicId and NodeInfo with 'relocated' name
+- [ ] Sentinel
+    - [ ] remove old sentinel (archive in sentinel crate until tests are carried over)
+    - [ ] plug in Sentinel crate into Routing [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
+    - [ ] break down (header, body) into correct (request, claim) and dispatch
+    - [ ] update signature of handler functions to request and claim
+    - [ ] block messages at filter once Sentinel has resolved
+    - [ ] update construction of message_header (original header lost after Sentinel)
 
+## [0.1.5] - essential logical corrections
+- [ ] limit swarm to targeted group (ie, add target to send_swarm_or_parallel or extract from header)
+- [ ] correct name calculation of pure Id; hash should include signature
+- [ ] ConnectResponse needs to include original signed ConnectRequest
 
 ## [0.0.9 - 0.1.4]
 
