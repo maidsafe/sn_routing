@@ -15,41 +15,42 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 #Todo Items
 
 ## [0.0.4] - integrate with routing
-- [ ] Documentation
-    - [ ] Personas
+- [ ] [MAID-1008](https://maidsafe.atlassian.net/browse/MAID-1008) Documentation
+    - [ ] [MAID-1009](https://maidsafe.atlassian.net/browse/MAID-1009) Personas
         - [ ] ClientManager : MaidManager
         - [ ] NodeManager : PmidManager
         - [ ] Node : PmidNode
         - [ ] NAE : DataManager, VersionHandler
-    - [ ] Flows
+    - [ ] [MAID-1010](https://maidsafe.atlassian.net/browse/MAID-1010) Flows
         - [ ] PutData / PutResponse
         - [ ] GetData / GetResponse
         - [ ] PostData
-    - [ ] Accounting
+    - [ ] [MAID-1011](https://maidsafe.atlassian.net/browse/MAID-1011) Accounting
         - [ ] MaidAccount : create, update and monitor
         - [ ] PmidAccount : create, update and monitor
-- [ ] Complete unfinished code (if it will be covered by the later-on tasks in this sprint, explicitly mention it as in-code TODO comment), especially in vault.rs
+- [ ] [MAID-1013](https://maidsafe.atlassian.net/browse/MAID-1013) Complete unfinished code (if it will be covered by the later-on tasks in this sprint, explicitly mention it as in-code TODO comment), especially in vault.rs
     - [ ] handle_get_key
     - [ ] handle_post
     - [ ] handle_put_response
     - [ ] handle_post_response
     - [ ] handle_cache_get
     - [ ] handle_cache_put
-- [ ] Integration test with new routing and crust (vaults bootstrap and network setup)
-    - [ ] bootstrap procedure (allowing droplet setup)
-    - [ ] network setup (nodes populating)
-    - [ ] churn (account transfer when nodes join or leave)
-- [ ] Vaults’ handling put/get with MaidsafeClient 
-    - [ ] functional test (Client Account / Node Account management, complete put/ get flow among medium sized network)
-    - [ ] performance evaluation (need to define what criterias to be used)
+- [ ] [MAID-1014](https://maidsafe.atlassian.net/browse/MAID-1014) Integration test with new routing and crust (vaults bootstrap and network setup)
+    - [ ] [MAID-1015](https://maidsafe.atlassian.net/browse/MAID-1015) bootstrap procedure (allowing droplet setup)
+    - [ ] [MAID-1028](https://maidsafe.atlassian.net/browse/MAID-1028) local joining test (process counting)
+    - [ ] [MAID-1016](https://maidsafe.atlassian.net/browse/MAID-1016) network example (nodes populating)
+    - [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
+- [ ] [MAID-1018](https://maidsafe.atlassian.net/browse/MAID-1018) Vaults’ handling put/get with MaidsafeClient 
+    - [ ] [MAID-1019](https://maidsafe.atlassian.net/browse/MAID-1019) functional test (Client Account / Node Account management, complete put/ get flow among medium sized network)
+    - [ ] [MAID-1020](https://maidsafe.atlassian.net/browse/MAID-1020) performance evaluation (need to define what criterias to be used)
 
 ## [0.0.5] - safecoin farming initial work
-- [ ] Documentation
-    - [ ] SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ )
+- [ ] [MAID-1008](https://maidsafe.atlassian.net/browse/MAID-1008) Documentation
+    - [ ] [MAID-1012](https://maidsafe.atlassian.net/browse/MAID-1012) SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ )
         - [ ] farming
         - [ ] account notification and verification
         - [ ] account update
-- [ ] Implement handling for Safecoin farming rate
+- [ ] [MAID-1021](https://maidsafe.atlassian.net/browse/MAID-1021) Implement handling for Safecoin farming rate
     - [ ] For DM handling Put request, store 2 copies and pick a new group based on XOR distance being ½ the address space away from the data name (i.e. XOR with 100000…).  This group repeats, using XOR of full address space away (XOR with 111111…).  
     - [ ] Farming rate drops when more copies are available and rises when less copies are available.
     - [ ] Although the rate is managed by DM, it needs to be available for PM to read.
