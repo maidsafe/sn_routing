@@ -23,6 +23,7 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
+use sodiumoxide::crypto::sign::SIGNATUREBYTES;
 use NameType;
 use std::fmt;
 use error::ResponseError;
@@ -271,7 +272,7 @@ impl Id {
     let sign_arr = &pub_sign_key.0;
     let asym_arr = &pub_asym_key.0;
 
-    let mut arr_combined = [0u8; 64 * 2];
+    let mut arr_combined = [0u8; 64 * 2 + SIGNATUREBYTES];
 
     for i in 0..sign_arr.len() {
         arr_combined[i] = sign_arr[i];
@@ -282,6 +283,11 @@ impl Id {
 
     let validation_token = Signature{signature :
       crypto::sign::sign(&arr_combined, &sec_sign_key)};
+
+    for i in 0..SIGNATUREBYTES {
+        arr_combined[64 * 2 + i] = validation_token.signature[i];
+    }
+
     let digest = crypto::hash::sha512::hash(&arr_combined);
 
     Id {
