@@ -23,7 +23,8 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
-use sodiumoxide::crypto::sign::{PUBLICKEYBYTES, SIGNATUREBYTES};
+use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto::asymmetricbox::curve25519xsalsa20poly1305::PUBLICKEYBYTES;
 use NameType;
 use std::fmt;
 use error::ResponseError;
@@ -272,20 +273,20 @@ impl Id {
     let sign_arr = &pub_sign_key.0;
     let asym_arr = &pub_asym_key.0;
 
-    let mut arr_combined = [0u8; PUBLICKEYBYTES * 2 + SIGNATUREBYTES];
+    let mut arr_combined = [0u8; sign::PUBLICKEYBYTES + PUBLICKEYBYTES + sign::SIGNATUREBYTES];
 
     for i in 0..sign_arr.len() {
         arr_combined[i] = sign_arr[i];
     }
     for i in 0..asym_arr.len() {
-        arr_combined[PUBLICKEYBYTES + i] = asym_arr[i];
+        arr_combined[sign::PUBLICKEYBYTES + i] = asym_arr[i];
     }
 
     let validation_token = Signature{signature :
       crypto::sign::sign(&arr_combined, &sec_sign_key)};
 
-    for i in 0..SIGNATUREBYTES {
-        arr_combined[PUBLICKEYBYTES * 2 + i] = validation_token.signature[i];
+    for i in 0..sign::SIGNATUREBYTES {
+        arr_combined[sign::PUBLICKEYBYTES + PUBLICKEYBYTES + i] = validation_token.signature[i];
     }
 
     let digest = crypto::hash::sha512::hash(&arr_combined);
