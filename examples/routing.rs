@@ -345,26 +345,18 @@ fn main() {
         let sign_keypair = crypto::sign::gen_keypair();
         let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
         let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
-        let test_client = RoutingClient::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }, client_id_packet);
-        let mutate_client = Arc::new(Mutex::new(test_client));
-        let copied_client = mutate_client.clone();
-        spawn(move || {
-            loop {
-                thread::sleep_ms(10);
-                copied_client.lock().unwrap().run();
-            }
-        });
+        let mut test_client = RoutingClient::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }, client_id_packet);
         if args.arg_endpoint.is_some() {
             match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
                 Ok(addr) => {
                     println!("initial bootstrapping to {} ", addr);
-                    let _ = mutate_client.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
+                    let _ = test_client.join(Some(vec![Endpoint::Tcp(addr)])); 
                 }
                 Err(_) => {}
             };
-        }else {
+        } else {
             // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
-            let _ = mutate_client.lock().unwrap().bootstrap(None, None);
+            let _ = test_client.join(None);
         }
         loop {
             command.clear();
@@ -377,15 +369,15 @@ fn main() {
                     let key: Vec<u8> = v[1].trim().bytes().collect();
                     let value: Vec<u8> = v[2].trim().bytes().collect();
                     let data = TestData::new(key, value);
-                    println!("putting data {:?} to network with name as {}", data, data.name());
-                    let _ = mutate_client.lock().unwrap().put(data);
+                    println!("putting data {:?} to network with name as {}", data, data.name());             
+                    let _ = test_client.put(data);
                 },
                 "get" => {
                     let key: Vec<u8> = v[1].trim().bytes().collect();
                     let name = TestData::get_name_from_key(&key);
                     let key_string = std::string::String::from_utf8(key).unwrap();
                     println!("getting data having key {} from network using name as {}", key_string, name);
-                    let _ = mutate_client.lock().unwrap().get(201, name);
+                    let _ = test_client.get(201, name);
                 },
                 _ => println!("Invalid Option")
             }

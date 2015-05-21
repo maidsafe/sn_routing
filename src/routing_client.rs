@@ -24,6 +24,7 @@ use sodiumoxide::crypto;
 use std::io::Error as IoError;
 use std::sync::{Mutex, Arc, mpsc};
 use std::sync::mpsc::Receiver;
+use std::thread;
 
 use client_interface::Interface;
 use crust;
@@ -158,36 +159,82 @@ impl Decodable for ClientIdPacket {
     }
 }
 
-pub struct RoutingClient<F: Interface> {
+struct RoutingClientState<F: Interface> {
     interface: Arc<Mutex<F>>,
-    event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
     id_packet: ClientIdPacket,
     bootstrap_address: (Option<NameType>, Option<Endpoint>),
     next_message_id: MessageId
 }
 
-impl<F> Drop for RoutingClient<F> where F: Interface {
+pub struct RoutingClient<'a, F: Interface + 'a> {
+    state: Arc<Mutex<RoutingClientState<F>>>,
+    join_guard: thread::JoinGuard<'a, ()>
+}
+
+impl<'a, F> Drop for RoutingClient<'a, F> where F: Interface {
     fn drop(&mut self) {
         // self.connection_manager.stop(); // TODO This should be coded in ConnectionManager once Peter
         // implements it.
     }
 }
 
-impl<F> RoutingClient<F> where F: Interface {
-    pub fn new(my_interface: F, id_packet: ClientIdPacket) -> RoutingClient<F> {
+impl<'a, F> RoutingClient<'a, F> where F: Interface {
+    pub fn new(my_interface: F, id_packet: ClientIdPacket) -> RoutingClient<'a, F> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let (tx, rx) = mpsc::channel::<Event>();
+        let (tx, rx) = mpsc::channel();
+        let state = Arc::new(Mutex::new(RoutingClientState {
+                interface: Arc::new(Mutex::new(my_interface)),
+                connection_manager: crust::ConnectionManager::new(tx),
+                id_packet: id_packet.clone(),
+                bootstrap_address: (None, None),
+                next_message_id: rand::random::<MessageId>()
+            }));
+        let copied_state = state.clone();
         RoutingClient {
-            interface: Arc::new(Mutex::new(my_interface)),
-            event_input: rx,
-            connection_manager: crust::ConnectionManager::new(tx),
-            id_packet: id_packet.clone(),
-            bootstrap_address: (None, None),
-            next_message_id: rand::random::<MessageId>()
+            state: state,
+            join_guard: thread::scoped(move || RoutingClient::run(rx, copied_state)),
         }
     }
 
+    /// Retrieve something from the network (non mutating) - Direct call
+    pub fn get(&mut self, type_id: u64, name: NameType) -> Result<MessageId, IoError> {
+        let mut state = self.state.lock().unwrap();
+        state.get(type_id, name)
+    }
+
+    /// Add something to the network, will always go via ClientManager group
+    pub fn put<T>(&mut self, content: T) -> Result<MessageId, IoError> where T: Sendable {
+        let mut state = self.state.lock().unwrap();
+        state.put(content)
+    }
+
+    /// Add content to the network
+    pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
+        let mut state = self.state.lock().unwrap();
+        state.unauthorised_put(destination, content)
+    }
+
+    /// join the network
+    pub fn join(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
+        let mut state = self.state.lock().unwrap();
+        state.join(bootstrap_list)
+    }
+
+    fn run(rx: mpsc::Receiver<Event>, state: Arc<Mutex<RoutingClientState<F>>>) {
+        loop {
+            let event = rx.recv();
+            if event.is_err() { return; }
+            let mut state = state.lock().unwrap();
+            if !state.handle_event(event.unwrap()) {
+                break;
+            }
+        }
+    }
+
+}
+
+impl<F> RoutingClientState<F> where F: Interface {
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) -> Result<MessageId, IoError> {
         let requester = types::SourceAddress {
@@ -255,24 +302,38 @@ impl<F> RoutingClient<F> where F: Interface {
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
     }
 
-    pub fn run(&mut self) {
-        let event = self.event_input.try_recv();
+    pub fn join(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
+        match self.connection_manager.bootstrap(bootstrap_list, None) {
+            Err(reason) => {
+                println!("Failed to connect to network (this might be the first node)\nDetails: {:?}", reason);
+                Err(RoutingError::FailedToBootstrap)
+            }
+            Ok(bootstrapped_to) => {
+                match bootstrapped_to.clone() {
+                        Endpoint::Tcp(socket) => println!("bootstrapped to {}", socket)
+                }
+                self.bootstrap_address.1 = Some(bootstrapped_to);
+                // starts swaping ID with the bootstrap peer
+                self.send_bootstrap_id_request();
+                Ok(())
+            }
+        }
+    }
 
-        if event.is_err() { return; }
-
-        match event.unwrap() {
+    fn handle_event(&mut self, event: crust::connection_manager::Event) -> bool {
+        match event {
             crust::connection_manager::Event::NewMessage(endpoint, bytes) => {
-                // The received id is Endpoint(i.e. ip + socket) which is no use to upper layer
                 // println!("received a new message from {}",
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
                 let routing_msg = match decode::<RoutingMessage>(&bytes) {
                     Ok(routing_msg) => routing_msg,
-                    Err(_) => return
+                    Err(_) => return false
                 };
                 // println!("received a {:?} from {}", routing_msg.message_type,
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
                 if self.bootstrap_address.1 == Some(endpoint.clone()) {
                     if routing_msg.message_type == messages::MessageTypeTag::BootstrapIdResponse {
+                        self.bootstrap_address.0 = Some(routing_msg.message_header.source.from_node);
                         self.handle_bootstrap_id_response(endpoint, routing_msg.serialised_body);
                     } else if routing_msg.message_header.destination.reply_to.is_some() &&
                               routing_msg.message_header.destination.reply_to.clone().unwrap() == self.id_packet.get_name() {
@@ -287,18 +348,10 @@ impl<F> RoutingClient<F> where F: Interface {
             },
             _ => { // as a client, shall not handle any connection related change
                    // TODO : try to re-bootstrap when lost the connection to the bootstrap node ?
+                   return false
                  }
         }
-    }
-
-    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
-                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
-         let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
-                                    .map_err(|_|RoutingError::FailedToBootstrap));
-         self.bootstrap_address.1 = Some(bootstrapped_to);
-         // starts swapping ID with the bootstrap peer
-         self.send_bootstrap_id_request();
-         Ok(())
+        true
     }
 
     fn send_bootstrap_id_request(&mut self) {
