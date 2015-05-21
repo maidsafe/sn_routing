@@ -24,7 +24,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
 use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::asymmetricbox::curve25519xsalsa20poly1305::PUBLICKEYBYTES;
+use sodiumoxide::crypto::asymmetricbox::PUBLICKEYBYTES;
 use NameType;
 use std::fmt;
 use error::ResponseError;
