@@ -49,8 +49,8 @@ pub mod post;
 pub mod put_data;
 #[path="messages/put_data_response.rs"]
 pub mod put_data_response;
-#[path="messages/put_public_pmid.rs"]
-pub mod put_public_pmid;
+#[path="messages/put_public_id.rs"]
+pub mod put_public_id;
 
 
 
@@ -83,7 +83,7 @@ pub enum MessageTypeTag {
     UnauthorisedPut,
     PutKey,
     AccountTransfer,
-    PutPublicPmid,
+    PutPublicId,
     Unknown,
 }
 
@@ -110,7 +110,7 @@ impl Encodable for MessageTypeTag {
             MessageTypeTag::UnauthorisedPut => type_tag = "UnauthorisedPut",
             MessageTypeTag::PutKey => type_tag = "PutKey",
             MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
-            MessageTypeTag::PutPublicPmid => type_tag = "PutPublicPmid",
+            MessageTypeTag::PutPublicId => type_tag = "PutPublicId",
             MessageTypeTag::Unknown => type_tag = "Unknown",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
@@ -141,7 +141,7 @@ impl Decodable for MessageTypeTag {
             "PutDataResponse" => Ok(MessageTypeTag::PutDataResponse),
             "UnauthorisedPut" => Ok(MessageTypeTag::UnauthorisedPut),
             "PutKey" => Ok(MessageTypeTag::PutKey),
-            "PutPublicPmid" => Ok(MessageTypeTag::PutPublicPmid),
+            "PutPublicId" => Ok(MessageTypeTag::PutPublicId),
             "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),
             _ => Ok(MessageTypeTag::Unknown)
         }
@@ -173,11 +173,6 @@ impl Decodable for RoutingMessage {
 }
 
 impl RoutingMessage {
-    // pub fn dummy_new(message_type: MessageTypeTag,
-    //                  message_header: message_header::MessageHeader) -> RoutingMessage {
-    //     RoutingMessage { message_type: message_type, message_header: message_header, serialised_body: Vec::<u8>::new() }
-    // }
-
     pub fn new<T>(message_type: MessageTypeTag, message_header: message_header::MessageHeader,
                   message : T, private_sign_key : &crypto::sign::SecretKey) -> RoutingMessage where T: for<'a> Encodable + Decodable {
         let mut e = cbor::Encoder::from_memory();
@@ -189,17 +184,5 @@ impl RoutingMessage {
             message_header: message_header,
             serialised_body: types::array_as_vector(e.as_bytes()),
             signature: signature }
-    }
-
-    pub fn get_message_body<T>(&self) -> T where T: for<'a> Encodable + Decodable {
-        let mut d = cbor::Decoder::from_bytes(&self.serialised_body[..]);
-        let obj: T = d.decode().next().unwrap().unwrap();
-        obj
-    }
-
-    pub fn set_message_body<T>(&mut self, message: T) where T: for<'a> Encodable + Decodable {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&message]).unwrap();
-        self.serialised_body = e.as_bytes().to_vec()
     }
 }

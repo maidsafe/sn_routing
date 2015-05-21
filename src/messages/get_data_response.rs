@@ -21,26 +21,41 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use types;
-use RoutingError;
+use error::ResponseError;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetDataResponse {
   pub name_and_type_id : types::NameAndTypeId,
-  pub data : Vec<u8>,  // len() == 0 indicates no data fetched
-  pub error : RoutingError  //  TODO this shall be a serializable MaidSafeError type
+  pub data : Result<Vec<u8>, ResponseError>,
 }
 
 impl Encodable for GetDataResponse {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.name_and_type_id, &self.data, &self.error)).encode(e)
-  }
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        let error : Option<&ResponseError> = match &self.data {
+            &Ok(_) => None,
+            &Err(ref e) => Some(e),
+        };
+
+        let dummy = Vec::new();
+
+        let data : &Vec<u8> = match self.data {
+            Ok(ref data) => data,
+            Err(_) => &dummy,
+        };
+
+        CborTagEncode::new(5483_001, &(&self.name_and_type_id, &data, &error)).encode(e)
+    }
 }
 
 impl Decodable for GetDataResponse {
   fn decode<D: Decoder>(d: &mut D)->Result<GetDataResponse, D::Error> {
     try!(d.read_u64());
     let (name_and_type_id, data, error) = try!(Decodable::decode(d));
-    Ok(GetDataResponse { name_and_type_id: name_and_type_id, data: data, error: error })
+
+    match error {
+        None        => Ok(GetDataResponse { name_and_type_id: name_and_type_id, data: Ok(data) }),
+        Some(error) => Ok(GetDataResponse { name_and_type_id: name_and_type_id, data: Err(error)})
+    }
   }
 }
 

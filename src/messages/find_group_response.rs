@@ -20,11 +20,11 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use frequency::Frequency;
-use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE, Mergeable};
+use types::{PublicId, GROUP_SIZE, QUORUM_SIZE, Mergeable};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
-  pub group : Vec<PublicPmid>
+  pub group : Vec<PublicId>
 }
 
 impl Mergeable for FindGroupResponse {
@@ -32,8 +32,8 @@ impl Mergeable for FindGroupResponse {
         let mut frequency = Frequency::new();
 
         for response in responses {
-            for public_pmid in &response.group {
-                frequency.update(public_pmid.clone());
+            for public_id in &response.group {
+                frequency.update(public_id.clone());
             }
         }
 
@@ -67,7 +67,7 @@ mod test {
     use super::*;
     use cbor;
     use types;
-    use types::{PublicPmid, GROUP_SIZE, QUORUM_SIZE};
+    use types::{PublicId, GROUP_SIZE, QUORUM_SIZE};
     use test_utils::Random;
     use rand::{thread_rng, Rng};
     use rand::distributions::{IndependentSample, Range};
@@ -88,22 +88,22 @@ mod test {
 
     #[test]
     fn merge() {
-        let pmids: FindGroupResponse = Random::generate_random();
-        // pmids.group.len() == types::GROUP_SIZE + 20
-        assert!(pmids.group.len() >= GROUP_SIZE as usize);
+        let ids: FindGroupResponse = Random::generate_random();
+        // ids.group.len() == types::GROUP_SIZE + 20
+        assert!(ids.group.len() >= GROUP_SIZE as usize);
 
         let group_size = GROUP_SIZE as usize;
         let quorum_size = QUORUM_SIZE as usize;
 
         // get random GROUP_SIZE groups
-        let mut groups = Vec::<PublicPmid>::with_capacity(quorum_size);
+        let mut groups = Vec::<PublicId>::with_capacity(quorum_size);
         let mut rng = thread_rng();
-        let range = Range::new(0, pmids.group.len());
+        let range = Range::new(0, ids.group.len());
 
         loop {
             let index = range.ind_sample(&mut rng);
-            if groups.contains(&pmids.group[index]) { continue; }
-            groups.push(pmids.group[index].clone());
+            if groups.contains(&ids.group[index]) { continue; }
+            groups.push(ids.group[index].clone());
             if groups.len() == quorum_size { break; }
         };
 
@@ -117,7 +117,7 @@ mod test {
             }
             // ...and the remainder arbitrary
             for _ in quorum_size..group_size {
-                response.group.push(PublicPmid::generate_random());
+                response.group.push(PublicId::generate_random());
             }
 
             rng.shuffle(&mut response.group[..]);

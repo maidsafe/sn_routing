@@ -25,8 +25,7 @@ use rand::random;
 use sodiumoxide;
 use NameType;
 use std::fmt;
-use std::str;
-use RoutingError;
+use error::ResponseError;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -67,56 +66,24 @@ pub trait Mergeable {
     fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub enum Authority {
-  ClientManager,  // from a node in our range but not routing table
-  NaeManager,     // target (name()) is in the group we are in
-  NodeManager,    // received from a node in our routing table (handle refresh here)
-  ManagedNode,    // in our group and routing table
-  ManagedClient,  // in our group
-  Client,         // detached
-  Unknown
-}
-
-impl Encodable for Authority {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    let mut authority = "";
-    match *self {
-      Authority::ClientManager => authority = "ClientManager",
-      Authority::NaeManager => authority = "NaeManager",
-      Authority::NodeManager => authority = "NodeManager",
-      Authority::ManagedNode => authority = "ManagedNode",
-      Authority::ManagedClient => authority = "ManagedClient",
-      Authority::Client => authority = "Client",
-      Authority::Unknown => authority = "Unknown",
-    };
-    CborTagEncode::new(5483_100, &(&authority)).encode(e)
-  }
-}
-
-impl Decodable for Authority {
-  fn decode<D: Decoder>(d: &mut D)->Result<Authority, D::Error> {
-    try!(d.read_u64());
-    let mut authority : String = String::new();
-    authority = try!(Decodable::decode(d));
-    match &authority[..] {
-      "ClientManager" => Ok(Authority::ClientManager),
-      "NaeManager" => Ok(Authority::NaeManager),
-      "NodeManager" => Ok(Authority::NodeManager),
-      "ManagedNode" => Ok(Authority::ManagedNode),
-      "ManagedClient" => Ok(Authority::ManagedClient),
-      "Client" => Ok(Authority::Client),
-      _ => Ok(Authority::Unknown)
-    }
-  }
-}
-
 pub type MessageId = u32;
 pub type NodeAddress = NameType; // (Address, NodeTag)
 pub type GroupAddress = NameType; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
-pub type PmidNode = NameType;
-pub type PmidNodes = Vec<PmidNode>;
+pub type IdNode = NameType;
+pub type IdNodes = Vec<IdNode>;
+
+//#[derive(RustcEncodable, RustcDecodable)]
+struct SignedKey {
+  sign_public_key: crypto::sign::PublicKey,
+  encrypt_public_key: crypto::asymmetricbox::PublicKey,
+  signature: crypto::sign::Signature, // detached signature
+}
+
+pub enum Action {
+  Reply(Vec<u8>),
+  SendOn(Vec<NameType>),
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
@@ -243,20 +210,20 @@ impl Decodable for PublicKey {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct PublicPmid {
+pub struct PublicId {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
   pub validation_token: Signature,
   pub name: NameType
 }
 
-impl PublicPmid {
-    pub fn new(pmid : &Pmid) -> PublicPmid {
-      PublicPmid {
-        public_key : pmid.get_public_key(),
-        public_sign_key : pmid.get_public_sign_key(),
-        validation_token : pmid.get_validation_token(),
-        name : pmid.get_name()
+impl PublicId {
+    pub fn new(id : &Id) -> PublicId {
+      PublicId {
+        public_key : id.get_public_key(),
+        public_sign_key : id.get_public_sign_key(),
+        validation_token : id.get_validation_token(),
+        name : id.get_name()
       }
     }
 
@@ -267,7 +234,7 @@ impl PublicPmid {
     }
 }
 
-impl Encodable for PublicPmid {
+impl Encodable for PublicId {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.public_key,
                                    &self.public_sign_key,
@@ -275,12 +242,12 @@ impl Encodable for PublicPmid {
   }
 }
 
-impl Decodable for PublicPmid {
-  fn decode<D: Decoder>(d: &mut D)->Result<PublicPmid, D::Error> {
+impl Decodable for PublicId {
+  fn decode<D: Decoder>(d: &mut D)->Result<PublicId, D::Error> {
     try!(d.read_u64());
     let (public_key, public_sign_key,
          validation_token, name) = try!(Decodable::decode(d));
-    Ok(PublicPmid { public_key: public_key,
+    Ok(PublicId { public_key: public_key,
                     public_sign_key : public_sign_key,
                     validation_token: validation_token, name : name })
   }
@@ -289,15 +256,15 @@ impl Decodable for PublicPmid {
 // #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 // TODO (ben 2015-04-01) : implement order based on name
 #[derive(Clone)]
-pub struct Pmid {
+pub struct Id {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
   validation_token: Signature,
   name: NameType
 }
 
-impl Pmid {
-  pub fn new() -> Pmid {
+impl Id {
+  pub fn new() -> Id {
     let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
     let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::asymmetricbox::gen_keypair();
 
@@ -317,7 +284,7 @@ impl Pmid {
       crypto::sign::sign(&arr_combined, &sec_sign_key)};
     let digest = crypto::hash::sha512::hash(&arr_combined);
 
-    Pmid {
+    Id {
       public_keys : (pub_sign_key, pub_asym_key),
       secret_keys : (sec_sign_key, sec_asym_key),
       validation_token : validation_token,
@@ -414,31 +381,26 @@ impl Decodable for DestinationAddress {
   }
 }
 
-impl Encodable for RoutingError {
+impl Encodable for ResponseError {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let mut type_tag;
         match *self {
-            RoutingError::Success => type_tag = "Success",
-            RoutingError::FailedToBootstrap => type_tag = "FailedToBootstrap",
-            RoutingError::NoData => type_tag = "NoData",
-            RoutingError::InvalidRequest => type_tag = "InvalidRequest",
-            RoutingError::IncorrectData(ref data) => type_tag = str::from_utf8(data.as_ref()).unwrap()
+            ResponseError::NoData => type_tag = "NoData",
+            ResponseError::InvalidRequest => type_tag = "InvalidRequest",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
     }
 }
 
-impl Decodable for RoutingError {
-    fn decode<D: Decoder>(d: &mut D)->Result<RoutingError, D::Error> {
+impl Decodable for ResponseError {
+    fn decode<D: Decoder>(d: &mut D)->Result<ResponseError, D::Error> {
         try!(d.read_u64());
         let mut type_tag : String;
         type_tag = try!(Decodable::decode(d));
         match &type_tag[..] {
-            "Success" => Ok(RoutingError::Success),
-            "FailedToBootstrap" => Ok(RoutingError::FailedToBootstrap),
-            "NoData" => Ok(RoutingError::NoData),
-            "InvalidRequest" => Ok(RoutingError::InvalidRequest),
-            data => Ok(RoutingError::IncorrectData(data.to_string().into_bytes()))
+            "NoData" => Ok(ResponseError::NoData),
+            "InvalidRequest" => Ok(ResponseError::InvalidRequest),
+            _ => Err(d.error("Unrecognised ResponseError"))
         }
     }
 }
@@ -451,6 +413,7 @@ mod test {
   use rand::random;
   use rustc_serialize::{Decodable, Encodable};
   use test_utils::Random;
+  use authority::Authority;
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];
@@ -492,14 +455,14 @@ mod test {
   }
 
 #[test]
-    fn serialisation_public_pmid() {
-        let obj_before = PublicPmid::generate_random();
+    fn serialisation_public_id() {
+        let obj_before = PublicId::generate_random();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: PublicPmid = d.decode().next().unwrap().unwrap();
+        let obj_after: PublicId = d.decode().next().unwrap().unwrap();
         assert_eq!(obj_before, obj_after);
     }
 }

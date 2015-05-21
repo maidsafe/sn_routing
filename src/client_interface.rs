@@ -16,14 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use types::MessageId;
-use super::RoutingError;
+use error::ResponseError;
 
 pub trait Interface : Sync + Send {
     fn handle_get_response(&mut self,
                            message_id: MessageId,
-                           response: Result<Vec<u8>, RoutingError>);
+                           response: Result<Vec<u8>, ResponseError>);
 
     fn handle_put_response(&mut self,
                            message_id: MessageId,
-                           response: Result<Vec<u8>, RoutingError>);
+                           response: Result<Vec<u8>, ResponseError>);
 }

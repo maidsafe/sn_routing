@@ -21,7 +21,6 @@ use rustc_serialize;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
 use sodiumoxide::crypto;
-use std::io;
 use std::io::Error as IoError;
 use std::sync::{Mutex, Arc, mpsc};
 use std::sync::mpsc::Receiver;
@@ -29,22 +28,24 @@ use std::thread;
 
 use client_interface::Interface;
 use crust;
-use crust::Endpoint::Tcp;
 use messages;
 use message_header;
 use name_type::NameType;
 use sendable::Sendable;
 use types;
-use RoutingError;
+use error::{RoutingError, ResponseError};
 use cbor::{Decoder, Encoder};
 use messages::bootstrap_id_request::BootstrapIdRequest;
 use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
+use messages::get_data::GetData;
 use name_type::{NAME_TYPE_LEN};
 use message_header::MessageHeader;
 use messages::{RoutingMessage, MessageTypeTag};
-use types::{MessageId, Authority};
+use types::MessageId;
+use authority::Authority;
+use utils::*;
 
 pub use crust::Endpoint;
 
@@ -181,7 +182,7 @@ impl<'a, F> Drop for RoutingClient<'a, F> where F: Interface {
 impl<'a, F> RoutingClient<'a, F> where F: Interface {
     pub fn new(my_interface: F, id_packet: ClientIdPacket) -> RoutingClient<'a, F> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
         let state = Arc::new(Mutex::new(RoutingClientState {
                 interface: Arc::new(Mutex::new(my_interface)),
                 connection_manager: crust::ConnectionManager::new(tx),
@@ -236,119 +237,69 @@ impl<'a, F> RoutingClient<'a, F> where F: Interface {
 impl<F> RoutingClientState<F> where F: Interface {
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) -> Result<MessageId, IoError> {
-        // Make GetData message
-        let get_data = messages::get_data::GetData {
-            requester: types::SourceAddress {
-                from_node: self.bootstrap_address.0.clone().unwrap(),
-                from_group: None,
-                reply_to: Some(self.id_packet.get_name()),
-            },
-            name_and_type_id: types::NameAndTypeId {
-                name: name.clone(),
-                type_id: type_id,
-            },
+        let requester = types::SourceAddress {
+            from_node: self.bootstrap_address.0.clone().unwrap(),
+            from_group: None,
+            reply_to: Some(self.id_packet.get_name())
         };
 
         let message_id = self.get_next_message_id();
 
-        // Make MessageHeader
-        let header = message_header::MessageHeader::new(
-            message_id,
-            types::DestinationAddress {
-                dest: name.clone(),
-                reply_to: None
-            },
-            get_data.requester.clone(),
-            types::Authority::Client
-        );
-
-        // Make RoutingMessage
-        let routing_msg = messages::RoutingMessage::new(
+        let message = messages::RoutingMessage::new(
             messages::MessageTypeTag::GetData,
-            header,
-            get_data,
+            message_header::MessageHeader::new(
+                self.get_next_message_id(),
+                types::DestinationAddress {
+                    dest: name.clone(),
+                    reply_to: None
+                },
+                requester.clone(),
+                Authority::Client
+            ),
+            GetData {requester: requester.clone(), name_and_type_id: types::NameAndTypeId {
+                name: name.clone(), type_id: type_id }},
             &self.id_packet.secret_keys.0
         );
 
-        // Serialise RoutingMessage
-        let mut encoder_routingmsg = cbor::Encoder::from_memory();
-        encoder_routingmsg.encode(&[&routing_msg]).unwrap();
-
-        // Give Serialised RoutingMessage to connection manager
-        match self.connection_manager.send(self.bootstrap_address.1.clone().unwrap(),
-                                           encoder_routingmsg.into_bytes()) {
-            Ok(_) => Ok(message_id),
-            Err(error) => Err(error),
-        }
-    }
+        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        Ok(message_id)    }
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put<T>(&mut self, content: T) -> Result<MessageId, IoError> where T: Sendable {
-        if self.bootstrap_address.1.is_none() {
-            println!("not bootstrapped");
-            return Err(IoError::new(io::ErrorKind::NotConnected, "?"));
-        }
-        // Make PutData message
-        let put_data = messages::put_data::PutData {
-            name: content.name(),
-            data: content.serialised_contents(),
-        };
-
         let message_id = self.get_next_message_id();
-
-        // Make MessageHeader
-        let header = message_header::MessageHeader::new(
-            message_id,
-            types::DestinationAddress {
-                dest: self.id_packet.get_name(),
-                reply_to: None,
-            },
-            types::SourceAddress {
-                from_node: self.bootstrap_address.0.clone().unwrap(),
-                from_group: None,
-                reply_to: Some(self.id_packet.get_name()),
-            },
-            types::Authority::Client
-        );
-
-        // Make RoutingMessage
-        let routing_msg = messages::RoutingMessage::new(
+        let message = messages::RoutingMessage::new(
             messages::MessageTypeTag::PutData,
-            header,
-            put_data,
+            MessageHeader::new(
+                message_id,
+                types::DestinationAddress {dest: self.id_packet.get_name(), reply_to: None },
+                types::SourceAddress {
+                    from_node: self.bootstrap_address.0.clone().unwrap(),
+                    from_group: None,
+                    reply_to: Some(self.id_packet.get_name()),
+                },
+                Authority::Client
+            ),
+            PutData {name: content.name(), data: content.serialised_contents()},
             &self.id_packet.secret_keys.0
         );
-
-        // Serialise RoutingMessage
-        let mut encoder_routingmsg = cbor::Encoder::from_memory();
-        encoder_routingmsg.encode(&[&routing_msg]).unwrap();
-
-        // Give Serialised RoutingMessage to connection manager
-        match self.connection_manager.send(self.bootstrap_address.1.clone().unwrap(),
-                                           encoder_routingmsg.into_bytes()) {
-            Ok(_) => Ok(message_id),
-            Err(error) => Err(error),
-        }
+        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        Ok(message_id)
     }
 
     /// Add content to the network
     pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
-        let source = types::SourceAddress {
-                        from_node: self.bootstrap_address.0.clone().unwrap(),
-                        from_group: None,
-                        reply_to: Some(self.id_packet.get_name()),
-                    };
-        let authority = Authority::Unknown;
-        let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(message_id, destination, source, authority);
-        let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut, header,
-                request, &self.id_packet.secret_keys.0);
-        let mut e = Encoder::from_memory();
-
-        e.encode(&[message]).unwrap();
-        let _ = self.connection_manager.send(self.bootstrap_address.1.clone().unwrap(), e.into_bytes());
+        let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut,
+            MessageHeader::new(self.get_next_message_id(),
+                types::DestinationAddress{ dest: destination, reply_to: None },
+                types::SourceAddress {
+                                from_node: self.bootstrap_address.0.clone().unwrap(),
+                                from_group: None,
+                                reply_to: Some(self.id_packet.get_name()),
+                            },
+                Authority::Unknown),
+            PutData{ name: content.name(), data: content.serialised_contents() },
+            &self.id_packet.secret_keys.0);
+        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
     }
 
     pub fn join(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
@@ -359,7 +310,7 @@ impl<F> RoutingClientState<F> where F: Interface {
             }
             Ok(bootstrapped_to) => {
                 match bootstrapped_to.clone() {
-                        Tcp(socket) => println!("bootstrapped to {}", socket)
+                        Endpoint::Tcp(socket) => println!("bootstrapped to {}", socket)
                 }
                 self.bootstrap_address.1 = Some(bootstrapped_to);
                 // starts swaping ID with the bootstrap peer
@@ -374,16 +325,16 @@ impl<F> RoutingClientState<F> where F: Interface {
             crust::connection_manager::Event::NewMessage(endpoint, bytes) => {
                 // println!("received a new message from {}",
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
-                let mut decode_routing_msg = cbor::Decoder::from_bytes(&bytes[..]);
-                let routing_msg: messages::RoutingMessage = decode_routing_msg.decode().next().unwrap().unwrap();
+                let routing_msg = match decode::<RoutingMessage>(&bytes) {
+                    Ok(routing_msg) => routing_msg,
+                    Err(_) => return false
+                };
                 // println!("received a {:?} from {}", routing_msg.message_type,
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
-                if self.bootstrap_address.1 == Some(endpoint) {
+                if self.bootstrap_address.1 == Some(endpoint.clone()) {
                     if routing_msg.message_type == messages::MessageTypeTag::BootstrapIdResponse {
-                //         println!("set bootstrap node to {:?} ", routing_msg.message_header.source.from_node.clone());
                         self.bootstrap_address.0 = Some(routing_msg.message_header.source.from_node);
-                    } else if routing_msg.message_type == messages::MessageTypeTag::BootstrapIdRequest {
-                        self.send_bootstrap_id_response();
+                        self.handle_bootstrap_id_response(endpoint, routing_msg.serialised_body);
                     } else if routing_msg.message_header.destination.reply_to.is_some() &&
                               routing_msg.message_header.destination.reply_to.clone().unwrap() == self.id_packet.get_name() {
                         match routing_msg.message_type {
@@ -395,47 +346,36 @@ impl<F> RoutingClientState<F> where F: Interface {
                     }
                 }
             },
-            crust::Event::NewConnection(endpoint) => {
-                // as a client, shall not handle any connection related change
-            },
-            _ => {
-                // TODO : try to re-bootstrap when lost the connection to the bootstrap node ?
-                println!("client stopped listening");
-                return false; // stop listening
-            }
+            _ => { // as a client, shall not handle any connection related change
+                   // TODO : try to re-bootstrap when lost the connection to the bootstrap node ?
+                   return false
+                 }
         }
         true
     }
 
     fn send_bootstrap_id_request(&mut self) {
-        let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
-        let source = types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None };
-        let authority = types::Authority::Client;
-        let request = BootstrapIdRequest { sender_id: self.id_packet.get_name().clone() };
-        let header = MessageHeader::new(message_id, destination, source, authority);
-        let message = RoutingMessage::new(MessageTypeTag::BootstrapIdRequest, header,
-            request, &self.id_packet.get_crypto_secret_sign_key());
-        let mut e = Encoder::from_memory();
-        e.encode(&[message]).unwrap();
-        // need to send to bootstrap node as we are not yet connected to anyone else
-        self.send_to_bootstrap_node(&e.into_bytes());
+        let message = RoutingMessage::new(
+            MessageTypeTag::BootstrapIdRequest,
+            MessageHeader::new(
+                self.get_next_message_id(),
+                types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
+                types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None },
+                Authority::Client),
+            BootstrapIdRequest { sender_id: self.id_packet.get_name().clone() },
+            &self.id_packet.get_crypto_secret_sign_key());
+        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
     }
 
-    fn send_bootstrap_id_response(&mut self) {
-        let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None };
-        let source = types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None };
-        let authority = types::Authority::Client;
-        let request = BootstrapIdResponse { sender_id: self.id_packet.get_name().clone(),
-                                            sender_fob: types::PublicPmid::new(&types::Pmid::new()) };
-        let header = MessageHeader::new(message_id, destination, source, authority);
-        let message = RoutingMessage::new(MessageTypeTag::BootstrapIdResponse, header,
-            request, &self.id_packet.get_crypto_secret_sign_key());
-        let mut e = Encoder::from_memory();
-        e.encode(&[message]).unwrap();
-        // need to send to bootstrap node as we are not yet connected to anyone else
-        self.send_to_bootstrap_node(&e.into_bytes());
+    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes) {
+        let bootstrap_id_response_msg = decode::<BootstrapIdResponse>(&bytes);
+        if bootstrap_id_response_msg.is_err() {  // TODO handle non routing connection here
+            return;
+        }
+        let bootstrap_id_response_msg = bootstrap_id_response_msg.unwrap();
+        assert!(self.bootstrap_address.0.is_none());
+        assert_eq!(self.bootstrap_address.1, Some(peer_endpoint.clone()));
+        self.bootstrap_address.0 = Some(bootstrap_id_response_msg.sender_id);
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Vec<u8>) {
@@ -449,20 +389,13 @@ impl<F> RoutingClientState<F> where F: Interface {
     }
 
     fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) {
-        let get_data_response = self.decode::<GetDataResponse>(&body).unwrap();
-        let response;
-        if get_data_response.error != RoutingError::Success {
-            response = Err(RoutingError::NoData);
-        } else {
-            response = Ok(get_data_response.data);
-        }
+        let get_data_response = decode::<GetDataResponse>(&body).unwrap();
+        let response = match get_data_response.data {
+            Ok(data) => Ok(data),
+            Err(_)   => Err(ResponseError::NoData)
+        };
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(header.message_id, response);
-    }
-
-    fn decode<T>(&self, bytes: &Bytes) -> Option<T> where T: Decodable {
-        let mut dec = Decoder::from_bytes(&bytes[..]);
-        dec.decode().next().and_then(|result| result.ok())
     }
 }
 
@@ -476,20 +409,20 @@ impl<F> RoutingClientState<F> where F: Interface {
 //     use types::*;
 //     use client_interface::Interface;
 //     use Action;
-//     use RoutingError;
+//     use ResponseError;
 //     use maidsafe_types::Random;
 //     use maidsafe_types::Maid;
 //
 //     struct TestInterface;
 //
 //     impl Interface for TestInterface {
-//         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: NameType , data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
+//         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: NameType , data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
 //         fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-//                       from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-//         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, RoutingError> { unimplemented!(); }
-//         fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!() }
-//         fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
-//         fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, RoutingError>) { unimplemented!(); }
+//                       from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
+//         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
+//         fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!() }
+//         fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
+//         fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
 //         fn add_node(&mut self, node: NameType) { unimplemented!(); }
 //         fn drop_node(&mut self, node: NameType) { unimplemented!(); }
 //     }

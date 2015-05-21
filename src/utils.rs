@@ -15,27 +15,19 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused_assignments)]
+use cbor::{Decoder, Encoder, CborError};
+use rustc_serialize::{Decodable, Encodable};
 
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use NameType;
-
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub struct BootstrapIdResponse {
-  pub sender_id  : NameType,
+pub fn encode<T>(value: &T) -> Result<Vec<u8>, CborError> where T: Encodable {
+    let mut enc = Encoder::from_memory();
+    try!(enc.encode(&[value]));
+    Ok(enc.into_bytes())
 }
 
-impl Encodable for BootstrapIdResponse {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.sender_id)).encode(e)
-  }
-}
-
-impl Decodable for BootstrapIdResponse {
-  fn decode<D: Decoder>(d: &mut D)->Result<BootstrapIdResponse, D::Error> {
-    try!(d.read_u64());
-    let sender_id = try!(Decodable::decode(d));
-    Ok(BootstrapIdResponse { sender_id: sender_id })
-  }
+pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, CborError> where T: Decodable {
+    let mut dec = Decoder::from_bytes(&bytes[..]);
+    match dec.decode().next() {
+        Some(result) => result,
+        None => Err(CborError::UnexpectedEOF)
+    }
 }

@@ -1,18 +1,22 @@
 # routing
 
+**Primary Maintainer:**     Benjamin Bollen (benjamin.bollen@maidsafe.net)
+
+**Secondary Maintainer:**   Peter Jankuliak (peter.jankuliak@maidsafe.net)
+
 Routing - a specialised storage DHT
 
-|Crate|Travis|Appveyor|Coverage|
-|:------:|:-------:|:-------:|:-------:|
-|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Build Status](https://travis-ci.org/dirvine/routing.svg?branch=master)](https://travis-ci.org/dirvine/routing)|[![Build status](https://ci.appveyor.com/api/projects/status/ni7c20e9aux3g01i?svg=true)](https://ci.appveyor.com/project/dirvine/routing)|[![Coverage Status](https://coveralls.io/repos/dirvine/routing/badge.svg?branch=master)](https://coveralls.io/r/dirvine/routing?branch=master)|
+|Crate|Travis|Windows|OSX|Coverage|
+|:------:|:-------:|:-------:|:-------:|:-------:|
+|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Build Status](https://travis-ci.org/maidsafe/routing.svg?branch=master)](https://travis-ci.org/maidsafe/routing)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_win64_status_badge)](http://ci.maidsafe.net:8080/job/routing_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_osx_status_badge)](http://ci.maidsafe.net:8080/job/routing_osx_status_badge/)|[![Coverage Status](https://coveralls.io/repos/maidsafe/routing/badge.svg)](https://coveralls.io/r/maidsafe/routing)|
 
-| [API Documentation](http://dirvine.github.io/routing/routing/)| [MaidSafe System Documention](http://systemdocs.maidsafe.net/) | [MaidSafe web site](http://www.maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
+| [API Documentation](http://maidsafe.github.io/routing/routing/)| [MaidSafe System Documention](http://systemdocs.maidsafe.net/) | [MaidSafe web site](http://www.maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
 
 #Overview
 
 A secured [DHT](http://en.wikipedia.org/wiki/Distributed_hash_table), based on a [kademlia-like](http://en.wikipedia.org/wiki/Kademlia) implementation, but with some very stark differences. This is a recursive as opposed to iterative network, enabling easier NAT traversal and providing more efficient use of routers and larger networks. This also allows very fast reconfiguration of network changes, aleviating the requirement for a refresh algorithm. A recursive solution based on a network protocol layer that is 'connection oriented' also allows a close group to be aligned with security protocols.
 
-This library makes use of [Public-key cryptography](http://en.wikipedia.org/wiki/Public-key_cryptography) to allow a mechanism to ensure nodes are well recognised and cryptographically secured. This pattern allows the creation of a DHT based PKI and this in turn allows a decentralised network to make use of groups as fixed in relation to any address. This is particularly useful in a continually fluid network as described [here,](http://maidsafe.net/Whitepapers/pdf/MaidSafeDistributedHashTable.pdf) creating a server-less and [autonomous network](http://maidsafe.net/docs/SAFEnetwork.pdf). 
+This library makes use of [Public-key cryptography](http://en.wikipedia.org/wiki/Public-key_cryptography) to allow a mechanism to ensure nodes are well recognised and cryptographically secured. This pattern allows the creation of a DHT based PKI and this in turn allows a decentralised network to make use of groups as fixed in relation to any address. This is particularly useful in a continually fluid network as described [here,](http://maidsafe.net/Whitepapers/pdf/MaidSafeDistributedHashTable.pdf) creating a server-less and [autonomous network](http://maidsafe.net/docs/SAFEnetwork.pdf).
 
 This is a very under researched area. For a general introduction to some of the ideas behind the design related to XOR Space, watching [The SAFE Network from First Principles series](https://www.youtube.com/watch?v=Lr9FJRDcNzk&list=PLiYqQVdgdw_sSDkdIZzDRQR9xZlsukIxD) is recommended. The slides for XOR Distance Metric and Basic Routing lecture are also [available here](http://ericklavoie.com/talks/safenetwork/1-xor-routing.pdf). The last video from the series on how the same ideas were applied to decentralised BitTorrent trackers is available [here](https://www.youtube.com/watch?v=YFV908uoLPY). A proper formalisation of the Routing algorithm is in progress.
 
@@ -25,52 +29,52 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 ##Todo Items
 
-- [x] Set up facade design pattern
-- [x] Test facade pattern
-- [x] Set up accumulator
-- [x] Accumulator tests
-- [x] Message header 
-- [x] Message header tests
-- [x] API version 0.0.6
-- [x] Bootstrap handler implementation
-- [x] Bootstrap handler test
-- [x] Create sort and bucket index methods 
-- [x] Implement routing table
-- [x] Test routing table 
-- [x] Implement sentinel (initial)
-- [x] Finalise sentinel in line with tests
-- [x] Implement client node
-- [x] Test sentinel 
-- [x] Implement routing message types (Connect FindNode)
-- [x] Test message types
-- [x] Implement Get Put Post messages
-- [x] Version 0.0.8
-- [x] Move bootstrap out of routing
-- [x] Complete Routing Node Interface to accomodate churn
-- [x] Add caching to node interface
-- [x] Handle PMID Caching
-- [x] Handle Cache / Get / Check calls
-- [x] Routing message handling
-- [ ] Sentinel:
-  - [x] Handover existing implementation
-  - [x] Account transfer merge
-  - [x] Group response merge
-  - [x] Signature checks
-  - [ ] QA Sentinel including code review from system design perspective
-- [x] Check Authority (Ensure use and implementation of Authority is in line with the design doc / blog.)
-- [x] Implement unauthorised_put in routing_node and routing_client (this skips Sentinel checks)
-- [ ] Complete Client Interface (Facade)
-- [ ] Implement routing node (100%)
-- [ ] Examples:
-  - [ ] zero state network
-  - [ ] Routing Node with type erased cache
-  - [ ] Routing Client accepting key, value as string for GET/PUT
-  - [ ] Local Network Test. 12 Linux, 2 OSX, 2 WIN
-  - [ ] 101 Droplet test
-- [ ] Version 0.1.6 (crates.io)
-- [ ] Address re-location (security essential)
-- [ ] Implement routing connections management
+General note: please document code you touch, and introduce property-based unit tests where applicable.
 
-## FixMe items
+## [0.1.5] - essential logical corrections
+- [ ] [MAID-1007](https://maidsafe.atlassian.net/browse/MAID-1007) limit swarm to targeted group
+- [ ] [MAID-1032](https://maidsafe.atlassian.net/browse/MAID-1032)
+correct name calculation of pure Id
+- [ ] [MAID-1034](https://maidsafe.atlassian.net/browse/MAID-1034) ConnectResponse needs to include original signed ConnectRequest
 
-- [ ] Test: Sentinel::FakeMessages (refer to Brian)
+## [0.1.6] - activate security features
+
+- [ ] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
+  - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) add optional 'relocated' name field to put_public_id message
+  - [ ] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
+  - [ ] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
+- [ ] [MAID-1042](https://maidsafe.atlassian.net/browse/MAID-1042) Sentinel
+    - [ ] [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
+    - [ ] [MAID-1045](https://maidsafe.atlassian.net/browse/MAID-1045) plug in Sentinel [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
+    - [ ] [MAID-1046](https://maidsafe.atlassian.net/browse/MAID-1046) break down (header, body) into correct (request, claim) and dispatch
+    - [ ] [MAID-1048](https://maidsafe.atlassian.net/browse/MAID-1048) Ensure correct dispatch of GetGroupKeyResponse
+    - [ ] [MAID-1049](https://maidsafe.atlassian.net/browse/MAID-1049) update signature of handler functions to request and claim
+    - [ ] [MAID-1050](https://maidsafe.atlassian.net/browse/MAID-1050) block messages at filter once Sentinel has resolved
+    - [ ] [MAID-1051](https://maidsafe.atlassian.net/browse/MAID-1051) update construction of message_header
+
+## [0.1.7] - restructure core of routing
+
+- [ ] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
+    - [ ] [MAID-1054](https://maidsafe.atlassian.net/browse/MAID-1054) move all handler functions to separate module
+    - [ ] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
+    - [ ] [MAID-1057](https://maidsafe.atlassian.net/browse/MAID-1057) make event loop in routing_node internal
+    - [ ] [MAID-1059](https://maidsafe.atlassian.net/browse/MAID-1059) rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
+    - [ ] [MAID-1060](https://maidsafe.atlassian.net/browse/MAID-1060) Interface handle Result < Option < Action >, >
+- [ ] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
+- [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
+    - [ ] [MAID-1064](https://maidsafe.atlassian.net/browse/MAID-1064) POC first and move UnauthorisedPut into explicit message structure.
+- [ ] [MAID-1065](https://maidsafe.atlassian.net/browse/MAID-1065) Return Result for Put Get Post
+- [ ] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
+
+## [0.1.8] - activate account transfer
+
+- [ ] [MAID-1067](https://maidsafe.atlassian.net/browse/MAID-1067) Remove merge from Sendable
+- [ ] [MAID-1068](https://maidsafe.atlassian.net/browse/MAID-1068) Account Transfer message
+- [ ] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
+
+## [0.1.9] Finish sprint
+
+- [ ] [MAID-1070](https://maidsafe.atlassian.net/browse/MAID-1070) drop_bootstrap in coordination with CRUST
+- [ ] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
+- [ ] [MAID-1072](https://maidsafe.atlassian.net/browse/MAID-1072) Integration test
+- [ ] [MAID-1076](https://maidsafe.atlassian.net/browse/MAID-1076) implement Network Visualiser
