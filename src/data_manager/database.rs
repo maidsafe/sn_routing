@@ -24,7 +24,9 @@ use cbor;
 use rustc_serialize::{Encodable};
 
 type Identity = routing::NameType; // name of the chunk
-use routing::types::{PmidNode, PmidNodes, GROUP_SIZE};
+type PmidNode = routing::NameType;
+pub type PmidNodes = Vec<PmidNode>;
+use routing::types::{GROUP_SIZE};
 use routing::NameType;
 use std::cmp;
 

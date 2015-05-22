@@ -20,7 +20,7 @@ use routing;
 use maidsafe_types;
 use routing::NameType;
 use routing::error::{ResponseError, InterfaceError};
-use routing::types::GROUP_SIZE;
+use routing::types::{Action, GROUP_SIZE};
 use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
@@ -94,15 +94,15 @@ impl VersionHandler {
     VersionHandler { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
   }
 
-  pub fn handle_get(&self, name: NameType) ->Result<routing::Action, InterfaceError> {
+  pub fn handle_get(&self, name: NameType) ->Result<Action, InterfaceError> {
     let data = self.chunk_store_.get(name);
     if data.len() == 0 {
       return Err(From::from(ResponseError::NoData));
     }
-    Ok(routing::Action::Reply(data))
+    Ok(Action::Reply(data))
   }
 
-  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, InterfaceError> {
+  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<Action, InterfaceError> {
     let mut data_name : NameType;
     let mut d = cbor::Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -168,8 +168,8 @@ mod test {
     let get_result = version_handler.handle_get(data_name);
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
-        routing::Action::SendOn(_) => panic!("Unexpected"),
-        routing::Action::Reply(x) => {
+        Action::SendOn(_) => panic!("Unexpected"),
+        Action::Reply(x) => {
                 let mut d = cbor::Decoder::from_bytes(x);
                 let obj_after: Payload = d.decode().next().unwrap().unwrap();
                 assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::StructuredData);
