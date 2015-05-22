@@ -593,8 +593,10 @@ impl<F> RoutingNode<F> where F: Interface {
         println!("{:?} received ConnectResponse", self.own_name);
         let connect_response = try!(decode::<ConnectResponse>(&body));
 
-        // Verify a connect request came from us.
-        if !verify_detached(&connect_response.connect_request_signature.get_crypto_signature(),
+        // Verify a connect request was initiated by us.
+        let connect_request = try!(decode::<ConnectRequest>(&connect_response.serialised_connect_request));
+        if connect_request.requester_id != self.id.get_name() ||
+           !verify_detached(&connect_response.connect_request_signature.get_crypto_signature(),
                             &connect_response.serialised_connect_request[..],
                             &self.id.get_crypto_public_sign_key()) {
             return Err(RoutingError::Response(ResponseError::InvalidRequest));
