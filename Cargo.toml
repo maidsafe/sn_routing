@@ -1,7 +1,7 @@
 [package]
 
 name = "routing"
-version = "0.1.40"
+version = "0.1.50"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A specialised storage DHT."
 documentation = "http://dirvine.github.io/routing/"

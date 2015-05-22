@@ -33,9 +33,11 @@ General note: please document code you touch, and introduce property-based unit 
 
 ## [0.1.5] - essential logical corrections
 - [ ] [MAID-1007](https://maidsafe.atlassian.net/browse/MAID-1007) limit swarm to targeted group
-- [ ] [MAID-1032](https://maidsafe.atlassian.net/browse/MAID-1032)
+ - [ ] [MAID-1105](https://maidsafe.atlassian.net/browse/MAID-1105) delay RoutingTable new ConnectRequests
+ - [ ] [MAID-1106](https://maidsafe.atlassian.net/browse/MAID-1106) examine Not For Us
+- [x] [MAID-1032](https://maidsafe.atlassian.net/browse/MAID-1032)
 correct name calculation of pure Id
-- [ ] [MAID-1034](https://maidsafe.atlassian.net/browse/MAID-1034) ConnectResponse needs to include original signed ConnectRequest
+- [x] [MAID-1034](https://maidsafe.atlassian.net/browse/MAID-1034) ConnectResponse needs to include original signed ConnectRequest
 
 ## [0.1.6] - activate security features
 
