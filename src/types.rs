@@ -74,6 +74,7 @@ pub type GroupAddress = NameType; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
 pub type IdNode = NameType;
 pub type IdNodes = Vec<IdNode>;
+pub type Bytes = Vec<u8>;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {

@@ -20,6 +20,7 @@ use cbor::{Decoder, Encoder, CborError};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
+use sodiumoxide::crypto::sign::verify_detached;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc;
 use std::boxed::Box;
@@ -38,7 +39,7 @@ use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use sendable::Sendable;
 use types;
-use types::{MessageId, NameAndTypeId};
+use types::{MessageId, NameAndTypeId, Signature, Bytes};
 use authority::{Authority, our_authority};
 use message_header::MessageHeader;
 use messages::bootstrap_id_request::BootstrapIdRequest;
@@ -60,7 +61,7 @@ use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_id::PutPublicId;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{Action};
-use error::{RoutingError, InterfaceError};
+use error::{RoutingError, InterfaceError, ResponseError};
 
 use std::convert::From;
 
@@ -68,7 +69,6 @@ type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 pub type Endpoint = crust::Endpoint;
 type PortAndProtocol = crust::Port;
-type Bytes = Vec<u8>;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -430,7 +430,6 @@ impl<F> RoutingNode<F> where F: Interface {
             ignore(self.send_connect_request_msg(&header.source.from_node));
          }
 
-
         // add to cache
         if message.message_type == MessageTypeTag::GetDataResponse {
             let get_data_response = try!(decode::<GetDataResponse>(&body));
@@ -498,7 +497,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
                 // switch message type
                 match message.message_type {
-                    MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body),
+                    MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body, message.signature),
                     MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
                     MessageTypeTag::FindGroup => self.handle_find_group(header, body),
                     MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
@@ -559,7 +558,7 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
+    fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes, signature: Signature) -> RoutingResult {
         println!("{:?} received ConnectRequest ", self.own_name);
         let connect_request = try!(decode::<ConnectRequest>(&body));
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
@@ -579,8 +578,8 @@ impl<F> RoutingNode<F> where F: Interface {
         self.connection_manager.connect(connect_request.local_endpoints.clone());
         self.connection_manager.connect(connect_request.external_endpoints.clone());
 
-        // Send the response containing out details.
-        let routing_msg = self.construct_connect_response_msg(&original_header, &connect_request);
+        // Send the response containing our details.
+        let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
         let serialised_message = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(&connect_request.requester_id, &serialised_message);
@@ -593,6 +592,14 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_connect_response(&mut self, body: Bytes) -> RoutingResult {
         println!("{:?} received ConnectResponse", self.own_name);
         let connect_response = try!(decode::<ConnectResponse>(&body));
+
+        // Verify a connect request came from us.
+        if !verify_detached(&connect_response.connect_request_signature.get_crypto_signature(),
+                            &connect_response.serialised_connect_request[..],
+                            &self.id.get_crypto_public_sign_key()) {
+            return Err(RoutingError::Response(ResponseError::InvalidRequest));
+        }
+
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
         let mut peer_endpoints = connect_response.receiver_local_endpoints.clone();
         peer_endpoints.extend(connect_response.receiver_external_endpoints.clone().into_iter());
@@ -934,7 +941,7 @@ impl<F> RoutingNode<F> where F: Interface {
             &self.id.get_crypto_secret_sign_key())
     }
 
-    fn construct_connect_response_msg(&mut self, original_header : &MessageHeader,
+    fn construct_connect_response_msg(&mut self, original_header : &MessageHeader, body: &Bytes, signature: &Signature,
                                       connect_request: &ConnectRequest) -> RoutingMessage {
         println!("{:?} construct_connect_response_msg ", self.own_name);
         debug_assert!(connect_request.receiver_id == self.own_name, format!("{:?} == {:?} failed", self.own_name, connect_request.receiver_id));
@@ -952,7 +959,9 @@ impl<F> RoutingNode<F> where F: Interface {
             receiver_external_endpoints: vec![],
             requester_id: connect_request.requester_id.clone(),
             receiver_id: self.own_name.clone(),
-            receiver_fob: types::PublicId::new(&self.id) };
+            receiver_fob: types::PublicId::new(&self.id),
+            serialised_connect_request: body.clone(),
+            connect_request_signature: signature.clone() };
 
         RoutingMessage::new(MessageTypeTag::ConnectResponse, header,
             connect_response, &self.id.get_crypto_secret_sign_key())
