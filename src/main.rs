@@ -127,7 +127,7 @@ mod test {
         let num_of_nodes = 8;
         for i in 0..num_of_nodes {
             println!("---------- starting node {} --------------", i);
-            processes.push(match Command::new("./maidsafe_vault").stdout(Stdio::piped()).spawn() {
+            processes.push(match Command::new("./target/debug/maidsafe_vault").stdout(Stdio::piped()).spawn() {
                         Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
                         Ok(process) => process,
                     });
@@ -147,7 +147,7 @@ mod test {
             if processes.len() == 0 {
                 assert_eq!(num_of_nodes as usize, marked_connections + 1);
             } else {
-                assert_eq!(num_of_nodes as usize, marked_connections + 2);                
+                assert_eq!(num_of_nodes as usize, marked_connections + 2);
             }
 
         }
