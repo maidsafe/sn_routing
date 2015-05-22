@@ -55,7 +55,7 @@ use routing::sendable::Sendable;
 use routing::types;
 use routing::authority::Authority;
 use routing::{NameType};
-use routing::types::Action;
+use routing::types::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
 
 // ==========================   Program Options   =================================
@@ -199,24 +199,24 @@ struct TestNode {
 impl Interface for TestNode {
     fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority,
                   from_authority: Authority, from_address: NameType)
-                   -> Result<Action, InterfaceError> {
+                   -> Result<MessageAction, InterfaceError> {
         println!("testing node handle get request from {} of chunk {}", from_address, name);
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
-            return Ok(Action::Reply(data.1.serialised_contents().clone()));
+            return Ok(MessageAction::Reply(data.1.serialised_contents().clone()));
         }
         Err(InterfaceError::Response(ResponseError::NoData))
     }
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: types::DestinationAddress,
-                data_in: Vec<u8>) -> Result<Action, InterfaceError> {
+                data_in: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         if our_authority != Authority::NaeManager {
             if our_authority == Authority::ClientManager {
                 let mut d = cbor::Decoder::from_bytes(data_in);
                 let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
                 println!("ClientManager forwarding data to DataManager around {:?} ", in_coming_data.name());
-                return Ok(Action::SendOn(vec![in_coming_data.name()]));
+                return Ok(MessageAction::SendOn(vec![in_coming_data.name()]));
             }
             println!("returning as our_authority is {:?} which is not supposed to handle_put", our_authority);
             return Err(InterfaceError::Abort);
@@ -236,7 +236,7 @@ impl Interface for TestNode {
         Err(InterfaceError::Abort)
     }
     fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
-                   from_address: NameType, name : NameType, data: Vec<u8>) -> Result<Action, InterfaceError> {
+                   from_address: NameType, name : NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
     fn handle_get_response(&mut self, from_address: NameType,
@@ -267,17 +267,17 @@ impl Interface for TestNode {
         unimplemented!();
     }
     fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
-                        from_address: NameType) -> Result<Action, InterfaceError> {
+                        from_address: NameType) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
             println!("testing node find data {} in cache", name);
-            return Ok(Action::Reply(data.1.serialised_contents().clone()));
+            return Ok(MessageAction::Reply(data.1.serialised_contents().clone()));
         }
         Err(InterfaceError::Abort)
     }
     fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
-                        data: Vec<u8>) -> Result<Action, InterfaceError> {
+                        data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         let mut d = cbor::Decoder::from_bytes(data);
@@ -295,7 +295,7 @@ impl Interface for TestNode {
                       name: NameType,
                       our_authority: Authority,
                       from_authority: Authority,
-                      from_address: NameType) -> Result<Action, InterfaceError> {
+                      from_address: NameType) -> Result<MessageAction, InterfaceError> {
         unimplemented!();
     }
 }

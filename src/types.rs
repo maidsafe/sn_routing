@@ -83,7 +83,7 @@ struct SignedKey {
   signature: crypto::sign::Signature, // detached signature
 }
 
-pub enum Action {
+pub enum MessageAction {
   Reply(Vec<u8>),
   SendOn(Vec<NameType>),
 }

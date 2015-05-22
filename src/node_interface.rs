@@ -19,7 +19,7 @@ use sendable::Sendable;
 use name_type::NameType;
 use types::DestinationAddress;
 use authority::Authority;
-use types::Action;
+use types::MessageAction;
 use error::{InterfaceError, ResponseError};
 
 pub enum RoutingNodeAction {
@@ -37,7 +37,7 @@ pub trait Interface : Sync + Send {
                       name: NameType,
                       our_authority: Authority,
                       from_authority: Authority,
-                      from_address: NameType) -> Result<Action, InterfaceError>;
+                      from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
     /// if reply is data then we send back the response message (ie get_response )
     fn handle_get(&mut self,
@@ -45,7 +45,7 @@ pub trait Interface : Sync + Send {
                   name: NameType,
                   our_authority: Authority,
                   from_authority: Authority,
-                  from_address: NameType) -> Result<Action, InterfaceError>;
+                  from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
     /// data: Vec<u8> is serialised maidsafe_types::Payload which holds typetag and content
     fn handle_put(&mut self,
@@ -53,14 +53,14 @@ pub trait Interface : Sync + Send {
                   from_authority: Authority,
                   from_address: NameType,
                   dest_address: DestinationAddress,
-                  data: Vec<u8>) -> Result<Action, InterfaceError>;
+                  data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 
     fn handle_post(&mut self,
                    our_authority: Authority,
                    from_authority: Authority,
                    from_address: NameType,
                    name : NameType,
-                   data: Vec<u8>) -> Result<Action, InterfaceError>;
+                   data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 
     fn handle_get_response(&mut self,
                            from_address: NameType,
@@ -82,10 +82,10 @@ pub trait Interface : Sync + Send {
                         type_id: u64,
                         name: NameType,
                         from_authority: Authority,
-                        from_address: NameType) -> Result<Action, InterfaceError>;
+                        from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
                         from_address: NameType,
-                        data: Vec<u8>) -> Result<Action, InterfaceError>;
+                        data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 }
