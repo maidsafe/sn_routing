@@ -271,26 +271,33 @@ impl Id {
     let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
     let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::asymmetricbox::gen_keypair();
 
-    let sign_arr = &pub_sign_key.0;
-    let asym_arr = &pub_asym_key.0;
+    let sign_key = &pub_sign_key.0;
+    let asym_key = &pub_asym_key.0;
 
-    let mut arr_combined = [0u8; sign::PUBLICKEYBYTES + asymmetricbox::PUBLICKEYBYTES + sign::SIGNATUREBYTES];
+    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + asymmetricbox::PUBLICKEYBYTES;
 
-    for i in 0..sign_arr.len() {
-        arr_combined[i] = sign_arr[i];
+    let mut keys = [0u8; KEYS_SIZE];
+
+    for i in 0..sign_key.len() {
+        keys[i] = sign_key[i];
     }
-    for i in 0..asym_arr.len() {
-        arr_combined[sign::PUBLICKEYBYTES + i] = asym_arr[i];
+    for i in 0..asym_key.len() {
+        keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
     }
 
-    let validation_token = Signature{signature :
-      crypto::sign::sign(&arr_combined, &sec_sign_key)};
+    let validation_token = Signature{ signature: crypto::sign::sign(&keys, &sec_sign_key) };
+
+    let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
+
+    for i in 0..KEYS_SIZE {
+        combined[i] = keys[i];
+    }
 
     for i in 0..sign::SIGNATUREBYTES {
-        arr_combined[sign::PUBLICKEYBYTES + asymmetricbox::PUBLICKEYBYTES + i] = validation_token.signature[i];
+        combined[KEYS_SIZE + i] = validation_token.signature[i];
     }
 
-    let digest = crypto::hash::sha512::hash(&arr_combined);
+    let digest = crypto::hash::sha512::hash(&combined);
 
     Id {
       public_keys : (pub_sign_key, pub_asym_key),
