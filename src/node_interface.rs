@@ -22,7 +22,7 @@ use authority::Authority;
 use types::MessageAction;
 use error::{InterfaceError, ResponseError};
 
-pub enum RoutingNodeAction {
+pub enum MethodCall {
     None,
     Put { destination: NameType, content: Box<Sendable>, },
     Get { type_id: u64, name: NameType, },
@@ -64,7 +64,7 @@ pub trait Interface : Sync + Send {
 
     fn handle_get_response(&mut self,
                            from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> RoutingNodeAction;
+                           response: Result<Vec<u8>, ResponseError>) -> MethodCall;
 
     fn handle_put_response(&mut self,
                            from_authority: Authority,
@@ -76,7 +76,7 @@ pub trait Interface : Sync + Send {
                             from_address: NameType,
                             response: Result<Vec<u8>, ResponseError>);
 
-    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<RoutingNodeAction>;
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<MethodCall>;
 
     fn handle_cache_get(&mut self,
                         type_id: u64,

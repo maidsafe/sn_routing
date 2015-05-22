@@ -399,14 +399,14 @@ impl<F> RoutingNode<F> where F: Interface {
         self.invoke_routing_actions(actions);
     }
 
-    fn invoke_routing_actions(&mut self, routing_actions: Vec<node_interface::RoutingNodeAction>) {
+    fn invoke_routing_actions(&mut self, routing_actions: Vec<node_interface::MethodCall>) {
         for routing_action in routing_actions {
             match routing_action {
-                node_interface::RoutingNodeAction::Put { destination: x, content: y, } => self.put(x, y),
-                node_interface::RoutingNodeAction::Get { type_id: x, name: y, } => self.get(x, y),
-                node_interface::RoutingNodeAction::Refresh { content: x, } => self.refresh(x),
-                node_interface::RoutingNodeAction::Post => unimplemented!(),
-                node_interface::RoutingNodeAction::None => (),
+                node_interface::MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                node_interface::MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                node_interface::MethodCall::Refresh { content: x, } => self.refresh(x),
+                node_interface::MethodCall::Post => unimplemented!(),
+                node_interface::MethodCall::None => (),
             }
         }
     }
@@ -1169,12 +1169,12 @@ mod test {
             Ok(MessageAction::Reply(data))
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                               ResponseError>) -> RoutingNodeAction {
+                               ResponseError>) -> MethodCall {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
             stats_value.data = "handle_get_response called".to_string().into_bytes();
-            RoutingNodeAction::None
+            MethodCall::None
         }
         fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
                                response: Result<Vec<u8>, ResponseError>) {
@@ -1191,7 +1191,7 @@ mod test {
             unimplemented!();
         }
         fn handle_churn(&mut self, close_group: Vec<NameType>)
-            -> Vec<RoutingNodeAction> {
+            -> Vec<MethodCall> {
             unimplemented!();
         }
         fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,

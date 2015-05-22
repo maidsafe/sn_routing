@@ -240,7 +240,7 @@ impl Interface for TestNode {
         Err(InterfaceError::Abort)
     }
     fn handle_get_response(&mut self, from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> routing::node_interface::RoutingNodeAction {
+                           response: Result<Vec<u8>, ResponseError>) -> routing::node_interface::MethodCall {
         if response.is_ok() {
             let mut d = cbor::Decoder::from_bytes(response.unwrap());
             let response_data: TestData = d.decode().next().unwrap().unwrap();
@@ -248,7 +248,7 @@ impl Interface for TestNode {
         } else {
             println!("testing node received error get_response from {}", from_address);
         }
-        routing::node_interface::RoutingNodeAction::None
+        routing::node_interface::MethodCall::None
     }
     fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) {
@@ -263,7 +263,7 @@ impl Interface for TestNode {
         unimplemented!();
     }
     fn handle_churn(&mut self, close_group: Vec<NameType>)
-        -> Vec<routing::node_interface::RoutingNodeAction> {
+        -> Vec<routing::node_interface::MethodCall> {
         unimplemented!();
     }
     fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
