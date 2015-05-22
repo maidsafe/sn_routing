@@ -86,7 +86,8 @@ pub struct RoutingNode<F: Interface> {
     bootstrap_endpoint: Option<Endpoint>,
     bootstrap_node_id: Option<NameType>,
     filter: MessageFilter<types::FilterType>,
-    public_id_cache: LruCache<NameType, types::PublicId>
+    public_id_cache: LruCache<NameType, types::PublicId>,
+    connection_cache: LruCache<NameType, time::SteadyTime>
 }
 
 impl<F> RoutingNode<F> where F: Interface {
@@ -120,7 +121,8 @@ impl<F> RoutingNode<F> where F: Interface {
                       bootstrap_endpoint: None,
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
-                      public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10))
+                      public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
+                      connection_cache: LruCache::with_expiry_duration(Duration::minutes(1)),
                     }
     }
 
@@ -427,6 +429,8 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // check if we can add source to rt
         if self.routing_table.check_node(&header.source.from_node) {
+            connection_cache.add(&header.source.from_node.clone(),
+                                 time::SteadyTime::now());
             ignore(self.send_connect_request_msg(&header.source.from_node));
          }
 
