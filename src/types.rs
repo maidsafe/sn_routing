@@ -23,6 +23,8 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
+use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto::asymmetricbox;
 use NameType;
 use std::fmt;
 use error::ResponseError;
@@ -72,6 +74,7 @@ pub type GroupAddress = NameType; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
 pub type IdNode = NameType;
 pub type IdNodes = Vec<IdNode>;
+pub type Bytes = Vec<u8>;
 
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
@@ -268,21 +271,33 @@ impl Id {
     let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
     let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::asymmetricbox::gen_keypair();
 
-    let sign_arr = &pub_sign_key.0;
-    let asym_arr = &pub_asym_key.0;
+    let sign_key = &pub_sign_key.0;
+    let asym_key = &pub_asym_key.0;
 
-    let mut arr_combined = [0u8; 64 * 2];
+    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + asymmetricbox::PUBLICKEYBYTES;
 
-    for i in 0..sign_arr.len() {
-        arr_combined[i] = sign_arr[i];
+    let mut keys = [0u8; KEYS_SIZE];
+
+    for i in 0..sign_key.len() {
+        keys[i] = sign_key[i];
     }
-    for i in 0..asym_arr.len() {
-        arr_combined[64 + i] = asym_arr[i];
+    for i in 0..asym_key.len() {
+        keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
     }
 
-    let validation_token = Signature{signature :
-      crypto::sign::sign(&arr_combined, &sec_sign_key)};
-    let digest = crypto::hash::sha512::hash(&arr_combined);
+    let validation_token = Signature{ signature: crypto::sign::sign(&keys, &sec_sign_key) };
+
+    let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
+
+    for i in 0..KEYS_SIZE {
+        combined[i] = keys[i];
+    }
+
+    for i in 0..sign::SIGNATUREBYTES {
+        combined[KEYS_SIZE + i] = validation_token.signature[i];
+    }
+
+    let digest = crypto::hash::sha512::hash(&combined);
 
     Id {
       public_keys : (pub_sign_key, pub_asym_key),
