@@ -22,6 +22,7 @@ mod database;
 use cbor::{ Decoder };
 use routing;
 use routing::NameType;
+use routing::types::{Action};
 use routing::error::{ResponseError, InterfaceError};
 use maidsafe_types;
 use routing::sendable::Sendable;
@@ -38,7 +39,7 @@ impl MaidManager {
     MaidManager { db_: database::MaidManagerDatabase::new() }
   }
 
-  pub fn handle_put(&mut self, from : &NameType, data : &Vec<u8>) ->Result<routing::Action, InterfaceError> {
+  pub fn handle_put(&mut self, from : &NameType, data : &Vec<u8>) ->Result<Action, InterfaceError> {
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     let mut destinations : Vec<NameType> = Vec::new();
@@ -61,7 +62,7 @@ impl MaidManager {
       }
       _ => return Err(From::from(ResponseError::InvalidRequest))
     }
-    Ok(routing::Action::SendOn(destinations))
+    Ok(Action::SendOn(destinations))
   }
 
   pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::RoutingNodeAction> {
@@ -95,11 +96,11 @@ mod test {
         let put_result = maid_manager.handle_put(&from, &array_as_vector(encoder.as_bytes()));
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
-            routing::Action::SendOn(ref x) => {
+            Action::SendOn(ref x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], data.name());
             }
-            routing::Action::Reply(x) => panic!("Unexpected"),
+            Action::Reply(x) => panic!("Unexpected"),
         }
     }
 }

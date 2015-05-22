@@ -19,6 +19,7 @@
 
 use chunk_store::ChunkStore;
 use routing::NameType;
+use routing::types::{Action};
 use routing::error::{ResponseError, InterfaceError};
 use routing;
 use maidsafe_types;
@@ -35,15 +36,15 @@ impl PmidNode {
     PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
   }
 
-  pub fn handle_get(&self, name: NameType) ->Result<routing::Action, InterfaceError> {
+  pub fn handle_get(&self, name: NameType) ->Result<Action, InterfaceError> {
     let data = self.chunk_store_.get(name);
     if data.len() == 0 {
       return Err(From::from(ResponseError::NoData));
     }
-    Ok(routing::Action::Reply(data))
+    Ok(Action::Reply(data))
   }
 
-  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<routing::Action, InterfaceError> {
+  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<Action, InterfaceError> {
     let mut data_name : NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -97,7 +98,7 @@ mod test {
     let get_result = pmid_node.handle_get(data.name());
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
-        routing::Action::Reply(ref x) => {
+        Action::Reply(ref x) => {
             let mut d = cbor::Decoder::from_bytes(&x[..]);
             let obj_after: Payload = d.decode().next().unwrap().unwrap();
             assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::ImmutableData);

@@ -19,9 +19,10 @@
 #![deny(missing_docs)]
 
 use routing;
-use routing::{Action, NameType};
+use routing::{NameType};
 use routing::error::{ResponseError, InterfaceError};
-use routing::types::{Authority, DestinationAddress};
+use routing::authority::Authority;
+use routing::types::{Action, DestinationAddress};
 
 use data_manager::DataManager;
 use maid_manager::MaidManager;
@@ -127,7 +128,7 @@ impl Interface for VaultFacade {
                         from_address: NameType) -> Result<Action, InterfaceError> { unimplemented!() }
 
     fn handle_cache_put(&mut self,
-                        from_authority: routing::types::Authority,
+                        from_authority: Authority,
                         from_address: routing::NameType,
                         data: Vec<u8>) -> Result<Action, InterfaceError> { unimplemented!() }
 }
