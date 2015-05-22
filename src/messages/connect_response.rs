@@ -21,6 +21,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use crust::Endpoint;
 use NameType;
 use types;
+use types::Bytes;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectResponse {
@@ -30,7 +31,9 @@ pub struct ConnectResponse {
     pub receiver_external_endpoints: Vec<Endpoint>,
     pub requester_id: NameType,
     pub receiver_id: NameType,
-    pub receiver_fob: types::PublicId
+    pub receiver_fob: types::PublicId,
+    pub serialised_connect_request: Bytes,
+    pub connect_request_signature: types::Signature
 }
 
 impl Encodable for ConnectResponse {
@@ -41,7 +44,9 @@ impl Encodable for ConnectResponse {
                                        &self.receiver_external_endpoints,
                                        &self.requester_id,
                                        &self.receiver_id,
-                                       &self.receiver_fob)).encode(encoder)
+                                       &self.receiver_fob,
+                                       &self.serialised_connect_request,
+                                       &self.connect_request_signature)).encode(encoder)
     }
 }
 
@@ -54,21 +59,27 @@ impl Decodable for ConnectResponse {
              receiver_external,
              requester_id,
              receiver_id,
-             receiver_fob):
+             receiver_fob,
+             serialised_connect_request,
+             connect_request_signature):
                  (Vec<Endpoint>,
                   Vec<Endpoint>,
                   Vec<Endpoint>,
                   Vec<Endpoint>,
                   NameType,
                   NameType,
-                  types::PublicId) = try!(Decodable::decode(decoder));
+                  types::PublicId,
+                  Bytes,
+                  types::Signature) = try!(Decodable::decode(decoder));
         Ok(ConnectResponse { requester_local_endpoints: requester_local,
                              requester_external_endpoints: requester_external,
                              receiver_local_endpoints: receiver_local,
                              receiver_external_endpoints: receiver_external,
                              requester_id: requester_id,
                              receiver_id: receiver_id,
-                             receiver_fob: receiver_fob
+                             receiver_fob: receiver_fob,
+                             serialised_connect_request: serialised_connect_request,
+                             connect_request_signature: connect_request_signature
                            })
     }
 }
