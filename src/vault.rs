@@ -156,7 +156,8 @@ impl VaultFacade {
     use pmid_manager;
     use version_handler;
     use maidsafe_types::{PayloadTypeTag, Payload};
-    use routing::types:: { Authority, DestinationAddress };
+    use routing::authority::Authority;
+    use routing::types:: { Action, DestinationAddress };
     use routing::NameType;
     use routing::error::InterfaceError;
     use routing::test_utils::Random;
@@ -191,11 +192,11 @@ impl VaultFacade {
                                              routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), false);
             match put_result.ok().unwrap() {
-                routing::Action::SendOn(ref x) => {
+                Action::SendOn(ref x) => {
                     assert_eq!(x.len(), 1);
                     assert_eq!(x[0], data.name());
                 }
-             routing::Action::Reply(x) => panic!("Unexpected"),
+             Action::Reply(x) => panic!("Unexpected"),
             }
         }
         vault.nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
@@ -208,28 +209,28 @@ impl VaultFacade {
                                              routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), false);
             match put_result.ok().unwrap() {
-                routing::Action::SendOn(ref x) => {
+                Action::SendOn(ref x) => {
                     assert_eq!(x.len(), data_manager::PARALLELISM);
                     //assert_eq!(x[0], NameType([3u8; 64]));
                     //assert_eq!(x[1], NameType([2u8; 64]));
                     //assert_eq!(x[2], NameType([1u8; 64]));
                     //assert_eq!(x[3], NameType([7u8; 64]));
                 }
-                routing::Action::Reply(x) => panic!("Unexpected"),
+                Action::Reply(x) => panic!("Unexpected"),
             }
             let from = NameType::new([1u8; 64]);
             let get_result = vault.handle_get(payload.get_type_tag() as u64, data.name().clone(), Authority::NaeManager,
                                              Authority::Client, from);
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
-                routing::Action::SendOn(ref x) => {
+                Action::SendOn(ref x) => {
                     assert_eq!(x.len(), data_manager::PARALLELISM);
                     //assert_eq!(x[0], NameType([3u8; 64]));
                     //assert_eq!(x[1], NameType([2u8; 64]));
                     //assert_eq!(x[2], NameType([1u8; 64]));
                     //assert_eq!(x[3], NameType([7u8; 64]));
                 }
-                routing::Action::Reply(x) => panic!("Unexpected"),
+                Action::Reply(x) => panic!("Unexpected"),
             }
         }
         { // PmidManager, shall put to pmid_nodes
@@ -239,11 +240,11 @@ impl VaultFacade {
                                          routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), false);
             match put_result.ok().unwrap() {
-                routing::Action::SendOn(ref x) => {
+                Action::SendOn(ref x) => {
                     assert_eq!(x.len(), 1);
                     assert_eq!(x[0], NameType([7u8; 64]));
                 }
-                routing::Action::Reply(x) => panic!("Unexpected"),
+                Action::Reply(x) => panic!("Unexpected"),
             }
         }
         { // PmidNode stores/retrieves data
@@ -262,7 +263,7 @@ impl VaultFacade {
                                              Authority::NodeManager, from);
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
-                routing::Action::Reply(ref x) => {
+                Action::Reply(ref x) => {
                     let mut d = cbor::Decoder::from_bytes(&x[..]);
                     let payload_retrieved: Payload = d.decode().next().unwrap().unwrap();
                     assert_eq!(payload_retrieved.get_type_tag(), PayloadTypeTag::ImmutableData);
@@ -281,11 +282,11 @@ impl VaultFacade {
                                          payload);
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
-            routing::Action::SendOn(ref x) => {
+            Action::SendOn(ref x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], payload_name);
             }
-            routing::Action::Reply(x) => panic!("Unexpected"),
+            Action::Reply(x) => panic!("Unexpected"),
         }
     }
 
@@ -295,10 +296,10 @@ impl VaultFacade {
             dest, payload);
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
-            routing::Action::SendOn(ref x) => {
+            Action::SendOn(ref x) => {
                 assert_eq!(x.len(), data_manager::PARALLELISM);
             }
-            routing::Action::Reply(x) => panic!("Unexpected"),
+            Action::Reply(x) => panic!("Unexpected"),
         }
     }
 
@@ -314,11 +315,11 @@ impl VaultFacade {
                                      payload);
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
-            routing::Action::SendOn(ref x) => {
+            Action::SendOn(ref x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], dest.dest);
             }
-            routing::Action::Reply(x) => panic!("Unexpected"),
+            Action::Reply(x) => panic!("Unexpected"),
         }
     }
 

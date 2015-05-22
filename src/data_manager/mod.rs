@@ -151,7 +151,7 @@ mod test {
 
   use super::{DataManager};
   use maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
-  use routing::types::{array_as_vector};
+  use routing::types::{Action, array_as_vector};
   use routing::NameType;
   use routing::sendable::Sendable;
 

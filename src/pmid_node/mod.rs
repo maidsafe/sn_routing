@@ -75,7 +75,7 @@ mod test {
   use super::*;
   use maidsafe_types::*;
   use routing::NameType;
-  use routing::types::array_as_vector;
+  use routing::types::{ Action, array_as_vector};
   use routing::sendable::Sendable;
 
   #[test]
