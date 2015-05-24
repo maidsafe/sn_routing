@@ -25,7 +25,7 @@ use std::sync::mpsc;
 use std::boxed::Box;
 use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
-use time::Duration;
+use time::{Duration, SteadyTime};
 
 use challenge::{ChallengeRequest, ChallengeResponse, validate};
 use crust;
@@ -87,7 +87,7 @@ pub struct RoutingNode<F: Interface> {
     bootstrap_node_id: Option<NameType>,
     filter: MessageFilter<types::FilterType>,
     public_id_cache: LruCache<NameType, types::PublicId>,
-    connection_cache: LruCache<NameType, time::SteadyTime>
+    connection_cache: BTreeMap<NameType, SteadyTime>
 }
 
 impl<F> RoutingNode<F> where F: Interface {
@@ -122,7 +122,7 @@ impl<F> RoutingNode<F> where F: Interface {
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                       public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-                      connection_cache: LruCache::with_expiry_duration(Duration::minutes(1)),
+                      connection_cache: BTreeMap::new(),
                     }
     }
 
@@ -429,9 +429,17 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // check if we can add source to rt
         if self.routing_table.check_node(&header.source.from_node) {
-            connection_cache.add(&header.source.from_node.clone(),
-                                 time::SteadyTime::now());
-            ignore(self.send_connect_request_msg(&header.source.from_node));
+            // FIXME: (ben) this implementation of connection_cache is far from optimal
+            //        it is a quick patch and can be improved.
+            self.connection_cache.insert(header.source.from_node.clone(),
+                                         SteadyTime::now());
+            for (new_node, time) in self.connection_cache.iter_mut() {
+                time_now = SteadyTime::now();
+                if time_now - *time > Duration::milliseconds(1000) {
+                    ignore(self.send_connect_request_msg(&header.source.from_node));
+                }
+            }
+
          }
 
 
