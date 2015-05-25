@@ -26,7 +26,7 @@ use std::sync::mpsc;
 use std::boxed::Box;
 use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
-use time::Duration;
+use time::{Duration, SteadyTime};
 
 use challenge::{ChallengeRequest, ChallengeResponse, validate};
 use crust;
@@ -86,7 +86,8 @@ pub struct RoutingNode<F: Interface> {
     bootstrap_endpoint: Option<Endpoint>,
     bootstrap_node_id: Option<NameType>,
     filter: MessageFilter<types::FilterType>,
-    public_id_cache: LruCache<NameType, types::PublicId>
+    public_id_cache: LruCache<NameType, types::PublicId>,
+    connection_cache: BTreeMap<NameType, SteadyTime>
 }
 
 impl<F> RoutingNode<F> where F: Interface {
@@ -120,7 +121,8 @@ impl<F> RoutingNode<F> where F: Interface {
                       bootstrap_endpoint: None,
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
-                      public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10))
+                      public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
+                      connection_cache: BTreeMap::new(),
                     }
     }
 
@@ -427,7 +429,25 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // check if we can add source to rt
         if self.routing_table.check_node(&header.source.from_node) {
-            ignore(self.send_connect_request_msg(&header.source.from_node));
+            // FIXME: (ben) this implementation of connection_cache is far from optimal
+            //        it is a quick patch and can be improved.
+            let mut next_connect_request : Option<NameType> = None;
+            self.connection_cache.insert(header.source.from_node.clone(),
+                                         SteadyTime::now());
+            for (new_node, time) in self.connection_cache.iter() {
+                let time_now = SteadyTime::now();
+                if time_now - *time > Duration::milliseconds(1000) {
+                    next_connect_request = Some(new_node.clone());
+                    break;
+                }
+            }
+            match next_connect_request {
+                Some(from_node) => {
+                    self.connection_cache.remove(&from_node);
+                    ignore(self.send_connect_request_msg(&from_node));
+                },
+                None => ()
+            }
          }
 
         // add to cache
