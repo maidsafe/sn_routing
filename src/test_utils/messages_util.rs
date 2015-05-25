@@ -77,6 +77,8 @@ impl Random for messages::connect_response::ConnectResponse {
             requester_id: Random::generate_random(),
             receiver_id: Random::generate_random(),
             receiver_fob: Random::generate_random(),
+            serialised_connect_request: generate_random_vec_u8(64),
+            connect_request_signature: Random::generate_random()
         }
     }
 }
