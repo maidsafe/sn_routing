@@ -47,6 +47,8 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [ ] [MAID-1018](https://maidsafe.atlassian.net/browse/MAID-1018) Vaults’ handling put/get with MaidsafeClient 
     - [ ] [MAID-1019](https://maidsafe.atlassian.net/browse/MAID-1019) functional test (Client Account / Node Account management, complete put/ get flow among medium sized network)
     - [ ] [MAID-1020](https://maidsafe.atlassian.net/browse/MAID-1020) performance evaluation (need to define what criterias to be used)
+- [ ] Update to interface changes to Routing v0.1.7 (future version)
+    - [ ] [MAID-1107](https://maidsafe.atlassian.net/browse/MAID-1107) Rename actions
 
 ## [0.0.5] - safecoin farming initial work
 - [ ] [MAID-1008](https://maidsafe.atlassian.net/browse/MAID-1008) Documentation
