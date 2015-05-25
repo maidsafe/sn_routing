@@ -525,9 +525,9 @@ impl<F> RoutingNode<F> where F: Interface {
           let mut next_connect_request : Option<NameType> = None;
           self.connection_cache.insert(from_node.clone(),
                                        SteadyTime::now());
+          let time_now = SteadyTime::now();
           for (new_node, time) in self.connection_cache.iter() {
-              let time_now = SteadyTime::now();
-              if time_now - *time > Duration::milliseconds(1000) {
+              if time_now - *time > Duration::seconds(5) {
                   next_connect_request = Some(new_node.clone());
                   break;
               }
