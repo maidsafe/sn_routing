@@ -21,7 +21,6 @@ use chunk_store::ChunkStore;
 use routing::NameType;
 use routing::types::{Action};
 use routing::error::{ResponseError, InterfaceError};
-use routing;
 use maidsafe_types;
 use routing::sendable::Sendable;
 use cbor::Decoder;
@@ -74,14 +73,12 @@ mod test {
   use routing::error::InterfaceError;
   use super::*;
   use maidsafe_types::*;
-  use routing::NameType;
   use routing::types::{ Action, array_as_vector};
   use routing::sendable::Sendable;
 
   #[test]
   fn handle_put_get() {
     let mut pmid_node = super::PmidNode::new();
-    let name = NameType([3u8; 64]);
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);

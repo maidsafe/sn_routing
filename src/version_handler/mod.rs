@@ -136,7 +136,6 @@ impl VersionHandler {
 mod test {
  use cbor;
  use maidsafe_types;
- use routing;
  use super::*;
  use maidsafe_types::*;
  use routing::types::*;

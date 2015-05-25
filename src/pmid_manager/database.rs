@@ -212,7 +212,6 @@ mod test {
   extern crate rand;
   extern crate routing;
   use super::{PmidManagerDatabase, PmidManagerAccount};
-  use self::routing::types::*;
 
     #[test]
     fn exist() {

@@ -18,7 +18,6 @@
 #[cfg(test)]
 mod test {
   use rand;
-  use maidsafe_types;
   use routing;
   use routing::test_utils::Random;
 
