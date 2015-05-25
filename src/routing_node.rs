@@ -431,15 +431,18 @@ impl<F> RoutingNode<F> where F: Interface {
         if self.routing_table.check_node(&header.source.from_node) {
             // FIXME: (ben) this implementation of connection_cache is far from optimal
             //        it is a quick patch and can be improved.
+            let mut next_connect_request : NameType = header.source.from_node.clone();
             self.connection_cache.insert(header.source.from_node.clone(),
                                          SteadyTime::now());
-            for (new_node, time) in self.connection_cache.iter_mut() {
-                time_now = SteadyTime::now();
-                if time_now - *time > Duration::milliseconds(1000) {
-                    ignore(self.send_connect_request_msg(&header.source.from_node));
+            for (new_node, time) in self.connection_cache.iter() {
+                let time_now = SteadyTime::now();
+                if time_now - *time > Duration::milliseconds(100) {
+                    next_connect_request = new_node.clone();
+                    break;
                 }
             }
-
+            self.connection_cache.remove(&next_connect_request);
+            ignore(self.send_connect_request_msg(&next_connect_request));
          }
 
 
