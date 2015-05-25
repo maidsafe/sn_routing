@@ -428,28 +428,7 @@ impl<F> RoutingNode<F> where F: Interface {
         self.filter.add(header.get_filter());
 
         // check if we can add source to rt
-        if self.routing_table.check_node(&header.source.from_node) {
-            // FIXME: (ben) this implementation of connection_cache is far from optimal
-            //        it is a quick patch and can be improved.
-            let mut next_connect_request : Option<NameType> = None;
-            self.connection_cache.insert(header.source.from_node.clone(),
-                                         SteadyTime::now());
-            for (new_node, time) in self.connection_cache.iter() {
-                let time_now = SteadyTime::now();
-                if time_now - *time > Duration::milliseconds(1000) {
-                    next_connect_request = Some(new_node.clone());
-                    break;
-                }
-            }
-            match next_connect_request {
-                Some(from_node) => {
-                    self.connection_cache.remove(&from_node);
-                    ignore(self.send_connect_request_msg(&from_node));
-                },
-                None => ()
-            }
-         }
-
+        self.refresh_routing_table(&header.source.from_node);
 
         // add to cache
         if message.message_type == MessageTypeTag::GetDataResponse {
@@ -538,6 +517,31 @@ impl<F> RoutingNode<F> where F: Interface {
             }
         }
     }
+
+    fn refresh_routing_table(&mut self, from_node : &NameType) {
+      if self.routing_table.check_node(from_node) {
+          // FIXME: (ben) this implementation of connection_cache is far from optimal
+          //        it is a quick patch and can be improved.
+          let mut next_connect_request : Option<NameType> = None;
+          self.connection_cache.insert(from_node.clone(),
+                                       SteadyTime::now());
+          for (new_node, time) in self.connection_cache.iter() {
+              let time_now = SteadyTime::now();
+              if time_now - *time > Duration::milliseconds(1000) {
+                  next_connect_request = Some(new_node.clone());
+                  break;
+              }
+          }
+          match next_connect_request {
+              Some(connect_to_node) => {
+                  self.connection_cache.remove(&connect_to_node);
+                  ignore(self.send_connect_request_msg(&connect_to_node));
+              },
+              None => ()
+          }
+       }
+    }
+
 
     fn handle_bootstrap_message(&mut self, peer_endpoint: Endpoint, serialised_msg: Bytes) -> RoutingResult {
         let message = try!(decode::<RoutingMessage>(&serialised_msg));
