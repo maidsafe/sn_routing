@@ -60,7 +60,7 @@ use messages::get_client_key::GetKey;
 use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_id::PutPublicId;
 use messages::{RoutingMessage, MessageTypeTag};
-use types::{Action};
+use types::{MessageAction};
 use error::{RoutingError, InterfaceError, ResponseError};
 
 use std::convert::From;
@@ -401,14 +401,14 @@ impl<F> RoutingNode<F> where F: Interface {
         self.invoke_routing_actions(actions);
     }
 
-    fn invoke_routing_actions(&mut self, routing_actions: Vec<node_interface::RoutingNodeAction>) {
+    fn invoke_routing_actions(&mut self, routing_actions: Vec<node_interface::MethodCall>) {
         for routing_action in routing_actions {
             match routing_action {
-                node_interface::RoutingNodeAction::Put { destination: x, content: y, } => self.put(x, y),
-                node_interface::RoutingNodeAction::Get { type_id: x, name: y, } => self.get(x, y),
-                node_interface::RoutingNodeAction::Refresh { content: x, } => self.refresh(x),
-                node_interface::RoutingNodeAction::Post => unimplemented!(),
-                node_interface::RoutingNodeAction::None => (),
+                node_interface::MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                node_interface::MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                node_interface::MethodCall::Refresh { content: x, } => self.refresh(x),
+                node_interface::MethodCall::Post => unimplemented!(),
+                node_interface::MethodCall::None => (),
             }
         }
     }
@@ -453,7 +453,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
             match retrieved_data {
                 Ok(action) => match action {
-                    Action::Reply(data) => {
+                    MessageAction::Reply(data) => {
                         let reply = self.construct_get_data_response_msg(&header, &get_data, data);
                         return encode(&reply).map(|reply| {
                             self.send_swarm_or_parallel(&header.send_to().dest, &reply);
@@ -707,14 +707,14 @@ impl<F> RoutingNode<F> where F: Interface {
 
         match self.mut_interface().handle_get(type_id, name, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
-                Action::Reply(data) => {
+                MessageAction::Reply(data) => {
                     let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_name, &our_authority),
                         GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Ok(data) },
                         &self.id.get_crypto_secret_sign_key());
                     let encoded_msg = try!(encode(&routing_msg));
                     self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
                 },
-                Action::SendOn(dest_nodes) => {
+                MessageAction::SendOn(dest_nodes) => {
                     for dest_node in dest_nodes {
                         let send_on_header = header.create_send_on(&self.own_name, &our_authority, &dest_node);
                         let routing_msg = RoutingMessage::new(MessageTypeTag::GetData, send_on_header,
@@ -747,7 +747,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let action = try!(self.mut_interface().handle_get_key(type_id, name, our_authority.clone(), from_authority, from));
 
         match action {
-            Action::Reply(data) => {
+            MessageAction::Reply(data) => {
                 let public_key = try!(decode::<types::PublicSignKey>(&data));
                 let routing_msg = RoutingMessage::new(MessageTypeTag::GetKeyResponse, header.create_reply(&self.own_name, &our_authority),
                     GetKeyResponse{ address : get_key.target_id.clone(), public_sign_key : public_key },
@@ -755,7 +755,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 let encoded_msg = try!(encode(&routing_msg));
                 self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
                 },
-            Action::SendOn(dest_nodes) => {
+            MessageAction::SendOn(dest_nodes) => {
                 for dest_node in dest_nodes {
                     let send_on_header = header.create_send_on(&self.own_name, &our_authority, &dest_node);
                     let routing_msg = RoutingMessage::new(MessageTypeTag::GetKey, send_on_header,
@@ -783,10 +783,10 @@ impl<F> RoutingNode<F> where F: Interface {
                                                     header.from(),
                                                     post.name.clone(),
                                                     post.data.clone())) {
-            Action::Reply(data) => {
+            MessageAction::Reply(data) => {
                 Ok(()) // TODO: implement post_response
             },
-            Action::SendOn(destinations) => {
+            MessageAction::SendOn(destinations) => {
                 for destination in destinations {
                     let send_on_header = header.create_send_on(&self.own_name,
                         &our_authority, &destination);
@@ -835,7 +835,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         match try!(self.mut_interface().handle_put(our_authority.clone(), from_authority, from,
                                                    to, put_data.data.clone())) {
-            Action::Reply(reply_data) => {
+            MessageAction::Reply(reply_data) => {
                 let reply_header = header.create_reply(&self.own_name, &our_authority);
                 let reply_to = match our_authority {
                     Authority::ClientManager => match header.reply_to() {
@@ -853,7 +853,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 self.send_swarm_or_parallel(&reply_to, &try!(encode(&routing_msg)));
                 Ok(())
             },
-            Action::SendOn(destinations) => {
+            MessageAction::SendOn(destinations) => {
                 for destination in destinations {
                     let send_on_header = header.create_send_on(&self.own_name,
                         &our_authority, &destination);
@@ -1105,7 +1105,7 @@ mod test {
     use node_interface::*;
     use name_type::NameType;
     use super::encode;
-    use types::Action;
+    use types::MessageAction;
     use error::{ResponseError, InterfaceError};
     use sendable::Sendable;
     use messages::put_data::PutData;
@@ -1169,23 +1169,23 @@ mod test {
 
     impl Interface for TestInterface {
         fn handle_get_key(&mut self, type_id: u64, name : NameType, our_authority: Authority,
-                          from_authority: Authority, from_address: NameType) -> Result<Action, InterfaceError> {
+                          from_authority: Authority, from_address: NameType) -> Result<MessageAction, InterfaceError> {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
             let data = stats_value.data.clone();
-            Ok(Action::Reply(data))
+            Ok(MessageAction::Reply(data))
         }
         fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: Authority,
-                      from_authority: Authority, from_address: NameType) -> Result<Action, InterfaceError> {
+                      from_authority: Authority, from_address: NameType) -> Result<MessageAction, InterfaceError> {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
-            Ok(Action::Reply("handle_get called".to_string().into_bytes()))
+            Ok(MessageAction::Reply("handle_get called".to_string().into_bytes()))
         }
         fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                     from_address: NameType, dest_address: types::DestinationAddress,
-                    data: Vec<u8>) -> Result<Action, InterfaceError> {
+                    data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1193,23 +1193,23 @@ mod test {
                 Authority::Unknown => "UnauthorisedPut".to_string().into_bytes(),
                 _   => "AuthorisedPut".to_string().into_bytes(),
             };
-            Ok(Action::Reply(data))
+            Ok(MessageAction::Reply(data))
         }
         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
-                       from_address: NameType, name: NameType, data: Vec<u8>) -> Result<Action, InterfaceError> {
+                       from_address: NameType, name: NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
             stats_value.data = data.clone();
-            Ok(Action::Reply(data))
+            Ok(MessageAction::Reply(data))
         }
         fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-                               ResponseError>) -> RoutingNodeAction {
+                               ResponseError>) -> MethodCall {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
             stats_value.data = "handle_get_response called".to_string().into_bytes();
-            RoutingNodeAction::None
+            MethodCall::None
         }
         fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
                                response: Result<Vec<u8>, ResponseError>) {
@@ -1226,15 +1226,15 @@ mod test {
             unimplemented!();
         }
         fn handle_churn(&mut self, close_group: Vec<NameType>)
-            -> Vec<RoutingNodeAction> {
+            -> Vec<MethodCall> {
             unimplemented!();
         }
         fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
-                            from_address: NameType) -> Result<Action, InterfaceError> {
+                            from_address: NameType) -> Result<MessageAction, InterfaceError> {
             Err(InterfaceError::Abort)
         }
         fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
-                            data: Vec<u8>) -> Result<Action, InterfaceError> {
+                            data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
             Err(InterfaceError::Abort)
         }
     }
