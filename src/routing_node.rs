@@ -527,6 +527,9 @@ impl<F> RoutingNode<F> where F: Interface {
                                        SteadyTime::now());
           let time_now = SteadyTime::now();
           for (new_node, time) in self.connection_cache.iter() {
+              // note that the first method to establish the close group
+              // is through explicit FindGroup messages.
+              // This refresh on scanning messages is secondary, hence the long delay.
               if time_now - *time > Duration::seconds(5) {
                   next_connect_request = Some(new_node.clone());
                   break;
@@ -535,7 +538,10 @@ impl<F> RoutingNode<F> where F: Interface {
           match next_connect_request {
               Some(connect_to_node) => {
                   self.connection_cache.remove(&connect_to_node);
-                  ignore(self.send_connect_request_msg(&connect_to_node));
+                  // check whether it is still valid to add this node.
+                  if self.routing_table.check_node(&connect_to_node) {
+                      ignore(self.send_connect_request_msg(&connect_to_node));
+                  }
               },
               None => ()
           }
