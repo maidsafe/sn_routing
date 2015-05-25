@@ -63,7 +63,6 @@ mod messages;
 mod frequency;
 mod name_type;
 mod routing_table;
-mod sentinel;
 mod challenge;
 mod utils;
 
