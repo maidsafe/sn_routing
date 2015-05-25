@@ -21,7 +21,6 @@ use chunk_store::ChunkStore;
 use routing::NameType;
 use routing::types::{Action};
 use routing::error::{ResponseError, InterfaceError};
-use routing;
 use maidsafe_types;
 use routing::sendable::Sendable;
 use cbor::Decoder;

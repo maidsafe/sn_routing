@@ -28,7 +28,6 @@ type PmidNode = routing::NameType;
 pub type PmidNodes = Vec<PmidNode>;
 use routing::types::{GROUP_SIZE};
 use routing::NameType;
-use std::cmp;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
 pub struct DataManagerSendable {

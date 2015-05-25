@@ -46,7 +46,6 @@ impl MaidManager {
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
-        let data_name = routing::types::array_as_vector(&immutable_data.name().get_id());
         if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
           return Err(From::from(ResponseError::InvalidRequest));
         }
@@ -74,10 +73,9 @@ impl MaidManager {
 #[cfg(test)]
 mod test {
     use cbor;
-    use maidsafe_types;
+    use maidsafe_types::{ ImmutableData, Payload, PayloadTypeTag };
     use routing;
     use super::*;
-    use maidsafe_types::*;
     use routing::types::*;
     use routing::NameType;
     use routing::sendable::Sendable;
@@ -86,7 +84,6 @@ mod test {
     fn handle_put() {
         let mut maid_manager = MaidManager::new();
         let from: NameType = routing::test_utils::Random::generate_random();
-        let name = NameType([3u8; 64]);
         let value = routing::types::generate_random_vec_u8(1024);
         let data = ImmutableData::new(value);
         let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
@@ -100,7 +97,7 @@ mod test {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], data.name());
             }
-            Action::Reply(x) => panic!("Unexpected"),
+            Action::Reply(_) => panic!("Unexpected"),
         }
     }
 }

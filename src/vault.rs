@@ -49,8 +49,12 @@ impl Clone for VaultFacade {
 }
 
 impl Interface for VaultFacade {
-    fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
-                from_address: NameType)->Result<Action, InterfaceError> {
+    fn handle_get(&mut self,
+                  _: u64, // type_id
+                  name: NameType,
+                  our_authority: Authority,
+                  _: Authority, // from_authority
+                  _: NameType)->Result<Action, InterfaceError> { // from_address
         match our_authority {
             Authority::NaeManager => {
                 // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
@@ -66,8 +70,12 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_get_key(&mut self, type_id: u64, name: NameType, our_authority: Authority, from_authority: Authority,
-                from_address: NameType)->Result<Action, InterfaceError> {
+    fn handle_get_key(&mut self,
+                      _: u64, // type_id
+                      _: NameType, // name
+                      _: Authority, // our_authority
+                      _: Authority, // from_authority
+                      _: NameType)->Result<Action, InterfaceError> { // from_address
         unimplemented!();
     }
 
@@ -91,12 +99,18 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, name: NameType, data: Vec<u8>)->Result<Action, InterfaceError> {
+    fn handle_post(&mut self,
+                   _: Authority, // our_authority
+                   _: Authority, // from_authority
+                   _: NameType, // from_address
+                   _: NameType, // name
+                   _: Vec<u8>)->Result<Action, InterfaceError> { // data
         Err(From::from(ResponseError::InvalidRequest))
     }
 
-    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
-         ResponseError>) -> RoutingNodeAction {
+    fn handle_get_response(&mut self,
+                           _: NameType, // from_address
+                           response: Result<Vec<u8>, ResponseError>) -> RoutingNodeAction {
         if response.is_ok() {
             self.data_manager.handle_get_response(response.ok().unwrap())
         } else {
@@ -104,33 +118,39 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, ResponseError>) {
+    fn handle_put_response(&mut self,
+                           _: Authority, // from_authority
+                           _: NameType, // from_address
+                           _: Result<Vec<u8>, ResponseError>) { // response
         ;
     }
 
-    fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType, response: Result<Vec<u8>, ResponseError>) {
+    fn handle_post_response(&mut self, 
+                            _: Authority, // from_authority
+                            _: NameType, // from_address
+                            _: Result<Vec<u8>, ResponseError>) { // response
         ;
     }
 
     fn handle_churn(&mut self, mut close_group: Vec<NameType>) -> Vec<RoutingNodeAction> {
-        let mut mm = self.maid_manager.retrieve_all_and_reset();
-        let mut vh = self.version_handler.retrieve_all_and_reset();
-        let mut pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
-        let mut dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
+        let mm = self.maid_manager.retrieve_all_and_reset();
+        let vh = self.version_handler.retrieve_all_and_reset();
+        let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
+        let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
 
         dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
     }
 
     fn handle_cache_get(&mut self,
-                        type_id: u64,
-                        name: NameType,
-                        from_authority: Authority,
-                        from_address: NameType) -> Result<Action, InterfaceError> { unimplemented!() }
+                        _: u64, // type_id
+                        _: NameType, // name
+                        _: Authority, //from_authority
+                        _: NameType) -> Result<Action, InterfaceError> { unimplemented!() } // from_address
 
     fn handle_cache_put(&mut self,
-                        from_authority: Authority,
-                        from_address: routing::NameType,
-                        data: Vec<u8>) -> Result<Action, InterfaceError> { unimplemented!() }
+                        _: Authority, // from_authority
+                        _: routing::NameType, // from_address
+                        _: Vec<u8>) -> Result<Action, InterfaceError> { unimplemented!() } // data
 }
 
 impl VaultFacade {
