@@ -33,7 +33,7 @@ use crust;
 use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
-use name_type::{closer_to_target, NAME_TYPE_LEN};
+use name_type::{closer_to_target_or_equal, NAME_TYPE_LEN};
 use node_interface;
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
@@ -1039,8 +1039,12 @@ impl<F> RoutingNode<F> where F: Interface {
             return true;
         }
 
-        let close_group = self.routing_table.our_close_group();
-        closer_to_target(&address, &self.routing_table.our_close_group().pop().unwrap().id(), &self.own_name)
+        match self.routing_table.our_close_group().pop() {
+            Some(furthest_close_node) => {
+                closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.own_name)
+            },
+            None => false  // ...should never reach here
+        }
     }
 
     pub fn id(&self) -> NameType { self.own_name.clone() }
