@@ -26,7 +26,7 @@ use std::sync::mpsc;
 use std::boxed::Box;
 use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
-use time::Duration;
+use time::{Duration, SteadyTime};
 
 use challenge::{ChallengeRequest, ChallengeResponse, validate};
 use crust;
@@ -86,7 +86,8 @@ pub struct RoutingNode<F: Interface> {
     bootstrap_endpoint: Option<Endpoint>,
     bootstrap_node_id: Option<NameType>,
     filter: MessageFilter<types::FilterType>,
-    public_id_cache: LruCache<NameType, types::PublicId>
+    public_id_cache: LruCache<NameType, types::PublicId>,
+    connection_cache: BTreeMap<NameType, SteadyTime>
 }
 
 impl<F> RoutingNode<F> where F: Interface {
@@ -120,7 +121,8 @@ impl<F> RoutingNode<F> where F: Interface {
                       bootstrap_endpoint: None,
                       bootstrap_node_id: None,
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
-                      public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10))
+                      public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
+                      connection_cache: BTreeMap::new(),
                     }
     }
 
@@ -426,9 +428,7 @@ impl<F> RoutingNode<F> where F: Interface {
         self.filter.add(header.get_filter());
 
         // check if we can add source to rt
-        if self.routing_table.check_node(&header.source.from_node) {
-            ignore(self.send_connect_request_msg(&header.source.from_node));
-         }
+        self.refresh_routing_table(&header.source.from_node);
 
         // add to cache
         if message.message_type == MessageTypeTag::GetDataResponse {
@@ -517,6 +517,37 @@ impl<F> RoutingNode<F> where F: Interface {
             }
         }
     }
+
+    fn refresh_routing_table(&mut self, from_node : &NameType) {
+      if self.routing_table.check_node(from_node) {
+          // FIXME: (ben) this implementation of connection_cache is far from optimal
+          //        it is a quick patch and can be improved.
+          let mut next_connect_request : Option<NameType> = None;
+          let time_now = SteadyTime::now();
+          self.connection_cache.entry(from_node.clone())
+                               .or_insert(time_now);
+          for (new_node, time) in self.connection_cache.iter() {
+              // note that the first method to establish the close group
+              // is through explicit FindGroup messages.
+              // This refresh on scanning messages is secondary, hence the long delay.
+              if time_now - *time > Duration::seconds(5) {
+                  next_connect_request = Some(new_node.clone());
+                  break;
+              }
+          }
+          match next_connect_request {
+              Some(connect_to_node) => {
+                  self.connection_cache.remove(&connect_to_node);
+                  // check whether it is still valid to add this node.
+                  if self.routing_table.check_node(&connect_to_node) {
+                      ignore(self.send_connect_request_msg(&connect_to_node));
+                  }
+              },
+              None => ()
+          }
+       }
+    }
+
 
     fn handle_bootstrap_message(&mut self, peer_endpoint: Endpoint, serialised_msg: Bytes) -> RoutingResult {
         let message = try!(decode::<RoutingMessage>(&serialised_msg));
