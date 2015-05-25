@@ -523,8 +523,10 @@ impl<F> RoutingNode<F> where F: Interface {
           // FIXME: (ben) this implementation of connection_cache is far from optimal
           //        it is a quick patch and can be improved.
           let mut next_connect_request : Option<NameType> = None;
-          self.connection_cache.insert(from_node.clone(),
-                                       SteadyTime::now());
+          if !self.connection_cache.contains_key(&from_node) {
+              self.connection_cache.insert(from_node.clone(),
+                                           SteadyTime::now());
+          }
           let time_now = SteadyTime::now();
           for (new_node, time) in self.connection_cache.iter() {
               // note that the first method to establish the close group
