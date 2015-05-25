@@ -315,7 +315,7 @@ fn main() {
         let copied_node = mutate_node.clone();
         spawn(move || {
             loop {
-                thread::sleep_ms(10);
+                thread::sleep_ms(1);
                 copied_node.lock().unwrap().run();
             }
         });
