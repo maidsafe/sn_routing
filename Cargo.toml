@@ -1,11 +1,11 @@
 [package]
 
 name = "routing"
-version = "0.1.50"
+version = "0.1.60"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
-description = "A specialised storage DHT."
-documentation = "http://dirvine.github.io/routing/"
-repository = "https://github.com/dirvine/routing"
+description = "A secured storage DHT"
+documentation = "http://maidsafe.github.io/routing/"
+repository = "https://github.com/maidsafe/routing"
 readme = "README.md"
 license = "GPL-3.0"
 homepage = "http://maidsafe.net"
