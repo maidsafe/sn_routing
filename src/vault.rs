@@ -184,19 +184,9 @@ impl VaultFacade {
     use routing::node_interface::{ Interface, RoutingNodeAction };
     use routing::sendable::Sendable;
 
-    fn array_as_vector_u8(array : [u8;64]) -> Vec<u8> {
-        let mut vec = Vec::with_capacity(array.len());
-        for i in array.iter() {
-          vec.push(*i);
-        }
-        vec
-    }
-
     #[test]
     fn put_get_flow() {
         let mut vault = VaultFacade::new();
-
-        let name = NameType([3u8; 64]);
         let value = routing::types::generate_random_vec_u8(1024);
         let data = maidsafe_types::ImmutableData::new(value);
         let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
@@ -216,7 +206,7 @@ impl VaultFacade {
                     assert_eq!(x.len(), 1);
                     assert_eq!(x[0], data.name());
                 }
-             Action::Reply(x) => panic!("Unexpected"),
+             Action::Reply(_) => panic!("Unexpected"),
             }
         }
         vault.nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
@@ -236,7 +226,7 @@ impl VaultFacade {
                     //assert_eq!(x[2], NameType([1u8; 64]));
                     //assert_eq!(x[3], NameType([7u8; 64]));
                 }
-                Action::Reply(x) => panic!("Unexpected"),
+                Action::Reply(_) => panic!("Unexpected"),
             }
             let from = NameType::new([1u8; 64]);
             let get_result = vault.handle_get(payload.get_type_tag() as u64, data.name().clone(), Authority::NaeManager,
@@ -250,7 +240,7 @@ impl VaultFacade {
                     //assert_eq!(x[2], NameType([1u8; 64]));
                     //assert_eq!(x[3], NameType([7u8; 64]));
                 }
-                Action::Reply(x) => panic!("Unexpected"),
+                Action::Reply(_) => panic!("Unexpected"),
             }
         }
         { // PmidManager, shall put to pmid_nodes
@@ -264,7 +254,7 @@ impl VaultFacade {
                     assert_eq!(x.len(), 1);
                     assert_eq!(x[0], NameType([7u8; 64]));
                 }
-                Action::Reply(x) => panic!("Unexpected"),
+                Action::Reply(_) => panic!("Unexpected"),
             }
         }
         { // PmidNode stores/retrieves data
@@ -306,7 +296,7 @@ impl VaultFacade {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], payload_name);
             }
-            Action::Reply(x) => panic!("Unexpected"),
+            Action::Reply(_) => panic!("Unexpected"),
         }
     }
 
@@ -319,7 +309,7 @@ impl VaultFacade {
             Action::SendOn(ref x) => {
                 assert_eq!(x.len(), data_manager::PARALLELISM);
             }
-            Action::Reply(x) => panic!("Unexpected"),
+            Action::Reply(_) => panic!("Unexpected"),
         }
     }
 
@@ -339,7 +329,7 @@ impl VaultFacade {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], dest.dest);
             }
-            Action::Reply(x) => panic!("Unexpected"),
+            Action::Reply(_) => panic!("Unexpected"),
         }
     }
 
@@ -387,7 +377,7 @@ impl VaultFacade {
 
             // MaidManagerAccount
             let maid_manager: maid_manager::MaidManagerAccountWrapper = match churn_data[0] {
-                RoutingNodeAction::Refresh {content: ref content} => {
+                RoutingNodeAction::Refresh {ref content} => {
                     let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
                     let mut decoder = cbor::Decoder::from_bytes(data);
                     decoder.decode().next().unwrap().unwrap()
@@ -412,7 +402,7 @@ impl VaultFacade {
             assert_eq!(churn_data.len(), 1);
 
              match churn_data[0] {
-                RoutingNodeAction::Refresh {content: ref content} => {
+                RoutingNodeAction::Refresh {ref content} => {
                     let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
                     let mut decoder = cbor::Decoder::from_bytes(data0);
                     let data_manager_sendable: data_manager::DataManagerSendable = decoder.decode().next().unwrap().unwrap();
@@ -432,7 +422,7 @@ impl VaultFacade {
             //assert_eq!(churn_data[0].0, from);
 
             let pmid_manager: pmid_manager::PmidManagerAccountWrapper = match churn_data[0] {
-                RoutingNodeAction::Refresh {content: ref content} => {
+                RoutingNodeAction::Refresh {ref content} => {
                     let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
                     let mut decoder = cbor::Decoder::from_bytes(data);
                     decoder.decode().next().unwrap().unwrap()
@@ -448,7 +438,7 @@ impl VaultFacade {
             let name = NameType::generate_random();
             let owner = NameType::generate_random();
             let mut vec_name_types = Vec::<NameType>::with_capacity(10);
-            for i in 0..10 {
+            for _ in 0..10 {
                 vec_name_types.push(NameType::generate_random());
             }
             let data = maidsafe_types::StructuredData::new(name, owner, vec![vec_name_types.clone()]);
@@ -464,7 +454,7 @@ impl VaultFacade {
             assert_eq!(churn_data.len(), 1);
 
             let sendable: version_handler::VersionHandlerSendable = match churn_data[0] {
-                RoutingNodeAction::Refresh {content: ref content} => {
+                RoutingNodeAction::Refresh {ref content} => {
                     let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
                     let mut decoder = cbor::Decoder::from_bytes(data);
                     decoder.decode().next().unwrap().unwrap()

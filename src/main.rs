@@ -67,7 +67,8 @@ impl Vault {
   }
 }
 
-fn main () {
+/// Main entry for start up a vault node
+pub fn main () {
     let vault = Vault::new();
     let mutate_vault = Arc::new(Mutex::new(vault));
     let copied_vault = mutate_vault.clone();
