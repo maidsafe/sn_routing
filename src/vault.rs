@@ -18,10 +18,19 @@
 
 #![deny(missing_docs)]
 
+use std::convert::From;
+
+use time::Duration;
+use cbor::Decoder;
+
+use lru_time_cache::LruCache;
+use maidsafe_types;
+
 use routing;
 use routing::{NameType};
 use routing::error::{ResponseError, InterfaceError};
 use routing::authority::Authority;
+use routing::sendable::Sendable;
 use routing::types::{Action, DestinationAddress};
 
 use data_manager::DataManager;
@@ -40,6 +49,7 @@ pub struct VaultFacade {
     pmid_node : PmidNode,
     version_handler : VersionHandler,
     nodes_in_table : Vec<NameType>,
+    data_cache: LruCache<NameType, Vec<u8>>
 }
 
 impl Clone for VaultFacade {
@@ -141,16 +151,41 @@ impl Interface for VaultFacade {
         dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
     }
 
+    // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
     fn handle_cache_get(&mut self,
                         _: u64, // type_id
-                        _: NameType, // name
+                        name: NameType,
                         _: Authority, //from_authority
-                        _: NameType) -> Result<Action, InterfaceError> { unimplemented!() } // from_address
+                        _: NameType) -> Result<Action, InterfaceError> { // from_address
+        match self.data_cache.get(&name) {
+            Some(data) => Ok(Action::Reply(data.clone())),
+            None => Err(From::from(ResponseError::NoData))
+        }
+    }
 
     fn handle_cache_put(&mut self,
                         _: Authority, // from_authority
                         _: routing::NameType, // from_address
-                        _: Vec<u8>) -> Result<Action, InterfaceError> { unimplemented!() } // data
+                        data: Vec<u8>) -> Result<Action, InterfaceError> {
+        let mut data_name : NameType;
+        let mut d = Decoder::from_bytes(&data[..]);
+        let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+        match payload.get_type_tag() {
+          maidsafe_types::PayloadTypeTag::ImmutableData => {
+            data_name = payload.get_data::<maidsafe_types::ImmutableData>().name();
+          }
+          maidsafe_types::PayloadTypeTag::PublicMaid => {
+            data_name = payload.get_data::<maidsafe_types::PublicMaid>().name();
+          }
+          maidsafe_types::PayloadTypeTag::PublicAnMaid => {
+            data_name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
+          }
+          _ => return Err(From::from(ResponseError::InvalidRequest))
+        }
+        // the type_tag needs to be stored as well
+        self.data_cache.add(data_name, data);
+        Err(InterfaceError::Abort)
+    }
 }
 
 impl VaultFacade {
@@ -160,6 +195,7 @@ impl VaultFacade {
         data_manager: DataManager::new(), maid_manager: MaidManager::new(),
         pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
         version_handler: VersionHandler::new(), nodes_in_table: Vec::new(),
+        data_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(10), 100),
     }
   }
 
