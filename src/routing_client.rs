@@ -175,11 +175,11 @@ impl<F> Drop for RoutingClient<F> where F: Interface {
 }
 
 impl<F> RoutingClient<F> where F: Interface {
-    pub fn new(my_interface: F, id_packet: ClientIdPacket) -> RoutingClient<F> {
+    pub fn new(my_interface: Arc<Mutex<F>>, id_packet: ClientIdPacket) -> RoutingClient<F> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (tx, rx) = mpsc::channel::<Event>();
         RoutingClient {
-            interface: Arc::new(Mutex::new(my_interface)),
+            interface: my_interface,
             event_input: rx,
             connection_manager: crust::ConnectionManager::new(tx),
             id_packet: id_packet.clone(),
