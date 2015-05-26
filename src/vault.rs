@@ -203,6 +203,7 @@ impl VaultFacade {
 
 #[cfg(test)]
  mod test {
+    use std::convert::From;
     use super::*;
     use data_manager;
     use routing;
@@ -215,7 +216,7 @@ impl VaultFacade {
     use routing::authority::Authority;
     use routing::types:: { Action, DestinationAddress };
     use routing::NameType;
-    use routing::error::InterfaceError;
+    use routing::error::{ResponseError, InterfaceError};
     use routing::test_utils::Random;
     use routing::node_interface::{ Interface, RoutingNodeAction };
     use routing::sendable::Sendable;
@@ -502,5 +503,53 @@ impl VaultFacade {
             assert!(vault.version_handler.retrieve_all_and_reset().is_empty());
         }
 
+    }
+
+    #[test]
+    fn cache_test() {
+        let mut vault = VaultFacade::new();
+        let value = routing::types::generate_random_vec_u8(1024);
+        let data = maidsafe_types::ImmutableData::new(value);
+        let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+        let mut encoder = cbor::Encoder::from_memory();
+        let encode_result = encoder.encode(&[&payload]);
+        assert_eq!(encode_result.is_ok(), true);
+
+        {
+            let get_result = vault.handle_cache_get(payload.get_type_tag() as u64, data.name().clone(),
+                                                    Authority::ManagedNode, NameType::new([7u8; 64]));
+            assert_eq!(get_result.is_err(), true);
+            assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
+        }
+
+        let put_result = vault.handle_cache_put(Authority::ManagedNode, NameType::new([7u8; 64]),
+                                                routing::types::array_as_vector(encoder.as_bytes()));
+        assert_eq!(put_result.is_err(), true);
+        match put_result.err().unwrap() {
+            InterfaceError::Abort => { }
+            _ => panic!("Unexpected"),
+        }
+        {
+            let get_result = vault.handle_cache_get(payload.get_type_tag() as u64, data.name().clone(),
+                                                    Authority::ManagedNode, NameType::new([7u8; 64]));
+            assert_eq!(get_result.is_err(), false);
+            match get_result.ok().unwrap() {
+                Action::Reply(ref x) => {
+                    let mut d = cbor::Decoder::from_bytes(&x[..]);
+                    let payload_retrieved: Payload = d.decode().next().unwrap().unwrap();
+                    assert_eq!(payload_retrieved.get_type_tag(), PayloadTypeTag::ImmutableData);
+                    let data_retrieved = payload_retrieved.get_data::<maidsafe_types::ImmutableData>();
+                    assert_eq!(data.name().0.to_vec(), data_retrieved.name().0.to_vec());
+                    assert_eq!(data.serialised_contents(), data_retrieved.serialised_contents());
+                },
+                _ => panic!("Unexpected"),
+            }
+        }
+        {
+            let get_result = vault.handle_cache_get(payload.get_type_tag() as u64, NameType::new([7u8; 64]),
+                                                    Authority::ManagedNode, NameType::new([7u8; 64]));
+            assert_eq!(get_result.is_err(), true);
+            assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
+        }
     }
 }
