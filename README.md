@@ -41,12 +41,13 @@ correct name calculation of pure Id
 
 ## [0.1.6] - activate security features
 
+- [ ] [MAID-1114](https://maidsafe.atlassian.net/browse/MAID-1114) Relay module
 - [ ] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
   - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) add optional 'relocated' name field to put_public_id message
   - [ ] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
   - [ ] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
 - [ ] [MAID-1042](https://maidsafe.atlassian.net/browse/MAID-1042) Sentinel
-    - [ ] [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
+    - [x] [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
     - [ ] [MAID-1045](https://maidsafe.atlassian.net/browse/MAID-1045) plug in Sentinel [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
     - [ ] [MAID-1046](https://maidsafe.atlassian.net/browse/MAID-1046) break down (header, body) into correct (request, claim) and dispatch
     - [ ] [MAID-1048](https://maidsafe.atlassian.net/browse/MAID-1048) Ensure correct dispatch of GetGroupKeyResponse
