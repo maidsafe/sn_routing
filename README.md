@@ -4,12 +4,12 @@
 
 **Secondary Maintainer:**   Spandan Sharma (spandan.sharma@maidsafe.net)
 
-|Crate|Travis|Windows|OSX|Coverage|
+|Crate|Linux|Windows|OSX|Coverage|
 |:------:|:-------:|:-------:|:-------:|:-------:|
 |[![](http://meritbadge.herokuapp.com/maidsafe_vault)](https://crates.io/crates/maidsafe_vault)|[![Build Status](https://travis-ci.org/maidsafe/maidsafe_vault.svg?branch=master)](https://travis-ci.org/maidsafe/maidsafe_vault) | [![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_win64_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_osx_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_osx_status_badge/) |[![Coverage Status](https://coveralls.io/repos/maidsafe/maidsafe_vault/badge.svg)](https://coveralls.io/r/maidsafe/maidsafe_vault)|
 
 
-| [API Documentation](http://maidsafe.github.io/maidsafe_vault/) | [MaidSafe System Documention](http://systemdocs.maidsafe.net/) | [MaidSafe web site](http://www.maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
+| [API Documentation](http://maidsafe.github.io/maidsafe_vault/) | [SAFENetwork System Documention](http://systemdocs.maidsafe.net/) | [MaidSafe website](http://www.maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
 
 #Overview
 
