@@ -21,7 +21,7 @@
 //! As such the relay module handles messages that need to flow in or out of the SAFE network.
 //! These messages include bootstrap actions by starting nodes or relay messages for clients.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crust::Endpoint;
 use types::PublicId;
 
@@ -65,6 +65,7 @@ impl RelayMap {
     /// slots.  This returns true if Info was addded.
     /// Returns true is the endpoint is newly added, or was already present.
     /// Returns false if the threshold was reached or name is our name.
+    /// Returns false if the endpoint is already assigned to a different name.
     pub fn add_ip_node(&mut self, relay_info: PublicId, relay_endpoint: Endpoint) -> bool {
         // always reject our own id
         if self.our_id == their_info.name {
@@ -77,16 +78,36 @@ impl RelayMap {
             return false;
         }
 
+        if self.lookup_map.entry(relay_endpoint.clone())
+                          .or_insert(relay_info.name.clone())
+           != relay_info.name { return false; }
         let new_set = || { (relay_info, BTreeSet::<Endpoint>::new()) };
-        // returns true if the endpoint is newly added, false if the
-        self.relay_map.entry(relay_info.fob.name).or_insert_with(new_set).1
+        self.relay_map.entry(relay_info.name.clone()).or_insert_with(new_set).1
                       .insert(relay_endpoint);
         true
     }
 
     /// This removes the ip_node from the relay map.
     pub fn drop_ip_node(&mut self, ip_node_to_drop: &NameType) {
+        match self.relay_map.get(&ip_node_to_drop) {
+            Some(relay_entry) => {
+                for endpoint in relay_entry.1.iter() {
+                    self.lookup_map.remove(endpoint);
+                }
+            },
+            None => return;
+        };
+        self.relay_map.remove(ip_node_to_drop);
+    }
 
+    /// Returns true if we keep relay endpoints for given name.
+    pub fn contains_relay_for(&self, relay_name: &NameType) -> bool {
+        self.relay_map.contains_key(relay_name)
+    }
+
+    ///
+    pub fn contains_endpoint(&self, relay_endpoint: &Endpoint) -> bool {
+        self.lookup_map.contains_key(relay_endpoint)
     }
 }
 
@@ -94,4 +115,12 @@ impl RelayMap {
 /// routing table connections are established.
 pub struct BootstrapEndpoints {
     bootstrap_endpoints: Vec<IpNodeInfo>,
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+
 }
