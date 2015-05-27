@@ -59,13 +59,13 @@ impl NodeInfo {
     }
     #[cfg(not(test))]
     pub fn id(&self) -> NameType {
-        self.fob.name.clone()
+        self.fob.name()
     }
 
     #[cfg(test)]
     pub fn new(fob: PublicId, endpoints: Vec<Endpoint>,
                connected_endpoint: Option<Endpoint>) -> NodeInfo {
-        let id = fob.name.clone();
+        let id = fob.name();
         NodeInfo {
             fob: fob,
             endpoints: endpoints,
@@ -574,7 +574,7 @@ mod test {
     fn create_random_node_info() -> NodeInfo {
         let public_id = types::PublicId::new(&types::Id::new());
         NodeInfo {
-            id: public_id.name.clone(),
+            id: public_id.name(),
             fob: public_id,
             endpoints: random_endpoints(),
             connected_endpoint: None,

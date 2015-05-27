@@ -212,12 +212,15 @@ impl Decodable for PublicKey {
   }
 }
 
+// Note: name field is initially same as original_name, this should be replaced by relocated name
+// calculated by the nodes close to original_name by using assign_relocated_name method
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicId {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
   pub validation_token: Signature,
-  pub name: NameType
+  name: NameType,
+  original_name : NameType,
 }
 
 impl PublicId {
@@ -226,8 +229,13 @@ impl PublicId {
         public_key : id.get_public_key(),
         public_sign_key : id.get_public_sign_key(),
         validation_token : id.get_validation_token(),
-        name : id.get_name()
+        name : id.get_name(),
+        original_name : id.get_original_name(),
       }
+    }
+
+    pub fn name(&self) -> NameType {
+      self.name.clone()
     }
 
     pub fn serialised_contents(&self)->Vec<u8> {
@@ -235,13 +243,24 @@ impl PublicId {
         e.encode(&[&self]).unwrap();
         e.into_bytes()
     }
+
+    pub fn is_relocated(&self) -> bool {
+        self.name != self.original_name
+    }
+
+    pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
+        debug_assert!(self.name != self.original_name, "already assigned relocated name !");
+        self.name = relocated_name
+    }
 }
 
 impl Encodable for PublicId {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
     CborTagEncode::new(5483_001, &(&self.public_key,
                                    &self.public_sign_key,
-                                   &self.validation_token, &self.name)).encode(e)
+                                   &self.validation_token,
+                                   &self.name,
+                                   &self.original_name)).encode(e)
   }
 }
 
@@ -249,21 +268,24 @@ impl Decodable for PublicId {
   fn decode<D: Decoder>(d: &mut D)->Result<PublicId, D::Error> {
     try!(d.read_u64());
     let (public_key, public_sign_key,
-         validation_token, name) = try!(Decodable::decode(d));
+         validation_token, name, original_name) = try!(Decodable::decode(d));
     Ok(PublicId { public_key: public_key,
                     public_sign_key : public_sign_key,
-                    validation_token: validation_token, name : name })
+                    validation_token: validation_token, name : name,
+                    original_name : original_name })
   }
 }
 
+// Note: name field is initially same as original_name, this should be later overwritten by
+// relocated name provided by the network using assign_relocated_name method
 // #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 // TODO (ben 2015-04-01) : implement order based on name
-#[derive(Clone)]
 pub struct Id {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
   validation_token: Signature,
-  name: NameType
+  name: NameType,
+  original_name : NameType,
 }
 
 impl Id {
@@ -303,34 +325,44 @@ impl Id {
       public_keys : (pub_sign_key, pub_asym_key),
       secret_keys : (sec_sign_key, sec_asym_key),
       validation_token : validation_token,
-      name : NameType::new(digest.0)
+      name : NameType::new(digest.0),
+      original_name : NameType::new(digest.0),
     }
   }
 
   pub fn get_name(&self) -> NameType {
-    self.name.clone()
+      self.name.clone()
   }
-
+  pub fn get_original_name(&self) -> NameType {
+      self.original_name.clone()
+  }
   pub fn get_public_key(&self) -> PublicKey {
-    PublicKey::new(self.public_keys.1.clone())
+      PublicKey::new(self.public_keys.1.clone())
   }
   pub fn get_public_sign_key(&self) -> PublicSignKey {
-    PublicSignKey::new(self.public_keys.0.clone())
+      PublicSignKey::new(self.public_keys.0.clone())
   }
   pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
-    self.public_keys.1.clone()
+      self.public_keys.1.clone()
   }
   pub fn get_crypto_secret_key(&self) -> crypto::asymmetricbox::SecretKey {
-    self.secret_keys.1.clone()
+      self.secret_keys.1.clone()
   }
   pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
-    self.public_keys.0.clone()
+      self.public_keys.0.clone()
   }
   pub fn get_crypto_secret_sign_key(&self) -> crypto::sign::SecretKey {
-    self.secret_keys.0.clone()
+      self.secret_keys.0.clone()
   }
   pub fn get_validation_token(&self) -> Signature {
-    self.validation_token.clone()
+      self.validation_token.clone()
+  }
+  pub fn is_relocated(&self) -> bool {
+      self.name != self.original_name
+  }
+  pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
+      debug_assert!(self.name != self.original_name, "already assigned relocated name !");
+      self.name = relocated_name
   }
 }
 
@@ -429,6 +461,7 @@ mod test {
   use rustc_serialize::{Decodable, Encodable};
   use test_utils::Random;
   use authority::Authority;
+  use NameType;
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];
@@ -480,4 +513,29 @@ mod test {
         let obj_after: PublicId = d.decode().next().unwrap().unwrap();
         assert_eq!(obj_before, obj_after);
     }
+
+
+#[test]
+    fn assign_relocated_name_public_id() {
+        let before = PublicId::generate_random();
+        assert!(!before.is_relocated());
+        assert_eq!(before.name, before.original_name);
+        let relocated_name: NameType = Random::generate_random();
+        let mut relocated = before.clone();
+        relocated.assign_relocated_name(relocated_name.clone());
+        assert_eq!(relocated.name(), relocated_name);
+        assert!(relocated.is_relocated());
+    }
+
+// FIXME
+    // fn assign_relocated_name_id() {
+    //     let before = Id::generate_random();
+    //     assert!(!before.is_relocated());
+    //     assert_eq!(before.name, before.original_name);
+    //     let relocated_name: NameType = Random::generate_random();
+    //     let mut relocated = before.clone();
+    //     relocated.assign_relocated_name(relocated_name.clone());
+    //     assert_eq!(relocated.name(), relocated_name);
+    //     assert!(relocated.is_relocated());
+    // }
 }
