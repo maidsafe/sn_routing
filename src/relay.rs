@@ -24,6 +24,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crust::Endpoint;
 use types::PublicId;
+use NameType;
 
 const MAX_RELAY : usize = 5;
 
@@ -55,7 +56,7 @@ impl RelayMap {
     /// This creates a new RelayMap.
     pub fn new(our_id: NameType) -> RelayMap {
         RelayMap {
-            relay_map: BTreeMap::with_capacity(MAX_RELAY),
+            relay_map: BTreeMap::new(),
             lookup_map: HashMap::<Endpoint, NameType>::new(),
             our_id: our_id
         }
@@ -68,20 +69,20 @@ impl RelayMap {
     /// Returns false if the endpoint is already assigned to a different name.
     pub fn add_ip_node(&mut self, relay_info: PublicId, relay_endpoint: Endpoint) -> bool {
         // always reject our own id
-        if self.our_id == their_info.name {
+        if self.our_id == relay_info.name {
             return false;
         }
 
         // impose limit on number of relay nodes active
-        if !self.relay_map.contains_key(relay_info.fob.name)
+        if !self.relay_map.contains_key(&relay_info.name)
             && self.relay_map.len() >= MAX_RELAY {
             return false;
         }
 
-        if self.lookup_map.entry(relay_endpoint.clone())
-                          .or_insert(relay_info.name.clone())
-           != relay_info.name { return false; }
-        let new_set = || { (relay_info, BTreeSet::<Endpoint>::new()) };
+        if self.lookup_map.contains_key(&relay_endpoint) { return false; }
+        self.lookup_map.entry(relay_endpoint.clone())
+                       .or_insert(relay_info.name.clone());
+        let new_set = || { (relay_info.clone(), BTreeSet::<Endpoint>::new()) };
         self.relay_map.entry(relay_info.name.clone()).or_insert_with(new_set).1
                       .insert(relay_endpoint);
         true
@@ -95,7 +96,7 @@ impl RelayMap {
                     self.lookup_map.remove(endpoint);
                 }
             },
-            None => return;
+            None => return
         };
         self.relay_map.remove(ip_node_to_drop);
     }
@@ -105,16 +106,21 @@ impl RelayMap {
         self.relay_map.contains_key(relay_name)
     }
 
-    ///
+    /// Returns true if we already have a name associated with this endpoint.
     pub fn contains_endpoint(&self, relay_endpoint: &Endpoint) -> bool {
         self.lookup_map.contains_key(relay_endpoint)
+    }
+
+    ///
+    pub fn get_endpoints(&self, relay_name: &NameType) -> Option<&(PublicId, BTreeSet<Endpoint>)> {
+        self.relay_map.get(relay_name)
     }
 }
 
 /// Bootstrap endpoints are used to connect to the network before
 /// routing table connections are established.
 pub struct BootstrapEndpoints {
-    bootstrap_endpoints: Vec<IpNodeInfo>,
+    bootstrap_endpoints: Vec<Endpoint>,
 }
 
 
