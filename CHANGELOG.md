@@ -1,5 +1,17 @@
 # Routing - Change Log
 
+## [0.1.60] - version alignment
+- [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
+- [MAID-1059](https://maidsafe.atlassian.net/browse/MAID-1059) rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
+
+## [0.1.50] - essential logical corrections (unpublished)
+- [MAID-1007](https://maidsafe.atlassian.net/browse/MAID-1007) limit swarm to targeted group
+ - [MAID-1105](https://maidsafe.atlassian.net/browse/MAID-1105) delay RoutingTable new ConnectRequests
+ - [MAID-1106](https://maidsafe.atlassian.net/browse/MAID-1106) examine Not For Us
+- [MAID-1032](https://maidsafe.atlassian.net/browse/MAID-1032)
+correct name calculation of pure Id
+- [MAID-1034](https://maidsafe.atlassian.net/browse/MAID-1034) ConnectResponse needs to include original signed ConnectRequest
+
 ## [0.1.1]
 - Remove FailedToConnect Event
 
