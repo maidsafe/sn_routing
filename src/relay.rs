@@ -127,6 +127,16 @@ pub struct BootstrapEndpoints {
 #[cfg(test)]
 mod test {
     use super::*;
+    use test_utils::Random;
 
+    fn generate_random_endpoint() -> Endpoint {
+      
+    }
 
+    #[test]
+    fn add() {
+        let our_id : NameType = Random::generate_random();
+        let relay_map = RelayMap::new(our_id);
+
+    }
 }
