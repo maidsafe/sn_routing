@@ -95,7 +95,7 @@ impl<F> RoutingNode<F> where F: Interface {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let id = types::Id::new();
-        let own_name = id.get_name();
+        let own_name = id.get_name().clone();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
@@ -577,7 +577,7 @@ impl<F> RoutingNode<F> where F: Interface {
                          .into_iter()
                          .map(|node| (node.fob.name(), node.fob.public_sign_key))
                          // add our own signature key
-                         .chain(Some((self.id.get_name(),self.id.get_public_sign_key())).into_iter())
+                         .chain(Some((self.id.get_name().clone(), self.id.get_public_sign_key())).into_iter())
                          .collect::<Vec<_>>();
 
         let routing_msg = self.construct_get_group_key_response_msg(&original_header,
@@ -626,7 +626,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // Verify a connect request was initiated by us.
         let connect_request = try!(decode::<ConnectRequest>(&connect_response.serialised_connect_request));
-        if connect_request.requester_id != self.id.get_name() ||
+        if connect_request.requester_id != self.id.get_name().clone() ||
            !verify_detached(&connect_response.connect_request_signature.get_crypto_signature(),
                             &connect_response.serialised_connect_request[..],
                             &self.id.get_crypto_public_sign_key()) {

@@ -1092,7 +1092,7 @@ mod test {
     fn our_close_group_and_in_range() {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
-        let our_id_name = types::Id::new().get_name();
+        let our_id_name = types::Id::new().get_name().clone();
         let mut routing_table: RoutingTable = RoutingTable::new(our_id_name.clone());
 
         let mut count: usize = 0;

@@ -229,7 +229,7 @@ impl PublicId {
         public_key : id.get_public_key(),
         public_sign_key : id.get_public_sign_key(),
         validation_token : id.get_validation_token(),
-        name : id.get_name(),
+        name : id.get_name().clone(),
         original_name : id.get_original_name(),
       }
     }
@@ -330,9 +330,10 @@ impl Id {
     }
   }
 
-  pub fn get_name(&self) -> NameType {
-      self.name.clone()
+  pub fn get_name<'a>(&'a self) -> &'a NameType {
+      &self.name
   }
+
   pub fn get_original_name(&self) -> NameType {
       self.original_name.clone()
   }
@@ -537,13 +538,13 @@ mod test {
     fn assign_relocated_name_id() {
         let before = Id::new();
         assert!(!before.is_relocated());
-        assert_eq!(before.get_name(), before.get_original_name());
+        assert_eq!(before.get_name().clone(), before.get_original_name());
         let relocated_name: NameType = Random::generate_random();
         let mut relocated = before.clone();
         relocated.assign_relocated_name(relocated_name.clone());
 
         assert!(relocated.is_relocated());
-        assert_eq!(relocated.get_name(), relocated_name);
+        assert_eq!(relocated.get_name().clone(), relocated_name);
         assert!(before.get_name()!= relocated.get_name());
         assert_eq!(before.get_original_name(), relocated.get_original_name());
         assert_eq!(before.get_public_key(), relocated.get_public_key());
