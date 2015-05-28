@@ -249,7 +249,7 @@ impl PublicId {
     }
 
     pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
-        debug_assert!(self.name != self.original_name, "already assigned relocated name !");
+        debug_assert!(!self.is_relocated(), "already assigned relocated name !");
         self.name = relocated_name
     }
 }
@@ -278,8 +278,8 @@ impl Decodable for PublicId {
 
 // Note: name field is initially same as original_name, this should be later overwritten by
 // relocated name provided by the network using assign_relocated_name method
-// #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 // TODO (ben 2015-04-01) : implement order based on name
+#[derive(Clone)]
 pub struct Id {
   public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
@@ -361,7 +361,7 @@ impl Id {
       self.name != self.original_name
   }
   pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
-      debug_assert!(self.name != self.original_name, "already assigned relocated name !");
+      debug_assert!(!self.is_relocated(), "already assigned relocated name !");
       self.name = relocated_name
   }
 }
@@ -523,19 +523,35 @@ mod test {
         let relocated_name: NameType = Random::generate_random();
         let mut relocated = before.clone();
         relocated.assign_relocated_name(relocated_name.clone());
-        assert_eq!(relocated.name(), relocated_name);
+
         assert!(relocated.is_relocated());
+        assert_eq!(relocated.name(), relocated_name);
+        assert!(before.name()!= relocated.name());
+        assert_eq!(before.public_key, relocated.public_key);
+        assert_eq!(before.public_sign_key, relocated.public_sign_key);
+        assert_eq!(before.validation_token, relocated.validation_token);
+        assert_eq!(before.original_name, relocated.original_name);
     }
 
-// FIXME
-    // fn assign_relocated_name_id() {
-    //     let before = Id::generate_random();
-    //     assert!(!before.is_relocated());
-    //     assert_eq!(before.name, before.original_name);
-    //     let relocated_name: NameType = Random::generate_random();
-    //     let mut relocated = before.clone();
-    //     relocated.assign_relocated_name(relocated_name.clone());
-    //     assert_eq!(relocated.name(), relocated_name);
-    //     assert!(relocated.is_relocated());
-    // }
+#[test]
+    fn assign_relocated_name_id() {
+        let before = Id::new();
+        assert!(!before.is_relocated());
+        assert_eq!(before.get_name(), before.get_original_name());
+        let relocated_name: NameType = Random::generate_random();
+        let mut relocated = before.clone();
+        relocated.assign_relocated_name(relocated_name.clone());
+
+        assert!(relocated.is_relocated());
+        assert_eq!(relocated.get_name(), relocated_name);
+        assert!(before.get_name()!= relocated.get_name());
+        assert_eq!(before.get_original_name(), relocated.get_original_name());
+        assert_eq!(before.get_public_key(), relocated.get_public_key());
+        assert_eq!(before.get_public_sign_key(), relocated.get_public_sign_key());
+        assert_eq!(before.get_crypto_public_key().0.to_vec(), relocated.get_crypto_public_key().0.to_vec());
+        assert_eq!(before.get_crypto_secret_key().0.to_vec(), relocated.get_crypto_secret_key().0.to_vec());
+        assert_eq!(before.get_crypto_public_sign_key().0.to_vec(), relocated.get_crypto_public_sign_key().0.to_vec());
+        assert_eq!(before.get_crypto_secret_sign_key().0.to_vec(), relocated.get_crypto_secret_sign_key().0.to_vec());
+        assert_eq!(before.get_validation_token(), relocated.get_validation_token());
+    }
 }
