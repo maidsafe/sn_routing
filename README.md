@@ -31,15 +31,17 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 General note: please document code you touch, and introduce property-based unit tests where applicable.
 
-## [0.1.5] - essential logical corrections
+## [0.1.60] - essential logical corrections
 - [x] [MAID-1007](https://maidsafe.atlassian.net/browse/MAID-1007) limit swarm to targeted group
  - [x] [MAID-1105](https://maidsafe.atlassian.net/browse/MAID-1105) delay RoutingTable new ConnectRequests
  - [x] [MAID-1106](https://maidsafe.atlassian.net/browse/MAID-1106) examine Not For Us
 - [x] [MAID-1032](https://maidsafe.atlassian.net/browse/MAID-1032)
 correct name calculation of pure Id
 - [x] [MAID-1034](https://maidsafe.atlassian.net/browse/MAID-1034) ConnectResponse needs to include original signed ConnectRequest
+- [x] [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
+- [x] [MAID-1059](https://maidsafe.atlassian.net/browse/MAID-1059) rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
 
-## [0.1.6] - activate security features
+## [0.1.61] - activate security features
 
 - [ ] [MAID-1114](https://maidsafe.atlassian.net/browse/MAID-1114) Relay module
 - [ ] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
@@ -47,7 +49,6 @@ correct name calculation of pure Id
   - [ ] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
   - [ ] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
 - [ ] [MAID-1042](https://maidsafe.atlassian.net/browse/MAID-1042) Sentinel
-    - [x] [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
     - [ ] [MAID-1045](https://maidsafe.atlassian.net/browse/MAID-1045) plug in Sentinel [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
     - [ ] [MAID-1046](https://maidsafe.atlassian.net/browse/MAID-1046) break down (header, body) into correct (request, claim) and dispatch
     - [ ] [MAID-1048](https://maidsafe.atlassian.net/browse/MAID-1048) Ensure correct dispatch of GetGroupKeyResponse
@@ -55,13 +56,12 @@ correct name calculation of pure Id
     - [ ] [MAID-1050](https://maidsafe.atlassian.net/browse/MAID-1050) block messages at filter once Sentinel has resolved
     - [ ] [MAID-1051](https://maidsafe.atlassian.net/browse/MAID-1051) update construction of message_header
 
-## [0.1.7] - restructure core of routing
+## [0.1.70] - restructure core of routing
 
 - [ ] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
     - [ ] [MAID-1054](https://maidsafe.atlassian.net/browse/MAID-1054) move all handler functions to separate module
     - [ ] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
     - [ ] [MAID-1057](https://maidsafe.atlassian.net/browse/MAID-1057) make event loop in routing_node internal
-    - [x] [MAID-1059](https://maidsafe.atlassian.net/browse/MAID-1059) rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
     - [ ] [MAID-1060](https://maidsafe.atlassian.net/browse/MAID-1060) Interface handle Result < Option < Action >, >
 - [ ] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
 - [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
