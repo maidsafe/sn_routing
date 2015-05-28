@@ -22,7 +22,7 @@ mod database;
 use std::cmp;
 use routing;
 use routing::NameType;
-use routing::types::{Action};
+use routing::types::{MessageAction};
 use maidsafe_types;
 use cbor::{ Decoder };
 use routing::sendable::Sendable;
@@ -40,7 +40,7 @@ pub struct DataManager {
 impl DataManager {
   pub fn new() -> DataManager { DataManager { db_: database::DataManagerDatabase::new() } }
 
-  pub fn handle_get(&mut self, name : &NameType) ->Result<Action, InterfaceError> {
+  pub fn handle_get(&mut self, name : &NameType) ->Result<MessageAction, InterfaceError> {
 	  let result = self.db_.get_pmid_nodes(name);
 	  if result.len() == 0 {
 	    return Err(From::from(ResponseError::NoData));
@@ -50,10 +50,10 @@ impl DataManager {
 	  for pmid in result.iter() {
         dest_pmids.push(pmid.clone());
 	  }
-	  Ok(Action::SendOn(dest_pmids))
+	  Ok(MessageAction::SendOn(dest_pmids))
   }
 
-  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<Action, InterfaceError> {
+  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<MessageAction, InterfaceError> {
     let mut name : routing::NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -62,10 +62,7 @@ impl DataManager {
         name = payload.get_data::<maidsafe_types::ImmutableData>().name();
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
-        name = payload.get_data::<maidsafe_types::PublicMaid>().name();
-      }
-      maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
+        name = payload.get_data::<maidsafe_types::PublicIdType>().name();
       }
       _ => return Err(From::from(ResponseError::InvalidRequest))
     }
@@ -87,10 +84,10 @@ impl DataManager {
       dest_pmids.push(nodes_in_table[index].clone());
     }
     self.db_.put_pmid_nodes(&data_name, dest_pmids.clone());
-    Ok(Action::SendOn(dest_pmids))
+    Ok(MessageAction::SendOn(dest_pmids))
   }
 
-  pub fn handle_get_response(&mut self, response: Vec<u8>) -> routing::node_interface::RoutingNodeAction {
+  pub fn handle_get_response(&mut self, response: Vec<u8>) -> routing::node_interface::MethodCall {
       let mut name: routing::NameType;
       let mut d = Decoder::from_bytes(&response[..]);
       let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -99,12 +96,9 @@ impl DataManager {
           name = payload.get_data::<maidsafe_types::ImmutableData>().name();
         }
         maidsafe_types::PayloadTypeTag::PublicMaid => {
-          name = payload.get_data::<maidsafe_types::PublicMaid>().name();
+          name = payload.get_data::<maidsafe_types::PublicIdType>().name();
         }
-        maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-          name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
-        }
-        _ => return routing::node_interface::RoutingNodeAction::None,
+        _ => return routing::node_interface::MethodCall::None,
       }
 
       match self.db_.temp_storage_after_churn.get(&name) {
@@ -126,19 +120,19 @@ impl DataManager {
                       }
                   }
 
-                  routing::node_interface::RoutingNodeAction::Put {
+                  routing::node_interface::MethodCall::Put {
                       destination: close_grp_node_to_add,
                       content: Box::new(DataManagerSendable::with_content(name, response)),
                   }
               } else {
-                  routing::node_interface::RoutingNodeAction::None
+                  routing::node_interface::MethodCall::None
               }
           },
-          None => routing::node_interface::RoutingNodeAction::None,
+          None => routing::node_interface::MethodCall::None,
       }
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::RoutingNodeAction> {
+  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::MethodCall> {
     self.db_.retrieve_all_and_reset(close_group)
   }
 }
@@ -151,7 +145,7 @@ mod test {
 
   use super::{DataManager};
   use maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
-  use routing::types::{Action, array_as_vector};
+  use routing::types::{MessageAction, array_as_vector};
   use routing::NameType;
   use routing::sendable::Sendable;
 
@@ -169,27 +163,27 @@ mod test {
     let put_result = data_manager.handle_put(&array_as_vector(encoder.as_bytes()), &mut nodes_in_table);
     assert_eq!(put_result.is_err(), false);
     match put_result.ok().unwrap() {
-      Action::SendOn(ref x) => {
+      MessageAction::SendOn(ref x) => {
         assert_eq!(x.len(), super::PARALLELISM);
         assert_eq!(x[0], nodes_in_table[0]);
         assert_eq!(x[1], nodes_in_table[1]);
         assert_eq!(x[2], nodes_in_table[2]);
         assert_eq!(x[3], nodes_in_table[3]);
       }
-      Action::Reply(_) => panic!("Unexpected"),
+      MessageAction::Reply(_) => panic!("Unexpected"),
     }
       let data_name = NameType::new(data.name().get_id());
     let get_result = data_manager.handle_get(&data_name);
       assert_eq!(get_result.is_err(), false);
       match get_result.ok().unwrap() {
-        Action::SendOn(ref x) => {
+        MessageAction::SendOn(ref x) => {
           assert_eq!(x.len(), super::PARALLELISM);
           assert_eq!(x[0], nodes_in_table[0]);
           assert_eq!(x[1], nodes_in_table[1]);
           assert_eq!(x[2], nodes_in_table[2]);
           assert_eq!(x[3], nodes_in_table[3]);
         }
-        Action::Reply(_) => panic!("Unexpected"),
+        MessageAction::Reply(_) => panic!("Unexpected"),
       }
     }
 }

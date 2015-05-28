@@ -22,7 +22,7 @@ mod database;
 use cbor::{ Decoder };
 use routing;
 use routing::NameType;
-use routing::types::{Action};
+use routing::types::{MessageAction};
 use routing::error::{ResponseError, InterfaceError};
 use maidsafe_types;
 use routing::sendable::Sendable;
@@ -39,32 +39,28 @@ impl MaidManager {
     MaidManager { db_: database::MaidManagerDatabase::new() }
   }
 
-  pub fn handle_put(&mut self, from : &NameType, data : &Vec<u8>) ->Result<Action, InterfaceError> {
+  pub fn handle_put(&mut self, from : &NameType, data : &Vec<u8>) ->Result<MessageAction, InterfaceError> {
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     let mut destinations : Vec<NameType> = Vec::new();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
-        if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
+        if !self.db_.put_data(from, immutable_data.value().len() as u64) {
           return Err(From::from(ResponseError::InvalidRequest));
         }
         destinations.push(NameType::new(immutable_data.name().get_id()));
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         // PublicMaid doesn't use any allowance
-        destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicMaid>().name().get_id()));
-      }
-      maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        // PublicAnMaid doesn't use any allowance
-        destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicAnMaid>().name().get_id()));
+        destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicIdType>().name().get_id()));
       }
       _ => return Err(From::from(ResponseError::InvalidRequest))
     }
-    Ok(Action::SendOn(destinations))
+    Ok(MessageAction::SendOn(destinations))
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::RoutingNodeAction> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
     self.db_.retrieve_all_and_reset()
   }
 
@@ -93,11 +89,11 @@ mod test {
         let put_result = maid_manager.handle_put(&from, &array_as_vector(encoder.as_bytes()));
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
-            Action::SendOn(ref x) => {
+            MessageAction::SendOn(ref x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], data.name());
             }
-            Action::Reply(_) => panic!("Unexpected"),
+            MessageAction::Reply(_) => panic!("Unexpected"),
         }
     }
 }
