@@ -46,18 +46,14 @@ impl MaidManager {
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
-        if !self.db_.put_data(from, immutable_data.get_value().len() as u64) {
+        if !self.db_.put_data(from, immutable_data.value().len() as u64) {
           return Err(From::from(ResponseError::InvalidRequest));
         }
         destinations.push(NameType::new(immutable_data.name().get_id()));
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         // PublicMaid doesn't use any allowance
-        destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicMaid>().name().get_id()));
-      }
-      maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        // PublicAnMaid doesn't use any allowance
-        destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicAnMaid>().name().get_id()));
+        destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicIdType>().name().get_id()));
       }
       _ => return Err(From::from(ResponseError::InvalidRequest))
     }

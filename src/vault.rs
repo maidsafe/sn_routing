@@ -175,10 +175,7 @@ impl Interface for VaultFacade {
             data_name = payload.get_data::<maidsafe_types::ImmutableData>().name();
           }
           maidsafe_types::PayloadTypeTag::PublicMaid => {
-            data_name = payload.get_data::<maidsafe_types::PublicMaid>().name();
-          }
-          maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-            data_name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
+            data_name = payload.get_data::<maidsafe_types::PublicIdType>().name();
           }
           _ => return Err(From::from(ResponseError::InvalidRequest))
         }
@@ -478,7 +475,7 @@ impl VaultFacade {
             for _ in 0..10 {
                 vec_name_types.push(NameType::generate_random());
             }
-            let data = maidsafe_types::StructuredData::new(name, owner, vec![vec_name_types.clone()]);
+            let data = maidsafe_types::StructuredData::new(name, owner, vec_name_types.clone());
             let payload = Payload::new(PayloadTypeTag::StructuredData, &data);
 
             let mut encoder = cbor::Encoder::from_memory();

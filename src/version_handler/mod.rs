@@ -148,8 +148,7 @@ mod test {
     let mut version_handler = VersionHandler::new();
     let name = NameType([3u8; 64]);
     let owner = NameType([4u8; 64]);
-    let mut value = Vec::new();
-    value.push(vec![NameType([5u8; 64]), NameType([6u8; 64])]);
+    let value = vec![NameType([5u8; 64]), NameType([6u8; 64])];
     let sdv = StructuredData::new(name, owner, value);
     let payload = Payload::new(PayloadTypeTag::StructuredData, &sdv);
     let mut encoder = cbor::Encoder::from_memory();
@@ -175,10 +174,9 @@ mod test {
                 let sdv_after = obj_after.get_data::<maidsafe_types::StructuredData>();
                 assert_eq!(sdv_after.name(), NameType([3u8;64]));
                 assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
-                assert_eq!(sdv_after.get_value().len(), 1);
-                assert_eq!(sdv_after.get_value()[0].len(), 2);
-                assert_eq!(sdv_after.get_value()[0][0], NameType([5u8;64]));
-                assert_eq!(sdv_after.get_value()[0][1], NameType([6u8;64]));
+                assert_eq!(sdv_after.value().len(), 2);
+                assert_eq!(sdv_after.value()[0], NameType([5u8;64]));
+                assert_eq!(sdv_after.value()[1], NameType([6u8;64]));
             }
         }
     }

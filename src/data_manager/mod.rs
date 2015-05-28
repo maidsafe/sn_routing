@@ -62,10 +62,7 @@ impl DataManager {
         name = payload.get_data::<maidsafe_types::ImmutableData>().name();
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
-        name = payload.get_data::<maidsafe_types::PublicMaid>().name();
-      }
-      maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
+        name = payload.get_data::<maidsafe_types::PublicIdType>().name();
       }
       _ => return Err(From::from(ResponseError::InvalidRequest))
     }
@@ -99,10 +96,7 @@ impl DataManager {
           name = payload.get_data::<maidsafe_types::ImmutableData>().name();
         }
         maidsafe_types::PayloadTypeTag::PublicMaid => {
-          name = payload.get_data::<maidsafe_types::PublicMaid>().name();
-        }
-        maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-          name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
+          name = payload.get_data::<maidsafe_types::PublicIdType>().name();
         }
         _ => return routing::node_interface::MethodCall::None,
       }

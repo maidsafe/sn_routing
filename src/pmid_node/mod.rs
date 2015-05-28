@@ -52,10 +52,7 @@ impl PmidNode {
         data_name = payload.get_data::<maidsafe_types::ImmutableData>().name();
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
-        data_name = payload.get_data::<maidsafe_types::PublicMaid>().name();
-      }
-      maidsafe_types::PayloadTypeTag::PublicAnMaid => {
-        data_name = payload.get_data::<maidsafe_types::PublicAnMaid>().name();
+        data_name = payload.get_data::<maidsafe_types::PublicIdType>().name();
       }
       _ => return Err(From::from(ResponseError::InvalidRequest))
     }
