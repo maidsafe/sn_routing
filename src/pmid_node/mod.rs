@@ -47,9 +47,11 @@ impl PmidNode {
     let mut data_name : NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+    let mut remove_sacrificial = false;
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         data_name = payload.get_data::<maidsafe_types::ImmutableData>().name();
+        remove_sacrificial = true;
       }
       maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
         data_name = payload.get_data::<maidsafe_types::ImmutableDataBackup>().name();
@@ -59,12 +61,43 @@ impl PmidNode {
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         data_name = payload.get_data::<maidsafe_types::PublicIdType>().name();
+        remove_sacrificial = true;
       }
       _ => return Err(From::from(ResponseError::InvalidRequest))
     }
-    // the type_tag needs to be stored as well    
-    self.chunk_store_.put(data_name, data);
-    Err(InterfaceError::Abort)
+    if self.chunk_store_.has_disk_space(data.len()) {
+      // the type_tag needs to be stored as well
+      self.chunk_store_.put(data_name, data);
+      return Err(InterfaceError::Abort);
+    }
+    // TODO: due to the limitation of current return type, only one notification can be sent out
+    //       so we will try to remove the first Sacrificial copy larger enough to free up space
+    //       if such Sacrifical copy does not exist, then return with error
+    if !remove_sacrificial {
+      return Err(From::from(ResponseError::InvalidRequest))
+    }
+    let required_space = data.len() - (self.chunk_store_.max_disk_usage() - self.chunk_store_.current_disk_usage());
+    let names = self.chunk_store_.names();
+    for name in names.iter() {
+      let fetched_data = self.chunk_store_.get(name.clone());
+      let mut decoder = Decoder::from_bytes(&fetched_data[..]);
+      let fetched_payload: maidsafe_types::Payload = decoder.decode().next().unwrap().unwrap();
+      // Only remove Sacrificial copy
+      match fetched_payload.get_type_tag() {
+        maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
+          if fetched_data.len() > required_space {
+            self.chunk_store_.delete(name.clone());
+            self.chunk_store_.put(data_name, data);
+            // TODO: ideally, the InterfaceError shall have an option like : 
+            //       Forward(Vec<u8>) where Vec<u8> is the data to be removed
+            // Currently, have to use Reply<Vec<u8>> to indicate a removal and let routing compose proper notification
+            return Ok(MessageAction::Reply(fetched_data));
+          }
+        }
+        _ => {}
+      }
+    }
+    Err(From::from(ResponseError::InvalidRequest))
   }
 
 }
