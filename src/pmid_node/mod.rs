@@ -51,6 +51,12 @@ impl PmidNode {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         data_name = payload.get_data::<maidsafe_types::ImmutableData>().name();
       }
+      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
+        data_name = payload.get_data::<maidsafe_types::ImmutableDataBackup>().name();
+      }
+      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
+        data_name = payload.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
+      }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         data_name = payload.get_data::<maidsafe_types::PublicIdType>().name();
       }

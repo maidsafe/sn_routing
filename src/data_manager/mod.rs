@@ -61,6 +61,12 @@ impl DataManager {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         name = payload.get_data::<maidsafe_types::ImmutableData>().name();
       }
+      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
+        name = payload.get_data::<maidsafe_types::ImmutableDataBackup>().name();
+      }
+      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
+        name = payload.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
+      }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         name = payload.get_data::<maidsafe_types::PublicIdType>().name();
       }
