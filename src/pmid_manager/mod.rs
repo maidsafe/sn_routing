@@ -20,7 +20,7 @@
 mod database;
 use routing;
 use routing::NameType;
-use routing::types::{Action};
+use routing::types::{MessageAction};
 use routing::error::{ResponseError, InterfaceError};
 use routing::types::DestinationAddress;
 pub use self::database::PmidManagerAccountWrapper;
@@ -34,17 +34,17 @@ impl PmidManager {
     PmidManager { db_: database::PmidManagerDatabase::new() }
   }
 
-  pub fn handle_put(&mut self, dest_address: &DestinationAddress, data : &Vec<u8>) ->Result<Action, InterfaceError> {
+  pub fn handle_put(&mut self, dest_address: &DestinationAddress, data : &Vec<u8>) ->Result<MessageAction, InterfaceError> {
     if self.db_.put_data(&dest_address.dest, data.len() as u64) {
       let mut destinations : Vec<NameType> = Vec::new();
       destinations.push(dest_address.dest.clone());
-      Ok(Action::SendOn(destinations))
+      Ok(MessageAction::SendOn(destinations))
     } else {
       Err(From::from(ResponseError::InvalidRequest))
     }
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::RoutingNodeAction> {
+  pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::MethodCall> {
     self.db_.retrieve_all_and_reset(close_group)
   }
 }
@@ -71,11 +71,11 @@ mod test {
     let put_result = pmid_manager.handle_put(&dest, &array_as_vector(encoder.as_bytes()));
     assert_eq!(put_result.is_err(), false);
     match put_result.ok().unwrap() {
-      Action::SendOn(ref x) => {
+      MessageAction::SendOn(ref x) => {
         assert_eq!(x.len(), 1);
         assert_eq!(x[0], dest.dest);
       }
-      Action::Reply(_) => panic!("Unexpected"),
+      MessageAction::Reply(_) => panic!("Unexpected"),
     }
   }
 }

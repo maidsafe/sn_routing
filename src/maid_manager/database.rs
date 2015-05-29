@@ -165,11 +165,11 @@ impl MaidManagerDatabase {
       entry.put_data(size)
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::RoutingNodeAction> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
       let data: Vec<_> = self.storage.drain().collect();
       let mut actions = Vec::with_capacity(data.len());
       for element in data {
-          actions.push(routing::node_interface::RoutingNodeAction::Refresh {
+          actions.push(routing::node_interface::MethodCall::Refresh {
               content: Box::new(MaidManagerAccountWrapper::new(element.0, element.1)),
           });
       }

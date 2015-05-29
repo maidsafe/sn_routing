@@ -20,7 +20,7 @@ use routing;
 use maidsafe_types;
 use routing::NameType;
 use routing::error::{ResponseError, InterfaceError};
-use routing::types::{Action, GROUP_SIZE};
+use routing::types::{MessageAction, GROUP_SIZE};
 use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
@@ -94,15 +94,15 @@ impl VersionHandler {
     VersionHandler { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
   }
 
-  pub fn handle_get(&self, name: NameType) ->Result<Action, InterfaceError> {
+  pub fn handle_get(&self, name: NameType) ->Result<MessageAction, InterfaceError> {
     let data = self.chunk_store_.get(name);
     if data.len() == 0 {
       return Err(From::from(ResponseError::NoData));
     }
-    Ok(Action::Reply(data))
+    Ok(MessageAction::Reply(data))
   }
 
-  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<Action, InterfaceError> {
+  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
     let mut data_name : NameType;
     let mut d = cbor::Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
@@ -117,12 +117,12 @@ impl VersionHandler {
     return Err(InterfaceError::Abort);
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::RoutingNodeAction> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
        let names = self.chunk_store_.names();
        let mut actions = Vec::with_capacity(names.len());
        for name in names {
             let data = self.chunk_store_.get(name.clone());
-            actions.push(routing::node_interface::RoutingNodeAction::Refresh {
+            actions.push(routing::node_interface::MethodCall::Refresh {
                 content: Box::new(VersionHandlerSendable::new(name, data)),
             });
        }
@@ -148,8 +148,7 @@ mod test {
     let mut version_handler = VersionHandler::new();
     let name = NameType([3u8; 64]);
     let owner = NameType([4u8; 64]);
-    let mut value = Vec::new();
-    value.push(vec![NameType([5u8; 64]), NameType([6u8; 64])]);
+    let value = vec![NameType([5u8; 64]), NameType([6u8; 64])];
     let sdv = StructuredData::new(name, owner, value);
     let payload = Payload::new(PayloadTypeTag::StructuredData, &sdv);
     let mut encoder = cbor::Encoder::from_memory();
@@ -167,18 +166,17 @@ mod test {
     let get_result = version_handler.handle_get(data_name);
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
-        Action::SendOn(_) => panic!("Unexpected"),
-        Action::Reply(x) => {
+        MessageAction::SendOn(_) => panic!("Unexpected"),
+        MessageAction::Reply(x) => {
                 let mut d = cbor::Decoder::from_bytes(x);
                 let obj_after: Payload = d.decode().next().unwrap().unwrap();
                 assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::StructuredData);
                 let sdv_after = obj_after.get_data::<maidsafe_types::StructuredData>();
                 assert_eq!(sdv_after.name(), NameType([3u8;64]));
                 assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
-                assert_eq!(sdv_after.get_value().len(), 1);
-                assert_eq!(sdv_after.get_value()[0].len(), 2);
-                assert_eq!(sdv_after.get_value()[0][0], NameType([5u8;64]));
-                assert_eq!(sdv_after.get_value()[0][1], NameType([6u8;64]));
+                assert_eq!(sdv_after.value().len(), 2);
+                assert_eq!(sdv_after.value()[0], NameType([5u8;64]));
+                assert_eq!(sdv_after.value()[1], NameType([6u8;64]));
             }
         }
     }
