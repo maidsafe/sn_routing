@@ -14,8 +14,9 @@ _Client_   =>> |__ClientManager__ (Primary, Backup, Sacrificial)[Allow ? So : Pu
           *->> |__PmidManager__ {Put.Sy, So}
           *->  |_PmidNode_ [Store ? Flow_Completed : Primary? TryToRemoveSacrificial : PutFailure]
 
-Note : when routing_node realise it is acting as ClientManager, handle_put will be called three times to trigger Primary, Backup and Sacrificial copies of data to be stored to network.
-Only when Primary is not allowed to be put, then ClientManager will send back a PutFailure to Client
+Note : with the current routing API design, the put request of Backup and Sacrificial copies will be sent using the same put request as Primary.
+However, the DestinationAddress will be used to differentiate the different type of copy.
+i.e. requiring a hash verification process in DataManager and PmidNode to replace the data_name
 
 --
 #####MaidManager::PutFailure
