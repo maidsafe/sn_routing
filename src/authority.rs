@@ -118,7 +118,7 @@ mod test {
 #[test]
 fn our_authority_full_routing_table() {
     let id = types::Id::new();
-    let mut routing_table = RoutingTable::new(id.get_name());
+    let mut routing_table = RoutingTable::new(&id.get_name());
     let mut count : usize = 0;
     loop {
         routing_table.add_node(NodeInfo::new(

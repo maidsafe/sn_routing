@@ -94,9 +94,20 @@ impl RelayMap {
         self.lookup_map.contains_key(relay_endpoint)
     }
 
-    ///
+    /// This returns a pair of the stored PublicId and a BTreeSet of the stored Endpoints.
     pub fn get_endpoints(&self, relay_name: &NameType) -> Option<&(PublicId, BTreeSet<Endpoint>)> {
         self.relay_map.get(relay_name)
+    }
+
+    /// This changes our name and drops any endpoint that would be stored under that name.
+    /// The motivation for this behaviour is that our claim for a name will overrule any unverified
+    /// other node claiming this name.
+    pub fn change_our_name(&mut self, new_name: &NameType) {
+        if self.relay_map.contains_key(new_name) {
+            self.drop_ip_node(new_name);
+        }
+
+        self.our_name = new_name.clone();
     }
 }
 

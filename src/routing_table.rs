@@ -86,8 +86,8 @@ pub struct RoutingTable {
 }
 
 impl RoutingTable {
-    pub fn new(our_id: NameType) -> RoutingTable {
-        RoutingTable { routing_table: Vec::<NodeInfo>::new(), our_id: our_id }
+    pub fn new(our_id: &NameType) -> RoutingTable {
+        RoutingTable { routing_table: Vec::<NodeInfo>::new(), our_id: our_id.clone() }
     }
 
     pub fn get_bucket_size() -> usize { BUCKET_SIZE }
@@ -1093,7 +1093,7 @@ mod test {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
         let our_id_name = types::Id::new().get_name();
-        let mut routing_table: RoutingTable = RoutingTable::new(our_id_name.clone());
+        let mut routing_table: RoutingTable = RoutingTable::new(&our_id_name);
 
         let mut count: usize = 0;
         loop {
