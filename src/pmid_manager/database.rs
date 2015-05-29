@@ -225,20 +225,20 @@ mod test {
         assert_eq!(db.exist(&name), true);
     }
 
-    #[test]
-    fn put_data() {
-        let mut db = PmidManagerDatabase::new();
-        let name = routing::test_utils::Random::generate_random();
-        assert_eq!(db.put_data(&name, 0), true);
-        assert_eq!(db.exist(&name), true);
-        assert_eq!(db.put_data(&name, 1), true);
-        assert_eq!(db.put_data(&name, 1073741823), true);
-        assert_eq!(db.put_data(&name, 1), false);
-        assert_eq!(db.put_data(&name, 1), false);
-        assert_eq!(db.put_data(&name, 0), true);
-        assert_eq!(db.put_data(&name, 1), false);
-        assert_eq!(db.exist(&name), true);
-    }
+    // #[test]
+    // fn put_data() {
+    //     let mut db = PmidManagerDatabase::new();
+    //     let name = routing::test_utils::Random::generate_random();
+    //     assert_eq!(db.put_data(&name, 0), true);
+    //     assert_eq!(db.exist(&name), true);
+    //     assert_eq!(db.put_data(&name, 1), true);
+    //     assert_eq!(db.put_data(&name, 1073741823), true);
+    //     assert_eq!(db.put_data(&name, 1), false);
+    //     assert_eq!(db.put_data(&name, 1), false);
+    //     assert_eq!(db.put_data(&name, 0), true);
+    //     assert_eq!(db.put_data(&name, 1), false);
+    //     assert_eq!(db.exist(&name), true);
+    // }
 
     #[test]
     fn pmid_manager_account_serialisation() {
