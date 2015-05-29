@@ -212,15 +212,25 @@ impl Decodable for PublicKey {
   }
 }
 
-// Note: name field is initially same as original_name, this should be replaced by relocated name
-// calculated by the nodes close to original_name by using assign_relocated_name method
+// TODO(Team): Below method should be modified and reused in constructor of Id.
+fn calculate_original_name(public_key: &crypto::sign::PublicKey,
+                           public_sign_key: &crypto::asymmetricbox::PublicKey,
+                           validation_token: &Signature) -> NameType {
+    let combined_iter = public_key.0.into_iter().chain(public_sign_key.0.into_iter())
+          .chain((&validation_token.signature).into_iter());
+    let mut combined: Vec<u8> = Vec::new();
+    for iter in combined_iter {
+        combined.push(*iter);
+    }
+    NameType(crypto::hash::sha512::hash(&combined).0)
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublicId {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
   pub validation_token: Signature,
   name: NameType,
-  relocated: bool,
 }
 
 impl PublicId {
@@ -230,7 +240,6 @@ impl PublicId {
         public_sign_key : id.get_public_sign_key(),
         validation_token : id.get_validation_token(),
         name : id.get_name().clone(),
-        relocated : id.relocated,
       }
     }
 
@@ -244,15 +253,21 @@ impl PublicId {
         e.into_bytes()
     }
 
+    // checks if the name is updated to a relocated name
     pub fn is_relocated(&self) -> bool {
-        self.relocated
+        self.name !=  calculate_original_name(&self.public_sign_key.get_crypto_public_sign_key(),
+                                              &self.public_key.get_crypto_public_key(),
+                                              &self.validation_token)
     }
 
-    pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
-        debug_assert!(!self.relocated, "already assigned relocated name !");
-        debug_assert!(self.name != relocated_name, "using original name as relocated name !");
+    // name field is initially same as original_name, this should be replaced by relocated name
+    // calculated by the nodes close to original_name by using this method
+    pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
+        if self.is_relocated() || self.name == relocated_name {
+            return false;
+        }
         self.name = relocated_name;
-        self.relocated = true;
+        return true;
     }
 }
 
@@ -261,20 +276,17 @@ impl Encodable for PublicId {
     CborTagEncode::new(5483_001, &(&self.public_key,
                                    &self.public_sign_key,
                                    &self.validation_token,
-                                   &self.name,
-                                   &self.relocated)).encode(e)
+                                   &self.name)).encode(e)
   }
 }
 
 impl Decodable for PublicId {
   fn decode<D: Decoder>(d: &mut D)->Result<PublicId, D::Error> {
     try!(d.read_u64());
-    let (public_key, public_sign_key,
-         validation_token, name, relocated) = try!(Decodable::decode(d));
+    let (public_key, public_sign_key, validation_token, name) = try!(Decodable::decode(d));
     Ok(PublicId { public_key: public_key,
                     public_sign_key : public_sign_key,
-                    validation_token: validation_token, name : name,
-                    relocated : relocated })
+                    validation_token: validation_token, name : name})
   }
 }
 
@@ -287,7 +299,6 @@ pub struct Id {
   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
   validation_token: Signature,
   name: NameType,
-  relocated : bool,
 }
 
 impl Id {
@@ -309,7 +320,7 @@ impl Id {
         keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
     }
 
-    let validation_token = Signature{ signature: crypto::sign::sign(&keys, &sec_sign_key) };
+    let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &sec_sign_key));
 
     let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
 
@@ -328,7 +339,6 @@ impl Id {
       secret_keys : (sec_sign_key, sec_asym_key),
       validation_token : validation_token,
       name : NameType::new(digest.0),
-      relocated : false,
     }
   }
 
@@ -357,14 +367,19 @@ impl Id {
   pub fn get_validation_token(&self) -> Signature {
       self.validation_token.clone()
   }
+  // checks if the name is updated to a relocated name
   pub fn is_relocated(&self) -> bool {
-      self.relocated
+      self.name !=  calculate_original_name(&self.public_keys.0, &self.public_keys.1, &self.validation_token)
   }
-  pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
-      debug_assert!(!self.relocated, "already assigned relocated name !");
-      debug_assert!(self.name != relocated_name, "using original name as relocated name !");
+
+  // name field is initially same as original_name, this should be later overwritten by
+  // relocated name provided by the network using this method
+  pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
+      if self.is_relocated() || self.name == relocated_name {
+          return false;
+      }
       self.name = relocated_name;
-      self.relocated = true;
+      return true;
   }
 }
 
@@ -520,10 +535,17 @@ mod test {
 #[test]
     fn assign_relocated_name_public_id() {
         let before = PublicId::generate_random();
+        let original_name = before.name();
         assert!(!before.is_relocated());
         let relocated_name: NameType = Random::generate_random();
         let mut relocated = before.clone();
-        relocated.assign_relocated_name(relocated_name.clone());
+        assert!(!relocated.assign_relocated_name(original_name.clone()));
+
+        assert!(relocated.assign_relocated_name(relocated_name.clone()));
+
+        assert!(!relocated.assign_relocated_name(relocated_name.clone()));
+        assert!(!relocated.assign_relocated_name(Random::generate_random()));
+        assert!(!relocated.assign_relocated_name(original_name.clone()));
 
         assert!(relocated.is_relocated());
         assert_eq!(relocated.name(), relocated_name);
@@ -536,10 +558,18 @@ mod test {
 #[test]
     fn assign_relocated_name_id() {
         let before = Id::new();
+        let original_name = before.get_name();
         assert!(!before.is_relocated());
         let relocated_name: NameType = Random::generate_random();
         let mut relocated = before.clone();
-        relocated.assign_relocated_name(relocated_name.clone());
+        assert!(!relocated.assign_relocated_name(original_name.clone()));
+
+        assert!(relocated.assign_relocated_name(relocated_name.clone()));
+
+        assert!(!relocated.assign_relocated_name(relocated_name.clone()));
+        assert!(!relocated.assign_relocated_name(Random::generate_random()));
+        assert!(!relocated.assign_relocated_name(original_name.clone()));
+
 
         assert!(relocated.is_relocated());
         assert_eq!(relocated.get_name().clone(), relocated_name);
