@@ -120,10 +120,13 @@ impl PmidManagerAccount {
     PmidManagerAccount { stored_total_size: 0, lost_total_size: 0, offered_space: 1073741824 }
   }
 
+  // TODO: Always return true to allow pmid_node carry out removal of Sacrificial copies
+  //       Otherwise PmidManagerAccount need to remember storage info of Primary, Backup and Sacrificial
+  //       copies separately to trigger an early alert
   pub fn put_data(&mut self, size : u64) -> bool {
-    if (self.stored_total_size + size) > self.offered_space {
-      return false;
-    }
+    // if (self.stored_total_size + size) > self.offered_space {
+    //   return false;
+    // }
     self.stored_total_size += size;
     true
   }
