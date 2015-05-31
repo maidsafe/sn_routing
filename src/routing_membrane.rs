@@ -18,6 +18,14 @@
 
 //! This is a fresh start of routing_node.rs and should upon successful completion replace
 //! the original routing_node.rs file
+//! Routing membrane is a single thread responsible for the in- and outgoing messages.
+//! It accepts messages received from CRUST.
+//! The membrane evaluates whether a message is to be forwarded, or
+//! accepted into the membrane as a request where Sentinel holds it until verified and resolved.
+//! Requests resolved by Sentinel, will be handed on to the Interface for actioning.
+//! A limited number of messages are deliberatly for Routing and network management purposes.
+//! Some network management messages are directly handled without Sentinel resolution.
+//! Other network management messages are handled by Routing after Sentinel resolution.
 
 #[allow(unused_imports)]
 use cbor::{Decoder, Encoder, CborError};
@@ -77,8 +85,8 @@ type PortAndProtocol = crust::Port;
 
 type RoutingResult = Result<(), RoutingError>;
 
-/// Routing Node
-pub struct RoutingNode<F: Interface> {
+/// Routing Membrane
+pub struct RoutingMembrane<F: Interface> {
     // for CRUST
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
@@ -96,8 +104,8 @@ pub struct RoutingNode<F: Interface> {
     interface: Box<F>
 }
 
-impl<F> RoutingNode<F> where F: Interface {
-    pub fn new(my_interface: F) -> RoutingNode<F> {
+impl<F> RoutingMembrane<F> where F: Interface {
+    pub fn new(my_interface: F) -> RoutingMembrane<F> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let id = types::Id::new();
@@ -115,7 +123,7 @@ impl<F> RoutingNode<F> where F: Interface {
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
         println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
-        RoutingNode { interface: Box::new(my_interface),
+        RoutingMembrane { interface: Box::new(my_interface),
                       id : id,
                       own_name : own_name.clone(),
                       event_input: event_input,
