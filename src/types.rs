@@ -29,7 +29,7 @@ use std::cmp;
 use NameType;
 use name_type::closer_to_target;
 use std::fmt;
-use error::{RoutingError, ResponseError};
+use error::{RoutingError};
 use routing_table::{NodeInfo};  // FIXME(prakash) consider not using it
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
@@ -270,7 +270,7 @@ impl PublicId {
         public_key : id.get_public_key(),
         public_sign_key : id.get_public_sign_key(),
         validation_token : id.get_validation_token(),
-        name : id.get_name().clone(),
+        name : id.get_name(),
       }
     }
 
@@ -373,8 +373,8 @@ impl Id {
     }
   }
 
-  pub fn get_name<'a>(&'a self) -> &'a NameType {
-      &self.name
+  pub fn get_name(&self) -> NameType {
+      self.name.clone()
   }
 
   pub fn get_public_key(&self) -> PublicKey {
@@ -474,30 +474,6 @@ impl Decodable for DestinationAddress {
     let (dest, reply_to) = try!(Decodable::decode(d));
     Ok(DestinationAddress { dest: dest, reply_to: reply_to })
   }
-}
-
-impl Encodable for ResponseError {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let mut type_tag;
-        match *self {
-            ResponseError::NoData => type_tag = "NoData",
-            ResponseError::InvalidRequest => type_tag = "InvalidRequest",
-        };
-        CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
-    }
-}
-
-impl Decodable for ResponseError {
-    fn decode<D: Decoder>(d: &mut D)->Result<ResponseError, D::Error> {
-        try!(d.read_u64());
-        let mut type_tag : String;
-        type_tag = try!(Decodable::decode(d));
-        match &type_tag[..] {
-            "NoData" => Ok(ResponseError::NoData),
-            "InvalidRequest" => Ok(ResponseError::InvalidRequest),
-            _ => Err(d.error("Unrecognised ResponseError"))
-        }
-    }
 }
 
 #[cfg(test)]
@@ -603,7 +579,7 @@ mod test {
 
 
         assert!(relocated.is_relocated());
-        assert_eq!(relocated.get_name().clone(), relocated_name);
+        assert_eq!(relocated.get_name(), relocated_name);
         assert!(before.get_name()!= relocated.get_name());
         assert_eq!(before.get_public_key(), relocated.get_public_key());
         assert_eq!(before.get_public_sign_key(), relocated.get_public_sign_key());
