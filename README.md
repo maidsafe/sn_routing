@@ -41,13 +41,26 @@ correct name calculation of pure Id
 - [x] [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
 - [x] [MAID-1059](https://maidsafe.atlassian.net/browse/MAID-1059) rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
 
-## [0.1.61] - activate security features
+## [0.1.61] - Relay module, relocatable Id, update NodeInterface
 
 - [x] [MAID-1114](https://maidsafe.atlassian.net/browse/MAID-1114) Relay module
+- [ ] [MAID-1060](https://maidsafe.atlassian.net/browse/MAID-1060) update Interface for Vaults
+- [x] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
+
+## [0.1.62] - restructure core of routing
+
 - [ ] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
-  - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) Integrate handlers with RelayMap 
+  - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) Integrate handlers with RelayMap
   - [ ] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
-  - [ ] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
+- [ ] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
+  - [ ] [MAID-1054](https://maidsafe.atlassian.net/browse/MAID-1054) move all handler functions to separate module
+  - [ ] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
+  - [ ] [MAID-1057](https://maidsafe.atlassian.net/browse/MAID-1057) make event loop in routing_node internal
+- [ ] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
+- [ ] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
+
+## [0.1.70] - activate Sentinel and refactor MessageTypeTag
+
 - [ ] [MAID-1042](https://maidsafe.atlassian.net/browse/MAID-1042) Sentinel
     - [ ] [MAID-1045](https://maidsafe.atlassian.net/browse/MAID-1045) plug in Sentinel [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
     - [ ] [MAID-1046](https://maidsafe.atlassian.net/browse/MAID-1046) break down (header, body) into correct (request, claim) and dispatch
@@ -55,27 +68,17 @@ correct name calculation of pure Id
     - [ ] [MAID-1049](https://maidsafe.atlassian.net/browse/MAID-1049) update signature of handler functions to request and claim
     - [ ] [MAID-1050](https://maidsafe.atlassian.net/browse/MAID-1050) block messages at filter once Sentinel has resolved
     - [ ] [MAID-1051](https://maidsafe.atlassian.net/browse/MAID-1051) update construction of message_header
-
-## [0.1.70] - restructure core of routing
-
-- [ ] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
-    - [ ] [MAID-1054](https://maidsafe.atlassian.net/browse/MAID-1054) move all handler functions to separate module
-    - [ ] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
-    - [ ] [MAID-1057](https://maidsafe.atlassian.net/browse/MAID-1057) make event loop in routing_node internal
-    - [ ] [MAID-1060](https://maidsafe.atlassian.net/browse/MAID-1060) Interface handle Result < Option < Action >, >
-- [ ] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
 - [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
     - [ ] [MAID-1064](https://maidsafe.atlassian.net/browse/MAID-1064) POC first and move UnauthorisedPut into explicit message structure.
 - [ ] [MAID-1065](https://maidsafe.atlassian.net/browse/MAID-1065) Return Result for Put Get Post
-- [ ] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
 
-## [0.1.8] - activate account transfer
+## [0.1.80] - activate account transfer
 
 - [ ] [MAID-1067](https://maidsafe.atlassian.net/browse/MAID-1067) Remove merge from Sendable
 - [ ] [MAID-1068](https://maidsafe.atlassian.net/browse/MAID-1068) Account Transfer message
 - [ ] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
 
-## [0.1.9] Finish sprint
+## [0.1.90] Finish sprint
 
 - [ ] [MAID-1070](https://maidsafe.atlassian.net/browse/MAID-1070) drop_bootstrap in coordination with CRUST
 - [ ] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
