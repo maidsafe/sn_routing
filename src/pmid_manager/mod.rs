@@ -75,7 +75,8 @@ impl PmidManager {
       }
       _ => { return MethodCall::None; }
     }
-    MethodCall::PutResponse { destination: name, payload: data }
+    // Routing holds the payload and will attach it to compose the response message to DataManager
+    MethodCall::SendOn { destination: name }
   }
 
   pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::MethodCall> {
