@@ -133,9 +133,11 @@ impl DataManager {
     let data = response.clone().unwrap();
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+    let mut replicate = false;
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         name = payload.get_data::<maidsafe_types::ImmutableData>().name();
+        replicate = true;
       }
       maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
         name = payload.get_data::<maidsafe_types::ImmutableDataBackup>().name();
@@ -145,11 +147,15 @@ impl DataManager {
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         name = payload.get_data::<maidsafe_types::PublicIdType>().name();
+        replicate = true;
       }
       _ => return MethodCall::None
     }
-
     self.db_.remove_pmid_node(&name, from_address.clone());
+    // No replication for Backup and Sacrificial copies.
+    if !replicate {
+      return MethodCall::None;
+    }
     let replicate_to = self.replicate_to(&name);
     match replicate_to {
         Some(pmid_node) => {
