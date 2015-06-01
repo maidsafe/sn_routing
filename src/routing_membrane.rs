@@ -17,7 +17,8 @@
 // relating to use of the SAFE Network Software.
 
 //! This is a fresh start of routing_node.rs and should upon successful completion replace
-//! the original routing_node.rs file
+//! the original routing_node.rs file, which in turn then is the owner of routing membrane and
+//! routing core.
 //! Routing membrane is a single thread responsible for the in- and outgoing messages.
 //! It accepts messages received from CRUST.
 //! The membrane evaluates whether a message is to be forwarded, or
@@ -182,10 +183,41 @@ impl<F> RoutingMembrane<F> where F: Interface {
         ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
     }
 
+    ///
+    pub fn run(&self) {
+        // TODO: wrap this into internal loop, such that ::run can be spawned off into thread
+        match self.event_input.try_recv() {
+            Err(()) => (),
+            Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                // match self.endpoint_to_name(&endpoint).map(|n|n.clone()) {
+                //     Some(name) => {
+                //         ignore(self.message_received(&name, bytes));
+                //     },
+                //     None => {
+                //         // if self.handle_challenge_request(&endpoint, &bytes) {
+                //         //     return;
+                //         // }
+                //         // if self.handle_challenge_response(&endpoint, &bytes) {
+                //         //     return;
+                //         // }
+                //         // ignore(self.handle_bootstrap_message(endpoint, bytes));
+                //     }
+                // }
+            },
+            Ok(crust::Event::NewConnection(endpoint)) => {
+                // self.handle_new_connect_event(endpoint);
+            },
+            Ok(crust::Event::LostConnection(endpoint)) => {
+                // self.handle_lost_connection_event(endpoint);
+            }
+        };
+    }
+
     fn send_swarm_or_parallel(&self, target: &NameType, msg: &Bytes) {
 
     }
 
+    // TODO: add optional group; fix bootstrapping/relay
     fn our_source_address(&self) -> types::SourceAddress {
         // if self.bootstrap_endpoint.is_some() {
         //     let id = self.all_connections.0.get(&self.bootstrap_endpoint.clone().unwrap());
