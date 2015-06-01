@@ -825,6 +825,10 @@ impl<F> RoutingNode<F> where F: Interface {
         }
     }
 
+    fn handle_put_public_id_reponse(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        Ok(())
+    }
+
     // // for clients, below methods are required
     fn handle_put_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let put_data = try!(decode::<PutData>(&body));
