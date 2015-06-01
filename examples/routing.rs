@@ -251,12 +251,13 @@ impl Interface for TestNode {
         routing::node_interface::MethodCall::None
     }
     fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) {
+                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
         if response.is_ok() {
             println!("testing node shall not receive a put_response in case of success");
         } else {
             println!("testing node received error put_response from {}", from_address);
         }
+        MethodCall::None
     }
     fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
                             response: Result<Vec<u8>, ResponseError>) {

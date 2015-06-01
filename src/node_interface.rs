@@ -28,6 +28,7 @@ pub enum MethodCall {
     Get { type_id: u64, name: NameType, },
     Post,
     Refresh { content: Box<Sendable>, },
+    SendOn { destination: NameType },
 }
 
 pub trait Interface : Sync + Send {
@@ -69,7 +70,7 @@ pub trait Interface : Sync + Send {
     fn handle_put_response(&mut self,
                            from_authority: Authority,
                            from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>);
+                           response: Result<Vec<u8>, ResponseError>) -> MethodCall;
 
     fn handle_post_response(&mut self,
                             from_authority: Authority,

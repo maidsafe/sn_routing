@@ -254,9 +254,9 @@ impl<F> RoutingNode<F> where F: Interface {
                 // ChallengeResponse.
                 return true;
             }
-            self.all_connections.0.insert(peer_endpoint.clone(), peer_public_id.name.clone());
+            self.all_connections.0.insert(peer_endpoint.clone(), peer_public_id.name());
             let found = if let Some(peer_endpoints) =
-                    self.all_connections.1.get_mut(&peer_public_id.name) {
+                    self.all_connections.1.get_mut(&peer_public_id.name()) {
                 assert!(!peer_endpoints.is_empty());
                 peer_endpoints.push(peer_endpoint.clone());
                 true
@@ -264,7 +264,7 @@ impl<F> RoutingNode<F> where F: Interface {
                 false
             };
             if !found {
-                self.all_connections.1.insert(peer_public_id.name, vec![peer_endpoint.clone()]);
+                self.all_connections.1.insert(peer_public_id.name(), vec![peer_endpoint.clone()]);
             }
             true
         } else {
@@ -336,7 +336,7 @@ impl<F> RoutingNode<F> where F: Interface {
     fn put_own_public_id(&mut self) {
         let our_public_id: types::PublicId = types::PublicId::new(&self.id);
         let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: our_public_id.name.clone(), reply_to: None };
+        let destination = types::DestinationAddress{ dest: our_public_id.name(), reply_to: None };
         let source = types::SourceAddress{ from_node: self.id(), from_group: None,
                                             reply_to: self.bootstrap_node_id.clone() };
         let authority = Authority::ManagedNode;
@@ -412,6 +412,8 @@ impl<F> RoutingNode<F> where F: Interface {
                 node_interface::MethodCall::Refresh { content: x, } => self.refresh(x),
                 node_interface::MethodCall::Post => unimplemented!(),
                 node_interface::MethodCall::None => (),
+                // TODO
+                node_interface::MethodCall::SendOn { destination: _ } => unimplemented!(),
             }
         }
     }
@@ -578,9 +580,9 @@ impl<F> RoutingNode<F> where F: Interface {
 
         let group_keys = self.routing_table.our_close_group()
                          .into_iter()
-                         .map(|node| (node.fob.name, node.fob.public_sign_key))
+                         .map(|node| (node.fob.name(), node.fob.public_sign_key))
                          // add our own signature key
-                         .chain(Some((self.id.get_name(),self.id.get_public_sign_key())).into_iter())
+                         .chain(Some((self.id.get_name(), self.id.get_public_sign_key())).into_iter())
                          .collect::<Vec<_>>();
 
         let routing_msg = self.construct_get_group_key_response_msg(&original_header,
@@ -606,7 +608,7 @@ impl<F> RoutingNode<F> where F: Interface {
         if !added {
             return Err(RoutingError::AlreadyConnected);  // FIXME can also be not added to rt
         }
-        println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name);
+        println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name());
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_request.local_endpoints.clone());
@@ -647,7 +649,7 @@ impl<F> RoutingNode<F> where F: Interface {
         if !added {
            return Ok(());
         }
-        println!("RT (size : {:?}) added {:?}", self.routing_table.size(), peer_node_info.fob.name);
+        println!("RT (size : {:?}) added {:?}", self.routing_table.size(), peer_node_info.fob.name());
 
         // Try to connect to the peer.
         self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
@@ -681,8 +683,8 @@ impl<F> RoutingNode<F> where F: Interface {
         let find_group_response = try!(decode::<FindGroupResponse>(&body));
 
         for peer in find_group_response.group {
-            if self.routing_table.check_node(&peer.name) {
-                ignore(self.send_connect_request_msg(&peer.name));
+            if self.routing_table.check_node(&peer.name()) {
+                ignore(self.send_connect_request_msg(&peer.name()));
             }
         }
 
@@ -813,12 +815,12 @@ impl<F> RoutingNode<F> where F: Interface {
         // if data type is public id and our authority is nae then add to public_id_cache
         // don't call upper layer if public id type
         let put_public_id = try!(decode::<PutPublicId>(&body));
-        match our_authority(&put_public_id.public_id.name, &header, &self.routing_table) {
+        match our_authority(&put_public_id.public_id.name(), &header, &self.routing_table) {
             Authority::NaeManager => {
                 // FIXME (prakash) signature check ?
                 // TODO (Ben): check whether to accept id into group;
                 //             restrict on minimal similar number of leading bits.
-                self.public_id_cache.add(put_public_id.public_id.name.clone(),
+                self.public_id_cache.add(put_public_id.public_id.name(),
                                            put_public_id.public_id);
                 Ok(())
             },
@@ -877,6 +879,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let put_data_response = try!(decode::<PutDataResponse>(&body));
         let from_authority = header.from_authority();
         let from = header.from();
+        // TODO: result verification
         self.mut_interface().handle_put_response(from_authority, from, put_data_response.data);
         Ok(())
     }
@@ -1219,7 +1222,7 @@ mod test {
             MethodCall::None
         }
         fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
-                               response: Result<Vec<u8>, ResponseError>) {
+                               response: Result<Vec<u8>, ResponseError>) -> MethodCall {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1227,6 +1230,7 @@ mod test {
                Ok(data) => data,
                 Err(_) => vec![]
             };
+            MethodCall::None
         }
         fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
                                 response: Result<Vec<u8>, ResponseError>) {
@@ -1429,7 +1433,7 @@ mod test {
             let put_public_id_header : MessageHeader = MessageHeader {
                 message_id : a_message_id.clone(),
                 destination : types::DestinationAddress {
-                    dest : put_public_id.public_id.name.clone(),
+                    dest : put_public_id.public_id.name(),
                     reply_to : None },
                 source : types::SourceAddress {
                     from_node : Random::generate_random(),  // Bootstrap node or ourself
@@ -1440,7 +1444,7 @@ mod test {
             let serialised_msg = encode(&put_public_id).unwrap();
             let result = routing_node.handle_put_public_id(put_public_id_header,
                 serialised_msg);
-            if closer_to_target(&put_public_id.public_id.name.clone(),
+            if closer_to_target(&put_public_id.public_id.name(),
                                 &furthest_node_close_group.id,
                                 &our_name) {
                 assert!(result.is_ok());
@@ -1462,7 +1466,7 @@ mod test {
             }
         }
         for public_id in stored_public_ids {
-            assert!(routing_node.public_id_cache.check(&public_id.name));
+            assert!(routing_node.public_id_cache.check(&public_id.name()));
         }
         // assert no outside keys were cached
         assert_eq!(routing_node.public_id_cache.len(), total_inside as usize);
