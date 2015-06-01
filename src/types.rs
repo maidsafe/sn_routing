@@ -27,7 +27,6 @@ use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto::asymmetricbox;
 use NameType;
 use std::fmt;
-use error::ResponseError;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -443,30 +442,6 @@ impl Decodable for DestinationAddress {
     let (dest, reply_to) = try!(Decodable::decode(d));
     Ok(DestinationAddress { dest: dest, reply_to: reply_to })
   }
-}
-
-impl Encodable for ResponseError {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let mut type_tag;
-        match *self {
-            ResponseError::NoData => type_tag = "NoData",
-            ResponseError::InvalidRequest => type_tag = "InvalidRequest",
-        };
-        CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
-    }
-}
-
-impl Decodable for ResponseError {
-    fn decode<D: Decoder>(d: &mut D)->Result<ResponseError, D::Error> {
-        try!(d.read_u64());
-        let mut type_tag : String;
-        type_tag = try!(Decodable::decode(d));
-        match &type_tag[..] {
-            "NoData" => Ok(ResponseError::NoData),
-            "InvalidRequest" => Ok(ResponseError::InvalidRequest),
-            _ => Err(d.error("Unrecognised ResponseError"))
-        }
-    }
 }
 
 #[cfg(test)]

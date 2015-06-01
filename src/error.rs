@@ -18,6 +18,8 @@
 use std::io;
 use std::convert::From;
 use cbor::CborError;
+use cbor::CborTagEncode;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::error;
 use std::fmt;
 
@@ -26,6 +28,7 @@ use std::fmt;
 pub enum ResponseError {
     NoData,
     InvalidRequest,
+    FailedToStoreData(Vec<u8>)
 }
 
 impl error::Error for ResponseError {
@@ -33,9 +36,10 @@ impl error::Error for ResponseError {
         match *self {
             ResponseError::NoData => "No Data",
             ResponseError::InvalidRequest => "Invalid request",
+            ResponseError::FailedToStoreData(_) => "Failed to store data",
         }
     }
-    
+
     fn cause(&self) -> Option<&error::Error> {
         None
     }
@@ -46,10 +50,48 @@ impl fmt::Display for ResponseError {
         match *self {
             ResponseError::NoData => fmt::Display::fmt("ResponsError::NoData", f),
             ResponseError::InvalidRequest => fmt::Display::fmt("ResponsError::InvalidRequest", f),
+            ResponseError::FailedToStoreData(_) =>
+                fmt::Display::fmt("ResponseError::FailedToStoreData", f),
         }
     }
 }
 
+impl Encodable for ResponseError {
+    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        let mut type_tag;
+        let mut data : Option<Vec<u8>> = None;
+        match *self {
+            ResponseError::NoData => type_tag = "NoData",
+            ResponseError::InvalidRequest => type_tag = "InvalidRequest",
+            ResponseError::FailedToStoreData(ref err_data) => {
+                type_tag = "FailedToStoreData";
+                data = Some(err_data.clone());
+            }
+        };
+        CborTagEncode::new(5483_100, &(&type_tag, &data)).encode(e)
+    }
+}
+
+impl Decodable for ResponseError {
+    fn decode<D: Decoder>(d: &mut D)->Result<ResponseError, D::Error> {
+        try!(d.read_u64());
+        // let mut type_tag : String;
+        // // let mut data : Option<Vec<u8>>;
+        let (type_tag, data) : (String, Option<Vec<u8>>)
+            = try!(Decodable::decode(d));
+        match &type_tag[..] {
+            "NoData" => Ok(ResponseError::NoData),
+            "InvalidRequest" => Ok(ResponseError::InvalidRequest),
+            "FailedToStoreData" => {
+                match data {
+                    Some(err_data) => Ok(ResponseError::FailedToStoreData(err_data)),
+                    None => Err(d.error("No data in FailedToStoreData"))
+                }
+            },
+            _ => Err(d.error("Unrecognised ResponseError"))
+        }
+    }
+}
 
 //------------------------------------------------------------------------------
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -71,7 +113,7 @@ impl error::Error for InterfaceError {
             InterfaceError::Response(ref err) => "Invalid response",
         }
     }
-    
+
     fn cause(&self) -> Option<&error::Error> {
         match *self {
             InterfaceError::Response(ref err) => Some(err as &error::Error),
@@ -135,7 +177,7 @@ impl error::Error for RoutingError {
             RoutingError::Response(ref err) => "Response error",
         }
     }
-    
+
     fn cause(&self) -> Option<&error::Error> {
         match *self {
             RoutingError::Interface(ref err) => Some(err as &error::Error),
@@ -162,4 +204,3 @@ impl fmt::Display for RoutingError {
         }
     }
 }
-
