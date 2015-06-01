@@ -28,7 +28,7 @@ pub enum MethodCall {
     Get { type_id: u64, name: NameType, },
     Post,
     Refresh { content: Box<Sendable>, },
-    PutResponse { destination: NameType, payload: Vec<u8> },
+    SendOn { destination: NameType },
 }
 
 pub trait Interface : Sync + Send {
