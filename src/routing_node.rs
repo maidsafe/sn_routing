@@ -1220,7 +1220,7 @@ mod test {
             MethodCall::None
         }
         fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
-                               response: Result<Vec<u8>, ResponseError>) {
+                               response: Result<Vec<u8>, ResponseError>) -> MethodCall {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1228,6 +1228,7 @@ mod test {
                Ok(data) => data,
                 Err(_) => vec![]
             };
+            MethodCall::None
         }
         fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
                                 response: Result<Vec<u8>, ResponseError>) {
