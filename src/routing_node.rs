@@ -409,6 +409,9 @@ impl<F> RoutingNode<F> where F: Interface {
                 node_interface::MethodCall::Refresh { content: x, } => self.refresh(x),
                 node_interface::MethodCall::Post => unimplemented!(),
                 node_interface::MethodCall::None => (),
+                // TODO
+                node_interface::MethodCall::PutResponse { destination: _, payload: _ } => unimplemented!(),
+                node_interface::MethodCall::Error => unimplemented!(),
             }
         }
     }
@@ -874,6 +877,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let put_data_response = try!(decode::<PutDataResponse>(&body));
         let from_authority = header.from_authority();
         let from = header.from();
+        // TODO: result verification
         self.mut_interface().handle_put_response(from_authority, from, put_data_response.data);
         Ok(())
     }
