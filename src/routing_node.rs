@@ -411,7 +411,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 node_interface::MethodCall::None => (),
                 // TODO
                 node_interface::MethodCall::PutResponse { destination: _, payload: _ } => unimplemented!(),
-                node_interface::MethodCall::Error => unimplemented!(),
             }
         }
     }

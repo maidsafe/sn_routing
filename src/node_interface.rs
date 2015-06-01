@@ -29,7 +29,6 @@ pub enum MethodCall {
     Post,
     Refresh { content: Box<Sendable>, },
     PutResponse { destination: NameType, payload: Vec<u8> },
-    Error
 }
 
 pub trait Interface : Sync + Send {
