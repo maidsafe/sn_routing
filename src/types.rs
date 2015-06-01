@@ -239,7 +239,7 @@ impl PublicId {
         public_key : id.get_public_key(),
         public_sign_key : id.get_public_sign_key(),
         validation_token : id.get_validation_token(),
-        name : id.get_name().clone(),
+        name : id.get_name(),
       }
     }
 
@@ -342,8 +342,8 @@ impl Id {
     }
   }
 
-  pub fn get_name<'a>(&'a self) -> &'a NameType {
-      &self.name
+  pub fn get_name(&self) -> NameType {
+      self.name.clone()
   }
 
   pub fn get_public_key(&self) -> PublicKey {
@@ -572,7 +572,7 @@ mod test {
 
 
         assert!(relocated.is_relocated());
-        assert_eq!(relocated.get_name().clone(), relocated_name);
+        assert_eq!(relocated.get_name(), relocated_name);
         assert!(before.get_name()!= relocated.get_name());
         assert_eq!(before.get_public_key(), relocated.get_public_key());
         assert_eq!(before.get_public_sign_key(), relocated.get_public_sign_key());
