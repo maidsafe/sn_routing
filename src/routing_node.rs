@@ -59,6 +59,7 @@ use messages::post::Post;
 use messages::get_client_key::GetKey;
 use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_id::PutPublicId;
+use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, InterfaceError, ResponseError};
@@ -804,19 +805,41 @@ impl<F> RoutingNode<F> where F: Interface {
         Ok(())
     }
 
+
     /// On bootstrapping a node can temporarily publish its PublicId in the group.
-    /// Sentinel will query this pool.  No handle_get_public_id is needed.
+    /// Sentinel will query this pool. No handle_get_public_id is needed.
+    // TODO (Ben): check whether to accept id into group;
+    // restrict on minimal similar number of leading bits.
     fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
-        // if data type is public id and our authority is nae then add to public_id_cache
-        // don't call upper layer if public id type
         let put_public_id = try!(decode::<PutPublicId>(&body));
-        match our_authority(&put_public_id.public_id.name(), &header, &self.routing_table) {
-            Authority::NaeManager => {
-                // FIXME (prakash) signature check ?
-                // TODO (Ben): check whether to accept id into group;
-                //             restrict on minimal similar number of leading bits.
-                self.public_id_cache.add(put_public_id.public_id.name(),
-                                           put_public_id.public_id);
+        let our_authority = our_authority(&put_public_id.public_id.name(), &header, &self.routing_table);
+
+        match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
+            (Authority::ManagedNode, Authority::NaeManager, false) => {
+                let mut put_public_id_relocated = put_public_id.clone();
+                let relocated_name =  types::calculate_relocated_name(self.routing_table.our_close_group(),
+                                      &put_public_id.public_id.name()).unwrap();   // FIXME(prakash) use map error
+                // assign_relocated_name
+                put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
+
+                //  SendOn to relocated_name
+                let send_on_header = header.create_send_on(&self.own_name, &our_authority, &relocated_name);
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicId,
+                        send_on_header, put_public_id_relocated, &self.id.get_crypto_secret_sign_key());
+                    self.send_swarm_or_parallel(&relocated_name, &try!(encode(&routing_msg)));
+                Ok(())
+            },
+            (Authority::NaeManager, Authority::NaeManager, true) => {
+                // workaround for sentinel FIXME (prakash)
+                self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
+
+                // Reply with PutPublicIdResponse to the reply_to address
+                let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
+                                     header.create_reply(&self.own_name, &our_authority),
+                                     PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
+                                     &self.id.get_crypto_secret_sign_key());
+                let encoded_msg = try!(encode(&routing_msg));
+                self.send_swarm_or_parallel(&put_public_id.public_id.name(), &encoded_msg);
                 Ok(())
             },
             _ => {
@@ -826,6 +849,8 @@ impl<F> RoutingNode<F> where F: Interface {
     }
 
     fn handle_put_public_id_reponse(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        let put_public_id_response = try!(decode::<PutPublicIdResponse>(&body));
+        // TODO (Ben) connect this to refactored code (as discussed)
         Ok(())
     }
 

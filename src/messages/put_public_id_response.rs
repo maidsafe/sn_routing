@@ -33,10 +33,10 @@ impl Encodable for PutPublicIdResponse {
 }
 
 impl Decodable for PutPublicIdResponse {
-    fn decode<D: Decoder>(d: &mut D)->Result<PutPublicId, D::Error> {
+    fn decode<D: Decoder>(d: &mut D)->Result<PutPublicIdResponse, D::Error> {
         try!(d.read_u64());
         let public_id = try!(Decodable::decode(d));
-        Ok(PutPublicId { public_id: public_id })
+        Ok(PutPublicIdResponse { public_id: public_id })
     }
 }
 

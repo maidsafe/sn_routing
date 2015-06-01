@@ -25,9 +25,12 @@ use rand::random;
 use sodiumoxide;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto::asymmetricbox;
+use std::cmp;
 use NameType;
+use name_type::closer_to_target;
 use std::fmt;
-use error::ResponseError;
+use error::{RoutingError, ResponseError};
+use routing_table::{NodeInfo};  // FIXME(prakash) consider not using it
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -210,6 +213,34 @@ impl Decodable for PublicKey {
     let public_key = try!(Decodable::decode(d));
     Ok(PublicKey { public_key: public_key })
   }
+}
+
+// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
+pub fn calculate_relocated_name(mut close_nodes: Vec<NodeInfo>,
+                                original_name: &NameType) -> Result<NameType, RoutingError> {
+    close_nodes.sort_by(|a, b| if closer_to_target(&a.id(), &b.id(), original_name) {
+                                  cmp::Ordering::Less
+                                } else {
+                                    cmp::Ordering::Greater
+                                });
+    close_nodes.truncate(2usize);
+    if close_nodes.len() != 2usize {
+        return Err(RoutingError::BadAuthority); // FIXME(prakash) new error NotEnoughNodes
+    }
+
+    let original_name_id = original_name.get_id();
+    let close_node_0_id = close_nodes[0].id().get_id();
+    let close_node_1_id = close_nodes[1].id().get_id();
+
+    let combined_iter = original_name_id.iter()
+        .chain(close_node_0_id.iter())
+            .chain(close_node_1_id.iter());
+
+    let mut combined: Vec<u8> = Vec::new();
+    for i in combined_iter {
+      combined.push(*i);
+    }
+    Ok(NameType(crypto::hash::sha512::hash(&combined).0))
 }
 
 // TODO(Team): Below method should be modified and reused in constructor of Id.
