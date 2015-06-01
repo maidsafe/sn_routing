@@ -44,7 +44,7 @@ correct name calculation of pure Id
 ## [0.1.61] - Relay module, relocatable Id, update NodeInterface
 
 - [x] [MAID-1114](https://maidsafe.atlassian.net/browse/MAID-1114) Relay module
-- [ ] [MAID-1060](https://maidsafe.atlassian.net/browse/MAID-1060) update Interface for Vaults
+- [x] [MAID-1060](https://maidsafe.atlassian.net/browse/MAID-1060) update Interface for Vaults
 - [x] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
 
 ## [0.1.62] - restructure core of routing
