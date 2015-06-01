@@ -55,6 +55,9 @@ impl PmidManager {
     // TODO: here the assumption is pmid_node's routing will send back the whole original payload data,
     //       when the return from pmid_node->handle_put() is Err(InvalidRequest)
     // The content in response is payload for the failing to store data or the removed Sacrificial copy
+    if response.is_err() {
+      return MethodCall::None;
+    }
     let data = response.clone().unwrap();
     self.db_.delete_data(from_address, data.len() as u64);
     let mut decoder = Decoder::from_bytes(&data[..]);

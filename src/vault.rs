@@ -132,7 +132,11 @@ impl Interface for VaultFacade {
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
         match from_authority {
             Authority::ManagedNode => { return self.pmid_manager.handle_put_response(&from_address, &response); }
-            Authority::NodeManager => { return self.data_manager.handle_put_response(&response); }
+            Authority::NodeManager => {
+                // TODO: this from_address shall be the original pmid_node that failing or removing the copy
+                //       which requires work in routing to replace the address properly
+                return self.data_manager.handle_put_response(&response, &from_address);
+            }
             _ => { return MethodCall::None; }
         }
     }
