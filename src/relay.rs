@@ -53,20 +53,20 @@ impl RelayMap {
     /// Returns false if the endpoint is already assigned to a different name.
     pub fn add_ip_node(&mut self, relay_info: PublicId, relay_endpoint: Endpoint) -> bool {
         // always reject our own id
-        if self.our_name == relay_info.name {
+        if self.our_name == relay_info.name() {
             return false;
         }
         // impose limit on number of relay nodes active
-        if !self.relay_map.contains_key(&relay_info.name)
+        if !self.relay_map.contains_key(&relay_info.name())
             && self.relay_map.len() >= MAX_RELAY {
             return false;
         }
         if self.lookup_map.contains_key(&relay_endpoint) {
           return false; }
         self.lookup_map.entry(relay_endpoint.clone())
-                       .or_insert(relay_info.name.clone());
+                       .or_insert(relay_info.name());
         let new_set = || { (relay_info.clone(), BTreeSet::<Endpoint>::new()) };
-        self.relay_map.entry(relay_info.name.clone()).or_insert_with(new_set).1
+        self.relay_map.entry(relay_info.name()).or_insert_with(new_set).1
                       .insert(relay_endpoint);
         true
     }
@@ -147,12 +147,12 @@ mod test {
         let test_endpoint = generate_random_endpoint();
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name));
+        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint));
-        relay_map.drop_ip_node(&test_public_id.name);
-        assert_eq!(false, relay_map.contains_relay_for(&test_public_id.name));
+        relay_map.drop_ip_node(&test_public_id.name());
+        assert_eq!(false, relay_map.contains_relay_for(&test_public_id.name()));
         assert_eq!(false, relay_map.contains_endpoint(&test_endpoint));
-        assert_eq!(None, relay_map.get_endpoints(&test_public_id.name));
+        assert_eq!(None, relay_map.get_endpoints(&test_public_id.name()));
     }
 
     #[test]
@@ -164,11 +164,11 @@ mod test {
         let test_conflicting_public_id = PublicId::new(&Id::new());
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name));
+        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint));
         assert_eq!(false, relay_map.add_ip_node(test_conflicting_public_id.clone(),
                                                 test_endpoint.clone()));
-        assert_eq!(false, relay_map.contains_relay_for(&test_conflicting_public_id.name))
+        assert_eq!(false, relay_map.contains_relay_for(&test_conflicting_public_id.name()))
     }
 
     #[test]
@@ -187,15 +187,15 @@ mod test {
         let test_endpoint_2 = generate_random_endpoint();
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint_1.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name));
+        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint_1));
         assert_eq!(false, relay_map.add_ip_node(test_public_id.clone(),
                                                 test_endpoint_1.clone()));
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint_2.clone()));
-        assert!(relay_map.get_endpoints(&test_public_id.name).unwrap().1
+        assert!(relay_map.get_endpoints(&test_public_id.name()).unwrap().1
                          .contains(&test_endpoint_1));
-        assert!(relay_map.get_endpoints(&test_public_id.name).unwrap().1
+        assert!(relay_map.get_endpoints(&test_public_id.name()).unwrap().1
                          .contains(&test_endpoint_2));
     }
 }
