@@ -43,9 +43,9 @@ correct name calculation of pure Id
 
 ## [0.1.61] - activate security features
 
-- [ ] [MAID-1114](https://maidsafe.atlassian.net/browse/MAID-1114) Relay module
+- [x] [MAID-1114](https://maidsafe.atlassian.net/browse/MAID-1114) Relay module
 - [ ] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
-  - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) add optional 'relocated' name field to put_public_id message
+  - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) Integrate handlers with RelayMap 
   - [ ] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
   - [ ] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
 - [ ] [MAID-1042](https://maidsafe.atlassian.net/browse/MAID-1042) Sentinel
