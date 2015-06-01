@@ -451,7 +451,6 @@ impl Encodable for ResponseError {
         match *self {
             ResponseError::NoData => type_tag = "NoData",
             ResponseError::InvalidRequest => type_tag = "InvalidRequest",
-            ResponseError::FailedToStoreData(_) => type_tag = "FailedToStoreData",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
     }

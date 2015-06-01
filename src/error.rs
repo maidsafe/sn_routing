@@ -26,7 +26,6 @@ use std::fmt;
 pub enum ResponseError {
     NoData,
     InvalidRequest,
-    FailedToStoreData(Vec<u8>),
 }
 
 impl error::Error for ResponseError {
@@ -34,7 +33,6 @@ impl error::Error for ResponseError {
         match *self {
             ResponseError::NoData => "No Data",
             ResponseError::InvalidRequest => "Invalid request",
-            ResponseError::FailedToStoreData(_) => "Failed to store data",
         }
     }
     
@@ -48,7 +46,6 @@ impl fmt::Display for ResponseError {
         match *self {
             ResponseError::NoData => fmt::Display::fmt("ResponsError::NoData", f),
             ResponseError::InvalidRequest => fmt::Display::fmt("ResponsError::InvalidRequest", f),
-            ResponseError::FailedToStoreData(_) => fmt::Display::fmt("ResponsError::FailedToStoreData", f),
         }
     }
 }

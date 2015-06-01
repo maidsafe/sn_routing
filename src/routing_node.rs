@@ -409,8 +409,6 @@ impl<F> RoutingNode<F> where F: Interface {
                 node_interface::MethodCall::Refresh { content: x, } => self.refresh(x),
                 node_interface::MethodCall::Post => unimplemented!(),
                 node_interface::MethodCall::None => (),
-                // TODO
-                node_interface::MethodCall::SendOn { destination: _ } => unimplemented!(),
             }
         }
     }
@@ -876,7 +874,6 @@ impl<F> RoutingNode<F> where F: Interface {
         let put_data_response = try!(decode::<PutDataResponse>(&body));
         let from_authority = header.from_authority();
         let from = header.from();
-        // TODO: result verification
         self.mut_interface().handle_put_response(from_authority, from, put_data_response.data);
         Ok(())
     }
@@ -1219,7 +1216,7 @@ mod test {
             MethodCall::None
         }
         fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
-                               response: Result<Vec<u8>, ResponseError>) -> MethodCall {
+                               response: Result<Vec<u8>, ResponseError>) {
             let stats = self.stats.clone();
             let mut stats_value = stats.lock().unwrap();
             stats_value.call_count += 1;
@@ -1227,7 +1224,6 @@ mod test {
                Ok(data) => data,
                 Err(_) => vec![]
             };
-            MethodCall::None
         }
         fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
                                 response: Result<Vec<u8>, ResponseError>) {
