@@ -193,6 +193,11 @@ impl PmidManagerDatabase {
         entry.put_data(size)
     }
 
+    pub fn delete_data(&mut self, name : &Identity, size: u64) {
+        let entry = self.storage.entry(name.clone()).or_insert(PmidManagerAccount::new());
+        entry.delete_data(size)
+    }
+
     pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::MethodCall> {
         let data: Vec<_> = self.storage.drain().collect();
         let mut actions = Vec::with_capacity(data.len());

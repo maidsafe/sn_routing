@@ -128,11 +128,13 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_put_response(&mut self,
-                           _: Authority, // from_authority
-                           _: NameType, // from_address
-                           _: Result<Vec<u8>, ResponseError>) { // response
-        ;
+    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
+                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
+        match from_authority {
+            Authority::ManagedNode => { return self.pmid_manager.handle_put_response(&from_address, &response); }
+            Authority::NodeManager => { return self.data_manager.handle_put_response(&response); }
+            _ => { return MethodCall::None; }
+        }
     }
 
     fn handle_post_response(&mut self, 

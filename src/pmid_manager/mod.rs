@@ -18,12 +18,18 @@
 #![allow(dead_code)]
 
 mod database;
+
+use maidsafe_types;
 use routing;
 use routing::NameType;
+use routing::node_interface::{MethodCall};
 use routing::types::{MessageAction};
 use routing::error::{ResponseError, InterfaceError};
 use routing::types::DestinationAddress;
+use routing::sendable::Sendable;
 pub use self::database::PmidManagerAccountWrapper;
+
+use cbor::Decoder;
 
 pub struct PmidManager {
   db_ : database::PmidManagerDatabase
@@ -42,6 +48,31 @@ impl PmidManager {
     } else {
       Err(From::from(ResponseError::InvalidRequest))
     }
+  }
+
+  pub fn handle_put_response(&mut self, from_address: &NameType,
+                             response: &Result<Vec<u8>, ResponseError>) -> MethodCall {
+    // TODO: here the assumption is pmid_node's routing will send back the whole original payload data,
+    //       when the return from pmid_node->handle_put() is Err(InvalidRequest)
+    // The content in response is payload for the failing to store data or the removed Sacrificial copy
+    let data = response.clone().unwrap();
+    self.db_.delete_data(from_address, data.len() as u64);
+    let mut decoder = Decoder::from_bytes(&data[..]);
+    let removed_copy: maidsafe_types::Payload = decoder.decode().next().unwrap().unwrap();
+    let mut name : NameType;
+    match removed_copy.get_type_tag() {
+      maidsafe_types::PayloadTypeTag::ImmutableData => {
+        name = removed_copy.get_data::<maidsafe_types::ImmutableData>().name();
+      }
+      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
+        name = removed_copy.get_data::<maidsafe_types::ImmutableDataBackup>().name();
+      }
+      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
+        name = removed_copy.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
+      }
+      _ => { return MethodCall::None; }
+    }
+    MethodCall::PutResponse { destination: name, payload: data }
   }
 
   pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::MethodCall> {
