@@ -141,6 +141,7 @@ impl RoutingTable {
                 return (true, None);
             } else {
                 let removal_node = self.routing_table[removal_node_index].clone();
+                self.remove_dangling_endpoints(&removal_node.id());
                 self.routing_table.remove(removal_node_index);
                 return (true, Some(removal_node));
             }
@@ -150,6 +151,7 @@ impl RoutingTable {
         if removal_node_index != usize::MAX &&
                 self.new_node_is_better_than_existing(&their_info.id(), removal_node_index) {
             let removal_node = self.routing_table[removal_node_index].clone();
+            self.remove_dangling_endpoints(&removal_node.id());
             self.routing_table.remove(removal_node_index);
             self.push_back_then_sort(their_info);
             return (true, Some(removal_node));
@@ -173,6 +175,10 @@ impl RoutingTable {
             None => None,
             Some(index) => {
                 self.routing_table[index].connected_endpoint = Some(endpoint.clone());
+                // always force update lookup_map
+                self.lookup_map.remove(&endpoint);
+                self.lookup_map.entry(endpoint.clone())
+                               .or_insert(self.routing_table[index].id());
                 Some(self.routing_table[index].id())
             },
         }
@@ -212,6 +218,8 @@ impl RoutingTable {
         }
 
         if index_of_removal < self.routing_table.len() {
+            let removal_name : NameType = self.routing_table[index_of_removal].id();
+            self.remove_dangling_endpoints(&removal_name);
             self.routing_table.remove(index_of_removal);
         }
     }
@@ -286,15 +294,11 @@ impl RoutingTable {
     }
 
     pub fn lookup_endpoint(&self, their_endpoint: &Endpoint) -> Option<NameType> {
-        // debug_assert!(self.is_nodes_sorted(), "RT::Lookup: Nodes are not sorted");
-        // //FIXME: we should not rebuild this map on every lookup, instead keep it.
-        // match self.routing_table.iter()
-        //         .filter(|&node_info| node_info.connected_endpoint.is_some())
-        //         .find(|&connected_node| & == their_endpoint) {
-        //     Some((name, endpoint)) => Some(name),
-        //     None => None,
-        // }
-        None
+        debug_assert!(self.is_nodes_sorted(), "RT::Lookup: Nodes are not sorted");
+        match self.lookup_map.get(their_endpoint) {
+            Some(name) => Some(name.clone()),
+            None => None
+        }
     }
 
     /// This returns the length of the routing table.
@@ -387,6 +391,14 @@ impl RoutingTable {
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
+        match node_info.connected_endpoint.clone() {
+            Some(endpoint) => {
+                self.lookup_map.remove(&endpoint);
+                self.lookup_map.entry(endpoint.clone())
+                               .or_insert(node_info.id());
+            },
+            None => ()
+        };
         self.routing_table.push(node_info);
         let our_id = &self.our_id;
         self.routing_table.sort_by(
@@ -422,6 +434,17 @@ impl RoutingTable {
             }
         }
         false
+    }
+
+    fn remove_dangling_endpoints(&mut self, name_removed: &NameType) {
+        let dangling_endpoints = self.lookup_map.iter()
+            .filter_map(|(endpoint, name)| if name == name_removed {
+                    Some(endpoint.clone())
+                } else { None })
+            .collect::<Vec<_>>();
+        for endpoint in dangling_endpoints {
+            self.lookup_map.remove(&endpoint);
+        }
     }
 }
 
