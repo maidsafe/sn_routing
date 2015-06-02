@@ -94,6 +94,14 @@ impl RelayMap {
         self.lookup_map.contains_key(relay_endpoint)
     }
 
+    /// Returns Option<NameType> if an endpoint is found
+    pub fn lookup_endpoint(&self, relay_endpoint: &Endpoint) -> Option<NameType> {
+        match self.lookup_map.get(relay_endpoint) {
+            Some(name) => Some(name.clone()),
+            None => None
+        }
+    }
+
     /// This returns a pair of the stored PublicId and a BTreeSet of the stored Endpoints.
     pub fn get_endpoints(&self, relay_name: &NameType) -> Option<&(PublicId, BTreeSet<Endpoint>)> {
         self.relay_map.get(relay_name)

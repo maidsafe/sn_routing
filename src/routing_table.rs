@@ -18,6 +18,7 @@
 use std::cmp;
 use std::usize;
 use sodiumoxide::crypto;
+use std::collections::{HashMap};
 
 use crust::Endpoint;
 
@@ -31,12 +32,12 @@ static BUCKET_SIZE: usize = 1;
 pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
-#[derive(Clone)]
-pub struct KeyFob {
-    pub id: NameType,
-    keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-    signature: crypto::sign::Signature,
-}
+// #[derive(Clone)]
+// pub struct KeyFob {
+//     pub id: NameType,
+//     keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
+//     signature: crypto::sign::Signature,
+// }
 
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
@@ -82,12 +83,17 @@ impl NodeInfo {
 /// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
+    lookup_map: HashMap<Endpoint, NameType>,
     our_id: NameType,
 }
 
 impl RoutingTable {
     pub fn new(our_id: &NameType) -> RoutingTable {
-        RoutingTable { routing_table: Vec::<NodeInfo>::new(), our_id: our_id.clone() }
+        RoutingTable {
+            routing_table: Vec::<NodeInfo>::new(),
+            lookup_map: HashMap::new(),
+            our_id: our_id.clone()
+        }
     }
 
     pub fn get_bucket_size() -> usize { BUCKET_SIZE }
@@ -272,13 +278,23 @@ impl RoutingTable {
 
     /// This returns the public key for the given node if the node is in our table.
     pub fn public_id(&self, their_id: &NameType)->Option<PublicId> {
-        if !self.is_nodes_sorted() {
-            panic!("Nodes are not sorted");
-        }
+        debug_assert!(self.is_nodes_sorted(), "RT::public_id: Nodes are not sorted");
         match self.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
             Some(node) => Some(node.fob.clone()),
             None => None,
         }
+    }
+
+    pub fn lookup_endpoint(&self, their_endpoint: &Endpoint) -> Option<NameType> {
+        // debug_assert!(self.is_nodes_sorted(), "RT::Lookup: Nodes are not sorted");
+        // //FIXME: we should not rebuild this map on every lookup, instead keep it.
+        // match self.routing_table.iter()
+        //         .filter(|&node_info| node_info.connected_endpoint.is_some())
+        //         .find(|&connected_node| & == their_endpoint) {
+        //     Some((name, endpoint)) => Some(name),
+        //     None => None,
+        // }
+        None
     }
 
     /// This returns the length of the routing table.
@@ -416,6 +432,7 @@ mod test {
     use super::*;
     use std::cmp;
     use std::collections::BitVec;
+    use std::collections::{HashMap};
     use types::PublicId;
     use name_type::closer_to_target;
     use types;
@@ -489,7 +506,9 @@ mod test {
             let table = RoutingTableUnitTest {
                 our_id: node_info.id().clone(),
                 table: RoutingTable {
-                    our_id: node_info.id().clone(), routing_table: Vec::new(),
+                    routing_table: Vec::new(),
+                    lookup_map: HashMap::new(),
+                    our_id: node_info.id().clone(),
                 },
                 buckets: initialise_buckets(&node_info.id()),
                 node_info: node_info,
@@ -586,7 +605,11 @@ mod test {
 
         let mut vector: Vec<RoutingTable> = Vec::with_capacity(num_of_tables);
         for i in 0..num_of_tables {
-            vector.push(RoutingTable { routing_table: Vec::new(), our_id: Random::generate_random() });
+            vector.push(RoutingTable {
+                routing_table: Vec::new(),
+                lookup_map: HashMap::new(),
+                our_id: Random::generate_random()
+            });
         }
         vector
     }
@@ -614,6 +637,7 @@ mod test {
 
         let mut table = RoutingTable {
             routing_table: Vec::new(),
+            lookup_map: HashMap::new(),
             our_id: Random::generate_random()
         };
 

@@ -95,7 +95,7 @@ pub struct RoutingMembrane<F: Interface> {
     // for Routing
     id: types::Id,
     own_name: NameType,
-    routing_table: Option<RoutingTable>,
+    routing_table: RoutingTable,
     relay_map: RelayMap,
     next_message_id: MessageId,
     filter: MessageFilter<types::FilterType>,
@@ -129,7 +129,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                       own_name : own_name.clone(),
                       event_input: event_input,
                       connection_manager: cm,
-                      routing_table : None,
+                      routing_table : RoutingTable::new(&own_name),
                       relay_map: RelayMap::new(&own_name),
                       accepting_on: listeners.0,
                       next_message_id: rand::random::<MessageId>(),
@@ -185,15 +185,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     ///
     pub fn run(&self) {
-        // TODO: wrap this into internal loop, such that ::run can be spawned off into thread
+        // TODO: v0.1.70 wrap this into internal loop, such that ::run can be spawned off into thread
         match self.event_input.try_recv() {
-            Err(()) => (),
+            Err(_) => (),
             Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                // match self.endpoint_to_name(&endpoint).map(|n|n.clone()) {
-                //     Some(name) => {
-                //         ignore(self.message_received(&name, bytes));
-                //     },
-                //     None => {
+                match self.lookup_endpoint(&endpoint) {
+                    Some(name) => {
+                        // ignore(self.message_received(&name, bytes));
+                    },
+                    None => {
                 //         // if self.handle_challenge_request(&endpoint, &bytes) {
                 //         //     return;
                 //         // }
@@ -201,8 +201,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 //         //     return;
                 //         // }
                 //         // ignore(self.handle_bootstrap_message(endpoint, bytes));
-                //     }
-                // }
+                    }
+                }
             },
             Ok(crust::Event::NewConnection(endpoint)) => {
                 // self.handle_new_connect_event(endpoint);
@@ -236,6 +236,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let temp = self.next_message_id;
         self.next_message_id = self.next_message_id.wrapping_add(1);
         return temp;
+    }
+
+    fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<NameType> {
+        match self.routing_table.lookup_endpoint(&endpoint) {
+            Some(name) => Some(name),
+            None => match self.relay_map.lookup_endpoint(&endpoint) {
+                Some(name) => Some(name),
+                None => None
+            }
+        }
     }
 }
 
