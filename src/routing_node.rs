@@ -819,8 +819,14 @@ impl<F> RoutingNode<F> where F: Interface {
         match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
             (Authority::ManagedNode, Authority::NaeManager, false) => {
                 let mut put_public_id_relocated = put_public_id.clone();
+
+                let mut close_group_node_ids : Vec<NameType> = Vec::new();
+                for node_info in self.routing_table.our_close_group() {
+                    close_group_node_ids.push(node_info.id());
+                }
+
                 let relocated_name =  try!(types::calculate_relocated_name(
-                                            self.routing_table.our_close_group().map_in_place(|i| i.id()),
+                                            close_group_node_ids,
                                             &put_public_id.public_id.name()));
                 // assign_relocated_name
                 put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
@@ -835,7 +841,7 @@ impl<F> RoutingNode<F> where F: Interface {
             },
             (Authority::NaeManager, Authority::NaeManager, true) => {
                 // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
-                if self.public_id_cache.check(&put_public_id.public_id.name()) {
+                if !self.public_id_cache.check(&put_public_id.public_id.name()) {
                   self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
                   // Reply with PutPublicIdResponse to the reply_to address
                   let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
@@ -1424,7 +1430,7 @@ mod test {
     }
 
     #[test]
-    fn cache_public_id() {
+    fn relocate_original_public_id() {
         // copy from our_authority_full_routing_table test
         let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
 
@@ -1469,6 +1475,91 @@ mod test {
             let serialised_msg = encode(&put_public_id).unwrap();
             let result = routing_node.handle_put_public_id(put_public_id_header,
                 serialised_msg);
+            if closer_to_target(&put_public_id.public_id.name(),
+                                &furthest_node_close_group.id,
+                                &our_name) {
+                assert!(result.is_ok());
+                stored_public_ids.push(put_public_id.public_id);
+                count_inside += 1;
+            } else {
+                assert!(result.is_err());
+            }
+            count_total += 1;
+            if count_inside >= total_inside {
+                break; // succcess
+            }
+            if count_total >= limit_attempts {
+                if count_inside > 0 {
+                    println!("Could only verify {} successful public_ids inside
+                            our group before limit reached.", count_inside);
+                    break;
+                } else { panic!("No PublicIds were found inside our close group!"); }
+            }
+        }
+        // no original public_ids should be cached
+        for public_id in stored_public_ids {
+            assert!(!routing_node.public_id_cache.check(&public_id.name()));
+        }
+        // assert no original ids were cached
+        assert_eq!(routing_node.public_id_cache.len(), 0usize);
+    }
+
+    #[test]
+    fn cache_relocated_public_id() {
+        // copy from our_authority_full_routing_table test
+        let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
+
+        let mut count : usize = 0;
+        loop {
+            routing_node.routing_table.add_node(routing_table::NodeInfo::new(
+                                       PublicId::new(&Id::new()), random_endpoints(),
+                                       Some(random_endpoint())));
+            count += 1;
+            if routing_node.routing_table.size() >=
+                routing_table::RoutingTable::get_optimal_size() { break; }
+            if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
+                panic!("Routing table does not fill up."); }
+        }
+        let a_message_id : MessageId = random::<u32>();
+        let our_name = routing_node.own_name.clone();
+        let our_close_group : Vec<routing_table::NodeInfo>
+            = routing_node.routing_table.our_close_group();
+        let furthest_node_close_group : routing_table::NodeInfo
+            = our_close_group.last().unwrap().clone();
+        // end copy from our_authority_full_routing_table
+
+        let total_inside : u32 = 50;
+        let limit_attempts : u32 = 200;
+        let mut stored_public_ids : Vec<PublicId> = Vec::with_capacity(total_inside as usize);
+
+        let mut count_inside : u32 = 0;
+        let mut count_total : u32 = 0;
+        loop {
+            let original_public_id = PublicId::generate_random();
+            let mut close_nodes_to_original_name : Vec<NameType> = Vec::new();
+            for i in 0..types::GROUP_SIZE {
+                close_nodes_to_original_name.push(Random::generate_random());
+            }
+            let relocated_name = types::calculate_relocated_name(close_nodes_to_original_name.clone(),
+                                    &original_public_id.name()).unwrap();
+            let mut relocated_public_id = original_public_id.clone();
+            assert!(relocated_public_id.assign_relocated_name(relocated_name.clone()));
+
+            let put_public_id = PutPublicId{ public_id :  relocated_public_id };
+
+            let put_public_id_header : MessageHeader = MessageHeader {
+                message_id : a_message_id.clone(),
+                destination : types::DestinationAddress {
+                    dest : put_public_id.public_id.name(),
+                    reply_to : None },
+                source : types::SourceAddress {
+                    from_node : close_nodes_to_original_name[0].clone(),  // from original name group member
+                    from_group : Some(original_public_id.name()),
+                    reply_to : None },
+                authority : Authority::NaeManager
+            };
+            let serialised_msg = encode(&put_public_id).unwrap();
+            let result = routing_node.handle_put_public_id(put_public_id_header, serialised_msg);
             if closer_to_target(&put_public_id.public_id.name(),
                                 &furthest_node_close_group.id,
                                 &our_name) {
