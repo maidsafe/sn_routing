@@ -88,13 +88,8 @@ impl PmidNode {
           if fetched_data.len() > required_space {
             self.chunk_store_.delete(name.clone());
             self.chunk_store_.put(data_name, data);
-            // TODO: ideally, the InterfaceError shall have an option like :
-            //       ResponseError(Vec<Vec<u8>>) where Vec<u8> is the sacrificial copy got removed
-            // Currently, one option is to use Reply<Vec<u8>> to indicate a removal
-            // and let routing compose proper notification. This only supports removing one sacrificial copy each time.
-            return Ok(MessageAction::Reply(fetched_data));
-            // Another option is Routing will send upon error a put_data_response message back to the previous PM
-            // and then PMs can read the error and MessageAction::SendOn(to DM). However size info has to be skipped
+            // TODO: ideally, the InterfaceError shall have an option holding a list of copies
+            return Err(From::from(ResponseError::FailedToStoreData(fetched_data)));
           }
         }
         _ => {}
