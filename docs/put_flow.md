@@ -40,9 +40,3 @@ Note: for each removed Sacrificial data, a PutFailure will be sent out
 <dd>Description: Get D from TempStore or network, then PutRequest(D).</ddt>
 #####DataManager::Replicate
 __DataManager__ ([!TempStoreHas(D) ? NetworkGet(D)])(PutRequest.So(D))
-
-
-
-
-
-
