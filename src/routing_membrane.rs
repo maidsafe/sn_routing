@@ -86,6 +86,12 @@ type PortAndProtocol = crust::Port;
 
 type RoutingResult = Result<(), RoutingError>;
 
+enum ConnectionName {
+    Unknown(NameType),
+    Relay(NameType),
+    Routing(NameType)
+}
+
 /// Routing Membrane
 pub struct RoutingMembrane<F: Interface> {
     // for CRUST
@@ -183,17 +189,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
         ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
     }
 
-    ///
-    pub fn run(&self) {
+    /// RoutingMembrane::Run starts the membrane
+    pub fn run(&mut self) {
         // TODO: v0.1.70 wrap this into internal loop, such that ::run can be spawned off into thread
         match self.event_input.try_recv() {
             Err(_) => (),
             Ok(crust::Event::NewMessage(endpoint, bytes)) => {
                 match self.lookup_endpoint(&endpoint) {
-                    Some(name) => {
-                        // ignore(self.message_received(&name, bytes));
+                    // we have an active connection to this endpoint,
+                    // mapped to a name in our routing_table
+                    Some(ConnectionName::Routing(name)) => {
+                        self.message_received(&name, bytes);
                     },
+                    Some(ConnectionName::Relay(name)) => {},
+                    Some(_) => {},
                     None => {
+                        // for now just drop the message if we don't know the sender
                 //         // if self.handle_challenge_request(&endpoint, &bytes) {
                 //         //     return;
                 //         // }
@@ -205,12 +216,24 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 }
             },
             Ok(crust::Event::NewConnection(endpoint)) => {
-                // self.handle_new_connect_event(endpoint);
+                self.handle_new_connection(endpoint);
             },
             Ok(crust::Event::LostConnection(endpoint)) => {
-                // self.handle_lost_connection_event(endpoint);
+                self.handle_lost_connection(endpoint);
             }
         };
+    }
+
+    fn handle_new_connection(&mut self, endpoint : Endpoint) {
+        // self.lookup_endpoint
+    }
+
+    fn handle_lost_connection(&mut self, endpoint : Endpoint) {
+
+    }
+
+    fn message_received(&mut self, name : &NameType, serialised_msg : Bytes) {
+
     }
 
     fn send_swarm_or_parallel(&self, target: &NameType, msg: &Bytes) {
@@ -238,11 +261,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         return temp;
     }
 
-    fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<NameType> {
+    fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<ConnectionName> {
         match self.routing_table.lookup_endpoint(&endpoint) {
-            Some(name) => Some(name),
+            Some(name) => Some(ConnectionName::Routing(name)),
             None => match self.relay_map.lookup_endpoint(&endpoint) {
-                Some(name) => Some(name),
+                Some(name) => Some(ConnectionName::Relay(name)),
                 None => None
             }
         }
