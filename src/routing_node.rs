@@ -819,29 +819,32 @@ impl<F> RoutingNode<F> where F: Interface {
         match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
             (Authority::ManagedNode, Authority::NaeManager, false) => {
                 let mut put_public_id_relocated = put_public_id.clone();
-                let relocated_name =  types::calculate_relocated_name(self.routing_table.our_close_group(),
-                                      &put_public_id.public_id.name()).unwrap();   // FIXME(prakash) use map error
+                let relocated_name =  try!(types::calculate_relocated_name(
+                                            self.routing_table.our_close_group().map_in_place(|i| i.id()),
+                                            &put_public_id.public_id.name()));
                 // assign_relocated_name
                 put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
 
-                //  SendOn to relocated_name
+                //  SendOn to relocated_name group, which will actually store the relocated public id
                 let send_on_header = header.create_send_on(&self.own_name, &our_authority, &relocated_name);
                     let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicId,
-                        send_on_header, put_public_id_relocated, &self.id.get_crypto_secret_sign_key());
+                                                          send_on_header, put_public_id_relocated,
+                                                          &self.id.get_crypto_secret_sign_key());
                     self.send_swarm_or_parallel(&relocated_name, &try!(encode(&routing_msg)));
                 Ok(())
             },
             (Authority::NaeManager, Authority::NaeManager, true) => {
-                // workaround for sentinel FIXME (prakash)
-                self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
-
-                // Reply with PutPublicIdResponse to the reply_to address
-                let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
-                                     header.create_reply(&self.own_name, &our_authority),
-                                     PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
-                                     &self.id.get_crypto_secret_sign_key());
-                let encoded_msg = try!(encode(&routing_msg));
-                self.send_swarm_or_parallel(&put_public_id.public_id.name(), &encoded_msg);
+                // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
+                if self.public_id_cache.check(&put_public_id.public_id.name()) {
+                  self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
+                  // Reply with PutPublicIdResponse to the reply_to address
+                  let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
+                                                        header.create_reply(&self.own_name, &our_authority),
+                                                        PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
+                                                        &self.id.get_crypto_secret_sign_key());
+                  let encoded_msg = try!(encode(&routing_msg));
+                  self.send_swarm_or_parallel(&put_public_id.public_id.name(), &encoded_msg);
+                }
                 Ok(())
             },
             _ => {

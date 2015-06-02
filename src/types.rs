@@ -30,7 +30,6 @@ use NameType;
 use name_type::closer_to_target;
 use std::fmt;
 use error::{RoutingError};
-use routing_table::{NodeInfo};  // FIXME(prakash) consider not using it
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -216,30 +215,33 @@ impl Decodable for PublicKey {
 }
 
 // relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
-pub fn calculate_relocated_name(mut close_nodes: Vec<NodeInfo>,
+pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
                                 original_name: &NameType) -> Result<NameType, RoutingError> {
-    close_nodes.sort_by(|a, b| if closer_to_target(&a.id(), &b.id(), original_name) {
+    close_nodes.sort_by(|a, b| if closer_to_target(&a, &b, original_name) {
                                   cmp::Ordering::Less
                                 } else {
                                     cmp::Ordering::Greater
                                 });
-    close_nodes.truncate(2usize);
-    if close_nodes.len() != 2usize {
+
+    if close_nodes.len() < 2usize {
         return Err(RoutingError::BadAuthority); // FIXME(prakash) new error NotEnoughNodes
     }
+    close_nodes.truncate(2usize);
+
 
     let original_name_id = original_name.get_id();
-    let close_node_0_id = close_nodes[0].id().get_id();
-    let close_node_1_id = close_nodes[1].id().get_id();
+    let close_node_0_id = close_nodes[0].get_id();
+    let close_node_1_id = close_nodes[1].get_id();
 
-    let combined_iter = original_name_id.iter()
-        .chain(close_node_0_id.iter())
-            .chain(close_node_1_id.iter());
+    let combined_iter = original_name_id.into_iter()
+        .chain(close_node_0_id.into_iter())
+            .chain(close_node_1_id.into_iter());
 
     let mut combined: Vec<u8> = Vec::new();
     for i in combined_iter {
       combined.push(*i);
     }
+
     Ok(NameType(crypto::hash::sha512::hash(&combined).0))
 }
 
@@ -481,11 +483,14 @@ impl Decodable for DestinationAddress {
 mod test {
   extern crate cbor;
   use super::*;
+  use sodiumoxide::crypto;
+  use std::cmp;
   use rand::random;
   use rustc_serialize::{Decodable, Encodable};
   use test_utils::Random;
   use authority::Authority;
   use NameType;
+  use name_type::closer_to_target;
 
   pub fn generate_address() -> Vec<u8> {
     let mut address: Vec<u8> = vec![];
@@ -538,6 +543,52 @@ mod test {
         assert_eq!(obj_before, obj_after);
     }
 
+#[test]
+    fn test_calculate_relocated_name() {
+        let mut close_nodes : Vec<NameType> = Vec::new();
+        for i in 0..GROUP_SIZE {
+            close_nodes.push(Random::generate_random());
+        }
+        let original_name : NameType = Random::generate_random();
+        let actual_relocated_name = calculate_relocated_name(close_nodes.clone(),
+                                                             &original_name).unwrap();
+        assert!(original_name != actual_relocated_name);
+
+        close_nodes.sort_by(|a, b| if closer_to_target(&a, &b, &original_name) {
+                                  cmp::Ordering::Less
+                                } else {
+                                    cmp::Ordering::Greater
+                                });
+        let first_closest = close_nodes[0].clone();
+        let second_closest = close_nodes[1].clone();
+        let mut combined: Vec<u8> = Vec::new();
+
+        for i in original_name.get_id().into_iter() {
+            combined.push(*i);
+        }
+        for i in first_closest.get_id().into_iter() {
+            combined.push(*i);
+        }
+        for i in second_closest.get_id().into_iter() {
+            combined.push(*i);
+        }
+
+        let expected_relocated_name = NameType(crypto::hash::sha512::hash(&combined).0);
+        assert_eq!(expected_relocated_name, actual_relocated_name);
+
+        let mut invalid_combined: Vec<u8> = Vec::new();
+        for i in first_closest.get_id().into_iter() {
+            invalid_combined.push(*i);
+        }
+        for i in second_closest.get_id().into_iter() {
+            invalid_combined.push(*i);
+        }
+        for i in original_name.get_id().into_iter() {
+            invalid_combined.push(*i);
+        }
+        let invalid_relocated_name = NameType(crypto::hash::sha512::hash(&invalid_combined).0);
+        assert!(invalid_relocated_name != actual_relocated_name);
+    }
 
 #[test]
     fn assign_relocated_name_public_id() {
