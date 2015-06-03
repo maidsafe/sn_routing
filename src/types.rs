@@ -217,31 +217,23 @@ impl Decodable for PublicKey {
 // relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
 pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
                                 original_name: &NameType) -> Result<NameType, RoutingError> {
+    if close_nodes.is_empty() {
+        return Err(RoutingError::RoutingTableEmpty);
+    }
     close_nodes.sort_by(|a, b| if closer_to_target(&a, &b, original_name) {
                                   cmp::Ordering::Less
                                 } else {
                                     cmp::Ordering::Greater
                                 });
-
-    if close_nodes.len() < 2usize {
-        return Err(RoutingError::BadAuthority); // FIXME(prakash) new error NotEnoughNodes
-    }
     close_nodes.truncate(2usize);
-
-
-    let original_name_id = original_name.get_id();
-    let close_node_0_id = close_nodes[0].get_id();
-    let close_node_1_id = close_nodes[1].get_id();
-
-    let combined_iter = original_name_id.into_iter()
-        .chain(close_node_0_id.into_iter())
-            .chain(close_node_1_id.into_iter());
+    close_nodes.insert(0, original_name.clone());
 
     let mut combined: Vec<u8> = Vec::new();
-    for i in combined_iter {
-      combined.push(*i);
+    for node_id in close_nodes {
+      for i in node_id.get_id().iter() {
+        combined.push(*i);
+      }
     }
-
     Ok(NameType(crypto::hash::sha512::hash(&combined).0))
 }
 
@@ -545,11 +537,39 @@ mod test {
 
 #[test]
     fn test_calculate_relocated_name() {
+        let original_name : NameType = Random::generate_random();
+
+        // empty close nodes
+        assert!(calculate_relocated_name(Vec::new(), &original_name).is_err());
+
+        // one entry
+        let mut close_nodes_one_entry : Vec<NameType> = Vec::new();
+        close_nodes_one_entry.push(Random::generate_random());
+        let actual_relocated_name_one_entry = calculate_relocated_name(close_nodes_one_entry.clone(),
+                                                                       &original_name).unwrap();
+        assert!(original_name != actual_relocated_name_one_entry);
+
+        let mut combined_one_node_vec : Vec<NameType> = Vec::new();
+        combined_one_node_vec.push(original_name.clone());
+        combined_one_node_vec.push(close_nodes_one_entry[0].clone());
+
+        let mut combined_one_node: Vec<u8> = Vec::new();
+        for node_id in combined_one_node_vec {
+            for i in node_id.get_id().iter() {
+                combined_one_node.push(*i);
+            }
+        }
+
+        let expected_relocated_name_one_node =
+              NameType(crypto::hash::sha512::hash(&combined_one_node).0);
+
+        assert_eq!(actual_relocated_name_one_entry, expected_relocated_name_one_node);
+
+        // populated closed nodes
         let mut close_nodes : Vec<NameType> = Vec::new();
         for i in 0..GROUP_SIZE {
             close_nodes.push(Random::generate_random());
         }
-        let original_name : NameType = Random::generate_random();
         let actual_relocated_name = calculate_relocated_name(close_nodes.clone(),
                                                              &original_name).unwrap();
         assert!(original_name != actual_relocated_name);
@@ -589,6 +609,7 @@ mod test {
         let invalid_relocated_name = NameType(crypto::hash::sha512::hash(&invalid_combined).0);
         assert!(invalid_relocated_name != actual_relocated_name);
     }
+
 
 #[test]
     fn assign_relocated_name_public_id() {
