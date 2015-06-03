@@ -19,30 +19,26 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 #Todo Items
 
 ## [0.0.4] - integrate with routing
-- [ ] [MAID-1008](https://maidsafe.atlassian.net/browse/MAID-1008) Documentation
-    - [ ] [MAID-1010](https://maidsafe.atlassian.net/browse/MAID-1010) Flows
-        - [ ] PutData / PutResponse
-        - [ ] GetData / GetResponse
-        - [ ] PostData
-- [ ] [MAID-1013](https://maidsafe.atlassian.net/browse/MAID-1013) Complete unfinished code (if it will be covered by the later-on tasks in this sprint, explicitly mention it as in-code TODO comment), especially in vault.rs
-    - [ ] handle_get_key
-    - [ ] handle_post
-    - [ ] handle_put_response
-    - [ ] handle_post_response
-    - [ ] handle_cache_get
-    - [ ] handle_cache_put
+- [x] [MAID-1010](https://maidsafe.atlassian.net/browse/MAID-1010) Flows
+    - [x] PutData / PutResponse
+    - [x] GetData / GetResponse
+    - [x] PostData
+- [x] [MAID-1013](https://maidsafe.atlassian.net/browse/MAID-1013) Complete unfinished code (if it will be covered by the later-on tasks in this sprint, explicitly mention it as in-code TODO comment), especially in vault.rs
+    - [x] [MAID-1109](https://maidsafe.atlassian.net/browse/MAID-1109) handle_get_key
+    - [x] [MAID-1112](https://maidsafe.atlassian.net/browse/MAID-1112) handle_put_response
+    - [x] [MAID-1113](https://maidsafe.atlassian.net/browse/MAID-1113) handle_cache_get
+    - [x] [MAID-1113](https://maidsafe.atlassian.net/browse/MAID-1113) handle_cache_put
 - [ ] [MAID-1014](https://maidsafe.atlassian.net/browse/MAID-1014) Integration test with new routing and crust (vaults bootstrap and network setup)
     - [x] [MAID-1028](https://maidsafe.atlassian.net/browse/MAID-1028) local joining test (process counting)
     - [x] [MAID-1016](https://maidsafe.atlassian.net/browse/MAID-1016) network example (nodes populating)
     - [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
-- [ ] [MAID-1107](https://maidsafe.atlassian.net/browse/MAID-1107) Rename actions (changes in routing v0.1.60)
+- [x] [MAID-1107](https://maidsafe.atlassian.net/browse/MAID-1107) Rename actions (changes in routing v0.1.60)
 
 ## [0.0.5] - safecoin farming initial work
-- [ ] [MAID-1008](https://maidsafe.atlassian.net/browse/MAID-1008) Documentation
-    - [ ] [MAID-1012](https://maidsafe.atlassian.net/browse/MAID-1012) SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ )
-        - [ ] farming
-        - [ ] account notification and verification
-        - [ ] account update
+- [ ] [MAID-1012](https://maidsafe.atlassian.net/browse/MAID-1012) SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ ) documentation
+    - [ ] farming
+    - [ ] account notification and verification
+    - [ ] account update
 - [ ] [MAID-1021](https://maidsafe.atlassian.net/browse/MAID-1021) Implement handling for Safecoin farming rate
     - [ ] For DM handling Put request, store 2 copies and pick a new group based on XOR distance being ½ the address space away from the data name (i.e. XOR with 100000…).  This group repeats, using XOR of full address space away (XOR with 111111…).  
     - [ ] Farming rate drops when more copies are available and rises when less copies are available.
