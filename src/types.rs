@@ -215,6 +215,8 @@ impl Decodable for PublicKey {
 }
 
 // relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
+// In case of only one close node provided (in initial network setup scenario),
+// relocated_name = Hash(original_name + 1st closest node id)
 pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
                                 original_name: &NameType) -> Result<NameType, RoutingError> {
     if close_nodes.is_empty() {
