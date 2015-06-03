@@ -22,6 +22,8 @@
 //! These messages include bootstrap actions by starting nodes or relay messages for clients.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use lru_time_cache::LruCache;
+use time::{Duration, SteadyTime};
 use crust::Endpoint;
 use types::PublicId;
 use NameType;
@@ -33,6 +35,7 @@ const MAX_RELAY : usize = 5;
 pub struct RelayMap {
     relay_map: BTreeMap<NameType, (PublicId, BTreeSet<Endpoint>)>,
     lookup_map: HashMap<Endpoint, NameType>,
+    accepted_connect_requests: LruCache<Endpoint, PublicId>,
     our_name: NameType
 }
 
@@ -42,6 +45,7 @@ impl RelayMap {
         RelayMap {
             relay_map: BTreeMap::new(),
             lookup_map: HashMap::new(),
+            accepted_connect_requests: LruCache::with_expiry_duration(Duration::minutes(1)),
             our_name: our_name.clone()
         }
     }
@@ -116,6 +120,21 @@ impl RelayMap {
         }
 
         self.our_name = new_name.clone();
+    }
+
+    /// On unknown connect request, register the PublicId we intended to connect to.
+    pub fn register_accepted_connect_request(&mut self, endpoints: &Vec<Endpoint>, public_id: &PublicId) {
+        // Note: consider whether we can reduce/remove this state-holder
+        // This should be possible with a connect success message.
+        for endpoint in endpoints {
+            self.accepted_connect_requests.add(endpoint.clone(), public_id.clone());
+        }
+    }
+
+    /// When we receive a new connection_event from CRUST we can pop the Id
+    /// and add it to the RelayMap
+    pub fn pop_accepted_connect_request(&mut self, endpoint: &Endpoint) -> Option<PublicId> {
+        self.accepted_connect_requests.remove(endpoint)
     }
 }
 

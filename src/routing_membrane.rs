@@ -243,13 +243,33 @@ impl<F> RoutingMembrane<F> where F: Interface {
           // if the PublicId is not relocated,
           // only accept the connection into the RelayMap.
           // This will enable this connection to bootstrap or act as a client.
-          false => {}
+          false => {
+              let routing_msg = self.construct_connect_response_msg(&header, &body,
+                  &signature, &connect_request);
+              let serialised_message = try!(encode(&routing_msg));
+              // Try to connect to the peer.
+              // when CRUST succeeds at establishing a connection,
+              // we use this register to retrieve the PublicId
+              self.relay_map.register_accepted_connect_request(&connect_request.external_endpoints,
+                  &connect_request.requester_fob);
+              self.connection_manager.connect(connect_request.external_endpoints);
+              self.relay_map.register_accepted_connect_request(&connect_request.local_endpoints,
+                  &connect_request.requester_fob);
+              self.connection_manager.connect(connect_request.local_endpoints);
+              // Send the response containing our details.
+              self.send_single(endpoint.clone(), serialised_message);
+          }
         }
 
         Ok(())
     }
 
-    /// Currently this event produces useless state, so ignore
+    /// When CRUST establishes a two-way connection
+    /// after exchanging details in ConnectRequest and ConnectResponse
+    ///  - we can either add it to RelayMap (if the id was not-relocated,
+    ///    and cached in relay_map)
+    ///  - or we can add it to routing table (if the id was relocated,
+    ///    and stored in public_id_cache after successful put_public_id handler)
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::Routing(name)) => {},
@@ -269,6 +289,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn message_received(&mut self, name : &NameType, serialised_msg : Bytes) {
 
+    }
+
+    // Main send function, pass iterator of targets and message to clone.
+    // FIXME: CRUST does not provide delivery promise.
+    fn send<'a, I>(&self, targets: I, message: &Bytes) where I: Iterator<Item=&'a Endpoint> {
+        for target in targets {
+            ignore(self.connection_manager.send(target.clone(), message.clone()));
+        }
+    }
+
+    // Send function to send message to single target.
+    fn send_single(&self, target: Endpoint, message: Bytes) {
+        ignore(self.connection_manager.send(target, message));
     }
 
     fn send_swarm_or_parallel(&self, target: &NameType, msg: &Bytes) {
@@ -297,13 +330,44 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<ConnectionName> {
+        // prioritise routing table
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => Some(ConnectionName::Routing(name)),
+            // secondly look in the relay_map
             None => match self.relay_map.lookup_endpoint(&endpoint) {
                 Some(name) => Some(ConnectionName::Relay(name)),
                 None => None
             }
         }
+    }
+
+    // -----Message Constructors-----------------------------------------------
+
+    fn construct_connect_response_msg(&mut self, original_header : &MessageHeader, body: &Bytes, signature: &Signature,
+                                      connect_request: &ConnectRequest) -> RoutingMessage {
+        println!("{:?} construct_connect_response_msg ", self.own_name);
+        debug_assert!(connect_request.receiver_id == self.own_name, format!("{:?} == {:?} failed", self.own_name, connect_request.receiver_id));
+
+        // FIXME: re-use message_id
+        let header = MessageHeader::new(self.get_next_message_id(),
+            original_header.send_to(), self.our_source_address(),
+            Authority::ManagedNode);
+
+        // FIXME: We're sending all accepting connections as local since we don't differentiate
+        // between local and external yet.
+        let connect_response = ConnectResponse {
+            requester_local_endpoints: connect_request.local_endpoints.clone(),
+            requester_external_endpoints: connect_request.external_endpoints.clone(),
+            receiver_local_endpoints: self.accepting_on.clone(),
+            receiver_external_endpoints: vec![],
+            requester_id: connect_request.requester_id.clone(),
+            receiver_id: self.own_name.clone(),
+            receiver_fob: types::PublicId::new(&self.id),
+            serialised_connect_request: body.clone(),
+            connect_request_signature: signature.clone() };
+
+        RoutingMessage::new(MessageTypeTag::ConnectResponse, header,
+            connect_response, &self.id.get_crypto_secret_sign_key())
     }
 }
 
