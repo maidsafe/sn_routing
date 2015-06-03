@@ -87,7 +87,6 @@ type PortAndProtocol = crust::Port;
 type RoutingResult = Result<(), RoutingError>;
 
 enum ConnectionName {
-    Unknown(NameType),
     Relay(NameType),
     Routing(NameType)
 }
@@ -196,15 +195,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Err(_) => (),
             Ok(crust::Event::NewMessage(endpoint, bytes)) => {
                 match self.lookup_endpoint(&endpoint) {
-                    // we have an active connection to this endpoint,
-                    // mapped to a name in our routing_table
+                    // we hold an active connection to this endpoint,
+                    // mapped to a name in our routing table
                     Some(ConnectionName::Routing(name)) => {
                         self.message_received(&name, bytes);
                     },
+                    // we hold an active connection to this endpoint,
+                    // mapped to a name in our relay map
                     Some(ConnectionName::Relay(name)) => {},
-                    Some(_) => {},
                     None => {
-                        // for now just drop the message if we don't know the sender
+                        // If we don't know the sender, only accept a connect request
+                        self.handle_unknown_connect_request(&endpoint, bytes);
                 //         // if self.handle_challenge_request(&endpoint, &bytes) {
                 //         //     return;
                 //         // }
@@ -224,12 +225,41 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
     }
 
-    fn handle_new_connection(&mut self, endpoint : Endpoint) {
-        // self.lookup_endpoint
+    ///
+    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, serialised_msg : Bytes)
+        -> RoutingResult {
+        let message = try!(decode::<RoutingMessage>(&serialised_msg));
+        let header = message.message_header;
+        let body = message.serialised_body;
+        let signature = message.signature;
+        // only accept ConnectRequest messages from unknown endpoints
+        let connect_request = try!(decode::<ConnectRequest>(&body));
+        // first verify that the message is correctly self-signed
+        if !verify_detached(&signature.get_crypto_signature(),
+                            &body[..], &connect_request.requester_fob.public_sign_key
+                                                       .get_crypto_public_sign_key()) {
+            return Err(RoutingError::Response(ResponseError::InvalidRequest));
+        }
+
+        Ok(())
     }
 
-    fn handle_lost_connection(&mut self, endpoint : Endpoint) {
+    /// Currently this event produces useless state, so ignore
+    fn handle_new_connection(&mut self, endpoint : Endpoint) {
+        match self.lookup_endpoint(&endpoint) {
+            Some(ConnectionName::Routing(name)) => {},
+            Some(ConnectionName::Relay(name)) => {},
+            None => {}
+        };
+    }
 
+    /// TODO: handle a lost connection
+    fn handle_lost_connection(&mut self, endpoint : Endpoint) {
+        match self.lookup_endpoint(&endpoint) {
+            Some(ConnectionName::Routing(name)) => {},
+            Some(ConnectionName::Relay(name)) => {},
+            None => {}
+        };
     }
 
     fn message_received(&mut self, name : &NameType, serialised_msg : Bytes) {
