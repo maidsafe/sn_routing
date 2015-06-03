@@ -80,9 +80,13 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_get_key(&mut self, type_id: u64,  name: NameType,  our_authority: Authority,
-                      from_authority: Authority, from_address: NameType)->Result<MessageAction, InterfaceError> { // 
-        self.handle_get(type_id, name, our_authority, from_authority, from_address)
+    fn handle_get_key(&mut self,
+                      _: u64, // type_id
+                      _: NameType, // name
+                      _: Authority, // our_authority
+                      _: Authority, // from_authority
+                      _: NameType)->Result<MessageAction, InterfaceError> { // from_address
+        unimplemented!();
     }
 
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
