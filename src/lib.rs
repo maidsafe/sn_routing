@@ -71,6 +71,7 @@ pub mod client_interface;
 pub mod node_interface;
 pub mod routing_client;
 pub mod routing_node;
+pub mod routing_membrane;
 pub mod sendable;
 pub mod test_utils;
 pub mod types;
