@@ -132,11 +132,17 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_put_response(&mut self,
-                           _: Authority, // from_authority
-                           _: NameType, // from_address
-                           _: Result<Vec<u8>, ResponseError>) { // response
-        ;
+    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
+                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
+        match from_authority {
+            Authority::ManagedNode => { return self.pmid_manager.handle_put_response(&from_address, &response); }
+            Authority::NodeManager => {
+                // TODO: this from_address shall be the original pmid_node that failing or removing the copy
+                //       which requires work in routing to replace the address properly
+                return self.data_manager.handle_put_response(&response, &from_address);
+            }
+            _ => { return MethodCall::None; }
+        }
     }
 
     // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1011
