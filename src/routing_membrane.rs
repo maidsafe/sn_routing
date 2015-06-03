@@ -92,7 +92,7 @@ enum ConnectionName {
 }
 
 /// Routing Membrane
-pub struct RoutingMembrane<F: Interface> {
+pub struct RoutingMembrane {
     // for CRUST
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
@@ -106,12 +106,10 @@ pub struct RoutingMembrane<F: Interface> {
     filter: MessageFilter<types::FilterType>,
     public_id_cache: LruCache<NameType, types::PublicId>,
     connection_cache: BTreeMap<NameType, SteadyTime>,
-    // for interface
-    interface: Box<F>
 }
 
-impl<F> RoutingMembrane<F> where F: Interface {
-    pub fn new(my_interface: F) -> RoutingMembrane<F> {
+impl RoutingMembrane {
+    pub fn new() -> RoutingMembrane {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let id = types::Id::new();
@@ -129,7 +127,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
         println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
-        RoutingMembrane { interface: Box::new(my_interface),
+        RoutingMembrane {
                       id : id,
                       own_name : own_name.clone(),
                       event_input: event_input,
@@ -190,32 +188,33 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
-        // TODO: v0.1.70 wrap this into internal loop, such that ::run can be spawned off into thread
-        match self.event_input.try_recv() {
-            Err(_) => (),
-            Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                match self.lookup_endpoint(&endpoint) {
-                    // we hold an active connection to this endpoint,
-                    // mapped to a name in our routing table
-                    Some(ConnectionName::Routing(name)) => {
-                        self.message_received(&name, bytes);
-                    },
-                    // we hold an active connection to this endpoint,
-                    // mapped to a name in our relay map
-                    Some(ConnectionName::Relay(name)) => {},
-                    None => {
-                        // If we don't know the sender, only accept a connect request
-                        self.handle_unknown_connect_request(&endpoint, bytes);
+        loop {
+            match self.event_input.recv() {
+                Err(_) => (),
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    match self.lookup_endpoint(&endpoint) {
+                        // we hold an active connection to this endpoint,
+                        // mapped to a name in our routing table
+                        Some(ConnectionName::Routing(name)) => {
+                            self.message_received(&name, bytes);
+                        },
+                        // we hold an active connection to this endpoint,
+                        // mapped to a name in our relay map
+                        Some(ConnectionName::Relay(name)) => {},
+                        None => {
+                            // If we don't know the sender, only accept a connect request
+                            self.handle_unknown_connect_request(&endpoint, bytes);
+                        }
                     }
+                },
+                Ok(crust::Event::NewConnection(endpoint)) => {
+                    self.handle_new_connection(endpoint);
+                },
+                Ok(crust::Event::LostConnection(endpoint)) => {
+                    self.handle_lost_connection(endpoint);
                 }
-            },
-            Ok(crust::Event::NewConnection(endpoint)) => {
-                self.handle_new_connection(endpoint);
-            },
-            Ok(crust::Event::LostConnection(endpoint)) => {
-                self.handle_lost_connection(endpoint);
-            }
-        };
+            };
+        }
     }
 
     ///

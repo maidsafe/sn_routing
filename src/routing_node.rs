@@ -38,6 +38,7 @@ use node_interface;
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
+use routing_membrane::RoutingMembrane;
 use sendable::Sendable;
 use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes};
@@ -64,6 +65,7 @@ use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, InterfaceError, ResponseError};
+use std::thread::spawn;
 
 use std::convert::From;
 
@@ -1142,6 +1144,13 @@ fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
 }
 
 fn ignore<R,E>(_: Result<R,E>) {}
+
+// The method is intentionally imlemented outside impl as it does not need RoutingNode
+// This function later should return tx part of the channel.
+fn run_membrane() {
+    let mut membrane = RoutingMembrane::new();
+    spawn(move || membrane.run());
+}
 
 #[cfg(test)]
 mod test {
