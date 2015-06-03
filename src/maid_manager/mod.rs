@@ -51,6 +51,22 @@ impl MaidManager {
         }
         destinations.push(NameType::new(immutable_data.name().get_id()));
       }
+      // The assumption here is Backup and Sacrificial copies incur storage charge.
+      // However, in case of not enough allownance, no put_failure being sent back, just abort the flow
+      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
+        let backup_data : maidsafe_types::ImmutableDataBackup = payload.get_data();
+        if !self.db_.put_data(from, backup_data.value().len() as u64) {
+          return Err(InterfaceError::Abort);
+        }
+        destinations.push(NameType::new(backup_data.name().get_id()));
+      }
+      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
+        let sacrificial_data : maidsafe_types::ImmutableDataSacrificial = payload.get_data();
+        if !self.db_.put_data(from, sacrificial_data.value().len() as u64) {
+          return Err(InterfaceError::Abort);
+        }
+        destinations.push(NameType::new(sacrificial_data.name().get_id()));
+      }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         // PublicMaid doesn't use any allowance
         destinations.push(NameType::new(payload.get_data::<maidsafe_types::PublicIdType>().name().get_id()));

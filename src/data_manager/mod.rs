@@ -22,6 +22,7 @@ mod database;
 use std::cmp;
 use routing;
 use routing::NameType;
+use routing::node_interface::{MethodCall};
 use routing::types::{MessageAction};
 use maidsafe_types;
 use cbor::{ Decoder };
@@ -60,6 +61,12 @@ impl DataManager {
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         name = payload.get_data::<maidsafe_types::ImmutableData>().name();
+      }
+      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
+        name = payload.get_data::<maidsafe_types::ImmutableDataBackup>().name();
+      }
+      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
+        name = payload.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         name = payload.get_data::<maidsafe_types::PublicIdType>().name();
@@ -101,7 +108,74 @@ impl DataManager {
         _ => return routing::node_interface::MethodCall::None,
       }
 
-      match self.db_.temp_storage_after_churn.get(&name) {
+      let replicate_to = self.replicate_to(&name);
+      match replicate_to {
+          Some(pmid_node) => {
+              self.db_.add_pmid_node(&name, pmid_node.clone());
+              return routing::node_interface::MethodCall::Put {
+                  destination: pmid_node,
+                  content: Box::new(DataManagerSendable::with_content(name, response)),
+              };
+          },
+          None => {}
+      }
+      MethodCall::None
+  }
+
+  pub fn handle_put_response(&mut self, response: &Result<Vec<u8>, ResponseError>,
+                             from_address: &NameType) -> MethodCall {
+    // TODO: assumption is the content in Result is the full payload of failed to store data
+    //       or the removed Sacrificial copy, which indicates as a failure response.
+    let mut name : routing::NameType;
+    if response.is_err() {
+      return MethodCall::None;
+    }
+    let data = response.clone().unwrap();
+    let mut d = Decoder::from_bytes(&data[..]);
+    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+    let mut replicate = false;
+    match payload.get_type_tag() {
+      maidsafe_types::PayloadTypeTag::ImmutableData => {
+        name = payload.get_data::<maidsafe_types::ImmutableData>().name();
+        replicate = true;
+      }
+      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
+        name = payload.get_data::<maidsafe_types::ImmutableDataBackup>().name();
+      }
+      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
+        name = payload.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
+      }
+      maidsafe_types::PayloadTypeTag::PublicMaid => {
+        name = payload.get_data::<maidsafe_types::PublicIdType>().name();
+        replicate = true;
+      }
+      _ => return MethodCall::None
+    }
+    self.db_.remove_pmid_node(&name, from_address.clone());
+    // No replication for Backup and Sacrificial copies.
+    if !replicate {
+      return MethodCall::None;
+    }
+    let replicate_to = self.replicate_to(&name);
+    match replicate_to {
+        Some(pmid_node) => {
+            self.db_.add_pmid_node(&name, pmid_node.clone());
+            return routing::node_interface::MethodCall::Put {
+                destination: pmid_node,
+                content: Box::new(DataManagerSendable::with_content(name, data)),
+            };
+        },
+        None => {}
+    }
+    MethodCall::None
+  }
+
+  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::MethodCall> {
+    self.db_.retrieve_all_and_reset(close_group)
+  }
+
+  fn replicate_to(&mut self, name : &routing::NameType) -> Option<NameType> {
+      match self.db_.temp_storage_after_churn.get(name) {
           Some(pmid_nodes) => {
               if pmid_nodes.len() < 3 {
                   self.db_.close_grp_from_churn.sort_by(|a, b| {
@@ -111,30 +185,21 @@ impl DataManager {
                         cmp::Ordering::Greater
                       }
                   });
-
                   let mut close_grp_node_to_add = NameType::new([0u8; 64]);
                   for close_grp_it in self.db_.close_grp_from_churn.iter() {
                       if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
                           close_grp_node_to_add = close_grp_it.clone();
                           break;
                       }
-                  }
-
-                  routing::node_interface::MethodCall::Put {
-                      destination: close_grp_node_to_add,
-                      content: Box::new(DataManagerSendable::with_content(name, response)),
-                  }
-              } else {
-                  routing::node_interface::MethodCall::None
+                  }                  
+                  return Some(close_grp_node_to_add);
               }
           },
-          None => routing::node_interface::MethodCall::None,
+          None => {}
       }
+      None
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::MethodCall> {
-    self.db_.retrieve_all_and_reset(close_group)
-  }
 }
 
 #[cfg(test)]

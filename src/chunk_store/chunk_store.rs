@@ -113,7 +113,7 @@ impl ChunkStore {
         name_vec
     }
 
-    fn has_disk_space(&self, required_space: usize) -> bool {
+    pub fn has_disk_space(&self, required_space: usize) -> bool {
        self.current_disk_usage + required_space <= self.max_disk_usage
     }
 }

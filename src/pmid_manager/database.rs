@@ -120,10 +120,13 @@ impl PmidManagerAccount {
     PmidManagerAccount { stored_total_size: 0, lost_total_size: 0, offered_space: 1073741824 }
   }
 
+  // TODO: Always return true to allow pmid_node carry out removal of Sacrificial copies
+  //       Otherwise PmidManagerAccount need to remember storage info of Primary, Backup and Sacrificial
+  //       copies separately to trigger an early alert
   pub fn put_data(&mut self, size : u64) -> bool {
-    if (self.stored_total_size + size) > self.offered_space {
-      return false;
-    }
+    // if (self.stored_total_size + size) > self.offered_space {
+    //   return false;
+    // }
     self.stored_total_size += size;
     true
   }
@@ -190,6 +193,11 @@ impl PmidManagerDatabase {
         entry.put_data(size)
     }
 
+    pub fn delete_data(&mut self, name : &Identity, size: u64) {
+        let entry = self.storage.entry(name.clone()).or_insert(PmidManagerAccount::new());
+        entry.delete_data(size)
+    }
+
     pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::MethodCall> {
         let data: Vec<_> = self.storage.drain().collect();
         let mut actions = Vec::with_capacity(data.len());
@@ -222,20 +230,20 @@ mod test {
         assert_eq!(db.exist(&name), true);
     }
 
-    #[test]
-    fn put_data() {
-        let mut db = PmidManagerDatabase::new();
-        let name = routing::test_utils::Random::generate_random();
-        assert_eq!(db.put_data(&name, 0), true);
-        assert_eq!(db.exist(&name), true);
-        assert_eq!(db.put_data(&name, 1), true);
-        assert_eq!(db.put_data(&name, 1073741823), true);
-        assert_eq!(db.put_data(&name, 1), false);
-        assert_eq!(db.put_data(&name, 1), false);
-        assert_eq!(db.put_data(&name, 0), true);
-        assert_eq!(db.put_data(&name, 1), false);
-        assert_eq!(db.exist(&name), true);
-    }
+    // #[test]
+    // fn put_data() {
+    //     let mut db = PmidManagerDatabase::new();
+    //     let name = routing::test_utils::Random::generate_random();
+    //     assert_eq!(db.put_data(&name, 0), true);
+    //     assert_eq!(db.exist(&name), true);
+    //     assert_eq!(db.put_data(&name, 1), true);
+    //     assert_eq!(db.put_data(&name, 1073741823), true);
+    //     assert_eq!(db.put_data(&name, 1), false);
+    //     assert_eq!(db.put_data(&name, 1), false);
+    //     assert_eq!(db.put_data(&name, 0), true);
+    //     assert_eq!(db.put_data(&name, 1), false);
+    //     assert_eq!(db.exist(&name), true);
+    // }
 
     #[test]
     fn pmid_manager_account_serialisation() {
