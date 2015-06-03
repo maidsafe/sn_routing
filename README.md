@@ -53,7 +53,6 @@ correct name calculation of pure Id
   - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) Integrate handlers with RelayMap
   - [ ] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
 - [ ] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
-  - [ ] [MAID-1054](https://maidsafe.atlassian.net/browse/MAID-1054) move all handler functions to separate module
   - [ ] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
   - [ ] [MAID-1057](https://maidsafe.atlassian.net/browse/MAID-1057) make event loop in routing_node internal
 - [ ] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
