@@ -37,6 +37,8 @@ use name_type::{closer_to_target_or_equal, NAME_TYPE_LEN};
 use node_interface;
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
+use relay::RelayMap;
+use routing_membrane::RoutingMembrane;
 use sendable::Sendable;
 use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes};
@@ -63,6 +65,7 @@ use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, InterfaceError, ResponseError};
+use std::thread::spawn;
 
 use std::convert::From;
 
@@ -82,6 +85,7 @@ pub struct RoutingNode<F: Interface> {
     connection_manager: ConnectionManager,
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Vec<Endpoint>>),
     routing_table: RoutingTable,
+    relay_map: RelayMap,
     accepting_on: Vec<Endpoint>,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
@@ -116,7 +120,8 @@ impl<F> RoutingNode<F> where F: Interface {
                       event_input: event_input,
                       connection_manager: cm,
                       all_connections: (HashMap::new(), BTreeMap::new()),
-                      routing_table : RoutingTable::new(own_name),
+                      routing_table : RoutingTable::new(&own_name),
+                      relay_map: RelayMap::new(&own_name),
                       accepting_on: listeners.0,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_endpoint: None,
@@ -1139,6 +1144,13 @@ fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
 }
 
 fn ignore<R,E>(_: Result<R,E>) {}
+
+// The method is intentionally imlemented outside impl as it does not need RoutingNode
+// This function later should return tx part of the channel.
+fn run_membrane() {
+    let mut membrane = RoutingMembrane::new();
+    spawn(move || membrane.run());
+}
 
 #[cfg(test)]
 mod test {
