@@ -86,6 +86,9 @@ impl Interface for VaultFacade {
                       _: Authority, // our_authority
                       _: Authority, // from_authority
                       _: NameType)->Result<MessageAction, InterfaceError> { // from_address
+        // According to the comment in https://maidsafe.atlassian.net/browse/MAID-1109
+        // this trait will be kept as internal to routing only as a resolve to issue
+        // https://github.com/maidsafe/routing/issues/290
         unimplemented!();
     }
 
@@ -109,6 +112,7 @@ impl Interface for VaultFacade {
         }
     }
 
+    // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1010
     fn handle_post(&mut self,
                    _: Authority, // our_authority
                    _: Authority, // from_authority
@@ -141,6 +145,7 @@ impl Interface for VaultFacade {
         }
     }
 
+    // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1011
     fn handle_post_response(&mut self, 
                             _: Authority, // from_authority
                             _: NameType, // from_address
