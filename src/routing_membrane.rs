@@ -206,13 +206,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     None => {
                         // If we don't know the sender, only accept a connect request
                         self.handle_unknown_connect_request(&endpoint, bytes);
-                //         // if self.handle_challenge_request(&endpoint, &bytes) {
-                //         //     return;
-                //         // }
-                //         // if self.handle_challenge_response(&endpoint, &bytes) {
-                //         //     return;
-                //         // }
-                //         // ignore(self.handle_bootstrap_message(endpoint, bytes));
                     }
                 }
             },
@@ -239,6 +232,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             &body[..], &connect_request.requester_fob.public_sign_key
                                                        .get_crypto_public_sign_key()) {
             return Err(RoutingError::Response(ResponseError::InvalidRequest));
+        }
+        // match on the relocation status of the fob
+        match connect_request.requester_fob.is_relocated() {
+          // if the PublicId claims to be relocated,
+          // check whether we have a temporary record of his relocated Id,
+          // which we would have stored after the sentinel group consensus
+          // of the relocated Id.
+          true => {},
+          // if the PublicId is not relocated,
+          // only accept the connection into the RelayMap.
+          // This will enable this connection to bootstrap or act as a client.
+          false => {}
         }
 
         Ok(())
