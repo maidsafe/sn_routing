@@ -24,10 +24,15 @@ use std::error;
 use std::fmt;
 
 //------------------------------------------------------------------------------
+#[deny(missing_docs)]
 #[derive(PartialEq, Eq, Clone, Debug)]
+/// represents response errors
 pub enum ResponseError {
+    /// data not found
     NoData,
+    /// invalid request
     InvalidRequest,
+    /// failure to store data
     FailedToStoreData(Vec<u8>)
 }
 
@@ -131,22 +136,35 @@ impl fmt::Display for InterfaceError {
     }
 }
 
-
-
 //------------------------------------------------------------------------------
+#[deny(missing_docs)]
 #[derive(Debug)]
+/// Represents routing error types
 pub enum RoutingError {
+    /// invalid requester or handler authorities
     BadAuthority,
+    /// failure to connect to an already connected node
     AlreadyConnected,
+    /// received message having unknown type
     UnknownMessageType,
+    /// duplicate request received
     FilterCheckFailed,
+    /// failure to bootstrap off the provided endpoints
     FailedToBootstrap,
+    /// unexpected empty routing table
     RoutingTableEmpty,
+    /// public id rejected because of unallowed relocated status
     RejectedPublicId,
+    /// routing table did not add the node information,
+    /// either because it was already added, or because it did not improve the routing table
     RefusedFromRoutingTable,
+    /// interface error
     Interface(InterfaceError),
+    /// i/o error
     Io(io::Error),
+    /// serialisation error
     Cbor(CborError),
+    /// invalid response
     Response(ResponseError),
 }
 
