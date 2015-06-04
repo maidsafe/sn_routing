@@ -1,0 +1,1 @@
+_MaidNode_ => |__DataManager__ [TempStoreHas(D) ? SendGetResponse : [OnlinePmids.Count == 0 ? SendGetFailure : (So)(Valid($) ? SendGetResponse : SendGetFailure)]] *=> |__PmidNode__ [EXISTS(D) ? SendGetResponse]
