@@ -22,17 +22,27 @@ use authority::Authority;
 use types::MessageAction;
 use error::{InterfaceError, ResponseError};
 
+/// MethodCall denotes a specific request to be carried out by routing.
 pub enum MethodCall {
+    /// request for no action
     None,
+    /// request to have `destination` NAE to handle put for the `content`
     Put { destination: NameType, content: Box<Sendable>, },
+    /// request to retreive data of particular type and name from network
     Get { type_id: u64, name: NameType, },
+    /// request to pot
     Post,
+    /// request to update
     Refresh { content: Box<Sendable>, },
+    /// request to send on the request to destination
     SendOn { destination: NameType },
 }
 
+#[deny(missing_docs)]
+/// The Interface trait introduces the methods expected to be implemented by the user
+/// of RoutingNode
 pub trait Interface : Sync + Send {
-    /// the public key or address of the node store it is returned on success.
+    /// the public key or address of the node potentially storing data is returned on success.
     fn handle_get_key(&mut self,
                       type_id: u64,
                       name: NameType,
@@ -40,7 +50,7 @@ pub trait Interface : Sync + Send {
                       from_authority: Authority,
                       from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
-    /// if reply is data then we send back the response message (ie get_response )
+    /// data or address of the node potentially storing data is returned on success.
     fn handle_get(&mut self,
                   type_id: u64,
                   name: NameType,
@@ -48,7 +58,7 @@ pub trait Interface : Sync + Send {
                   from_authority: Authority,
                   from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
-    /// data: Vec<u8> is serialised maidsafe_types::Payload which holds typetag and content
+    /// attempts to store data. The return value can contain the original data
     fn handle_put(&mut self,
                   our_authority: Authority,
                   from_authority: Authority,
@@ -56,6 +66,8 @@ pub trait Interface : Sync + Send {
                   dest_address: DestinationAddress,
                   data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 
+    /// to handle post request. The requested data or potential address to find it is provided on
+    /// success
     fn handle_post(&mut self,
                    our_authority: Authority,
                    from_authority: Authority,
@@ -63,28 +75,34 @@ pub trait Interface : Sync + Send {
                    name : NameType,
                    data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 
+    /// consumes data in response or handles the error
     fn handle_get_response(&mut self,
                            from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall;
 
+    /// handles the result of a put request
     fn handle_put_response(&mut self,
                            from_authority: Authority,
                            from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall;
 
+    /// handles the result of a post request
     fn handle_post_response(&mut self,
                             from_authority: Authority,
                             from_address: NameType,
                             response: Result<Vec<u8>, ResponseError>);
 
+    /// handles the actions to be carried out in the event of a churn
     fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<MethodCall>;
 
+    /// attempts to provide data from cache. On success data is returned
     fn handle_cache_get(&mut self,
                         type_id: u64,
                         name: NameType,
                         from_authority: Authority,
                         from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
+    /// attempts to stores data in cache
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
                         from_address: NameType,

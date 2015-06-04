@@ -131,20 +131,30 @@ impl fmt::Display for InterfaceError {
     }
 }
 
-
-
 //------------------------------------------------------------------------------
+#[deny(missing_docs)]
 #[derive(Debug)]
+/// Represents routing error types
 pub enum RoutingError {
+    /// invalid requester or handler authorities
     BadAuthority,
+    /// failure to connect to an already connected node
     AlreadyConnected,
+    /// received message having unknown type
     UnknownMessageType,
+    /// duplicate request received
     FilterCheckFailed,
+    /// failure to bootstrap off the provided endpoints
     FailedToBootstrap,
+    /// unexpected empty routing table
     RoutingTableEmpty,
+    /// interface error
     Interface(InterfaceError),
+    /// i/o error
     Io(io::Error),
+    /// serialisation error
     Cbor(CborError),
+    /// invalid response
     Response(ResponseError),
 }
 
