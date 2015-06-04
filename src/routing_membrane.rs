@@ -296,7 +296,7 @@ impl RoutingMembrane {
     ///    and cached in relay_map)
     ///  - or we can mark it as connected in routing table (if the id was relocated,
     ///    and stored in public_id_cache after successful put_public_id handler,
-    ///    then on (unknown) ConnectRequest it will have been given to RT to consider adding)
+    ///    then on ConnectRequest it will have been given to RT to consider adding
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::Routing(name)) => {
@@ -329,8 +329,26 @@ impl RoutingMembrane {
                     }
                 };
             },
-            Some(ConnectionName::Relay(name)) => {},
-            None => {}
+            Some(ConnectionName::Relay(name)) => {
+                // this endpoint is already present in the relay lookup_map
+                // nothing to do
+            },
+            None => {
+                // Connect requests for relays do not get stored in the relay map,
+                // as we want to avoid state; instead we keep an LruCache to recover the public_id.
+                // This either is a client or an un-relocated node bootstrapping.
+                match self.relay_map.pop_accepted_connect_request(&endpoint) {
+                    Some(public_id) => {
+                        // a relocated Id should not be in the cache for un-relocated Ids
+                        if public_id.is_relocated() {
+                            println!("FAILURE: logical code error, a relocated Id should not have made
+                                      its way into this cache.");
+                            return; }
+
+                    },
+                    None => {}
+                };
+            }
         };
     }
 
