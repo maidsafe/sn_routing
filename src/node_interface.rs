@@ -28,13 +28,13 @@ pub enum MethodCall {
     None,
     /// request to have `destination` to handle put for the `content`
     Put { destination: NameType, content: Box<Sendable>, },
-    /// request to retreive data of particular type and name from network
+    /// request to retreive data with specified type and name from network
     Get { type_id: u64, name: NameType, },
     /// request to post
     Post,
     /// request to refresh
     Refresh { content: Box<Sendable>, },
-    /// request to send on the request to destination
+    /// request to send on the request to destination for further handling
     SendOn { destination: NameType },
 }
 
@@ -42,7 +42,9 @@ pub enum MethodCall {
 /// The Interface trait introduces the methods expected to be implemented by the user
 /// of RoutingNode
 pub trait Interface : Sync + Send {
-    /// the public key or address of the node potentially storing data is returned on success.
+    /// depending on our_authority and from_authority, the public key or address of the node
+    /// potentially storing public key with specified name is returned, on success.
+    /// failure to provide public key or an address is indicated as an InterfaceError.
     fn handle_get_key(&mut self,
                       type_id: u64,
                       name: NameType,
@@ -50,7 +52,9 @@ pub trait Interface : Sync + Send {
                       from_authority: Authority,
                       from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
-    /// data or address of the node potentially storing data is returned on success.
+    /// depending on our_authority and from_authority, data or address of the node
+    /// potentially storing data with specified name and type_id is returned, on success.
+    /// failure to provide data or an address is indicated as an InterfaceError..
     fn handle_get(&mut self,
                   type_id: u64,
                   name: NameType,
@@ -58,7 +62,9 @@ pub trait Interface : Sync + Send {
                   from_authority: Authority,
                   from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
-    /// success indicates store is done, or an address to store data is provided
+    /// depending on our_authority and from_authority, data is stored on current node or an address
+    /// (with different authority) for further handling of the request is provided.
+    /// failure is indicated as an InterfaceError.
     fn handle_put(&mut self,
                   our_authority: Authority,
                   from_authority: Authority,
@@ -66,8 +72,9 @@ pub trait Interface : Sync + Send {
                   dest_address: DestinationAddress,
                   data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 
-    /// to handle post request. The requested data or potential address to find it is provided on
-    /// success
+    /// depending on our_authority and from_authority, post request is handled by current node or
+    /// an address for further handling of the request is provided. Failure is indicated as an
+    /// InterfaceError.
     fn handle_post(&mut self,
                    our_authority: Authority,
                    from_authority: Authority,
@@ -75,34 +82,38 @@ pub trait Interface : Sync + Send {
                    name : NameType,
                    data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 
-    /// consumes data in response or handles the error
+    /// handles the response to a put request. Depending on ResponseError, performing an action of
+    /// type MethodCall is requested.
     fn handle_get_response(&mut self,
                            from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall;
 
-    /// handles the result of a put request
+    /// handles the response to a put request. Depending on ResponseError, performing an action of
+    /// type MethodCall is requested.
     fn handle_put_response(&mut self,
                            from_authority: Authority,
                            from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall;
 
-    /// handles the result of a post request
+    /// handles the response to a post request. Depending on ResponseError, performing an action of
+    /// type MethodCall is requested.
     fn handle_post_response(&mut self,
                             from_authority: Authority,
                             from_address: NameType,
                             response: Result<Vec<u8>, ResponseError>);
 
-    /// handles the actions to be carried out in the event of a churn
+    /// handles the actions to be carried out in the event of a churn. The function provides a list
+    /// of actions (of type MethodCall) to be carried out in order to update relevant nodes.
     fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<MethodCall>;
 
-    /// attempts to provide data from cache. On success data is returned
+    /// attempts to potentially retrieve data from cache.
     fn handle_cache_get(&mut self,
                         type_id: u64,
                         name: NameType,
                         from_authority: Authority,
                         from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
-    /// attempts to stores data in cache
+    /// attempts to store data in cache.
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
                         from_address: NameType,
