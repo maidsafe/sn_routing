@@ -238,7 +238,18 @@ impl RoutingMembrane {
           // check whether we have a temporary record of his relocated Id,
           // which we would have stored after the sentinel group consensus
           // of the relocated Id.
-          true => {},
+          true => {
+              match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
+                  Some(public_id) => {
+                      if public_id == connect_request.requester_fob {
+                          let routing_msg = self.construct_connect_response_msg(&header, &body,
+                              &signature, &connect_request);
+                          let serialised_message = try!(encode(&routing_msg));
+                      }
+                  },
+                  None => {}
+              }
+          },
           // if the PublicId is not relocated,
           // only accept the connection into the RelayMap.
           // This will enable this connection to bootstrap or act as a client.
