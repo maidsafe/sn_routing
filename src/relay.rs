@@ -123,9 +123,11 @@ impl RelayMap {
     }
 
     /// On unknown connect request, register the PublicId we intended to connect to.
+    /// Only an unrelocated Id is accepted into the cache.
     pub fn register_accepted_connect_request(&mut self, endpoints: &Vec<Endpoint>, public_id: &PublicId) {
         // Note: consider whether we can reduce/remove this state-holder
         // This should be possible with a connect success message.
+        if public_id.is_relocated() { return; }
         for endpoint in endpoints {
             self.accepted_connect_requests.add(endpoint.clone(), public_id.clone());
         }
