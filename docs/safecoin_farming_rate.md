@@ -6,15 +6,15 @@ The farming rate is a mechanism to allow the network to balance supply and deman
 
 ## DataManager groups
 
-A DataManager is a specialisation of a NaeManager. It has teh responsibility of storing data and ensuring it's integrity. Each DM group will store 2 copies of each ImmutableData type. There is a primary DM a backup DM and sacrifical DM for the three types created for every ImmutabelData packet.
+A DataManager is a specialisation of a NaeManager. It has the responsibility of storing data and ensuring it's integrity. Each DM group will monitor 2 copies of each ImmutableData type. There is a primary DM group, a backup DM group and sacrifical DM group for the three types created for every ImmutabelData packet.
 
 ## Data types. 
 
-ImmutableData has three types, these are ImmutableData, ImmutableDataBackup & ImmutableDataSacrificial. These types all contain the same data (see [types lib](https://github.com/maidsafe/maidsafe_types)) and are monitored by the DataManagers. 
+ImmutableData has three types, these are ImmutableData, ImmutableDataBackup & ImmutableDataSacrificial. These types all contain the same data (see [types lib](https://github.com/maidsafe/maidsafe_types)) and are monitored by the DataManagers.
 
 ##Sacrifical copies 
 
-The third data type ImmutableDataSacrificial which is the network measuring stick. These types are only attempted to be stored, whereas other types MUST be stored. In the case where other types cannot be stored then teh 2 copies of Sacrifical data will be deleted form the PMID nodes, by sending a delete data message to the PmidManagers of that node. 
+The third data type ImmutableDataSacrificial which is the network measuring stick. These types are only attempted to be stored, whereas other types MUST be stored. In the case where other types cannot be stored then copies of Sacrifical data will be deleted from the PMID nodes, and a notification will be sent from pmid_node back to PmidManager then eventually reach DataManager (see [put_flow](https://github.com/maidsafe/maidsafe_vault/blob/master/docs/put_flow.md) and check put_response part for detail). 
 
 ##Farming Rate
 This rate calculation is a simple approach and meant as a tool to investigate the algorithm. A simple add/subtract mechnism is in place to allow measurement. This is not intended for production and will undergo vigerous proofs (which are not complex, but need to be linked to cost of storage from client side)
@@ -31,5 +31,5 @@ Vaults will keep a placeholder and on churn attempt to store Sacrifical data los
 
 ## Accounting 
 
-The Farming rate is held by all DM in a group, on a churn event this specific account info is transferred as a refresh command. The account type is orderable and the routing sentinel will get the median value to return back to vaults. 
+The Farming rate is held by all DM in a group, on a churn event this specific account info is transferred as a refresh command. The account type is orderable and the routing sentinel will get the median value to return back to vaults.
 
