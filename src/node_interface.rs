@@ -32,7 +32,7 @@ pub enum MethodCall {
     Get { type_id: u64, name: NameType, },
     /// request to post
     Post,
-    /// request to update
+    /// request to refresh
     Refresh { content: Box<Sendable>, },
     /// request to send on the request to destination
     SendOn { destination: NameType },
