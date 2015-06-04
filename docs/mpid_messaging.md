@@ -86,6 +86,18 @@ When ```PUSH``` model is used, nfs_mpid_client is expected to have it's own rout
 
 Such seperate routing object is not required when ```PULL``` model is used. It may also have the benefit of saving the battery life on mobile device as the client app doesn't need to keeps nfs_mpid_client running all the time.
 
+Network Language
+============
+_MPid(A)_ =>> | __MPidManager(A)__  (Put)(Alert.So)
+         *->>   __MPidManager(B)__  (Store(Alert))(Online(Mpid(B)) ? Alert.So : (WaitForOnlineB)(Alert.So))
+         *->  | _Mpid(B)_ So.Retreive
+          ->> | __MpidManager(B)__
+         *->  | __MpidManager(A)__ So.Message
+         *->> | __MpidManager(B)__ Online(Mpid(B)) ? Message.So
+         *->  | _Mpid(B)_ Remove.So
+          ->> | __MpidManager(B)__ {Remove(Alert), Remove.So}
+         *->> | __MpidManager(A)__ Remove
+
 Future Works
 ============
 
