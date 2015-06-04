@@ -113,7 +113,8 @@ pub trait Interface : Sync + Send {
                         from_authority: Authority,
                         from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
-    /// attempts to store data in cache.
+    /// attempts to store data in cache. The type of data and/or from_authority indicates
+    /// if store in cache is required.
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
                         from_address: NameType,
