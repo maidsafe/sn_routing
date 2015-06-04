@@ -18,6 +18,7 @@
 use std::cmp;
 use std::usize;
 use sodiumoxide::crypto;
+use std::collections::{HashMap};
 
 use crust::Endpoint;
 
@@ -31,12 +32,12 @@ static BUCKET_SIZE: usize = 1;
 pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
-#[derive(Clone)]
-pub struct KeyFob {
-    pub id: NameType,
-    keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-    signature: crypto::sign::Signature,
-}
+// #[derive(Clone)]
+// pub struct KeyFob {
+//     pub id: NameType,
+//     keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
+//     signature: crypto::sign::Signature,
+// }
 
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
@@ -82,12 +83,17 @@ impl NodeInfo {
 /// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
+    lookup_map: HashMap<Endpoint, NameType>,
     our_id: NameType,
 }
 
 impl RoutingTable {
-    pub fn new(our_id: NameType) -> RoutingTable {
-        RoutingTable { routing_table: Vec::<NodeInfo>::new(), our_id: our_id }
+    pub fn new(our_id: &NameType) -> RoutingTable {
+        RoutingTable {
+            routing_table: Vec::<NodeInfo>::new(),
+            lookup_map: HashMap::new(),
+            our_id: our_id.clone()
+        }
     }
 
     pub fn get_bucket_size() -> usize { BUCKET_SIZE }
@@ -135,6 +141,7 @@ impl RoutingTable {
                 return (true, None);
             } else {
                 let removal_node = self.routing_table[removal_node_index].clone();
+                self.remove_dangling_endpoints(&removal_node.id());
                 self.routing_table.remove(removal_node_index);
                 return (true, Some(removal_node));
             }
@@ -144,6 +151,7 @@ impl RoutingTable {
         if removal_node_index != usize::MAX &&
                 self.new_node_is_better_than_existing(&their_info.id(), removal_node_index) {
             let removal_node = self.routing_table[removal_node_index].clone();
+            self.remove_dangling_endpoints(&removal_node.id());
             self.routing_table.remove(removal_node_index);
             self.push_back_then_sort(their_info);
             return (true, Some(removal_node));
@@ -167,6 +175,10 @@ impl RoutingTable {
             None => None,
             Some(index) => {
                 self.routing_table[index].connected_endpoint = Some(endpoint.clone());
+                // always force update lookup_map
+                self.lookup_map.remove(&endpoint);
+                self.lookup_map.entry(endpoint.clone())
+                               .or_insert(self.routing_table[index].id());
                 Some(self.routing_table[index].id())
             },
         }
@@ -206,6 +218,8 @@ impl RoutingTable {
         }
 
         if index_of_removal < self.routing_table.len() {
+            let removal_name : NameType = self.routing_table[index_of_removal].id();
+            self.remove_dangling_endpoints(&removal_name);
             self.routing_table.remove(index_of_removal);
         }
     }
@@ -272,12 +286,18 @@ impl RoutingTable {
 
     /// This returns the public key for the given node if the node is in our table.
     pub fn public_id(&self, their_id: &NameType)->Option<PublicId> {
-        if !self.is_nodes_sorted() {
-            panic!("Nodes are not sorted");
-        }
+        debug_assert!(self.is_nodes_sorted(), "RT::public_id: Nodes are not sorted");
         match self.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
             Some(node) => Some(node.fob.clone()),
             None => None,
+        }
+    }
+
+    pub fn lookup_endpoint(&self, their_endpoint: &Endpoint) -> Option<NameType> {
+        debug_assert!(self.is_nodes_sorted(), "RT::Lookup: Nodes are not sorted");
+        match self.lookup_map.get(their_endpoint) {
+            Some(name) => Some(name.clone()),
+            None => None
         }
     }
 
@@ -371,6 +391,14 @@ impl RoutingTable {
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
+        match node_info.connected_endpoint.clone() {
+            Some(endpoint) => {
+                self.lookup_map.remove(&endpoint);
+                self.lookup_map.entry(endpoint.clone())
+                               .or_insert(node_info.id());
+            },
+            None => ()
+        };
         self.routing_table.push(node_info);
         let our_id = &self.our_id;
         self.routing_table.sort_by(
@@ -407,6 +435,17 @@ impl RoutingTable {
         }
         false
     }
+
+    fn remove_dangling_endpoints(&mut self, name_removed: &NameType) {
+        let dangling_endpoints = self.lookup_map.iter()
+            .filter_map(|(endpoint, name)| if name == name_removed {
+                    Some(endpoint.clone())
+                } else { None })
+            .collect::<Vec<_>>();
+        for endpoint in dangling_endpoints {
+            self.lookup_map.remove(&endpoint);
+        }
+    }
 }
 
 
@@ -416,6 +455,7 @@ mod test {
     use super::*;
     use std::cmp;
     use std::collections::BitVec;
+    use std::collections::{HashMap};
     use types::PublicId;
     use name_type::closer_to_target;
     use types;
@@ -489,7 +529,9 @@ mod test {
             let table = RoutingTableUnitTest {
                 our_id: node_info.id().clone(),
                 table: RoutingTable {
-                    our_id: node_info.id().clone(), routing_table: Vec::new(),
+                    routing_table: Vec::new(),
+                    lookup_map: HashMap::new(),
+                    our_id: node_info.id().clone(),
                 },
                 buckets: initialise_buckets(&node_info.id()),
                 node_info: node_info,
@@ -586,7 +628,11 @@ mod test {
 
         let mut vector: Vec<RoutingTable> = Vec::with_capacity(num_of_tables);
         for i in 0..num_of_tables {
-            vector.push(RoutingTable { routing_table: Vec::new(), our_id: Random::generate_random() });
+            vector.push(RoutingTable {
+                routing_table: Vec::new(),
+                lookup_map: HashMap::new(),
+                our_id: Random::generate_random()
+            });
         }
         vector
     }
@@ -614,6 +660,7 @@ mod test {
 
         let mut table = RoutingTable {
             routing_table: Vec::new(),
+            lookup_map: HashMap::new(),
             our_id: Random::generate_random()
         };
 
@@ -1093,7 +1140,7 @@ mod test {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
         let our_id_name = types::Id::new().get_name();
-        let mut routing_table: RoutingTable = RoutingTable::new(our_id_name.clone());
+        let mut routing_table: RoutingTable = RoutingTable::new(&our_id_name);
 
         let mut count: usize = 0;
         loop {

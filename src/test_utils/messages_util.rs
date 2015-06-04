@@ -213,3 +213,12 @@ impl Random for messages::put_public_id::PutPublicId {
         }
     }
 }
+
+impl Random for messages::put_public_id_response::PutPublicIdResponse {
+    fn generate_random() -> messages::put_public_id_response::PutPublicIdResponse {
+        let public_id : PublicId = Random::generate_random();
+        messages::put_public_id_response::PutPublicIdResponse {
+            public_id: public_id,
+        }
+    }
+}
