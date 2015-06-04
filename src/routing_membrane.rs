@@ -245,6 +245,12 @@ impl RoutingMembrane {
                           let routing_msg = self.construct_connect_response_msg(&header, &body,
                               &signature, &connect_request);
                           let serialised_message = try!(encode(&routing_msg));
+                          let mut peer_endpoints = connect_request.local_endpoints.clone();
+                          peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
+                          let peer_node_info =
+                              NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
+                          self.connection_manager.connect(connect_request.external_endpoints);
+                          self.connection_manager.connect(connect_request.local_endpoints);
                       }
                   },
                   None => {}
