@@ -237,7 +237,7 @@ impl RoutingMembrane {
           // if the PublicId claims to be relocated,
           // check whether we have a temporary record of his relocated Id,
           // which we would have stored after the sentinel group consensus
-          // of the relocated Id.
+          // of the relocated Id. If the fobs match, add it to routing_table.
           true => {
               match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
                   Some(public_id) => {
@@ -294,11 +294,41 @@ impl RoutingMembrane {
     /// after exchanging details in ConnectRequest and ConnectResponse
     ///  - we can either add it to RelayMap (if the id was not-relocated,
     ///    and cached in relay_map)
-    ///  - or we can add it to routing table (if the id was relocated,
-    ///    and stored in public_id_cache after successful put_public_id handler)
+    ///  - or we can mark it as connected in routing table (if the id was relocated,
+    ///    and stored in public_id_cache after successful put_public_id handler,
+    ///    then on (unknown) ConnectRequest it will have been given to RT to consider adding)
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
         match self.lookup_endpoint(&endpoint) {
-            Some(ConnectionName::Routing(name)) => {},
+            Some(ConnectionName::Routing(name)) => {
+                // the only state-change is in marking the node connected; rest is debug printout
+                match self.routing_table.mark_as_connected(&endpoint) {
+                    Some(peer_name) => {
+                        println!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
+                                 self.routing_table.size(), peer_name, endpoint);
+                        // FIXME: the presence of this debug assert indicates
+                        // that the logic for unconnected RT nodes is not quite right.
+                        debug_assert!(peer_name == name);
+                    },
+                    None => {
+                        // this is purely for debug purposes; no relevant state changes
+                        // will drop connection if
+                        match self.routing_table.lookup_endpoint(&endpoint) {
+                            Some(peer_name) => {
+                                println!("RT (size : {:?}) peer {:?} was already connected on endpoint {:?}",
+                                         self.routing_table.size(), peer_name, endpoint);
+                            },
+                            None => {
+                              println!("FAILED: dropping connection on endpoint {:?};
+                                        no peer found in RT for this endpoint
+                                        and as such also not already connected.", endpoint);
+                              // FIXME: This is a logical error because we are twice looking up
+                              // the same endpoint in the same RT::lookup_endpoint; should never occur
+                              self.connection_manager.drop_node(endpoint);
+                            }
+                        };
+                    }
+                };
+            },
             Some(ConnectionName::Relay(name)) => {},
             None => {}
         };
