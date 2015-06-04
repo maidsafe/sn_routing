@@ -88,6 +88,38 @@ impl RelayMap {
         self.relay_map.remove(ip_node_to_drop);
     }
 
+    /// This removes the provided endpoint and returns a NameType if this endpoint
+    /// was the last endpoint assocoiated with this Name; otherwise returns None.
+    pub fn drop_endpoint(&mut self, endpoint_to_drop: &Endpoint) -> Option<NameType> {
+        let mut old_entry = match self.lookup_map.remove(endpoint_to_drop) {
+            Some(name) => {
+                match self.relay_map.remove(&name) {
+                    Some(entry) => Some((name, entry)),
+                    None => None
+                }
+            },
+            None => None
+        };
+        let new_entry = match old_entry {
+            Some((ref name, (ref public_id, ref mut endpoints))) => {
+                endpoints.remove(endpoint_to_drop);
+                Some((name, (public_id, endpoints)))
+            },
+            None => None
+        };
+        match new_entry {
+            Some((name, (public_id, endpoints))) => {
+                if endpoints.is_empty() {
+                    Some(name.clone())
+                } else {
+                    self.relay_map.insert(name.clone(), (public_id.clone(), endpoints.clone()));
+                    None
+                }
+            },
+            None => None
+        }
+    }
+
     /// Returns true if we keep relay endpoints for given name.
     pub fn contains_relay_for(&self, relay_name: &NameType) -> bool {
         self.relay_map.contains_key(relay_name)
@@ -238,4 +270,6 @@ mod test {
         assert!(relay_map.get_endpoints(&test_public_id.name()).unwrap().1
                          .contains(&test_endpoint_2));
     }
+
+    // TODO: add test for drop_endpoint
 }
