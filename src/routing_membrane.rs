@@ -296,11 +296,13 @@ impl RoutingMembrane {
     ///    and cached in relay_map)
     ///  - or we can mark it as connected in routing table (if the id was relocated,
     ///    and stored in public_id_cache after successful put_public_id handler,
-    ///    then on ConnectRequest it will have been given to RT to consider adding
+    ///    after wich on ConnectRequest it will have been given to RT to consider adding).
+    //  FIXME: two lines are marked as relevant for state-change;
+    //  remainder is exhausting logic for debug purposes.
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::Routing(name)) => {
-                // the only state-change is in marking the node connected; rest is debug printout
+        // IMPORTANT: the only state-change is in marking the node connected; rest is debug printout
                 match self.routing_table.mark_as_connected(&endpoint) {
                     Some(peer_name) => {
                         println!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
@@ -311,7 +313,6 @@ impl RoutingMembrane {
                     },
                     None => {
                         // this is purely for debug purposes; no relevant state changes
-                        // will drop connection if
                         match self.routing_table.lookup_endpoint(&endpoint) {
                             Some(peer_name) => {
                                 println!("RT (size : {:?}) peer {:?} was already connected on endpoint {:?}",
@@ -344,9 +345,19 @@ impl RoutingMembrane {
                             println!("FAILURE: logical code error, a relocated Id should not have made
                                       its way into this cache.");
                             return; }
-
+        // IMPORTANT: only state-change is here by adding it to the relay_map
+                        self.relay_map.add_ip_node(public_id, endpoint);
                     },
-                    None => {}
+                    None => {
+                        // Note: we assume that the connect_request precedes
+                        // a CRUST::new_connection event and has registered a PublicId
+                        // with all desired endpoints it has.
+                        // As such, for a membrane we do not accept an unknown endpoint.
+                        // If the order on these events is not logically guaranteed by CRUST,
+                        // this branch has to be expanded.
+                        println!("Refused unknown connection from {:?}", endpoint);
+                        self.connection_manager.drop_node(endpoint);
+                    }
                 };
             }
         };
