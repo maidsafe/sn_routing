@@ -242,18 +242,28 @@ impl RoutingMembrane {
               match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
                   Some(public_id) => {
                       if public_id == connect_request.requester_fob {
-                          let routing_msg = self.construct_connect_response_msg(&header, &body,
-                              &signature, &connect_request);
-                          let serialised_message = try!(encode(&routing_msg));
                           let mut peer_endpoints = connect_request.local_endpoints.clone();
                           peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
                           let peer_node_info =
                               NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
-                          self.connection_manager.connect(connect_request.external_endpoints);
-                          self.connection_manager.connect(connect_request.local_endpoints);
+                          let (added, _) = self.routing_table.add_node(peer_node_info);
+                          println!("RT (size : {:?}) added relocated {:?}", self.routing_table.size(),
+                              connect_request.requester_fob.name());
+                          if added {
+                              let routing_msg = self.construct_connect_response_msg(&header, &body,
+                                  &signature, &connect_request);
+                              let serialised_message = try!(encode(&routing_msg));
+                              self.connection_manager.connect(connect_request.external_endpoints);
+                              self.connection_manager.connect(connect_request.local_endpoints);
+                              // Send the response containing our details.
+                              self.send_single(endpoint.clone(), serialised_message);
+                          }
                       }
                   },
-                  None => {}
+                  None => {
+                      println!("FAILED to add relocated {:?}, different Id cached for this name.",
+                          connect_request.requester_fob.name());
+                      return Err(RoutingError::FailedToBootstrap); }
               }
           },
           // if the PublicId is not relocated,
