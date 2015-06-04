@@ -299,6 +299,7 @@ impl RoutingMembrane {
     ///    after wich on ConnectRequest it will have been given to RT to consider adding).
     //  FIXME: two lines are marked as relevant for state-change;
     //  remainder is exhausting logic for debug purposes.
+    //  TODO: add churn trigger
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::Routing(name)) => {
@@ -363,13 +364,22 @@ impl RoutingMembrane {
         };
     }
 
-    /// TODO: handle a lost connection
+    /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
+    /// TODO: A churn event might be triggered
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
-        match self.lookup_endpoint(&endpoint) {
-            Some(ConnectionName::Routing(name)) => {},
-            Some(ConnectionName::Relay(name)) => {},
-            None => {}
+        // Make sure the endpoint is dropped anywhere
+        // The relay map will automatically drop the Name if the last endpoint to it is dropped
+        self.relay_map.drop_endpoint(&endpoint);
+        let mut trigger_churn = false;
+        match self.routing_table.lookup_endpoint(&endpoint) {
+            Some(name) => {
+                trigger_churn = self.routing_table.address_in_our_close_group_range(&name);
+                self.routing_table.drop_node(&name);
+                Some(name)
+            },
+            None => None
         };
+        // TODO: trigger churn on boolean
     }
 
     fn message_received(&mut self, name : &NameType, serialised_msg : Bytes) {
