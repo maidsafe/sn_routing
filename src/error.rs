@@ -24,10 +24,15 @@ use std::error;
 use std::fmt;
 
 //------------------------------------------------------------------------------
+#[deny(missing_docs)]
 #[derive(PartialEq, Eq, Clone, Debug)]
+/// represents response errors
 pub enum ResponseError {
+    /// data not found
     NoData,
+    /// invalid request
     InvalidRequest,
+    /// failure to store data
     FailedToStoreData(Vec<u8>)
 }
 

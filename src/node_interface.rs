@@ -26,7 +26,7 @@ use error::{InterfaceError, ResponseError};
 pub enum MethodCall {
     /// request for no action
     None,
-    /// request to have `destination` NAE to handle put for the `content`
+    /// request to have `destination` to handle put for the `content`
     Put { destination: NameType, content: Box<Sendable>, },
     /// request to retreive data of particular type and name from network
     Get { type_id: u64, name: NameType, },
@@ -58,7 +58,7 @@ pub trait Interface : Sync + Send {
                   from_authority: Authority,
                   from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
-    /// attempts to store data. The return value can contain the original data
+    /// on success stores data or sends on request
     fn handle_put(&mut self,
                   our_authority: Authority,
                   from_authority: Authority,
