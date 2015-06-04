@@ -49,6 +49,7 @@ correct name calculation of pure Id
 
 ## [0.1.62] - restructure core of routing
 
+- [x] Update dependecy to CRUSTv0.0.60 : resolved loopback endpoint problem
 - [ ] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
   - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) Integrate handlers with RelayMap
   - [x] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
