@@ -224,7 +224,7 @@ impl RoutingMembrane {
         let header = message.message_header;
         let body = message.serialised_body;
         let signature = message.signature;
-        // only accept ConnectRequest messages from unknown endpoints
+        //  from unknown endpoints only accept ConnectRequest messages
         let connect_request = try!(decode::<ConnectRequest>(&body));
         // first verify that the message is correctly self-signed
         if !verify_detached(&signature.get_crypto_signature(),
@@ -232,61 +232,29 @@ impl RoutingMembrane {
                                                        .get_crypto_public_sign_key()) {
             return Err(RoutingError::Response(ResponseError::InvalidRequest));
         }
-        // match on the relocation status of the fob
-        match connect_request.requester_fob.is_relocated() {
-          // if the PublicId claims to be relocated,
-          // check whether we have a temporary record of his relocated Id,
-          // which we would have stored after the sentinel group consensus
-          // of the relocated Id. If the fobs match, add it to routing_table.
-          true => {
-              // match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
-              //     Some(public_id) => {
-              //         if public_id == connect_request.requester_fob {
-              //             let mut peer_endpoints = connect_request.local_endpoints.clone();
-              //             peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
-              //             let peer_node_info =
-              //                 NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
-              //             let (added, _) = self.routing_table.add_node(peer_node_info);
-              //             println!("RT (size : {:?}) added relocated {:?}", self.routing_table.size(),
-              //                 connect_request.requester_fob.name());
-              //             if added {
-              //                 let routing_msg = self.construct_connect_response_msg(&header, &body,
-              //                     &signature, &connect_request);
-              //                 let serialised_message = try!(encode(&routing_msg));
-              //                 self.connection_manager.connect(connect_request.external_endpoints);
-              //                 self.connection_manager.connect(connect_request.local_endpoints);
-              //                 // Send the response containing our details.
-              //                 self.send_single(endpoint.clone(), serialised_message);
-              //             }
-              //         }
-              //     },
-              //     None => {
-              //         println!("FAILED to add relocated {:?}, different Id cached for this name.",
-              //             connect_request.requester_fob.name());
-              //         return Err(RoutingError::FailedToBootstrap); }
-              // }
-          },
-          // if the PublicId is not relocated,
-          // only accept the connection into the RelayMap.
-          // This will enable this connection to bootstrap or act as a client.
-          false => {
-              let routing_msg = self.construct_connect_response_msg(&header, &body,
-                  &signature, &connect_request);
-              let serialised_message = try!(encode(&routing_msg));
-              // Try to connect to the peer.
-              // when CRUST succeeds at establishing a connection,
-              // we use this register to retrieve the PublicId
-              self.relay_map.register_accepted_connect_request(&connect_request.external_endpoints,
-                  &connect_request.requester_fob);
-              self.connection_manager.connect(connect_request.external_endpoints);
-              self.relay_map.register_accepted_connect_request(&connect_request.local_endpoints,
-                  &connect_request.requester_fob);
-              self.connection_manager.connect(connect_request.local_endpoints);
-              // Send the response containing our details.
-              self.send_single(endpoint.clone(), serialised_message);
-          }
-        }
-
+        // only accept unrelocated Ids from unknown connections
+        if connect_request.requester_fob.is_relocated() {
+            return Err(RoutingError::RejectedPublicId); }
+        // if the PublicId is not relocated,
+        // only accept the connection into the RelayMap.
+        // This will enable this connection to bootstrap or act as a client.
+        let routing_msg = self.construct_connect_response_msg(&header, &body,
+            &signature, &connect_request);
+        let serialised_message = try!(encode(&routing_msg));
+        // Try to connect to the peer.
+        // when CRUST succeeds at establishing a connection,
+        // we use this register to retrieve the PublicId
+        self.relay_map.register_accepted_connect_request(&connect_request.external_endpoints,
+            &connect_request.requester_fob);
+        self.connection_manager.connect(connect_request.external_endpoints);
+        self.relay_map.register_accepted_connect_request(&connect_request.local_endpoints,
+            &connect_request.requester_fob);
+        self.connection_manager.connect(connect_request.local_endpoints);
+        // Send the response containing our details.
+        // FIXME: Verify that CRUST can send a message back and does not drop it,
+        // simply because it is not established a connection yet.
+        debug_assert!(self.connection_manager.send(endpoint.clone(), serialised_message)
+            .is_ok());
         Ok(())
     }
 
@@ -394,11 +362,6 @@ impl RoutingMembrane {
         }
     }
 
-    // Send function to send message to single target.
-    fn send_single(&self, target: Endpoint, message: Bytes) {
-        ignore(self.connection_manager.send(target, message));
-    }
-
     fn send_swarm_or_parallel(&self, name : &NameType, msg: &Bytes) {
         for peer in self.routing_table.target_nodes(name) {
             match peer.connected_endpoint {
@@ -450,6 +413,12 @@ impl RoutingMembrane {
         let connect_request = try!(decode::<ConnectRequest>(&body));
         if !connect_request.requester_fob.is_relocated() {
             return Err(RoutingError::RejectedPublicId); }
+        // first verify that the message is correctly self-signed
+        if !verify_detached(&signature.get_crypto_signature(),
+                            &body[..], &connect_request.requester_fob.public_sign_key
+                                                       .get_crypto_public_sign_key()) {
+            return Err(RoutingError::Response(ResponseError::InvalidRequest));
+        }
         // if the PublicId claims to be relocated,
         // check whether we have a temporary record of this relocated Id,
         // which we would have stored after the sentinel group consensus
@@ -471,7 +440,8 @@ impl RoutingMembrane {
                     // Try to connect to the peer.
                     self.connection_manager.connect(connect_request.local_endpoints.clone());
                     self.connection_manager.connect(connect_request.external_endpoints.clone());
-                    // Send the response containing our details.
+                    // Send the response containing our details,
+                    // and add the original signature as proof of the request
                     let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
                     let serialised_message = try!(encode(&routing_msg));
 
