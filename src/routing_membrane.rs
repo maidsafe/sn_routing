@@ -52,7 +52,7 @@ use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
 use sendable::Sendable;
 use types;
-use types::{MessageId, NameAndTypeId, Signature, Bytes};
+use types::{MessageId, NameAndTypeId, Signature, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
 use message_header::MessageHeader;
 // use messages::bootstrap_id_request::BootstrapIdRequest;
@@ -239,32 +239,32 @@ impl RoutingMembrane {
           // which we would have stored after the sentinel group consensus
           // of the relocated Id. If the fobs match, add it to routing_table.
           true => {
-              match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
-                  Some(public_id) => {
-                      if public_id == connect_request.requester_fob {
-                          let mut peer_endpoints = connect_request.local_endpoints.clone();
-                          peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
-                          let peer_node_info =
-                              NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
-                          let (added, _) = self.routing_table.add_node(peer_node_info);
-                          println!("RT (size : {:?}) added relocated {:?}", self.routing_table.size(),
-                              connect_request.requester_fob.name());
-                          if added {
-                              let routing_msg = self.construct_connect_response_msg(&header, &body,
-                                  &signature, &connect_request);
-                              let serialised_message = try!(encode(&routing_msg));
-                              self.connection_manager.connect(connect_request.external_endpoints);
-                              self.connection_manager.connect(connect_request.local_endpoints);
-                              // Send the response containing our details.
-                              self.send_single(endpoint.clone(), serialised_message);
-                          }
-                      }
-                  },
-                  None => {
-                      println!("FAILED to add relocated {:?}, different Id cached for this name.",
-                          connect_request.requester_fob.name());
-                      return Err(RoutingError::FailedToBootstrap); }
-              }
+              // match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
+              //     Some(public_id) => {
+              //         if public_id == connect_request.requester_fob {
+              //             let mut peer_endpoints = connect_request.local_endpoints.clone();
+              //             peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
+              //             let peer_node_info =
+              //                 NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
+              //             let (added, _) = self.routing_table.add_node(peer_node_info);
+              //             println!("RT (size : {:?}) added relocated {:?}", self.routing_table.size(),
+              //                 connect_request.requester_fob.name());
+              //             if added {
+              //                 let routing_msg = self.construct_connect_response_msg(&header, &body,
+              //                     &signature, &connect_request);
+              //                 let serialised_message = try!(encode(&routing_msg));
+              //                 self.connection_manager.connect(connect_request.external_endpoints);
+              //                 self.connection_manager.connect(connect_request.local_endpoints);
+              //                 // Send the response containing our details.
+              //                 self.send_single(endpoint.clone(), serialised_message);
+              //             }
+              //         }
+              //     },
+              //     None => {
+              //         println!("FAILED to add relocated {:?}, different Id cached for this name.",
+              //             connect_request.requester_fob.name());
+              //         return Err(RoutingError::FailedToBootstrap); }
+              // }
           },
           // if the PublicId is not relocated,
           // only accept the connection into the RelayMap.
@@ -360,8 +360,15 @@ impl RoutingMembrane {
         ignore(self.connection_manager.send(target, message));
     }
 
-    fn send_swarm_or_parallel(&self, target: &NameType, msg: &Bytes) {
-
+    fn send_swarm_or_parallel(&self, name : &NameType, msg: &Bytes) {
+        for peer in self.routing_table.target_nodes(name) {
+            match peer.connected_endpoint {
+                Some(peer_endpoint) => {
+                    ignore(self.connection_manager.send(peer_endpoint, msg.clone()));
+                },
+                None => {}
+            };
+        }
     }
 
     // TODO: add optional group; fix bootstrapping/relay
@@ -397,6 +404,46 @@ impl RoutingMembrane {
         }
     }
 
+    // -----Message Handlers from Routing Table connections----------------------------------------
+
+    fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes, signature: Signature) -> RoutingResult {
+        println!("{:?} received ConnectRequest ", self.own_name);
+        let connect_request = try!(decode::<ConnectRequest>(&body));
+        if !connect_request.requester_fob.is_relocated() {
+            return Err(RoutingError::RejectedPublicId); }
+        // if the PublicId claims to be relocated,
+        // check whether we have a temporary record of this relocated Id,
+        // which we would have stored after the sentinel group consensus
+        // of the relocated Id. If the fobs match, add it to routing_table.
+        match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
+            Some(public_id) => {
+                // check the full fob received corresponds, not just the names
+                if public_id == connect_request.requester_fob {
+                    // Collect the local and external endpoints into a single vector to construct a NodeInfo
+                    let mut peer_endpoints = connect_request.local_endpoints.clone();
+                    peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
+                    let peer_node_info =
+                        NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
+                    // Try to add to the routing table.  If unsuccessful, no need to continue.
+                    let (added, _) = self.routing_table.add_node(peer_node_info.clone());
+                    if !added {
+                        return Err(RoutingError::RefusedFromRoutingTable); }
+                    println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name());
+                    // Try to connect to the peer.
+                    self.connection_manager.connect(connect_request.local_endpoints.clone());
+                    self.connection_manager.connect(connect_request.external_endpoints.clone());
+                    // Send the response containing our details.
+                    let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
+                    let serialised_message = try!(encode(&routing_msg));
+
+                    self.send_swarm_or_parallel(&routing_msg.message_header.destination.dest,
+                        &serialised_message);
+                }
+            },
+            None => {}
+        };
+        Ok(())
+    }
     // -----Message Constructors-----------------------------------------------
 
     fn construct_connect_response_msg(&mut self, original_header : &MessageHeader, body: &Bytes, signature: &Signature,
