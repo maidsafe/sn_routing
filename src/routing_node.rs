@@ -397,11 +397,12 @@ impl<F> RoutingNode<F> where F: Interface {
                 None => (),
             }
             self.all_connections.1.remove(&peer_id);
-          // FIXME call handle_churn here
+            self.on_churn(self.routing_table.our_close_group().into_iter()
+                              .map(|node| node.fob.name)
+                              .collect::<Vec<NameType>>());
         }
     }
 
-    //TODO(team) This method needs to be triggered when routing table close group changes
     fn on_churn(&mut self, close_group: Vec<NameType>) {
         let actions = self.interface.handle_churn(close_group);
         self.invoke_routing_actions(actions);
