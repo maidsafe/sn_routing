@@ -58,7 +58,7 @@ pub trait Interface : Sync + Send {
                   from_authority: Authority,
                   from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
-    /// on success stores data or sends on request
+    /// success indicates store is done, or an address to store data is provided
     fn handle_put(&mut self,
                   our_authority: Authority,
                   from_authority: Authority,
