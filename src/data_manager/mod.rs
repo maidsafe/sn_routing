@@ -35,11 +35,15 @@ pub use self::database::DataManagerSendable;
 pub static PARALLELISM: usize = 4;
 
 pub struct DataManager {
-  db_ : database::DataManagerDatabase
+  db_ : database::DataManagerDatabase,
+  // the higher the index is, the slower the farming rate will be
+  resource_index : u64
 }
 
 impl DataManager {
-  pub fn new() -> DataManager { DataManager { db_: database::DataManagerDatabase::new() } }
+  pub fn new() -> DataManager {
+    DataManager { db_: database::DataManagerDatabase::new(), resource_index: 1 }
+  }
 
   pub fn handle_get(&mut self, name : &NameType) ->Result<MessageAction, InterfaceError> {
 	  let result = self.db_.get_pmid_nodes(name);
@@ -91,6 +95,9 @@ impl DataManager {
       dest_pmids.push(nodes_in_table[index].clone());
     }
     self.db_.put_pmid_nodes(&data_name, dest_pmids.clone());
+    if payload.get_type_tag() == maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial {
+      self.resource_index = cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
+    }
     Ok(MessageAction::SendOn(dest_pmids))
   }
 
@@ -144,6 +151,7 @@ impl DataManager {
       }
       maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
         name = payload.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
+        self.resource_index = cmp::max(1, self.resource_index - 1);
       }
       maidsafe_types::PayloadTypeTag::PublicMaid => {
         name = payload.get_data::<maidsafe_types::PublicIdType>().name();
