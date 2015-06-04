@@ -2,7 +2,7 @@
 
 **Primary Maintainer:**     Qi Ma (qi.ma@maidsafe.net)
 
-**Secondary Maintainer:**   Spandan Sharma (spandan.sharma@maidsafe.net)
+**Secondary Maintainer:**   Chandra Prakash (prakash@maidsafe.net)
 
 |Crate|Linux|Windows|OSX|Coverage|
 |:------:|:-------:|:-------:|:-------:|:-------:|
