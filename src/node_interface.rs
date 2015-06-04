@@ -30,7 +30,7 @@ pub enum MethodCall {
     Put { destination: NameType, content: Box<Sendable>, },
     /// request to retreive data of particular type and name from network
     Get { type_id: u64, name: NameType, },
-    /// request to pot
+    /// request to post
     Post,
     /// request to update
     Refresh { content: Box<Sendable>, },
