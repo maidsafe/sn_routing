@@ -148,8 +148,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) {
-        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()),
-                                                     reply_to: None };
+        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()), relay_to: None };
         let header = MessageHeader::new(self.get_next_message_id(),
                                         destination, self.our_source_address(),
                                         Authority::Client);
@@ -165,7 +164,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
+        let destination = types::DestinationAddress{ dest: destination, relay_to: None };
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(self.get_next_message_id(),
                                         destination, self.our_source_address(),
@@ -179,7 +178,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// Add something to the network
     pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
+        let destination = types::DestinationAddress{ dest: destination, relay_to: None };
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(self.get_next_message_id(), destination,
                                         self.our_source_address(), Authority::Unknown);
@@ -423,7 +422,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // handle relay request/response
         if header.destination.dest == self.own_name {
             // FIXME: source and destination addresses need a correction
-            match header.destination.reply_to {
+            match header.destination.relay_to {
                 Some(relay) => {
                     self.send_out_as_relay(&relay, serialised_msg);
                     return Ok(());
@@ -590,9 +589,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //                                      reply_to: Some(self.own_name.clone()) }
         //     }
         // }
-        return types::SourceAddress{ from_node: self.own_name.clone(),
-                                     from_group: None,
-                                     reply_to: None }
+        return types::SourceAddress{ from_node: self.own_name.clone(), from_group: None, reply_to: None, relayed_for: None }
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
@@ -808,7 +805,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn construct_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingMessage {
         let header = MessageHeader::new(self.get_next_message_id(),
-            types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
+            types::DestinationAddress {dest: peer_id.clone(), relay_to: None },
             self.our_source_address(), Authority::ManagedNode);
 
         // FIXME: We're sending all accepting connections as local since we don't differentiate

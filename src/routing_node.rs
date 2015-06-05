@@ -134,8 +134,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) {
-        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()),
-                                                     reply_to: None };
+        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()), relay_to: None };
         let header = MessageHeader::new(self.get_next_message_id(),
                                         destination, self.our_source_address(),
                                         Authority::Client);
@@ -151,7 +150,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
+        let destination = types::DestinationAddress{ dest: destination, relay_to: None };
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(self.get_next_message_id(),
                                         destination, self.our_source_address(),
@@ -165,7 +164,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// Add something to the network
     pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let destination = types::DestinationAddress{ dest: destination, reply_to: None };
+        let destination = types::DestinationAddress{ dest: destination, relay_to: None };
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(self.get_next_message_id(), destination,
                                         self.our_source_address(), Authority::Unknown);
@@ -279,11 +278,8 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn generate_bootstrap_header(&self, message_id: MessageId) -> MessageHeader {
         MessageHeader::new( message_id,
-                            types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]),
-                                                       reply_to: None },
-                            types::SourceAddress{ from_node: self.id(),
-                                                  from_group: None,
-                                                  reply_to: None },
+                            types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), relay_to: None },
+                            types::SourceAddress{ from_node: self.id(), from_group: None, reply_to: None, relayed_for: None },
                             Authority::ManagedNode)
     }
 
@@ -339,9 +335,9 @@ impl<F> RoutingNode<F> where F: Interface {
     fn put_own_public_id(&mut self) {
         let our_public_id: types::PublicId = types::PublicId::new(&self.id);
         let message_id = self.get_next_message_id();
-        let destination = types::DestinationAddress{ dest: our_public_id.name(), reply_to: None };
+        let destination = types::DestinationAddress{ dest: our_public_id.name(), relay_to: None };
         let source = types::SourceAddress{ from_node: self.id(), from_group: None,
-                                            reply_to: self.bootstrap_node_id.clone() };
+                                           reply_to: self.bootstrap_node_id.clone(), relayed_for: None };
         let authority = Authority::ManagedNode;
         let request = PutPublicId{ public_id: our_public_id };
         let header = MessageHeader::new(message_id, destination, source, authority);
@@ -477,7 +473,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         // handle relay request/response
         if header.destination.dest == self.own_name {
-            self.send_by_name(header.destination.reply_to.iter(), serialised_msg);
+            self.send_by_name(header.destination.relay_to.iter(), serialised_msg);
         }
 
         if !self.address_in_close_group_range(&header.destination.dest) {
@@ -489,8 +485,8 @@ impl<F> RoutingNode<F> where F: Interface {
         // and this node is in the group but the message destination is another group member node.
         if message.message_type == MessageTypeTag::ConnectRequest || message.message_type == MessageTypeTag::ConnectResponse {
             if header.destination.dest != self.own_name &&
-                (header.destination.reply_to.is_none() ||
-                 header.destination.reply_to != Some(self.own_name.clone())) { // "not for me"
+                (header.destination.relay_to.is_none() ||
+                 header.destination.relay_to != Some(self.own_name.clone())) { // "not for me"
                 return Ok(());
             }
         }
@@ -676,7 +672,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         self.send_swarm_or_parallel(&original_header.send_to().dest, &serialised_msg);
         // if node is in my group && in non routing list send it to non_routing list as well
-        self.send_by_name(original_header.source.reply_to.iter(), serialised_msg);
+        self.send_by_name(original_header.source.relayed_for.iter(), serialised_msg);
 
         Ok(())
     }
@@ -926,25 +922,25 @@ impl<F> RoutingNode<F> where F: Interface {
             if id.is_some() {
                 return types::SourceAddress{ from_node: id.unwrap().clone(),
                                              from_group: None,
-                                             reply_to: Some(self.own_name.clone()) }
+                                             reply_to: None,
+                                             relayed_for: Some(self.own_name.clone()) }
             }
         }
-        return types::SourceAddress{ from_node: self.own_name.clone(),
-                                     from_group: None,
-                                     reply_to: None }
+        return types::SourceAddress{ from_node: self.own_name.clone(), from_group: None, reply_to: None, relayed_for: None }
     }
 
     fn group_address_for_group(&self, group_address : &types::GroupAddress) -> types::SourceAddress {
         types::SourceAddress {
           from_node : self.own_name.clone(),
           from_group : Some(group_address.clone()),
-          reply_to : None
+          reply_to : None,
+          relayed_for: None
         }
     }
 
     fn our_group_address(&self, group_id: NameType) -> types::SourceAddress {
         types::SourceAddress{ from_node: self.own_name.clone(), from_group: Some(group_id.clone()),
-                                reply_to: None }
+                              reply_to: None, relayed_for: None }
     }
 
     fn construct_get_group_key_response_msg(&mut self, original_header : &MessageHeader,
@@ -969,7 +965,7 @@ impl<F> RoutingNode<F> where F: Interface {
             self.get_next_message_id(),
             types::DestinationAddress {
                  dest:     self.own_name.clone(),
-                 reply_to: Some(self.id())
+                 relay_to: None
             },
             self.our_source_address(),
             Authority::ManagedNode);
@@ -1003,7 +999,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
     fn construct_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingMessage {
         let header = MessageHeader::new(self.get_next_message_id(),
-            types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
+            types::DestinationAddress {dest: peer_id.clone(), relay_to: None },
             self.our_source_address(), Authority::ManagedNode);
 
         // FIXME: We're sending all accepting connections as local since we don't differentiate
@@ -1025,7 +1021,7 @@ impl<F> RoutingNode<F> where F: Interface {
         println!("{:?} construct_connect_response_msg ", self.own_name);
         debug_assert!(connect_request.receiver_id == self.own_name, format!("{:?} == {:?} failed", self.own_name, connect_request.receiver_id));
 
-        let header = MessageHeader::new(self.get_next_message_id(),
+        let header = MessageHeader::new(original_header.message_id,
             original_header.send_to(), self.our_source_address(),
             Authority::ManagedNode);
 
@@ -1296,8 +1292,8 @@ mod test {
         let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
         let header = MessageHeader {
             message_id:  n1.get_next_message_id(),
-            destination: types::DestinationAddress { dest: n1.own_name.clone(), reply_to: None },
-            source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
+            destination: types::DestinationAddress { dest: n1.own_name.clone(), relay_to: None },
+            source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None, relayed_for: None },
             authority:   match message_type {
                 MessageTypeTag::UnauthorisedPut => Authority::Unknown,
                 _ => Authority::NaeManager
@@ -1409,7 +1405,7 @@ mod test {
                 }
             }));
         let listening_endpoints = node.lock().unwrap().accepting_on.clone();
-        println!("network: {:?},    {:?}", &listening_endpoints, node.lock().unwrap().id());
+        println!("network: {:?},  {:?}", &listening_endpoints, node.lock().unwrap().id());
         for _ in 0..(network_size - 1) {
             let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
             let use_node = node.clone();
@@ -1469,12 +1465,10 @@ mod test {
             let put_public_id_header : MessageHeader = MessageHeader {
                 message_id : random::<u32>(),
                 destination : types::DestinationAddress {
-                    dest : put_public_id.public_id.name(),
-                    reply_to : None },
+                    dest : put_public_id.public_id.name(), relay_to : None },
                 source : types::SourceAddress {
                     from_node : Random::generate_random(),  // Bootstrap node or ourself
-                    from_group : None,
-                    reply_to : None },
+                    from_group : None, reply_to : None, relayed_for : None },
                 authority : Authority::ManagedNode
             };
             let serialised_msg = encode(&put_public_id).unwrap();
@@ -1537,12 +1531,10 @@ mod test {
             let put_public_id_header : MessageHeader = MessageHeader {
                 message_id : random::<u32>(),
                 destination : types::DestinationAddress {
-                    dest : put_public_id.public_id.name(),
-                    reply_to : None },
+                    dest : put_public_id.public_id.name(), relay_to : None },
                 source : types::SourceAddress {
                     from_node : close_nodes_to_original_name[0].clone(),  // from original name group member
-                    from_group : Some(original_public_id.name()),
-                    reply_to : None },
+                    from_group : Some(original_public_id.name()), reply_to : None, relayed_for : None },
                 authority : Authority::NaeManager
             };
             let serialised_msg = encode(&put_public_id).unwrap();
