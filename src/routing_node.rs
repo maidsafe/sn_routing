@@ -672,7 +672,7 @@ impl<F> RoutingNode<F> where F: Interface {
 
         self.send_swarm_or_parallel(&original_header.send_to().dest, &serialised_msg);
         // if node is in my group && in non routing list send it to non_routing list as well
-        self.send_by_name(original_header.source.reply_to.iter(), serialised_msg);
+        self.send_by_name(original_header.source.relayed_for.iter(), serialised_msg);
 
         Ok(())
     }
@@ -922,8 +922,8 @@ impl<F> RoutingNode<F> where F: Interface {
             if id.is_some() {
                 return types::SourceAddress{ from_node: id.unwrap().clone(),
                                              from_group: None,
-                                             reply_to: Some(self.own_name.clone()),
-                                             relayed_for: None }
+                                             reply_to: None,
+                                             relayed_for: Some(self.own_name.clone()) }
             }
         }
         return types::SourceAddress{ from_node: self.own_name.clone(), from_group: None, reply_to: None, relayed_for: None }
@@ -965,7 +965,7 @@ impl<F> RoutingNode<F> where F: Interface {
             self.get_next_message_id(),
             types::DestinationAddress {
                  dest:     self.own_name.clone(),
-                 relay_to: Some(self.id())
+                 relay_to: None
             },
             self.our_source_address(),
             Authority::ManagedNode);
@@ -1021,7 +1021,7 @@ impl<F> RoutingNode<F> where F: Interface {
         println!("{:?} construct_connect_response_msg ", self.own_name);
         debug_assert!(connect_request.receiver_id == self.own_name, format!("{:?} == {:?} failed", self.own_name, connect_request.receiver_id));
 
-        let header = MessageHeader::new(self.get_next_message_id(),
+        let header = MessageHeader::new(original_header.message_id,
             original_header.send_to(), self.our_source_address(),
             Authority::ManagedNode);
 
@@ -1405,7 +1405,7 @@ mod test {
                 }
             }));
         let listening_endpoints = node.lock().unwrap().accepting_on.clone();
-        println!("network: {:?},    {:?}", &listening_endpoints, node.lock().unwrap().id());
+        println!("network: {:?},  {:?}", &listening_endpoints, node.lock().unwrap().id());
         for _ in 0..(network_size - 1) {
             let node = Arc::new(Mutex::new(RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) })));
             let use_node = node.clone();
