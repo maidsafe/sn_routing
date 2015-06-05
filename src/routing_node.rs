@@ -106,7 +106,7 @@ impl<F> RoutingNode<F> where F: Interface {
         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
         // TODO: Beacon port should be passed down
         let beacon_port = Some(5483u16);
-        let listeners = match cm.start_listening(ports_and_protocols, beacon_port) {
+        let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
             Err(reason) => {
                 println!("Failed to start listening: {:?}", reason);
                 (vec![], None)
@@ -680,13 +680,11 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         println!("{:?} received FindGroupResponse", self.own_name);
         let find_group_response = try!(decode::<FindGroupResponse>(&body));
-
         for peer in find_group_response.group {
             if self.routing_table.check_node(&peer.name()) {
                 ignore(self.send_connect_request_msg(&peer.name()));
             }
         }
-
         Ok(())
     }
 
