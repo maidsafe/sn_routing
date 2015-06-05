@@ -161,7 +161,13 @@ impl MessageHeader {
             relayed_for: None
         };
         reply_header.destination = types::DestinationAddress {
-            dest : self.from().clone(),
+            dest : match self.source.reply_to.clone() {
+                       Some(reply_to) => reply_to,
+                       None => match self.source.from_group.clone() {
+                           Some(group_name) => group_name,
+                           None => self.source.from_node.clone()
+                       }
+                   },
             relay_to : self.source.relayed_for.clone()
         };
         reply_header.authority = our_authority.clone();
