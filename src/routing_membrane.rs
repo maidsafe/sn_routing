@@ -446,16 +446,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
             }
         }
         //
-        // // pre-sentinel message handling
-        // match message.message_type {
+        // pre-sentinel message handling
+        match message.message_type {
+            // FIXME: Unauthorised Put needs review
         //     MessageTypeTag::UnauthorisedPut => self.handle_put_data(header, body),
-        //     MessageTypeTag::GetKey => self.handle_get_key(header, body),
-        //     MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
-        //     _ => {
-        //         // Sentinel check
-        //
-        //         // switch message type
-        //         match message.message_type {
+            // MessageTypeTag::GetKey => self.handle_get_key(header, body),
+            // MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
+            _ => {
+                // Sentinel check
+
+                // switch message type
+                match message.message_type {
         //             MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body, message.signature),
         //             MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
         //             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
@@ -464,18 +465,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //             MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
         //             MessageTypeTag::Post => self.handle_post(header, body),
         //             MessageTypeTag::PostResponse => self.handle_post_response(header, body),
-        //             MessageTypeTag::PutData => self.handle_put_data(header, body),
-        //             MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
+                    MessageTypeTag::PutData => self.handle_put_data(header, body),
+                    MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
         //             MessageTypeTag::PutPublicId => self.handle_put_public_id(header, body),
         //             //PutKey,
-        //             _ => {
-        //                 println!("unhandled message from {:?}", received_from.0);
-        //                 Err(RoutingError::UnknownMessageType)
-        //             }
-        //         }
-        //     }
-        // }
-        Ok(())
+                    _ => {
+                        Err(RoutingError::UnknownMessageType)
+                    }
+                }
+            }
+        }
     }
 
     /// Scan all passing messages for the existance of nodes in the address space.
@@ -616,6 +615,58 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 
     // -----Message Handlers from Routing Table connections----------------------------------------
+    // FIXME: all handlers need completion and review
+
+    // Routing handle put_data
+    fn handle_put_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        let put_data = try!(decode::<PutData>(&body));
+        let our_authority = our_authority(&put_data.name, &header, &self.routing_table);
+        let from_authority = header.from_authority();
+        let from = header.from();
+        let to = header.send_to();
+
+        // FIXME: handle interface errors
+        match try!(self.mut_interface().handle_put(our_authority.clone(), from_authority, from,
+                                                   to, put_data.data.clone())) {
+            MessageAction::Reply(reply_data) => {
+                let reply_header = header.create_reply(&self.own_name, &our_authority);
+                let reply_to = match our_authority {
+                    Authority::ClientManager => match header.reply_to() {
+                        Some(client) => client,
+                        None => header.from()
+                    },
+                    _ => header.from()
+                };
+                let put_data_response = PutDataResponse {
+                    name : put_data.name.clone(),
+                    data : Ok(reply_data),
+                };
+                let routing_msg = RoutingMessage::new(MessageTypeTag::PutDataResponse,
+                    reply_header, put_data_response, &self.id.get_crypto_secret_sign_key());
+                self.send_swarm_or_parallel(&reply_to, &try!(encode(&routing_msg)));
+                Ok(())
+            },
+            MessageAction::SendOn(destinations) => {
+                for destination in destinations {
+                    let send_on_header = header.create_send_on(&self.own_name,
+                        &our_authority, &destination);
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::PutData,
+                        send_on_header, put_data.clone(), &self.id.get_crypto_secret_sign_key());
+                    self.send_swarm_or_parallel(&destination, &try!(encode(&routing_msg)));
+                }
+                Ok(())
+            },
+        }
+    }
+
+    fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        let put_data_response = try!(decode::<PutDataResponse>(&body));
+        let from_authority = header.from_authority();
+        let from = header.from();
+        // TODO: result verification
+        self.mut_interface().handle_put_response(from_authority, from, put_data_response.data);
+        Ok(())
+    }
 
     fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes, signature: Signature) -> RoutingResult {
         println!("{:?} received ConnectRequest ", self.own_name);
