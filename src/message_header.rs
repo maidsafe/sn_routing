@@ -102,12 +102,12 @@ impl MessageHeader {
         if self.is_relayed() {
             types::DestinationAddress{
                 dest : self.source.from_node.clone(),
-                reply_to : self.source.reply_to.clone()
+                relay_to : self.source.relayed_for.clone()
             }
         } else {
             types::DestinationAddress{
                 dest : self.source.from_node.clone(),
-                reply_to : None
+                relay_to : None
             }
         }
     }
@@ -132,11 +132,12 @@ impl MessageHeader {
         send_on_header.source = types::SourceAddress {
             from_node : our_name.clone(),
             from_group : Some(self.destination.dest.clone()),
-            reply_to : self.source.reply_to.clone()
+            reply_to : self.source.reply_to.clone(),
+            relayed_for : self.source.relayed_for.clone()
         };
         send_on_header.destination = types::DestinationAddress {
             dest : destination.clone(),
-            reply_to : self.destination.reply_to.clone()
+            relay_to : self.destination.relay_to.clone()
         };
         send_on_header.authority = our_authority.clone();
         send_on_header
@@ -154,11 +155,12 @@ impl MessageHeader {
         reply_header.source = types::SourceAddress {
             from_node : our_name.clone(),
             from_group : Some(self.destination.dest.clone()),
-            reply_to : None
+            reply_to : None,
+            relayed_for: None
         };
         reply_header.destination = types::DestinationAddress {
             dest : self.from().clone(),
-            reply_to : self.source.reply_to.clone()
+            relay_to : self.source.relayed_for.clone()
         };
         reply_header.authority = our_authority.clone();
         reply_header

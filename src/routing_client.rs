@@ -193,18 +193,18 @@ impl<F> RoutingClient<F> where F: Interface {
         let requester = types::SourceAddress {
             from_node: self.bootstrap_address.0.clone().unwrap(),
             from_group: None,
-            reply_to: Some(self.id_packet.get_name())
+            reply_to: None,
+            relayed_for: Some(self.id_packet.get_name())
         };
 
         let message_id = self.get_next_message_id();
-
         let message = messages::RoutingMessage::new(
             messages::MessageTypeTag::GetData,
             message_header::MessageHeader::new(
                 self.get_next_message_id(),
                 types::DestinationAddress {
                     dest: name.clone(),
-                    reply_to: None
+                    relay_to: None
                 },
                 requester.clone(),
                 Authority::Client
@@ -224,11 +224,12 @@ impl<F> RoutingClient<F> where F: Interface {
             messages::MessageTypeTag::PutData,
             MessageHeader::new(
                 message_id,
-                types::DestinationAddress {dest: self.id_packet.get_name(), reply_to: None },
+                types::DestinationAddress {dest: self.id_packet.get_name(), relay_to: None },
                 types::SourceAddress {
                     from_node: self.bootstrap_address.0.clone().unwrap(),
                     from_group: None,
-                    reply_to: Some(self.id_packet.get_name()),
+                    reply_to: None,
+                    relayed_for: Some(self.id_packet.get_name()),
                 },
                 Authority::Client
             ),
@@ -243,11 +244,12 @@ impl<F> RoutingClient<F> where F: Interface {
     pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
         let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut,
             MessageHeader::new(self.get_next_message_id(),
-                types::DestinationAddress{ dest: destination, reply_to: None },
+                types::DestinationAddress{ dest: destination, relay_to: None },
                 types::SourceAddress {
                                 from_node: self.bootstrap_address.0.clone().unwrap(),
                                 from_group: None,
-                                reply_to: Some(self.id_packet.get_name()),
+                                reply_to: None,
+                                relayed_for: Some(self.id_packet.get_name()),
                             },
                 Authority::Unknown),
             PutData{ name: content.name(), data: content.serialised_contents() },
@@ -274,8 +276,8 @@ impl<F> RoutingClient<F> where F: Interface {
                 if self.bootstrap_address.1 == Some(endpoint.clone()) {
                     if routing_msg.message_type == messages::MessageTypeTag::BootstrapIdResponse {
                         self.handle_bootstrap_id_response(endpoint, routing_msg.serialised_body);
-                    } else if routing_msg.message_header.destination.reply_to.is_some() &&
-                              routing_msg.message_header.destination.reply_to.clone().unwrap() == self.id_packet.get_name() {
+                    } else if routing_msg.message_header.destination.relay_to.is_some() &&
+                              routing_msg.message_header.destination.relay_to.clone().unwrap() == self.id_packet.get_name() {
                         match routing_msg.message_type {
                             messages::MessageTypeTag::GetDataResponse => {
                                 self.handle_get_data_response(routing_msg.message_header, routing_msg.serialised_body);
@@ -306,8 +308,8 @@ impl<F> RoutingClient<F> where F: Interface {
             MessageTypeTag::BootstrapIdRequest,
             MessageHeader::new(
                 self.get_next_message_id(),
-                types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
-                types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None },
+                types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), relay_to: None },
+                types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None, relayed_for: None },
                 Authority::Client),
             BootstrapIdRequest { sender_id: self.id_packet.get_name().clone() },
             &self.id_packet.get_crypto_secret_sign_key());
