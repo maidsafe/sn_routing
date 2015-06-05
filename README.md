@@ -1,4 +1,4 @@
-# routing
+# Routing
 
 **Primary Maintainer:**     Benjamin Bollen (benjamin.bollen@maidsafe.net)
 
@@ -49,8 +49,8 @@ correct name calculation of pure Id
 
 ## [0.1.62] - restructure core of routing
 
-- [ ] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
-  - [ ] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) Integrate handlers with RelayMap
+- [x] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
+  - [x] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) Integrate handlers with RelayMap
   - [x] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
 - [ ] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
   - [ ] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
@@ -82,4 +82,3 @@ correct name calculation of pure Id
 ## [0.1.90] Finish sprint
 
 - [ ] [MAID-1072](https://maidsafe.atlassian.net/browse/MAID-1072) Integration test
-- [ ] [MAID-1076](https://maidsafe.atlassian.net/browse/MAID-1076) implement Network Visualiser
