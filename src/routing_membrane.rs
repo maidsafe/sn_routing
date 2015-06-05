@@ -381,62 +381,70 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // check if we can add source to rt
         self.refresh_routing_table(&header.source.from_node);
 
-        // // add to cache
-        // if message.message_type == MessageTypeTag::GetDataResponse {
-        //     let get_data_response = try!(decode::<GetDataResponse>(&body));
-        //     let _ = get_data_response.data.map(|data| {
-        //         if data.len() != 0 {
-        //             let _ = self.mut_interface().handle_cache_put(
-        //                 header.from_authority(), header.from(), data);
-        //         }
-        //     });
-        // }
-        //
-        // // cache check / response
-        // if message.message_type == MessageTypeTag::GetData {
-        //     let get_data = try!(decode::<GetData>(&body));
-        //
-        //     let retrieved_data = self.mut_interface().handle_cache_get(
-        //         get_data.name_and_type_id.type_id.clone() as u64,
-        //         get_data.name_and_type_id.name.clone(),
-        //         header.from_authority(),
-        //         header.from());
-        //
-        //     match retrieved_data {
-        //         Ok(action) => match action {
-        //             MessageAction::Reply(data) => {
-        //                 let reply = self.construct_get_data_response_msg(&header, &get_data, data);
-        //                 return encode(&reply).map(|reply| {
-        //                     self.send_swarm_or_parallel(&header.send_to().dest, &reply);
-        //                 }).map_err(From::from);
-        //             },
-        //             _ => (),
-        //         },
-        //         Err(_) => (),
-        //     };
-        // }
-        //
-        // self.send_swarm_or_parallel(&header.destination.dest, &serialised_msg);
-        //
-        // // handle relay request/response
-        // if header.destination.dest == self.own_name {
-        //     self.send_by_name(header.destination.reply_to.iter(), serialised_msg);
-        // }
-        //
-        // if !self.address_in_close_group_range(&header.destination.dest) {
-        //     println!("{:?} not for us ", self.own_name);
-        //     return Ok(());
-        // }
-        //
-        // // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
-        // // and this node is in the group but the message destination is another group member node.
-        // if message.message_type == MessageTypeTag::ConnectRequest || message.message_type == MessageTypeTag::ConnectResponse {
-        //     if header.destination.dest != self.own_name &&
-        //         (header.destination.reply_to.is_none() ||
-        //          header.destination.reply_to != Some(self.own_name.clone())) { // "not for me"
-        //         return Ok(());
-        //     }
-        // }
+        // add to cache
+        if message.message_type == MessageTypeTag::GetDataResponse {
+            let get_data_response = try!(decode::<GetDataResponse>(&body));
+            let _ = get_data_response.data.map(|data| {
+                if data.len() != 0 {
+                    let _ = self.mut_interface().handle_cache_put(
+                        header.from_authority(), header.from(), data);
+                }
+            });
+        }
+
+        // cache check / response
+        if message.message_type == MessageTypeTag::GetData {
+            let get_data = try!(decode::<GetData>(&body));
+
+            let retrieved_data = self.mut_interface().handle_cache_get(
+                get_data.name_and_type_id.type_id.clone() as u64,
+                get_data.name_and_type_id.name.clone(),
+                header.from_authority(),
+                header.from());
+
+            match retrieved_data {
+                Ok(action) => match action {
+                    MessageAction::Reply(data) => {
+                        let reply = self.construct_get_data_response_msg(&header, &get_data, data);
+                        return encode(&reply).map(|reply| {
+                            self.send_swarm_or_parallel(&header.send_to().dest, &reply);
+                        }).map_err(From::from);
+                    },
+                    _ => (),
+                },
+                Err(_) => (),
+            };
+        }
+
+        // SendOn in address space
+        self.send_swarm_or_parallel(&header.destination.dest, &serialised_msg);
+
+        // handle relay request/response
+        if header.destination.dest == self.own_name {
+            // FIXME: source and destination addresses need a correction
+            match header.destination.reply_to {
+                Some(relay) => {
+                    self.send_out_as_relay(&relay, serialised_msg);
+                    return Ok(());
+                },
+                None => {}
+            };
+        }
+
+        if !self.address_in_close_group_range(&header.destination.dest) {
+            println!("{:?} not for us ", self.own_name);
+            return Ok(());
+        }
+
+        // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
+        // and this node is in the group but the message destination is another group member node.
+        if message.message_type == MessageTypeTag::ConnectRequest
+            || message.message_type == MessageTypeTag::ConnectResponse {
+            if header.destination.dest != self.own_name  {
+                // "not for me"
+                return Ok(());
+            }
+        }
         //
         // // pre-sentinel message handling
         // match message.message_type {
@@ -514,6 +522,31 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
+    // -----Name-based Send Functions----------------------------------------
+
+    fn send_out_as_relay(&mut self, name: &NameType, msg: Bytes) {
+        let mut failed_endpoints : Vec<Endpoint> = Vec::new();
+        match self.relay_map.get_endpoints(name) {
+            Some(&(ref public_id, ref endpoints)) => {
+                for endpoint in endpoints {
+                    match self.connection_manager.send(endpoint.clone(), msg.clone()) {
+                        Ok(_) => break,
+                        Err(_) => {
+                            println!("Dropped relay connection {:?} on failed attempt
+                                to relay for node {:?}", endpoint, name);
+                            failed_endpoints.push(endpoint.clone());
+                        }
+                    };
+                }
+            },
+            None => {}
+        };
+        for failed_endpoint in failed_endpoints {
+            self.relay_map.drop_endpoint(&failed_endpoint);
+            self.connection_manager.drop_node(failed_endpoint);
+        }
+    }
+
     fn send_swarm_or_parallel(&self, name : &NameType, msg: &Bytes) {
         for peer in self.routing_table.target_nodes(name) {
             match peer.connected_endpoint {
@@ -530,6 +563,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let serialised_message = try!(encode(&routing_msg));
         self.send_swarm_or_parallel(peer_id, &serialised_message);
         Ok(())
+    }
+
+    // -----Address and various functions----------------------------------------
+
+    fn address_in_close_group_range(&self, address: &NameType) -> bool {
+        if self.routing_table.size() < RoutingTable::get_group_size() {
+            return true;
+        }
+
+        match self.routing_table.our_close_group().pop() {
+            Some(furthest_close_node) => {
+                closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.own_name)
+            },
+            None => false  // ...should never reach here
+        }
     }
 
     // TODO: add optional group; fix bootstrapping/relay
@@ -614,6 +662,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
         Ok(())
     }
+
     // -----Message Constructors-----------------------------------------------
 
     fn construct_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingMessage {
@@ -640,7 +689,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         println!("{:?} construct_connect_response_msg ", self.own_name);
         debug_assert!(connect_request.receiver_id == self.own_name, format!("{:?} == {:?} failed", self.own_name, connect_request.receiver_id));
 
-        // FIXME: re-use message_id
         let header = MessageHeader::new(original_header.message_id(),
             original_header.send_to(), self.our_source_address(),
             Authority::ManagedNode);
@@ -660,6 +708,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         RoutingMessage::new(MessageTypeTag::ConnectResponse, header,
             connect_response, &self.id.get_crypto_secret_sign_key())
+    }
+
+    fn construct_get_data_response_msg(&mut self, original_header: &MessageHeader,
+                                       get_data: &GetData, data: Vec<u8>) -> RoutingMessage {
+        let header = original_header.create_reply(&self.own_name, &Authority::ManagedNode);
+        let get_data_response = GetDataResponse {
+            name_and_type_id: get_data.name_and_type_id.clone(), data: Ok(data)
+        };
+        RoutingMessage::new(MessageTypeTag::GetDataResponse, header,
+            get_data_response, &self.id.get_crypto_secret_sign_key())
     }
 }
 
