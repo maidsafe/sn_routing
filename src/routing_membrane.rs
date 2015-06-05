@@ -37,7 +37,7 @@ use sodiumoxide::crypto::sign::verify_detached;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc;
 use std::boxed::Box;
-// use std::ops::DerefMut;
+use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
 use time::{Duration, SteadyTime};
 
@@ -52,7 +52,7 @@ use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
 use sendable::Sendable;
 use types;
-use types::{MessageId, NameAndTypeId, Signature, Bytes};
+use types::{MessageId, NameAndTypeId, Signature, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
 use message_header::MessageHeader;
 // use messages::bootstrap_id_request::BootstrapIdRequest;
@@ -72,6 +72,7 @@ use messages::post::Post;
 use messages::get_client_key::GetKey;
 use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_id::PutPublicId;
+use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, InterfaceError, ResponseError};
@@ -92,7 +93,7 @@ enum ConnectionName {
 }
 
 /// Routing Membrane
-pub struct RoutingMembrane {
+pub struct RoutingMembrane<F : Interface> {
     // for CRUST
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
@@ -106,10 +107,12 @@ pub struct RoutingMembrane {
     filter: MessageFilter<types::FilterType>,
     public_id_cache: LruCache<NameType, types::PublicId>,
     connection_cache: BTreeMap<NameType, SteadyTime>,
+    // for Persona logic
+    interface: Box<F>
 }
 
-impl RoutingMembrane {
-    pub fn new() -> RoutingMembrane {
+impl<F> RoutingMembrane<F> where F: Interface {
+    pub fn new(personas : F) -> RoutingMembrane<F> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let id = types::Id::new();
@@ -139,6 +142,7 @@ impl RoutingMembrane {
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                       public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
                       connection_cache: BTreeMap::new(),
+                      interface : Box::new(personas)
                     }
     }
 
@@ -196,7 +200,8 @@ impl RoutingMembrane {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
-                            self.message_received(&name, bytes);
+                            self.message_received(&ConnectionName::Routing(name),
+                                bytes);
                         },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
@@ -224,7 +229,7 @@ impl RoutingMembrane {
         let header = message.message_header;
         let body = message.serialised_body;
         let signature = message.signature;
-        // only accept ConnectRequest messages from unknown endpoints
+        //  from unknown endpoints only accept ConnectRequest messages
         let connect_request = try!(decode::<ConnectRequest>(&body));
         // first verify that the message is correctly self-signed
         if !verify_detached(&signature.get_crypto_signature(),
@@ -232,46 +237,347 @@ impl RoutingMembrane {
                                                        .get_crypto_public_sign_key()) {
             return Err(RoutingError::Response(ResponseError::InvalidRequest));
         }
-        // match on the relocation status of the fob
-        match connect_request.requester_fob.is_relocated() {
-          // if the PublicId claims to be relocated,
-          // check whether we have a temporary record of his relocated Id,
-          // which we would have stored after the sentinel group consensus
-          // of the relocated Id.
-          true => {},
-          // if the PublicId is not relocated,
-          // only accept the connection into the RelayMap.
-          // This will enable this connection to bootstrap or act as a client.
-          false => {}
-        }
-
+        // only accept unrelocated Ids from unknown connections
+        if connect_request.requester_fob.is_relocated() {
+            return Err(RoutingError::RejectedPublicId); }
+        // if the PublicId is not relocated,
+        // only accept the connection into the RelayMap.
+        // This will enable this connection to bootstrap or act as a client.
+        let routing_msg = self.construct_connect_response_msg(&header, &body,
+            &signature, &connect_request);
+        let serialised_message = try!(encode(&routing_msg));
+        // Try to connect to the peer.
+        // when CRUST succeeds at establishing a connection,
+        // we use this register to retrieve the PublicId
+        self.relay_map.register_accepted_connect_request(&connect_request.external_endpoints,
+            &connect_request.requester_fob);
+        self.connection_manager.connect(connect_request.external_endpoints);
+        self.relay_map.register_accepted_connect_request(&connect_request.local_endpoints,
+            &connect_request.requester_fob);
+        self.connection_manager.connect(connect_request.local_endpoints);
+        // Send the response containing our details.
+        // FIXME: Verify that CRUST can send a message back and does not drop it,
+        // simply because it is not established a connection yet.
+        debug_assert!(self.connection_manager.send(endpoint.clone(), serialised_message)
+            .is_ok());
         Ok(())
     }
 
-    /// Currently this event produces useless state, so ignore
+    /// When CRUST establishes a two-way connection
+    /// after exchanging details in ConnectRequest and ConnectResponse
+    ///  - we can either add it to RelayMap (if the id was not-relocated,
+    ///    and cached in relay_map)
+    ///  - or we can mark it as connected in routing table (if the id was relocated,
+    ///    and stored in public_id_cache after successful put_public_id handler,
+    ///    after which on ConnectRequest it will have been given to RT to consider adding).
+    //  FIXME: two lines are marked as relevant for state-change;
+    //  remainder is exhausting logic for debug purposes.
+    //  TODO: add churn trigger
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
         match self.lookup_endpoint(&endpoint) {
-            Some(ConnectionName::Routing(name)) => {},
-            Some(ConnectionName::Relay(name)) => {},
-            None => {}
+            Some(ConnectionName::Routing(name)) => {
+        // IMPORTANT: the only state-change is in marking the node connected; rest is debug printout
+                match self.routing_table.mark_as_connected(&endpoint) {
+                    Some(peer_name) => {
+                        println!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
+                                 self.routing_table.size(), peer_name, endpoint);
+                        // FIXME: the presence of this debug assert indicates
+                        // that the logic for unconnected RT nodes is not quite right.
+                        debug_assert!(peer_name == name);
+                    },
+                    None => {
+                        // this is purely for debug purposes; no relevant state changes
+                        match self.routing_table.lookup_endpoint(&endpoint) {
+                            Some(peer_name) => {
+                                println!("RT (size : {:?}) peer {:?} was already connected on endpoint {:?}",
+                                         self.routing_table.size(), peer_name, endpoint);
+                            },
+                            None => {
+                              println!("FAILED: dropping connection on endpoint {:?};
+                                        no peer found in RT for this endpoint
+                                        and as such also not already connected.", endpoint);
+                              // FIXME: This is a logical error because we are twice looking up
+                              // the same endpoint in the same RT::lookup_endpoint; should never occur
+                              self.connection_manager.drop_node(endpoint);
+                            }
+                        };
+                    }
+                };
+            },
+            Some(ConnectionName::Relay(name)) => {
+                // this endpoint is already present in the relay lookup_map
+                // nothing to do
+            },
+            None => {
+                // Connect requests for relays do not get stored in the relay map,
+                // as we want to avoid state; instead we keep an LruCache to recover the public_id.
+                // This either is a client or an un-relocated node bootstrapping.
+                match self.relay_map.pop_accepted_connect_request(&endpoint) {
+                    Some(public_id) => {
+                        // a relocated Id should not be in the cache for un-relocated Ids
+                        if public_id.is_relocated() {
+                            println!("FAILURE: logical code error, a relocated Id should not have made
+                                      its way into this cache.");
+                            return; }
+        // IMPORTANT: only state-change is here by adding it to the relay_map
+                        self.relay_map.add_ip_node(public_id, endpoint);
+                    },
+                    None => {
+                        // Note: we assume that the connect_request precedes
+                        // a CRUST::new_connection event and has registered a PublicId
+                        // with all desired endpoints it has.
+                        // As such, for a membrane we do not accept an unknown endpoint.
+                        // If the order on these events is not logically guaranteed by CRUST,
+                        // this branch has to be expanded.
+                        println!("Refused unknown connection from {:?}", endpoint);
+                        self.connection_manager.drop_node(endpoint);
+                    }
+                };
+            }
         };
     }
 
-    /// TODO: handle a lost connection
+    /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
+    /// TODO: A churn event might be triggered
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
-        match self.lookup_endpoint(&endpoint) {
-            Some(ConnectionName::Routing(name)) => {},
-            Some(ConnectionName::Relay(name)) => {},
+        // Make sure the endpoint is dropped anywhere
+        // The relay map will automatically drop the Name if the last endpoint to it is dropped
+        self.relay_map.drop_endpoint(&endpoint);
+        let mut trigger_churn = false;
+        match self.routing_table.lookup_endpoint(&endpoint) {
+            Some(name) => {
+                trigger_churn = self.routing_table.address_in_our_close_group_range(&name);
+                self.routing_table.drop_node(&name);
+            },
             None => {}
         };
+        // TODO: trigger churn on boolean
     }
 
-    fn message_received(&mut self, name : &NameType, serialised_msg : Bytes) {
+    /// This the fundamental functional function in routing.
+    /// It only handles messages received from connections in our routing table;
+    /// i.e. this is a pure SAFE message (and does not function as the start of a relay).
+    /// If we are the relay node for a message from the SAFE network to a node we relay for,
+    /// then we will pass out the message to the client or bootstrapping node;
+    /// no relay-messages enter the SAFE network here.
+    fn message_received(&mut self, received_from : &ConnectionName,
+        serialised_msg : Bytes) -> RoutingResult {
+        match received_from {
+            &ConnectionName::Routing(_) => {},
+            _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
+        };
+        // Parse
+        let message = try!(decode::<RoutingMessage>(&serialised_msg));
+        let header = message.message_header;
+        let body = message.serialised_body;
 
+        // filter check
+        if self.filter.check(&header.get_filter()) {
+            // should just return quietly
+            return Err(RoutingError::FilterCheckFailed);
+        }
+        // add to filter
+        self.filter.add(header.get_filter());
+
+        // check if we can add source to rt
+        self.refresh_routing_table(&header.source.from_node);
+
+        // add to cache
+        if message.message_type == MessageTypeTag::GetDataResponse {
+            let get_data_response = try!(decode::<GetDataResponse>(&body));
+            let _ = get_data_response.data.map(|data| {
+                if data.len() != 0 {
+                    let _ = self.mut_interface().handle_cache_put(
+                        header.from_authority(), header.from(), data);
+                }
+            });
+        }
+
+        // cache check / response
+        if message.message_type == MessageTypeTag::GetData {
+            let get_data = try!(decode::<GetData>(&body));
+
+            let retrieved_data = self.mut_interface().handle_cache_get(
+                get_data.name_and_type_id.type_id.clone() as u64,
+                get_data.name_and_type_id.name.clone(),
+                header.from_authority(),
+                header.from());
+
+            match retrieved_data {
+                Ok(action) => match action {
+                    MessageAction::Reply(data) => {
+                        let reply = self.construct_get_data_response_msg(&header, &get_data, data);
+                        return encode(&reply).map(|reply| {
+                            self.send_swarm_or_parallel(&header.send_to().dest, &reply);
+                        }).map_err(From::from);
+                    },
+                    _ => (),
+                },
+                Err(_) => (),
+            };
+        }
+
+        // SendOn in address space
+        self.send_swarm_or_parallel(&header.destination.dest, &serialised_msg);
+
+        // handle relay request/response
+        if header.destination.dest == self.own_name {
+            // FIXME: source and destination addresses need a correction
+            match header.destination.reply_to {
+                Some(relay) => {
+                    self.send_out_as_relay(&relay, serialised_msg);
+                    return Ok(());
+                },
+                None => {}
+            };
+        }
+
+        if !self.address_in_close_group_range(&header.destination.dest) {
+            println!("{:?} not for us ", self.own_name);
+            return Ok(());
+        }
+
+        // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
+        // and this node is in the group but the message destination is another group member node.
+        if message.message_type == MessageTypeTag::ConnectRequest
+            || message.message_type == MessageTypeTag::ConnectResponse {
+            if header.destination.dest != self.own_name  {
+                // "not for me"
+                return Ok(());
+            }
+        }
+        //
+        // pre-sentinel message handling
+        match message.message_type {
+            // FIXME: Unauthorised Put needs review
+        //     MessageTypeTag::UnauthorisedPut => self.handle_put_data(header, body),
+            // MessageTypeTag::GetKey => self.handle_get_key(header, body),
+            // MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
+            MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body, message.signature),
+            _ => {
+                // Sentinel check
+
+                // switch message type
+                match message.message_type {
+                    MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
+        //             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
+        //             MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
+        //             MessageTypeTag::GetData => self.handle_get_data(header, body),
+        //             MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
+        //             MessageTypeTag::Post => self.handle_post(header, body),
+        //             MessageTypeTag::PostResponse => self.handle_post_response(header, body),
+                    MessageTypeTag::PutData => self.handle_put_data(header, body),
+                    MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
+        //             MessageTypeTag::PutPublicId => self.handle_put_public_id(header, body),
+        //             //PutKey,
+                    _ => {
+                        Err(RoutingError::UnknownMessageType)
+                    }
+                }
+            }
+        }
     }
 
-    fn send_swarm_or_parallel(&self, target: &NameType, msg: &Bytes) {
+    /// Scan all passing messages for the existance of nodes in the address space.
+    /// If a node is detected with a name that would improve our routing table,
+    /// then we cache this name.  During a delay of 5 seconds, we collapse
+    /// all re-occurances of this name, after which we send out a connect_request
+    /// if the name is still of interest to us at that point in time.
+    /// The large delay of 5 seconds is justified, because this is only a passive
+    /// mechanism, second to active FindGroup requests.
+    fn refresh_routing_table(&mut self, from_node : &NameType) {
+      if self.routing_table.check_node(from_node) {
+          // FIXME: add correction for already connected, but not-online close node
+          let mut next_connect_request : Option<NameType> = None;
+          let time_now = SteadyTime::now();
+          self.connection_cache.entry(from_node.clone())
+                               .or_insert(time_now);
+          for (new_node, time) in self.connection_cache.iter() {
+              // note that the first method to establish the close group
+              // is through explicit FindGroup messages.
+              // This refresh on scanning messages is secondary, hence the long delay.
+              if time_now - *time > Duration::seconds(5) {
+                  next_connect_request = Some(new_node.clone());
+                  break;
+              }
+          }
+          match next_connect_request {
+              Some(connect_to_node) => {
+                  self.connection_cache.remove(&connect_to_node);
+                  // check whether it is still valid to add this node.
+                  if self.routing_table.check_node(&connect_to_node) {
+                      ignore(self.send_connect_request_msg(&connect_to_node));
+                  }
+              },
+              None => ()
+          }
+       }
+    }
 
+    // Main send function, pass iterator of targets and message to clone.
+    // FIXME: CRUST does not provide delivery promise.
+    fn send<'a, I>(&self, targets: I, message: &Bytes) where I: Iterator<Item=&'a Endpoint> {
+        for target in targets {
+            ignore(self.connection_manager.send(target.clone(), message.clone()));
+        }
+    }
+
+    // -----Name-based Send Functions----------------------------------------
+
+    fn send_out_as_relay(&mut self, name: &NameType, msg: Bytes) {
+        let mut failed_endpoints : Vec<Endpoint> = Vec::new();
+        match self.relay_map.get_endpoints(name) {
+            Some(&(ref public_id, ref endpoints)) => {
+                for endpoint in endpoints {
+                    match self.connection_manager.send(endpoint.clone(), msg.clone()) {
+                        Ok(_) => break,
+                        Err(_) => {
+                            println!("Dropped relay connection {:?} on failed attempt
+                                to relay for node {:?}", endpoint, name);
+                            failed_endpoints.push(endpoint.clone());
+                        }
+                    };
+                }
+            },
+            None => {}
+        };
+        for failed_endpoint in failed_endpoints {
+            self.relay_map.drop_endpoint(&failed_endpoint);
+            self.connection_manager.drop_node(failed_endpoint);
+        }
+    }
+
+    fn send_swarm_or_parallel(&self, name : &NameType, msg: &Bytes) {
+        for peer in self.routing_table.target_nodes(name) {
+            match peer.connected_endpoint {
+                Some(peer_endpoint) => {
+                    ignore(self.connection_manager.send(peer_endpoint, msg.clone()));
+                },
+                None => {}
+            };
+        }
+    }
+
+    fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
+        let routing_msg = self.construct_connect_request_msg(&peer_id);
+        let serialised_message = try!(encode(&routing_msg));
+        self.send_swarm_or_parallel(peer_id, &serialised_message);
+        Ok(())
+    }
+
+    // -----Address and various functions----------------------------------------
+
+    fn address_in_close_group_range(&self, address: &NameType) -> bool {
+        if self.routing_table.size() < RoutingTable::get_group_size() {
+            return true;
+        }
+
+        match self.routing_table.our_close_group().pop() {
+            Some(furthest_close_node) => {
+                closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.own_name)
+            },
+            None => false  // ...should never reach here
+        }
     }
 
     // TODO: add optional group; fix bootstrapping/relay
@@ -296,13 +602,263 @@ impl RoutingMembrane {
     }
 
     fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<ConnectionName> {
+        // prioritise routing table
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => Some(ConnectionName::Routing(name)),
+            // secondly look in the relay_map
             None => match self.relay_map.lookup_endpoint(&endpoint) {
                 Some(name) => Some(ConnectionName::Relay(name)),
                 None => None
             }
         }
+    }
+
+    fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
+
+    // -----Message Handlers from Routing Table connections----------------------------------------
+    // FIXME: all handlers need completion and review
+
+    // Routing handle put_data
+    fn handle_put_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        let put_data = try!(decode::<PutData>(&body));
+        let our_authority = our_authority(&put_data.name, &header, &self.routing_table);
+        let from_authority = header.from_authority();
+        let from = header.from();
+        let to = header.send_to();
+
+        // FIXME: handle interface errors
+        match try!(self.mut_interface().handle_put(our_authority.clone(), from_authority, from,
+                                                   to, put_data.data.clone())) {
+            MessageAction::Reply(reply_data) => {
+                let reply_header = header.create_reply(&self.own_name, &our_authority);
+                let reply_to = match our_authority {
+                    Authority::ClientManager => match header.reply_to() {
+                        Some(client) => client,
+                        None => header.from()
+                    },
+                    _ => header.from()
+                };
+                let put_data_response = PutDataResponse {
+                    name : put_data.name.clone(),
+                    data : Ok(reply_data),
+                };
+                let routing_msg = RoutingMessage::new(MessageTypeTag::PutDataResponse,
+                    reply_header, put_data_response, &self.id.get_crypto_secret_sign_key());
+                self.send_swarm_or_parallel(&reply_to, &try!(encode(&routing_msg)));
+                Ok(())
+            },
+            MessageAction::SendOn(destinations) => {
+                for destination in destinations {
+                    let send_on_header = header.create_send_on(&self.own_name,
+                        &our_authority, &destination);
+                    let routing_msg = RoutingMessage::new(MessageTypeTag::PutData,
+                        send_on_header, put_data.clone(), &self.id.get_crypto_secret_sign_key());
+                    self.send_swarm_or_parallel(&destination, &try!(encode(&routing_msg)));
+                }
+                Ok(())
+            },
+        }
+    }
+
+    fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        let put_data_response = try!(decode::<PutDataResponse>(&body));
+        let from_authority = header.from_authority();
+        let from = header.from();
+        // TODO: result verification
+        self.mut_interface().handle_put_response(from_authority, from, put_data_response.data);
+        Ok(())
+    }
+
+    fn handle_connect_request(&mut self, original_header: MessageHeader, body: Bytes, signature: Signature) -> RoutingResult {
+        println!("{:?} received ConnectRequest ", self.own_name);
+        let connect_request = try!(decode::<ConnectRequest>(&body));
+        if !connect_request.requester_fob.is_relocated() {
+            return Err(RoutingError::RejectedPublicId); }
+        // first verify that the message is correctly self-signed
+        if !verify_detached(&signature.get_crypto_signature(),
+                            &body[..], &connect_request.requester_fob.public_sign_key
+                                                       .get_crypto_public_sign_key()) {
+            return Err(RoutingError::Response(ResponseError::InvalidRequest));
+        }
+        // if the PublicId claims to be relocated,
+        // check whether we have a temporary record of this relocated Id,
+        // which we would have stored after the sentinel group consensus
+        // of the relocated Id. If the fobs match, add it to routing_table.
+        match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
+            Some(public_id) => {
+                // check the full fob received corresponds, not just the names
+                if public_id == connect_request.requester_fob {
+                    // Collect the local and external endpoints into a single vector to construct a NodeInfo
+                    let mut peer_endpoints = connect_request.local_endpoints.clone();
+                    peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
+                    let peer_node_info =
+                        NodeInfo::new(connect_request.requester_fob.clone(), peer_endpoints, None);
+                    // Try to add to the routing table.  If unsuccessful, no need to continue.
+                    let (added, _) = self.routing_table.add_node(peer_node_info.clone());
+                    if !added {
+                        return Err(RoutingError::RefusedFromRoutingTable); }
+                    println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name());
+                    // Try to connect to the peer.
+                    self.connection_manager.connect(connect_request.local_endpoints.clone());
+                    self.connection_manager.connect(connect_request.external_endpoints.clone());
+                    // Send the response containing our details,
+                    // and add the original signature as proof of the request
+                    let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
+                    let serialised_message = try!(encode(&routing_msg));
+
+                    self.send_swarm_or_parallel(&routing_msg.message_header.destination.dest,
+                        &serialised_message);
+                }
+            },
+            None => {}
+        };
+        Ok(())
+    }
+
+    fn handle_connect_response(&mut self, body: Bytes) -> RoutingResult {
+        println!("{:?} received ConnectResponse", self.own_name);
+        let connect_response = try!(decode::<ConnectResponse>(&body));
+
+        // Verify a connect request was initiated by us.
+        let connect_request = try!(decode::<ConnectRequest>(&connect_response.serialised_connect_request));
+        if connect_request.requester_id != self.id.get_name() ||
+           !verify_detached(&connect_response.connect_request_signature.get_crypto_signature(),
+                            &connect_response.serialised_connect_request[..],
+                            &self.id.get_crypto_public_sign_key()) {
+            return Err(RoutingError::Response(ResponseError::InvalidRequest));
+        }
+        // double check if fob is relocated;
+        // this should be okay as we check this before sending out a connect_request
+        if !connect_response.receiver_fob.is_relocated() {
+            return Err(RoutingError::RejectedPublicId); }
+        // Collect the local and external endpoints into a single vector to construct a NodeInfo
+        let mut peer_endpoints = connect_response.receiver_local_endpoints.clone();
+        peer_endpoints.extend(connect_response.receiver_external_endpoints.clone().into_iter());
+        let peer_node_info =
+            NodeInfo::new(connect_response.receiver_fob.clone(), peer_endpoints, None);
+
+        // Try to add to the routing table.  If unsuccessful, no need to continue.
+        let (added, _) = self.routing_table.add_node(peer_node_info.clone());
+        if !added {
+           return Err(RoutingError::RefusedFromRoutingTable); }
+        println!("RT (size : {:?}) added {:?}", self.routing_table.size(), peer_node_info.fob.name());
+        // Try to connect to the peer.
+        self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
+        self.connection_manager.connect(connect_response.receiver_external_endpoints.clone());
+        Ok(())
+    }
+
+    /// On bootstrapping a node can temporarily publish its PublicId in the group.
+    /// Sentinel will query this pool. No handle_get_public_id is needed.
+    // TODO (Ben): check whether to accept id into group;
+    // restrict on minimal similar number of leading bits.
+
+    fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        let put_public_id = try!(decode::<PutPublicId>(&body));
+        let our_authority = our_authority(&put_public_id.public_id.name(), &header, &self.routing_table);
+
+        match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
+            (Authority::ManagedNode, Authority::NaeManager, false) => {
+                let mut put_public_id_relocated = put_public_id.clone();
+
+                let mut close_group_node_ids : Vec<NameType> = Vec::new();
+                for node_info in self.routing_table.our_close_group() {
+                    close_group_node_ids.push(node_info.id());
+                }
+
+                let relocated_name =  try!(types::calculate_relocated_name(
+                                            close_group_node_ids,
+                                            &put_public_id.public_id.name()));
+                // assign_relocated_name
+                put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
+
+                // SendOn to relocated_name group, which will actually store the relocated public id
+                let mut send_on_header = header.create_send_on(&self.own_name, &our_authority, &relocated_name);
+                send_on_header.message_id = send_on_header.message_id.wrapping_add(1);
+                let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicId,
+                                                      send_on_header, put_public_id_relocated,
+                                                      &self.id.get_crypto_secret_sign_key());
+                self.send_swarm_or_parallel(&relocated_name, &try!(encode(&routing_msg)));
+                Ok(())
+            },
+            (Authority::NaeManager, Authority::NaeManager, true) => {
+                // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
+                if !self.public_id_cache.check(&put_public_id.public_id.name()) {
+                  self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
+                  // Reply with PutPublicIdResponse to the reply_to address
+                  let reply_header = header.create_reply(&self.own_name, &our_authority);
+                  let destination = reply_header.destination.dest.clone();
+                  let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
+                                                        reply_header,
+                                                        PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
+                                                        &self.id.get_crypto_secret_sign_key());
+                  let encoded_msg = try!(encode(&routing_msg));
+                  // Send this to the relay node as specified in the reply_header
+                  self.send_swarm_or_parallel(&destination, &encoded_msg);
+                }
+                Ok(())
+            },
+            _ => {
+                Err(RoutingError::BadAuthority)
+            }
+        }
+    }
+
+    // -----Message Constructors-----------------------------------------------
+
+    fn construct_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingMessage {
+        let header = MessageHeader::new(self.get_next_message_id(),
+            types::DestinationAddress {dest: peer_id.clone(), reply_to: None },
+            self.our_source_address(), Authority::ManagedNode);
+
+        // FIXME: We're sending all accepting connections as local since we don't differentiate
+        // between local and external yet.
+        let connect_request = ConnectRequest {
+            local_endpoints: self.accepting_on.clone(),
+            external_endpoints: vec![],
+            requester_id: self.own_name.clone(),
+            receiver_id: peer_id.clone(),
+            requester_fob: types::PublicId::new(&self.id),
+        };
+
+        RoutingMessage::new(MessageTypeTag::ConnectRequest, header, connect_request,
+            &self.id.get_crypto_secret_sign_key())
+    }
+
+    fn construct_connect_response_msg(&mut self, original_header : &MessageHeader, body: &Bytes, signature: &Signature,
+                                      connect_request: &ConnectRequest) -> RoutingMessage {
+        println!("{:?} construct_connect_response_msg ", self.own_name);
+        debug_assert!(connect_request.receiver_id == self.own_name, format!("{:?} == {:?} failed", self.own_name, connect_request.receiver_id));
+
+        let header = MessageHeader::new(original_header.message_id(),
+            original_header.send_to(), self.our_source_address(),
+            Authority::ManagedNode);
+
+        // FIXME: We're sending all accepting connections as local since we don't differentiate
+        // between local and external yet.
+        let connect_response = ConnectResponse {
+            requester_local_endpoints: connect_request.local_endpoints.clone(),
+            requester_external_endpoints: connect_request.external_endpoints.clone(),
+            receiver_local_endpoints: self.accepting_on.clone(),
+            receiver_external_endpoints: vec![],
+            requester_id: connect_request.requester_id.clone(),
+            receiver_id: self.own_name.clone(),
+            receiver_fob: types::PublicId::new(&self.id),
+            serialised_connect_request: body.clone(),
+            connect_request_signature: signature.clone() };
+
+        RoutingMessage::new(MessageTypeTag::ConnectResponse, header,
+            connect_response, &self.id.get_crypto_secret_sign_key())
+    }
+
+    fn construct_get_data_response_msg(&mut self, original_header: &MessageHeader,
+                                       get_data: &GetData, data: Vec<u8>) -> RoutingMessage {
+        let header = original_header.create_reply(&self.own_name, &Authority::ManagedNode);
+        let get_data_response = GetDataResponse {
+            name_and_type_id: get_data.name_and_type_id.clone(), data: Ok(data)
+        };
+        RoutingMessage::new(MessageTypeTag::GetDataResponse, header,
+            get_data_response, &self.id.get_crypto_secret_sign_key())
     }
 }
 

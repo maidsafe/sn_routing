@@ -112,6 +112,7 @@ impl MessageHeader {
         }
     }
 
+    // FIXME: add from_authority to filter value
     pub fn get_filter(&self) -> types::FilterType {
         (self.source.from_node.clone(), self.message_id)
     }
@@ -129,6 +130,7 @@ impl MessageHeader {
                           destination : &NameType) -> MessageHeader {
         // implicitly preserve all non-mutated fields.
         let mut send_on_header = self.clone();
+        send_on_header.message_id = self.message_id.wrapping_add(1u32);
         send_on_header.source = types::SourceAddress {
             from_node : our_name.clone(),
             from_group : Some(self.destination.dest.clone()),

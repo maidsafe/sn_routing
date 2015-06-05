@@ -1145,13 +1145,6 @@ fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
 
 fn ignore<R,E>(_: Result<R,E>) {}
 
-// The method is intentionally imlemented outside impl as it does not need RoutingNode
-// This function later should return tx part of the channel.
-fn run_membrane() {
-    let mut membrane = RoutingMembrane::new();
-    spawn(move || membrane.run());
-}
-
 #[cfg(test)]
 mod test {
     use routing_node::{RoutingNode};

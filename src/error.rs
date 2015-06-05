@@ -153,6 +153,11 @@ pub enum RoutingError {
     FailedToBootstrap,
     /// unexpected empty routing table
     RoutingTableEmpty,
+    /// public id rejected because of unallowed relocated status
+    RejectedPublicId,
+    /// routing table did not add the node information,
+    /// either because it was already added, or because it did not improve the routing table
+    RefusedFromRoutingTable,
     /// interface error
     Interface(InterfaceError),
     /// i/o error
@@ -188,6 +193,8 @@ impl error::Error for RoutingError {
             RoutingError::FilterCheckFailed => "Filter check failure",
             RoutingError::FailedToBootstrap => "Could not bootstrap",
             RoutingError::RoutingTableEmpty => "Routing table empty",
+            RoutingError::RejectedPublicId => "Rejected Public Id",
+            RoutingError::RefusedFromRoutingTable => "Refused from routing table",
             RoutingError::Interface(ref e) => "Interface error",
             RoutingError::Io(ref err) => "I/O error",
             RoutingError::Cbor(ref err) => "Serialisation error",
@@ -215,6 +222,8 @@ impl fmt::Display for RoutingError {
             RoutingError::FilterCheckFailed => fmt::Display::fmt("filter check failed", f),
             RoutingError::FailedToBootstrap => fmt::Display::fmt("could not bootstrap", f),
             RoutingError::RoutingTableEmpty => fmt::Display::fmt("routing table empty", f),
+            RoutingError::RejectedPublicId => fmt::Display::fmt("Rejected Public Id", f),
+            RoutingError::RefusedFromRoutingTable => fmt::Display::fmt("Refused from routing table", f),
             RoutingError::Interface(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Cbor(ref err) => fmt::Display::fmt(err, f),
