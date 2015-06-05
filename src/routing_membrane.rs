@@ -422,7 +422,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // handle relay request/response
         if header.destination.dest == self.own_name {
             // FIXME: source and destination addresses need a correction
-            match header.destination.reply_to {
+            match header.destination.relay_to {
                 Some(relay) => {
                     self.send_out_as_relay(&relay, serialised_msg);
                     return Ok(());
