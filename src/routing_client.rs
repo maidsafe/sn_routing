@@ -215,7 +215,7 @@ impl<F> RoutingClient<F> where F: Interface {
             ),
             GetData {requester: requester.clone(), name_and_type_id: types::NameAndTypeId {
                 name: name.clone(), type_id: type_id }},
-            &self.id_packet.secret_keys.0
+            &self.id.get_crypto_secret_sign_key()
         );
 
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
@@ -228,16 +228,16 @@ impl<F> RoutingClient<F> where F: Interface {
             messages::MessageTypeTag::PutData,
             MessageHeader::new(
                 message_id,
-                types::DestinationAddress {dest: self.id_packet.get_name(), reply_to: None },
+                types::DestinationAddress {dest: self.public_id.name(), reply_to: None },
                 types::SourceAddress {
                     from_node: self.bootstrap_address.0.clone().unwrap(),
                     from_group: None,
-                    reply_to: Some(self.id_packet.get_name()),
+                    reply_to: Some(self.public_id.name()),
                 },
                 Authority::Client
             ),
             PutData {name: content.name(), data: content.serialised_contents()},
-            &self.id_packet.secret_keys.0
+            &self.id.get_crypto_secret_sign_key()
         );
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
         Ok(message_id)
@@ -255,7 +255,7 @@ impl<F> RoutingClient<F> where F: Interface {
                             },
                 Authority::Unknown),
             PutData{ name: content.name(), data: content.serialised_contents() },
-            &self.id_packet.secret_keys.0);
+            &self.id.get_crypto_secret_sign_key());
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
     }
 
@@ -272,10 +272,10 @@ impl<F> RoutingClient<F> where F: Interface {
                 };
                 // println!("received a {:?} from {}", routing_msg.message_type,
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
-                match self.bootstrap_address.1 {
-                    Some(bootstrap_endpoint) => {
+                match self.bootstrap_address.1.clone() {
+                    Some(ref bootstrap_endpoint) => {
                         // only accept messages from our bootstrap endpoint
-                        if bootstrap_endpoint == endpoint {
+                        if bootstrap_endpoint == &endpoint {
                             match routing_msg.message_type {
                                 MessageTypeTag::ConnectResponse => {
                                     self.handle_connect_response(endpoint, routing_msg.serialised_body);
@@ -312,17 +312,27 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     fn send_bootstrap_connect_request(&mut self) {
-        let message = RoutingMessage::new(
-            MessageTypeTag::ConnectRequest,
-            MessageHeader::new(
-                // FIXME: after MAID-1126; update these relay fields
-                self.get_next_message_id(),
-                types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
-                types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None },
-                Authority::Client),
-            ConnectRequest { sender_id: self.id_packet.get_name().clone() },
-            &self.id_packet.get_crypto_secret_sign_key());
-        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        match self.bootstrap_address.clone() {
+            (Some(ref name), Some(ref endpoint)) => {
+                let message = RoutingMessage::new(
+                    MessageTypeTag::ConnectRequest,
+                    MessageHeader::new(
+                        // FIXME: after MAID-1126; update these relay fields
+                        self.get_next_message_id(),
+                        types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
+                        types::SourceAddress{ from_node: self.public_id.name().clone(), from_group: None, reply_to: None },
+                        Authority::Client),
+                    ConnectRequest {
+                        local_endpoints: vec![],
+                        external_endpoints: vec![],
+                        requester_id: self.public_id.name(),
+                        receiver_id: name.clone(),
+                        requester_fob: self.public_id.clone() },
+                    &self.id.get_crypto_secret_sign_key());
+                let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+            },
+            _ => {}
+        }
     }
 
     fn handle_connect_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes) {
