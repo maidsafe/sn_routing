@@ -268,7 +268,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     ///    and cached in relay_map)
     ///  - or we can mark it as connected in routing table (if the id was relocated,
     ///    and stored in public_id_cache after successful put_public_id handler,
-    ///    after wich on ConnectRequest it will have been given to RT to consider adding).
+    ///    after which on ConnectRequest it will have been given to RT to consider adding).
     //  FIXME: two lines are marked as relevant for state-change;
     //  remainder is exhausting logic for debug purposes.
     //  TODO: add churn trigger
@@ -452,13 +452,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //     MessageTypeTag::UnauthorisedPut => self.handle_put_data(header, body),
             // MessageTypeTag::GetKey => self.handle_get_key(header, body),
             // MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
+            MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body, message.signature),
             _ => {
                 // Sentinel check
 
                 // switch message type
                 match message.message_type {
-        //             MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body, message.signature),
-        //             MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
+                    MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
         //             MessageTypeTag::FindGroup => self.handle_find_group(header, body),
         //             MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
         //             MessageTypeTag::GetData => self.handle_get_data(header, body),
@@ -711,6 +711,39 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             None => {}
         };
+        Ok(())
+    }
+
+    fn handle_connect_response(&mut self, body: Bytes) -> RoutingResult {
+        println!("{:?} received ConnectResponse", self.own_name);
+        let connect_response = try!(decode::<ConnectResponse>(&body));
+
+        // Verify a connect request was initiated by us.
+        let connect_request = try!(decode::<ConnectRequest>(&connect_response.serialised_connect_request));
+        if connect_request.requester_id != self.id.get_name() ||
+           !verify_detached(&connect_response.connect_request_signature.get_crypto_signature(),
+                            &connect_response.serialised_connect_request[..],
+                            &self.id.get_crypto_public_sign_key()) {
+            return Err(RoutingError::Response(ResponseError::InvalidRequest));
+        }
+        // double check if fob is relocated;
+        // this should be okay as we check this before sending out a connect_request
+        if !connect_response.receiver_fob.is_relocated() {
+            return Err(RoutingError::RejectedPublicId); }
+        // Collect the local and external endpoints into a single vector to construct a NodeInfo
+        let mut peer_endpoints = connect_response.receiver_local_endpoints.clone();
+        peer_endpoints.extend(connect_response.receiver_external_endpoints.clone().into_iter());
+        let peer_node_info =
+            NodeInfo::new(connect_response.receiver_fob.clone(), peer_endpoints, None);
+
+        // Try to add to the routing table.  If unsuccessful, no need to continue.
+        let (added, _) = self.routing_table.add_node(peer_node_info.clone());
+        if !added {
+           return Err(RoutingError::RefusedFromRoutingTable); }
+        println!("RT (size : {:?}) added {:?}", self.routing_table.size(), peer_node_info.fob.name());
+        // Try to connect to the peer.
+        self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
+        self.connection_manager.connect(connect_response.receiver_external_endpoints.clone());
         Ok(())
     }
 
