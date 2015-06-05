@@ -121,6 +121,6 @@ pub trait Interface : Sync + Send {
                         data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 }
 
-pub trait CreatePersonas<T: Interface> {
-    fn create_personas(&self) -> T;
+pub trait CreatePersonas<T: Interface> : Sync + Send  {
+    fn create_personas(&mut self) -> T;
 }
