@@ -80,7 +80,7 @@ impl MessageHeader {
     }
 
     pub fn is_relayed(&self) -> bool {
-        self.source.reply_to.is_some()
+        self.source.relayed_for.is_some()
     }
 
     pub fn reply_to(&self) -> Option<NameType> {
