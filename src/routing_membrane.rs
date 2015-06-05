@@ -461,7 +461,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 match message.message_type {
                     MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
                     MessageTypeTag::FindGroup => self.handle_find_group(header, body),
-        //             MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
+                    MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
         //             MessageTypeTag::GetData => self.handle_get_data(header, body),
         //             MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
         //             MessageTypeTag::Post => self.handle_post(header, body),
@@ -843,18 +843,33 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
+    fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
+        let find_group_response = try!(decode::<FindGroupResponse>(&body));
+
+        for peer in find_group_response.group {
+            if self.routing_table.check_node(&peer.name()) {
+                ignore(self.send_connect_request_msg(&peer.name()));
+            }
+        }
+
+        Ok(())
+    }
+
     // -----Message Constructors-----------------------------------------------
 
     fn construct_find_group_response_msg(&mut self, original_header : &MessageHeader,
                                          find_group: &FindGroup,
                                          group: Vec<types::PublicId>) -> RoutingMessage {
-        let header = MessageHeader::new(self.get_next_message_id(),
-            original_header.send_to(),
-            self.our_source_address(Some(find_group.target_id.clone())),
-            Authority::NaeManager);
 
-        RoutingMessage::new(MessageTypeTag::FindGroupResponse, header,
-            FindGroupResponse{ group: group }, &self.id.get_crypto_secret_sign_key())
+        let header = MessageHeader::new(self.get_next_message_id(),
+                                        original_header.send_to(),
+                                        self.our_source_address(Some(find_group.target_id.clone())),
+                                        Authority::NaeManager);
+
+        RoutingMessage::new(MessageTypeTag::FindGroupResponse,
+                            header,
+                            FindGroupResponse{ group: group },
+                            &self.id.get_crypto_secret_sign_key())
     }
 
     fn construct_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingMessage {
