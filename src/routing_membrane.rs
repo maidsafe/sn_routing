@@ -37,7 +37,7 @@ use sodiumoxide::crypto::sign::verify_detached;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc;
 use std::boxed::Box;
-// use std::ops::DerefMut;
+use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
 use time::{Duration, SteadyTime};
 
@@ -111,7 +111,7 @@ pub struct RoutingMembrane<F : Interface> {
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
-    pub fn new(personas : F) -> RoutingMembrane<F> {
+    pub fn new(personas : Box<F>) -> RoutingMembrane<F> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let id = types::Id::new();
@@ -141,7 +141,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                       public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
                       connection_cache: BTreeMap::new(),
-                      interface : Box::new(personas)
+                      interface : personas
                     }
     }
 

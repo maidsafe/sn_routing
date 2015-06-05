@@ -120,3 +120,7 @@ pub trait Interface : Sync + Send {
                         from_address: NameType,
                         data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 }
+
+pub trait CreatePersonas<T: Interface> {
+    fn create_personas(&self) -> T;
+}
