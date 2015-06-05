@@ -1292,8 +1292,8 @@ mod test {
         let mut n1 = RoutingNode::new(TestInterface { stats: stats_copy });
         let header = MessageHeader {
             message_id:  n1.get_next_message_id(),
-            destination: types::DestinationAddress { dest: n1.own_name.clone(), reply_to: None },
-            source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None },
+            destination: types::DestinationAddress { dest: n1.own_name.clone(), relay_to: None },
+            source:      types::SourceAddress { from_node: Random::generate_random(), from_group: None, reply_to: None, relayed_for: None },
             authority:   match message_type {
                 MessageTypeTag::UnauthorisedPut => Authority::Unknown,
                 _ => Authority::NaeManager
@@ -1465,12 +1465,10 @@ mod test {
             let put_public_id_header : MessageHeader = MessageHeader {
                 message_id : random::<u32>(),
                 destination : types::DestinationAddress {
-                    dest : put_public_id.public_id.name(),
-                    reply_to : None },
+                    dest : put_public_id.public_id.name(), relay_to : None },
                 source : types::SourceAddress {
                     from_node : Random::generate_random(),  // Bootstrap node or ourself
-                    from_group : None,
-                    reply_to : None },
+                    from_group : None, reply_to : None, relayed_for : None },
                 authority : Authority::ManagedNode
             };
             let serialised_msg = encode(&put_public_id).unwrap();
@@ -1533,12 +1531,10 @@ mod test {
             let put_public_id_header : MessageHeader = MessageHeader {
                 message_id : random::<u32>(),
                 destination : types::DestinationAddress {
-                    dest : put_public_id.public_id.name(),
-                    reply_to : None },
+                    dest : put_public_id.public_id.name(), relay_to : None },
                 source : types::SourceAddress {
                     from_node : close_nodes_to_original_name[0].clone(),  // from original name group member
-                    from_group : Some(original_public_id.name()),
-                    reply_to : None },
+                    from_group : Some(original_public_id.name()), reply_to : None, relayed_for : None },
                 authority : Authority::NaeManager
             };
             let serialised_msg = encode(&put_public_id).unwrap();

@@ -166,13 +166,10 @@ fn our_authority_full_routing_table() {
     // assert to get a client_manager Authority
     let client_manager_header : MessageHeader = MessageHeader {
         message_id : a_message_id.clone(),
-        destination : types::DestinationAddress {
-            dest : Random::generate_random(),
-            reply_to : None },
+        destination : types::DestinationAddress {dest : Random::generate_random(), relay_to : None },
         source : types::SourceAddress {
             from_node : nae_or_client_in_our_close_group.clone(),
-            from_group : None,
-            reply_to : None },
+            from_group : None, reply_to : None, relayed_for : None },
         authority : Authority::Client
     };
     assert_eq!(our_authority(&name_outside_close_group,
@@ -184,12 +181,10 @@ fn our_authority_full_routing_table() {
     let nae_manager_header : MessageHeader = MessageHeader {
         message_id : a_message_id.clone(),
         destination : types::DestinationAddress {
-            dest : nae_or_client_in_our_close_group.clone(),
-            reply_to : None },
+            dest : nae_or_client_in_our_close_group.clone(), relay_to : None },
         source : types::SourceAddress {
             from_node : Random::generate_random(),
-            from_group : Some(name_outside_close_group.clone()),
-            reply_to : None },
+            from_group : Some(name_outside_close_group.clone()), reply_to : None, relayed_for : None },
         authority : Authority::ClientManager
     };
     assert_eq!(our_authority(&nae_or_client_in_our_close_group,
@@ -200,12 +195,11 @@ fn our_authority_full_routing_table() {
     let node_manager_header : MessageHeader = MessageHeader {
         message_id : a_message_id.clone(),
         destination : types::DestinationAddress {
-            dest : second_closest_node_in_our_close_group.id.clone(),
-            reply_to : None },
+            dest : second_closest_node_in_our_close_group.id.clone(), relay_to : None },
         source : types::SourceAddress {
             from_node : Random::generate_random(),
             from_group : Some(name_outside_close_group.clone()),
-            reply_to : None },
+            reply_to : None, relayed_for : None },
         authority : Authority::NaeManager
     };
     assert_eq!(our_authority(&name_outside_close_group,
@@ -217,12 +211,11 @@ fn our_authority_full_routing_table() {
     let managed_node_header : MessageHeader = MessageHeader {
         message_id : a_message_id.clone(),
         destination : types::DestinationAddress {
-            dest : our_name.clone(),
-            reply_to : None },
+            dest : our_name.clone(), relay_to : None },
         source : types::SourceAddress {
             from_node : Random::generate_random(),
             from_group : Some(second_closest_node_in_our_close_group.id.clone()),
-            reply_to : None },
+            reply_to : None, relayed_for : None },
         authority : Authority::NodeManager
     };
     assert_eq!(our_authority(&name_outside_close_group,

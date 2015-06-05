@@ -190,10 +190,9 @@ mod test {
     fn test_message_header() {
         test_object(MessageHeader {
             message_id : random::<u32>(),
-            destination : types::DestinationAddress{ dest: Random::generate_random(),
-                                                     reply_to: None },
+            destination : types::DestinationAddress{ dest: Random::generate_random(), relay_to: None },
             source : types::SourceAddress { from_node : Random::generate_random(),
-                                            from_group : None, reply_to: None },
+                                            from_group : None, reply_to: None, relayed_for: None },
             authority : Authority::ManagedNode });
     }
 }

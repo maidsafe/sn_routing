@@ -517,15 +517,12 @@ mod test {
 
   #[test]
   fn test_destination_address() {
-    test_object(DestinationAddress { dest: Random::generate_random(), reply_to: None });
+    test_object(DestinationAddress { dest: Random::generate_random(), relay_to: None });
   }
 
   #[test]
   fn test_source_address() {
-
-    test_object(SourceAddress { from_node : Random::generate_random(),
-                                from_group : None,
-                                reply_to: None });
+      test_object(SourceAddress { from_node : Random::generate_random(), from_group : None, reply_to: None, relayed_for : None });
   }
 
 #[test]
