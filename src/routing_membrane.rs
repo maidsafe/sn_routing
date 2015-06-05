@@ -72,6 +72,7 @@ use messages::post::Post;
 use messages::get_client_key::GetKey;
 use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_id::PutPublicId;
+use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, InterfaceError, ResponseError};
@@ -745,6 +746,62 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
         self.connection_manager.connect(connect_response.receiver_external_endpoints.clone());
         Ok(())
+    }
+
+    /// On bootstrapping a node can temporarily publish its PublicId in the group.
+    /// Sentinel will query this pool. No handle_get_public_id is needed.
+    // TODO (Ben): check whether to accept id into group;
+    // restrict on minimal similar number of leading bits.
+
+    fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        let put_public_id = try!(decode::<PutPublicId>(&body));
+        let our_authority = our_authority(&put_public_id.public_id.name(), &header, &self.routing_table);
+
+        match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
+            (Authority::ManagedNode, Authority::NaeManager, false) => {
+                let mut put_public_id_relocated = put_public_id.clone();
+
+                let mut close_group_node_ids : Vec<NameType> = Vec::new();
+                for node_info in self.routing_table.our_close_group() {
+                    close_group_node_ids.push(node_info.id());
+                }
+
+                let relocated_name =  try!(types::calculate_relocated_name(
+                                            close_group_node_ids,
+                                            &put_public_id.public_id.name()));
+                // assign_relocated_name
+                put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
+
+                // SendOn to relocated_name group, which will actually store the relocated public id
+                let mut send_on_header = header.create_send_on(&self.own_name, &our_authority, &relocated_name);
+                send_on_header.message_id = send_on_header.message_id.wrapping_add(1);
+                let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicId,
+                                                      send_on_header, put_public_id_relocated,
+                                                      &self.id.get_crypto_secret_sign_key());
+                self.send_swarm_or_parallel(&relocated_name, &try!(encode(&routing_msg)));
+                Ok(())
+            },
+            (Authority::NaeManager, Authority::NaeManager, true) => {
+                // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
+                if !self.public_id_cache.check(&put_public_id.public_id.name()) {
+                  self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
+                  // Reply with PutPublicIdResponse to the reply_to address
+                  let reply_header = header.create_reply(&self.own_name, &our_authority);
+                  let destination = reply_header.destination.dest.clone();
+                  let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
+                                                        reply_header,
+                                                        PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
+                                                        &self.id.get_crypto_secret_sign_key());
+                  let encoded_msg = try!(encode(&routing_msg));
+                  // Send this to the relay node as specified in the reply_header
+                  self.send_swarm_or_parallel(&destination, &encoded_msg);
+                }
+                Ok(())
+            },
+            _ => {
+                Err(RoutingError::BadAuthority)
+            }
+        }
     }
 
     // -----Message Constructors-----------------------------------------------
