@@ -198,7 +198,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
-                        Some(ConnectionName::Relay(name)) => {},
+                        Some(ConnectionName::Relay(name)) => {
+                            // For a relay connection, parse and forward
+                            // FIXME: later limit which messages are sent forward,
+                            // limiting our exposure.
+                            let _ = self.relay_message_received(&ConnectionName::Relay(name), bytes);
+                        },
                         None => {
                             // If we don't know the sender, only accept a connect request
                             let _ = self.handle_unknown_connect_request(&endpoint, bytes);
@@ -346,6 +351,25 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // TODO: trigger churn on boolean
     }
 
+    fn relay_message_received(&mut self, received_from: &ConnectionName,
+        serialised_message: Bytes) -> RoutingResult {
+        match received_from {
+            &ConnectionName::Relay(_) => {},
+            _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
+        };
+        // Parse
+        let message = try!(decode::<RoutingMessage>(&serialised_message));
+        let header = message.message_header;
+        let body = message.serialised_body;
+
+        match message.message_type {
+            MessageTypeTag::PutPublicId => {
+                ignore(self.handle_put_public_id(header, body));
+            },
+            _ => ()
+        };
+        Ok(())
+    }
     /// This the fundamental functional function in routing.
     /// It only handles messages received from connections in our routing table;
     /// i.e. this is a pure SAFE message (and does not function as the start of a relay).
@@ -742,7 +766,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// Sentinel will query this pool. No handle_get_public_id is needed.
     // TODO (Ben): check whether to accept id into group;
     // restrict on minimal similar number of leading bits.
-
     fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let put_public_id = try!(decode::<PutPublicId>(&body));
         let our_authority = our_authority(&put_public_id.public_id.name(), &header, &self.routing_table);
@@ -753,6 +776,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 let mut close_group_node_ids : Vec<NameType> = Vec::new();
                 for node_info in self.routing_table.our_close_group() {
+                    // FIXME: we should add ourselves
                     close_group_node_ids.push(node_info.id());
                 }
 
@@ -793,6 +817,36 @@ impl<F> RoutingMembrane<F> where F: Interface {
             }
         }
     }
+
+    ///  Only use this handler if we have a self-relocated id, and our routing table is empty
+    // fn handle_put_public_id_zero_state(&mut self, header: MessageHeader, body: Bytes)
+    //     -> RoutingResult {
+    //     let put_public_id = try!(decode::<PutPublicId>(&body));
+    //     if put_public_id.public_id.is_relocated() {
+    //         return Err(RoutingError::RejectedPublicId); }
+    //     let mut put_public_id_relocated = put_public_id.clone();
+    //
+    //     let relocated_name =  try!(types::calculate_relocated_name(
+    //                                 vec![self.id.get_name()],
+    //                                 &put_public_id.public_id.name()));
+    //     // assign_relocated_name
+    //     put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
+    //
+    //     if !self.public_id_cache.check(&put_public_id.public_id.name()) {
+    //       self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
+    //       // Reply with PutPublicIdResponse to the reply_to address
+    //       let reply_header = header.create_reply(&self.own_name, &our_authority);
+    //       let destination = reply_header.destination.dest.clone();
+    //       let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
+    //                                             reply_header,
+    //                                             PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
+    //                                             &self.id.get_crypto_secret_sign_key());
+    //       let encoded_msg = try!(encode(&routing_msg));
+    //       // Send this to the relay node as specified in the reply_header
+    //       self.send_swarm_or_parallel(&destination, &encoded_msg);
+    //     };
+    //     Ok(())
+    // }
 
     // -----Message Constructors-----------------------------------------------
 

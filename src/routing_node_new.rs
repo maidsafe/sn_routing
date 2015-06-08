@@ -141,7 +141,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
         let bootstrapped_to = try!(cm.bootstrap(bootstrap_list, beacon_port)
             .map_err(|_|RoutingError::FailedToBootstrap));
         println!("bootstrap {:?}", bootstrapped_to);
-        self.bootstrap_endpoint = Some(bootstrapped_to);
+        self.bootstrap_endpoint = Some(bootstrapped_to.clone());
 
         let relocated_id = self.id.clone();
         // send_connect_request_msg
@@ -174,10 +174,10 @@ impl<G : CreatePersonas> RoutingNode<G> {
         Ok(())
     }
 
-    fn construct_connect_request_msg(&mut self, bootstrap_name: &NameType,
+    fn construct_connect_request_msg(&mut self, destination: &NameType,
         accepting_on: Vec<Endpoint>) -> RoutingMessage {
         let header = MessageHeader::new(self.get_next_message_id(),
-            types::DestinationAddress {dest: bootstrap_name.clone(), relay_to: None },
+            types::DestinationAddress {dest: destination.clone(), relay_to: None },
             self.our_source_address(), Authority::ManagedNode);
 
         // FIXME: We're sending all accepting connections as local since we don't differentiate
@@ -186,7 +186,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
             local_endpoints: accepting_on,
             external_endpoints: vec![],
             requester_id: self.own_name.clone(),
-            receiver_id: bootstrap_name.clone(),
+            receiver_id: destination.clone(),
             requester_fob: types::PublicId::new(&self.id),
         };
 
