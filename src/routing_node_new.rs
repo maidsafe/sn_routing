@@ -131,14 +131,7 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
     /// when the routing_table is full.
     pub fn zero_node(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let mut id = types::Id::new();
-        let original_name = id.get_name();
-        let self_relocated_name = match types::calculate_relocated_name(
-            vec![original_name.clone()], &original_name) {
-            Ok(self_relocated_name) => self_relocated_name,
-            Err(_) => panic!("Could not self-relocate our name.") // unreachable
-        };
-        id.assign_relocated_name(self_relocated_name);
+        let id = types::Id::new();
         let own_name = id.get_name(); // is equal to self_relocated_name
         RoutingNode { genesis: Box::new(genesis),
                       phantom: PhantomData,
@@ -148,6 +141,42 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
                       bootstrap_endpoint: None,
                       bootstrap_node_id: None,
                     }
+    }
+
+    /// Starts the routing membrane without looking to bootstrap.
+    /// A zero_membrane will not be able to connect to an existing network,
+    /// and as the original node, it will be rejected by the network later on.
+    pub fn run_zero_membrane(&mut self) {
+        let (event_output, event_input) = mpsc::channel();
+        let mut cm = crust::ConnectionManager::new(event_output);
+        // TODO: Default Protocol and Port need to be passed down
+        let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
+        // TODO: Beacon port should be passed down
+        let beacon_port = Some(5483u16);
+        let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
+            Err(reason) => {
+                println!("Failed to start listening: {:?}", reason);
+                (vec![], None)
+            }
+            Ok(listeners_and_beacon) => listeners_and_beacon
+        };
+
+        // self-relocate our id
+        let original_name = self.id.get_name();
+        let self_relocated_name = match types::calculate_relocated_name(
+            vec![original_name.clone()], &original_name) {
+            Ok(self_relocated_name) => self_relocated_name,
+            Err(_) => panic!("Could not self-relocate our name.") // unreachable
+        };
+        self.id.assign_relocated_name(self_relocated_name);
+
+        let mut membrane = RoutingMembrane::new(
+            cm, event_input, None,
+            listeners.0, self.id.clone(),
+            self.genesis.create_personas());
+        // TODO: currently terminated by main, should be signalable to terminate
+        // and join the routing_node thread.
+        spawn(move || membrane.run());
     }
 
     /// run_membrane spawns a new thread and moves a newly constructed Membrane into this thread.
@@ -191,7 +220,7 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
         match (self.bootstrap_node_id.clone(), self.bootstrap_endpoint.clone()) {
             (Some(name), Some(endpoint)) => {
                 let mut membrane = RoutingMembrane::new(
-                    cm, event_input, (name, endpoint),
+                    cm, event_input, Some((name, endpoint)),
                     listeners.0, relocated_id,
                     self.genesis.create_personas());
                 spawn(move || membrane.run());

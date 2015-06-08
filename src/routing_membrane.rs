@@ -112,9 +112,10 @@ pub struct RoutingMembrane<F : Interface> {
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
+    // TODO: clean ownership transfer up with proper structure
     pub fn new(cm: crust::ConnectionManager,
                event_input: Receiver<crust::Event>,
-               bootstrap_node: (NameType, crust::Endpoint),
+               bootstrap_node: Option<(NameType, crust::Endpoint)>,
                accepting_on: Vec<crust::Endpoint>,
                relocated_id: types::Id,
                personas: F) -> RoutingMembrane<F> {
