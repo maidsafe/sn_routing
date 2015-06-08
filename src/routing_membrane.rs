@@ -400,7 +400,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             match retrieved_data {
                 Ok(action) => match action {
                     MessageAction::Reply(data) => {
-                        let reply = self.make_get_data_response(Authority::ManagedNode, &header, get_data, Ok(data));
+                        let reply = self.construct_get_data_response_msg(Authority::ManagedNode,
+                                                                         &header, get_data,
+                                                                         Ok(data));
                         return encode(&reply).map(|reply| {
                             self.send_swarm_or_parallel(&header.send_to().dest, &reply);
                         }).map_err(From::from);
@@ -627,7 +629,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 
     // -----Message Handlers from Routing Table connections----------------------------------------
-    // FIXME: all handlers need completion and review
 
     // Routing handle put_data
     fn handle_put_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
@@ -648,7 +649,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         },
                         _ => header.from()
                     };
-                    let routing_msg = self.make_put_data_response(our_authority, &header, put_data, Ok(reply_data));
+                    let routing_msg = self.construct_put_data_response_msg(our_authority, &header, put_data, Ok(reply_data));
                     self.send_swarm_or_parallel(&reply_to, &try!(encode(&routing_msg)));
                 },
                 MessageAction::SendOn(destinations) => {
@@ -659,7 +660,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(InterfaceError::Abort) => {;},
             Err(InterfaceError::Response(error)) => {
-                let routing_msg = self.make_put_data_response(our_authority, &header, put_data, Err(error));
+                let routing_msg = self.construct_put_data_response_msg(our_authority, &header, put_data, Err(error));
                 self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
             }
         }
@@ -854,7 +855,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match self.mut_interface().handle_get(type_id, name.clone(), our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
-                    let routing_msg = self.make_get_data_response(our_authority, &header, get_data, Ok(data));
+                    let routing_msg = self.construct_get_data_response_msg(our_authority, &header, get_data, Ok(data));
                     self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
                 },
                 MessageAction::SendOn(dest_nodes) => {
@@ -865,7 +866,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(InterfaceError::Abort) => {;},
             Err(InterfaceError::Response(error)) => {
-                let routing_msg = self.make_get_data_response(our_authority, &header, get_data, Err(error));
+                let routing_msg = self.construct_get_data_response_msg(our_authority, &header, get_data, Err(error));
                 self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
             }
         }
@@ -956,7 +957,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
             connect_response, &self.id.get_crypto_secret_sign_key())
     }
 
-    fn make_get_data_response(&self, our_authority: Authority, orig_header: &MessageHeader, orig_message: GetData, reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage {
+    fn construct_get_data_response_msg(&self,
+                                       our_authority: Authority,
+                                       orig_header: &MessageHeader,
+                                       orig_message: GetData,
+                                       reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage
+    {
         RoutingMessage::new(MessageTypeTag::GetDataResponse,
                             orig_header.create_reply(&self.own_name, &our_authority),
                             GetDataResponse{ name_and_type_id: orig_message.name_and_type_id,
@@ -964,7 +970,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             &self.id.get_crypto_secret_sign_key())
     }
 
-    fn make_put_data_response(&self, our_authority: Authority, orig_header: &MessageHeader, orig_message: PutData, reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage {
+    fn construct_put_data_response_msg(&self,
+                                       our_authority: Authority,
+                                       orig_header: &MessageHeader,
+                                       orig_message: PutData,
+                                       reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage
+    {
         let reply_header = orig_header.create_reply(&self.own_name, &our_authority);
         let put_data_response = PutDataResponse {
             name : orig_message.name.clone(),
