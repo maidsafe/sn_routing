@@ -432,43 +432,46 @@ impl Decodable for AccountTransferInfo {
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {
-  pub from_node  : NameType,
-  pub from_group : Option<NameType>,
-  pub reply_to   : Option<NameType>
+  pub from_node   : NameType,
+  pub from_group  : Option<NameType>,
+  pub reply_to    : Option<NameType>,
+  pub relayed_for : Option<NameType>
 }
 
 impl Encodable for SourceAddress {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_102 , &(&self.from_node, &self.from_group, &self.reply_to)).encode(e)
+    CborTagEncode::new(5483_102 , &(&self.from_node, &self.from_group,
+        &self.reply_to, &self.relayed_for)).encode(e)
   }
 }
 
 impl Decodable for SourceAddress {
   fn decode<D: Decoder>(d: &mut D)->Result<SourceAddress, D::Error> {
     try!(d.read_u64());
-    let (from_node, from_group, reply_to) = try!(Decodable::decode(d));
-    Ok(SourceAddress { from_node: from_node, from_group: from_group, reply_to: reply_to })
+    let (from_node, from_group, reply_to, relayed_for) = try!(Decodable::decode(d));
+    Ok(SourceAddress { from_node: from_node, from_group: from_group,
+        reply_to: reply_to, relayed_for: relayed_for })
   }
 }
 
 /// Address of the destination of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct DestinationAddress {
-  pub dest : NameType,
-  pub reply_to : Option<NameType>
+  pub dest     : NameType,
+  pub relay_to : Option<NameType>
 }
 
 impl Encodable for DestinationAddress {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_101, &(&self.dest, &self.reply_to)).encode(e)
+    CborTagEncode::new(5483_101, &(&self.dest, &self.relay_to)).encode(e)
   }
 }
 
 impl Decodable for DestinationAddress {
   fn decode<D: Decoder>(d: &mut D)->Result<DestinationAddress, D::Error> {
     try!(d.read_u64());
-    let (dest, reply_to) = try!(Decodable::decode(d));
-    Ok(DestinationAddress { dest: dest, reply_to: reply_to })
+    let (dest, relay_to) = try!(Decodable::decode(d));
+    Ok(DestinationAddress { dest: dest, relay_to: relay_to })
   }
 }
 
@@ -514,15 +517,12 @@ mod test {
 
   #[test]
   fn test_destination_address() {
-    test_object(DestinationAddress { dest: Random::generate_random(), reply_to: None });
+    test_object(DestinationAddress { dest: Random::generate_random(), relay_to: None });
   }
 
   #[test]
   fn test_source_address() {
-
-    test_object(SourceAddress { from_node : Random::generate_random(),
-                                from_group : None,
-                                reply_to: None });
+      test_object(SourceAddress { from_node : Random::generate_random(), from_group : None, reply_to: None, relayed_for : None });
   }
 
 #[test]
