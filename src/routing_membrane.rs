@@ -95,9 +95,9 @@ enum ConnectionName {
 /// Routing Membrane
 pub struct RoutingMembrane<F : Interface> {
     // for CRUST
-    event_input: Receiver<Event>,
-    connection_manager: ConnectionManager,
-    accepting_on: Vec<Endpoint>,
+    event_input: Receiver<crust::Event>,
+    connection_manager: crust::ConnectionManager,
+    accepting_on: Vec<crust::Endpoint>,
     // for Routing
     id: types::Id,
     own_name: NameType,
@@ -112,32 +112,37 @@ pub struct RoutingMembrane<F : Interface> {
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
-    pub fn new(personas : F) -> RoutingMembrane<F> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let (event_output, event_input) = mpsc::channel();
-        let id = types::Id::new();
-        let own_name = id.get_name();
-        let mut cm = crust::ConnectionManager::new(event_output);
+    pub fn new(cm: crust::ConnectionManager,
+               event_input: Receiver<crust::Event>,
+               bootstrap_node: (NameType, crust::Endpoint),
+               accepting_on: Vec<crust::Endpoint>,
+               relocated_id: types::Id,
+               personas: F) -> RoutingMembrane<F> {
+        // sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
+        // let (event_output, event_input) = mpsc::channel();
+        // let id = types::Id::new();
+        let own_name = relocated_id.get_name();
+        // let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
-        let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
+        // let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
         // TODO: Beacon port should be passed down
-        let beacon_port = Some(5483u16);
-        let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
-            Err(reason) => {
-                println!("Failed to start listening: {:?}", reason);
-                (vec![], None)
-            }
-            Ok(listeners_and_beacon) => listeners_and_beacon
-        };
-        println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
+        // let beacon_port = Some(5483u16);
+        // let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
+        //     Err(reason) => {
+        //         println!("Failed to start listening: {:?}", reason);
+        //         (vec![], None)
+        //     }
+        //     Ok(listeners_and_beacon) => listeners_and_beacon
+        // };
+        // println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
         RoutingMembrane {
-                      id : id,
-                      own_name : own_name.clone(),
+                      id : relocated_id,
                       event_input: event_input,
                       connection_manager: cm,
                       routing_table : RoutingTable::new(&own_name),
                       relay_map: RelayMap::new(&own_name),
-                      accepting_on: listeners.0,
+                      own_name: own_name,
+                      accepting_on: accepting_on,
                       next_message_id: rand::random::<MessageId>(),
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                       public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),

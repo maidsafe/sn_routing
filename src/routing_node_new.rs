@@ -45,8 +45,6 @@ use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes};
 use authority::{Authority, our_authority};
 use message_header::MessageHeader;
-use messages::bootstrap_id_request::BootstrapIdRequest;
-use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
@@ -87,16 +85,10 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     own_name: NameType,
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
-    all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Vec<Endpoint>>),
-    routing_table: RoutingTable,
-    relay_map: RelayMap,
     accepting_on: Vec<Endpoint>,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
     bootstrap_node_id: Option<NameType>,
-    filter: MessageFilter<types::FilterType>,
-    public_id_cache: LruCache<NameType, types::PublicId>,
-    connection_cache: BTreeMap<NameType, SteadyTime>
 }
 
 impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
@@ -125,16 +117,10 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
                       own_name : own_name.clone(),
                       event_input: event_input,
                       connection_manager: cm,
-                      all_connections: (HashMap::new(), BTreeMap::new()),
-                      routing_table : RoutingTable::new(&own_name),
-                      relay_map: RelayMap::new(&own_name),
                       accepting_on: listeners.0,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_endpoint: None,
                       bootstrap_node_id: None,
-                      filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
-                      public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-                      connection_cache: BTreeMap::new(),
                     }
     }
 
@@ -145,9 +131,17 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
     //        connection_manager should also be moved into the membrane;
     //        firstly moving most ownership of the constructor into this function.
     fn run_membrane(&mut self) {
-        let mut membrane = RoutingMembrane::new(self.genesis.create_personas());
-        spawn(move || membrane.run());
+        // let mut cm = crust::ConnectionManager::new(event_output);
+
+        // let mut membrane = RoutingMembrane::new(self.genesis.create_personas());
+        // spawn(move || membrane.run());
     }
+
+    /// bootstrap
+    fn bootstrap(&mut self)  {
+
+    }
+
 }
 
 fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
