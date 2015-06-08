@@ -134,12 +134,12 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) {
-        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()), relay_to: None };
+        let destination = types::DestinationAddress{ dest: name.clone(), relay_to: None };
         let header = MessageHeader::new(self.get_next_message_id(),
                                         destination, self.our_source_address(),
                                         Authority::Client);
         let request = GetData{ requester: self.our_source_address(),
-                               name_and_type_id: NameAndTypeId{name: NameType::new(name.get_id()),
+                               name_and_type_id: NameAndTypeId{name: name.clone(),
                                                                type_id: type_id} };
         let message = RoutingMessage::new(MessageTypeTag::GetData, header,
                                           request, &self.id.get_crypto_secret_sign_key());
