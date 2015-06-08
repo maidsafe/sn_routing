@@ -15,28 +15,32 @@
 //
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
-#![allow(unused_variables)]
 
 use cbor::{Decoder, Encoder, CborError};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
-use std::collections::{BTreeMap, HashMap};
+// use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc;
 use std::boxed::Box;
-use std::sync::mpsc::Receiver;
-use time::{Duration, SteadyTime};
+// use std::sync::mpsc::Receiver;
+// use time::{Duration, SteadyTime};
 
 use crust;
-use lru_time_cache::LruCache;
-use message_filter::MessageFilter;
+// use lru_time_cache::LruCache;
+// use message_filter::MessageFilter;
 use NameType;
 use node_interface::{Interface, CreatePersonas};
-use routing_table::{RoutingTable};
-use relay::RelayMap;
 use routing_membrane::RoutingMembrane;
 use types;
 use types::{MessageId, Bytes};
+use authority::{Authority};
+use messages::connect_request::ConnectRequest;
+// use messages::connect_response::ConnectResponse;
+// use messages::put_public_id::PutPublicId;
+// use messages::put_public_id_response::PutPublicIdResponse;
+use messages::{RoutingMessage, MessageTypeTag};
+use message_header::MessageHeader;
 use error::{RoutingError};
 use std::thread::spawn;
 
@@ -139,11 +143,61 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
-        let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
+        let bootstrapped_to = try!(cm.bootstrap(bootstrap_list, beacon_port)
             .map_err(|_|RoutingError::FailedToBootstrap));
         println!("bootstrap {:?}", bootstrapped_to);
         self.bootstrap_endpoint = Some(bootstrapped_to);
+        // send_connect_request_msg
+        // FIXME: for now just write out explicitly in this function the bootstrapping loop
+        loop {
+            match event_input.recv() {
+                Err(_) => (),
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                  break;
+                },
+                Ok(crust::Event::NewConnection(endpoint)) => {
 
+                },
+                Ok(crust::Event::LostConnection(endpoint)) => {
+
+                }
+            }
+        };
+        Ok(())
+    }
+
+    fn construct_connect_request_msg(&mut self, bootstrap_name: &NameType,
+        accepting_on: Vec<Endpoint>) -> RoutingMessage {
+        let header = MessageHeader::new(self.get_next_message_id(),
+            types::DestinationAddress {dest: bootstrap_name.clone(), relay_to: None },
+            self.our_source_address(), Authority::ManagedNode);
+
+        // FIXME: We're sending all accepting connections as local since we don't differentiate
+        // between local and external yet.
+        let connect_request = ConnectRequest {
+            local_endpoints: accepting_on,
+            external_endpoints: vec![],
+            requester_id: self.own_name.clone(),
+            receiver_id: bootstrap_name.clone(),
+            requester_fob: types::PublicId::new(&self.id),
+        };
+
+        RoutingMessage::new(MessageTypeTag::ConnectRequest, header, connect_request,
+            &self.id.get_crypto_secret_sign_key())
+    }
+
+    fn our_source_address(&self) -> types::SourceAddress {
+        types::SourceAddress{ from_node: self.id.get_name(),
+                              from_group: None,
+                              reply_to: None,
+                              // FIXME: relay node should fill this field
+                              relayed_for: Some(self.id.get_name()) }
+    }
+
+    fn get_next_message_id(&mut self) -> MessageId {
+        let temp = self.next_message_id;
+        self.next_message_id = self.next_message_id.wrapping_add(1);
+        return temp;
     }
 
     /// run_membrane spawns a new thread and moves a newly constructed Membrane into this thread.
@@ -155,33 +209,33 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
     fn run_membrane(&mut self)  {
 
 
-        let relocated_id = self.bootstrap();
-        // for now just write out explicitly in this function the bootstrapping
-        loop {
-            match event_input.recv() {
-                Err(_) => (),
-                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-
-                },
-                Ok(crust::Event::NewConnection(endpoint)) => {
-
-                },
-                Ok(crust::Event::LostConnection(endpoint)) => {
-
-                }
-            }
-        }
-
-        match (self.bootstrap_node_id.clone(), self.bootstrap_endpoint.clone()) {
-            (Some(name), Some(endpoint)) => {
-                let mut membrane = RoutingMembrane::new(
-                    cm, event_input, Some((name, endpoint)),
-                    listeners.0, relocated_id,
-                    self.genesis.create_personas());
-                spawn(move || membrane.run());
-            },
-            _ => () // failed to bootstrap
-        }
+        // let relocated_id = self.bootstrap();
+        // // for now just write out explicitly in this function the bootstrapping
+        // loop {
+        //     match event_input.recv() {
+        //         Err(_) => (),
+        //         Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+        //
+        //         },
+        //         Ok(crust::Event::NewConnection(endpoint)) => {
+        //
+        //         },
+        //         Ok(crust::Event::LostConnection(endpoint)) => {
+        //
+        //         }
+        //     }
+        // }
+        //
+        // match (self.bootstrap_node_id.clone(), self.bootstrap_endpoint.clone()) {
+        //     (Some(name), Some(endpoint)) => {
+        //         let mut membrane = RoutingMembrane::new(
+        //             cm, event_input, Some((name, endpoint)),
+        //             listeners.0, relocated_id,
+        //             self.genesis.create_personas());
+        //         spawn(move || membrane.run());
+        //     },
+        //     _ => () // failed to bootstrap
+        // }
     }
 }
 

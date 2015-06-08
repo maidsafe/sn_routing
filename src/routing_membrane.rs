@@ -32,10 +32,10 @@
 use cbor::{Decoder, Encoder, CborError};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
-use sodiumoxide;
+// use sodiumoxide;
 use sodiumoxide::crypto::sign::verify_detached;
 use std::collections::{BTreeMap};
-use std::sync::mpsc;
+// use std::sync::mpsc;
 use std::boxed::Box;
 use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
