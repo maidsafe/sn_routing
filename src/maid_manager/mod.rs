@@ -103,6 +103,7 @@ mod test {
     use routing::types::*;
     use routing::NameType;
     use routing::sendable::Sendable;
+    use super::database::MaidManagerAccount;
 
     #[test]
     fn handle_put() {
@@ -123,5 +124,18 @@ mod test {
             }
             MessageAction::Reply(_) => panic!("Unexpected"),
         }
+    }
+
+    #[test]
+    fn handle_account_transfer() {
+        let mut maid_manager = MaidManager::new();
+        let name : NameType = routing::test_utils::Random::generate_random();
+        let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), MaidManagerAccount::new());
+        let payload = Payload::new(PayloadTypeTag::MaidManagerAccountTransfer, &account_wrapper);
+        let mut encoder = cbor::Encoder::from_memory();
+        let encode_result = encoder.encode(&[&payload]);
+        assert_eq!(encode_result.is_ok(), true);
+        maid_manager.handle_account_transfer(&array_as_vector(encoder.as_bytes()));
+        assert_eq!(maid_manager.db_.exist(&name), true);
     }
 }
