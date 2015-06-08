@@ -99,16 +99,9 @@ impl MessageHeader {
     }
 
     pub fn send_to(&self) -> types::DestinationAddress {
-        if self.is_relayed() {
-            types::DestinationAddress{
-                dest : self.source.from_node.clone(),
-                relay_to : self.source.relayed_for.clone()
-            }
-        } else {
-            types::DestinationAddress{
-                dest : self.source.from_node.clone(),
-                relay_to : None
-            }
+        types::DestinationAddress {
+            dest: self.source.from_node.clone(),
+            relay_to: self.source.relayed_for.clone()
         }
     }
 
