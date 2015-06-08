@@ -132,7 +132,7 @@ impl Sendable for TestData {
         false
     }
 
-    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
+    fn merge(&self, _responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
 }
 
 impl Encodable for TestData {
@@ -197,8 +197,8 @@ struct TestNode {
 }
 
 impl Interface for TestNode {
-    fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority,
-                  from_authority: Authority, from_address: NameType)
+    fn handle_get(&mut self, _type_id: u64, name: NameType, _our_authority: Authority,
+                  _from_authority: Authority, from_address: NameType)
                    -> Result<MessageAction, InterfaceError> {
         println!("testing node handle get request from {} of chunk {}", from_address, name);
         let stats = self.stats.clone();
@@ -208,8 +208,8 @@ impl Interface for TestNode {
         }
         Err(InterfaceError::Response(ResponseError::NoData))
     }
-    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                from_address: NameType, dest_address: types::DestinationAddress,
+    fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
+                from_address: NameType, _dest_address: types::DestinationAddress,
                 data_in: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         if our_authority != Authority::NaeManager {
             if our_authority == Authority::ClientManager {
@@ -235,8 +235,8 @@ impl Interface for TestNode {
         // return with abort to terminate the flow
         Err(InterfaceError::Abort)
     }
-    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
-                   from_address: NameType, name : NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+    fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
+                   _from_address: NameType, _name : NameType, _data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
     fn handle_get_response(&mut self, from_address: NameType,
@@ -250,7 +250,7 @@ impl Interface for TestNode {
         }
         routing::node_interface::MethodCall::None
     }
-    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
+    fn handle_put_response(&mut self, _from_authority: Authority, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
         if response.is_ok() {
             println!("testing node shall not receive a put_response in case of success");
@@ -259,16 +259,16 @@ impl Interface for TestNode {
         }
         MethodCall::None
     }
-    fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
-                            response: Result<Vec<u8>, ResponseError>) {
+    fn handle_post_response(&mut self, _from_authority: Authority, _from_address: NameType,
+                            _response: Result<Vec<u8>, ResponseError>) {
         unimplemented!();
     }
-    fn handle_churn(&mut self, close_group: Vec<NameType>)
+    fn handle_churn(&mut self, _close_group: Vec<NameType>)
         -> Vec<routing::node_interface::MethodCall> {
         unimplemented!();
     }
-    fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
-                        from_address: NameType) -> Result<MessageAction, InterfaceError> {
+    fn handle_cache_get(&mut self, _type_id: u64, name : NameType, _from_authority: Authority,
+                        _from_address: NameType) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
@@ -277,7 +277,7 @@ impl Interface for TestNode {
         }
         Err(InterfaceError::Abort)
     }
-    fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
+    fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
                         data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
@@ -292,11 +292,11 @@ impl Interface for TestNode {
         Err(InterfaceError::Abort)
     }
     fn handle_get_key(&mut self,
-                      type_id: u64,
-                      name: NameType,
-                      our_authority: Authority,
-                      from_authority: Authority,
-                      from_address: NameType) -> Result<MessageAction, InterfaceError> {
+                      _type_id: u64,
+                      _name: NameType,
+                      _our_authority: Authority,
+                      _from_authority: Authority,
+                      _from_address: NameType) -> Result<MessageAction, InterfaceError> {
         unimplemented!();
     }
 }
