@@ -131,8 +131,15 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
     /// when the routing_table is full.
     pub fn zero_node(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let id = types::Id::new();
-        let own_name = id.get_name();
+        let mut id = types::Id::new();
+        let original_name = id.get_name();
+        let self_relocated_name = match types::calculate_relocated_name(
+            vec![original_name.clone()], &original_name) {
+            Ok(self_relocated_name) => self_relocated_name,
+            Err(_) => panic!("Could not self-relocate our name.") // unreachable
+        };
+        id.assign_relocated_name(self_relocated_name);
+        let own_name = id.get_name(); // is equal to self_relocated_name
         RoutingNode { genesis: Box::new(genesis),
                       phantom: PhantomData,
                       id : id,
