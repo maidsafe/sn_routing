@@ -20,7 +20,7 @@ rand = "*"
 message_filter = "*"
 lru_time_cache = "0.1.5"
 accumulator = "0.0.1"
-crust = "0.0.8"
+crust = "0.0.61"
 docopt = "*"
 
 [[example]]
