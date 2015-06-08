@@ -98,15 +98,13 @@ impl Interface for VaultFacade {
             // Account Transfer entries will be passed down from routing as a put request,
             // however having the same authority of from and own
             // The incoming data is a serialized PaylodType, whose data is one entry of a serialised account data
-            match our_authority {
-                Authority::ClientManager => { self.maid_manager.handle_account_transfer(&data); }
-                // Authority::NaeManager => {
-                //     // both DataManager and VersionHandler are NaeManagers
-                //     self.data_manager.handle_account_transfer(&data);
-                //     self.version_handler.handle_account_transfer(&data);
-                // }
-                // Authority::NodeManager => { self.pmid_manager.handle_account_transfer(&data); }
-                _ => {}
+            let mut d = Decoder::from_bytes(&data[..]);
+            let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+            match payload.get_type_tag() {
+              maidsafe_types::PayloadTypeTag::MaidManagerAccountTransfer => {
+                self.maid_manager.handle_account_transfer(payload);
+              }
+              _ => {}
             }
             // The return from this handling branch shall always be TERMINATE of the flow
             return Err(InterfaceError::Abort);

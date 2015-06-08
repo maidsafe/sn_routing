@@ -76,16 +76,9 @@ impl MaidManager {
     Ok(MessageAction::SendOn(destinations))
   }
 
-  pub fn handle_account_transfer(&mut self, data : &Vec<u8>) {
-    let mut d = Decoder::from_bytes(&data[..]);
-    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
-    match payload.get_type_tag() {
-      maidsafe_types::PayloadTypeTag::MaidManagerAccountTransfer => {
-        let maid_account_wrapper : MaidManagerAccountWrapper = payload.get_data();
-        self.db_.handle_account_transfer(&maid_account_wrapper);
-      }
-      _ => {}
-    }
+  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
+      let maid_account_wrapper : MaidManagerAccountWrapper = payload.get_data();
+      self.db_.handle_account_transfer(&maid_account_wrapper);
   }
 
   pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
@@ -132,10 +125,7 @@ mod test {
         let name : NameType = routing::test_utils::Random::generate_random();
         let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), MaidManagerAccount::new());
         let payload = Payload::new(PayloadTypeTag::MaidManagerAccountTransfer, &account_wrapper);
-        let mut encoder = cbor::Encoder::from_memory();
-        let encode_result = encoder.encode(&[&payload]);
-        assert_eq!(encode_result.is_ok(), true);
-        maid_manager.handle_account_transfer(&array_as_vector(encoder.as_bytes()));
+         maid_manager.handle_account_transfer(payload);
         assert_eq!(maid_manager.db_.exist(&name), true);
     }
 }
