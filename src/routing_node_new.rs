@@ -64,7 +64,7 @@ use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, InterfaceError, ResponseError};
-use std::thread::spawn;
+use std::thread::{spawn, JoinHandle};
 
 use std::convert::From;
 use std::marker::PhantomData;
@@ -83,41 +83,60 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     phantom: PhantomData<F>,
     id: types::Id,
     own_name: NameType,
-    event_input: Receiver<Event>,
-    connection_manager: ConnectionManager,
-    accepting_on: Vec<Endpoint>,
+    // event_input: Receiver<Event>,
+    // connection_manager: ConnectionManager,
+    // accepting_on: Vec<Endpoint>,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
     bootstrap_node_id: Option<NameType>,
+    // membrane_handle: Option<JoinHandle<_>>
 }
 
 impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
                                    G : CreatePersonas<F> {
     pub fn new(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let (event_output, event_input) = mpsc::channel();
+        // let (event_output, event_input) = mpsc::channel();
         let id = types::Id::new();
         let own_name = id.get_name();
-        let mut cm = crust::ConnectionManager::new(event_output);
+        // let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
-        let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
+        // let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
         // TODO: Beacon port should be passed down
-        let beacon_port = Some(5483u16);
-        let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
-            Err(reason) => {
-                println!("Failed to start listening: {:?}", reason);
-                (vec![], None)
-            }
-            Ok(listeners_and_beacon) => listeners_and_beacon
-        };
-        println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
+        // let beacon_port = Some(5483u16);
+        // let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
+        //     Err(reason) => {
+        //         println!("Failed to start listening: {:?}", reason);
+        //         (vec![], None)
+        //     }
+        //     Ok(listeners_and_beacon) => listeners_and_beacon
+        // };
+        // println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
         RoutingNode { genesis: Box::new(genesis),
                       phantom: PhantomData,
                       id : id,
                       own_name : own_name.clone(),
-                      event_input: event_input,
-                      connection_manager: cm,
-                      accepting_on: listeners.0,
+                      // event_input: event_input,
+                      // connection_manager: cm,
+                      // accepting_on: listeners.0,
+                      next_message_id: rand::random::<MessageId>(),
+                      bootstrap_endpoint: None,
+                      bootstrap_node_id: None,
+                    }
+    }
+
+    /// Starts a node without requiring responses from the network.
+    /// It will relocate its own address with the a double hash.
+    /// This allows the network to later reject this zero node
+    /// when the routing_table is full.
+    pub fn zero_node(genesis: G) -> RoutingNode<F, G> {
+        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
+        let id = types::Id::new();
+        let own_name = id.get_name();
+        RoutingNode { genesis: Box::new(genesis),
+                      phantom: PhantomData,
+                      id : id,
+                      own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_endpoint: None,
                       bootstrap_node_id: None,
@@ -130,16 +149,53 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
     //  TODO: a (two-way) channel should be passed in to control the membrane.
     //        connection_manager should also be moved into the membrane;
     //        firstly moving most ownership of the constructor into this function.
-    fn run_membrane(&mut self) {
-        // let mut cm = crust::ConnectionManager::new(event_output);
+    fn run_membrane(&mut self)  {
+        let (event_output, event_input) = mpsc::channel();
+        let mut cm = crust::ConnectionManager::new(event_output);
+        // TODO: Default Protocol and Port need to be passed down
+        let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
+        // TODO: Beacon port should be passed down
+        let beacon_port = Some(5483u16);
+        let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
+            Err(reason) => {
+                println!("Failed to start listening: {:?}", reason);
+                (vec![], None)
+            }
+            Ok(listeners_and_beacon) => listeners_and_beacon
+        };
 
-        // let mut membrane = RoutingMembrane::new(self.genesis.create_personas());
-        // spawn(move || membrane.run());
+        let relocated_id = self.bootstrap();
+        // for now just write out explicitly in this function the bootstrapping
+        loop {
+            match event_input.recv() {
+                Err(_) => (),
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+
+                },
+                Ok(crust::Event::NewConnection(endpoint)) => {
+
+                },
+                Ok(crust::Event::LostConnection(endpoint)) => {
+
+                }
+            }
+        }
+
+        match (self.bootstrap_node_id.clone(), self.bootstrap_endpoint.clone()) {
+            (Some(name), Some(endpoint)) => {
+                let mut membrane = RoutingMembrane::new(
+                    cm, event_input, (name, endpoint),
+                    listeners.0, relocated_id,
+                    self.genesis.create_personas());
+                spawn(move || membrane.run());
+            },
+            _ => () // failed to bootstrap
+        }
     }
 
     /// bootstrap
-    fn bootstrap(&mut self)  {
-
+    fn bootstrap(&mut self) -> types::Id  {
+        types::Id::new()  // TODO: placeholder
     }
 
 }
