@@ -71,7 +71,6 @@ impl<G : CreatePersonas> RoutingNode<G> {
         let id = types::Id::new();
         let own_name = id.get_name();
         RoutingNode { genesis: Box::new(genesis),
-                      phantom: PhantomData,
                       id : id,
                       own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),
@@ -88,7 +87,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
     ///
     /// A zero_membrane will not be able to connect to an existing network,
     /// and as a special node, it will be rejected by the network later on.
-    pub fn run_zero_membrane(&mut self) {
+    pub fn run_zero_membrane<T: Interface + 'static>(&mut self) {
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
@@ -112,7 +111,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
         };
         self.id.assign_relocated_name(self_relocated_name);
 
-        let mut membrane = RoutingMembrane::new(
+        let mut membrane = RoutingMembrane::<T>::new(
             cm, event_input, None,
             listeners.0, self.id.clone(),
             self.genesis.create_personas());
@@ -123,8 +122,9 @@ impl<G : CreatePersonas> RoutingNode<G> {
 
     /// Bootstrap the node to an existing (or zero) node on the network.
     /// If a bootstrap list is provided those will be used over the beacon support from CRUST.
-    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
-                     beacon_port: Option<u16>) -> Result<(), RoutingError>  {
+    pub fn bootstrap<T: Interface + 'static>(&mut self,
+            bootstrap_list: Option<Vec<Endpoint>>,
+            beacon_port: Option<u16>) -> Result<(), RoutingError>  {
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
@@ -142,6 +142,8 @@ impl<G : CreatePersonas> RoutingNode<G> {
             .map_err(|_|RoutingError::FailedToBootstrap));
         println!("bootstrap {:?}", bootstrapped_to);
         self.bootstrap_endpoint = Some(bootstrapped_to);
+
+        let relocated_id = self.id.clone();
         // send_connect_request_msg
         // FIXME: for now just write out explicitly in this function the bootstrapping loop
         loop {
@@ -157,6 +159,17 @@ impl<G : CreatePersonas> RoutingNode<G> {
 
                 }
             }
+        };
+
+        match (self.bootstrap_node_id.clone(), self.bootstrap_endpoint.clone()) {
+            (Some(name), Some(endpoint)) => {
+                let mut membrane = RoutingMembrane::<T>::new(
+                    cm, event_input, Some((name, endpoint)),
+                    listeners.0, relocated_id,
+                    self.genesis.create_personas());
+                spawn(move || membrane.run());
+            },
+            _ => () // failed to bootstrap
         };
         Ok(())
     }
@@ -201,38 +214,13 @@ impl<G : CreatePersonas> RoutingNode<G> {
     //  TODO: a (two-way) channel should be passed in to control the membrane.
     //        connection_manager should also be moved into the membrane;
     //        firstly moving most ownership of the constructor into this function.
-    fn run_membrane<T: Interface + 'static>(&mut self)  {
-
-        // let mut membrane = RoutingMembrane::<T>::new(self.genesis.create_personas());
-        // spawn(move || membrane.run());
-        // ---------
-        // let relocated_id = self.bootstrap();
-        // // for now just write out explicitly in this function the bootstrapping
-        // loop {
-        //     match event_input.recv() {
-        //         Err(_) => (),
-        //         Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-        //
-        //         },
-        //         Ok(crust::Event::NewConnection(endpoint)) => {
-        //
-        //         },
-        //         Ok(crust::Event::LostConnection(endpoint)) => {
-        //
-        //         }
-        //     }
-        // }
-        //
-        // match (self.bootstrap_node_id.clone(), self.bootstrap_endpoint.clone()) {
-        //     (Some(name), Some(endpoint)) => {
-        //         let mut membrane = RoutingMembrane::new(
-        //             cm, event_input, Some((name, endpoint)),
-        //             listeners.0, relocated_id,
-        //             self.genesis.create_personas());
-        //         spawn(move || membrane.run());
-        //     },
-        //     _ => () // failed to bootstrap
-        // }
+    fn run_membrane(&mut self)  {
+    //
+    //     let mut membrane = RoutingMembrane::<T>::new(self.genesis.create_personas());
+    //     spawn(move || membrane.run());
+    //     // ---------
+    //
+    //
     }
 }
 
