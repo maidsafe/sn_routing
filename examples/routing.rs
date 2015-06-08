@@ -24,6 +24,8 @@
 //!      starting later on nodes : routing -n 127.0.0.0:7364
 //!      starting a client : routing 127.0.0.0:7364
 
+#![forbid(bad_style, warnings)]
+
 extern crate cbor;
 extern crate docopt;
 extern crate rand;

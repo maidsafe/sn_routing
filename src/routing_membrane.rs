@@ -54,8 +54,6 @@ use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
 use message_header::MessageHeader;
-// use messages::bootstrap_id_request::BootstrapIdRequest;
-// use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
@@ -862,4 +860,4 @@ fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
     }
 }
 
-fn ignore<R,E>(_: Result<R,E>) {}
+fn ignore<R,E>(_restul: Result<R,E>) {}
