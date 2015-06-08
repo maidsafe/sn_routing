@@ -259,7 +259,7 @@ impl VaultFacade {
         { // MaidManager, shall allowing the put and SendOn to DataManagers around name
             let from = NameType::new([1u8; 64]);
             // TODO : in this stage, dest can be populated as anything ?
-            let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
+            let dest = DestinationAddress{ dest : NameType::generate_random(), relay_to: None };
             let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
                                              routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), false);
@@ -276,7 +276,7 @@ impl VaultFacade {
         { // DataManager, shall SendOn to pmid_nodes
             let from = NameType::new([1u8; 64]);
             // TODO : in this stage, dest can be populated as anything ?
-            let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
+            let dest = DestinationAddress{ dest : NameType::generate_random(), relay_to: None };
             let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
                                              routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), false);
@@ -307,7 +307,7 @@ impl VaultFacade {
         }
         { // PmidManager, shall put to pmid_nodes
             let from = NameType::new([3u8; 64]);
-            let dest = DestinationAddress{ dest : NameType::new([7u8; 64]), reply_to: None };
+            let dest = DestinationAddress{ dest : NameType::new([7u8; 64]), relay_to: None };
             let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager, from, dest,
                                          routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), false);
@@ -321,7 +321,7 @@ impl VaultFacade {
         }
         { // PmidNode stores/retrieves data
             let from = NameType::new([7u8; 64]);
-            let dest = DestinationAddress{ dest : NameType::new([6u8; 64]), reply_to: None };
+            let dest = DestinationAddress{ dest : NameType::new([6u8; 64]), relay_to: None };
             let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager, from.clone(), dest,
                                              routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), true);
@@ -424,7 +424,7 @@ impl VaultFacade {
         assert_eq!(encode_result.is_ok(), true);
 
         let from = available_nodes[0].clone();
-        let dest = DestinationAddress{ dest : available_nodes[1].clone(), reply_to: None };
+        let dest = DestinationAddress{ dest : available_nodes[1].clone(), relay_to: None };
         let data_as_vec = encoder.into_bytes();
 
         let mut small_close_group = Vec::with_capacity(5);
