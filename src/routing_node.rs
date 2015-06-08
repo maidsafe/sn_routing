@@ -38,7 +38,6 @@ use node_interface;
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
-use routing_membrane::RoutingMembrane;
 use sendable::Sendable;
 use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes};
@@ -65,7 +64,6 @@ use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, InterfaceError, ResponseError};
-use std::thread::spawn;
 
 use std::convert::From;
 

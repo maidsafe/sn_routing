@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use lru_time_cache::LruCache;
-use time::{Duration, SteadyTime};
+use time::{Duration};
 use crust::Endpoint;
 use types::PublicId;
 use NameType;
