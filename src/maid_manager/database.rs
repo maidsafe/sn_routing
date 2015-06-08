@@ -165,6 +165,12 @@ impl MaidManagerDatabase {
       entry.put_data(size)
   }
 
+  pub fn handle_account_transfer(&mut self, account_wrapper : &MaidManagerAccountWrapper) {
+      // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
+      let _ = self.storage.remove(&account_wrapper.name());
+      self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
+  }
+
   pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
       let data: Vec<_> = self.storage.drain().collect();
       let mut actions = Vec::with_capacity(data.len());

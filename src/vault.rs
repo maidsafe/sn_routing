@@ -94,6 +94,23 @@ impl Interface for VaultFacade {
 
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<MessageAction, InterfaceError> {
+        if our_authority == from_authority {
+            // Account Transfer entries will be passed down from routing as a put request,
+            // however having the same authority of from and own
+            // The incoming data is a serialized PaylodType, whose data is one entry of a serialised account data
+            match our_authority {
+                Authority::ClientManager => { self.maid_manager.handle_account_transfer(&data); }
+                // Authority::NaeManager => {
+                //     // both DataManager and VersionHandler are NaeManagers
+                //     self.data_manager.handle_account_transfer(&data);
+                //     self.version_handler.handle_account_transfer(&data);
+                // }
+                // Authority::NodeManager => { self.pmid_manager.handle_account_transfer(&data); }
+                _ => {}
+            }
+            // The return from this handling branch shall always be TERMINATE of the flow
+            return Err(InterfaceError::Abort);
+        }
         match our_authority {
             Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
             Authority::NaeManager => {

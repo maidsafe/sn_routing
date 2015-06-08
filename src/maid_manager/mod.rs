@@ -76,6 +76,18 @@ impl MaidManager {
     Ok(MessageAction::SendOn(destinations))
   }
 
+  pub fn handle_account_transfer(&mut self, data : &Vec<u8>) {
+    let mut d = Decoder::from_bytes(&data[..]);
+    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+    match payload.get_type_tag() {
+      maidsafe_types::PayloadTypeTag::MaidManagerAccountTransfer => {
+        let maid_account_wrapper : MaidManagerAccountWrapper = payload.get_data();
+        self.db_.handle_account_transfer(&maid_account_wrapper);
+      }
+      _ => {}
+    }
+  }
+
   pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
     self.db_.retrieve_all_and_reset()
   }
