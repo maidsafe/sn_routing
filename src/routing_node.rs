@@ -701,11 +701,10 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let get_data = try!(decode::<GetData>(&body));
         let type_id = get_data.name_and_type_id.type_id.clone();
-        let our_authority = our_authority(&get_data.name_and_type_id.name, &header,
-                                          &self.routing_table);
+        let name = get_data.name_and_type_id.name.clone();
+        let our_authority = our_authority(&name, &header, &self.routing_table);
         let from_authority = header.from_authority();
         let from = header.from();
-        let name = get_data.name_and_type_id.name.clone();
 
         match self.mut_interface().handle_get(type_id, name, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
