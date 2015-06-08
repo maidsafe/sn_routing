@@ -242,6 +242,32 @@ mod test {
     }
 
     #[test]
+    fn handle_account_transfer() {
+        let mut db = MaidManagerDatabase::new();
+        let name = routing::test_utils::Random::generate_random();
+        assert_eq!(db.put_data(&name, 0), true);
+        assert_eq!(db.put_data(&name, 1073741823), true);
+        assert_eq!(db.put_data(&name, 2), false);
+        
+        let mut account = MaidManagerAccount::new();
+        account.put_data(1073741822);
+        {
+            let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), account.clone());
+            db.handle_account_transfer(&account_wrapper);
+        }
+        assert_eq!(db.put_data(&name, 3), false);
+        assert_eq!(db.put_data(&name, 2), true);
+
+        account.delete_data(1073741822);
+        {
+            let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), account.clone());
+            db.handle_account_transfer(&account_wrapper);
+        }
+        assert_eq!(db.put_data(&name, 1073741825), false);
+        assert_eq!(db.put_data(&name, 1073741824), true);
+    }
+
+    #[test]
     fn maid_manager_account_wrapper_serialisation() {
         let obj_before = MaidManagerAccountWrapper::new(routing::NameType([1u8;64]), MaidManagerAccount::new());
 
