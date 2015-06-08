@@ -40,8 +40,6 @@ use types::{MessageId, Bytes};
 use error::{RoutingError};
 use std::thread::spawn;
 
-use std::marker::PhantomData;
-
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 pub type Endpoint = crust::Endpoint;
@@ -50,10 +48,8 @@ type PortAndProtocol = crust::Port;
 type RoutingResult = Result<(), RoutingError>;
 
 /// DHT node
-pub struct RoutingNode<F, G> where F : Interface + 'static,
-                                   G : CreatePersonas<F> {
+pub struct RoutingNode<G : CreatePersonas> {
     genesis: Box<G>,
-    phantom: PhantomData<F>,
     id: types::Id,
     own_name: NameType,
     event_input: Receiver<Event>,
@@ -70,9 +66,8 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     connection_cache: BTreeMap<NameType, SteadyTime>
 }
 
-impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
-                                   G : CreatePersonas<F> {
-    pub fn new(genesis: G) -> RoutingNode<F, G> {
+impl<G : CreatePersonas> RoutingNode<G> {
+    pub fn new(genesis: G) -> RoutingNode<G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (event_output, event_input) = mpsc::channel();
         let id = types::Id::new();
@@ -91,7 +86,6 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
         };
         println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
         RoutingNode { genesis: Box::new(genesis),
-                      phantom: PhantomData,
                       id : id,
                       own_name : own_name.clone(),
                       event_input: event_input,
@@ -115,8 +109,8 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
     //  TODO: a (two-way) channel should be passed in to control the membrane.
     //        connection_manager should also be moved into the membrane;
     //        firstly moving most ownership of the constructor into this function.
-    fn run_membrane(&mut self) {
-        let mut membrane = RoutingMembrane::new(self.genesis.create_personas());
+    fn run_membrane<T: Interface + 'static>(&mut self) {
+        let mut membrane = RoutingMembrane::<T>::new(self.genesis.create_personas());
         spawn(move || membrane.run());
     }
 }
