@@ -397,7 +397,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             match retrieved_data {
                 Ok(action) => match action {
                     MessageAction::Reply(data) => {
-                        let reply = self.construct_get_data_response_msg(&header, &get_data, data);
+                        let reply = self.make_get_data_response(Authority::ManagedNode, &header, get_data, Ok(data));
                         return encode(&reply).map(|reply| {
                             self.send_swarm_or_parallel(&header.send_to().dest, &reply);
                         }).map_err(From::from);
@@ -634,34 +634,33 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let from = header.from();
         let to = header.send_to();
 
-        // FIXME: handle interface errors
-        match try!(self.mut_interface().handle_put(our_authority.clone(), from_authority, from,
-                                                   to, put_data.data.clone())) {
-            MessageAction::Reply(reply_data) => {
-                let reply_header = header.create_reply(&self.own_name, &our_authority);
-                let reply_to = match our_authority {
-                    Authority::ClientManager => match header.reply_to() {
-                        Some(client) => client,
-                        None => header.from()
-                    },
-                    _ => header.from()
-                };
-                let put_data_response = PutDataResponse {
-                    name : put_data.name.clone(),
-                    data : Ok(reply_data),
-                };
-                let routing_msg = RoutingMessage::new(MessageTypeTag::PutDataResponse,
-                    reply_header, put_data_response, &self.id.get_crypto_secret_sign_key());
-                self.send_swarm_or_parallel(&reply_to, &try!(encode(&routing_msg)));
-                Ok(())
+        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from,
+                                              to, put_data.data.clone()) {
+            Ok(action) => match action {
+                MessageAction::Reply(reply_data) => {
+                    let reply_to = match our_authority {
+                        Authority::ClientManager => match header.reply_to() {
+                            Some(client) => client,
+                            None => header.from()
+                        },
+                        _ => header.from()
+                    };
+                    let routing_msg = self.make_put_data_response(our_authority, &header, put_data, Ok(reply_data));
+                    self.send_swarm_or_parallel(&reply_to, &try!(encode(&routing_msg)));
+                },
+                MessageAction::SendOn(destinations) => {
+                    for destination in destinations {
+                        ignore(self.send_on(&put_data.name, &header, destination, MessageTypeTag::PutData, put_data.clone()));
+                    }
+                },
             },
-            MessageAction::SendOn(destinations) => {
-                for destination in destinations {
-                    ignore(self.send_on(&put_data.name, &header, destination, MessageTypeTag::PutData, put_data.clone()));
-                }
-                Ok(())
-            },
+            Err(InterfaceError::Abort) => {;},
+            Err(InterfaceError::Response(error)) => {
+                let routing_msg = self.make_put_data_response(our_authority, &header, put_data, Err(error));
+                self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
+            }
         }
+        Ok(())
     }
 
     fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
@@ -852,11 +851,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match self.mut_interface().handle_get(type_id, name.clone(), our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
-                    let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_name, &our_authority),
-                        GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Ok(data) },
-                        &self.id.get_crypto_secret_sign_key());
-                    let encoded_msg = try!(encode(&routing_msg));
-                    self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
+                    let routing_msg = self.make_get_data_response(our_authority, &header, get_data, Ok(data));
+                    self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
                 },
                 MessageAction::SendOn(dest_nodes) => {
                     for destination in dest_nodes {
@@ -866,11 +862,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(InterfaceError::Abort) => {;},
             Err(InterfaceError::Response(error)) => {
-                let routing_msg = RoutingMessage::new(MessageTypeTag::GetDataResponse, header.create_reply(&self.own_name, &our_authority),
-                    GetDataResponse{ name_and_type_id :get_data.name_and_type_id, data: Err(error) },
-                    &self.id.get_crypto_secret_sign_key());
-                let encoded_msg = try!(encode(&routing_msg));
-                self.send_swarm_or_parallel(&header.send_to().dest, &encoded_msg);
+                let routing_msg = self.make_get_data_response(our_authority, &header, get_data, Err(error));
+                self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
             }
         }
         Ok(())
@@ -960,14 +953,24 @@ impl<F> RoutingMembrane<F> where F: Interface {
             connect_response, &self.id.get_crypto_secret_sign_key())
     }
 
-    fn construct_get_data_response_msg(&mut self, original_header: &MessageHeader,
-                                       get_data: &GetData, data: Vec<u8>) -> RoutingMessage {
-        let header = original_header.create_reply(&self.own_name, &Authority::ManagedNode);
-        let get_data_response = GetDataResponse {
-            name_and_type_id: get_data.name_and_type_id.clone(), data: Ok(data)
+    fn make_get_data_response(&self, our_authority: Authority, orig_header: &MessageHeader, orig_message: GetData, reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage {
+        RoutingMessage::new(MessageTypeTag::GetDataResponse,
+                            orig_header.create_reply(&self.own_name, &our_authority),
+                            GetDataResponse{ name_and_type_id: orig_message.name_and_type_id,
+                                             data: reply_data },
+                            &self.id.get_crypto_secret_sign_key())
+    }
+
+    fn make_put_data_response(&self, our_authority: Authority, orig_header: &MessageHeader, orig_message: PutData, reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage {
+        let reply_header = orig_header.create_reply(&self.own_name, &our_authority);
+        let put_data_response = PutDataResponse {
+            name : orig_message.name.clone(),
+            data : reply_data,
         };
-        RoutingMessage::new(MessageTypeTag::GetDataResponse, header,
-            get_data_response, &self.id.get_crypto_secret_sign_key())
+        RoutingMessage::new(MessageTypeTag::PutDataResponse,
+                            reply_header,
+                            put_data_response,
+                            &self.id.get_crypto_secret_sign_key())
     }
 
 }
