@@ -34,7 +34,7 @@ use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
 use sodiumoxide::crypto::sign::verify_detached;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap};
 use std::sync::mpsc;
 use std::boxed::Box;
 use std::ops::DerefMut;
@@ -45,8 +45,7 @@ use crust;
 use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
-use name_type::{closer_to_target_or_equal, NAME_TYPE_LEN};
-use node_interface;
+use name_type::{closer_to_target_or_equal};
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
@@ -55,27 +54,17 @@ use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
 use message_header::MessageHeader;
-// use messages::bootstrap_id_request::BootstrapIdRequest;
-// use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data::GetData;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
 use messages::put_data_response::PutDataResponse;
 use messages::connect_request::ConnectRequest;
 use messages::connect_response::ConnectResponse;
-// use messages::connect_success::ConnectSuccess;
-use messages::find_group::FindGroup;
-use messages::find_group_response::FindGroupResponse;
-use messages::get_group_key::GetGroupKey;
-use messages::get_group_key_response::GetGroupKeyResponse;
-use messages::post::Post;
-use messages::get_client_key::GetKey;
-use messages::get_client_key_response::GetKeyResponse;
 use messages::put_public_id::PutPublicId;
 use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
-use error::{RoutingError, InterfaceError, ResponseError};
+use error::{RoutingError, ResponseError};
 
 // use std::convert::From;
 
@@ -199,15 +188,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
-                            self.message_received(&ConnectionName::Routing(name),
-                                bytes);
+                            let _ = self.message_received(&ConnectionName::Routing(name), bytes);
                         },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
                         Some(ConnectionName::Relay(name)) => {},
                         None => {
                             // If we don't know the sender, only accept a connect request
-                            self.handle_unknown_connect_request(&endpoint, bytes);
+                            let _ = self.handle_unknown_connect_request(&endpoint, bytes);
                         }
                     }
                 },
@@ -342,10 +330,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // Make sure the endpoint is dropped anywhere
         // The relay map will automatically drop the Name if the last endpoint to it is dropped
         self.relay_map.drop_endpoint(&endpoint);
-        let mut trigger_churn = false;
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => {
-                trigger_churn = self.routing_table.address_in_our_close_group_range(&name);
+                let _ = self.routing_table.address_in_our_close_group_range(&name);
                 self.routing_table.drop_node(&name);
             },
             None => {}
@@ -873,4 +860,4 @@ fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
     }
 }
 
-fn ignore<R,E>(_: Result<R,E>) {}
+fn ignore<R,E>(_restul: Result<R,E>) {}
