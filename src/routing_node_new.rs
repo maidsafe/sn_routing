@@ -104,11 +104,10 @@ impl<G : CreatePersonas> RoutingNode<G> {
 
         // self-relocate our id
         let original_name = self.id.get_name();
-        let self_relocated_name = match types::calculate_relocated_name(
-            vec![original_name.clone()], &original_name) {
-            Ok(self_relocated_name) => self_relocated_name,
-            Err(_) => panic!("Could not self-relocate our name.") // unreachable
-        };
+        let self_relocated_name = types::calculate_self_relocated_name(
+            &self.id.get_crypto_public_sign_key(),
+            &self.id.get_crypto_public_key(),
+            &self.id.get_validation_token());
         self.id.assign_relocated_name(self_relocated_name);
 
         let mut membrane = RoutingMembrane::<T>::new(
