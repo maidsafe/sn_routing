@@ -96,29 +96,12 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
                                    G : CreatePersonas<F> {
     pub fn new(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        // let (event_output, event_input) = mpsc::channel();
         let id = types::Id::new();
         let own_name = id.get_name();
-        // let mut cm = crust::ConnectionManager::new(event_output);
-        // TODO: Default Protocol and Port need to be passed down
-        // let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-        // TODO: Beacon port should be passed down
-        // let beacon_port = Some(5483u16);
-        // let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
-        //     Err(reason) => {
-        //         println!("Failed to start listening: {:?}", reason);
-        //         (vec![], None)
-        //     }
-        //     Ok(listeners_and_beacon) => listeners_and_beacon
-        // };
-        // println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
         RoutingNode { genesis: Box::new(genesis),
                       phantom: PhantomData,
                       id : id,
                       own_name : own_name.clone(),
-                      // event_input: event_input,
-                      // connection_manager: cm,
-                      // accepting_on: listeners.0,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_endpoint: None,
                       bootstrap_node_id: None,
@@ -126,26 +109,13 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
     }
 
     /// Starts a node without requiring responses from the network.
-    /// It will relocate its own address with the a double hash.
+    /// Starts the routing membrane without looking to bootstrap.
+    /// It will relocate its own address with the hash of twice its name.
     /// This allows the network to later reject this zero node
     /// when the routing_table is full.
-    pub fn zero_node(genesis: G) -> RoutingNode<F, G> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let id = types::Id::new();
-        let own_name = id.get_name(); // is equal to self_relocated_name
-        RoutingNode { genesis: Box::new(genesis),
-                      phantom: PhantomData,
-                      id : id,
-                      own_name : own_name.clone(),
-                      next_message_id: rand::random::<MessageId>(),
-                      bootstrap_endpoint: None,
-                      bootstrap_node_id: None,
-                    }
-    }
-
-    /// Starts the routing membrane without looking to bootstrap.
+    ///
     /// A zero_membrane will not be able to connect to an existing network,
-    /// and as the original node, it will be rejected by the network later on.
+    /// and as a special node, it will be rejected by the network later on.
     pub fn run_zero_membrane(&mut self) {
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output);
@@ -179,13 +149,10 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
         spawn(move || membrane.run());
     }
 
-    /// run_membrane spawns a new thread and moves a newly constructed Membrane into this thread.
-    /// Routing node uses the genesis object to create a new instance of the personas to embed
-    /// inside the membrane.
-    //  TODO: a (two-way) channel should be passed in to control the membrane.
-    //        connection_manager should also be moved into the membrane;
-    //        firstly moving most ownership of the constructor into this function.
-    fn run_membrane(&mut self)  {
+    /// Bootstrap the node to an existing (or zero) node on the network.
+    /// If a bootstrap list is provided those will be used over the beacon support from CRUST.
+    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
+                     beacon_port: Option<u16>) -> Result<(), RoutingError>  {
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
@@ -199,6 +166,21 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
+        let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
+            .map_err(|_|RoutingError::FailedToBootstrap));
+        println!("bootstrap {:?}", bootstrapped_to);
+        self.bootstrap_endpoint = Some(bootstrapped_to);
+
+    }
+
+    /// run_membrane spawns a new thread and moves a newly constructed Membrane into this thread.
+    /// Routing node uses the genesis object to create a new instance of the personas to embed
+    /// inside the membrane.
+    //  TODO: a (two-way) channel should be passed in to control the membrane.
+    //        connection_manager should also be moved into the membrane;
+    //        firstly moving most ownership of the constructor into this function.
+    fn run_membrane(&mut self)  {
+
 
         let relocated_id = self.bootstrap();
         // for now just write out explicitly in this function the bootstrapping
@@ -228,12 +210,6 @@ impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
             _ => () // failed to bootstrap
         }
     }
-
-    /// bootstrap
-    fn bootstrap(&mut self) -> types::Id  {
-        types::Id::new()  // TODO: placeholder
-    }
-
 }
 
 fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
