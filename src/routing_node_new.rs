@@ -38,7 +38,6 @@ use messages::{RoutingMessage, MessageTypeTag};
 use message_header::MessageHeader;
 use error::{RoutingError};
 use std::thread::spawn;
-use std::marker::PhantomData;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
