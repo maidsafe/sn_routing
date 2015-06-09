@@ -547,34 +547,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
        }
     }
 
-    // Main send function, pass iterator of targets and message to clone.
-    // FIXME: CRUST does not provide delivery promise.
-    fn send<'a, I>(&self, targets: I, message: &Bytes) where I: Iterator<Item=&'a Endpoint> {
-        for target in targets {
-            ignore(self.connection_manager.send(target.clone(), message.clone()));
-        }
-    }
-
-    fn send_by_name<'a, I>(&self, peers: I, serialised_msg: Bytes) where I: Iterator<Item=&'a NameType> {
-        for peer in peers {
-            self.send(self.name_to_endpoint(peer).into_iter(), &serialised_msg);
-        }
-    }
-
-    fn name_to_endpoint(&self, name: &NameType) -> Vec<&Endpoint> {
-        self.relay_map.get_endpoints(&name).iter()
-            .flat_map(|&&(_, ref endpoint_set)| endpoint_set)
-            .collect()
-
-        //match self.all_connections.1.get(name) {
-        //    Some(endpoints) => {
-        //                           assert!(!endpoints.is_empty());
-        //                           Some(&endpoints[0])
-        //                       },
-        //    None => None
-        //}
-    }
-
     // -----Name-based Send Functions----------------------------------------
 
     fn send_out_as_relay(&mut self, name: &NameType, msg: Bytes) {
@@ -892,8 +864,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let serialised_msg = try!(encode(&routing_msg));
 
         self.send_swarm_or_parallel(&original_header.send_to().dest, &serialised_msg);
-        // if node is in my group && in non routing list send it to non_routing list as well
-        self.send_by_name(original_header.source.reply_to.iter(), serialised_msg);
 
         Ok(())
     }
