@@ -64,6 +64,7 @@ Usage:
     routing [<peer>...]
     routing --node [<peer>...]
     routing --help
+    routing --first
 
 If no arguments are passed, this will try to connect to an existing network
 using Crust's discovery protocol.  If this is unsuccessful, you can provide
@@ -73,13 +74,15 @@ will try to connect to one of these in order to connect to the network.
 Options:
     -n, --node  Run as a RoutingNode rather than a RoutingClient.
     -h, --help  Display this help message.
+    -f, --first Run as first node
 ";
 
 #[derive(RustcDecodable, Debug)]
 struct Args {
     arg_endpoint: Option<String>,
     flag_node : bool,
-    flag_help : bool
+    flag_help : bool,
+    flag_first : bool
 }
 
 // ==========================   Helper Function   =================================
@@ -319,9 +322,8 @@ impl Interface for TestNode {
 
 struct TestNodeGenerator;
 
-impl CreatePersonas for TestNodeGenerator {
-    fn create_personas<TestNode>(&mut self) -> TestNode {
-        // TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }
+impl CreatePersonas<TestNode> for TestNodeGenerator {
+    fn create_personas(&mut self) -> TestNode {
         TestNode::new()
     }
 }
@@ -336,18 +338,20 @@ fn main() {
     }
     let mut command = String::new();
     if args.flag_node {
-        let test_node = RoutingNode::<TestNodeGenerator>::new(TestNodeGenerator);
-        if args.arg_endpoint.is_some() {
+        let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+        if /* args.flag_first */ true {
+            test_node.run_zero_membrane();
+        } else if args.arg_endpoint.is_some() {
             match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
                 Ok(addr) => {
                     println!("initial bootstrapping to {} ", addr);
-                    // let _ = test_node.bootstrap(Some(vec![Endpoint::Tcp(addr)]), None); // not implemented yet
+                    let _ = test_node.bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
                 }
                 Err(_) => {}
             };
         } else {
             // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
-            // let _ = test_node.bootstrap(None, None); // not implemented yet
+            let _ = test_node.bootstrap(None, None);
         }
         loop {
             command.clear();
