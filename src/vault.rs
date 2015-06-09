@@ -467,7 +467,7 @@ impl VaultFacade {
             // DataManagerStatsTransfer will always be included in the return
             let churn_data = vault.handle_churn(close_group.clone());
             assert_eq!(churn_data.len(), 2);
-println!("1");
+
             match churn_data[0] {
                 MethodCall::Refresh {ref content} => {
                     let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
@@ -478,7 +478,7 @@ println!("1");
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
             };
-println!("2");
+
             match churn_data[1] {
                 MethodCall::Refresh {ref content} => {
                     let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
