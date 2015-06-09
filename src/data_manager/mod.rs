@@ -287,7 +287,7 @@ mod test {
   extern crate maidsafe_types;
   extern crate routing;
 
-  use super::{DataManager};
+  use super::{DataManager, DataManagerStatsSendable};
   use super::database::DataManagerSendable;
   use maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
   use routing::types::{MessageAction, array_as_vector};
@@ -340,5 +340,15 @@ mod test {
         let payload = Payload::new(PayloadTypeTag::DataManagerAccountTransfer, &account_wrapper);
         data_manager.handle_account_transfer(payload);
         assert_eq!(data_manager.db_.exist(&name), true);
+    }
+
+    #[test]
+    fn handle_stats_transfer() {
+        let mut data_manager = DataManager::new();
+        let name : NameType = routing::test_utils::Random::generate_random();
+        let stats_sendable = DataManagerStatsSendable::new(name.clone(), 1023);
+        let payload = Payload::new(PayloadTypeTag::DataManagerStatsTransfer, &stats_sendable);
+        data_manager.handle_stats_transfer(payload);
+        assert_eq!(data_manager.resource_index, 512);
     }
 }
