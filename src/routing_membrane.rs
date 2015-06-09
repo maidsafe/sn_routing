@@ -126,12 +126,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // };
         // println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
         RoutingMembrane {
-                      id : relocated_id,
                       event_input: event_input,
                       connection_manager: cm,
                       routing_table : RoutingTable::new(&own_name),
-                      relay_map: RelayMap::new(&own_name),
+                      relay_map: RelayMap::new(&relocated_id),
                       own_name: own_name,
+                      id : relocated_id,
                       accepting_on: accepting_on,
                       next_message_id: rand::random::<MessageId>(),
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
@@ -354,19 +354,25 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn relay_message_received(&mut self, received_from: &ConnectionName,
         serialised_message: Bytes) -> RoutingResult {
         match received_from {
-            &ConnectionName::Relay(_) => {},
-            _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
-        };
-        // Parse
-        let message = try!(decode::<RoutingMessage>(&serialised_message));
-        let header = message.message_header;
-        let body = message.serialised_body;
+            &ConnectionName::Relay(ref name) => {
+                // Parse as mutable to change header
+                let mut message = try!(decode::<RoutingMessage>(&serialised_message));
 
-        match message.message_type {
-            MessageTypeTag::PutPublicId => {
-                ignore(self.handle_put_public_id(header, body));
+                // intercept PutPublicId for zero node without connections
+                if message.message_type == MessageTypeTag::PutPublicId
+                    && self.relay_map.zero_node()
+                    && self.routing_table.size() == 0 {
+                    let header = message.message_header;
+                    let body = message.serialised_body;
+                    // FIXME: check signature
+                    ignore(self.handle_put_public_id_zero_node(header, body));
+                    return Ok(());
+                }
+
+                // update header and normal message_received
+                message.message_header.set_relay_name(&self.own_name, &name);
             },
-            _ => ()
+            _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
         Ok(())
     }
@@ -819,34 +825,34 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     ///  Only use this handler if we have a self-relocated id, and our routing table is empty
-    // fn handle_put_public_id_zero_state(&mut self, header: MessageHeader, body: Bytes)
-    //     -> RoutingResult {
-    //     let put_public_id = try!(decode::<PutPublicId>(&body));
-    //     if put_public_id.public_id.is_relocated() {
-    //         return Err(RoutingError::RejectedPublicId); }
-    //     let mut put_public_id_relocated = put_public_id.clone();
-    //
-    //     let relocated_name =  try!(types::calculate_relocated_name(
-    //                                 vec![self.id.get_name()],
-    //                                 &put_public_id.public_id.name()));
-    //     // assign_relocated_name
-    //     put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
-    //
-    //     if !self.public_id_cache.check(&put_public_id.public_id.name()) {
-    //       self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
-    //       // Reply with PutPublicIdResponse to the reply_to address
-    //       let reply_header = header.create_reply(&self.own_name, &our_authority);
-    //       let destination = reply_header.destination.dest.clone();
-    //       let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
-    //                                             reply_header,
-    //                                             PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
-    //                                             &self.id.get_crypto_secret_sign_key());
-    //       let encoded_msg = try!(encode(&routing_msg));
-    //       // Send this to the relay node as specified in the reply_header
-    //       self.send_swarm_or_parallel(&destination, &encoded_msg);
-    //     };
-    //     Ok(())
-    // }
+    fn handle_put_public_id_zero_node(&mut self, header: MessageHeader, body: Bytes)
+        -> RoutingResult {
+        let put_public_id = try!(decode::<PutPublicId>(&body));
+        if put_public_id.public_id.is_relocated() {
+            return Err(RoutingError::RejectedPublicId); }
+        let mut put_public_id_relocated = put_public_id.clone();
+
+        let relocated_name =  try!(types::calculate_relocated_name(
+                                    vec![self.id.get_name()],
+                                    &put_public_id.public_id.name()));
+        // assign_relocated_name
+        put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
+
+        if !self.public_id_cache.check(&put_public_id.public_id.name()) {
+          self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
+          // Reply with PutPublicIdResponse to the reply_to address
+          let reply_header = header.create_reply(&self.own_name, &Authority::NaeManager);
+          let destination = reply_header.destination.dest.clone();
+          let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
+                                                reply_header,
+                                                PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
+                                                &self.id.get_crypto_secret_sign_key());
+          let encoded_msg = try!(encode(&routing_msg));
+          // Send this to the relay node as specified in the reply_header
+          self.send_swarm_or_parallel(&destination, &encoded_msg);
+        };
+        Ok(())
+    }
 
     // -----Message Constructors-----------------------------------------------
 
