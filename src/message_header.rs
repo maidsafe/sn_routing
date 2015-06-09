@@ -121,6 +121,11 @@ impl MessageHeader {
         self.authority.clone()
     }
 
+    pub fn set_relay_name(&mut self, reply_to: &NameType, relay_for: &NameType) {
+        self.source.reply_to = Some(reply_to.clone());
+        self.source.relayed_for = Some(relay_for.clone());
+    }
+
     /// This creates a new header for Action::SendOn. It clones all the fields,
     /// and then mutates the destination and source accordingly.
     /// Authority is changed at this point as this method is called after
