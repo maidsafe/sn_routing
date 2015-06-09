@@ -79,7 +79,8 @@ type RoutingResult = Result<(), RoutingError>;
 
 enum ConnectionName {
     Relay(NameType),
-    Routing(NameType)
+    Routing(NameType),
+    OurBootstrap
 }
 
 /// Routing Membrane
@@ -174,9 +175,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
-        // First Send FindGroup Requests
-        let find_group_msg = self.construct_find_group_msg();
-        // ignore(encode(&find_group_msg).map(|msg|self.send_to_bootstrap_node(&msg)));
+        // First send FindGroup request
+        match self.bootstrap_endpoint.clone() {
+            Some(ref bootstrap_endpoint) => {
+                let find_group_msg = self.construct_find_group_msg();
+                // FIXME: act on error to send; don't over clone bootstrap_endpoint
+                ignore(encode(&find_group_msg).map(|msg|self.connection_manager
+                    .send(bootstrap_endpoint.clone(), msg)));
+            },
+            None => {
+                // routing_table is still empty now, but check
+                // should never happen
+                if self.routing_table.size() == 0 {
+                    panic!("No connections to get started.");
+                }
+            }
+        }
 
         loop {
             match self.event_input.recv() {
@@ -196,6 +210,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // limiting our exposure.
                             let _ = self.relay_message_received(
                                 &ConnectionName::Relay(name), bytes, endpoint);
+                        },
+                        Some(ConnectionName::OurBootstrap) => {
+
                         },
                         None => {
                             // If we don't know the sender, only accept a connect request
@@ -299,6 +316,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // this endpoint is already present in the relay lookup_map
                 // nothing to do
             },
+            Some(ConnectionName::OurBootstrap) => {
+                // FIXME: for now do nothing
+            }
             None => {
                 // Connect requests for relays do not get stored in the relay map,
                 // as we want to avoid state; instead we keep an LruCache to recover the public_id.
@@ -341,6 +361,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             None => {}
         };
+        let mut drop_bootstrap = false;
+        match self.bootstrap_endpoint {
+            Some(ref bootstrap_endpoint) => {
+                if &endpoint == bootstrap_endpoint {
+                    println!("Bootstrap connectioin disconnected by relay node.");
+                    self.connection_manager.drop_node(endpoint);
+                    drop_bootstrap = true;
+                }
+            },
+            None => {}
+        };
+        if drop_bootstrap { self.bootstrap_endpoint = None; }
         // TODO: trigger churn on boolean
     }
 
@@ -637,7 +669,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // secondly look in the relay_map
             None => match self.relay_map.lookup_endpoint(&endpoint) {
                 Some(name) => Some(ConnectionName::Relay(name)),
-                None => None
+                // finally see if it is our bootstrap_endpoint
+                None => match self.bootstrap_endpoint {
+                    Some(ref our_bootstrap) => {
+                        if our_bootstrap == endpoint {
+                            Some(ConnectionName::OurBootstrap)
+                        } else {
+                            None
+                        }
+                    },
+                    None => None
+                }
             }
         }
     }
