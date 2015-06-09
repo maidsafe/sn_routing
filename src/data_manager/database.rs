@@ -316,4 +316,22 @@ mod test {
     assert_eq!(result, new_pmid_nodes);
     assert!(result != pmid_nodes);
   }
+
+  #[test]
+  fn handle_account_transfer() {
+    let mut db = DataManagerDatabase::new();
+    let value = generate_random_vec_u8(1024);
+    let data = ImmutableData::new(value);
+    let data_name = data.name();
+    let mut pmid_nodes : Vec<NameType> = vec![];
+
+    for _ in 0..4 {
+      pmid_nodes.push(Random::generate_random());
+    }
+    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+    assert_eq!(db.get_pmid_nodes(&data_name).len(), pmid_nodes.len());
+
+    db.handle_account_transfer(&DataManagerSendable::new(data_name.clone(), vec![]));
+    assert_eq!(db.get_pmid_nodes(&data_name).len(), 0);
+  }
 }
