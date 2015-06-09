@@ -60,30 +60,22 @@ use routing::error::{ResponseError, InterfaceError};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
-Usage:
-    routing [<peer>...]
-    routing --node [<peer>...]
-    routing --help
+Naval Fate.
 
-If no arguments are passed, this will try to connect to an existing network
-using Crust's discovery protocol.  If this is unsuccessful, you can provide
-a list of known endpoints (other running instances of this example) and the node
-will try to connect to one of these in order to connect to the network.
+Usage:
+  routing_new [--type=<node_type>] [--peer=<end_point>]
+  routing_new (-h | --help)
+
+  If no arguments are passed, this will try to connect to an existing network
+  using Crust's discovery protocol.  If this is unsuccessful, you can provide
+  a list of known endpoints (other running instances of this example) and the node
+  will try to connect to one of these in order to connect to the network.
 
 Options:
-    -n, --node  Run as a RoutingNode rather than a RoutingClient.
-    -h, --help  Display this help message.
+  -h --help           Show this screen.
+  --type=<node_type>  node_type = client | node | first.
+  --peer=<end_point>  end_point
 ";
-
-//    -f, --first Run as the first node
-//     routing --first
-#[derive(RustcDecodable, Debug)]
-struct Args {
-    arg_endpoint: Option<String>,
-    flag_node : bool,
-    flag_help : bool,
-//    flag_first : bool
-}
 
 // ==========================   Helper Function   =================================
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
@@ -319,18 +311,19 @@ impl CreatePersonas<TestNode> for TestNodeGenerator {
 }
 
 fn main() {
-    let args : Args = Docopt::new(USAGE)
-                     .and_then(|d| d.decode())
-                     .unwrap_or_else(|e| e.exit());
-    if args.flag_help && !args.arg_endpoint.is_some() {
-        println!("{:?}", args);
-        return;
-    }
+    let args = Docopt::new(USAGE)
+                      .and_then(|dopt| dopt.parse())
+                      .unwrap_or_else(|e| e.exit());
+
+    // You can conveniently access values with `get_{bool,count,str,vec}`
+    // functions. If the key doesn't exist (or if, e.g., you use `get_str` on
+    // a switch), then a sensible default value is returned.
+    let node_type = args.get_str("--type");
     let mut command = String::new();
-    if args.flag_node {
+    if node_type == "node" {
         let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
-        if args.arg_endpoint.is_some() {
-            match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
+        if !args.get_str("end_point").is_empty() {
+            match SocketAddr::from_str(args.get_str("end_point")) {
                 Ok(addr) => {
                     println!("initial bootstrapping to {} ", addr);
                     let _ = test_node.bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
@@ -351,6 +344,20 @@ fn main() {
                 _ => println!("Invalid Option")
             }
         }
+    } else if node_type == "first" {
+      let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+      test_node.run_zero_membrane();
+      loop {
+          let mut command = String::new();
+          command.clear();
+          println!("Input command (stop)");
+          let _ = io::stdin().read_line(&mut command);
+          let v: Vec<&str> = command.split(' ').collect();
+          match v[0].trim() {
+              "stop" => break,
+              _ => println!("Invalid Option")
+        }
+      }
     } else {
         let sign_keypair = crypto::sign::gen_keypair();
         let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
@@ -364,8 +371,8 @@ fn main() {
                 copied_client.lock().unwrap().run();
             }
         });
-        if args.arg_endpoint.is_some() {
-            match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
+        if !args.get_str("end_point").is_empty() {
+            match SocketAddr::from_str(args.get_str("end_point")) {
                 Ok(addr) => {
                     println!("initial bootstrapping to {} ", addr);
                     let _ = mutate_client.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
