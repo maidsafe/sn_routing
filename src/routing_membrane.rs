@@ -371,11 +371,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 // update header and normal message_received
                 message.message_header.set_relay_name(&self.own_name, &name);
+                ignore(self.message_received(&ConnectionName::Routing(name.clone()),
+                    try!(encode(&message))));
             },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
         Ok(())
     }
+
     /// This the fundamental functional function in routing.
     /// It only handles messages received from connections in our routing table;
     /// i.e. this is a pure SAFE message (and does not function as the start of a relay).
