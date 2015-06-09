@@ -490,8 +490,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //             MessageTypeTag::PostResponse => self.handle_post_response(header, body),
                     MessageTypeTag::PutData => self.handle_put_data(header, body),
                     MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
-        //             MessageTypeTag::PutPublicId => self.handle_put_public_id(header, body),
-        //             //PutKey,
+                    MessageTypeTag::PutPublicId => self.handle_put_public_id(header, body),
                     _ => {
                         Err(RoutingError::UnknownMessageType)
                     }
@@ -802,7 +801,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     /// On bootstrapping a node can temporarily publish its PublicId in the group.
-    /// Sentinel will query this pool. No handle_get_public_id is needed.
+    /// No handle_get_public_id is needed - this is handled by routing_node
+    /// before the membrane instantiates.
     // TODO (Ben): check whether to accept id into group;
     // restrict on minimal similar number of leading bits.
     fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
