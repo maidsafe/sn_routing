@@ -28,3 +28,15 @@ name = "routing"
 path = "examples/routing.rs"
 test = true
 bench = false
+
+[[example]]
+name = "routing_new"
+path = "examples/routing_new.rs"
+test = true
+bench = false
+
+[[example]]
+name = "routing_first"
+path = "examples/routing_first.rs"
+test = true
+bench = false

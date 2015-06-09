@@ -43,6 +43,7 @@ use messages::{RoutingMessage, MessageTypeTag};
 use message_header::MessageHeader;
 use error::{RoutingError};
 use std::thread::spawn;
+use std::marker::PhantomData;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
@@ -52,8 +53,10 @@ type PortAndProtocol = crust::Port;
 type RoutingResult = Result<(), RoutingError>;
 
 /// DHT node
-pub struct RoutingNode<G : CreatePersonas> {
+pub struct RoutingNode<F, G> where F : Interface + 'static,
+                                   G : CreatePersonas<F> {
     genesis: Box<G>,
+    phantom: PhantomData<F>,
     id: types::Id,
     own_name: NameType,
     // event_input: Receiver<Event>,
@@ -65,12 +68,14 @@ pub struct RoutingNode<G : CreatePersonas> {
     // membrane_handle: Option<JoinHandle<_>>
 }
 
-impl<G : CreatePersonas> RoutingNode<G> {
-    pub fn new(genesis: G) -> RoutingNode<G> {
+impl<F, G> RoutingNode<F, G> where F: Interface + 'static,
+                                   G : CreatePersonas<F> {
+    pub fn new(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let id = types::Id::new();
         let own_name = id.get_name();
         RoutingNode { genesis: Box::new(genesis),
+                      phantom : PhantomData,
                       id : id,
                       own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),
@@ -87,7 +92,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
     ///
     /// A zero_membrane will not be able to connect to an existing network,
     /// and as a special node, it will be rejected by the network later on.
-    pub fn run_zero_membrane<T: Interface + 'static>(&mut self) {
+    pub fn run_zero_membrane(&mut self) {
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
@@ -110,7 +115,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
             &self.id.get_validation_token());
         self.id.assign_relocated_name(self_relocated_name);
 
-        let mut membrane = RoutingMembrane::<T>::new(
+        let mut membrane = RoutingMembrane::<F>::new(
             cm, event_input, None,
             listeners.0, self.id.clone(),
             self.genesis.create_personas());
@@ -121,7 +126,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
 
     /// Bootstrap the node to an existing (or zero) node on the network.
     /// If a bootstrap list is provided those will be used over the beacon support from CRUST.
-    pub fn bootstrap<T: Interface + 'static>(&mut self,
+    pub fn bootstrap(&mut self,
             bootstrap_list: Option<Vec<Endpoint>>,
             beacon_port: Option<u16>) -> Result<(), RoutingError>  {
         let (event_output, event_input) = mpsc::channel();
@@ -194,7 +199,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
         match relocated_name {
             Some(relocated_name) => {
                 self.id.assign_relocated_name(relocated_name);
-                let mut membrane = RoutingMembrane::<T>::new(
+                let mut membrane = RoutingMembrane::<F>::new(
                     cm, event_input, Some(bootstrapped_to.clone()),
                     listeners.0, unrelocated_id,
                     self.genesis.create_personas());
