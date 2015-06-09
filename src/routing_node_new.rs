@@ -20,15 +20,10 @@ use cbor::{Decoder, Encoder, CborError};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
-// use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc;
 use std::boxed::Box;
-// use std::sync::mpsc::Receiver;
-// use time::{Duration, SteadyTime};
 
 use crust;
-// use lru_time_cache::LruCache;
-// use message_filter::MessageFilter;
 use NameType;
 use node_interface::{Interface, CreatePersonas};
 use routing_membrane::RoutingMembrane;
@@ -36,7 +31,6 @@ use types;
 use types::{MessageId, Bytes};
 use authority::{Authority};
 use messages::connect_request::ConnectRequest;
-// use messages::connect_response::ConnectResponse;
 use messages::put_public_id::PutPublicId;
 use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
@@ -56,13 +50,9 @@ pub struct RoutingNode<G : CreatePersonas> {
     genesis: Box<G>,
     id: types::Id,
     own_name: NameType,
-    // event_input: Receiver<Event>,
-    // connection_manager: ConnectionManager,
-    // accepting_on: Vec<Endpoint>,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
     bootstrap_node_id: Option<NameType>,
-    // membrane_handle: Option<JoinHandle<_>>
 }
 
 impl<G : CreatePersonas> RoutingNode<G> {
@@ -102,7 +92,6 @@ impl<G : CreatePersonas> RoutingNode<G> {
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
 
-        // self-relocate our id
         let original_name = self.id.get_name();
         let self_relocated_name = types::calculate_self_relocated_name(
             &self.id.get_crypto_public_sign_key(),
@@ -121,6 +110,10 @@ impl<G : CreatePersonas> RoutingNode<G> {
 
     /// Bootstrap the node to an existing (or zero) node on the network.
     /// If a bootstrap list is provided those will be used over the beacon support from CRUST.
+    /// Spawns a new thread and moves a newly constructed Membrane into this thread.
+    /// Routing node uses the genesis object to create a new instance of the personas to embed
+    /// inside the membrane.
+    //  TODO: a (two-way) channel should be passed in to control the membrane.
     pub fn bootstrap<T: Interface + 'static>(&mut self,
             bootstrap_list: Option<Vec<Endpoint>>,
             beacon_port: Option<u16>) -> Result<(), RoutingError>  {
@@ -142,7 +135,6 @@ impl<G : CreatePersonas> RoutingNode<G> {
         println!("bootstrap {:?}", bootstrapped_to);
         self.bootstrap_endpoint = Some(bootstrapped_to.clone());
 
-
         let unrelocated_id = self.id.clone();
         let mut relocated_name : Option<NameType>;
 
@@ -150,6 +142,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
         let connect_msg = self.construct_connect_request_msg(&unrelocated_id.get_name(),
             listeners.0.clone());
         let serialised_message = try!(encode(&connect_msg));
+
         ignore(cm.send(bootstrapped_to.clone(), serialised_message));
 
         // FIXME: for now just write out explicitly in this function the bootstrapping loop
@@ -200,7 +193,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
                     self.genesis.create_personas());
                 spawn(move || membrane.run());
             },
-            _ => () // failed to bootstrap
+            _ => panic!("DEBUG: did not relocate the publicId.") // failed to bootstrap
         };
         Ok(())
     }
@@ -247,21 +240,6 @@ impl<G : CreatePersonas> RoutingNode<G> {
         let temp = self.next_message_id;
         self.next_message_id = self.next_message_id.wrapping_add(1);
         return temp;
-    }
-
-    /// run_membrane spawns a new thread and moves a newly constructed Membrane into this thread.
-    /// Routing node uses the genesis object to create a new instance of the personas to embed
-    /// inside the membrane.
-    //  TODO: a (two-way) channel should be passed in to control the membrane.
-    //        connection_manager should also be moved into the membrane;
-    //        firstly moving most ownership of the constructor into this function.
-    fn run_membrane(&mut self)  {
-    //
-    //     let mut membrane = RoutingMembrane::<T>::new(self.genesis.create_personas());
-    //     spawn(move || membrane.run());
-    //     // ---------
-    //
-    //
     }
 }
 

@@ -32,10 +32,8 @@
 use cbor::{Decoder, Encoder, CborError};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
-// use sodiumoxide;
 use sodiumoxide::crypto::sign::verify_detached;
 use std::collections::{BTreeMap};
-// use std::sync::mpsc;
 use std::boxed::Box;
 use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
@@ -111,31 +109,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
                accepting_on: Vec<crust::Endpoint>,
                relocated_id: types::Id,
                personas: F) -> RoutingMembrane<F> {
-        // sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        // let (event_output, event_input) = mpsc::channel();
-        // let id = types::Id::new();
+        debug_assert!(relocated_id.is_relocated());
         let own_name = relocated_id.get_name();
-        // let mut cm = crust::ConnectionManager::new(event_output);
-        // TODO: Default Protocol and Port need to be passed down
-        // let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-        // TODO: Beacon port should be passed down
-        // let beacon_port = Some(5483u16);
-        // let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
-        //     Err(reason) => {
-        //         println!("Failed to start listening: {:?}", reason);
-        //         (vec![], None)
-        //     }
-        //     Ok(listeners_and_beacon) => listeners_and_beacon
-        // };
-        // println!("{:?}  -- listening on : {:?}", own_name, listeners.0);
         RoutingMembrane {
                       event_input: event_input,
                       connection_manager: cm,
+                      accepting_on: accepting_on,
                       routing_table : RoutingTable::new(&own_name),
                       relay_map: RelayMap::new(&relocated_id),
                       own_name: own_name,
                       id : relocated_id,
-                      accepting_on: accepting_on,
                       next_message_id: rand::random::<MessageId>(),
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                       public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
@@ -189,6 +172,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
+        // First Send FindGroup Requests
+
         loop {
             match self.event_input.recv() {
                 Err(_) => (),
