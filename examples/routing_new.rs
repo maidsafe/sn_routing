@@ -192,72 +192,86 @@ impl routing::client_interface::Interface for TestClient {
     }
 }
 
-struct TestNode {
-    pub stats: Arc<Mutex<Stats>>
+pub struct TestNode {
+    // pub stats: Arc<Mutex<Stats>>
+    pub foo:usize
+}
+
+impl TestNode {
+    pub fn new() -> TestNode {
+        TestNode{
+            foo:0usize
+        }
+    }
 }
 
 impl Interface for TestNode {
     fn handle_get(&mut self, type_id: u64, name: NameType, our_authority: Authority,
                   from_authority: Authority, from_address: NameType)
                    -> Result<MessageAction, InterfaceError> {
-        println!("testing node handle get request from {} of chunk {}", from_address, name);
-        let stats = self.stats.clone();
-        let stats_value = stats.lock().unwrap();
-        for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
-            return Ok(MessageAction::Reply(data.1.serialised_contents().clone()));
-        }
-        Err(InterfaceError::Response(ResponseError::NoData))
+        // println!("testing node handle get request from {} of chunk {}", from_address, name);
+        // let stats = self.stats.clone();
+        // let stats_value = stats.lock().unwrap();
+        // for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
+        //     return Ok(MessageAction::Reply(data.1.serialised_contents().clone()));
+        // }
+        // Err(InterfaceError::Response(ResponseError::NoData))
+        unimplemented!();
     }
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: types::DestinationAddress,
                 data_in: Vec<u8>) -> Result<MessageAction, InterfaceError> {
-        if our_authority != Authority::NaeManager {
-            if our_authority == Authority::ClientManager {
-                let mut d = cbor::Decoder::from_bytes(data_in);
-                let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
-                println!("ClientManager forwarding data to DataManager around {:?} ", in_coming_data.name());
-                return Ok(MessageAction::SendOn(vec![in_coming_data.name()]));
-            }
-            println!("returning as our_authority is {:?} which is not supposed to handle_put", our_authority);
-            return Err(InterfaceError::Abort);
-        }
-        let stats = self.stats.clone();
-        let mut stats_value = stats.lock().unwrap();
-        let mut d = cbor::Decoder::from_bytes(data_in);
-        let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
-        println!("testing node handle put request from {} of data {:?}", from_address, in_coming_data);
-        for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
-            data.0 += 1;
-            // return with abort to terminate the flow
-            return Err(InterfaceError::Abort);
-        }
-        stats_value.stats.push((1, in_coming_data));
-        // return with abort to terminate the flow
-        Err(InterfaceError::Abort)
+        // if our_authority != Authority::NaeManager {
+        //     if our_authority == Authority::ClientManager {
+        //         let mut d = cbor::Decoder::from_bytes(data_in);
+        //         let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
+        //         println!("ClientManager forwarding data to DataManager around {:?} ", in_coming_data.name());
+        //         return Ok(MessageAction::SendOn(vec![in_coming_data.name()]));
+        //     }
+        //     println!("returning as our_authority is {:?} which is not supposed to handle_put", our_authority);
+        //     return Err(InterfaceError::Abort);
+        // }
+        // let stats = self.stats.clone();
+        // let mut stats_value = stats.lock().unwrap();
+        // let mut d = cbor::Decoder::from_bytes(data_in);
+        // let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
+        // println!("testing node handle put request from {} of data {:?}", from_address, in_coming_data);
+        // for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
+        //     data.0 += 1;
+        //     // return with abort to terminate the flow
+        //     return Err(InterfaceError::Abort);
+        // }
+        // stats_value.stats.push((1, in_coming_data));
+        // // return with abort to terminate the flow
+        // Err(InterfaceError::Abort)
+        unimplemented!();
     }
     fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
                    from_address: NameType, name : NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
-        Err(InterfaceError::Abort)
+        // Err(InterfaceError::Abort)
+        unimplemented!();
     }
     fn handle_get_response(&mut self, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> routing::node_interface::MethodCall {
-        if response.is_ok() {
-            let mut d = cbor::Decoder::from_bytes(response.unwrap());
-            let response_data: TestData = d.decode().next().unwrap().unwrap();
-            println!("testing node received get_response from {} with data as {:?}", from_address, response_data);
-        } else {
-            println!("testing node received error get_response from {}", from_address);
-        }
-        routing::node_interface::MethodCall::None
+        // if response.is_ok() {
+        //     let mut d = cbor::Decoder::from_bytes(response.unwrap());
+        //     let response_data: TestData = d.decode().next().unwrap().unwrap();
+        //     println!("testing node received get_response from {} with data as {:?}", from_address, response_data);
+        // } else {
+        //     println!("testing node received error get_response from {}", from_address);
+        // }
+        // routing::node_interface::MethodCall::None
+        unimplemented!();
     }
     fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
-        if response.is_ok() {
-            println!("testing node shall not receive a put_response in case of success");
-        } else {
-            println!("testing node received error put_response from {}", from_address);
-        }
-        MethodCall::None
+        // if response.is_ok() {
+        //     println!("testing node shall not receive a put_response in case of success");
+        // } else {
+        //     println!("testing node received error put_response from {}", from_address);
+        // }
+        // MethodCall::None
+        unimplemented!();
     }
     fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
                             response: Result<Vec<u8>, ResponseError>) {
@@ -269,27 +283,29 @@ impl Interface for TestNode {
     }
     fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
                         from_address: NameType) -> Result<MessageAction, InterfaceError> {
-        let stats = self.stats.clone();
-        let stats_value = stats.lock().unwrap();
-        for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
-            println!("testing node find data {} in cache", name);
-            return Ok(MessageAction::Reply(data.1.serialised_contents().clone()));
-        }
-        Err(InterfaceError::Abort)
+        // let stats = self.stats.clone();
+        // let stats_value = stats.lock().unwrap();
+        // for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
+        //     println!("testing node find data {} in cache", name);
+        //     return Ok(MessageAction::Reply(data.1.serialised_contents().clone()));
+        // }
+        // Err(InterfaceError::Abort)
+        unimplemented!();
     }
     fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
                         data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
-        let stats = self.stats.clone();
-        let mut stats_value = stats.lock().unwrap();
-        let mut d = cbor::Decoder::from_bytes(data);
-        let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
-        for _ in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
-            println!("testing node already have data {:?} in cache", in_coming_data);
-            return Err(InterfaceError::Abort);
-        }
-        println!("testing node inserted data {:?} into cache", in_coming_data);
-        stats_value.stats.push((0, in_coming_data));
-        Err(InterfaceError::Abort)
+        // let stats = self.stats.clone();
+        // let mut stats_value = stats.lock().unwrap();
+        // let mut d = cbor::Decoder::from_bytes(data);
+        // let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
+        // for _ in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
+        //     println!("testing node already have data {:?} in cache", in_coming_data);
+        //     return Err(InterfaceError::Abort);
+        // }
+        // println!("testing node inserted data {:?} into cache", in_coming_data);
+        // stats_value.stats.push((0, in_coming_data));
+        // Err(InterfaceError::Abort)
+        unimplemented!();
     }
     fn handle_get_key(&mut self,
                       type_id: u64,
@@ -303,9 +319,10 @@ impl Interface for TestNode {
 
 struct TestNodeGenerator;
 
-impl CreatePersonas<TestNode> for TestNodeGenerator {
-    fn create_personas(&mut self) -> TestNode {
-        TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }
+impl CreatePersonas for TestNodeGenerator {
+    fn create_personas<TestNode>(&mut self) -> TestNode {
+        // TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }
+        TestNode::new()
     }
 }
 
@@ -319,7 +336,7 @@ fn main() {
     }
     let mut command = String::new();
     if args.flag_node {
-        let test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+        let test_node = RoutingNode::<TestNodeGenerator>::new(TestNodeGenerator);
         if args.arg_endpoint.is_some() {
             match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
                 Ok(addr) => {
