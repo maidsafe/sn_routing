@@ -202,7 +202,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // For a relay connection, parse and forward
                             // FIXME: later limit which messages are sent forward,
                             // limiting our exposure.
-                            let _ = self.relay_message_received(&ConnectionName::Relay(name), bytes);
+                            let _ = self.relay_message_received(
+                                &ConnectionName::Relay(name), bytes, endpoint);
                         },
                         None => {
                             // If we don't know the sender, only accept a connect request
@@ -351,8 +352,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // TODO: trigger churn on boolean
     }
 
+    /// Parse and update the header with us as a relay node;
+    /// Intercept PutPublicId messages if we are the only zero node.
     fn relay_message_received(&mut self, received_from: &ConnectionName,
-        serialised_message: Bytes) -> RoutingResult {
+        serialised_message: Bytes, endpoint: Endpoint) -> RoutingResult {
         match received_from {
             &ConnectionName::Relay(ref name) => {
                 // Parse as mutable to change header
@@ -365,7 +368,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     let header = message.message_header;
                     let body = message.serialised_body;
                     // FIXME: check signature
-                    ignore(self.handle_put_public_id_zero_node(header, body));
+                    ignore(self.handle_put_public_id_zero_node(header, body, &endpoint));
                     return Ok(());
                 }
 
@@ -828,31 +831,34 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     ///  Only use this handler if we have a self-relocated id, and our routing table is empty
-    fn handle_put_public_id_zero_node(&mut self, header: MessageHeader, body: Bytes)
-        -> RoutingResult {
+    fn handle_put_public_id_zero_node(&mut self, header: MessageHeader, body: Bytes,
+        send_to: &Endpoint) -> RoutingResult {
+        println!("FIRST NODE BOOSTRAPS OFF OF ZERO NODE");
         let put_public_id = try!(decode::<PutPublicId>(&body));
         if put_public_id.public_id.is_relocated() {
             return Err(RoutingError::RejectedPublicId); }
-        let mut put_public_id_relocated = put_public_id.clone();
+        let mut relocated_public_id = put_public_id.public_id.clone();
 
         let relocated_name =  try!(types::calculate_relocated_name(
-                                    vec![self.id.get_name()],
+                                    vec![self.own_name.clone()],
                                     &put_public_id.public_id.name()));
         // assign_relocated_name
-        put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
+        relocated_public_id.assign_relocated_name(relocated_name.clone());
 
-        if !self.public_id_cache.check(&put_public_id.public_id.name()) {
-          self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
-          // Reply with PutPublicIdResponse to the reply_to address
-          let reply_header = header.create_reply(&self.own_name, &Authority::NaeManager);
-          let destination = reply_header.destination.dest.clone();
-          let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
-                                                reply_header,
-                                                PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
-                                                &self.id.get_crypto_secret_sign_key());
-          let encoded_msg = try!(encode(&routing_msg));
-          // Send this to the relay node as specified in the reply_header
-          self.send_swarm_or_parallel(&destination, &encoded_msg);
+        if !self.public_id_cache.check(&relocated_name) {
+            self.public_id_cache.add(relocated_name, relocated_public_id.clone());
+            // Reply with PutPublicIdResponse to the reply_to address
+            let reply_header = header.create_reply(&self.own_name, &Authority::NaeManager);
+            let destination = reply_header.destination.dest.clone();
+            let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicIdResponse,
+                                                  reply_header,
+                                                  PutPublicIdResponse {
+                                                      public_id: relocated_public_id },
+                                                  &self.id.get_crypto_secret_sign_key());
+            let encoded_msg = try!(encode(&routing_msg));
+            // Send this directly back to the bootstrapping node
+            debug_assert!(self.connection_manager.send(send_to.clone(), encoded_msg)
+                .is_ok());
         };
         Ok(())
     }
