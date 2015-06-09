@@ -212,7 +212,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 &ConnectionName::Relay(name), bytes, endpoint);
                         },
                         Some(ConnectionName::OurBootstrap) => {
-
+                            // FIXME: This is a short-cut and should be improved upon.
+                            // note: the name is not actively used by message_received.
+                            let placeholder_name = self.own_name.clone();
+                            let _ = self.message_received(
+                                &ConnectionName::Routing(placeholder_name), bytes);
                         },
                         None => {
                             // If we don't know the sender, only accept a connect request
