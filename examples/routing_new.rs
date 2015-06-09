@@ -339,9 +339,7 @@ fn main() {
     let mut command = String::new();
     if args.flag_node {
         let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
-        if /* args.flag_first */ true {
-            test_node.run_zero_membrane();
-        } else if args.arg_endpoint.is_some() {
+        if args.arg_endpoint.is_some() {
             match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
                 Ok(addr) => {
                     println!("initial bootstrapping to {} ", addr);
@@ -353,6 +351,19 @@ fn main() {
             // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
             let _ = test_node.bootstrap(None, None);
         }
+        loop {
+            command.clear();
+            println!("Input command (stop)");
+            let _ = io::stdin().read_line(&mut command);
+            let v: Vec<&str> = command.split(' ').collect();
+            match v[0].trim() {
+                "stop" => break,
+                _ => println!("Invalid Option")
+            }
+        }
+    } else if args.flag_first {
+        let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+        test_node.run_zero_membrane();
         loop {
             command.clear();
             println!("Input command (stop)");
