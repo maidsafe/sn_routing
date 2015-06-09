@@ -38,6 +38,7 @@ use messages::{RoutingMessage, MessageTypeTag};
 use message_header::MessageHeader;
 use error::{RoutingError};
 use std::thread::spawn;
+use std::marker::PhantomData;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
@@ -82,7 +83,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     ///
     /// A zero_membrane will not be able to connect to an existing network,
     /// and as a special node, it will be rejected by the network later on.
-    pub fn run_zero_membrane<T: Interface + 'static>(&mut self) {
+    pub fn run_zero_membrane(&mut self) {
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
@@ -119,7 +120,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     /// Routing node uses the genesis object to create a new instance of the personas to embed
     /// inside the membrane.
     //  TODO: a (two-way) channel should be passed in to control the membrane.
-    pub fn bootstrap<T: Interface + 'static>(&mut self,
+    pub fn bootstrap(&mut self,
             bootstrap_list: Option<Vec<Endpoint>>,
             beacon_port: Option<u16>) -> Result<(), RoutingError>  {
         let (event_output, event_input) = mpsc::channel();
