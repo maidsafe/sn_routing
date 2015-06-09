@@ -37,7 +37,6 @@ use name_type::{closer_to_target_or_equal, NAME_TYPE_LEN};
 use node_interface;
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
-use relay::RelayMap;
 use sendable::Sendable;
 use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes};
@@ -83,7 +82,6 @@ pub struct RoutingNode<F: Interface> {
     connection_manager: ConnectionManager,
     all_connections: (HashMap<Endpoint, NameType>, BTreeMap<NameType, Vec<Endpoint>>),
     routing_table: RoutingTable,
-    relay_map: RelayMap,
     accepting_on: Vec<Endpoint>,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
@@ -119,7 +117,6 @@ impl<F> RoutingNode<F> where F: Interface {
                       connection_manager: cm,
                       all_connections: (HashMap::new(), BTreeMap::new()),
                       routing_table : RoutingTable::new(&own_name),
-                      relay_map: RelayMap::new(&own_name),
                       accepting_on: listeners.0,
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_endpoint: None,
