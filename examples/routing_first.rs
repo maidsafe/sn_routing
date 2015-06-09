@@ -60,7 +60,6 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-
 // ==========================   Test Data Structure   =================================
 #[derive(Clone)]
 struct TestData {
@@ -69,15 +68,6 @@ struct TestData {
 }
 
 impl TestData {
-    fn new(key: Vec<u8>, value: Vec<u8>) -> TestData {
-        TestData { key: key, value: value }
-    }
-
-    pub fn get_name_from_key(key: &Vec<u8>) -> NameType {
-        let digest = crypto::hash::sha512::hash(key);
-        NameType(digest.0)
-    }
-
     pub fn get_key(&self) -> Vec<u8> { self.key.clone() }
 
     pub fn get_value(&self) -> Vec<u8> { self.value.clone() }
@@ -136,29 +126,6 @@ impl fmt::Debug for TestData {
 // ==========================   Implement traits   =================================
 struct Stats {
     pub stats : Vec<(u32, TestData)>
-}
-
-struct TestClient {
-    pub stats: Arc<Mutex<Stats>>
-}
-
-impl routing::client_interface::Interface for TestClient {
-    fn handle_get_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, ResponseError>) {
-        if response.is_ok() {
-            let mut d = cbor::Decoder::from_bytes(response.unwrap());
-            let response_data: TestData = d.decode().next().unwrap().unwrap();
-            println!("testing client received get_response with testdata {:?}", response_data);
-        } else {
-            println!("testing client received error get_response");
-        }
-    }
-    fn handle_put_response(&mut self, _: types::MessageId, response: Result<Vec<u8>, ResponseError>) {
-        if response.is_ok() {
-            println!("testing client shall not receive a success put_response");
-        } else {
-            println!("testing client received error put_response");
-        }
-    }
 }
 
 struct TestNode {

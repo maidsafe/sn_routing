@@ -68,11 +68,7 @@ impl MessageHeader {
     }
 
     pub fn from_group(&self) -> Option<NameType> {
-        if self.source.from_group.is_some() {
-            self.source.from_group.clone()
-        } else {
-            None
-        }
+        self.source.from_group.clone()
     }
 
     pub fn is_from_group(&self) -> bool {
@@ -99,16 +95,9 @@ impl MessageHeader {
     }
 
     pub fn send_to(&self) -> types::DestinationAddress {
-        if self.is_relayed() {
-            types::DestinationAddress{
-                dest : self.source.from_node.clone(),
-                relay_to : self.source.relayed_for.clone()
-            }
-        } else {
-            types::DestinationAddress{
-                dest : self.source.from_node.clone(),
-                relay_to : None
-            }
+        types::DestinationAddress {
+            dest: self.source.from_node.clone(),
+            relay_to: self.source.relayed_for.clone()
         }
     }
 

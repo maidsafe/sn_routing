@@ -135,7 +135,7 @@ impl Sendable for TestData {
         false
     }
 
-    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
+    fn merge(&self, _responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
 }
 
 impl Encodable for TestData {

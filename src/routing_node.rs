@@ -129,12 +129,12 @@ impl<F> RoutingNode<F> where F: Interface {
 
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) {
-        let destination = types::DestinationAddress{ dest: NameType::new(name.get_id()), relay_to: None };
+        let destination = types::DestinationAddress{ dest: name.clone(), relay_to: None };
         let header = MessageHeader::new(self.get_next_message_id(),
                                         destination, self.our_source_address(),
                                         Authority::Client);
         let request = GetData{ requester: self.our_source_address(),
-                               name_and_type_id: NameAndTypeId{name: NameType::new(name.get_id()),
+                               name_and_type_id: NameAndTypeId{name: name.clone(),
                                                                type_id: type_id} };
         let message = RoutingMessage::new(MessageTypeTag::GetData, header,
                                           request, &self.id.get_crypto_secret_sign_key());
@@ -696,11 +696,10 @@ impl<F> RoutingNode<F> where F: Interface {
     fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let get_data = try!(decode::<GetData>(&body));
         let type_id = get_data.name_and_type_id.type_id.clone();
-        let our_authority = our_authority(&get_data.name_and_type_id.name, &header,
-                                          &self.routing_table);
+        let name = get_data.name_and_type_id.name.clone();
+        let our_authority = our_authority(&name, &header, &self.routing_table);
         let from_authority = header.from_authority();
         let from = header.from();
-        let name = get_data.name_and_type_id.name.clone();
 
         match self.mut_interface().handle_get(type_id, name, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
