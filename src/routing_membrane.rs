@@ -679,7 +679,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(InterfaceError::Abort) => {;},
             Err(InterfaceError::Response(error)) => {
-                try!(self.send_put_reply(&header.from_node(), our_authority, &header, put_data, Err(error)));
+                try!(self.send_put_reply(&header.from(), our_authority, &header, put_data, Err(error)));
             }
         }
         Ok(())
