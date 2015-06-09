@@ -58,30 +58,6 @@ use routing::{NameType};
 use routing::types::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
 
-// ==========================   Program Options   =================================
-static USAGE: &'static str = "
-Usage:
-    routing [<peer>...]
-    routing --node [<peer>...]
-    routing --help
-
-If no arguments are passed, this will try to connect to an existing network
-using Crust's discovery protocol.  If this is unsuccessful, you can provide
-a list of known endpoints (other running instances of this example) and the node
-will try to connect to one of these in order to connect to the network.
-
-Options:
-    -n, --node  Run as a RoutingNode rather than a RoutingClient.
-    -h, --help  Display this help message.
-";
-
-#[derive(RustcDecodable, Debug)]
-struct Args {
-    arg_endpoint: Option<String>,
-    flag_node : bool,
-    flag_help : bool,
-}
-
 // ==========================   Helper Function   =================================
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
