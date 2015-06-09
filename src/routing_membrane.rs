@@ -690,8 +690,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let put_data_response = try!(decode::<PutDataResponse>(&body));
         let from_authority = header.from_authority();
         let from = header.from();
-        // TODO: result verification
-        self.mut_interface().handle_put_response(from_authority, from, put_data_response.data);
+        let method_call = self.mut_interface().handle_put_response(from_authority,
+                                                                   from, put_data_response.data);
+
+        match method_call {
+            MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+            MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+            MethodCall::Refresh { content: x, } => self.refresh(x),
+            MethodCall::Post => unimplemented!(),
+            MethodCall::None => (),
+            MethodCall::SendOn { destination } =>
+                ignore(self.send_on(&put_data_response.name, &header,
+                             destination, MessageTypeTag::PutDataResponse, body)),
+        }
         Ok(())
     }
 
