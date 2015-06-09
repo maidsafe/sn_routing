@@ -67,6 +67,7 @@ use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, ResponseError, InterfaceError};
+use node_interface::MethodCall;
 
 // use std::convert::From;
 
@@ -628,6 +629,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 
+    /// Refresh the content in the close group nodes of group address content::name.
+    /// This method needs to be called when churn is triggered.
+    /// all the group members need to call this, otherwise it will not be resolved as a valid
+    /// content.
+    pub fn refresh(&mut self, content: Box<Sendable>) {
+        self.put(content.name(), content);
+    }
+
     // -----Message Handlers from Routing Table connections----------------------------------------
 
     // Routing handle put_data
@@ -778,10 +787,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             (Authority::ManagedNode, Authority::NaeManager, false) => {
                 let mut put_public_id_relocated = put_public_id.clone();
 
-                let mut close_group_node_ids : Vec<NameType> = Vec::new();
-                for node_info in self.routing_table.our_close_group() {
-                    close_group_node_ids.push(node_info.id());
-                }
+                let close_group_node_ids = self.routing_table.our_close_group().into_iter()
+                                               .map(|node_info| node_info.id())
+                                               .collect::<Vec<_>>();
 
                 let relocated_name =  try!(types::calculate_relocated_name(
                                             close_group_node_ids,
@@ -790,12 +798,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
 
                 // SendOn to relocated_name group, which will actually store the relocated public id
-                let mut send_on_header = header.create_send_on(&self.own_name, &our_authority, &relocated_name);
-                send_on_header.message_id = send_on_header.message_id.wrapping_add(1);
-                let routing_msg = RoutingMessage::new(MessageTypeTag::PutPublicId,
-                                                      send_on_header, put_public_id_relocated,
-                                                      &self.id.get_crypto_secret_sign_key());
-                self.send_swarm_or_parallel(&relocated_name, &try!(encode(&routing_msg)));
+                try!(self.send_on(&put_public_id.public_id.name(),
+                                  &header,
+                                  relocated_name,
+                                  MessageTypeTag::PutPublicId,
+                                  put_public_id_relocated));
                 Ok(())
             },
             (Authority::NaeManager, Authority::NaeManager, true) => {
@@ -901,7 +908,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let get_data_response = try!(decode::<GetDataResponse>(&body));
         let from = header.from();
-        self.mut_interface().handle_get_response(from, get_data_response.data);
+        let method_call = self.mut_interface().handle_get_response(from, get_data_response.data);
+
+        match method_call {
+            MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+            MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+            MethodCall::Refresh { content: x, } => self.refresh(x),
+            MethodCall::Post => unimplemented!(),
+            MethodCall::None => (),
+            MethodCall::SendOn { destination } =>
+                ignore(self.send_on(&get_data_response.name_and_type_id.name, &header,
+                             destination, MessageTypeTag::GetDataResponse, body)),
+        }
+
         Ok(())
     }
 
