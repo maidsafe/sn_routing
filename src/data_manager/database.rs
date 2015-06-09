@@ -173,6 +173,12 @@ impl DataManagerDatabase {
         }
     }
 
+    pub fn handle_account_transfer(&mut self, account_wrapper : &DataManagerSendable) {
+        // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
+        let _ = self.storage.remove(&account_wrapper.name());
+        self.storage.insert(account_wrapper.name(), account_wrapper.get_data_holders());
+    }
+
     pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::MethodCall> {
         assert!(close_group.len() >= 3);
         self.temp_storage_after_churn = self.storage.clone();

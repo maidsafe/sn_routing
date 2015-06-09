@@ -104,6 +104,12 @@ impl Interface for VaultFacade {
               maidsafe_types::PayloadTypeTag::MaidManagerAccountTransfer => {
                 self.maid_manager.handle_account_transfer(payload);
               }
+              maidsafe_types::PayloadTypeTag::DataManagerAccountTransfer => {
+                self.maid_manager.handle_account_transfer(payload);
+              }
+              // maidsafe_types::PayloadTypeTag::DataManagerStatsTransfer => {
+              //   self.maid_manager.handle_stats_transfer(payload);
+              // }
               _ => {}
             }
             // The return from this handling branch shall always be TERMINATE of the flow

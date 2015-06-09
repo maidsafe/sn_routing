@@ -178,6 +178,11 @@ impl DataManager {
     MethodCall::None
   }
 
+  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
+      let datamanager_account_wrapper : DataManagerSendable = payload.get_data();
+      self.db_.handle_account_transfer(&datamanager_account_wrapper);
+  }
+
   pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::MethodCall> {
     self.db_.retrieve_all_and_reset(close_group)
   }
