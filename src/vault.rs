@@ -180,7 +180,7 @@ impl Interface for VaultFacade {
         let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
 
-        dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
+        mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
     }
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
@@ -439,7 +439,8 @@ impl VaultFacade {
         {// MaidManager - churn handling
             maid_manager_put(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
-            assert!(churn_data.len() == 1);
+            // DataManagerStatsTransfer will always be included in the return
+            assert!(churn_data.len() == 2);
 
             // MaidManagerAccount
             let maid_manager: maid_manager::MaidManagerAccountWrapper = match churn_data[0] {
@@ -463,11 +464,11 @@ impl VaultFacade {
             for i in 10..30 {
                 close_group.push(available_nodes[i].clone());
             }
-
+            // DataManagerStatsTransfer will always be included in the return
             let churn_data = vault.handle_churn(close_group.clone());
-            assert_eq!(churn_data.len(), 1);
-
-             match churn_data[0] {
+            assert_eq!(churn_data.len(), 2);
+println!("1");
+            match churn_data[0] {
                 MethodCall::Refresh {ref content} => {
                     let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
                     let mut decoder = cbor::Decoder::from_bytes(data0);
@@ -477,14 +478,32 @@ impl VaultFacade {
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
             };
-
-            assert!(vault.data_manager.retrieve_all_and_reset(&mut close_group).is_empty());
+println!("2");
+            match churn_data[1] {
+                MethodCall::Refresh {ref content} => {
+                    let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
+                    let mut decoder = cbor::Decoder::from_bytes(data0);
+                    let stats_sendable : data_manager::DataManagerStatsSendable = decoder.decode().next().unwrap().unwrap();
+                    // match payload.get_type_tag() {
+                    //   maidsafe_types::PayloadTypeTag::DataManagerStatsTransfer => {
+                    //     let stats_sendable : data_manager::DataManagerStatsSendable = payload.get_data();
+                        assert_eq!(stats_sendable.get_resource_index(), 1);
+                    //   }
+                    //   _ => panic!("DataManagerStatsTransfer tag expected")
+                    // }
+                },
+                MethodCall::Get { .. } => (),
+                _ => panic!("Refresh type expected")
+            };
+            // DataManagerStatsTransfer will always be included in the return
+            assert_eq!(vault.data_manager.retrieve_all_and_reset(&mut close_group).len(), 1);
         }
 
         {// PmidManager - churn handling
             pmid_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
-            assert_eq!(churn_data.len(), 1);
+            // DataManagerStatsTransfer will always be included in the return
+            assert_eq!(churn_data.len(), 2);
             //assert_eq!(churn_data[0].0, from);
 
             let pmid_manager: pmid_manager::PmidManagerAccountWrapper = match churn_data[0] {
@@ -517,7 +536,8 @@ impl VaultFacade {
 
             version_handler_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
-            assert_eq!(churn_data.len(), 1);
+            // DataManagerStatsTransfer will always be included in the return
+            assert_eq!(churn_data.len(), 2);
 
             let sendable: version_handler::VersionHandlerSendable = match churn_data[0] {
                 MethodCall::Refresh {ref content} => {
