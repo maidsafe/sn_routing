@@ -596,30 +596,33 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn our_source_address(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
         // first check whether we are safe to drop our bootstrap connection
+        let mut relayed_for : Option<NameType> = None;
         match self.bootstrap_endpoint.clone() {
             Some(endpoint) => {
                 // this threshold is set arbitrarily
                 if self.routing_table.size() > 5 {
                     self.connection_manager.drop_node(endpoint);
                     self.bootstrap_endpoint = None;
+                } else {
+                    relayed_for = Some(self.own_name.clone());
                 }
             },
             None => {}
         };
 
-
-        // if self.bootstrap_endpoint.is_some() {
-        //     let id = self.all_connections.0.get(&self.bootstrap_endpoint.clone().unwrap());
-        //     if id.is_some() {
-        //         return types::SourceAddress{ from_node: id.unwrap().clone(),
-        //                                      from_group: None,
-        //                                      reply_to: Some(self.own_name.clone()) }
-        //     }
-        // }
-        return types::SourceAddress{ from_node:   self.own_name.clone(),
-                                     from_group:  from_group,
-                                     reply_to:    None,
-                                     relayed_for: None }
+        types::SourceAddress{ from_node: self.own_name.clone(),
+                              from_group: from_group,
+                              // note:
+                              // if a message is sent over a relay connection,
+                              // the relay node will fill-in reply_to field with its name
+                              // if there is no reply_to field, relayed_for is ignored;
+                              // so a message can be sent out over both routing table and
+                              // a bootstrap connection and both should find their way back
+                              // (provided the bootstrap connection is not destroyed since;
+                              // but then then routing table should amply have it covered.)
+                              reply_to: None,
+                              relayed_for: relayed_for
+        }
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
