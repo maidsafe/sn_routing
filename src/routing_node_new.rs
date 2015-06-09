@@ -37,8 +37,8 @@ use types::{MessageId, Bytes};
 use authority::{Authority};
 use messages::connect_request::ConnectRequest;
 // use messages::connect_response::ConnectResponse;
-// use messages::put_public_id::PutPublicId;
-// use messages::put_public_id_response::PutPublicIdResponse;
+use messages::put_public_id::PutPublicId;
+use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use message_header::MessageHeader;
 use error::{RoutingError};
@@ -142,29 +142,61 @@ impl<G : CreatePersonas> RoutingNode<G> {
         println!("bootstrap {:?}", bootstrapped_to);
         self.bootstrap_endpoint = Some(bootstrapped_to.clone());
 
-        let relocated_id = self.id.clone();
-        // send_connect_request_msg
+
+        let unrelocated_id = self.id.clone();
+        let mut relocated_name : Option<NameType>;
+
+        // FIXME: connect request should not require the knowledge of the name you're connecting to
+        let connect_msg = self.construct_connect_request_msg(&unrelocated_id.get_name(),
+            listeners.0.clone());
+        let serialised_message = try!(encode(&connect_msg));
+        ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+
         // FIXME: for now just write out explicitly in this function the bootstrapping loop
+        // - fully check match of returned public id with ours
+        // - break from loop if unsuccessful; no response; retry
         loop {
             match event_input.recv() {
                 Err(_) => (),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                  break;
+                    let message = try!(decode::<RoutingMessage>(&bytes));
+                    match message.message_type {
+                        MessageTypeTag::ConnectResponse => {
+                            // for now, ignore the actual response message
+                            // bootstrap node responded, try to put our id to the network
+                            let put_public_id_msg
+                                = self.construct_put_public_id_msg(
+                                &types::PublicId::new(&unrelocated_id));
+                            let serialised_message = try!(encode(&put_public_id_msg));
+                            ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+                        },
+                        MessageTypeTag::PutPublicIdResponse => {
+                            let put_public_id_response =
+                                try!(decode::<PutPublicIdResponse>(&message.serialised_body));
+                            relocated_name = Some(put_public_id_response.public_id.name());
+                            if put_public_id_response.public_id.validation_token
+                                != self.id.get_validation_token() {
+                                return Err(RoutingError::FailedToBootstrap); }
+                            break;
+                        },
+                        _ => {}
+                    }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
-
+                    // FIXME: handle this; safe to ignore for now
                 },
                 Ok(crust::Event::LostConnection(endpoint)) => {
-
+                    return Err(RoutingError::FailedToBootstrap);
                 }
             }
         };
 
-        match (self.bootstrap_node_id.clone(), self.bootstrap_endpoint.clone()) {
-            (Some(name), Some(endpoint)) => {
+        match relocated_name {
+            Some(relocated_name) => {
+                self.id.assign_relocated_name(relocated_name);
                 let mut membrane = RoutingMembrane::<T>::new(
-                    cm, event_input, Some((name, endpoint)),
-                    listeners.0, relocated_id,
+                    cm, event_input, Some(bootstrapped_to.clone()),
+                    listeners.0, unrelocated_id,
                     self.genesis.create_personas());
                 spawn(move || membrane.run());
             },
@@ -190,6 +222,16 @@ impl<G : CreatePersonas> RoutingNode<G> {
         };
 
         RoutingMessage::new(MessageTypeTag::ConnectRequest, header, connect_request,
+            &self.id.get_crypto_secret_sign_key())
+    }
+
+    fn construct_put_public_id_msg(&mut self,
+        our_unrelocated_id: &types::PublicId) -> RoutingMessage {
+        let header = MessageHeader::new(self.get_next_message_id(),
+            types::DestinationAddress{dest: our_unrelocated_id.name(), relay_to: None},
+            self.our_source_address(), Authority::ManagedNode);
+        let put_public_id = PutPublicId { public_id : our_unrelocated_id.clone() };
+        RoutingMessage::new(MessageTypeTag::PutPublicId, header, put_public_id,
             &self.id.get_crypto_secret_sign_key())
     }
 
