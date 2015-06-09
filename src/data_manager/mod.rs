@@ -222,6 +222,7 @@ mod test {
   extern crate routing;
 
   use super::{DataManager};
+  use super::database::DataManagerSendable;
   use maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
   use routing::types::{MessageAction, array_as_vector};
   use routing::NameType;
@@ -250,18 +251,28 @@ mod test {
       }
       MessageAction::Reply(_) => panic!("Unexpected"),
     }
-      let data_name = NameType::new(data.name().get_id());
+    let data_name = NameType::new(data.name().get_id());
     let get_result = data_manager.handle_get(&data_name);
-      assert_eq!(get_result.is_err(), false);
-      match get_result.ok().unwrap() {
-        MessageAction::SendOn(ref x) => {
-          assert_eq!(x.len(), super::PARALLELISM);
-          assert_eq!(x[0], nodes_in_table[0]);
-          assert_eq!(x[1], nodes_in_table[1]);
-          assert_eq!(x[2], nodes_in_table[2]);
-          assert_eq!(x[3], nodes_in_table[3]);
-        }
-        MessageAction::Reply(_) => panic!("Unexpected"),
+    assert_eq!(get_result.is_err(), false);
+    match get_result.ok().unwrap() {
+      MessageAction::SendOn(ref x) => {
+        assert_eq!(x.len(), super::PARALLELISM);
+        assert_eq!(x[0], nodes_in_table[0]);
+        assert_eq!(x[1], nodes_in_table[1]);
+        assert_eq!(x[2], nodes_in_table[2]);
+        assert_eq!(x[3], nodes_in_table[3]);
       }
+      MessageAction::Reply(_) => panic!("Unexpected"),
+    }
+  }
+
+    #[test]
+    fn handle_account_transfer() {
+        let mut data_manager = DataManager::new();
+        let name : NameType = routing::test_utils::Random::generate_random();
+        let account_wrapper = DataManagerSendable::new(name.clone(), vec![]);
+        let payload = Payload::new(PayloadTypeTag::DataManagerAccountTransfer, &account_wrapper);
+        data_manager.handle_account_transfer(payload);
+        assert_eq!(data_manager.db_.exist(&name), true);
     }
 }

@@ -125,7 +125,7 @@ mod test {
         let name : NameType = routing::test_utils::Random::generate_random();
         let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), MaidManagerAccount::new());
         let payload = Payload::new(PayloadTypeTag::MaidManagerAccountTransfer, &account_wrapper);
-         maid_manager.handle_account_transfer(payload);
+        maid_manager.handle_account_transfer(payload);
         assert_eq!(maid_manager.db_.exist(&name), true);
     }
 }
