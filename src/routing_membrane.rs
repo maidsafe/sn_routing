@@ -88,6 +88,7 @@ pub struct RoutingMembrane<F : Interface> {
     event_input: Receiver<crust::Event>,
     connection_manager: crust::ConnectionManager,
     accepting_on: Vec<crust::Endpoint>,
+    bootstrap_endpoint: Option<crust::Endpoint>,
     // for Routing
     id: types::Id,
     own_name: NameType,
@@ -115,6 +116,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                       event_input: event_input,
                       connection_manager: cm,
                       accepting_on: accepting_on,
+                      bootstrap_endpoint: bootstrap_endpoint,
                       routing_table : RoutingTable::new(&own_name),
                       relay_map: RelayMap::new(&relocated_id),
                       own_name: own_name,
@@ -173,6 +175,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
         // First Send FindGroup Requests
+        let find_group_msg = self.construct_find_group_msg();
+        // ignore(encode(&find_group_msg).map(|msg|self.send_to_bootstrap_node(&msg)));
 
         loop {
             match self.event_input.recv() {
@@ -590,7 +594,20 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn our_source_address(&self, from_group: Option<NameType>) -> types::SourceAddress {
+    fn our_source_address(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
+        // first check whether we are safe to drop our bootstrap connection
+        match self.bootstrap_endpoint.clone() {
+            Some(endpoint) => {
+                // this threshold is set arbitrarily
+                if self.routing_table.size() > 5 {
+                    self.connection_manager.drop_node(endpoint);
+                    self.bootstrap_endpoint = None;
+                }
+            },
+            None => {}
+        };
+
+
         // if self.bootstrap_endpoint.is_some() {
         //     let id = self.all_connections.0.get(&self.bootstrap_endpoint.clone().unwrap());
         //     if id.is_some() {
@@ -1053,6 +1070,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             &self.id.get_crypto_secret_sign_key())
     }
 
+    fn construct_find_group_msg(&mut self) -> RoutingMessage {
+        let header = MessageHeader::new(
+            self.get_next_message_id(),
+            types::DestinationAddress {
+                 dest:     self.own_name.clone(),
+                 relay_to: None
+            },
+            self.our_source_address(None),
+            Authority::ManagedNode);
+
+        RoutingMessage::new(MessageTypeTag::FindGroup, header,
+            FindGroup{ requester_id: self.own_name.clone(),
+                       target_id:    self.own_name.clone()},
+            &self.id.get_crypto_secret_sign_key())
+    }
 }
 
 fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
