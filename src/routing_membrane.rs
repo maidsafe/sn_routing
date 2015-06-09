@@ -662,7 +662,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                               to, put_data.data.clone()) {
             Ok(action) => match action {
                 MessageAction::Reply(reply_data) => {
-                    try!(self.send_put_reply(our_authority, &header, put_data, Ok(reply_data)));
+                    let reply_to = match our_authority {
+                        Authority::ClientManager => match header.reply_to() {
+                            Some(client) => client,
+                            None => header.from()
+                        },
+                        _ => header.from()
+                    };
+                    try!(self.send_put_reply(&reply_to, our_authority, &header, put_data, Ok(reply_data)));
                 },
                 MessageAction::SendOn(destinations) => {
                     for destination in destinations {
@@ -672,28 +679,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(InterfaceError::Abort) => {;},
             Err(InterfaceError::Response(error)) => {
-                try!(self.send_put_reply(our_authority, &header, put_data, Err(error)));
+                try!(self.send_put_reply(&header.from_node(), our_authority, &header, put_data, Err(error)));
             }
         }
         Ok(())
     }
 
-    fn send_put_reply(&self, our_authority: Authority,
+    fn send_put_reply(&self, destination:   &NameType,
+                             our_authority: Authority,
                              orig_header:   &MessageHeader,
                              orig_message:  PutData,
                              reply_data:    Result<Vec<u8>, ResponseError>) -> RoutingResult {
-        let reply_to = match our_authority {
-            Authority::ClientManager => match orig_header.reply_to() {
-                Some(client) => client,
-                None => orig_header.from()
-            },
-            _ => orig_header.from()
-        };
-
         let routing_msg = self.construct_put_data_response_msg(
             our_authority, &orig_header, orig_message, reply_data);
 
-        self.send_swarm_or_parallel(&reply_to, &try!(encode(&routing_msg)));
+        self.send_swarm_or_parallel(&destination, &try!(encode(&routing_msg)));
         Ok(())
     }
 

@@ -68,11 +68,7 @@ impl MessageHeader {
     }
 
     pub fn from_group(&self) -> Option<NameType> {
-        if self.source.from_group.is_some() {
-            self.source.from_group.clone()
-        } else {
-            None
-        }
+        self.source.from_group.clone()
     }
 
     pub fn is_from_group(&self) -> bool {
