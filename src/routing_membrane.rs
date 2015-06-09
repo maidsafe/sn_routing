@@ -606,7 +606,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //                                      reply_to: Some(self.own_name.clone()) }
         //     }
         // }
-        return types::SourceAddress{ from_node: self.own_name.clone(), from_group: None, reply_to: None, relayed_for: None }
+        return types::SourceAddress{ from_node:   self.own_name.clone(),
+                                     from_group:  from_group,
+                                     reply_to:    None,
+                                     relayed_for: None }
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
