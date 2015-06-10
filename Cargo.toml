@@ -28,9 +28,3 @@ name = "simple_key_value_store"
 path = "examples/simple_key_value_store.rs"
 test = true
 bench = false
-
-[[example]]
-name = "routing"
-path = "examples/routing.rs"
-test = true
-bench = false
