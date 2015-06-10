@@ -946,10 +946,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let serialised_msg = try!(encode(&routing_msg));
 
         // intercept if we can relay it directly
-        match (original_header.source.reply_to.clone(), original_header.source.relayed_for.clone()) {
-            (Some(reply), Some(relay)) => {
+        match (routing_msg.message_header.destination.dest.clone(),
+            routing_msg.message_header.destination.relay_to.clone()) {
+            (dest, Some(relay)) => {
                 // if we should directly respond to this message, do so
-                if reply == self.own_name
+                if dest == self.own_name
                     && self.relay_map.contains_relay_for(&relay) {
                     println!("Sending FindGroupResponse directly to relay {:?}", relay);
                     self.send_out_as_relay(&relay, serialised_msg);
