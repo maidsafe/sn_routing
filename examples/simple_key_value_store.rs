@@ -361,7 +361,10 @@ fn main() {
         },
         // default to client behaviour
         _ => {
-            let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) })), types::Id::new());            let mutate_client = Arc::new(Mutex::new(test_client));
+            let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient {
+                stats: Arc::new(Mutex::new(Stats {
+                    stats: Vec::<(u32, TestData)>::new()})) })), types::Id::new());
+            let mutate_client = Arc::new(Mutex::new(test_client));
             let copied_client = mutate_client.clone();
             spawn(move || {
                 loop {
