@@ -343,35 +343,59 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // FIXME: for now do nothing
             }
             None => {
+                // If we don't know the endpoint yet,
+                // see whether the routing table has this endpoint registered for a node
+                match self.routing_table.mark_as_connected(&endpoint) {
+                    Some(peer_name) => {
+                        println!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
+                                 self.routing_table.size(), peer_name, endpoint);
+                        return;
+                    },
+                    None => {
+                        // this is purely for debug purposes; no relevant state changes
+                        match self.routing_table.lookup_endpoint(&endpoint) {
+                            Some(peer_name) => {
+                                println!("RT (size : {:?}) peer {:?} was already connected on endpoint {:?}",
+                                         self.routing_table.size(), peer_name, endpoint);
+                            },
+                            None => {
+                              println!("Received new connection from {:?}, but unknown so far.",
+                                  endpoint);
+                            }
+                        };
+                    }
+                };
                 // Connect requests for relays do not get stored in the relay map,
                 // as we want to avoid state; instead we keep an LruCache to recover the public_id.
                 // This either is a client or an un-relocated node bootstrapping.
-                match self.relay_map.pop_accepted_connect_request(&endpoint) {
-                    Some(public_id) => {
-                        // a relocated Id should not be in the cache for un-relocated Ids
-                        if public_id.is_relocated() {
-                            println!("FAILURE: logical code error, a relocated Id should not have made
-                                      its way into this cache.");
-                            return; }
-        // IMPORTANT: only state-change is here by adding it to the relay_map
-                        println!("Setup relay for node {:?} on {:?}", public_id.name(), endpoint);
-                        self.relay_map.add_ip_node(public_id.clone(), endpoint.clone());
-                        debug_assert!(self.relay_map.contains_relay_for(&public_id.name()));
-                        debug_assert!(self.relay_map.contains_endpoint(&endpoint));
-                    },
-                    None => {
-                        // Note: we assume that the connect_request precedes
-                        // a CRUST::new_connection event and has registered a PublicId
-                        // with all desired endpoints it has.
-                        // As such, for a membrane we do not accept an unknown endpoint.
-                        // If the order on these events is not logically guaranteed by CRUST,
-                        // this branch has to be expanded.
-                        println!("Unknown new connection from {:?}", endpoint);
-                        // self.connection_manager.drop_node(endpoint);
-                        // FIXME: if we don't get a connect_request on this connection
-                        // before this new_connection expires from a LRU buffer, drop it.
-                    }
-                };
+        // FIXME: this can be deleted; proper refactor possible;
+        // the logic of CRUST::NewConnection is different then here worked out
+        //         match self.relay_map.pop_accepted_connect_request(&endpoint) {
+        //             Some(public_id) => {
+        //                 // a relocated Id should not be in the cache for un-relocated Ids
+        //                 if public_id.is_relocated() {
+        //                     println!("FAILURE: logical code error, a relocated Id should not have made
+        //                               its way into this cache.");
+        //                     return; }
+        // // IMPORTANT: only state-change is here by adding it to the relay_map
+        //                 println!("Setup relay for node {:?} on {:?}", public_id.name(), endpoint);
+        //                 self.relay_map.add_ip_node(public_id.clone(), endpoint.clone());
+        //                 debug_assert!(self.relay_map.contains_relay_for(&public_id.name()));
+        //                 debug_assert!(self.relay_map.contains_endpoint(&endpoint));
+        //             },
+        //             None => {
+        //                 // Note: we assume that the connect_request precedes
+        //                 // a CRUST::new_connection event and has registered a PublicId
+        //                 // with all desired endpoints it has.
+        //                 // As such, for a membrane we do not accept an unknown endpoint.
+        //                 // If the order on these events is not logically guaranteed by CRUST,
+        //                 // this branch has to be expanded.
+        //                 println!("Unknown new connection from {:?}", endpoint);
+        //                 // self.connection_manager.drop_node(endpoint);
+        //                 // FIXME: if we don't get a connect_request on this connection
+        //                 // before this new_connection expires from a LRU buffer, drop it.
+        //             }
+        //         };
             }
         };
     }
@@ -836,8 +860,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         return Err(RoutingError::RefusedFromRoutingTable); }
                     println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name());
                     // Try to connect to the peer.
-                    self.connection_manager.connect(connect_request.local_endpoints.clone());
-                    self.connection_manager.connect(connect_request.external_endpoints.clone());
+                    // FIXME: don't doubly connect as it comes in as a new unknown connection,
+                    //        at the requester side.
+                    // self.connection_manager.connect(connect_request.local_endpoints.clone());
+                    // self.connection_manager.connect(connect_request.external_endpoints.clone());
                     // Send the response containing our details,
                     // and add the original signature as proof of the request
                     let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
