@@ -60,12 +60,17 @@ correct name calculation of pure Id
 - [x] [MAID-1070](https://maidsafe.atlassian.net/browse/MAID-1070) drop_bootstrap in coordination with CRUST
 - [x] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
 - [x] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
-- [ ] [MAID-1072](https://maidsafe.atlassian.net/browse/MAID-1072) Debug restructured routing core
 
 ## [0.1.70] - activate Sentinel and activate AccountTransfer
 
 - [ ] [MAID-1068](https://maidsafe.atlassian.net/browse/MAID-1068) Refresh orderable message
 - [ ] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
+
+## Future sprints
+
+- [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
+    - [ ] [MAID-1064](https://maidsafe.atlassian.net/browse/MAID-1064) POC first and move UnauthorisedPut into explicit message structure.
+- [ ] [MAID-1065](https://maidsafe.atlassian.net/browse/MAID-1065) Return Result for Put Get Post- 
 - [ ] [MAID-1042](https://maidsafe.atlassian.net/browse/MAID-1042) Sentinel [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
     - [ ] [MAID-1045](https://maidsafe.atlassian.net/browse/MAID-1045) Instantiate pure Sentinel for PUT GET (POST) / from node & from group
     - [ ] [MAID-1048](https://maidsafe.atlassian.net/browse/MAID-1048) Instantiate Key Sentinel for FindGroupResponse
@@ -74,9 +79,3 @@ correct name calculation of pure Id
     - [ ]  update signature of handler functions to request and claim
     - [ ] [MAID-1051](https://maidsafe.atlassian.net/browse/MAID-1051) update construction of message_header
     - [ ] [MAID-1050](https://maidsafe.atlassian.net/browse/MAID-1050) block messages at filter once Sentinel has resolved
-
-## Future sprints
-
-- [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
-    - [ ] [MAID-1064](https://maidsafe.atlassian.net/browse/MAID-1064) POC first and move UnauthorisedPut into explicit message structure.
-- [ ] [MAID-1065](https://maidsafe.atlassian.net/browse/MAID-1065) Return Result for Put Get Post
