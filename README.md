@@ -82,4 +82,3 @@ correct name calculation of pure Id
 ## [0.1.90] Finish sprint
 
 - [ ] [MAID-1072](https://maidsafe.atlassian.net/browse/MAID-1072) Integration test
-- [ ] [MAID-1076](https://maidsafe.atlassian.net/browse/MAID-1076) implement Network Visualiser

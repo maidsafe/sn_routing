@@ -23,9 +23,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use lru_time_cache::LruCache;
-use time::{Duration, SteadyTime};
+use time::{Duration};
 use crust::Endpoint;
-use types::PublicId;
+use types::{Id, PublicId};
 use NameType;
 
 const MAX_RELAY : usize = 5;
@@ -36,17 +36,19 @@ pub struct RelayMap {
     relay_map: BTreeMap<NameType, (PublicId, BTreeSet<Endpoint>)>,
     lookup_map: HashMap<Endpoint, NameType>,
     accepted_connect_requests: LruCache<Endpoint, PublicId>,
-    our_name: NameType
+    our_name: NameType,
+    self_relocated: bool
 }
 
 impl RelayMap {
     /// This creates a new RelayMap.
-    pub fn new(our_name: &NameType) -> RelayMap {
+    pub fn new(our_id: &Id) -> RelayMap {
         RelayMap {
             relay_map: BTreeMap::new(),
             lookup_map: HashMap::new(),
             accepted_connect_requests: LruCache::with_expiry_duration(Duration::minutes(1)),
-            our_name: our_name.clone()
+            our_name: our_id.get_name(),
+            self_relocated: our_id.is_self_relocated()
         }
     }
 
@@ -170,6 +172,12 @@ impl RelayMap {
     pub fn pop_accepted_connect_request(&mut self, endpoint: &Endpoint) -> Option<PublicId> {
         self.accepted_connect_requests.remove(endpoint)
     }
+
+    /// Returns true if the relay map was instantiated with a self_relocated id.
+    /// A self_relocated id should only be used by the first node to start a network.
+    pub fn zero_node(&self) -> bool {
+        self.self_relocated
+    }
 }
 
 /// Bootstrap endpoints are used to connect to the network before
@@ -182,12 +190,10 @@ pub struct BootstrapEndpoints {
 #[cfg(test)]
 mod test {
     use super::*;
-    use NameType;
     use crust::Endpoint;
     use types::{Id, PublicId};
     use std::net::SocketAddr;
     use std::str::FromStr;
-    use test_utils::Random;
     use rand::random;
 
     fn generate_random_endpoint() -> Endpoint {
@@ -199,7 +205,7 @@ mod test {
         let our_id : Id = Id::new();
         let our_public_id = PublicId::new(&our_id);
         let our_name = our_id.get_name();
-        let mut relay_map = RelayMap::new(&our_name);
+        let mut relay_map = RelayMap::new(&our_id);
         assert_eq!(false, relay_map.add_ip_node(our_public_id.clone(), generate_random_endpoint()));
         assert_eq!(0, relay_map.relay_map.len());
         assert_eq!(0, relay_map.lookup_map.len());
@@ -213,8 +219,9 @@ mod test {
 
     #[test]
     fn drop() {
-        let our_name : NameType = Random::generate_random();
-        let mut relay_map = RelayMap::new(&our_name);
+        let our_id : Id = Id::new();
+        let our_name = our_id.get_name();
+        let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
         let test_endpoint = generate_random_endpoint();
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
@@ -229,8 +236,9 @@ mod test {
 
     #[test]
     fn add_conflicting_endpoints() {
-        let our_name : NameType = Random::generate_random();
-        let mut relay_map = RelayMap::new(&our_name);
+        let our_id : Id = Id::new();
+        let our_name = our_id.get_name();
+        let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
         let test_endpoint = generate_random_endpoint();
         let test_conflicting_public_id = PublicId::new(&Id::new());
@@ -245,8 +253,9 @@ mod test {
 
     #[test]
     fn add_multiple_endpoints() {
-        let our_name : NameType = Random::generate_random();
-        let mut relay_map = RelayMap::new(&our_name);
+        let our_id : Id = Id::new();
+        let our_name = our_id.get_name();
+        let mut relay_map = RelayMap::new(&our_id);
         assert!(super::MAX_RELAY - 1 > 0);
         // ensure relay_map is all but full, so multiple endpoints are not counted as different
         // relays.

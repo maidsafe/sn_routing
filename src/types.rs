@@ -239,6 +239,16 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
     Ok(NameType(crypto::hash::sha512::hash(&combined).0))
 }
 
+// A self_relocated id, is purely used for a zero-node to bootstrap a network.
+// Such a node will be rejected by the network once routing tables fill up.
+pub fn calculate_self_relocated_name(public_key: &crypto::sign::PublicKey,
+                           public_sign_key: &crypto::asymmetricbox::PublicKey,
+                           validation_token: &Signature) -> NameType {
+    let original_name = calculate_original_name(public_key, public_sign_key,
+        validation_token);
+    NameType(crypto::hash::sha512::hash(&original_name.0.to_vec()).0)
+}
+
 // TODO(Team): Below method should be modified and reused in constructor of Id.
 fn calculate_original_name(public_key: &crypto::sign::PublicKey,
                            public_sign_key: &crypto::asymmetricbox::PublicKey,
@@ -285,6 +295,13 @@ impl PublicId {
         self.name !=  calculate_original_name(&self.public_sign_key.get_crypto_public_sign_key(),
                                               &self.public_key.get_crypto_public_key(),
                                               &self.validation_token)
+    }
+
+    // checks if the name is equal to the self_relocated name
+    pub fn is_self_relocated(&self) -> bool {
+        self.name ==  calculate_self_relocated_name(
+            &self.public_sign_key.get_crypto_public_sign_key(),
+            &self.public_key.get_crypto_public_key(), &self.validation_token)
     }
 
     // name field is initially same as original_name, this should be replaced by relocated name
@@ -396,7 +413,14 @@ impl Id {
   }
   // checks if the name is updated to a relocated name
   pub fn is_relocated(&self) -> bool {
-      self.name !=  calculate_original_name(&self.public_keys.0, &self.public_keys.1, &self.validation_token)
+      self.name !=  calculate_original_name(&self.public_keys.0,
+          &self.public_keys.1, &self.validation_token)
+  }
+
+  // checks if the name is equal to the self_relocated name
+  pub fn is_self_relocated(&self) -> bool {
+      self.name ==  calculate_self_relocated_name(&self.public_keys.0,
+          &self.public_keys.1, &self.validation_token)
   }
 
   // name field is initially same as original_name, this should be later overwritten by
@@ -432,43 +456,46 @@ impl Decodable for AccountTransferInfo {
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct SourceAddress {
-  pub from_node  : NameType,
-  pub from_group : Option<NameType>,
-  pub reply_to   : Option<NameType>
+  pub from_node   : NameType,
+  pub from_group  : Option<NameType>,
+  pub reply_to    : Option<NameType>,
+  pub relayed_for : Option<NameType>
 }
 
 impl Encodable for SourceAddress {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_102 , &(&self.from_node, &self.from_group, &self.reply_to)).encode(e)
+    CborTagEncode::new(5483_102 , &(&self.from_node, &self.from_group,
+        &self.reply_to, &self.relayed_for)).encode(e)
   }
 }
 
 impl Decodable for SourceAddress {
   fn decode<D: Decoder>(d: &mut D)->Result<SourceAddress, D::Error> {
     try!(d.read_u64());
-    let (from_node, from_group, reply_to) = try!(Decodable::decode(d));
-    Ok(SourceAddress { from_node: from_node, from_group: from_group, reply_to: reply_to })
+    let (from_node, from_group, reply_to, relayed_for) = try!(Decodable::decode(d));
+    Ok(SourceAddress { from_node: from_node, from_group: from_group,
+        reply_to: reply_to, relayed_for: relayed_for })
   }
 }
 
 /// Address of the destination of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct DestinationAddress {
-  pub dest : NameType,
-  pub reply_to : Option<NameType>
+  pub dest     : NameType,
+  pub relay_to : Option<NameType>
 }
 
 impl Encodable for DestinationAddress {
   fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_101, &(&self.dest, &self.reply_to)).encode(e)
+    CborTagEncode::new(5483_101, &(&self.dest, &self.relay_to)).encode(e)
   }
 }
 
 impl Decodable for DestinationAddress {
   fn decode<D: Decoder>(d: &mut D)->Result<DestinationAddress, D::Error> {
     try!(d.read_u64());
-    let (dest, reply_to) = try!(Decodable::decode(d));
-    Ok(DestinationAddress { dest: dest, reply_to: reply_to })
+    let (dest, relay_to) = try!(Decodable::decode(d));
+    Ok(DestinationAddress { dest: dest, relay_to: relay_to })
   }
 }
 
@@ -514,15 +541,12 @@ mod test {
 
   #[test]
   fn test_destination_address() {
-    test_object(DestinationAddress { dest: Random::generate_random(), reply_to: None });
+    test_object(DestinationAddress { dest: Random::generate_random(), relay_to: None });
   }
 
   #[test]
   fn test_source_address() {
-
-    test_object(SourceAddress { from_node : Random::generate_random(),
-                                from_group : None,
-                                reply_to: None });
+      test_object(SourceAddress { from_node : Random::generate_random(), from_group : None, reply_to: None, relayed_for : None });
   }
 
 #[test]

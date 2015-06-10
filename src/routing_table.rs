@@ -17,7 +17,6 @@
 
 use std::cmp;
 use std::usize;
-use sodiumoxide::crypto;
 use std::collections::{HashMap};
 
 use crust::Endpoint;

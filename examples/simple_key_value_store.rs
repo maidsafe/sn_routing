@@ -24,8 +24,6 @@
 //!      starting later on nodes : routing -n 127.0.0.0:7364
 //!      starting a client : routing 127.0.0.0:7364
 
-#![forbid(bad_style, warnings)]
-
 extern crate cbor;
 extern crate docopt;
 extern crate rand;
@@ -51,8 +49,8 @@ use sodiumoxide::crypto;
 
 use crust::Endpoint;
 use routing::node_interface::*;
-use routing::routing_client::{RoutingClient};
-use routing::routing_node::{RoutingNode};
+use routing::routing_client::{ClientIdPacket, RoutingClient};
+use routing::routing_node_new::{RoutingNode};
 use routing::sendable::Sendable;
 use routing::types;
 use routing::authority::Authority;
@@ -63,26 +61,19 @@ use routing::error::{ResponseError, InterfaceError};
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage:
-    routing [<peer>...]
-    routing --node [<peer>...]
-    routing --help
+  routing_new [--type=<node_type>] [--peer=<end_point>]
+  routing_new (-h | --help)
 
-If no arguments are passed, this will try to connect to an existing network
-using Crust's discovery protocol.  If this is unsuccessful, you can provide
-a list of known endpoints (other running instances of this example) and the node
-will try to connect to one of these in order to connect to the network.
+  If no arguments are passed, this will try to connect to an existing network
+  using Crust's discovery protocol.  If this is unsuccessful, you can provide
+  a list of known endpoints (other running instances of this example) and the node
+  will try to connect to one of these in order to connect to the network.
 
 Options:
-    -n, --node  Run as a RoutingNode rather than a RoutingClient.
-    -h, --help  Display this help message.
+  -h --help           Show this screen.
+  --type=<node_type>  node_type = client | node | first.
+  --peer=<end_point>  end_point
 ";
-
-#[derive(RustcDecodable, Debug)]
-struct Args {
-    arg_endpoint: Option<String>,
-    flag_node : bool,
-    flag_help : bool
-}
 
 // ==========================   Helper Function   =================================
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
@@ -195,7 +186,13 @@ impl routing::client_interface::Interface for TestClient {
 }
 
 struct TestNode {
-    pub stats: Arc<Mutex<Stats>>
+    stats: Arc<Mutex<Stats>>
+}
+
+impl TestNode {
+    pub fn new() -> TestNode {
+        TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }
+    }
 }
 
 impl Interface for TestNode {
@@ -303,95 +300,115 @@ impl Interface for TestNode {
     }
 }
 
+struct TestNodeGenerator;
+
+impl CreatePersonas<TestNode> for TestNodeGenerator {
+    fn create_personas(&mut self) -> TestNode {
+        TestNode::new()
+    }
+}
+
 fn main() {
-    let args : Args = Docopt::new(USAGE)
-                     .and_then(|d| d.decode())
-                     .unwrap_or_else(|e| e.exit());
-    if args.flag_help && !args.arg_endpoint.is_some() {
-        println!("{:?}", args);
-        return;
-    }
+    let args = Docopt::new(USAGE)
+                      .and_then(|dopt| dopt.parse())
+                      .unwrap_or_else(|e| e.exit());
+
+    // You can conveniently access values with `get_{bool,count,str,vec}`
+    // functions. If the key doesn't exist (or if, e.g., you use `get_str` on
+    // a switch), then a sensible default value is returned.
+    let node_type = args.get_str("--type");
     let mut command = String::new();
-    if args.flag_node {
-        let test_node = RoutingNode::new(TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) });
-        let mutate_node = Arc::new(Mutex::new(test_node));
-        let copied_node = mutate_node.clone();
-        spawn(move || {
+    match node_type {
+        "node" => {
+            let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+            if !args.get_str("end_point").is_empty() {
+                match SocketAddr::from_str(args.get_str("end_point")) {
+                    Ok(addr) => {
+                        println!("initial bootstrapping to {} ", addr);
+                        let _ = test_node.bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
+                    }
+                    Err(_) => {}
+                };
+            } else {
+                // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+                let _ = test_node.bootstrap(None, None);
+            }
             loop {
-                thread::sleep_ms(1);
-                copied_node.lock().unwrap().run();
-            }
-        });
-        if args.arg_endpoint.is_some() {
-            match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
-                Ok(addr) => {
-                    println!("initial bootstrapping to {} ", addr);
-                    let _ = mutate_node.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
+                command.clear();
+                println!("Input command (stop)");
+                let _ = io::stdin().read_line(&mut command);
+                let v: Vec<&str> = command.split(' ').collect();
+                match v[0].trim() {
+                    "stop" => break,
+                    _ => println!("Invalid Option")
                 }
-                Err(_) => {}
-            };
-        } else {
-            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
-            let _ = mutate_node.lock().unwrap().bootstrap(None, None);
-        }
-        loop {
-            command.clear();
-            println!("Input command (stop)");
-            let _ = io::stdin().read_line(&mut command);
-            let v: Vec<&str> = command.split(' ').collect();
-            match v[0].trim() {
-                "stop" => break,
-                _ => println!("Invalid Option")
             }
-        }
-    } else {
-        // let sign_keypair = crypto::sign::gen_keypair();
-        // let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
-        // let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
-        let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) })), types::Id::new());
-        let mutate_client = Arc::new(Mutex::new(test_client));
-        let copied_client = mutate_client.clone();
-        spawn(move || {
+        },
+        "first" => {
+            let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+            test_node.run_zero_membrane();
             loop {
-                thread::sleep_ms(10);
-                copied_client.lock().unwrap().run();
+                let mut command = String::new();
+                command.clear();
+                println!("Input command (stop)");
+                let _ = io::stdin().read_line(&mut command);
+                let v: Vec<&str> = command.split(' ').collect();
+                match v[0].trim() {
+                    "stop" => break,
+                    _ => println!("Invalid Option")
+              }
             }
-        });
-        if args.arg_endpoint.is_some() {
-            match SocketAddr::from_str(args.arg_endpoint.unwrap().trim()) {
-                Ok(addr) => {
-                    println!("initial bootstrapping to {} ", addr);
-                    let _ = mutate_client.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
+        },
+        // default to client behaviour
+        _ => {
+            let sign_keypair = crypto::sign::gen_keypair();
+            let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
+            let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
+            let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) })), client_id_packet);
+            let mutate_client = Arc::new(Mutex::new(test_client));
+            let copied_client = mutate_client.clone();
+            spawn(move || {
+                loop {
+                    thread::sleep_ms(10);
+                    copied_client.lock().unwrap().run();
                 }
-                Err(_) => {}
-            };
-        }else {
-            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
-            let _ = mutate_client.lock().unwrap().bootstrap(None, None);
-        }
-        loop {
-            command.clear();
-            println!("Input command (stop, put <key> <value>, get <key>)");
-            let _ = io::stdin().read_line(&mut command);
-            let v: Vec<&str> = command.split(' ').collect();
-            match v[0].trim() {
-                "stop" => break,
-                "put" => {
-                    let key: Vec<u8> = v[1].trim().bytes().collect();
-                    let value: Vec<u8> = v[2].trim().bytes().collect();
-                    let data = TestData::new(key, value);
-                    println!("putting data {:?} to network with name as {}", data, data.name());
-                    let _ = mutate_client.lock().unwrap().put(data);
-                },
-                "get" => {
-                    let key: Vec<u8> = v[1].trim().bytes().collect();
-                    let name = TestData::get_name_from_key(&key);
-                    let key_string = std::string::String::from_utf8(key).unwrap();
-                    println!("getting data having key {} from network using name as {}", key_string, name);
-                    let _ = mutate_client.lock().unwrap().get(201, name);
-                },
-                _ => println!("Invalid Option")
+            });
+            if !args.get_str("end_point").is_empty() {
+                match SocketAddr::from_str(args.get_str("end_point")) {
+                    Ok(addr) => {
+                        println!("initial bootstrapping to {} ", addr);
+                        let _ = mutate_client.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
+                    }
+                    Err(_) => {}
+                };
+            }else {
+                // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+                let _ = mutate_client.lock().unwrap().bootstrap(None, None);
+            }
+            loop {
+                command.clear();
+                println!("Input command (stop, put <key> <value>, get <key>)");
+                let _ = io::stdin().read_line(&mut command);
+                let v: Vec<&str> = command.split(' ').collect();
+                match v[0].trim() {
+                    "stop" => break,
+                    "put" => {
+                        let key: Vec<u8> = v[1].trim().bytes().collect();
+                        let value: Vec<u8> = v[2].trim().bytes().collect();
+                        let data = TestData::new(key, value);
+                        println!("putting data {:?} to network with name as {}", data, data.name());
+                        let _ = mutate_client.lock().unwrap().put(data);
+                    },
+                    "get" => {
+                        let key: Vec<u8> = v[1].trim().bytes().collect();
+                        let name = TestData::get_name_from_key(&key);
+                        let key_string = std::string::String::from_utf8(key).unwrap();
+                        println!("getting data having key {} from network using name as {}", key_string, name);
+                        let _ = mutate_client.lock().unwrap().get(201, name);
+                    },
+                    _ => println!("Invalid Option")
+                }
             }
         }
-    }
+    };
 }

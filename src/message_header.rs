@@ -68,11 +68,7 @@ impl MessageHeader {
     }
 
     pub fn from_group(&self) -> Option<NameType> {
-        if self.source.from_group.is_some() {
-            self.source.from_group.clone()
-        } else {
-            None
-        }
+        self.source.from_group.clone()
     }
 
     pub fn is_from_group(&self) -> bool {
@@ -80,7 +76,7 @@ impl MessageHeader {
     }
 
     pub fn is_relayed(&self) -> bool {
-        self.source.reply_to.is_some()
+        self.source.relayed_for.is_some()
     }
 
     pub fn reply_to(&self) -> Option<NameType> {
@@ -99,16 +95,9 @@ impl MessageHeader {
     }
 
     pub fn send_to(&self) -> types::DestinationAddress {
-        if self.is_relayed() {
-            types::DestinationAddress{
-                dest : self.source.from_node.clone(),
-                reply_to : self.source.reply_to.clone()
-            }
-        } else {
-            types::DestinationAddress{
-                dest : self.source.from_node.clone(),
-                reply_to : None
-            }
+        types::DestinationAddress {
+            dest: self.source.from_node.clone(),
+            relay_to: self.source.relayed_for.clone()
         }
     }
 
@@ -119,6 +108,11 @@ impl MessageHeader {
 
     pub fn from_authority(&self) -> Authority {
         self.authority.clone()
+    }
+
+    pub fn set_relay_name(&mut self, reply_to: &NameType, relay_for: &NameType) {
+        self.source.reply_to = Some(reply_to.clone());
+        self.source.relayed_for = Some(relay_for.clone());
     }
 
     /// This creates a new header for Action::SendOn. It clones all the fields,
@@ -134,11 +128,12 @@ impl MessageHeader {
         send_on_header.source = types::SourceAddress {
             from_node : our_name.clone(),
             from_group : Some(self.destination.dest.clone()),
-            reply_to : self.source.reply_to.clone()
+            reply_to : self.source.reply_to.clone(),
+            relayed_for : self.source.relayed_for.clone()
         };
         send_on_header.destination = types::DestinationAddress {
             dest : destination.clone(),
-            reply_to : self.destination.reply_to.clone()
+            relay_to : self.destination.relay_to.clone()
         };
         send_on_header.authority = our_authority.clone();
         send_on_header
@@ -156,11 +151,18 @@ impl MessageHeader {
         reply_header.source = types::SourceAddress {
             from_node : our_name.clone(),
             from_group : Some(self.destination.dest.clone()),
-            reply_to : None
+            reply_to : None,
+            relayed_for: None
         };
         reply_header.destination = types::DestinationAddress {
-            dest : self.from().clone(),
-            reply_to : self.source.reply_to.clone()
+            dest : match self.source.reply_to.clone() {
+                       Some(reply_to) => reply_to,
+                       None => match self.source.from_group.clone() {
+                           Some(group_name) => group_name,
+                           None => self.source.from_node.clone()
+                       }
+                   },
+            relay_to : self.source.relayed_for.clone()
         };
         reply_header.authority = our_authority.clone();
         reply_header
@@ -190,10 +192,9 @@ mod test {
     fn test_message_header() {
         test_object(MessageHeader {
             message_id : random::<u32>(),
-            destination : types::DestinationAddress{ dest: Random::generate_random(),
-                                                     reply_to: None },
+            destination : types::DestinationAddress{ dest: Random::generate_random(), relay_to: None },
             source : types::SourceAddress { from_node : Random::generate_random(),
-                                            from_group : None, reply_to: None },
+                                            from_group : None, reply_to: None, relayed_for: None },
             authority : Authority::ManagedNode });
     }
 }
