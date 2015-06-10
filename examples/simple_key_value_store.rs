@@ -69,8 +69,8 @@ Usage:
   'first' should be passed as parameter to start first node in the network.
   If no arguments are passed, this will try to connect to an existing network
   using Crust's discovery protocol.  If this is unsuccessful, you can provide
-  an endpoint (other running instances of this example) and the node
-  will try to connect to the node in order to connect to the network.
+  a list of known endpoints (other running instances of this example) and the node
+  will try to connect to one of these in order to connect to the network.
 
 Options:
   -h --help           Show this screen.
