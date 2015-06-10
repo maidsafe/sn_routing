@@ -484,13 +484,7 @@ impl VaultFacade {
                     let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
                     let mut decoder = cbor::Decoder::from_bytes(data0);
                     let stats_sendable : data_manager::DataManagerStatsSendable = decoder.decode().next().unwrap().unwrap();
-                    // match payload.get_type_tag() {
-                    //   maidsafe_types::PayloadTypeTag::DataManagerStatsTransfer => {
-                    //     let stats_sendable : data_manager::DataManagerStatsSendable = payload.get_data();
-                        assert_eq!(stats_sendable.get_resource_index(), 1);
-                    //   }
-                    //   _ => panic!("DataManagerStatsTransfer tag expected")
-                    // }
+                    assert_eq!(stats_sendable.get_resource_index(), 1);
                 },
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
