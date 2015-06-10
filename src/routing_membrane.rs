@@ -199,6 +199,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             match self.event_input.recv() {
                 Err(_) => (),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    println!("Received new message from {:?}", endpoint);
                     match self.lookup_endpoint(&endpoint) {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
@@ -211,10 +212,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // For a relay connection, parse and forward
                             // FIXME: later limit which messages are sent forward,
                             // limiting our exposure.
+                            println!("New message is from relayed {:?}, named {:?}", endpoint, name);
                             let _ = self.relay_message_received(
                                 &ConnectionName::Relay(name), bytes, endpoint);
                         },
                         Some(ConnectionName::OurBootstrap) => {
+                            println!("New message is from our bootstrap");
                             // FIXME: This is a short-cut and should be improved upon.
                             // note: the name is not actively used by message_received.
                             let placeholder_name = self.own_name.clone();
@@ -222,6 +225,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 &ConnectionName::Routing(placeholder_name), bytes);
                         },
                         None => {
+                            println!("New message came from unknown endpoint {:?}", endpoint);
                             // If we don't know the sender, only accept a connect request
                             let _ = self.handle_unknown_connect_request(&endpoint, bytes);
                         }

@@ -97,7 +97,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
-
+        println!("ZERO listening on {:?}", listeners.0.first());
         let original_name = self.id.get_name();
         let self_relocated_name = types::calculate_self_relocated_name(
             &self.id.get_crypto_public_sign_key(),
