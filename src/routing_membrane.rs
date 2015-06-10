@@ -205,7 +205,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
-                            let _ = self.message_received(&ConnectionName::Routing(name), bytes);
+                            let _ = self.message_received(&ConnectionName::Routing(name),
+                            bytes, false);
                         },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
@@ -221,9 +222,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             println!("New message is from our bootstrap");
                             // FIXME: This is a short-cut and should be improved upon.
                             // note: the name is not actively used by message_received.
+                            // note: the destination address of header needs
+                            // to be pointed to our relocated name; bypassed with flag
                             let placeholder_name = self.own_name.clone();
                             let _ = self.message_received(
-                                &ConnectionName::Routing(placeholder_name), bytes);
+                                &ConnectionName::Routing(placeholder_name),
+                                bytes, true);
                         },
                         None => {
                             println!("New message came from unknown endpoint {:?}", endpoint);
@@ -453,7 +457,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 message.message_header.set_relay_name(&self.own_name, &name);
                 println!("RELAYED as relay node for {:?}", name);
                 ignore(self.message_received(&ConnectionName::Routing(name.clone()),
-                    try!(encode(&message))));
+                    try!(encode(&message)), false));
             },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
@@ -467,15 +471,20 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
     fn message_received(&mut self, received_from : &ConnectionName,
-        serialised_msg : Bytes) -> RoutingResult {
+        serialised_msg : Bytes, received_from_relay: bool) -> RoutingResult {
         match received_from {
             &ConnectionName::Routing(_) => { },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
         // Parse
         let message = try!(decode::<RoutingMessage>(&serialised_msg));
-        let header = message.message_header;
+        let mut header = message.message_header;
         let body = message.serialised_body;
+        if received_from_relay {
+            // then this message was explicitly for us
+            header.destination.dest = self.own_name.clone();
+            header.destination.relay_to = None;
+        }
         println!("Received SAFE msg from {:?}", header.from_node());
         // filter check
         if self.filter.check(&header.get_filter()) {
@@ -550,6 +559,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             || message.message_type == MessageTypeTag::ConnectResponse {
             if header.destination.dest != self.own_name  {
                 // "not for me"
+                println!("Dropped ConnectRequest ConnectReponse as not for me.
+                    Destined for {:?}, and we are {:?}", header.destination.dest,
+                    self.own_name);
                 return Ok(());
             }
         }
