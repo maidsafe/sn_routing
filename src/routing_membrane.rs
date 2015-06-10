@@ -416,6 +416,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 if message.message_type == MessageTypeTag::PutPublicId
                     && self.relay_map.zero_node()
                     && self.routing_table.size() == 0 {
+                    println!("Intercepted PutPublicId as relay node for {:?}", name);
                     let header = message.message_header;
                     let body = message.serialised_body;
                     // FIXME: check signature
@@ -425,6 +426,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 // update header and normal message_received
                 message.message_header.set_relay_name(&self.own_name, &name);
+                println!("RELAYED as relay node for {:?}", name);
                 ignore(self.message_received(&ConnectionName::Routing(name.clone()),
                     try!(encode(&message))));
             },
@@ -442,14 +444,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn message_received(&mut self, received_from : &ConnectionName,
         serialised_msg : Bytes) -> RoutingResult {
         match received_from {
-            &ConnectionName::Routing(_) => {},
+            &ConnectionName::Routing(_) => { },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
         // Parse
         let message = try!(decode::<RoutingMessage>(&serialised_msg));
         let header = message.message_header;
         let body = message.serialised_body;
-
+        println!("Received SAFE msg from {:?}", header.from_node());
         // filter check
         if self.filter.check(&header.get_filter()) {
             // should just return quietly
@@ -1019,6 +1021,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     ///  Only use this handler if we have a self-relocated id, and our routing table is empty
+    // FIXME: we can (very likely) completely drop this special case; in relay_message_received
+    // just treat this PutPublicId as any other message, but in the normal handlers for PutPublicId,
+    // also add our own name.
     fn handle_put_public_id_zero_node(&mut self, header: MessageHeader, body: Bytes,
         send_to: &Endpoint) -> RoutingResult {
         println!("FIRST NODE BOOSTRAPS OFF OF ZERO NODE");
@@ -1030,6 +1035,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let relocated_name =  try!(types::calculate_relocated_name(
                                     vec![self.own_name.clone()],
                                     &put_public_id.public_id.name()));
+        println!("Will assign relocated name as {:?} from {:?}", relocated_name,
+            put_public_id.public_id.name());
         // assign_relocated_name
         relocated_public_id.assign_relocated_name(relocated_name.clone());
 

@@ -183,6 +183,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             let put_public_id_response =
                                 try!(decode::<PutPublicIdResponse>(&message.serialised_body));
                             relocated_name = Some(put_public_id_response.public_id.name());
+                            debug_assert!(put_public_id_response.public_id.is_relocated());
                             if put_public_id_response.public_id.validation_token
                                 != self.id.get_validation_token() {
                                 return Err(RoutingError::FailedToBootstrap); }
@@ -204,10 +205,12 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
         match relocated_name {
             Some(relocated_name) => {
+                println!("Assign myself relocated name {:?}", relocated_name);
                 self.id.assign_relocated_name(relocated_name);
+                debug_assert!(self.id.is_relocated());
                 let mut membrane = RoutingMembrane::<F>::new(
                     cm, event_input, Some(bootstrapped_to.clone()),
-                    listeners.0, unrelocated_id,
+                    listeners.0, self.id.clone(),
                     self.genesis.create_personas());
                 spawn(move || membrane.run());
             },
