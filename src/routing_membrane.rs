@@ -79,7 +79,8 @@ type RoutingResult = Result<(), RoutingError>;
 
 enum ConnectionName {
     Relay(NameType),
-    Routing(NameType)
+    Routing(NameType),
+    OurBootstrap
 }
 
 /// Routing Membrane
@@ -88,6 +89,7 @@ pub struct RoutingMembrane<F : Interface> {
     event_input: Receiver<crust::Event>,
     connection_manager: crust::ConnectionManager,
     accepting_on: Vec<crust::Endpoint>,
+    bootstrap_endpoint: Option<crust::Endpoint>,
     // for Routing
     id: types::Id,
     own_name: NameType,
@@ -115,6 +117,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                       event_input: event_input,
                       connection_manager: cm,
                       accepting_on: accepting_on,
+                      bootstrap_endpoint: bootstrap_endpoint,
                       routing_table : RoutingTable::new(&own_name),
                       relay_map: RelayMap::new(&relocated_id),
                       own_name: own_name,
@@ -172,7 +175,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
-        // First Send FindGroup Requests
+        // First send FindGroup request
+        match self.bootstrap_endpoint.clone() {
+            Some(ref bootstrap_endpoint) => {
+                let find_group_msg = self.construct_find_group_msg(true);
+                // FIXME: act on error to send; don't over clone bootstrap_endpoint
+                ignore(encode(&find_group_msg).map(|msg|self.connection_manager
+                    .send(bootstrap_endpoint.clone(), msg)));
+            },
+            None => {
+                // routing_table is still empty now, but check
+                // should never happen
+                if self.routing_table.size() == 0 {
+                    panic!("No connections to get started.");
+                }
+            }
+        }
 
         loop {
             match self.event_input.recv() {
@@ -192,6 +210,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // limiting our exposure.
                             let _ = self.relay_message_received(
                                 &ConnectionName::Relay(name), bytes, endpoint);
+                        },
+                        Some(ConnectionName::OurBootstrap) => {
+                            // FIXME: This is a short-cut and should be improved upon.
+                            // note: the name is not actively used by message_received.
+                            let placeholder_name = self.own_name.clone();
+                            let _ = self.message_received(
+                                &ConnectionName::Routing(placeholder_name), bytes);
                         },
                         None => {
                             // If we don't know the sender, only accept a connect request
@@ -295,6 +320,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // this endpoint is already present in the relay lookup_map
                 // nothing to do
             },
+            Some(ConnectionName::OurBootstrap) => {
+                // FIXME: for now do nothing
+            }
             None => {
                 // Connect requests for relays do not get stored in the relay map,
                 // as we want to avoid state; instead we keep an LruCache to recover the public_id.
@@ -337,6 +365,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             None => {}
         };
+        let mut drop_bootstrap = false;
+        match self.bootstrap_endpoint {
+            Some(ref bootstrap_endpoint) => {
+                if &endpoint == bootstrap_endpoint {
+                    println!("Bootstrap connectioin disconnected by relay node.");
+                    self.connection_manager.drop_node(endpoint);
+                    drop_bootstrap = true;
+                }
+            },
+            None => {}
+        };
+        if drop_bootstrap { self.bootstrap_endpoint = None; }
         // TODO: trigger churn on boolean
     }
 
@@ -440,7 +480,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // handle relay request/response
         if header.destination.dest == self.own_name {
-            // FIXME: source and destination addresses need a correction
             match header.destination.relay_to {
                 Some(relay) => {
                     self.send_out_as_relay(&relay, serialised_msg);
@@ -486,8 +525,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //             MessageTypeTag::PostResponse => self.handle_post_response(header, body),
                     MessageTypeTag::PutData => self.handle_put_data(header, body),
                     MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
-        //             MessageTypeTag::PutPublicId => self.handle_put_public_id(header, body),
-        //             //PutKey,
+                    MessageTypeTag::PutPublicId => self.handle_put_public_id(header, body),
                     _ => {
                         Err(RoutingError::UnknownMessageType)
                     }
@@ -590,19 +628,37 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn our_source_address(&self, from_group: Option<NameType>) -> types::SourceAddress {
-        // if self.bootstrap_endpoint.is_some() {
-        //     let id = self.all_connections.0.get(&self.bootstrap_endpoint.clone().unwrap());
-        //     if id.is_some() {
-        //         return types::SourceAddress{ from_node: id.unwrap().clone(),
-        //                                      from_group: None,
-        //                                      reply_to: Some(self.own_name.clone()) }
-        //     }
-        // }
-        return types::SourceAddress{ from_node:   self.own_name.clone(),
-                                     from_group:  from_group,
-                                     reply_to:    None,
-                                     relayed_for: None }
+    fn our_source_address_for_bootstrap(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
+        // first check whether we are safe to drop our bootstrap connection
+        let mut relayed_for : Option<NameType> = None;
+        match self.bootstrap_endpoint.clone() {
+            Some(endpoint) => {
+                // this threshold is set arbitrarily
+                if self.routing_table.size() > 5 {
+                    self.connection_manager.drop_node(endpoint);
+                    self.bootstrap_endpoint = None;
+                } else {
+                    relayed_for = Some(self.own_name.clone());
+                }
+            },
+            None => {}
+        };
+
+        types::SourceAddress{ from_node: self.own_name.clone(),
+                              from_group: from_group,
+                              // note: if a message is sent over a relay connection,
+                              // the relay node will fill-in reply_to field with its name
+                              reply_to: None,
+                              relayed_for: relayed_for
+        }
+    }
+
+    fn our_source_address(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
+        types::SourceAddress{ from_node: self.own_name.clone(),
+                              from_group: from_group,
+                              reply_to: None,
+                              relayed_for: None
+        }
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
@@ -618,7 +674,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // secondly look in the relay_map
             None => match self.relay_map.lookup_endpoint(&endpoint) {
                 Some(name) => Some(ConnectionName::Relay(name)),
-                None => None
+                // finally see if it is our bootstrap_endpoint
+                None => match self.bootstrap_endpoint {
+                    Some(ref our_bootstrap) => {
+                        if our_bootstrap == endpoint {
+                            Some(ConnectionName::OurBootstrap)
+                        } else {
+                            None
+                        }
+                    },
+                    None => None
+                }
             }
         }
     }
@@ -782,7 +848,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     /// On bootstrapping a node can temporarily publish its PublicId in the group.
-    /// Sentinel will query this pool. No handle_get_public_id is needed.
+    /// No handle_get_public_id is needed - this is handled by routing_node
+    /// before the membrane instantiates.
     // TODO (Ben): check whether to accept id into group;
     // restrict on minimal similar number of leading bits.
     fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
@@ -1053,6 +1120,24 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             &self.id.get_crypto_secret_sign_key())
     }
 
+    fn construct_find_group_msg(&mut self, for_bootstrap_connection: bool) -> RoutingMessage {
+        let header = MessageHeader::new(
+            self.get_next_message_id(),
+            types::DestinationAddress {
+                 dest:     self.own_name.clone(),
+                 relay_to: None
+            },
+            match for_bootstrap_connection {
+                true => self.our_source_address_for_bootstrap(None),
+                false => self.our_source_address(None),
+            },
+            Authority::ManagedNode);
+
+        RoutingMessage::new(MessageTypeTag::FindGroup, header,
+            FindGroup{ requester_id: self.own_name.clone(),
+                       target_id:    self.own_name.clone()},
+            &self.id.get_crypto_secret_sign_key())
+    }
 }
 
 fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
