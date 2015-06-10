@@ -189,6 +189,20 @@ mod test {
     }
 
     #[test]
+    fn handle_account_transfer() {
+        let name = NameType([3u8; 64]);
+        let owner = NameType([4u8; 64]);
+        let value = vec![NameType([5u8; 64]), NameType([6u8; 64])];
+        let sdv = StructuredData::new(name.clone(), owner, value);
+
+        let mut version_handler = VersionHandler::new();
+        let payload = Payload::new(PayloadTypeTag::VersionHandlerAccountTransfer,
+                                   &VersionHandlerSendable::new(name.clone(), sdv.serialised_contents()));
+        version_handler.handle_account_transfer(payload);
+        assert_eq!(version_handler.chunk_store_.has_chunk(name), true);
+    }
+
+    #[test]
     fn version_handler_sendable_serialisation() {
         let obj_before = super::VersionHandlerSendable::new(NameType([1u8;64]), vec![2,3,45,5]);
 
