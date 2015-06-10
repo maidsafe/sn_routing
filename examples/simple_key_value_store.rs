@@ -17,12 +17,12 @@
 //! usage example (using default methods of connecting to the network):
 //!      starting first node : simple_key_value_store --first
 //!      starting later on nodes : simple_key_value_store --node
-//!      starting a client : simple_key_value_store --client
+//!      starting a client : simple_key_value_store
 //! usage example (using explicit list of peer endpoints and overriding default methods to connect to the network):
 //!      starting first node : simple_key_value_store --first
 //!      (127.0.0.0:7364 to be the socket address the first node listening on)
 //!      starting later on nodes : simple_key_value_store --node 127.0.0.0:7364
-//!      starting a client : simple_key_value_store --client 127.0.0.0:7364
+//!      starting a client : simple_key_value_store 127.0.0.0:7364
 
 extern crate cbor;
 extern crate docopt;
@@ -61,22 +61,24 @@ use routing::error::{ResponseError, InterfaceError};
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage:
-  simple_key_value_store [--client | --node ] [<peer>...]
+  simple_key_value_store [--node] [<peer>...]
   simple_key_value_store --first
   simple_key_value_store (-h | --help)
 
-  Running with '--node' or '--client' requires an existing network to connect to.
-  'first' should be passed as parameter to start first node in the network.
-  If no arguments are passed, this will try to connect to an existing network
+  Running with '--node' or without '--first' requires an existing network to connect to.
+  '--first' must be passed as parameter to start the first node in the network.
+  Running with '--node' or '--first' starts a passive node that reacts on received requests.
+  Running without '--node' or '--first' starts an interactive node that can initiate requests to the network.
+
+  If no arguments are passed (as peer), this will try to connect to an existing network
   using Crust's discovery protocol.  If this is unsuccessful, you can provide
   a list of known endpoints (other running instances of this example) and the node
   will try to connect to one of these in order to connect to the network.
 
 Options:
   -h --help           Show this screen.
-  --client            node runs as a client
-  --first             node runs as the first non-client node in the network
-  --node              node runs as the non-first non-client node in the network
+  --first             Node runs as the first passive node in the network.
+  --node              Node runs as the non-first passive node in the network.
 ";
 
 // ==========================   Helper Function   =================================
@@ -359,7 +361,7 @@ fn main() {
                 _ => println!("Invalid Option")
           }
         }
-    } else if args.get_bool("--client") {
+    } else {
         let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient {
             stats: Arc::new(Mutex::new(Stats {
                 stats: Vec::<(u32, TestData)>::new()})) })), types::Id::new());
@@ -407,7 +409,5 @@ fn main() {
                 _ => println!("Invalid Option")
             }
         }
-    } else {
-        println!("{}", USAGE);
     }
 }
