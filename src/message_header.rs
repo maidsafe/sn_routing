@@ -68,11 +68,7 @@ impl MessageHeader {
     }
 
     pub fn from_group(&self) -> Option<NameType> {
-        if self.source.from_group.is_some() {
-            self.source.from_group.clone()
-        } else {
-            None
-        }
+        self.source.from_group.clone()
     }
 
     pub fn is_from_group(&self) -> bool {
@@ -99,16 +95,9 @@ impl MessageHeader {
     }
 
     pub fn send_to(&self) -> types::DestinationAddress {
-        if self.is_relayed() {
-            types::DestinationAddress{
-                dest : self.source.from_node.clone(),
-                relay_to : self.source.relayed_for.clone()
-            }
-        } else {
-            types::DestinationAddress{
-                dest : self.source.from_node.clone(),
-                relay_to : None
-            }
+        types::DestinationAddress {
+            dest: self.source.from_node.clone(),
+            relay_to: self.source.relayed_for.clone()
         }
     }
 
@@ -119,6 +108,11 @@ impl MessageHeader {
 
     pub fn from_authority(&self) -> Authority {
         self.authority.clone()
+    }
+
+    pub fn set_relay_name(&mut self, reply_to: &NameType, relay_for: &NameType) {
+        self.source.reply_to = Some(reply_to.clone());
+        self.source.relayed_for = Some(relay_for.clone());
     }
 
     /// This creates a new header for Action::SendOn. It clones all the fields,

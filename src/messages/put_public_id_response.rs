@@ -23,7 +23,7 @@ use types;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct PutPublicIdResponse {
-    pub public_id: types::PublicId,  //FIXME check if we need entire PublicId returned?
+    pub public_id: types::PublicId,
 }
 
 impl Encodable for PutPublicIdResponse {
