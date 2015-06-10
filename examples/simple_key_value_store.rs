@@ -49,8 +49,8 @@ use sodiumoxide::crypto;
 
 use crust::Endpoint;
 use routing::node_interface::*;
-use routing::routing_client_new::{RoutingClient};
-use routing::routing_node_new::{RoutingNode};
+use routing::routing_client::{RoutingClient};
+use routing::routing_node::{RoutingNode};
 use routing::sendable::Sendable;
 use routing::types;
 use routing::authority::Authority;
