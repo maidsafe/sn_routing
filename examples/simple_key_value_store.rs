@@ -318,92 +318,97 @@ fn main() {
     // a switch), then a sensible default value is returned.
     let node_type = args.get_str("--type");
     let mut command = String::new();
-    if node_type == "node" {
-        let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
-        if !args.get_str("end_point").is_empty() {
-            match SocketAddr::from_str(args.get_str("end_point")) {
-                Ok(addr) => {
-                    println!("initial bootstrapping to {} ", addr);
-                    let _ = test_node.bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
-                }
-                Err(_) => {}
-            };
-        } else {
-            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
-            let _ = test_node.bootstrap(None, None);
-        }
-        loop {
-            command.clear();
-            println!("Input command (stop)");
-            let _ = io::stdin().read_line(&mut command);
-            let v: Vec<&str> = command.split(' ').collect();
-            match v[0].trim() {
-                "stop" => break,
-                _ => println!("Invalid Option")
+    match node_type {
+        "node" => {
+            let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+            if !args.get_str("end_point").is_empty() {
+                match SocketAddr::from_str(args.get_str("end_point")) {
+                    Ok(addr) => {
+                        println!("initial bootstrapping to {} ", addr);
+                        let _ = test_node.bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
+                    }
+                    Err(_) => {}
+                };
+            } else {
+                // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+                let _ = test_node.bootstrap(None, None);
             }
-        }
-    } else if node_type == "first" {
-      let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
-      test_node.run_zero_membrane();
-      loop {
-          let mut command = String::new();
-          command.clear();
-          println!("Input command (stop)");
-          let _ = io::stdin().read_line(&mut command);
-          let v: Vec<&str> = command.split(' ').collect();
-          match v[0].trim() {
-              "stop" => break,
-              _ => println!("Invalid Option")
-        }
-      }
-    } else {
-        let sign_keypair = crypto::sign::gen_keypair();
-        let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
-        let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
-        let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) })), client_id_packet);
-        let mutate_client = Arc::new(Mutex::new(test_client));
-        let copied_client = mutate_client.clone();
-        spawn(move || {
             loop {
-                thread::sleep_ms(10);
-                copied_client.lock().unwrap().run();
-            }
-        });
-        if !args.get_str("end_point").is_empty() {
-            match SocketAddr::from_str(args.get_str("end_point")) {
-                Ok(addr) => {
-                    println!("initial bootstrapping to {} ", addr);
-                    let _ = mutate_client.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
+                command.clear();
+                println!("Input command (stop)");
+                let _ = io::stdin().read_line(&mut command);
+                let v: Vec<&str> = command.split(' ').collect();
+                match v[0].trim() {
+                    "stop" => break,
+                    _ => println!("Invalid Option")
                 }
-                Err(_) => {}
-            };
-        }else {
-            // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
-            let _ = mutate_client.lock().unwrap().bootstrap(None, None);
-        }
-        loop {
-            command.clear();
-            println!("Input command (stop, put <key> <value>, get <key>)");
-            let _ = io::stdin().read_line(&mut command);
-            let v: Vec<&str> = command.split(' ').collect();
-            match v[0].trim() {
-                "stop" => break,
-                "put" => {
-                    let key: Vec<u8> = v[1].trim().bytes().collect();
-                    let value: Vec<u8> = v[2].trim().bytes().collect();
-                    let data = TestData::new(key, value);
-                    println!("putting data {:?} to network with name as {}", data, data.name());
-                    let _ = mutate_client.lock().unwrap().put(data);
-                },
-                "get" => {
-                    let key: Vec<u8> = v[1].trim().bytes().collect();
-                    let name = TestData::get_name_from_key(&key);
-                    let key_string = std::string::String::from_utf8(key).unwrap();
-                    println!("getting data having key {} from network using name as {}", key_string, name);
-                    let _ = mutate_client.lock().unwrap().get(201, name);
-                },
-                _ => println!("Invalid Option")
+            }
+        },
+        "first" => {
+            let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+            test_node.run_zero_membrane();
+            loop {
+                let mut command = String::new();
+                command.clear();
+                println!("Input command (stop)");
+                let _ = io::stdin().read_line(&mut command);
+                let v: Vec<&str> = command.split(' ').collect();
+                match v[0].trim() {
+                    "stop" => break,
+                    _ => println!("Invalid Option")
+              }
+            }
+        },
+        // default to client behaviour
+        _ => {
+            let sign_keypair = crypto::sign::gen_keypair();
+            let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
+            let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
+            let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) })), client_id_packet);
+            let mutate_client = Arc::new(Mutex::new(test_client));
+            let copied_client = mutate_client.clone();
+            spawn(move || {
+                loop {
+                    thread::sleep_ms(10);
+                    copied_client.lock().unwrap().run();
+                }
+            });
+            if !args.get_str("end_point").is_empty() {
+                match SocketAddr::from_str(args.get_str("end_point")) {
+                    Ok(addr) => {
+                        println!("initial bootstrapping to {} ", addr);
+                        let _ = mutate_client.lock().unwrap().bootstrap(Some(vec![Endpoint::Tcp(addr)]), None);
+                    }
+                    Err(_) => {}
+                };
+            }else {
+                // if no bootstrap endpoint provided, still need to call the bootstrap method to trigger default behaviour
+                let _ = mutate_client.lock().unwrap().bootstrap(None, None);
+            }
+            loop {
+                command.clear();
+                println!("Input command (stop, put <key> <value>, get <key>)");
+                let _ = io::stdin().read_line(&mut command);
+                let v: Vec<&str> = command.split(' ').collect();
+                match v[0].trim() {
+                    "stop" => break,
+                    "put" => {
+                        let key: Vec<u8> = v[1].trim().bytes().collect();
+                        let value: Vec<u8> = v[2].trim().bytes().collect();
+                        let data = TestData::new(key, value);
+                        println!("putting data {:?} to network with name as {}", data, data.name());
+                        let _ = mutate_client.lock().unwrap().put(data);
+                    },
+                    "get" => {
+                        let key: Vec<u8> = v[1].trim().bytes().collect();
+                        let name = TestData::get_name_from_key(&key);
+                        let key_string = std::string::String::from_utf8(key).unwrap();
+                        println!("getting data having key {} from network using name as {}", key_string, name);
+                        let _ = mutate_client.lock().unwrap().get(201, name);
+                    },
+                    _ => println!("Invalid Option")
+                }
             }
         }
-    }
+    };
 }
