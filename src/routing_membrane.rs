@@ -187,7 +187,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // routing_table is still empty now, but check
                 // should never happen
                 if self.routing_table.size() == 0 {
-                    panic!("No connections to get started.");
+                    // only for a self-relocated node is this a normal situation.
+                    if !self.id.is_self_relocated() {
+                        panic!("No connections to get started.");
+                    }
                 }
             }
         }
@@ -196,6 +199,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             match self.event_input.recv() {
                 Err(_) => (),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    println!("Received new message from {:?}", endpoint);
                     match self.lookup_endpoint(&endpoint) {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
@@ -208,10 +212,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // For a relay connection, parse and forward
                             // FIXME: later limit which messages are sent forward,
                             // limiting our exposure.
+                            println!("New message is from relayed {:?}, named {:?}", endpoint, name);
                             let _ = self.relay_message_received(
                                 &ConnectionName::Relay(name), bytes, endpoint);
                         },
                         Some(ConnectionName::OurBootstrap) => {
+                            println!("New message is from our bootstrap");
                             // FIXME: This is a short-cut and should be improved upon.
                             // note: the name is not actively used by message_received.
                             let placeholder_name = self.own_name.clone();
@@ -219,6 +225,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 &ConnectionName::Routing(placeholder_name), bytes);
                         },
                         None => {
+                            println!("New message came from unknown endpoint {:?}", endpoint);
                             // If we don't know the sender, only accept a connect request
                             let _ = self.handle_unknown_connect_request(&endpoint, bytes);
                         }
@@ -237,6 +244,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     ///
     fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, serialised_msg : Bytes)
         -> RoutingResult {
+
         let message = try!(decode::<RoutingMessage>(&serialised_msg));
         let header = message.message_header;
         let body = message.serialised_body;
@@ -267,6 +275,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.relay_map.register_accepted_connect_request(&connect_request.local_endpoints,
             &connect_request.requester_fob);
         self.connection_manager.connect(connect_request.local_endpoints);
+        self.relay_map.register_accepted_connect_request(&vec![endpoint.clone()],
+            &connect_request.requester_fob);
+        self.connection_manager.connect(vec![endpoint.clone()]);
         // Send the response containing our details.
         // FIXME: Verify that CRUST can send a message back and does not drop it,
         // simply because it is not established a connection yet.
@@ -335,6 +346,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                       its way into this cache.");
                             return; }
         // IMPORTANT: only state-change is here by adding it to the relay_map
+                        println!("Setup relay for node {:?} on {:?}", public_id.name(), endpoint);
                         self.relay_map.add_ip_node(public_id, endpoint);
                     },
                     None => {
@@ -345,7 +357,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // If the order on these events is not logically guaranteed by CRUST,
                         // this branch has to be expanded.
                         println!("Refused unknown connection from {:?}", endpoint);
-                        self.connection_manager.drop_node(endpoint);
+                        // self.connection_manager.drop_node(endpoint);
                     }
                 };
             }
@@ -369,7 +381,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match self.bootstrap_endpoint {
             Some(ref bootstrap_endpoint) => {
                 if &endpoint == bootstrap_endpoint {
-                    println!("Bootstrap connectioin disconnected by relay node.");
+                    println!("Bootstrap connection disconnected by relay node.");
                     self.connection_manager.drop_node(endpoint);
                     drop_bootstrap = true;
                 }
@@ -1067,7 +1079,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn construct_connect_response_msg(&mut self, original_header : &MessageHeader, body: &Bytes, signature: &Signature,
                                       connect_request: &ConnectRequest) -> RoutingMessage {
         println!("{:?} construct_connect_response_msg ", self.own_name);
-        debug_assert!(connect_request.receiver_id == self.own_name, format!("{:?} == {:?} failed", self.own_name, connect_request.receiver_id));
+        // FIXME: connect_request should remove receiver_id,
+        // as we can bootstrap to an unknown endpoint
 
         let header = MessageHeader::new(original_header.message_id(),
             original_header.send_to(), self.our_source_address(None),

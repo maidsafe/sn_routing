@@ -22,6 +22,8 @@ use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
 use std::sync::mpsc;
 use std::boxed::Box;
+use std::thread;
+use std::marker::PhantomData;
 
 use crust;
 use NameType;
@@ -46,8 +48,10 @@ type PortAndProtocol = crust::Port;
 type RoutingResult = Result<(), RoutingError>;
 
 /// DHT node
-pub struct RoutingNode<G : CreatePersonas> {
+pub struct RoutingNode<F, G> where F : Interface + 'static,
+                                   G : CreatePersonas<F> {
     genesis: Box<G>,
+    phantom_data: PhantomData<F>,
     id: types::Id,
     own_name: NameType,
     next_message_id: MessageId,
@@ -55,12 +59,14 @@ pub struct RoutingNode<G : CreatePersonas> {
     bootstrap_node_id: Option<NameType>,
 }
 
-impl<G : CreatePersonas> RoutingNode<G> {
-    pub fn new(genesis: G) -> RoutingNode<G> {
+impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
+                                   G : CreatePersonas<F> {
+    pub fn new(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let id = types::Id::new();
         let own_name = id.get_name();
         RoutingNode { genesis: Box::new(genesis),
+                      phantom_data: PhantomData,
                       id : id,
                       own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),
@@ -77,7 +83,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
     ///
     /// A zero_membrane will not be able to connect to an existing network,
     /// and as a special node, it will be rejected by the network later on.
-    pub fn run_zero_membrane<T: Interface + 'static>(&mut self) {
+    pub fn run_zero_membrane(&mut self) {
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
@@ -91,7 +97,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
-
+        println!("ZERO listening on {:?}", listeners.0.first());
         let original_name = self.id.get_name();
         let self_relocated_name = types::calculate_self_relocated_name(
             &self.id.get_crypto_public_sign_key(),
@@ -99,7 +105,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
             &self.id.get_validation_token());
         self.id.assign_relocated_name(self_relocated_name);
 
-        let mut membrane = RoutingMembrane::<T>::new(
+        let mut membrane = RoutingMembrane::<F>::new(
             cm, event_input, None,
             listeners.0, self.id.clone(),
             self.genesis.create_personas());
@@ -114,7 +120,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
     /// Routing node uses the genesis object to create a new instance of the personas to embed
     /// inside the membrane.
     //  TODO: a (two-way) channel should be passed in to control the membrane.
-    pub fn bootstrap<T: Interface + 'static>(&mut self,
+    pub fn bootstrap(&mut self,
             bootstrap_list: Option<Vec<Endpoint>>,
             beacon_port: Option<u16>) -> Result<(), RoutingError>  {
         let (event_output, event_input) = mpsc::channel();
@@ -130,10 +136,15 @@ impl<G : CreatePersonas> RoutingNode<G> {
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
+
+        // CRUST bootstrap
         let bootstrapped_to = try!(cm.bootstrap(bootstrap_list, beacon_port)
             .map_err(|_|RoutingError::FailedToBootstrap));
         println!("bootstrap {:?}", bootstrapped_to);
         self.bootstrap_endpoint = Some(bootstrapped_to.clone());
+        // cm.connect(vec![bootstrapped_to.clone()]);
+        // allow CRUST to connect
+        thread::sleep_ms(100);
 
         let unrelocated_id = self.id.clone();
         let mut relocated_name : Option<NameType>;
@@ -143,11 +154,12 @@ impl<G : CreatePersonas> RoutingNode<G> {
             listeners.0.clone());
         let serialised_message = try!(encode(&connect_msg));
 
-        ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+        debug_assert!(cm.send(bootstrapped_to.clone(), serialised_message).is_ok());
 
         // FIXME: for now just write out explicitly in this function the bootstrapping loop
         // - fully check match of returned public id with ours
         // - break from loop if unsuccessful; no response; retry
+        println!("Waiting for responses from network");
         loop {
             match event_input.recv() {
                 Err(_) => (),
@@ -157,13 +169,16 @@ impl<G : CreatePersonas> RoutingNode<G> {
                         MessageTypeTag::ConnectResponse => {
                             // for now, ignore the actual response message
                             // bootstrap node responded, try to put our id to the network
+                            println!("Received connect response");
                             let put_public_id_msg
                                 = self.construct_put_public_id_msg(
                                 &types::PublicId::new(&unrelocated_id));
                             let serialised_message = try!(encode(&put_public_id_msg));
-                            ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+                            debug_assert!(cm.send(bootstrapped_to.clone(), serialised_message)
+                                .is_ok());
                         },
                         MessageTypeTag::PutPublicIdResponse => {
+                            println!("Received PutPublicId response");
                             let put_public_id_response =
                                 try!(decode::<PutPublicIdResponse>(&message.serialised_body));
                             relocated_name = Some(put_public_id_response.public_id.name());
@@ -172,7 +187,9 @@ impl<G : CreatePersonas> RoutingNode<G> {
                                 return Err(RoutingError::FailedToBootstrap); }
                             break;
                         },
-                        _ => {}
+                        _ => {
+                            println!("Received unexpected message");
+                        }
                     }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
@@ -187,7 +204,7 @@ impl<G : CreatePersonas> RoutingNode<G> {
         match relocated_name {
             Some(relocated_name) => {
                 self.id.assign_relocated_name(relocated_name);
-                let mut membrane = RoutingMembrane::<T>::new(
+                let mut membrane = RoutingMembrane::<F>::new(
                     cm, event_input, Some(bootstrapped_to.clone()),
                     listeners.0, unrelocated_id,
                     self.genesis.create_personas());
