@@ -61,7 +61,7 @@ correct name calculation of pure Id
 - [x] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
 - [x] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
 
-## [0.1.70] - activate Sentinel and activate AccountTransfer
+## [0.1.70] - Activate AccountTransfer
 
 - [ ] [MAID-1068](https://maidsafe.atlassian.net/browse/MAID-1068) Refresh orderable message
 - [ ] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
