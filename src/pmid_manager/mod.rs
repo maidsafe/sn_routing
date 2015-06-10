@@ -96,6 +96,7 @@ mod test {
   use super::{PmidManager};
   use maidsafe_types::*;
   use routing::types::*;
+  use super::database::{PmidManagerAccount, PmidManagerAccountWrapper};
 
   #[test]
   fn handle_put() {
@@ -118,4 +119,14 @@ mod test {
       MessageAction::Reply(_) => panic!("Unexpected"),
     }
   }
+
+    #[test]
+    fn handle_account_transfer() {
+        let mut pmid_manager = PmidManager::new();
+        let name : routing::NameType = routing::test_utils::Random::generate_random();
+        let account_wrapper = PmidManagerAccountWrapper::new(name.clone(), PmidManagerAccount::new());
+        let payload = Payload::new(PayloadTypeTag::PmidManagerAccountTransfer, &account_wrapper);
+        pmid_manager.handle_account_transfer(payload);
+        assert_eq!(pmid_manager.db_.exist(&name), true);
+    }
 }
