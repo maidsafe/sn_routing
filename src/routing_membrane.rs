@@ -178,7 +178,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // First send FindGroup request
         match self.bootstrap_endpoint.clone() {
             Some(ref bootstrap_endpoint) => {
-                let find_group_msg = self.construct_find_group_msg();
+                let find_group_msg = self.construct_find_group_msg(true);
                 // FIXME: act on error to send; don't over clone bootstrap_endpoint
                 ignore(encode(&find_group_msg).map(|msg|self.connection_manager
                     .send(bootstrap_endpoint.clone(), msg)));
@@ -492,7 +492,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // handle relay request/response
         if header.destination.dest == self.own_name {
-            // FIXME: source and destination addresses need a correction
             match header.destination.relay_to {
                 Some(relay) => {
                     self.send_out_as_relay(&relay, serialised_msg);
@@ -641,7 +640,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn our_source_address(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
+    fn our_source_address_for_bootstrap(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
         // first check whether we are safe to drop our bootstrap connection
         let mut relayed_for : Option<NameType> = None;
         match self.bootstrap_endpoint.clone() {
@@ -659,16 +658,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         types::SourceAddress{ from_node: self.own_name.clone(),
                               from_group: from_group,
-                              // note:
-                              // if a message is sent over a relay connection,
+                              // note: if a message is sent over a relay connection,
                               // the relay node will fill-in reply_to field with its name
-                              // if there is no reply_to field, relayed_for is ignored;
-                              // so a message can be sent out over both routing table and
-                              // a bootstrap connection and both should find their way back
-                              // (provided the bootstrap connection is not destroyed since;
-                              // but then then routing table should amply have it covered.)
                               reply_to: None,
                               relayed_for: relayed_for
+        }
+    }
+
+    fn our_source_address(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
+        types::SourceAddress{ from_node: self.own_name.clone(),
+                              from_group: from_group,
+                              reply_to: None,
+                              relayed_for: None
         }
     }
 
@@ -1132,14 +1133,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             &self.id.get_crypto_secret_sign_key())
     }
 
-    fn construct_find_group_msg(&mut self) -> RoutingMessage {
+    fn construct_find_group_msg(&mut self, for_bootstrap_connection: bool) -> RoutingMessage {
         let header = MessageHeader::new(
             self.get_next_message_id(),
             types::DestinationAddress {
                  dest:     self.own_name.clone(),
                  relay_to: None
             },
-            self.our_source_address(None),
+            match for_bootstrap_connection {
+                true => self.our_source_address_for_bootstrap(None),
+                false => self.our_source_address(None),
+            },
             Authority::ManagedNode);
 
         RoutingMessage::new(MessageTypeTag::FindGroup, header,
