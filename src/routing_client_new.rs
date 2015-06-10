@@ -15,12 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor;
+
 use rand;
-use rustc_serialize;
-use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
-use sodiumoxide::crypto;
 use std::io::Error as IoError;
 use std::sync::{Mutex, Arc, mpsc};
 use std::sync::mpsc::Receiver;
@@ -33,11 +30,8 @@ use name_type::NameType;
 use sendable::Sendable;
 use types;
 use error::{RoutingError, ResponseError};
-use cbor::{Decoder, Encoder};
 use messages::connect_request::ConnectRequest;
 use messages::connect_response::ConnectResponse;
-use messages::bootstrap_id_request::BootstrapIdRequest;
-use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
 use messages::get_data::GetData;
@@ -117,7 +111,8 @@ impl<F> RoutingClient<F> where F: Interface {
         );
 
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
-        Ok(message_id)    }
+        Ok(message_id)
+    }
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put<T>(&mut self, content: T) -> Result<MessageId, IoError> where T: Sendable {
@@ -126,7 +121,7 @@ impl<F> RoutingClient<F> where F: Interface {
             messages::MessageTypeTag::PutData,
             MessageHeader::new(
                 message_id,
-                types::DestinationAddress {dest: self.id_packet.get_name(), relay_to: None },
+                types::DestinationAddress {dest: self.public_id.name(), relay_to: None },
                 types::SourceAddress {
                     from_node: self.bootstrap_address.0.clone().unwrap(),
                     from_group: None,
@@ -219,9 +214,10 @@ impl<F> RoutingClient<F> where F: Interface {
                     MessageHeader::new(
                         // FIXME: after MAID-1126; update these relay fields
                         self.get_next_message_id(),
-                        types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
+                        types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]),
+                            relay_to: None },
                         types::SourceAddress{ from_node: self.public_id.name().clone(),
-                            from_group: None, reply_to: None, relayed_for: self.public_id.name() },
+                            from_group: None, reply_to: None, relayed_for: Some(self.public_id.name()) },
                         Authority::Client),
                     ConnectRequest {
                         local_endpoints: vec![],
@@ -237,14 +233,14 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     fn handle_connect_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes) {
-        let bootstrap_id_response_msg = decode::<BootstrapIdResponse>(&bytes);
-        if bootstrap_id_response_msg.is_err() {  // TODO handle non routing connection here
-            return;
-        }
-        let bootstrap_id_response_msg = bootstrap_id_response_msg.unwrap();
-        assert!(self.bootstrap_address.0.is_none());
-        assert_eq!(self.bootstrap_address.1, Some(peer_endpoint.clone()));
-        self.bootstrap_address.0 = Some(bootstrap_id_response_msg.sender_id);
+        match decode::<ConnectResponse>(&bytes) {
+            Err(_) => return,
+            Ok(connect_response_msg) => {
+                assert!(self.bootstrap_address.0.is_none());
+                assert_eq!(self.bootstrap_address.1, Some(peer_endpoint.clone()));
+                self.bootstrap_address.0 = Some(connect_response_msg.receiver_fob.name());
+            }
+        };
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Vec<u8>) {

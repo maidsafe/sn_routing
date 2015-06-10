@@ -51,7 +51,7 @@ use sodiumoxide::crypto;
 
 use crust::Endpoint;
 use routing::node_interface::*;
-use routing::routing_client::{RoutingClient};
+use routing::routing_client::{ClientIdPacket, RoutingClient};
 use routing::routing_node::{RoutingNode};
 use routing::sendable::Sendable;
 use routing::types;
@@ -345,10 +345,10 @@ fn main() {
             }
         }
     } else {
-        // let sign_keypair = crypto::sign::gen_keypair();
-        // let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
-        // let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
-        let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) })), types::Id::new());
+        let sign_keypair = crypto::sign::gen_keypair();
+        let encrypt_keypair = crypto::asymmetricbox::gen_keypair();
+        let client_id_packet = ClientIdPacket::new((sign_keypair.0, encrypt_keypair.0), (sign_keypair.1, encrypt_keypair.1));
+        let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) })), client_id_packet);
         let mutate_client = Arc::new(Mutex::new(test_client));
         let copied_client = mutate_client.clone();
         spawn(move || {
