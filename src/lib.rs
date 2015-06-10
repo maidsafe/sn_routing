@@ -72,6 +72,7 @@ mod utils;
 pub mod client_interface;
 pub mod node_interface;
 pub mod routing_client;
+pub mod routing_client_new;
 pub mod routing_node;
 pub mod routing_node_new;
 pub mod routing_membrane;
