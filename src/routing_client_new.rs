@@ -34,6 +34,8 @@ use sendable::Sendable;
 use types;
 use error::{RoutingError, ResponseError};
 use cbor::{Decoder, Encoder};
+use messages::connect_request::ConnectRequest;
+use messages::connect_response::ConnectResponse;
 use messages::bootstrap_id_request::BootstrapIdRequest;
 use messages::bootstrap_id_response::BootstrapIdResponse;
 use messages::get_data_response::GetDataResponse;
@@ -42,7 +44,7 @@ use messages::get_data::GetData;
 use name_type::{NAME_TYPE_LEN};
 use message_header::MessageHeader;
 use messages::{RoutingMessage, MessageTypeTag};
-use types::MessageId;
+use types::{MessageId, Id, PublicId};
 use authority::Authority;
 use utils::*;
 
@@ -56,113 +58,12 @@ pub enum CryptoError {
     Unknown
 }
 
-#[derive(Clone)]
-pub struct ClientIdPacket {
-    public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-    secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
-}
-
-impl ClientIdPacket {
-    pub fn new(public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-               secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey)) -> ClientIdPacket {
-        ClientIdPacket {
-            public_keys: public_keys,
-            secret_keys: secret_keys
-        }
-    }
-
-    //FIXME(ben 2015-04-22) :
-    //  pub fn get_id(&self) -> [u8; NameType::NAME_TYPE_LEN] {
-    //  gives a rustc compiler error; follow up and report bug
-    pub fn get_id(&self) -> [u8; 64usize] {
-
-      let sign_arr = &(self.public_keys.0).0;
-      let asym_arr = &(self.public_keys.1).0;
-
-      let mut arr_combined = [0u8; 64 * 2];
-
-      for i in 0..sign_arr.len() {
-         arr_combined[i] = sign_arr[i];
-      }
-      for i in 0..asym_arr.len() {
-         arr_combined[64 + i] = asym_arr[i];
-      }
-
-      let digest = crypto::hash::sha512::hash(&arr_combined);
-      digest.0
-    }
-
-    pub fn get_name(&self) -> NameType {
-      NameType::new(self.get_id())
-    }
-
-    pub fn get_public_keys(&self) -> &(crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey){
-        &self.public_keys
-    }
-
-    pub fn get_crypto_secret_sign_key(&self) -> crypto::sign::SecretKey {
-      self.secret_keys.0.clone()
-    }
-
-    pub fn sign(&self, data : &[u8]) -> crypto::sign::Signature {
-        return crypto::sign::sign_detached(&data, &self.secret_keys.0)
-    }
-
-    pub fn encrypt(&self, data : &[u8], to : &crypto::asymmetricbox::PublicKey) -> (Vec<u8>, crypto::asymmetricbox::Nonce) {
-        let nonce = crypto::asymmetricbox::gen_nonce();
-        let encrypted = crypto::asymmetricbox::seal(data, &nonce, &to, &self.secret_keys.1);
-        return (encrypted, nonce);
-    }
-
-    pub fn decrypt(&self, data : &[u8], nonce : &crypto::asymmetricbox::Nonce,
-                   from : &crypto::asymmetricbox::PublicKey) -> Result<Vec<u8>, CryptoError> {
-        return crypto::asymmetricbox::open(&data, &nonce, &from, &self.secret_keys.1).ok_or(CryptoError::Unknown);
-    }
-
-}
-
-impl Encodable for ClientIdPacket {
-    fn encode<E: rustc_serialize::Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let (crypto::sign::PublicKey(pub_sign_vec), crypto::asymmetricbox::PublicKey(pub_asym_vec)) = self.public_keys;
-        let (crypto::sign::SecretKey(sec_sign_vec), crypto::asymmetricbox::SecretKey(sec_asym_vec)) = self.secret_keys;
-
-        cbor::CborTagEncode::new(5483_001, &(
-            pub_sign_vec.as_ref(),
-            pub_asym_vec.as_ref(),
-            sec_sign_vec.as_ref(),
-            sec_asym_vec.as_ref())).encode(e)
-    }
-}
-
-impl Decodable for ClientIdPacket {
-    fn decode<D: rustc_serialize::Decoder>(d: &mut D)-> Result<ClientIdPacket, D::Error> {
-        try!(d.read_u64());
-        let (pub_sign_vec, pub_asym_vec, sec_sign_vec, sec_asym_vec) : (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) = try!(Decodable::decode(d));
-
-        let pub_sign_arr = container_of_u8_to_array!(pub_sign_vec, crypto::sign::PUBLICKEYBYTES);
-        let pub_asym_arr =
-            container_of_u8_to_array!(pub_asym_vec, crypto::asymmetricbox::PUBLICKEYBYTES);
-        let sec_sign_arr = container_of_u8_to_array!(sec_sign_vec, crypto::sign::SECRETKEYBYTES);
-        let sec_asym_arr =
-            container_of_u8_to_array!(sec_asym_vec, crypto::asymmetricbox::SECRETKEYBYTES);
-
-        if pub_sign_arr.is_none() || pub_asym_arr.is_none() || sec_sign_arr.is_none() || sec_asym_arr.is_none() {
-            return Err(d.error("Bad Maid size"));
-        }
-
-        let pub_keys = (crypto::sign::PublicKey(pub_sign_arr.unwrap()),
-                        crypto::asymmetricbox::PublicKey(pub_asym_arr.unwrap()));
-        let sec_keys = (crypto::sign::SecretKey(sec_sign_arr.unwrap()),
-                        crypto::asymmetricbox::SecretKey(sec_asym_arr.unwrap()));
-        Ok(ClientIdPacket{ public_keys: pub_keys, secret_keys: sec_keys })
-    }
-}
-
 pub struct RoutingClient<F: Interface> {
     interface: Arc<Mutex<F>>,
     event_input: Receiver<Event>,
     connection_manager: ConnectionManager,
-    id_packet: ClientIdPacket,
+    id: Id,
+    public_id: PublicId,
     bootstrap_address: (Option<NameType>, Option<Endpoint>),
     next_message_id: MessageId
 }
@@ -175,14 +76,15 @@ impl<F> Drop for RoutingClient<F> where F: Interface {
 }
 
 impl<F> RoutingClient<F> where F: Interface {
-    pub fn new(my_interface: Arc<Mutex<F>>, id_packet: ClientIdPacket) -> RoutingClient<F> {
+    pub fn new(my_interface: Arc<Mutex<F>>, id: Id) -> RoutingClient<F> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (tx, rx) = mpsc::channel::<Event>();
         RoutingClient {
             interface: my_interface,
             event_input: rx,
             connection_manager: crust::ConnectionManager::new(tx),
-            id_packet: id_packet.clone(),
+            public_id: PublicId::new(&id),
+            id: id,
             bootstrap_address: (None, None),
             next_message_id: rand::random::<MessageId>()
         }
@@ -194,7 +96,7 @@ impl<F> RoutingClient<F> where F: Interface {
             from_node: self.bootstrap_address.0.clone().unwrap(),
             from_group: None,
             reply_to: None,
-            relayed_for: Some(self.id_packet.get_name())
+            relayed_for: Some(self.public_id.name())
         };
 
         let message_id = self.get_next_message_id();
@@ -211,7 +113,7 @@ impl<F> RoutingClient<F> where F: Interface {
             ),
             GetData {requester: requester.clone(), name_and_type_id: types::NameAndTypeId {
                 name: name.clone(), type_id: type_id }},
-            &self.id_packet.secret_keys.0
+            &self.id.get_crypto_secret_sign_key()
         );
 
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
@@ -229,12 +131,12 @@ impl<F> RoutingClient<F> where F: Interface {
                     from_node: self.bootstrap_address.0.clone().unwrap(),
                     from_group: None,
                     reply_to: None,
-                    relayed_for: Some(self.id_packet.get_name()),
+                    relayed_for: Some(self.public_id.name()),
                 },
                 Authority::Client
             ),
             PutData {name: content.name(), data: content.serialised_contents()},
-            &self.id_packet.secret_keys.0
+            &self.id.get_crypto_secret_sign_key()
         );
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
         Ok(message_id)
@@ -249,21 +151,18 @@ impl<F> RoutingClient<F> where F: Interface {
                                 from_node: self.bootstrap_address.0.clone().unwrap(),
                                 from_group: None,
                                 reply_to: None,
-                                relayed_for: Some(self.id_packet.get_name()),
+                                relayed_for: Some(self.public_id.name()),
                             },
                 Authority::Unknown),
             PutData{ name: content.name(), data: content.serialised_contents() },
-            &self.id_packet.secret_keys.0);
+            &self.id.get_crypto_secret_sign_key());
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
     }
 
     pub fn run(&mut self) {
-        let event = self.event_input.try_recv();
-
-        if event.is_err() { return; }
-
-        match event.unwrap() {
-            crust::connection_manager::Event::NewMessage(endpoint, bytes) => {
+        match self.event_input.try_recv() {
+            Err(_) => (),
+            Ok(crust::connection_manager::Event::NewMessage(endpoint, bytes)) => {
                 // The received id is Endpoint(i.e. ip + socket) which is no use to upper layer
                 // println!("received a new message from {}",
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
@@ -273,50 +172,71 @@ impl<F> RoutingClient<F> where F: Interface {
                 };
                 // println!("received a {:?} from {}", routing_msg.message_type,
                 //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
-                if self.bootstrap_address.1 == Some(endpoint.clone()) {
-                    if routing_msg.message_type == messages::MessageTypeTag::BootstrapIdResponse {
-                        self.handle_bootstrap_id_response(endpoint, routing_msg.serialised_body);
-                    } else if routing_msg.message_header.destination.relay_to.is_some() &&
-                              routing_msg.message_header.destination.relay_to.clone().unwrap() == self.id_packet.get_name() {
-                        match routing_msg.message_type {
-                            messages::MessageTypeTag::GetDataResponse => {
-                                self.handle_get_data_response(routing_msg.message_header, routing_msg.serialised_body);
+                match self.bootstrap_address.1.clone() {
+                    Some(ref bootstrap_endpoint) => {
+                        // only accept messages from our bootstrap endpoint
+                        if bootstrap_endpoint == &endpoint {
+                            match routing_msg.message_type {
+                                MessageTypeTag::ConnectResponse => {
+                                    self.handle_connect_response(endpoint, routing_msg.serialised_body);
+                                },
+                                MessageTypeTag::GetDataResponse => {
+                                    self.handle_get_data_response(routing_msg.message_header, routing_msg.serialised_body);
+                                },
+                                MessageTypeTag::PutDataResponse => {
+                                    unimplemented!();
+                                },
+                                _ => {}
                             }
-                            _ => unimplemented!(),
                         }
-                    }
+                    },
+                    None => { println!("Client is not connected to a node."); }
                 }
             },
             _ => { // as a client, shall not handle any connection related change
                    // TODO : try to re-bootstrap when lost the connection to the bootstrap node ?
-                 }
-        }
+            }
+        };
     }
 
+    /// Use bootstrap to attempt connecting the client to previously known nodes,
+    /// or use CRUST self-discovery options.
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
                      beacon_port: Option<u16>) -> Result<(), RoutingError> {
          let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
                                     .map_err(|_|RoutingError::FailedToBootstrap));
          self.bootstrap_address.1 = Some(bootstrapped_to);
          // starts swapping ID with the bootstrap peer
-         self.send_bootstrap_id_request();
+         self.send_bootstrap_connect_request();
          Ok(())
     }
 
-    fn send_bootstrap_id_request(&mut self) {
-        let message = RoutingMessage::new(
-            MessageTypeTag::BootstrapIdRequest,
-            MessageHeader::new(
-                self.get_next_message_id(),
-                types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), relay_to: None },
-                types::SourceAddress{ from_node: self.id_packet.get_name().clone(), from_group: None, reply_to: None, relayed_for: None },
-                Authority::Client),
-            BootstrapIdRequest { sender_id: self.id_packet.get_name().clone() },
-            &self.id_packet.get_crypto_secret_sign_key());
-        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+    fn send_bootstrap_connect_request(&mut self) {
+        match self.bootstrap_address.clone() {
+            (Some(ref name), Some(ref endpoint)) => {
+                let message = RoutingMessage::new(
+                    MessageTypeTag::ConnectRequest,
+                    MessageHeader::new(
+                        // FIXME: after MAID-1126; update these relay fields
+                        self.get_next_message_id(),
+                        types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]), reply_to: None },
+                        types::SourceAddress{ from_node: self.public_id.name().clone(),
+                            from_group: None, reply_to: None, relayed_for: self.public_id.name() },
+                        Authority::Client),
+                    ConnectRequest {
+                        local_endpoints: vec![],
+                        external_endpoints: vec![],
+                        requester_id: self.public_id.name(),
+                        receiver_id: name.clone(),
+                        requester_fob: self.public_id.clone() },
+                    &self.id.get_crypto_secret_sign_key());
+                let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+            },
+            _ => {}
+        }
     }
 
-    fn handle_bootstrap_id_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes) {
+    fn handle_connect_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes) {
         let bootstrap_id_response_msg = decode::<BootstrapIdResponse>(&bytes);
         if bootstrap_id_response_msg.is_err() {  // TODO handle non routing connection here
             return;
