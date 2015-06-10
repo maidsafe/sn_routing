@@ -79,6 +79,11 @@ impl PmidManager {
     MethodCall::SendOn { destination: name }
   }
 
+  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
+      let pmidmanager_account_wrapper : PmidManagerAccountWrapper = payload.get_data();
+      self.db_.handle_account_transfer(&pmidmanager_account_wrapper);
+  }
+
   pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::MethodCall> {
     self.db_.retrieve_all_and_reset(close_group)
   }
