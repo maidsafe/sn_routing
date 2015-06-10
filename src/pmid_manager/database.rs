@@ -225,7 +225,7 @@ mod test {
   extern crate maidsafe_types;
   extern crate rand;
   extern crate routing;
-  use super::{PmidManagerDatabase, PmidManagerAccount};
+  use super::{PmidManagerDatabase, PmidManagerAccount, PmidManagerAccountWrapper};
 
     #[test]
     fn exist() {
@@ -250,6 +250,20 @@ mod test {
     //     assert_eq!(db.put_data(&name, 1), false);
     //     assert_eq!(db.exist(&name), true);
     // }
+
+    #[test]
+    fn handle_account_transfer() {
+        let mut db = PmidManagerDatabase::new();
+        let name = routing::test_utils::Random::generate_random();
+        assert_eq!(db.put_data(&name, 1024), true);
+        assert_eq!(db.exist(&name), true);
+
+        let pmidmanager_account_wrapper = PmidManagerAccountWrapper::new(name.clone(), PmidManagerAccount::new());
+        db.handle_account_transfer(&pmidmanager_account_wrapper);
+        assert_eq!(db.storage[&name].get_offered_space(), 1073741824);
+        assert_eq!(db.storage[&name].get_lost_total_size(), 0);
+        assert_eq!(db.storage[&name].get_stored_total_size(), 0);
+    }
 
     #[test]
     fn pmid_manager_account_serialisation() {
