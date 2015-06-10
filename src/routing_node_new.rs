@@ -22,6 +22,7 @@ use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
 use std::sync::mpsc;
 use std::boxed::Box;
+use std::thread;
 use std::marker::PhantomData;
 
 use crust;
@@ -135,10 +136,15 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
+
+        // CRUST bootstrap
         let bootstrapped_to = try!(cm.bootstrap(bootstrap_list, beacon_port)
             .map_err(|_|RoutingError::FailedToBootstrap));
         println!("bootstrap {:?}", bootstrapped_to);
         self.bootstrap_endpoint = Some(bootstrapped_to.clone());
+        // cm.connect(vec![bootstrapped_to.clone()]);
+        // allow CRUST to connect
+        thread::sleep_ms(100);
 
         let unrelocated_id = self.id.clone();
         let mut relocated_name : Option<NameType>;
@@ -148,11 +154,12 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             listeners.0.clone());
         let serialised_message = try!(encode(&connect_msg));
 
-        ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+        debug_assert!(cm.send(bootstrapped_to.clone(), serialised_message).is_ok());
 
         // FIXME: for now just write out explicitly in this function the bootstrapping loop
         // - fully check match of returned public id with ours
         // - break from loop if unsuccessful; no response; retry
+        println!("Waiting for responses from network");
         loop {
             match event_input.recv() {
                 Err(_) => (),
@@ -162,13 +169,16 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                         MessageTypeTag::ConnectResponse => {
                             // for now, ignore the actual response message
                             // bootstrap node responded, try to put our id to the network
+                            println!("Received connect response");
                             let put_public_id_msg
                                 = self.construct_put_public_id_msg(
                                 &types::PublicId::new(&unrelocated_id));
                             let serialised_message = try!(encode(&put_public_id_msg));
-                            ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+                            debug_assert!(cm.send(bootstrapped_to.clone(), serialised_message)
+                                .is_ok());
                         },
                         MessageTypeTag::PutPublicIdResponse => {
+                            println!("Received PutPublicId response");
                             let put_public_id_response =
                                 try!(decode::<PutPublicIdResponse>(&message.serialised_body));
                             relocated_name = Some(put_public_id_response.public_id.name());
@@ -177,7 +187,9 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                 return Err(RoutingError::FailedToBootstrap); }
                             break;
                         },
-                        _ => {}
+                        _ => {
+                            println!("Received unexpected message");
+                        }
                     }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
