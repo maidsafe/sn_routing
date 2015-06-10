@@ -56,10 +56,10 @@ correct name calculation of pure Id
 - [x] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
   - [x] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
   - [x] [MAID-1057](https://maidsafe.atlassian.net/browse/MAID-1057) make event loop in routing_node internal
-- [ ] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
+- [x] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
 - [x] [MAID-1070](https://maidsafe.atlassian.net/browse/MAID-1070) drop_bootstrap in coordination with CRUST
 - [x] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
-- [ ] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
+- [x] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
 - [ ] [MAID-1072](https://maidsafe.atlassian.net/browse/MAID-1072) Debug restructured routing core
 
 ## [0.1.70] - activate Sentinel and activate AccountTransfer
