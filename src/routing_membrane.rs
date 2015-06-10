@@ -635,8 +635,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
         let routing_msg = self.construct_connect_request_msg(&peer_id);
         let serialised_message = try!(encode(&routing_msg));
-        self.send_swarm_or_parallel(peer_id, &serialised_message);
-        Ok(())
+        match self.routing_table.size() > 0 {
+            true => {
+                self.send_swarm_or_parallel(peer_id, &serialised_message);
+                Ok(()) },
+            false => match self.bootstrap_endpoint.clone() {
+                Some(ref bootstrap_endpoint) => {
+                    debug_assert!(self.connection_manager.send(bootstrap_endpoint.clone(),
+                    serialised_message).is_ok());
+                    Ok(()) },
+                None => Err(RoutingError::FailedToBootstrap)
+            }
+        }
     }
 
     // -----Address and various functions----------------------------------------
@@ -833,6 +843,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
                     let serialised_message = try!(encode(&routing_msg));
 
+                    // intercept if we can relay it directly
+                    match (routing_msg.message_header.destination.dest.clone(),
+                        routing_msg.message_header.destination.relay_to.clone()) {
+                        (dest, Some(relay)) => {
+                            // if we should directly respond to this message, do so
+                            if dest == self.own_name
+                                && self.relay_map.contains_relay_for(&relay) {
+                                println!("Sending ConnectResponse directly to relay {:?}", relay);
+                                self.send_out_as_relay(&relay, serialised_message);
+                                return Ok(());
+                            }
+                        },
+                        _ => {}
+                    };
+
                     self.send_swarm_or_parallel(&routing_msg.message_header.destination.dest,
                         &serialised_message);
                 }
@@ -967,13 +992,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         let find_group_response = try!(decode::<FindGroupResponse>(&body));
-        println!("Received FindGroupResonse");
+        println!("Received FindGroupResponse from node {:?}", original_header.source.from_node);
+
         for peer in find_group_response.group {
             if self.routing_table.check_node(&peer.name()) {
+                println!("Sending ConnectRequest to {:?}", peer.name());
                 ignore(self.send_connect_request_msg(&peer.name()));
             }
         }
-
         Ok(())
     }
 
