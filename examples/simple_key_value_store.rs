@@ -386,7 +386,7 @@ fn main() {
             }
             loop {
                 command.clear();
-                println!("Input command (stop, put <key> <value>, get <key>)");
+                println!("Enter command (stop | put <key> <value> | get <key>)>");
                 let _ = io::stdin().read_line(&mut command);
                 let v: Vec<&str> = command.split(' ').collect();
                 match v[0].trim() {
@@ -394,15 +394,17 @@ fn main() {
                     "put" => {
                         let key: Vec<u8> = v[1].trim().bytes().collect();
                         let value: Vec<u8> = v[2].trim().bytes().collect();
-                        let data = TestData::new(key, value);
-                        println!("putting data {:?} to network with name as {}", data, data.name());
+                        let data = TestData::new(key.clone(), value.clone());
+                        let key_string = std::string::String::from_utf8(key).unwrap();
+                        let value_string = std::string::String::from_utf8(value).unwrap();
+                        println!("Putting {} to network under key {}", value_string, key_string);
                         let _ = mutate_client.lock().unwrap().put(data);
                     },
                     "get" => {
                         let key: Vec<u8> = v[1].trim().bytes().collect();
                         let name = TestData::get_name_from_key(&key);
                         let key_string = std::string::String::from_utf8(key).unwrap();
-                        println!("getting data having key {} from network using name as {}", key_string, name);
+                        println!("Getting value for key {} from network.", key_string);
                         let _ = mutate_client.lock().unwrap().get(201, name);
                     },
                     _ => println!("Invalid Option")
