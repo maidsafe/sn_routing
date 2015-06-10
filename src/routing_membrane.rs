@@ -269,16 +269,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // Try to connect to the peer.
         // when CRUST succeeds at establishing a connection,
         // we use this register to retrieve the PublicId
-        self.relay_map.register_accepted_connect_request(&connect_request.external_endpoints,
-            &connect_request.requester_fob);
-        self.connection_manager.connect(connect_request.external_endpoints);
-        self.relay_map.register_accepted_connect_request(&connect_request.local_endpoints,
-            &connect_request.requester_fob);
-        self.connection_manager.connect(connect_request.local_endpoints);
-        self.relay_map.register_accepted_connect_request(&vec![endpoint.clone()],
-            &connect_request.requester_fob);
+        // FIXME: remove the 'our_endpoints' from connect_request
+        // self.relay_map.register_accepted_connect_request(&connect_request.external_endpoints,
+        //     &connect_request.requester_fob);
+        // self.connection_manager.connect(connect_request.external_endpoints);
+        // self.relay_map.register_accepted_connect_request(&connect_request.local_endpoints,
+        //     &connect_request.requester_fob);
+        // self.connection_manager.connect(connect_request.local_endpoints);
+        // println!("registering accepting endpoint {:?}", endpoint);
+        // self.relay_map.register_accepted_connect_request(&vec![endpoint.clone()],
+        //     &connect_request.requester_fob);
+        println!("Added endpoint {:?} to relay map, named {:?}", endpoint, connect_request.requester_fob.name());
         self.connection_manager.connect(vec![endpoint.clone()]);
-        // Send the response containing our details.
+        // FIXME: as a patch directly add this to the relay map
+        // Send the response containing our details.  Possibly use a ConnectSuccess message
+        // to confirm.
+        self.relay_map.add_ip_node(connect_request.requester_fob, endpoint.clone());
+        debug_assert!(self.relay_map.contains_endpoint(&endpoint));
         // FIXME: Verify that CRUST can send a message back and does not drop it,
         // simply because it is not established a connection yet.
         debug_assert!(self.connection_manager.send(endpoint.clone(), serialised_message)
@@ -347,7 +354,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             return; }
         // IMPORTANT: only state-change is here by adding it to the relay_map
                         println!("Setup relay for node {:?} on {:?}", public_id.name(), endpoint);
-                        self.relay_map.add_ip_node(public_id, endpoint);
+                        self.relay_map.add_ip_node(public_id.clone(), endpoint.clone());
+                        debug_assert!(self.relay_map.contains_relay_for(&public_id.name()));
+                        debug_assert!(self.relay_map.contains_endpoint(&endpoint));
                     },
                     None => {
                         // Note: we assume that the connect_request precedes
@@ -356,8 +365,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // As such, for a membrane we do not accept an unknown endpoint.
                         // If the order on these events is not logically guaranteed by CRUST,
                         // this branch has to be expanded.
-                        println!("Refused unknown connection from {:?}", endpoint);
+                        println!("Unknown new connection from {:?}", endpoint);
                         // self.connection_manager.drop_node(endpoint);
+                        // FIXME: if we don't get a connect_request on this connection
+                        // before this new_connection expires from a LRU buffer, drop it.
                     }
                 };
             }

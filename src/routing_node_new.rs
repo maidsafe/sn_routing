@@ -140,9 +140,10 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         // CRUST bootstrap
         let bootstrapped_to = try!(cm.bootstrap(bootstrap_list, beacon_port)
             .map_err(|_|RoutingError::FailedToBootstrap));
-        println!("bootstrap {:?}", bootstrapped_to);
+        println!("BOOTSTRAP {:?}", bootstrapped_to);
+        println!("NODE listening on {:?}", listeners.0.first());
         self.bootstrap_endpoint = Some(bootstrapped_to.clone());
-        // cm.connect(vec![bootstrapped_to.clone()]);
+        cm.connect(vec![bootstrapped_to.clone()]);
         // allow CRUST to connect
         thread::sleep_ms(100);
 
