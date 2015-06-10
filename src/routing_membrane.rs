@@ -195,6 +195,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             }
         }
 
+        println!("Started Membrane loop");
         loop {
             match self.event_input.recv() {
                 Err(_) => (),
@@ -634,8 +635,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
         let routing_msg = self.construct_connect_request_msg(&peer_id);
         let serialised_message = try!(encode(&routing_msg));
-        self.send_swarm_or_parallel(peer_id, &serialised_message);
-        Ok(())
+        match self.routing_table.size() > 0 {
+            true => {
+                self.send_swarm_or_parallel(peer_id, &serialised_message);
+                Ok(()) },
+            false => match self.bootstrap_endpoint.clone() {
+                Some(ref bootstrap_endpoint) => {
+                    debug_assert!(self.connection_manager.send(bootstrap_endpoint.clone(),
+                    serialised_message).is_ok());
+                    Ok(()) },
+                None => Err(RoutingError::FailedToBootstrap)
+            }
+        }
     }
 
     // -----Address and various functions----------------------------------------
@@ -653,30 +664,32 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn our_source_address_for_bootstrap(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
-        // first check whether we are safe to drop our bootstrap connection
-        let mut relayed_for : Option<NameType> = None;
-        match self.bootstrap_endpoint.clone() {
-            Some(endpoint) => {
-                // this threshold is set arbitrarily
-                if self.routing_table.size() > 5 {
-                    self.connection_manager.drop_node(endpoint);
-                    self.bootstrap_endpoint = None;
-                } else {
-                    relayed_for = Some(self.own_name.clone());
-                }
-            },
-            None => {}
-        };
-
-        types::SourceAddress{ from_node: self.own_name.clone(),
-                              from_group: from_group,
-                              // note: if a message is sent over a relay connection,
-                              // the relay node will fill-in reply_to field with its name
-                              reply_to: None,
-                              relayed_for: relayed_for
-        }
-    }
+    // FIXME: this function can be dropped, the relay_node will fill in the relayed_for name as
+    // he knows us by our unrelocated name
+    // fn our_source_address_for_bootstrap(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
+    //     // first check whether we are safe to drop our bootstrap connection
+    //     let mut relayed_for : Option<NameType> = None;
+    //     match self.bootstrap_endpoint.clone() {
+    //         Some(endpoint) => {
+    //             // this threshold is set arbitrarily
+    //             if self.routing_table.size() > 5 {
+    //                 self.connection_manager.drop_node(endpoint);
+    //                 self.bootstrap_endpoint = None;
+    //             } else {
+    //                 relayed_for = Some(self.own_name.clone());
+    //             }
+    //         },
+    //         None => {}
+    //     };
+    //
+    //     types::SourceAddress{ from_node: self.own_name.clone(),
+    //                           from_group: from_group,
+    //                           // note: if a message is sent over a relay connection,
+    //                           // the relay node will fill-in reply_to field with its name
+    //                           reply_to: None,
+    //                           relayed_for: relayed_for
+    //     }
+    // }
 
     fn our_source_address(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
         types::SourceAddress{ from_node: self.own_name.clone(),
@@ -830,6 +843,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
                     let serialised_message = try!(encode(&routing_msg));
 
+                    // intercept if we can relay it directly
+                    match (routing_msg.message_header.destination.dest.clone(),
+                        routing_msg.message_header.destination.relay_to.clone()) {
+                        (dest, Some(relay)) => {
+                            // if we should directly respond to this message, do so
+                            if dest == self.own_name
+                                && self.relay_map.contains_relay_for(&relay) {
+                                println!("Sending ConnectResponse directly to relay {:?}", relay);
+                                self.send_out_as_relay(&relay, serialised_message);
+                                return Ok(());
+                            }
+                        },
+                        _ => {}
+                    };
+
                     self.send_swarm_or_parallel(&routing_msg.message_header.destination.dest,
                         &serialised_message);
                 }
@@ -929,6 +957,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         let find_group = try!(decode::<FindGroup>(&body));
+        println!("Received FindGroup for target {:?}, requester {:?} from node {:?}",
+            find_group.target_id, find_group.requester_id, original_header.from_node());
 
         let group = self.routing_table.our_close_group().into_iter()
                     .map(|x|x.fob)
@@ -940,6 +970,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         let serialised_msg = try!(encode(&routing_msg));
 
+        // intercept if we can relay it directly
+        match (routing_msg.message_header.destination.dest.clone(),
+            routing_msg.message_header.destination.relay_to.clone()) {
+            (dest, Some(relay)) => {
+                // if we should directly respond to this message, do so
+                if dest == self.own_name
+                    && self.relay_map.contains_relay_for(&relay) {
+                    println!("Sending FindGroupResponse directly to relay {:?}", relay);
+                    self.send_out_as_relay(&relay, serialised_msg);
+                    return Ok(());
+                }
+            },
+            _ => {}
+        };
+
         self.send_swarm_or_parallel(&original_header.send_to().dest, &serialised_msg);
 
         Ok(())
@@ -947,13 +992,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
         let find_group_response = try!(decode::<FindGroupResponse>(&body));
+        println!("Received FindGroupResponse from node {:?}", original_header.source.from_node);
 
         for peer in find_group_response.group {
             if self.routing_table.check_node(&peer.name()) {
+                println!("Sending ConnectRequest to {:?}", peer.name());
                 ignore(self.send_connect_request_msg(&peer.name()));
             }
         }
-
         Ok(())
     }
 
@@ -1151,18 +1197,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             &self.id.get_crypto_secret_sign_key())
     }
 
-    fn construct_find_group_msg(&mut self, for_bootstrap_connection: bool) -> RoutingMessage {
+    // FIXME: remove for_bootstrap_connection
+    fn construct_find_group_msg(&mut self, _for_bootstrap_connection: bool) -> RoutingMessage {
         let header = MessageHeader::new(
-            self.get_next_message_id(),
-            types::DestinationAddress {
-                 dest:     self.own_name.clone(),
-                 relay_to: None
-            },
-            match for_bootstrap_connection {
-                true => self.our_source_address_for_bootstrap(None),
-                false => self.our_source_address(None),
-            },
-            Authority::ManagedNode);
+              self.get_next_message_id(),
+              types::DestinationAddress {
+                   dest:     self.own_name.clone(),
+                   relay_to: None
+              },
+              self.our_source_address(None),
+              Authority::ManagedNode);
 
         RoutingMessage::new(MessageTypeTag::FindGroup, header,
             FindGroup{ requester_id: self.own_name.clone(),
