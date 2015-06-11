@@ -37,7 +37,6 @@ extern crate routing;
 extern crate maidsafe_types;
 extern crate rand;
 
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::spawn;
 
@@ -70,16 +69,13 @@ impl Vault {
 
 /// Main entry for start up a vault node
 pub fn main () {
-    let vault = Vault::new();
-    let mutate_vault = Arc::new(Mutex::new(vault));
-    let copied_vault = mutate_vault.clone();
+    let mut vault = Vault::new();
+    let _ = vault.routing_node.bootstrap(None, None);
     let thread_guard = spawn(move || {
         loop {
             thread::sleep_ms(1);
-            let _ = copied_vault.lock().unwrap().routing_node.bootstrap(None, Some(5483));
         }
     });
-    let _ = mutate_vault.lock().unwrap().routing_node.bootstrap(None, None);
     let _ = thread_guard.join();
 }
 
@@ -87,7 +83,6 @@ pub fn main () {
 mod test {
     use super::*;
     use std::io::BufRead;
-    use std::sync::{Arc, Mutex};
     use std::thread;
     use std::thread::spawn;
     use std::process::Stdio;
@@ -97,17 +92,14 @@ mod test {
 
     #[test]
     fn lib_test() {
-        let run_vault = |vault: Vault| {
+        let run_vault = |mut vault: Vault| {
             spawn(move || {
-                let mutate_vault = Arc::new(Mutex::new(vault));
-                let copied_vault = mutate_vault.clone();
+                let _ = vault.routing_node.bootstrap(None, None);
                 let thread_guard = spawn(move || {
                     loop {
                         thread::sleep_ms(1);
-                        let _ = copied_vault.lock().unwrap().routing_node.run();
                     }
                 });
-                let _ = mutate_vault.lock().unwrap().routing_node.bootstrap(None, None);
                 let _ = thread_guard.join();
             })
         };
