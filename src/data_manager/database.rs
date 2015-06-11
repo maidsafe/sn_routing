@@ -173,6 +173,12 @@ impl DataManagerDatabase {
         }
     }
 
+    pub fn handle_account_transfer(&mut self, account_wrapper : &DataManagerSendable) {
+        // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
+        let _ = self.storage.remove(&account_wrapper.name());
+        self.storage.insert(account_wrapper.name(), account_wrapper.get_data_holders());
+    }
+
     pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::MethodCall> {
         assert!(close_group.len() >= 3);
         self.temp_storage_after_churn = self.storage.clone();
@@ -309,5 +315,23 @@ mod test {
     let result = db.get_pmid_nodes(&data_name);
     assert_eq!(result, new_pmid_nodes);
     assert!(result != pmid_nodes);
+  }
+
+  #[test]
+  fn handle_account_transfer() {
+    let mut db = DataManagerDatabase::new();
+    let value = generate_random_vec_u8(1024);
+    let data = ImmutableData::new(value);
+    let data_name = data.name();
+    let mut pmid_nodes : Vec<NameType> = vec![];
+
+    for _ in 0..4 {
+      pmid_nodes.push(Random::generate_random());
+    }
+    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+    assert_eq!(db.get_pmid_nodes(&data_name).len(), pmid_nodes.len());
+
+    db.handle_account_transfer(&DataManagerSendable::new(data_name.clone(), vec![]));
+    assert_eq!(db.get_pmid_nodes(&data_name).len(), 0);
   }
 }

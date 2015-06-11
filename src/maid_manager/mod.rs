@@ -76,6 +76,11 @@ impl MaidManager {
     Ok(MessageAction::SendOn(destinations))
   }
 
+  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
+      let maid_account_wrapper : MaidManagerAccountWrapper = payload.get_data();
+      self.db_.handle_account_transfer(&maid_account_wrapper);
+  }
+
   pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
     self.db_.retrieve_all_and_reset()
   }
@@ -91,6 +96,7 @@ mod test {
     use routing::types::*;
     use routing::NameType;
     use routing::sendable::Sendable;
+    use super::database::MaidManagerAccount;
 
     #[test]
     fn handle_put() {
@@ -111,5 +117,15 @@ mod test {
             }
             MessageAction::Reply(_) => panic!("Unexpected"),
         }
+    }
+
+    #[test]
+    fn handle_account_transfer() {
+        let mut maid_manager = MaidManager::new();
+        let name : NameType = routing::test_utils::Random::generate_random();
+        let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), MaidManagerAccount::new());
+        let payload = Payload::new(PayloadTypeTag::MaidManagerAccountTransfer, &account_wrapper);
+        maid_manager.handle_account_transfer(payload);
+        assert_eq!(maid_manager.db_.exist(&name), true);
     }
 }

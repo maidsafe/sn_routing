@@ -94,6 +94,30 @@ impl Interface for VaultFacade {
 
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<MessageAction, InterfaceError> {
+        if our_authority == from_authority {
+            // Account Transfer entries will be passed down from routing as a put request,
+            // however having the same authority of from and own
+            // The incoming data is a serialized PaylodType, whose data is one entry of a serialised account data
+            let mut d = Decoder::from_bytes(&data[..]);
+            let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+            match payload.get_type_tag() {
+              maidsafe_types::PayloadTypeTag::MaidManagerAccountTransfer => {
+                self.maid_manager.handle_account_transfer(payload);
+              }
+              maidsafe_types::PayloadTypeTag::DataManagerAccountTransfer => {
+                self.data_manager.handle_account_transfer(payload);
+              }
+              maidsafe_types::PayloadTypeTag::DataManagerStatsTransfer => {
+                self.data_manager.handle_stats_transfer(payload);
+              }
+              maidsafe_types::PayloadTypeTag::PmidManagerAccountTransfer => {
+                self.pmid_manager.handle_account_transfer(payload);
+              }
+              _ => {}
+            }
+            // The return from this handling branch shall always be TERMINATE of the flow
+            return Err(InterfaceError::Abort);
+        }
         match our_authority {
             Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
             Authority::NaeManager => {
@@ -159,7 +183,7 @@ impl Interface for VaultFacade {
         let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
 
-        dm.into_iter().chain(mm.into_iter().chain(pm.into_iter().chain(vh.into_iter()))).collect()
+        mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
     }
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
@@ -242,7 +266,7 @@ impl VaultFacade {
         { // MaidManager, shall allowing the put and SendOn to DataManagers around name
             let from = NameType::new([1u8; 64]);
             // TODO : in this stage, dest can be populated as anything ?
-            let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
+            let dest = DestinationAddress{ dest : NameType::generate_random(), relay_to: None };
             let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest,
                                              routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), false);
@@ -259,7 +283,7 @@ impl VaultFacade {
         { // DataManager, shall SendOn to pmid_nodes
             let from = NameType::new([1u8; 64]);
             // TODO : in this stage, dest can be populated as anything ?
-            let dest = DestinationAddress{ dest : NameType::generate_random(), reply_to: None };
+            let dest = DestinationAddress{ dest : NameType::generate_random(), relay_to: None };
             let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest,
                                              routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), false);
@@ -290,7 +314,7 @@ impl VaultFacade {
         }
         { // PmidManager, shall put to pmid_nodes
             let from = NameType::new([3u8; 64]);
-            let dest = DestinationAddress{ dest : NameType::new([7u8; 64]), reply_to: None };
+            let dest = DestinationAddress{ dest : NameType::new([7u8; 64]), relay_to: None };
             let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager, from, dest,
                                          routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), false);
@@ -304,7 +328,7 @@ impl VaultFacade {
         }
         { // PmidNode stores/retrieves data
             let from = NameType::new([7u8; 64]);
-            let dest = DestinationAddress{ dest : NameType::new([6u8; 64]), reply_to: None };
+            let dest = DestinationAddress{ dest : NameType::new([6u8; 64]), relay_to: None };
             let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager, from.clone(), dest,
                                              routing::types::array_as_vector(encoder.as_bytes()));
             assert_eq!(put_result.is_err(), true);
@@ -407,7 +431,7 @@ impl VaultFacade {
         assert_eq!(encode_result.is_ok(), true);
 
         let from = available_nodes[0].clone();
-        let dest = DestinationAddress{ dest : available_nodes[1].clone(), reply_to: None };
+        let dest = DestinationAddress{ dest : available_nodes[1].clone(), relay_to: None };
         let data_as_vec = encoder.into_bytes();
 
         let mut small_close_group = Vec::with_capacity(5);
@@ -418,7 +442,8 @@ impl VaultFacade {
         {// MaidManager - churn handling
             maid_manager_put(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
-            assert!(churn_data.len() == 1);
+            // DataManagerStatsTransfer will always be included in the return
+            assert!(churn_data.len() == 2);
 
             // MaidManagerAccount
             let maid_manager: maid_manager::MaidManagerAccountWrapper = match churn_data[0] {
@@ -442,11 +467,11 @@ impl VaultFacade {
             for i in 10..30 {
                 close_group.push(available_nodes[i].clone());
             }
-
+            // DataManagerStatsTransfer will always be included in the return
             let churn_data = vault.handle_churn(close_group.clone());
-            assert_eq!(churn_data.len(), 1);
+            assert_eq!(churn_data.len(), 2);
 
-             match churn_data[0] {
+            match churn_data[0] {
                 MethodCall::Refresh {ref content} => {
                     let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
                     let mut decoder = cbor::Decoder::from_bytes(data0);
@@ -457,13 +482,25 @@ impl VaultFacade {
                 _ => panic!("Refresh type expected")
             };
 
-            assert!(vault.data_manager.retrieve_all_and_reset(&mut close_group).is_empty());
+            match churn_data[1] {
+                MethodCall::Refresh {ref content} => {
+                    let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
+                    let mut decoder = cbor::Decoder::from_bytes(data0);
+                    let stats_sendable : data_manager::DataManagerStatsSendable = decoder.decode().next().unwrap().unwrap();
+                    assert_eq!(stats_sendable.get_resource_index(), 1);
+                },
+                MethodCall::Get { .. } => (),
+                _ => panic!("Refresh type expected")
+            };
+            // DataManagerStatsTransfer will always be included in the return
+            assert_eq!(vault.data_manager.retrieve_all_and_reset(&mut close_group).len(), 1);
         }
 
         {// PmidManager - churn handling
             pmid_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
-            assert_eq!(churn_data.len(), 1);
+            // DataManagerStatsTransfer will always be included in the return
+            assert_eq!(churn_data.len(), 2);
             //assert_eq!(churn_data[0].0, from);
 
             let pmid_manager: pmid_manager::PmidManagerAccountWrapper = match churn_data[0] {
@@ -496,7 +533,8 @@ impl VaultFacade {
 
             version_handler_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
-            assert_eq!(churn_data.len(), 1);
+            // DataManagerStatsTransfer will always be included in the return
+            assert_eq!(churn_data.len(), 2);
 
             let sendable: version_handler::VersionHandlerSendable = match churn_data[0] {
                 MethodCall::Refresh {ref content} => {

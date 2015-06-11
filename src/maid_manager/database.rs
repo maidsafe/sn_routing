@@ -165,6 +165,12 @@ impl MaidManagerDatabase {
       entry.put_data(size)
   }
 
+  pub fn handle_account_transfer(&mut self, account_wrapper : &MaidManagerAccountWrapper) {
+      // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
+      let _ = self.storage.remove(&account_wrapper.name());
+      self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
+  }
+
   pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
       let data: Vec<_> = self.storage.drain().collect();
       let mut actions = Vec::with_capacity(data.len());
@@ -231,6 +237,32 @@ mod test {
         assert_eq!(db.put_data(&name, 1), false);
         db.delete_data(&name, 1073741825);
         assert_eq!(db.exist(&name), true);
+        assert_eq!(db.put_data(&name, 1073741825), false);
+        assert_eq!(db.put_data(&name, 1073741824), true);
+    }
+
+    #[test]
+    fn handle_account_transfer() {
+        let mut db = MaidManagerDatabase::new();
+        let name = routing::test_utils::Random::generate_random();
+        assert_eq!(db.put_data(&name, 0), true);
+        assert_eq!(db.put_data(&name, 1073741823), true);
+        assert_eq!(db.put_data(&name, 2), false);
+        
+        let mut account = MaidManagerAccount::new();
+        account.put_data(1073741822);
+        {
+            let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), account.clone());
+            db.handle_account_transfer(&account_wrapper);
+        }
+        assert_eq!(db.put_data(&name, 3), false);
+        assert_eq!(db.put_data(&name, 2), true);
+
+        account.delete_data(1073741822);
+        {
+            let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), account.clone());
+            db.handle_account_transfer(&account_wrapper);
+        }
         assert_eq!(db.put_data(&name, 1073741825), false);
         assert_eq!(db.put_data(&name, 1073741824), true);
     }

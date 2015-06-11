@@ -26,9 +26,12 @@ use routing::node_interface::{MethodCall};
 use routing::types::{MessageAction};
 use maidsafe_types;
 use cbor::{ Decoder };
+use cbor;
 use routing::sendable::Sendable;
 use routing::error::{InterfaceError, ResponseError};
 type Address = NameType;
+use routing::types::GROUP_SIZE;
+use utils::median;
 
 pub use self::database::DataManagerSendable;
 
@@ -38,6 +41,58 @@ pub struct DataManager {
   db_ : database::DataManagerDatabase,
   // the higher the index is, the slower the farming rate will be
   resource_index : u64
+}
+
+#[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
+pub struct DataManagerStatsSendable {
+    name: NameType,
+    tag: u64,
+    resource_index: u64
+}
+
+impl DataManagerStatsSendable {
+    pub fn new(name: NameType, resource_index: u64) -> DataManagerStatsSendable {
+        DataManagerStatsSendable {
+            name: name,
+            tag: 220, // FIXME : Change once the tag is freezed
+            resource_index: resource_index
+        }
+    }
+
+    pub fn get_resource_index(&self) -> u64 {
+        self.resource_index
+    }
+}
+
+impl Sendable for DataManagerStatsSendable {
+    fn name(&self) -> NameType {
+        self.name.clone()
+    }
+
+    fn type_tag(&self) -> u64 {
+        self.tag.clone()
+    }
+
+    fn serialised_contents(&self) -> Vec<u8> {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
+    }
+
+    fn refresh(&self)->bool {
+        true
+    }
+
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
+        let mut resource_indexes: Vec<u64> = Vec::new();
+        for value in responses {
+            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
+            let tmp_senderable: DataManagerStatsSendable = d.decode().next().unwrap().unwrap();
+            resource_indexes.push(tmp_senderable.get_resource_index());
+        }
+        assert!(resource_indexes.len() < (GROUP_SIZE as usize + 1) / 2);
+        Some(Box::new(DataManagerStatsSendable::new(NameType([0u8;64]), median(&resource_indexes))))
+    }
 }
 
 impl DataManager {
@@ -178,8 +233,24 @@ impl DataManager {
     MethodCall::None
   }
 
+  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
+      let datamanager_account_wrapper : DataManagerSendable = payload.get_data();
+      self.db_.handle_account_transfer(&datamanager_account_wrapper);
+  }
+
+  pub fn handle_stats_transfer(&mut self, payload : maidsafe_types::Payload) {
+      let stats_sendable : DataManagerStatsSendable = payload.get_data();
+      // TODO: shall give more priority to the incoming stats?
+      self.resource_index = (self.resource_index + stats_sendable.get_resource_index()) / 2;
+  }
+
   pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::MethodCall> {
-    self.db_.retrieve_all_and_reset(close_group)
+    // TODO: as Vault doesn't have access to what ID it is, so here have to use the first one in the closing group as its ID
+    let mut result = self.db_.retrieve_all_and_reset(close_group);
+    result.push(routing::node_interface::MethodCall::Refresh {
+        content: Box::new(DataManagerStatsSendable::new(close_group[0].clone(), self.resource_index))
+    });
+    result
   }
 
   fn replicate_to(&mut self, name : &routing::NameType) -> Option<NameType> {
@@ -216,7 +287,8 @@ mod test {
   extern crate maidsafe_types;
   extern crate routing;
 
-  use super::{DataManager};
+  use super::{DataManager, DataManagerStatsSendable};
+  use super::database::DataManagerSendable;
   use maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
   use routing::types::{MessageAction, array_as_vector};
   use routing::NameType;
@@ -245,18 +317,38 @@ mod test {
       }
       MessageAction::Reply(_) => panic!("Unexpected"),
     }
-      let data_name = NameType::new(data.name().get_id());
+    let data_name = NameType::new(data.name().get_id());
     let get_result = data_manager.handle_get(&data_name);
-      assert_eq!(get_result.is_err(), false);
-      match get_result.ok().unwrap() {
-        MessageAction::SendOn(ref x) => {
-          assert_eq!(x.len(), super::PARALLELISM);
-          assert_eq!(x[0], nodes_in_table[0]);
-          assert_eq!(x[1], nodes_in_table[1]);
-          assert_eq!(x[2], nodes_in_table[2]);
-          assert_eq!(x[3], nodes_in_table[3]);
-        }
-        MessageAction::Reply(_) => panic!("Unexpected"),
+    assert_eq!(get_result.is_err(), false);
+    match get_result.ok().unwrap() {
+      MessageAction::SendOn(ref x) => {
+        assert_eq!(x.len(), super::PARALLELISM);
+        assert_eq!(x[0], nodes_in_table[0]);
+        assert_eq!(x[1], nodes_in_table[1]);
+        assert_eq!(x[2], nodes_in_table[2]);
+        assert_eq!(x[3], nodes_in_table[3]);
       }
+      MessageAction::Reply(_) => panic!("Unexpected"),
+    }
+  }
+
+    #[test]
+    fn handle_account_transfer() {
+        let mut data_manager = DataManager::new();
+        let name : NameType = routing::test_utils::Random::generate_random();
+        let account_wrapper = DataManagerSendable::new(name.clone(), vec![]);
+        let payload = Payload::new(PayloadTypeTag::DataManagerAccountTransfer, &account_wrapper);
+        data_manager.handle_account_transfer(payload);
+        assert_eq!(data_manager.db_.exist(&name), true);
+    }
+
+    #[test]
+    fn handle_stats_transfer() {
+        let mut data_manager = DataManager::new();
+        let name : NameType = routing::test_utils::Random::generate_random();
+        let stats_sendable = DataManagerStatsSendable::new(name.clone(), 1023);
+        let payload = Payload::new(PayloadTypeTag::DataManagerStatsTransfer, &stats_sendable);
+        data_manager.handle_stats_transfer(payload);
+        assert_eq!(data_manager.resource_index, 512);
     }
 }
