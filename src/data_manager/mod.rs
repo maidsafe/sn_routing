@@ -246,7 +246,7 @@ impl DataManager {
   pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
     // TODO: as Vault doesn't have access to what ID it is, so here have to use the first one in the closing group as its ID
     let mut result = self.db_.retrieve_all_and_reset(close_group);
-    result.push(routing::node_interface::MethodCall::Refresh {
+    result.push(MethodCall::Refresh {
         content: Box::new(DataManagerStatsSendable::new(close_group[0].clone(), self.resource_index))
     });
     result

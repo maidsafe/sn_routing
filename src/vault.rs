@@ -103,16 +103,16 @@ impl Interface for VaultFacade {
               PayloadTypeTag::MaidManagerAccountTransfer => {
                 self.maid_manager.handle_account_transfer(payload);
               }
-              maidsafe_types::PayloadTypeTag::DataManagerAccountTransfer => {
+              PayloadTypeTag::DataManagerAccountTransfer => {
                 self.data_manager.handle_account_transfer(payload);
               }
-              maidsafe_types::PayloadTypeTag::DataManagerStatsTransfer => {
+              PayloadTypeTag::DataManagerStatsTransfer => {
                 self.data_manager.handle_stats_transfer(payload);
               }
-              maidsafe_types::PayloadTypeTag::PmidManagerAccountTransfer => {
+              PayloadTypeTag::PmidManagerAccountTransfer => {
                 self.pmid_manager.handle_account_transfer(payload);
               }
-              maidsafe_types::PayloadTypeTag::VersionHandlerAccountTransfer => {
+              PayloadTypeTag::VersionHandlerAccountTransfer => {
                 self.version_handler.handle_account_transfer(payload);
               }
               _ => {}

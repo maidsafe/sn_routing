@@ -77,7 +77,7 @@ impl PmidManager {
     MethodCall::SendOn { destination: name }
   }
 
-  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
+  pub fn handle_account_transfer(&mut self, payload : Payload) {
       let pmidmanager_account_wrapper : PmidManagerAccountWrapper = payload.get_data();
       self.db_.handle_account_transfer(&pmidmanager_account_wrapper);
   }
