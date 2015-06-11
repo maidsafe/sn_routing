@@ -80,7 +80,8 @@ type RoutingResult = Result<(), RoutingError>;
 enum ConnectionName {
     Relay(NameType),
     Routing(NameType),
-    OurBootstrap
+    OurBootstrap,
+    UnidentifiedConnection,
 }
 
 /// Routing Membrane
@@ -229,6 +230,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 &ConnectionName::Routing(placeholder_name),
                                 bytes, true);
                         },
+                        Some(ConnectionName::UnidentifiedConnection) => {
+
+                        },
                         None => {
                             println!("New message came from unknown endpoint {:?}", endpoint);
                             // If we don't know the sender, only accept a connect request
@@ -298,6 +302,42 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
+    /// When CRUST receives a connect to our listening port and establishes a new connection,
+    /// the endpoint is given here as new connection
+    fn handle_new_connection(&mut self, endpoint : Endpoint) {
+      println!("CRUST::NewConnection on {:?}", endpoint);
+        match self.lookup_endpoint(&endpoint) {
+            Some(ConnectionName::Routing(name)) => {
+                match self.routing_table.mark_as_connected(&endpoint) {
+                    Some(peer_name) => {
+                        println!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
+                                 self.routing_table.size(), peer_name, endpoint);
+                        // FIXME: the presence of this debug assert indicates
+                        // that the logic for unconnected RT nodes is not quite right.
+                        debug_assert!(peer_name == name);
+                    },
+                    None => { }
+                };
+            },
+            Some(ConnectionName::Relay(name)) => {
+                // this endpoint is already present in the relay lookup_map
+                // nothing to do
+            },
+            Some(ConnectionName::OurBootstrap) => {
+                // FIXME: for now do nothing
+            },
+            Some(ConnectionName::UnidentifiedConnection) => {
+                // again, already connected so examine later
+            },
+            None => {
+                self.relay_map.register_unknown_connection(endpoint);
+                // Send "Who are you?" message
+                // self.connection_manager.send()
+            }
+      }
+    }
+
+/*  OLD HANDLE NEW CONNECTION ---------------------------------------------------------
     /// When CRUST establishes a two-way connection
     /// after exchanging details in ConnectRequest and ConnectResponse
     ///  - we can either add it to RelayMap (if the id was not-relocated,
@@ -309,8 +349,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
     //  remainder is exhausting logic for debug purposes.
     //  TODO: add churn trigger
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
+        println!("CRUST::NewConnection on {:?}", endpoint);
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::Routing(name)) => {
+              // FIXME: this has been moved to unknown endpoint
         // IMPORTANT: the only state-change is in marking the node connected; rest is debug printout
                 match self.routing_table.mark_as_connected(&endpoint) {
                     Some(peer_name) => {
@@ -404,11 +446,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
     }
 
+    END OF OLD HANDLE NEW CONNECTION -------------------------------------------------- */
+
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     /// TODO: A churn event might be triggered
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
         // Make sure the endpoint is dropped anywhere
         // The relay map will automatically drop the Name if the last endpoint to it is dropped
+        self.relay_map.remove_unknown_connection(&endpoint);
         self.relay_map.drop_endpoint(&endpoint);
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => {
@@ -748,7 +793,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // secondly look in the relay_map
             None => match self.relay_map.lookup_endpoint(&endpoint) {
                 Some(name) => Some(ConnectionName::Relay(name)),
-                // finally see if it is our bootstrap_endpoint
+                // check to see if it is our bootstrap_endpoint
                 None => match self.bootstrap_endpoint {
                     Some(ref our_bootstrap) => {
                         if our_bootstrap == endpoint {
@@ -757,7 +802,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             None
                         }
                     },
-                    None => None
+                    None => match self.relay_map.lookup_unknown_connection(&endpoint) {
+                        true => Some(ConnectionName::UnidentifiedConnection),
+                        false => None
+                    }
                 }
             }
         }
@@ -924,6 +972,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
         let mut peer_endpoints = connect_response.receiver_local_endpoints.clone();
         peer_endpoints.extend(connect_response.receiver_external_endpoints.clone().into_iter());
+  // println!("ConnectResponse from {:?}",  )
+  // for peer in peer_endpoint {
+  //     println!("")
+  // }
         let peer_node_info =
             NodeInfo::new(connect_response.receiver_fob.clone(), peer_endpoints, None);
 

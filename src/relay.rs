@@ -172,6 +172,11 @@ impl RelayMap {
         }
     }
 
+    /// Returns true if the endpoint has been registered as an unknown NewConnection
+    pub fn lookup_unknown_connection(&self, endpoint: &Endpoint) -> bool {
+        self.unknown_connections.contains_key(endpoint)
+    }
+
     /// Returns true if the relay map was instantiated with a self_relocated id.
     /// A self_relocated id should only be used by the first node to start a network.
     pub fn zero_node(&self) -> bool {
