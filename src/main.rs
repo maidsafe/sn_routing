@@ -50,20 +50,20 @@ mod pmid_node;
 mod vault;
 mod utils;
 
-use vault::VaultFacade;
+use vault::{ VaultFacade, VaultGenerator };
 
 /// Placeholder doc test
 pub fn always_true() -> bool { true }
 
 /// The Vault structure to hold the logical interface to provide behavioural logic to routing.
 pub struct Vault {
-  routing_node: routing::routing_node::RoutingNode<VaultFacade>,
+  routing_node: routing::routing_node::RoutingNode<VaultFacade, VaultGenerator>,
 }
 
 impl Vault {
   fn new() -> Vault {
     Vault {
-      routing_node: routing::routing_node::RoutingNode::new(VaultFacade::new()),
+      routing_node: routing::routing_node::RoutingNode::<VaultFacade, VaultGenerator>::new(VaultGenerator),
     }
   }
 }
@@ -76,7 +76,7 @@ pub fn main () {
     let thread_guard = spawn(move || {
         loop {
             thread::sleep_ms(1);
-            let _ = copied_vault.lock().unwrap().routing_node.run();
+            let _ = copied_vault.lock().unwrap().routing_node.bootstrap(None, Some(5483));
         }
     });
     let _ = mutate_vault.lock().unwrap().routing_node.bootstrap(None, None);

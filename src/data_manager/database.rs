@@ -17,17 +17,17 @@
 
 #![allow(dead_code)]
 
-use routing;
+use routing::NameType;
 use routing::sendable::Sendable;
+use routing::types::{GROUP_SIZE};
+use routing::node_interface::MethodCall;
 use std::collections::HashMap;
 use cbor;
 use rustc_serialize::{Encodable};
 
-type Identity = routing::NameType; // name of the chunk
-type PmidNode = routing::NameType;
+type Identity = NameType; // name of the chunk
+type PmidNode = NameType;
 pub type PmidNodes = Vec<PmidNode>;
-use routing::types::{GROUP_SIZE};
-use routing::NameType;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
 pub struct DataManagerSendable {
@@ -173,7 +173,7 @@ impl DataManagerDatabase {
         }
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::MethodCall> {
+    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
         assert!(close_group.len() >= 3);
         self.temp_storage_after_churn = self.storage.clone();
         let mut close_grp_already_stored = false;
@@ -194,15 +194,15 @@ impl DataManagerDatabase {
         }
 
         let data: Vec<_> = self.storage.drain().collect();
-        let mut actions = Vec::<routing::node_interface::MethodCall>::new();
+        let mut actions = Vec::<MethodCall>::new();
         for element in data {
             if self.temp_storage_after_churn.get(&element.0).unwrap().len() < 3 {
-                actions.push(routing::node_interface::MethodCall::Get {
+                actions.push(MethodCall::Get {
                     type_id: 206, //TODO Get type_tag correct
                     name: element.0.clone(),
                 });
             }
-            actions.push(routing::node_interface::MethodCall::Refresh {
+            actions.push(MethodCall::Refresh {
                 content: Box::new(DataManagerSendable::new(element.0, element.1)),
             });
         }

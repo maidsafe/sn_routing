@@ -24,12 +24,13 @@ use time::Duration;
 use cbor::Decoder;
 
 use lru_time_cache::LruCache;
-use maidsafe_types;
 
-use routing;
+use maidsafe_types::*;
+
 use routing::{NameType};
 use routing::error::{ResponseError, InterfaceError};
 use routing::authority::Authority;
+use routing::node_interface::{ Interface, MethodCall, CreatePersonas };
 use routing::sendable::Sendable;
 use routing::types::{MessageAction, DestinationAddress};
 
@@ -38,8 +39,6 @@ use maid_manager::MaidManager;
 use pmid_manager::PmidManager;
 use pmid_node::PmidNode;
 use version_handler::VersionHandler;
-use routing::node_interface::{ Interface, MethodCall };
-
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -99,9 +98,9 @@ impl Interface for VaultFacade {
             // however having the same authority of from and own
             // The incoming data is a serialized PaylodType, whose data is one entry of a serialised account data
             let mut d = Decoder::from_bytes(&data[..]);
-            let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+            let payload: Payload = d.decode().next().unwrap().unwrap();
             match payload.get_type_tag() {
-              maidsafe_types::PayloadTypeTag::MaidManagerAccountTransfer => {
+              PayloadTypeTag::MaidManagerAccountTransfer => {
                 self.maid_manager.handle_account_transfer(payload);
               }
               _ => {}
@@ -143,7 +142,7 @@ impl Interface for VaultFacade {
         if response.is_ok() {
             self.data_manager.handle_get_response(response.ok().unwrap())
         } else {
-            routing::node_interface::MethodCall::None
+            MethodCall::None
         }
     }
 
@@ -191,17 +190,17 @@ impl Interface for VaultFacade {
 
     fn handle_cache_put(&mut self,
                         _: Authority, // from_authority
-                        _: routing::NameType, // from_address
+                        _: NameType, // from_address
                         data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         let mut data_name : NameType;
         let mut d = Decoder::from_bytes(&data[..]);
-        let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+        let payload: Payload = d.decode().next().unwrap().unwrap();
         match payload.get_type_tag() {
-          maidsafe_types::PayloadTypeTag::ImmutableData => {
-            data_name = payload.get_data::<maidsafe_types::ImmutableData>().name();
+          PayloadTypeTag::ImmutableData => {
+            data_name = payload.get_data::<ImmutableData>().name();
           }
-          maidsafe_types::PayloadTypeTag::PublicMaid => {
-            data_name = payload.get_data::<maidsafe_types::PublicIdType>().name();
+          PayloadTypeTag::PublicMaid => {
+            data_name = payload.get_data::<PublicIdType>().name();
           }
           _ => return Err(From::from(ResponseError::InvalidRequest))
         }
@@ -223,6 +222,15 @@ impl VaultFacade {
   }
 
 }
+
+pub struct VaultGenerator;
+
+impl CreatePersonas<VaultFacade> for VaultGenerator {
+    fn create_personas(&mut self) -> VaultFacade {
+        VaultFacade::new()
+    }
+}
+
 
 #[cfg(test)]
  mod test {

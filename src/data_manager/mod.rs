@@ -20,8 +20,7 @@
 mod database;
 
 use std::cmp;
-use routing;
-use routing::NameType;
+use routing::{ NameType, closer_to_target };
 use routing::node_interface::{MethodCall};
 use routing::types::{MessageAction};
 use maidsafe_types;
@@ -59,7 +58,7 @@ impl DataManager {
   }
 
   pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<MessageAction, InterfaceError> {
-    let mut name : routing::NameType;
+    let mut name : NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
@@ -84,7 +83,7 @@ impl DataManager {
     }
 
     nodes_in_table.sort_by(|a, b|
-        if routing::closer_to_target(&a, &b, &data_name) {
+        if closer_to_target(&a, &b, &data_name) {
           cmp::Ordering::Less
         } else {
           cmp::Ordering::Greater
@@ -101,8 +100,8 @@ impl DataManager {
     Ok(MessageAction::SendOn(dest_pmids))
   }
 
-  pub fn handle_get_response(&mut self, response: Vec<u8>) -> routing::node_interface::MethodCall {
-      let mut name: routing::NameType;
+  pub fn handle_get_response(&mut self, response: Vec<u8>) -> MethodCall {
+      let mut name: NameType;
       let mut d = Decoder::from_bytes(&response[..]);
       let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
       match payload.get_type_tag() {
@@ -112,14 +111,14 @@ impl DataManager {
         maidsafe_types::PayloadTypeTag::PublicMaid => {
           name = payload.get_data::<maidsafe_types::PublicIdType>().name();
         }
-        _ => return routing::node_interface::MethodCall::None,
+        _ => return MethodCall::None,
       }
 
       let replicate_to = self.replicate_to(&name);
       match replicate_to {
           Some(pmid_node) => {
               self.db_.add_pmid_node(&name, pmid_node.clone());
-              return routing::node_interface::MethodCall::Put {
+              return MethodCall::Put {
                   destination: pmid_node,
                   content: Box::new(DataManagerSendable::with_content(name, response)),
               };
@@ -133,7 +132,7 @@ impl DataManager {
                              from_address: &NameType) -> MethodCall {
     // TODO: assumption is the content in Result is the full payload of failed to store data
     //       or the removed Sacrificial copy, which indicates as a failure response.
-    let mut name : routing::NameType;
+    let mut name : NameType;
     if response.is_err() {
       return MethodCall::None;
     }
@@ -168,7 +167,7 @@ impl DataManager {
     match replicate_to {
         Some(pmid_node) => {
             self.db_.add_pmid_node(&name, pmid_node.clone());
-            return routing::node_interface::MethodCall::Put {
+            return MethodCall::Put {
                 destination: pmid_node,
                 content: Box::new(DataManagerSendable::with_content(name, data)),
             };
@@ -178,16 +177,16 @@ impl DataManager {
     MethodCall::None
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<routing::node_interface::MethodCall> {
+  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
     self.db_.retrieve_all_and_reset(close_group)
   }
 
-  fn replicate_to(&mut self, name : &routing::NameType) -> Option<NameType> {
+  fn replicate_to(&mut self, name : &NameType) -> Option<NameType> {
       match self.db_.temp_storage_after_churn.get(name) {
           Some(pmid_nodes) => {
               if pmid_nodes.len() < 3 {
                   self.db_.close_grp_from_churn.sort_by(|a, b| {
-                      if routing::closer_to_target(&a, &b, &name) {
+                      if closer_to_target(&a, &b, &name) {
                         cmp::Ordering::Less
                       } else {
                         cmp::Ordering::Greater

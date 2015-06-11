@@ -20,11 +20,11 @@
 mod database;
 
 use cbor::{ Decoder };
-use routing;
 use routing::NameType;
 use routing::types::{MessageAction};
 use routing::error::{ResponseError, InterfaceError};
 use maidsafe_types;
+use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
 pub use self::database::MaidManagerAccountWrapper;
 
@@ -81,7 +81,7 @@ impl MaidManager {
       self.db_.handle_account_transfer(&maid_account_wrapper);
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
     self.db_.retrieve_all_and_reset()
   }
 

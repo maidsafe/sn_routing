@@ -17,12 +17,12 @@
 
 #![allow(dead_code)]
 
-use routing;
 use std::collections;
 use routing::NameType;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use cbor;
+use routing::node_interface::MethodCall;
 use routing::types::GROUP_SIZE;
 use utils::median;
 
@@ -171,11 +171,11 @@ impl MaidManagerDatabase {
       self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
       let data: Vec<_> = self.storage.drain().collect();
       let mut actions = Vec::with_capacity(data.len());
       for element in data {
-          actions.push(routing::node_interface::MethodCall::Refresh {
+          actions.push(MethodCall::Refresh {
               content: Box::new(MaidManagerAccountWrapper::new(element.0, element.1)),
           });
       }

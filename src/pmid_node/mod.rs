@@ -18,10 +18,10 @@
 #![allow(dead_code)]
 
 use chunk_store::ChunkStore;
+use maidsafe_types::*;
 use routing::NameType;
 use routing::types::{MessageAction};
 use routing::error::{ResponseError, InterfaceError};
-use maidsafe_types;
 use routing::sendable::Sendable;
 use cbor::Decoder;
 
@@ -46,21 +46,21 @@ impl PmidNode {
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
     let mut data_name : NameType;
     let mut d = Decoder::from_bytes(&data[..]);
-    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+    let payload: Payload = d.decode().next().unwrap().unwrap();
     let mut remove_sacrificial = false;
     match payload.get_type_tag() {
-      maidsafe_types::PayloadTypeTag::ImmutableData => {
-        data_name = payload.get_data::<maidsafe_types::ImmutableData>().name();
+      PayloadTypeTag::ImmutableData => {
+        data_name = payload.get_data::<ImmutableData>().name();
         remove_sacrificial = true;
       }
-      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
-        data_name = payload.get_data::<maidsafe_types::ImmutableDataBackup>().name();
+      PayloadTypeTag::ImmutableDataBackup => {
+        data_name = payload.get_data::<ImmutableDataBackup>().name();
       }
-      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
-        data_name = payload.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
+      PayloadTypeTag::ImmutableDataSacrificial => {
+        data_name = payload.get_data::<ImmutableDataSacrificial>().name();
       }
-      maidsafe_types::PayloadTypeTag::PublicMaid => {
-        data_name = payload.get_data::<maidsafe_types::PublicIdType>().name();
+      PayloadTypeTag::PublicMaid => {
+        data_name = payload.get_data::<PublicIdType>().name();
         remove_sacrificial = true;
       }
       _ => return Err(From::from(ResponseError::InvalidRequest))
@@ -81,10 +81,10 @@ impl PmidNode {
     for name in names.iter() {
       let fetched_data = self.chunk_store_.get(name.clone());
       let mut decoder = Decoder::from_bytes(&fetched_data[..]);
-      let fetched_payload: maidsafe_types::Payload = decoder.decode().next().unwrap().unwrap();
+      let fetched_payload: Payload = decoder.decode().next().unwrap().unwrap();
       // Only remove Sacrificial copy
       match fetched_payload.get_type_tag() {
-        maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
+        PayloadTypeTag::ImmutableDataSacrificial => {
           if fetched_data.len() > required_space {
             self.chunk_store_.delete(name.clone());
             self.chunk_store_.put(data_name, data);
