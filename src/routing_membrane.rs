@@ -51,7 +51,7 @@ use sendable::Sendable;
 use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
-use who_are_you::{WhoAreYou};
+use who_are_you::{WhoAreYou, IAm};
 use message_header::MessageHeader;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
@@ -232,7 +232,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 bytes, true);
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
-
+                            println!("Unidentified connection {:?} sent message.", endpoint);
+                            // only expect WhoAreYou or IAm message
+                            let _ = self.handle_who_are_you(&endpoint, bytes);
                         },
                         None => {
                             println!("New message came from unknown endpoint {:?}", endpoint);
@@ -731,8 +733,76 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
+    // ---- Who Are You ---------------------------------------------------------
+
+    fn handle_who_are_you(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
+        -> RoutingResult {
+        match decode::<WhoAreYou>(&serialised_message) {
+            Ok(who_are_you_msg) => {
+                println!("Received WhoAreYou question on {:?}.", endpoint);
+                ignore(self.send_i_am_msg(endpoint.clone(), who_are_you_msg.nonce));
+                Ok(())
+            },
+            Err(_) => match decode::<IAm>(&serialised_message) {
+                Ok(i_am_msg) => {
+                println!("Received He Is {:?} on {:?}.", i_am_msg.public_id.name(), endpoint);
+                // FIXME: validate signature of nonce
+                ignore(self.handle_i_am(endpoint.clone(), i_am_msg));
+                Ok(())
+                },
+                Err(_) => Err(RoutingError::UnknownMessageType)
+            }
+        }
+    }
+
+    fn handle_i_am(&mut self, endpoint: Endpoint, i_am: IAm) -> RoutingResult {
+        match i_am.public_id.is_relocated() {
+            // if it is relocated, we consider the connection for our routing table
+            true => {
+                // check we have a cache for his public id from the relocation procedure
+                match self.public_id_cache.remove(&i_am.public_id.name()) {
+                    Some(cached_public_id) => {
+                        // check the full fob received corresponds, not just the names
+                        if cached_public_id == i_am.public_id {
+                            let peer_endpoints = vec![endpoint.clone()];
+                            let peer_node_info = NodeInfo::new(i_am.public_id.clone(), peer_endpoints,
+                                Some(endpoint.clone()));
+                            // FIXME: node info cloned for debug printout below
+                            let (added, _) = self.routing_table.add_node(peer_node_info.clone());
+                            // TODO: drop dropped node in connection_manager
+                            if !added {
+                                return Err(RoutingError::RefusedFromRoutingTable); }
+                            println!("RT (size : {:?}) added connected node {:?} on {:?}",
+                                self.routing_table.size(), peer_node_info.fob.name(), endpoint);
+                        }
+                        Ok(())
+                    },
+                    None => {
+                        println!("Dropping connection on {:?} as {:?} is relocated, but not cached.",
+                            endpoint, i_am.public_id.name());
+                        // TODO: enable below
+                        // self.relay_map.remove_unknown_connection(&endpoint);
+                        // self.connection_manager.drop_node(endpoint);
+                        Ok(())
+                    }
+                }
+            },
+            // if it is not relocated, we consider the connection for our relay_map
+            false => {
+                Ok(())
+            }
+        }
+    }
+
     fn send_who_are_you_msg(&mut self, endpoint: Endpoint) -> RoutingResult {
         let message = try!(encode(&WhoAreYou {nonce : 0u8}));
+        ignore(self.connection_manager.send(endpoint, message));
+        Ok(())
+    }
+
+    fn send_i_am_msg(&mut self, endpoint: Endpoint, _nonce : u8) -> RoutingResult {
+        // FIXME: sign proper nonce
+        let message = try!(encode(&IAm {public_id : types::PublicId::new(&self.id)}));
         ignore(self.connection_manager.send(endpoint, message));
         Ok(())
     }
