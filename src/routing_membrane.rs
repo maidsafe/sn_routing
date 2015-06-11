@@ -311,6 +311,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
       println!("CRUST::NewConnection on {:?}", endpoint);
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::Routing(name)) => {
+                // should not occur; if the endpoint is in the lookup map of routing table,
+                // it was already marked online.
+                println!("DEBUG: NewConnection {:?} on already connected endpoint {:?} in RT.",
+                    endpoint, name);
                 match self.routing_table.mark_as_connected(&endpoint) {
                     Some(peer_name) => {
                         println!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
@@ -771,24 +775,64 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             let (added, _) = self.routing_table.add_node(peer_node_info.clone());
                             // TODO: drop dropped node in connection_manager
                             if !added {
+                                println!("RT (size : {:?}) refused connection on {:?} as {:?}
+                                    from routing table.", self.routing_table.size(),
+                                    endpoint, i_am.public_id.name());
+                                self.relay_map.remove_unknown_connection(&endpoint);
+                                self.connection_manager.drop_node(endpoint);
                                 return Err(RoutingError::RefusedFromRoutingTable); }
                             println!("RT (size : {:?}) added connected node {:?} on {:?}",
                                 self.routing_table.size(), peer_node_info.fob.name(), endpoint);
+                        } else {
+                            println!("I Am, relocated name {:?} conflicted with cached fob.",
+                                i_am.public_id.name());
+                            self.relay_map.remove_unknown_connection(&endpoint);
+                            self.connection_manager.drop_node(endpoint);
                         }
                         Ok(())
                     },
                     None => {
-                        println!("Dropping connection on {:?} as {:?} is relocated, but not cached.",
-                            endpoint, i_am.public_id.name());
-                        // TODO: enable below
-                        // self.relay_map.remove_unknown_connection(&endpoint);
-                        // self.connection_manager.drop_node(endpoint);
+                        // if we are connecting to an existing group,
+      // FIXME: ConnectRequest had target name signed by us; so no state held on response
+      // I Am by default just has a nonce; now we will accept everyone, but we can avoid state,
+      // by repeating the Who Are You message, this time with the nonce as his name.
+      // So we check if the doubly signed nonce is his name, if so, add him to RT;
+      // if not do second WhoAreYou as above;
+      // we can do 512 + 1 bit to flag and break an endless loop
+                        match self.routing_table.check_node(&i_am.public_id.name()) {
+                            true => {
+                                let peer_endpoints = vec![endpoint.clone()];
+                                let peer_node_info = NodeInfo::new(i_am.public_id.clone(),
+                                    peer_endpoints, Some(endpoint.clone()));
+                                // FIXME: node info cloned for debug printout below
+                                let (added, _) = self.routing_table.add_node(
+                                    peer_node_info.clone());
+                                // TODO: drop dropped node in connection_manager
+                                if !added {
+                                    println!("RT (size : {:?}) refused connection on {:?} as {:?}
+                                        from routing table.", self.routing_table.size(),
+                                        endpoint, i_am.public_id.name());
+                                    self.relay_map.remove_unknown_connection(&endpoint);
+                                    self.connection_manager.drop_node(endpoint);
+                                    return Err(RoutingError::RefusedFromRoutingTable); }
+                                println!("RT (size : {:?}) added connected node {:?} on {:?}",
+                                    self.routing_table.size(), peer_node_info.fob.name(), endpoint);
+                            },
+                            false => {
+                                println!("Dropping connection on {:?} as {:?} is relocated,
+                                    but not cached, or marked in our RT.",
+                                    endpoint, i_am.public_id.name());
+                                self.relay_map.remove_unknown_connection(&endpoint);
+                                self.connection_manager.drop_node(endpoint);
+                            }
+                        };
                         Ok(())
                     }
                 }
             },
             // if it is not relocated, we consider the connection for our relay_map
             false => {
+
                 Ok(())
             }
         }
