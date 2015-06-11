@@ -386,6 +386,44 @@ impl Id {
     }
   }
 
+  pub fn with_keys(public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
+                   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey)) -> Id {
+    let sign_key = &(public_keys.0).0;
+    let asym_key = &(public_keys.1).0;
+
+    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + asymmetricbox::PUBLICKEYBYTES;
+
+    let mut keys = [0u8; KEYS_SIZE];
+
+    for i in 0..sign_key.len() {
+        keys[i] = sign_key[i];
+    }
+    for i in 0..asym_key.len() {
+        keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
+    }
+
+    let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &secret_keys.0));
+
+    let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
+
+    for i in 0..KEYS_SIZE {
+        combined[i] = keys[i];
+    }
+
+    for i in 0..sign::SIGNATUREBYTES {
+        combined[KEYS_SIZE + i] = validation_token.signature[i];
+    }
+
+    let digest = crypto::hash::sha512::hash(&combined);
+
+    Id {
+      public_keys : public_keys,
+      secret_keys : secret_keys,
+      validation_token : validation_token,
+      name : NameType::new(digest.0),
+    }
+  }
+
   pub fn get_name(&self) -> NameType {
       self.name.clone()
   }
@@ -527,6 +565,48 @@ mod test {
     let mut d = cbor::Decoder::from_bytes(e.as_bytes());
     let obj_after: T = d.decode().next().unwrap().unwrap();
     assert_eq!(obj_after == obj_before, true)
+  }
+
+  #[test]
+  fn construct_id_with_keys() {
+    let sign_keys = crypto::sign::gen_keypair();
+    let asym_keys = crypto::asymmetricbox::gen_keypair();
+
+    let public_keys = (sign_keys.0, asym_keys.0);
+    let secret_keys = (sign_keys.1, asym_keys.1);
+
+    let id = Id::with_keys(public_keys, secret_keys.clone());
+
+    let sign_key = &(public_keys.0).0;
+    let asym_key = &(public_keys.1).0;
+
+    const KEYS_SIZE: usize = crypto::sign::PUBLICKEYBYTES + crypto::asymmetricbox::PUBLICKEYBYTES;
+
+    let mut keys = [0u8; KEYS_SIZE];
+
+    for i in 0..sign_key.len() {
+        keys[i] = sign_key[i];
+    }
+    for i in 0..asym_key.len() {
+        keys[crypto::sign::PUBLICKEYBYTES + i] = asym_key[i];
+    }
+
+    let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &secret_keys.0));
+
+    let mut combined = [0u8; KEYS_SIZE + crypto::sign::SIGNATUREBYTES];
+
+    for i in 0..KEYS_SIZE {
+        combined[i] = keys[i];
+    }
+
+    for i in 0..crypto::sign::SIGNATUREBYTES {
+        combined[KEYS_SIZE + i] = validation_token.signature[i];
+    }
+
+    let digest = crypto::hash::sha512::hash(&combined);
+
+    assert_eq!(NameType::new(digest.0), id.get_name());
+
   }
 
   #[test]
