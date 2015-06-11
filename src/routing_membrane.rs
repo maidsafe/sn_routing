@@ -16,9 +16,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//! This is a fresh start of routing_node.rs and should upon successful completion replace
-//! the original routing_node.rs file, which in turn then is the owner of routing membrane and
-//! routing core.
 //! Routing membrane is a single thread responsible for the in- and outgoing messages.
 //! It accepts messages received from CRUST.
 //! The membrane evaluates whether a message is to be forwarded, or
@@ -207,6 +204,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
+                            println!("Routing node {:?} on connection {:?} sent message.",
+                                name, endpoint);
                             let _ = self.message_received(&ConnectionName::Routing(name),
                             bytes, false);
                         },
@@ -234,9 +233,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         Some(ConnectionName::UnidentifiedConnection) => {
                             println!("Unidentified connection {:?} sent message.", endpoint);
                             // only expect WhoAreYou or IAm message
-                            let _ = self.handle_who_are_you(&endpoint, bytes);
+                            match self.handle_unknown_connect_request(&endpoint, bytes.clone()) {
+                                Ok(_) => {
+                                    // FIXME : deprecate this approach; we are already directly connected.
+                                    println!("Successfully handled ConnectRequest from
+                                        unidentified connect."); },
+                                Err(_) => {
+                                    // on any error, handle as WhoAreYou/IAm
+                                    println!("Handling message from {:?} as WhoAreYou/IAm.",
+                                        endpoint);
+                                    let _ = self.handle_who_are_you(&endpoint, bytes);
+                                },
+                            }
+
                         },
                         None => {
+                            // FIXME: probably should never happen anymore
                             println!("New message came from unknown endpoint {:?}", endpoint);
                             // If we don't know the sender, only accept a connect request
                             let _ = self.handle_unknown_connect_request(&endpoint, bytes);
@@ -292,14 +304,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // self.relay_map.register_accepted_connect_request(&vec![endpoint.clone()],
         //     &connect_request.requester_fob);
         println!("Added endpoint {:?} to relay map, named {:?}", endpoint, connect_request.requester_fob.name());
-        self.connection_manager.connect(vec![endpoint.clone()]);
+        // self.connection_manager.connect(vec![endpoint.clone()]);
         // FIXME: as a patch directly add this to the relay map
         // Send the response containing our details.  Possibly use a ConnectSuccess message
         // to confirm.
         self.relay_map.add_ip_node(connect_request.requester_fob, endpoint.clone());
+        self.relay_map.remove_unknown_connection(endpoint);
         debug_assert!(self.relay_map.contains_endpoint(&endpoint));
-        // FIXME: Verify that CRUST can send a message back and does not drop it,
-        // simply because it is not established a connection yet.
         debug_assert!(self.connection_manager.send(endpoint.clone(), serialised_message)
             .is_ok());
         Ok(())
@@ -337,6 +348,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // again, already connected so examine later
             },
             None => {
+                println!("Unknown connection on {:?}", endpoint);
                 self.relay_map.register_unknown_connection(endpoint.clone());
                 // Send "Who are you?" message
                 ignore(self.send_who_are_you_msg(endpoint));
@@ -741,6 +753,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn handle_who_are_you(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
         -> RoutingResult {
+        println!("Handling WhoAreYou/IAm from {:?}", endpoint);
         match decode::<WhoAreYou>(&serialised_message) {
             Ok(who_are_you_msg) => {
                 println!("Received WhoAreYou question on {:?}.", endpoint);
@@ -749,10 +762,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(_) => match decode::<IAm>(&serialised_message) {
                 Ok(i_am_msg) => {
-                println!("Received He Is {:?} on {:?}.", i_am_msg.public_id.name(), endpoint);
-                // FIXME: validate signature of nonce
-                ignore(self.handle_i_am(endpoint.clone(), i_am_msg));
-                Ok(())
+                    println!("Received He Is {:?} on {:?}.", i_am_msg.public_id.name(), endpoint);
+                    // FIXME: validate signature of nonce
+                    ignore(self.handle_i_am(endpoint.clone(), i_am_msg));
+                    Ok(())
                 },
                 Err(_) => Err(RoutingError::UnknownMessageType)
             }
@@ -792,7 +805,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         Ok(())
                     },
                     None => {
-                        // if we are connecting to an existing group,
+                        // if we are connecting to an existing group
       // FIXME: ConnectRequest had target name signed by us; so no state held on response
       // I Am by default just has a nonce; now we will accept everyone, but we can avoid state,
       // by repeating the Who Are You message, this time with the nonce as his name.
@@ -831,8 +844,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 }
             },
             // if it is not relocated, we consider the connection for our relay_map
+            // but with unknown connect request we already successfully relay for an relocated node
             false => {
-
+                println!("I Am unrelocated {:?} on {:?}. Not Acting on this result.",
+                    i_am.public_id.name(), endpoint);
                 Ok(())
             }
         }
@@ -840,6 +855,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn send_who_are_you_msg(&mut self, endpoint: Endpoint) -> RoutingResult {
         let message = try!(encode(&WhoAreYou {nonce : 0u8}));
+        println!("Sending WhoAreYou to {:?}", endpoint);
         ignore(self.connection_manager.send(endpoint, message));
         Ok(())
     }
@@ -1041,13 +1057,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         return Err(RoutingError::RefusedFromRoutingTable); }
                     println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name());
                     // Try to connect to the peer.
-                    // FIXME: don't doubly connect as it comes in as a new unknown connection,
-                    //        at the requester side.
-                    // self.connection_manager.connect(connect_request.local_endpoints.clone());
-                    // self.connection_manager.connect(connect_request.external_endpoints.clone());
+                    self.connection_manager.connect(connect_request.local_endpoints.clone());
+                    self.connection_manager.connect(connect_request.external_endpoints.clone());
                     // Send the response containing our details,
                     // and add the original signature as proof of the request
-                    let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
+// FIXME: for TCP rendez-vous connect is not needed
+/*                    let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
                     let serialised_message = try!(encode(&routing_msg));
 
                     // intercept if we can relay it directly
@@ -1067,6 +1082,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                     self.send_swarm_or_parallel(&routing_msg.message_header.destination.dest,
                         &serialised_message);
+*/
                 }
             },
             None => {}
