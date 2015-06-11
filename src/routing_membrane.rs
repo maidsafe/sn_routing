@@ -692,7 +692,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             return true;
         }
 
-        match self.routing_table.our_close_group().pop() {
+        match self.routing_table.our_close_group().last() {
             Some(furthest_close_node) => {
                 closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.own_name)
             },
