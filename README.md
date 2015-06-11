@@ -61,6 +61,12 @@ correct name calculation of pure Id
 - [x] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
 - [x] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
 
+## [0.1.63] - bug fixes
+
+- [x] [#314](https://github.com/maidsafe/routing/issues/314) simple_key_value_store input validation lacking
+- [x] [#324](https://github.com/maidsafe/routing/issues/324) simple_key_value_store peer option
+- [x] [#336](https://github.com/maidsafe/routing/issues/336) Routing `0.1.62` causes API inconsistency in usage of RoutingClient
+
 ## [0.1.70] - Activate AccountTransfer
 
 - [ ] [MAID-1068](https://maidsafe.atlassian.net/browse/MAID-1068) Refresh orderable message
