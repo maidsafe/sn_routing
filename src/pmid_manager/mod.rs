@@ -19,13 +19,11 @@
 
 mod database;
 
-use maidsafe_types;
-use routing;
+use maidsafe_types::*;
 use routing::NameType;
 use routing::node_interface::{MethodCall};
-use routing::types::{MessageAction};
+use routing::types::{MessageAction, DestinationAddress};
 use routing::error::{ResponseError, InterfaceError};
-use routing::types::DestinationAddress;
 use routing::sendable::Sendable;
 pub use self::database::PmidManagerAccountWrapper;
 
@@ -61,17 +59,17 @@ impl PmidManager {
     let data = response.clone().unwrap();
     self.db_.delete_data(from_address, data.len() as u64);
     let mut decoder = Decoder::from_bytes(&data[..]);
-    let removed_copy: maidsafe_types::Payload = decoder.decode().next().unwrap().unwrap();
+    let removed_copy: Payload = decoder.decode().next().unwrap().unwrap();
     let mut name : NameType;
     match removed_copy.get_type_tag() {
-      maidsafe_types::PayloadTypeTag::ImmutableData => {
-        name = removed_copy.get_data::<maidsafe_types::ImmutableData>().name();
+      PayloadTypeTag::ImmutableData => {
+        name = removed_copy.get_data::<ImmutableData>().name();
       }
-      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
-        name = removed_copy.get_data::<maidsafe_types::ImmutableDataBackup>().name();
+      PayloadTypeTag::ImmutableDataBackup => {
+        name = removed_copy.get_data::<ImmutableDataBackup>().name();
       }
-      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
-        name = removed_copy.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
+      PayloadTypeTag::ImmutableDataSacrificial => {
+        name = removed_copy.get_data::<ImmutableDataSacrificial>().name();
       }
       _ => { return MethodCall::None; }
     }
@@ -79,12 +77,12 @@ impl PmidManager {
     MethodCall::SendOn { destination: name }
   }
 
-  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
+  pub fn handle_account_transfer(&mut self, payload : Payload) {
       let pmidmanager_account_wrapper : PmidManagerAccountWrapper = payload.get_data();
       self.db_.handle_account_transfer(&pmidmanager_account_wrapper);
   }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::MethodCall> {
+  pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {
     self.db_.retrieve_all_and_reset(close_group)
   }
 }

@@ -18,8 +18,8 @@
 #![allow(dead_code)]
 
 extern crate routing;
+extern crate cbor;
 
-use cbor;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::collections;
 use routing::types::GROUP_SIZE;

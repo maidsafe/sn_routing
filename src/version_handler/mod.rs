@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 #![allow(dead_code)]
-use routing;
 use maidsafe_types;
 use routing::NameType;
+use routing::node_interface::{MethodCall};
 use routing::error::{ResponseError, InterfaceError};
 use routing::types::{MessageAction, GROUP_SIZE};
 use chunk_store::ChunkStore;
@@ -124,12 +124,12 @@ impl VersionHandler {
       self.chunk_store_.put(version_handler_sendable.name(), version_handler_sendable.get_data().clone());
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<routing::node_interface::MethodCall> {
+  pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
        let names = self.chunk_store_.names();
        let mut actions = Vec::with_capacity(names.len());
        for name in names {
             let data = self.chunk_store_.get(name.clone());
-            actions.push(routing::node_interface::MethodCall::Refresh {
+            actions.push(MethodCall::Refresh {
                 content: Box::new(VersionHandlerSendable::new(name, data)),
             });
        }

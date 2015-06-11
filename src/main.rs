@@ -37,7 +37,6 @@ extern crate routing;
 extern crate maidsafe_types;
 extern crate rand;
 
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::spawn;
 
@@ -50,36 +49,33 @@ mod pmid_node;
 mod vault;
 mod utils;
 
-use vault::VaultFacade;
+use vault::{ VaultFacade, VaultGenerator };
 
 /// Placeholder doc test
 pub fn always_true() -> bool { true }
 
 /// The Vault structure to hold the logical interface to provide behavioural logic to routing.
 pub struct Vault {
-  routing_node: routing::routing_node::RoutingNode<VaultFacade>,
+  routing_node: routing::routing_node::RoutingNode<VaultFacade, VaultGenerator>,
 }
 
 impl Vault {
   fn new() -> Vault {
     Vault {
-      routing_node: routing::routing_node::RoutingNode::new(VaultFacade::new()),
+      routing_node: routing::routing_node::RoutingNode::<VaultFacade, VaultGenerator>::new(VaultGenerator),
     }
   }
 }
 
 /// Main entry for start up a vault node
 pub fn main () {
-    let vault = Vault::new();
-    let mutate_vault = Arc::new(Mutex::new(vault));
-    let copied_vault = mutate_vault.clone();
+    let mut vault = Vault::new();
+    let _ = vault.routing_node.bootstrap(None, None);
     let thread_guard = spawn(move || {
         loop {
             thread::sleep_ms(1);
-            let _ = copied_vault.lock().unwrap().routing_node.run();
         }
     });
-    let _ = mutate_vault.lock().unwrap().routing_node.bootstrap(None, None);
     let _ = thread_guard.join();
 }
 
@@ -87,7 +83,6 @@ pub fn main () {
 mod test {
     use super::*;
     use std::io::BufRead;
-    use std::sync::{Arc, Mutex};
     use std::thread;
     use std::thread::spawn;
     use std::process::Stdio;
@@ -97,17 +92,14 @@ mod test {
 
     #[test]
     fn lib_test() {
-        let run_vault = |vault: Vault| {
+        let run_vault = |mut vault: Vault| {
             spawn(move || {
-                let mutate_vault = Arc::new(Mutex::new(vault));
-                let copied_vault = mutate_vault.clone();
+                let _ = vault.routing_node.bootstrap(None, None);
                 let thread_guard = spawn(move || {
                     loop {
                         thread::sleep_ms(1);
-                        let _ = copied_vault.lock().unwrap().routing_node.run();
                     }
                 });
-                let _ = mutate_vault.lock().unwrap().routing_node.bootstrap(None, None);
                 let _ = thread_guard.join();
             })
         };
