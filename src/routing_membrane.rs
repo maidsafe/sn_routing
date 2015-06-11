@@ -236,8 +236,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             match self.handle_unknown_connect_request(&endpoint, bytes.clone()) {
                                 Ok(_) => {
                                     // FIXME : deprecate this approach; we are already directly connected.
-                                    println!("Successfully handled ConnectRequest from
-                                        unidentified connect."); },
+                                    println!("Successfully marked previously unidentified as relay."); },
                                 Err(_) => {
                                     // on any error, handle as WhoAreYou/IAm
                                     println!("Handling message from {:?} as WhoAreYou/IAm.",
@@ -248,10 +247,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                         },
                         None => {
-                            // FIXME: probably should never happen anymore
+                            // FIXME: probably the 'unidentified connection' is useless state;
+                            // only good for pruning later on.
                             println!("New message came from unknown endpoint {:?}", endpoint);
                             // If we don't know the sender, only accept a connect request
-                            let _ = self.handle_unknown_connect_request(&endpoint, bytes);
+                            match self.handle_unknown_connect_request(&endpoint, bytes.clone()) {
+                                Ok(_) => {
+                                    // FIXME : deprecate this approach; we are already directly connected.
+                                    println!("Successfully marked previously unidentified as relay."); },
+                                Err(_) => {
+                                    // on any error, handle as WhoAreYou/IAm
+                                    println!("Handling message from {:?} as WhoAreYou/IAm.",
+                                        endpoint);
+                                    let _ = self.handle_who_are_you(&endpoint, bytes);
+                                },
+                            }
                         }
                     }
                 },
@@ -756,7 +766,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         println!("Handling WhoAreYou/IAm from {:?}", endpoint);
         match decode::<WhoAreYou>(&serialised_message) {
             Ok(who_are_you_msg) => {
-                println!("Received WhoAreYou question on {:?}.", endpoint);
+                println!("Responding to WhoAreYou question on {:?} with IAm.", endpoint);
                 ignore(self.send_i_am_msg(endpoint.clone(), who_are_you_msg.nonce));
                 Ok(())
             },
