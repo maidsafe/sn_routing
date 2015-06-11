@@ -22,7 +22,7 @@ use utils::decode;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct WhoAreYou {
-    nonce: u8  // FIXME: a placeholder for nonce
+    pub nonce: u8  // FIXME: a placeholder for nonce
 }
 // TODO: add nonce to be signed for added security later
 

@@ -51,6 +51,7 @@ use sendable::Sendable;
 use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
+use who_are_you::{WhoAreYou};
 use message_header::MessageHeader;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
@@ -330,9 +331,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // again, already connected so examine later
             },
             None => {
-                self.relay_map.register_unknown_connection(endpoint);
+                self.relay_map.register_unknown_connection(endpoint.clone());
                 // Send "Who are you?" message
-                // self.connection_manager.send()
+                ignore(self.send_who_are_you_msg(endpoint));
             }
       }
     }
@@ -728,6 +729,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 None => Err(RoutingError::FailedToBootstrap)
             }
         }
+    }
+
+    fn send_who_are_you_msg(&mut self, endpoint: Endpoint) -> RoutingResult {
+        let message = try!(encode(&WhoAreYou {nonce : 0u8}));
+        ignore(self.connection_manager.send(endpoint, message));
+        Ok(())
     }
 
     // -----Address and various functions----------------------------------------
