@@ -77,6 +77,11 @@ impl PmidManager {
     MethodCall::SendOn { destination: name }
   }
 
+  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
+      let pmidmanager_account_wrapper : PmidManagerAccountWrapper = payload.get_data();
+      self.db_.handle_account_transfer(&pmidmanager_account_wrapper);
+  }
+
   pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {
     self.db_.retrieve_all_and_reset(close_group)
   }
@@ -89,6 +94,7 @@ mod test {
   use super::{PmidManager};
   use maidsafe_types::*;
   use routing::types::*;
+  use super::database::{PmidManagerAccount, PmidManagerAccountWrapper};
 
   #[test]
   fn handle_put() {
@@ -111,4 +117,14 @@ mod test {
       MessageAction::Reply(_) => panic!("Unexpected"),
     }
   }
+
+    #[test]
+    fn handle_account_transfer() {
+        let mut pmid_manager = PmidManager::new();
+        let name : routing::NameType = routing::test_utils::Random::generate_random();
+        let account_wrapper = PmidManagerAccountWrapper::new(name.clone(), PmidManagerAccount::new());
+        let payload = Payload::new(PayloadTypeTag::PmidManagerAccountTransfer, &account_wrapper);
+        pmid_manager.handle_account_transfer(payload);
+        assert_eq!(pmid_manager.db_.exist(&name), true);
+    }
 }

@@ -198,6 +198,12 @@ impl PmidManagerDatabase {
         entry.delete_data(size)
     }
 
+    pub fn handle_account_transfer(&mut self, account_wrapper : &PmidManagerAccountWrapper) {
+        // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
+        let _ = self.storage.remove(&account_wrapper.name());
+        self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
+    }
+
     pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::MethodCall> {
         let data: Vec<_> = self.storage.drain().collect();
         let mut actions = Vec::with_capacity(data.len());
@@ -219,7 +225,7 @@ mod test {
   extern crate maidsafe_types;
   extern crate rand;
   extern crate routing;
-  use super::{PmidManagerDatabase, PmidManagerAccount};
+  use super::{PmidManagerDatabase, PmidManagerAccount, PmidManagerAccountWrapper};
 
     #[test]
     fn exist() {
@@ -244,6 +250,20 @@ mod test {
     //     assert_eq!(db.put_data(&name, 1), false);
     //     assert_eq!(db.exist(&name), true);
     // }
+
+    #[test]
+    fn handle_account_transfer() {
+        let mut db = PmidManagerDatabase::new();
+        let name = routing::test_utils::Random::generate_random();
+        assert_eq!(db.put_data(&name, 1024), true);
+        assert_eq!(db.exist(&name), true);
+
+        let pmidmanager_account_wrapper = PmidManagerAccountWrapper::new(name.clone(), PmidManagerAccount::new());
+        db.handle_account_transfer(&pmidmanager_account_wrapper);
+        assert_eq!(db.storage[&name].get_offered_space(), 1073741824);
+        assert_eq!(db.storage[&name].get_lost_total_size(), 0);
+        assert_eq!(db.storage[&name].get_stored_total_size(), 0);
+    }
 
     #[test]
     fn pmid_manager_account_serialisation() {

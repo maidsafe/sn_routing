@@ -83,7 +83,7 @@ impl Sendable for VersionHandlerSendable {
 }
 
 pub struct VersionHandler {
-  // This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
+  // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
   // If such assumption becomes in-valid, LruCache or Sqlite based persona specific database shall be used
   chunk_store_ : ChunkStore
 }
@@ -115,6 +115,13 @@ impl VersionHandler {
     // the type_tag needs to be stored as well, ChunkStore::put is overwritable
     self.chunk_store_.put(data_name, data);
     return Err(InterfaceError::Abort);
+  }
+
+  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
+      let version_handler_sendable : VersionHandlerSendable = payload.get_data();
+      // TODO: Assuming the incoming merged entry has the priority and shall also be trusted first
+      self.chunk_store_.delete(version_handler_sendable.name());
+      self.chunk_store_.put(version_handler_sendable.name(), version_handler_sendable.get_data().clone());
   }
 
   pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
@@ -179,6 +186,20 @@ mod test {
                 assert_eq!(sdv_after.value()[1], NameType([6u8;64]));
             }
         }
+    }
+
+    #[test]
+    fn handle_account_transfer() {
+        let name = NameType([3u8; 64]);
+        let owner = NameType([4u8; 64]);
+        let value = vec![NameType([5u8; 64]), NameType([6u8; 64])];
+        let sdv = StructuredData::new(name.clone(), owner, value);
+
+        let mut version_handler = VersionHandler::new();
+        let payload = Payload::new(PayloadTypeTag::VersionHandlerAccountTransfer,
+                                   &VersionHandlerSendable::new(name.clone(), sdv.serialised_contents()));
+        version_handler.handle_account_transfer(payload);
+        assert_eq!(version_handler.chunk_store_.has_chunk(name), true);
     }
 
     #[test]

@@ -20,7 +20,7 @@
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://dirvine.github.io/dirvine/maidsafe_vault/")]
-
+#![forbid(bad_style, warnings)]
 #![deny(missing_docs)]
 //! MaidSafe Vault provides the interface to SAFE routing.
 //!
