@@ -783,14 +783,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn handle_i_am(&mut self, endpoint: Endpoint, i_am: IAm) -> RoutingResult {
+        println!("Handling IAm {:?} on {:?}", i_am.public_id.name(), endpoint);
         match i_am.public_id.is_relocated() {
             // if it is relocated, we consider the connection for our routing table
             true => {
                 // check we have a cache for his public id from the relocation procedure
-                match self.public_id_cache.remove(&i_am.public_id.name()) {
+                match self.public_id_cache.get(&i_am.public_id.name()) {
                     Some(cached_public_id) => {
                         // check the full fob received corresponds, not just the names
-                        if cached_public_id == i_am.public_id {
+                        if cached_public_id == &i_am.public_id {
                             let peer_endpoints = vec![endpoint.clone()];
                             let peer_node_info = NodeInfo::new(i_am.public_id.clone(), peer_endpoints,
                                 Some(endpoint.clone()));
@@ -1052,10 +1053,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // check whether we have a temporary record of this relocated Id,
         // which we would have stored after the sentinel group consensus
         // of the relocated Id. If the fobs match, add it to routing_table.
-        match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
+        match self.public_id_cache.get(&connect_request.requester_fob.name()) {
             Some(public_id) => {
                 // check the full fob received corresponds, not just the names
-                if public_id == connect_request.requester_fob {
+                if public_id == &connect_request.requester_fob {
+/* FIXME: we will add this node to the routing table on WhoAreYou
                     // Collect the local and external endpoints into a single vector to construct a NodeInfo
                     let mut peer_endpoints = connect_request.local_endpoints.clone();
                     peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
@@ -1066,6 +1068,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     if !added {
                         return Err(RoutingError::RefusedFromRoutingTable); }
                     println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name());
+*/
                     // Try to connect to the peer.
                     self.connection_manager.connect(connect_request.local_endpoints.clone());
                     self.connection_manager.connect(connect_request.external_endpoints.clone());
@@ -1171,7 +1174,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             (Authority::NaeManager, Authority::NaeManager, true) => {
                 // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
-                if !self.public_id_cache.check(&put_public_id.public_id.name()) {
+                if !self.public_id_cache.contains_key(&put_public_id.public_id.name()) {
                   self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
                   // Reply with PutPublicIdResponse to the reply_to address
                   let reply_header = header.create_reply(&self.own_name, &our_authority);
@@ -1323,7 +1326,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // assign_relocated_name
         relocated_public_id.assign_relocated_name(relocated_name.clone());
 
-        if !self.public_id_cache.check(&relocated_name) {
+        if !self.public_id_cache.contains_key(&relocated_name) {
             self.public_id_cache.add(relocated_name, relocated_public_id.clone());
             // Reply with PutPublicIdResponse to the reply_to address
             let reply_header = header.create_reply(&self.own_name, &Authority::NaeManager);
