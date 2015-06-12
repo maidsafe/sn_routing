@@ -15,15 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused_assignments)]
-
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sendable::Sendable;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Refresh<T> where T: Sendable + Encodable + Decodable {
-    payload: T,
+    pub payload: T,
 }
 
 impl<T> Encodable for Refresh<T> where T: Sendable + Encodable + Decodable {
