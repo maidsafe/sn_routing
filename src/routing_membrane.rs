@@ -1148,7 +1148,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let put_public_id = try!(decode::<PutPublicId>(&body));
         let our_authority = our_authority(&put_public_id.public_id.name(), &header, &self.routing_table);
-
+        println!("Handle PutPublicId from {:?}.", header.source.from_node);
         match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
             (Authority::ManagedNode, Authority::NaeManager, false) => {
                 let mut put_public_id_relocated = put_public_id.clone();
@@ -1184,6 +1184,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                                         PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
                                                         &self.id.get_crypto_secret_sign_key());
                   let encoded_msg = try!(encode(&routing_msg));
+
+                  // intercept if we can relay it directly
+                  match (routing_msg.message_header.destination.dest.clone(),
+                      routing_msg.message_header.destination.relay_to.clone()) {
+                      (dest, Some(relay)) => {
+                          // if we should directly respond to this message, do so
+                          if dest == self.own_name
+                              && self.relay_map.contains_relay_for(&relay) {
+                              println!("Sending FindGroupResponse directly to relay {:?}", relay);
+                              self.send_out_as_relay(&relay, encoded_msg);
+                              return Ok(());
+                          }
+                      },
+                      _ => {}
+                  };
+
                   // Send this to the relay node as specified in the reply_header
                   self.send_swarm_or_parallel(&destination, &encoded_msg);
                 }
