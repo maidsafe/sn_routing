@@ -77,7 +77,7 @@ impl Decodable for Authority {
 ///    -> Client Manager
 /// b) if the element is within our close group range
 ///       and the destination is the element
-///       and the source is not the destination
+///       and the source group is not the destination
 ///    -> Network-Addressable-Element Manager
 /// c) if the element is within our close group range
 ///       and the source is the destination, and equals the element
@@ -100,7 +100,10 @@ pub fn our_authority(element : &NameType, header : &MessageHeader,
         return Authority::ClientManager; }
     else if routing_table.address_in_our_close_group_range(element)
        && header.destination.dest == *element
-       && header.from() != header.destination.dest {
+       && match header.from_group() {
+          Some(group_source) => {
+             group_source != header.destination.dest},
+          None => true } {
         return Authority::NaeManager; }
     else if routing_table.address_in_our_close_group_range(element)
        && header.destination.dest == *element
