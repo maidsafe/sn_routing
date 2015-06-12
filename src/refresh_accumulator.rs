@@ -17,7 +17,6 @@
 
 use lru_time_cache::LruCache;
 use std::collections::{BTreeMap};
-use rustc_serialize::{Decodable, Encodable};
 use sendable::Sendable;
 use NameType;
 
@@ -28,7 +27,7 @@ const MAX_REQUEST_COUNT: usize = 1000;
 pub type Request = (NameType, u64);
 
 pub struct RefreshAccumulator<T>
-    where T: Clone + Sendable + Encodable + Decodable {
+    where T: Clone + Sendable {
 
     //                                 +-> Who sent it
     //                                 |
@@ -36,7 +35,7 @@ pub struct RefreshAccumulator<T>
 }
 
 impl<T> RefreshAccumulator<T>
-    where T: Clone + Sendable + Encodable + Decodable {
+    where T: Clone + Sendable {
 
     pub fn new() -> RefreshAccumulator<T> {
         RefreshAccumulator {
