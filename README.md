@@ -23,8 +23,8 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [x] [MAID-1008](https://maidsafe.atlassian.net/browse/MAID-1008) Documentation
     - [x] [MAID-1009](https://maidsafe.atlassian.net/browse/MAID-1009) Personas
         - [x] ClientManager : MaidManager
-        - [ ] NodeManager : PmidManager
-        - [ ] Node : PmidNode
+        - [x] NodeManager : PmidManager
+        - [x] Node : PmidNode
         - [x] NAE : DataManager, VersionHandler
     - [x] [MAID-1011](https://maidsafe.atlassian.net/browse/MAID-1011) Accounting
         - [x] MaidAccount : create, update and monitor
@@ -45,9 +45,9 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 - [x] [MAID-1012](https://maidsafe.atlassian.net/browse/MAID-1012) SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ ) documentation
     - [x] farming
     - [x] account
-- [ ] [MAID-1021](https://maidsafe.atlassian.net/browse/MAID-1021) Implement handling for Safecoin farming rate
-    - [ ] Farming rate determined by the Sacrificial copies.  
-    - [ ] Farming rate drops when more copies are available and rises when less copies are available.
+- [x] [MAID-1021](https://maidsafe.atlassian.net/browse/MAID-1021) Implement handling for Safecoin farming rate
+    - [x] Farming rate determined by the Sacrificial copies.  
+    - [x] Farming rate drops when more copies are available and rises when less copies are available.
 
 
 #Detailed documentation
