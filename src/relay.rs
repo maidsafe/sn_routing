@@ -114,6 +114,7 @@ impl RelayMap {
         match new_entry {
             Some((name, (public_id, endpoints))) => {
                 if endpoints.is_empty() {
+                    println!("Connection {:?} lost for relayed node {:?}", endpoint_to_drop, name);
                     Some(name.clone())
                 } else {
                     self.relay_map.insert(name.clone(), (public_id.clone(), endpoints.clone()));
