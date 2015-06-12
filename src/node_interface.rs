@@ -34,6 +34,7 @@ pub enum MethodCall {
     Post,
     /// request to refresh
     Refresh { content: Box<Sendable>, },
+    RefreshNew { type_tag: u64, from_group: NameType, payload: Vec<u8>, },
     /// request to send on the request to destination for further handling
     SendOn { destination: NameType },
 }

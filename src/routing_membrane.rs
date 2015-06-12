@@ -910,6 +910,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
             MethodCall::Refresh { content: x, } => self.refresh(x),
+            MethodCall::RefreshNew { type_tag, from_group, payload } => self.refresh_new(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
@@ -1202,6 +1203,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
             MethodCall::Refresh { content: x, } => self.refresh(x),
+            MethodCall::RefreshNew { type_tag, from_group, payload } => self.refresh_new(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
