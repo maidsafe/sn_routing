@@ -672,37 +672,29 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// Scan all passing messages for the existance of nodes in the address space.
     /// If a node is detected with a name that would improve our routing table,
-    /// then we cache this name.  During a delay of 5 seconds, we collapse
-    /// all re-occurances of this name, after which we send out a connect_request
-    /// if the name is still of interest to us at that point in time.
-    /// The large delay of 5 seconds is justified, because this is only a passive
-    /// mechanism, second to active FindGroup requests.
+    /// then try to connect.  During a delay of 5 seconds, we collapse
+    /// all re-occurances of this name, and block a new connect request
+    /// TODO: The behaviour of this function has been adapted to serve as a filter
+    /// to cover for the lack of a filter on FindGroupResponse
     fn refresh_routing_table(&mut self, from_node : &NameType) {
+      let time_now = SteadyTime::now();
       if self.routing_table.check_node(from_node) {
-          // FIXME: add correction for already connected, but not-online close node
-          let mut next_connect_request : Option<NameType> = None;
-          let time_now = SteadyTime::now();
+          // hold off connect request if it was already in cache
+          if !self.connection_cache.contains_key(&from_node) {
+              ignore(self.send_connect_request_msg(&from_node));
+          }
           self.connection_cache.entry(from_node.clone())
-                               .or_insert(time_now);
-          for (new_node, time) in self.connection_cache.iter() {
-              // note that the first method to establish the close group
-              // is through explicit FindGroup messages.
-              // This refresh on scanning messages is secondary, hence the long delay.
-              if time_now - *time > Duration::seconds(5) {
-                  next_connect_request = Some(new_node.clone());
-                  break;
-              }
-          }
-          match next_connect_request {
-              Some(connect_to_node) => {
-                  self.connection_cache.remove(&connect_to_node);
-                  // check whether it is still valid to add this node.
-                  if self.routing_table.check_node(&connect_to_node) {
-                      ignore(self.send_connect_request_msg(&connect_to_node));
-                  }
-              },
-              None => ()
-          }
+              .or_insert(time_now);
+       }
+       let mut prune_blockage : Vec<NameType> = Vec::new();
+       for (blocked_node, time) in self.connection_cache.iter_mut() {
+           // clear block for nodes
+           if time_now - *time > Duration::seconds(5) {
+               prune_blockage.push(blocked_node.clone());
+           }
+       }
+       for prune_name in prune_blockage {
+           self.connection_cache.remove(&prune_name);
        }
     }
 
@@ -1251,10 +1243,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         println!("Received FindGroupResponse from node {:?}", original_header.source.from_node);
 
         for peer in find_group_response.group {
-            if self.routing_table.check_node(&peer.name()) {
-                println!("Sending ConnectRequest to {:?}", peer.name());
-                ignore(self.send_connect_request_msg(&peer.name()));
-            }
+            // if self.routing_table.check_node(&peer.name()) {
+                self.refresh_routing_table(&peer.name());
+                // println!("Sending ConnectRequest to {:?}", peer.name());
+                // ignore(self.send_connect_request_msg(&peer.name()));
+            // }
         }
         Ok(())
     }
