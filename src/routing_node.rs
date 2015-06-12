@@ -37,6 +37,7 @@ use messages::put_public_id::PutPublicId;
 use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
 use message_header::MessageHeader;
+use sendable::Sendable;
 use error::{RoutingError};
 use std::thread::spawn;
 
@@ -48,10 +49,12 @@ type PortAndProtocol = crust::Port;
 type RoutingResult = Result<(), RoutingError>;
 
 /// DHT node
-pub struct RoutingNode<F, G> where F : Interface + 'static,
-                                   G : CreatePersonas<F> {
+pub struct RoutingNode<F, RefreshType, G> where F : Interface + 'static,
+                                                RefreshType : Sendable + Encodable + Decodable,
+                                                G : CreatePersonas<F> {
     genesis: Box<G>,
-    phantom_data: PhantomData<F>,
+    phantom_interface: PhantomData<F>,
+    phantom_refresh_type: PhantomData<RefreshType>,
     id: types::Id,
     own_name: NameType,
     next_message_id: MessageId,
@@ -59,14 +62,17 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     bootstrap_node_id: Option<NameType>,
 }
 
-impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
-                                   G : CreatePersonas<F> {
-    pub fn new(genesis: G) -> RoutingNode<F, G> {
+impl<F, RefreshType, G> RoutingNode<F, RefreshType, G>
+    where F : Interface + 'static,
+          RefreshType : Sendable + Encodable + Decodable,
+          G : CreatePersonas<F> {
+    pub fn new(genesis: G) -> RoutingNode<F, RefreshType, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let id = types::Id::new();
         let own_name = id.get_name();
         RoutingNode { genesis: Box::new(genesis),
-                      phantom_data: PhantomData,
+                      phantom_interface: PhantomData,
+                      phantom_refresh_type: PhantomData,
                       id : id,
                       own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),

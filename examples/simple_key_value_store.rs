@@ -383,6 +383,13 @@ impl Interface for TestNode {
     }
 }
 
+#[derive(Encodable, Decodable)]
+struct TestRefresh;
+
+impl Sendable for TestRefresh {
+    
+}
+
 struct TestNodeGenerator;
 
 impl CreatePersonas<TestNode> for TestNodeGenerator {
@@ -392,7 +399,8 @@ impl CreatePersonas<TestNode> for TestNodeGenerator {
 }
 
 fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
-    let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+    let mut test_node = RoutingNode::<TestNode, TestRefresh,
+        TestNodeGenerator>::new(TestNodeGenerator);
     if is_first {
         test_node.run_zero_membrane();
     } else {
