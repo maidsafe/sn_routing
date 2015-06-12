@@ -97,12 +97,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
-        println!("ZERO listening on {:?}", listeners.0.first());
         let original_name = self.id.get_name();
         let self_relocated_name = types::calculate_self_relocated_name(
             &self.id.get_crypto_public_sign_key(),
             &self.id.get_crypto_public_key(),
             &self.id.get_validation_token());
+        println!("ZERO listening on {:?}, named {:?}", listeners.0.first(),
+            self_relocated_name);
         self.id.assign_relocated_name(self_relocated_name);
 
         let mut membrane = RoutingMembrane::<F>::new(
@@ -140,7 +141,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         // CRUST bootstrap
         let bootstrapped_to = try!(cm.bootstrap(bootstrap_list, beacon_port)
             .map_err(|_|RoutingError::FailedToBootstrap));
-        println!("BOOTSTRAP {:?}", bootstrapped_to);
+        println!("BOOTSTRAP to {:?}", bootstrapped_to);
         println!("NODE listening on {:?}", listeners.0.first());
         self.bootstrap_endpoint = Some(bootstrapped_to.clone());
         cm.connect(vec![bootstrapped_to.clone()]);
@@ -182,7 +183,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                         .is_ok());
                                 },
                                 MessageTypeTag::PutPublicIdResponse => {
-                                    println!("Received PutPublicId response");
                                     let put_public_id_response =
                                         try!(decode::<PutPublicIdResponse>(&message.serialised_body));
                                     relocated_name = Some(put_public_id_response.public_id.name());
@@ -190,6 +190,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                     if put_public_id_response.public_id.validation_token
                                         != self.id.get_validation_token() {
                                         return Err(RoutingError::FailedToBootstrap); }
+                                    println!("Received PutPublicId relocated name {:?} from {:?}",
+                                        relocated_name, self.id.get_name());
                                     break;
                                 },
                                 _ => {
@@ -198,8 +200,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             }
                         },
                         Err(_) => {
-                            println!("Received non-RoutingMessage on {:?},
-                                presumably WhoAreYou; ignoring.", endpoint);
+                          // WhoAreYou/IAm messages fall in here.
                         }
                     };
                 },
@@ -214,7 +215,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
         match relocated_name {
             Some(relocated_name) => {
-                println!("Assign myself relocated name {:?}", relocated_name);
                 self.id.assign_relocated_name(relocated_name);
                 debug_assert!(self.id.is_relocated());
                 let mut membrane = RoutingMembrane::<F>::new(
