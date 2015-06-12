@@ -17,35 +17,38 @@
 
 use lru_time_cache::LruCache;
 use std::collections::{BTreeMap};
-use sendable::Sendable;
 use NameType;
 
 type Map<K,V> = BTreeMap<K,V>;
+pub type Bytes = Vec<u8>;
 
 const MAX_REQUEST_COUNT: usize = 1000;
 
+//                     +-> Source and target group
+//                     |
 pub type Request = (NameType, u64);
 
-pub struct RefreshAccumulator<T>
-    where T: Clone + Sendable {
-
+pub struct RefreshAccumulator {
     //                                 +-> Who sent it
     //                                 |
-    requests: LruCache<Request, Map<NameType, T>>,
+    requests: LruCache<Request, Map<NameType, Bytes>>,
 }
 
-impl<T> RefreshAccumulator<T>
-    where T: Clone + Sendable {
+impl RefreshAccumulator {
 
-    pub fn new() -> RefreshAccumulator<T> {
+    pub fn new() -> RefreshAccumulator {
         RefreshAccumulator {
             requests: LruCache::with_capacity(MAX_REQUEST_COUNT),
         }
     }
 
-    pub fn add_message(&mut self, threshold: usize, sender: NameType, payload: T)
-        -> Option<Vec<T>> {
-        let request = (payload.name(), payload.type_tag());
+    pub fn add_message(&mut self,
+                       threshold:    usize,
+                       type_tag:     u64,
+                       sender_node:  NameType,
+                       sender_group: NameType,
+                       payload:      Bytes) -> Option<Vec<Bytes>> {
+        let request = (sender_group, type_tag);
 
         {
             if threshold <= 1 {
@@ -53,7 +56,7 @@ impl<T> RefreshAccumulator<T>
             }
 
             let map = self.requests.entry(request.clone()).or_insert_with(||Map::new());
-            map.insert(sender, payload);
+            map.insert(sender_node, payload);
 
             if map.len() < threshold {
                 return None;

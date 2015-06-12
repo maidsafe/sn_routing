@@ -53,6 +53,7 @@ use message_header::MessageHeader;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_data::GetData;
+use messages::refresh::Refresh;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
 use messages::put_data_response::PutDataResponse;
@@ -813,6 +814,25 @@ impl<F> RoutingMembrane<F> where F: Interface {
     pub fn refresh(&mut self, content: Box<Sendable>) {
         self.put(content.name(), content);
     }
+
+    pub fn refresh_new(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
+        let destination = types::DestinationAddress{ dest: from_group.clone(), relay_to: None };
+
+        let request = Refresh { type_tag: type_tag, payload: content };
+
+        let header = MessageHeader::new(self.get_next_message_id(),
+                                        destination,
+                                        self.our_source_address(Some(from_group)),
+                                        Authority::OurCloseGroup);
+
+        let message = RoutingMessage::new(MessageTypeTag::Refresh,
+                                          header,
+                                          request,
+                                          &self.id.get_crypto_secret_sign_key());
+
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
+    }
+
 
     // -----Message Handlers from Routing Table connections----------------------------------------
 
