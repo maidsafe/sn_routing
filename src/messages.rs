@@ -53,6 +53,8 @@ pub mod put_data_response;
 pub mod put_public_id;
 #[path="messages/put_public_id_response.rs"]
 pub mod put_public_id_response;
+#[path="messages/refresh.rs"]
+pub mod refresh;
 
 
 
@@ -87,6 +89,7 @@ pub enum MessageTypeTag {
     AccountTransfer,
     PutPublicId,
     PutPublicIdResponse,
+    Refresh,
     Unknown,
 }
 
@@ -115,6 +118,7 @@ impl Encodable for MessageTypeTag {
             MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
             MessageTypeTag::PutPublicId => type_tag = "PutPublicId",
             MessageTypeTag::PutPublicIdResponse => type_tag = "PutPublicIdResponse",
+            MessageTypeTag::Refresh => type_tag = "Refresh",
             MessageTypeTag::Unknown => type_tag = "Unknown",
         };
         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
@@ -148,6 +152,7 @@ impl Decodable for MessageTypeTag {
             "PutPublicId" => Ok(MessageTypeTag::PutPublicId),
             "PutPublicIdResponse" => Ok(MessageTypeTag::PutPublicIdResponse),
             "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),
+            "Refresh" => Ok(MessageTypeTag::Refresh),
             _ => Ok(MessageTypeTag::Unknown)
         }
     }
