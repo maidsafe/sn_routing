@@ -184,10 +184,9 @@ impl Sendable for TestData {
 
     fn serialised_contents(&self) -> Vec<u8> {
         let mut e = cbor::Encoder::from_memory();
-        match e.encode(&[&self]) {
-            Ok(()) => e.into_bytes(),
-            Err(_) => Vec::<u8>::new()
-        }
+        e.encode(&[&self]).unwrap();
+        e.into_bytes()
+
     }
 
     fn refresh(&self) -> bool {
