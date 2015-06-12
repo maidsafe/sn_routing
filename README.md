@@ -68,7 +68,7 @@ Churn, duplication of data and ensuring all members of a group agree is handled 
 
 ### general considerations
 
-Nodes and data both live in the same XOR space which is addressed with a 2^512 bit key; a Network-Addressable-Element (NAE).  A message flows from a NAE to a NAE.  An operation can be performed on a message flow by a manager group.
+Nodes and data both live in the same XOR space which is addressed with a 512 bit key (2^512 possible addresses); a Network-Addressable-Element (NAE).  A message flows from a NAE to a NAE.  An operation can be performed on a message flow by a manager group.
 
 A message flow from start to end can be represented by
 
