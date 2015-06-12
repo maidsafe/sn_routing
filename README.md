@@ -67,6 +67,15 @@ correct name calculation of pure Id
 - [x] [#324](https://github.com/maidsafe/routing/issues/324) simple_key_value_store peer option
 - [x] [#336](https://github.com/maidsafe/routing/issues/336) Routing `0.1.62` causes API inconsistency in usage of RoutingClient
 
+## [0.1.64] - bug fixes
+
+- [x] [#330](https://github.com/maidsafe/routing/issues/330) Who-Are-You / I-Am message for identifying new connections
+- [x] [#312](https://github.com/maidsafe/routing/issues/312) Fix never-connecting client
+- [x] [#343](https://github.com/maidsafe/routing/issues/343) Filter escalating number of connect requests
+- [x] [#342](https://github.com/maidsafe/routing/issues/342) Clean up overloaded debug command line printout
+- [x] [#347](https://github.com/maidsafe/routing/issues/347) Relay GetDataResponses and cached GetDataResponses back to relayed node
+
+
 ## [0.1.70] - Activate AccountTransfer
 
 - [ ] [MAID-1068](https://maidsafe.atlassian.net/browse/MAID-1068) Refresh orderable message
