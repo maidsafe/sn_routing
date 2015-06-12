@@ -65,6 +65,7 @@ use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::MethodCall;
+use refresh_accumulator::RefreshAccumulator;
 
 // use std::convert::From;
 
@@ -99,6 +100,7 @@ pub struct RoutingMembrane<F : Interface> {
     filter: MessageFilter<types::FilterType>,
     public_id_cache: LruCache<NameType, types::PublicId>,
     connection_cache: BTreeMap<NameType, SteadyTime>,
+    refresh_accumulator: RefreshAccumulator,
     // for Persona logic
     interface: Box<F>
 }
@@ -126,6 +128,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                       public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
                       connection_cache: BTreeMap::new(),
+                      refresh_accumulator: RefreshAccumulator::new(),
                       interface : Box::new(personas)
                     }
     }
@@ -546,12 +549,30 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageTypeTag::PutData => self.handle_put_data(header, body),
                     MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
                     MessageTypeTag::PutPublicId => self.handle_put_public_id(header, body),
+                    MessageTypeTag::Refresh => self.handle_refresh(header, body),
                     _ => {
                         Err(RoutingError::UnknownMessageType)
                     }
                 }
             }
         }
+    }
+
+    fn handle_refresh(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        let refresh = try!(decode::<Refresh>(&body));
+        let from_group = try!(header.from_group().ok_or(RoutingError::RefreshNotFromGroup));
+
+        let threshold = (self.routing_table.size() as f32) * 0.8; // 80% chosen arbitrary
+
+        let opt_payloads = self.refresh_accumulator.add_message(threshold as usize,
+                                                                refresh.type_tag,
+                                                                header.from_node(),
+                                                                from_group,
+                                                                refresh.payload);
+
+        opt_payloads.map(|payloads| /* TODO: Handle refresh in the interface */());
+
+        Ok(())
     }
 
     /// Scan all passing messages for the existance of nodes in the address space.
