@@ -97,12 +97,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
-        println!("ZERO listening on {:?}", listeners.0.first());
         let original_name = self.id.get_name();
         let self_relocated_name = types::calculate_self_relocated_name(
             &self.id.get_crypto_public_sign_key(),
             &self.id.get_crypto_public_key(),
             &self.id.get_validation_token());
+        println!("ZERO listening on {:?}, named {:?}", listeners.0.first(),
+            self_relocated_name);
         self.id.assign_relocated_name(self_relocated_name);
 
         let mut membrane = RoutingMembrane::<F>::new(
@@ -140,7 +141,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         // CRUST bootstrap
         let bootstrapped_to = try!(cm.bootstrap(bootstrap_list, beacon_port)
             .map_err(|_|RoutingError::FailedToBootstrap));
-        println!("BOOTSTRAP {:?}", bootstrapped_to);
+        println!("BOOTSTRAP to {:?}", bootstrapped_to);
         println!("NODE listening on {:?}", listeners.0.first());
         self.bootstrap_endpoint = Some(bootstrapped_to.clone());
         cm.connect(vec![bootstrapped_to.clone()]);
@@ -160,42 +161,51 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         // FIXME: for now just write out explicitly in this function the bootstrapping loop
         // - fully check match of returned public id with ours
         // - break from loop if unsuccessful; no response; retry
+        // - this initial bootstrap should only use the WhoAreYou paradigm,
+        //   not the unknown_connect_request as currently used.
         println!("Waiting for responses from network");
         loop {
             match event_input.recv() {
-                Err(_) => (),
+                Err(_) => {},
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                    let message = try!(decode::<RoutingMessage>(&bytes));
-                    match message.message_type {
-                        MessageTypeTag::ConnectResponse => {
-                            // for now, ignore the actual response message
-                            // bootstrap node responded, try to put our id to the network
-                            println!("Received connect response");
-                            let put_public_id_msg
-                                = self.construct_put_public_id_msg(
-                                &types::PublicId::new(&unrelocated_id));
-                            let serialised_message = try!(encode(&put_public_id_msg));
-                            debug_assert!(cm.send(bootstrapped_to.clone(), serialised_message)
-                                .is_ok());
+                    match decode::<RoutingMessage>(&bytes) {
+                        Ok(message) => {
+                            match message.message_type {
+                                MessageTypeTag::ConnectResponse => {
+                                    // for now, ignore the actual response message
+                                    // bootstrap node responded, try to put our id to the network
+                                    println!("Received connect response");
+                                    let put_public_id_msg
+                                        = self.construct_put_public_id_msg(
+                                        &types::PublicId::new(&unrelocated_id));
+                                    let serialised_message = try!(encode(&put_public_id_msg));
+                                    debug_assert!(cm.send(bootstrapped_to.clone(), serialised_message)
+                                        .is_ok());
+                                },
+                                MessageTypeTag::PutPublicIdResponse => {
+                                    let put_public_id_response =
+                                        try!(decode::<PutPublicIdResponse>(&message.serialised_body));
+                                    relocated_name = Some(put_public_id_response.public_id.name());
+                                    debug_assert!(put_public_id_response.public_id.is_relocated());
+                                    if put_public_id_response.public_id.validation_token
+                                        != self.id.get_validation_token() {
+                                        return Err(RoutingError::FailedToBootstrap); }
+                                    println!("Received PutPublicId relocated name {:?} from {:?}",
+                                        relocated_name, self.id.get_name());
+                                    break;
+                                },
+                                _ => {
+                                    println!("Received unexpected message");
+                                }
+                            }
                         },
-                        MessageTypeTag::PutPublicIdResponse => {
-                            println!("Received PutPublicId response");
-                            let put_public_id_response =
-                                try!(decode::<PutPublicIdResponse>(&message.serialised_body));
-                            relocated_name = Some(put_public_id_response.public_id.name());
-                            debug_assert!(put_public_id_response.public_id.is_relocated());
-                            if put_public_id_response.public_id.validation_token
-                                != self.id.get_validation_token() {
-                                return Err(RoutingError::FailedToBootstrap); }
-                            break;
-                        },
-                        _ => {
-                            println!("Received unexpected message");
+                        Err(_) => {
+                          // WhoAreYou/IAm messages fall in here.
                         }
-                    }
+                    };
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
-                    // FIXME: handle this; safe to ignore for now
+                    println!("NewConnection on {:?} while waiting on network.", endpoint);
                 },
                 Ok(crust::Event::LostConnection(endpoint)) => {
                     return Err(RoutingError::FailedToBootstrap);
@@ -205,7 +215,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
         match relocated_name {
             Some(relocated_name) => {
-                println!("Assign myself relocated name {:?}", relocated_name);
                 self.id.assign_relocated_name(relocated_name);
                 debug_assert!(self.id.is_relocated());
                 let mut membrane = RoutingMembrane::<F>::new(

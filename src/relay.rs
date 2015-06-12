@@ -22,20 +22,22 @@
 //! These messages include bootstrap actions by starting nodes or relay messages for clients.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use lru_time_cache::LruCache;
-use time::{Duration};
+use time::{SteadyTime};
 use crust::Endpoint;
 use types::{Id, PublicId};
 use NameType;
 
-const MAX_RELAY : usize = 5;
+const MAX_RELAY : usize = 100;
 
 /// The relay map is used to maintain a list of contacts for whom
 /// we are relaying messages, when we are ourselves connected to the network.
 pub struct RelayMap {
     relay_map: BTreeMap<NameType, (PublicId, BTreeSet<Endpoint>)>,
     lookup_map: HashMap<Endpoint, NameType>,
-    accepted_connect_requests: LruCache<Endpoint, PublicId>,
+    // FIXME : we don't want to store a value; but LRUcache can clear itself out
+    // however, we want the explicit timestamp stored and clear it at routing,
+    // to drop the connection on clearing; for now CM will just keep all these connections
+    unknown_connections: HashMap<Endpoint, SteadyTime>,
     our_name: NameType,
     self_relocated: bool
 }
@@ -46,7 +48,7 @@ impl RelayMap {
         RelayMap {
             relay_map: BTreeMap::new(),
             lookup_map: HashMap::new(),
-            accepted_connect_requests: LruCache::with_expiry_duration(Duration::minutes(1)),
+            unknown_connections: HashMap::new(),
             our_name: our_id.get_name(),
             self_relocated: our_id.is_self_relocated()
         }
@@ -112,6 +114,7 @@ impl RelayMap {
         match new_entry {
             Some((name, (public_id, endpoints))) => {
                 if endpoints.is_empty() {
+                    println!("Connection {:?} lost for relayed node {:?}", endpoint_to_drop, name);
                     Some(name.clone())
                 } else {
                     self.relay_map.insert(name.clone(), (public_id.clone(), endpoints.clone()));
@@ -156,21 +159,23 @@ impl RelayMap {
         self.our_name = new_name.clone();
     }
 
-    /// On unknown connect request, register the PublicId we intended to connect to.
-    /// Only an unrelocated Id is accepted into the cache.
-    pub fn register_accepted_connect_request(&mut self, endpoints: &Vec<Endpoint>, public_id: &PublicId) {
-        // Note: consider whether we can reduce/remove this state-holder
-        // This should be possible with a connect success message.
-        if public_id.is_relocated() { return; }
-        for endpoint in endpoints {
-            self.accepted_connect_requests.add(endpoint.clone(), public_id.clone());
+    /// On unknown NewConnection, register the endpoint we are connected to.
+    pub fn register_unknown_connection(&mut self, endpoint: Endpoint) {
+        // TODO: later prune and drop old unknown connections
+        self.unknown_connections.insert(endpoint, SteadyTime::now());
+    }
+
+    /// When we receive an "I am" message on this connection, drop it
+    pub fn remove_unknown_connection(&mut self, endpoint: &Endpoint) -> Option<Endpoint> {
+        match self.unknown_connections.remove(endpoint) {
+            Some(addded_timestamp) => Some(endpoint.clone()), // return the endpoint
+            None => None
         }
     }
 
-    /// When we receive a new connection_event from CRUST we can pop the Id
-    /// and add it to the RelayMap
-    pub fn pop_accepted_connect_request(&mut self, endpoint: &Endpoint) -> Option<PublicId> {
-        self.accepted_connect_requests.remove(endpoint)
+    /// Returns true if the endpoint has been registered as an unknown NewConnection
+    pub fn lookup_unknown_connection(&self, endpoint: &Endpoint) -> bool {
+        self.unknown_connections.contains_key(endpoint)
     }
 
     /// Returns true if the relay map was instantiated with a self_relocated id.
@@ -281,4 +286,6 @@ mod test {
     }
 
     // TODO: add test for drop_endpoint
+
+    // TODO: add tests for unknown_connections
 }
