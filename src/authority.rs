@@ -25,6 +25,9 @@ use NameType;
 pub enum Authority {
   ClientManager,  // from a node in our range but not routing table
   NaeManager,     // target (name()) is in the group we are in
+  OurCloseGroup,  // for account transfer where the source = the destination (= the element)
+                  // this reflects a NAE back onto itself, but on a refreshed group
+                  // TODO: find a better name, this name is a bit of a misnomer
   NodeManager,    // received from a node in our routing table (handle refresh here)
   ManagedNode,    // in our group and routing table
   ManagedClient,  // in our group
@@ -37,6 +40,7 @@ impl Encodable for Authority {
     let authority = match *self {
       Authority::ClientManager => "ClientManager",
       Authority::NaeManager => "NaeManager",
+      Authority::OurCloseGroup => "OurCloseGroup",
       Authority::NodeManager => "NodeManager",
       Authority::ManagedNode => "ManagedNode",
       Authority::ManagedClient => "ManagedClient",
@@ -54,6 +58,7 @@ impl Decodable for Authority {
     match &authority[..] {
       "ClientManager" => Ok(Authority::ClientManager),
       "NaeManager" => Ok(Authority::NaeManager),
+      "OurCloseGroup" => Ok(Authority::OurCloseGroup),
       "NodeManager" => Ok(Authority::NodeManager),
       "ManagedNode" => Ok(Authority::ManagedNode),
       "ManagedClient" => Ok(Authority::ManagedClient),
@@ -72,16 +77,21 @@ impl Decodable for Authority {
 ///    -> Client Manager
 /// b) if the element is within our close group range
 ///       and the destination is the element
+///       and the source is not the destination
 ///    -> Network-Addressable-Element Manager
-/// c) if the message is from a group,
+/// c) if the element is within our close group range
+///       and the source is the destination, and equals the element
+///       and it is from a group
+///    -> OurCloseGroup for AccountTransfer
+/// d) if the message is from a group,
 ///       the destination is within our close group,
 ///       and our id is not the destination
 ///    -> Node Manager
-/// d) if the message is from a group,
+/// e) if the message is from a group,
 ///       the group is within our close group range,
 ///       and the destination is our id
 ///    -> Managed Node
-/// e) otherwise return Unknown Authority
+/// f) otherwise return Unknown Authority
 pub fn our_authority(element : &NameType, header : &MessageHeader,
                      routing_table : &RoutingTable) -> Authority {
     if !header.is_from_group()
@@ -89,8 +99,14 @@ pub fn our_authority(element : &NameType, header : &MessageHeader,
        && header.destination.dest != *element {
         return Authority::ClientManager; }
     else if routing_table.address_in_our_close_group_range(element)
-       && header.destination.dest == *element {
+       && header.destination.dest == *element
+       && header.from() != header.destination.dest {
         return Authority::NaeManager; }
+    else if routing_table.address_in_our_close_group_range(element)
+       && header.destination.dest == *element
+       && header.from() == *element
+       && header.is_from_group() {
+         return Authority::OurCloseGroup; }
     else if header.is_from_group()
        && routing_table.address_in_our_close_group_range(&header.destination.dest)
        && header.destination.dest != routing_table.our_name() {
@@ -190,6 +206,21 @@ fn our_authority_full_routing_table() {
     assert_eq!(our_authority(&nae_or_client_in_our_close_group,
                              &nae_manager_header, &routing_table),
                Authority::NaeManager);
+
+    // assert to get a our_close_group Authority
+    let our_close_group_header : MessageHeader = MessageHeader {
+        message_id : a_message_id.clone(),
+        destination : types::DestinationAddress {
+            dest : nae_or_client_in_our_close_group.clone(), relay_to : None },
+        source : types::SourceAddress {
+            from_node : Random::generate_random(),
+            from_group : Some(nae_or_client_in_our_close_group.clone()),
+            reply_to : None, relayed_for : None },
+        authority : Authority::NaeManager
+    };
+    assert_eq!(our_authority(&nae_or_client_in_our_close_group,
+                            &our_close_group_header, &routing_table),
+              Authority::OurCloseGroup);
 
     // assert to get a node_manager Authority
     let node_manager_header : MessageHeader = MessageHeader {
