@@ -100,7 +100,10 @@ pub fn our_authority(element : &NameType, header : &MessageHeader,
         return Authority::ClientManager; }
     else if routing_table.address_in_our_close_group_range(element)
        && header.destination.dest == *element
-       && header.from_group() != Some(header.destination.dest.clone()) {
+       && match header.from_group() {
+          Some(group_source) => {
+             group_source != header.destination.dest},
+          None => true } {
         return Authority::NaeManager; }
     else if routing_table.address_in_our_close_group_range(element)
        && header.destination.dest == *element
