@@ -16,9 +16,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//! This is a fresh start of routing_node.rs and should upon successful completion replace
-//! the original routing_node.rs file, which in turn then is the owner of routing membrane and
-//! routing core.
 //! Routing membrane is a single thread responsible for the in- and outgoing messages.
 //! It accepts messages received from CRUST.
 //! The membrane evaluates whether a message is to be forwarded, or
@@ -51,6 +48,7 @@ use sendable::Sendable;
 use types;
 use types::{MessageId, NameAndTypeId, Signature, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
+use who_are_you::{WhoAreYou, IAm};
 use message_header::MessageHeader;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
@@ -80,7 +78,8 @@ type RoutingResult = Result<(), RoutingError>;
 enum ConnectionName {
     Relay(NameType),
     Routing(NameType),
-    OurBootstrap
+    OurBootstrap,
+    UnidentifiedConnection,
 }
 
 /// Routing Membrane
@@ -205,6 +204,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
+                            println!("Routing node {:?} on connection {:?} sent message.",
+                                name, endpoint);
                             let _ = self.message_received(&ConnectionName::Routing(name),
                             bytes, false);
                         },
@@ -229,10 +230,38 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 &ConnectionName::Routing(placeholder_name),
                                 bytes, true);
                         },
+                        Some(ConnectionName::UnidentifiedConnection) => {
+                            println!("Unidentified connection {:?} sent message.", endpoint);
+                            // only expect WhoAreYou or IAm message
+                            match self.handle_unknown_connect_request(&endpoint, bytes.clone()) {
+                                Ok(_) => {
+                                    // FIXME : deprecate this approach; we are already directly connected.
+                                    println!("Successfully marked previously unidentified as relay."); },
+                                Err(_) => {
+                                    // on any error, handle as WhoAreYou/IAm
+                                    println!("Handling message from {:?} as WhoAreYou/IAm.",
+                                        endpoint);
+                                    let _ = self.handle_who_are_you(&endpoint, bytes);
+                                },
+                            }
+
+                        },
                         None => {
+                            // FIXME: probably the 'unidentified connection' is useless state;
+                            // only good for pruning later on.
                             println!("New message came from unknown endpoint {:?}", endpoint);
                             // If we don't know the sender, only accept a connect request
-                            let _ = self.handle_unknown_connect_request(&endpoint, bytes);
+                            match self.handle_unknown_connect_request(&endpoint, bytes.clone()) {
+                                Ok(_) => {
+                                    // FIXME : deprecate this approach; we are already directly connected.
+                                    println!("Successfully marked previously unidentified as relay."); },
+                                Err(_) => {
+                                    // on any error, handle as WhoAreYou/IAm
+                                    println!("Handling message from {:?} as WhoAreYou/IAm.",
+                                        endpoint);
+                                    let _ = self.handle_who_are_you(&endpoint, bytes);
+                                },
+                            }
                         }
                     }
                 },
@@ -285,19 +314,59 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // self.relay_map.register_accepted_connect_request(&vec![endpoint.clone()],
         //     &connect_request.requester_fob);
         println!("Added endpoint {:?} to relay map, named {:?}", endpoint, connect_request.requester_fob.name());
-        self.connection_manager.connect(vec![endpoint.clone()]);
+        // self.connection_manager.connect(vec![endpoint.clone()]);
         // FIXME: as a patch directly add this to the relay map
         // Send the response containing our details.  Possibly use a ConnectSuccess message
         // to confirm.
         self.relay_map.add_ip_node(connect_request.requester_fob, endpoint.clone());
+        self.relay_map.remove_unknown_connection(endpoint);
         debug_assert!(self.relay_map.contains_endpoint(&endpoint));
-        // FIXME: Verify that CRUST can send a message back and does not drop it,
-        // simply because it is not established a connection yet.
         debug_assert!(self.connection_manager.send(endpoint.clone(), serialised_message)
             .is_ok());
         Ok(())
     }
 
+    /// When CRUST receives a connect to our listening port and establishes a new connection,
+    /// the endpoint is given here as new connection
+    fn handle_new_connection(&mut self, endpoint : Endpoint) {
+      println!("CRUST::NewConnection on {:?}", endpoint);
+        match self.lookup_endpoint(&endpoint) {
+            Some(ConnectionName::Routing(name)) => {
+                // should not occur; if the endpoint is in the lookup map of routing table,
+                // it was already marked online.
+                println!("DEBUG: NewConnection {:?} on already connected endpoint {:?} in RT.",
+                    endpoint, name);
+                match self.routing_table.mark_as_connected(&endpoint) {
+                    Some(peer_name) => {
+                        println!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
+                                 self.routing_table.size(), peer_name, endpoint);
+                        // FIXME: the presence of this debug assert indicates
+                        // that the logic for unconnected RT nodes is not quite right.
+                        debug_assert!(peer_name == name);
+                    },
+                    None => { }
+                };
+            },
+            Some(ConnectionName::Relay(name)) => {
+                // this endpoint is already present in the relay lookup_map
+                // nothing to do
+            },
+            Some(ConnectionName::OurBootstrap) => {
+                // FIXME: for now do nothing
+            },
+            Some(ConnectionName::UnidentifiedConnection) => {
+                // again, already connected so examine later
+            },
+            None => {
+                println!("Unknown connection on {:?}", endpoint);
+                self.relay_map.register_unknown_connection(endpoint.clone());
+                // Send "Who are you?" message
+                ignore(self.send_who_are_you_msg(endpoint));
+            }
+      }
+    }
+
+/*  OLD HANDLE NEW CONNECTION ---------------------------------------------------------
     /// When CRUST establishes a two-way connection
     /// after exchanging details in ConnectRequest and ConnectResponse
     ///  - we can either add it to RelayMap (if the id was not-relocated,
@@ -309,8 +378,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
     //  remainder is exhausting logic for debug purposes.
     //  TODO: add churn trigger
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
+        println!("CRUST::NewConnection on {:?}", endpoint);
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::Routing(name)) => {
+              // FIXME: this has been moved to unknown endpoint
         // IMPORTANT: the only state-change is in marking the node connected; rest is debug printout
                 match self.routing_table.mark_as_connected(&endpoint) {
                     Some(peer_name) => {
@@ -404,11 +475,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
     }
 
+    END OF OLD HANDLE NEW CONNECTION -------------------------------------------------- */
+
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     /// TODO: A churn event might be triggered
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
         // Make sure the endpoint is dropped anywhere
         // The relay map will automatically drop the Name if the last endpoint to it is dropped
+        self.relay_map.remove_unknown_connection(&endpoint);
         self.relay_map.drop_endpoint(&endpoint);
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => {
@@ -685,6 +759,125 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
+    // ---- Who Are You ---------------------------------------------------------
+
+    fn handle_who_are_you(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
+        -> RoutingResult {
+        println!("Handling WhoAreYou/IAm from {:?}", endpoint);
+        match decode::<WhoAreYou>(&serialised_message) {
+            Ok(who_are_you_msg) => {
+                println!("Responding to WhoAreYou question on {:?} with IAm.", endpoint);
+                ignore(self.send_i_am_msg(endpoint.clone(), who_are_you_msg.nonce));
+                Ok(())
+            },
+            Err(_) => match decode::<IAm>(&serialised_message) {
+                Ok(i_am_msg) => {
+                    println!("Received He Is {:?} on {:?}.", i_am_msg.public_id.name(), endpoint);
+                    // FIXME: validate signature of nonce
+                    ignore(self.handle_i_am(endpoint.clone(), i_am_msg));
+                    Ok(())
+                },
+                Err(_) => Err(RoutingError::UnknownMessageType)
+            }
+        }
+    }
+
+    fn handle_i_am(&mut self, endpoint: Endpoint, i_am: IAm) -> RoutingResult {
+        println!("Handling IAm {:?} on {:?}", i_am.public_id.name(), endpoint);
+        match i_am.public_id.is_relocated() {
+            // if it is relocated, we consider the connection for our routing table
+            true => {
+                // check we have a cache for his public id from the relocation procedure
+                match self.public_id_cache.get(&i_am.public_id.name()) {
+                    Some(cached_public_id) => {
+                        // check the full fob received corresponds, not just the names
+                        if cached_public_id == &i_am.public_id {
+                            let peer_endpoints = vec![endpoint.clone()];
+                            let peer_node_info = NodeInfo::new(i_am.public_id.clone(), peer_endpoints,
+                                Some(endpoint.clone()));
+                            // FIXME: node info cloned for debug printout below
+                            let (added, _) = self.routing_table.add_node(peer_node_info.clone());
+                            // TODO: drop dropped node in connection_manager
+                            if !added {
+                                println!("RT (size : {:?}) refused connection on {:?} as {:?}
+                                    from routing table.", self.routing_table.size(),
+                                    endpoint, i_am.public_id.name());
+                                self.relay_map.remove_unknown_connection(&endpoint);
+                                self.connection_manager.drop_node(endpoint);
+                                return Err(RoutingError::RefusedFromRoutingTable); }
+                            println!("RT (size : {:?}) added connected node {:?} on {:?}",
+                                self.routing_table.size(), peer_node_info.fob.name(), endpoint);
+                        } else {
+                            println!("I Am, relocated name {:?} conflicted with cached fob.",
+                                i_am.public_id.name());
+                            self.relay_map.remove_unknown_connection(&endpoint);
+                            self.connection_manager.drop_node(endpoint);
+                        }
+                        Ok(())
+                    },
+                    None => {
+                        // if we are connecting to an existing group
+      // FIXME: ConnectRequest had target name signed by us; so no state held on response
+      // I Am by default just has a nonce; now we will accept everyone, but we can avoid state,
+      // by repeating the Who Are You message, this time with the nonce as his name.
+      // So we check if the doubly signed nonce is his name, if so, add him to RT;
+      // if not do second WhoAreYou as above;
+      // we can do 512 + 1 bit to flag and break an endless loop
+                        match self.routing_table.check_node(&i_am.public_id.name()) {
+                            true => {
+                                let peer_endpoints = vec![endpoint.clone()];
+                                let peer_node_info = NodeInfo::new(i_am.public_id.clone(),
+                                    peer_endpoints, Some(endpoint.clone()));
+                                // FIXME: node info cloned for debug printout below
+                                let (added, _) = self.routing_table.add_node(
+                                    peer_node_info.clone());
+                                // TODO: drop dropped node in connection_manager
+                                if !added {
+                                    println!("RT (size : {:?}) refused connection on {:?} as {:?}
+                                        from routing table.", self.routing_table.size(),
+                                        endpoint, i_am.public_id.name());
+                                    self.relay_map.remove_unknown_connection(&endpoint);
+                                    self.connection_manager.drop_node(endpoint);
+                                    return Err(RoutingError::RefusedFromRoutingTable); }
+                                println!("RT (size : {:?}) added connected node {:?} on {:?}",
+                                    self.routing_table.size(), peer_node_info.fob.name(), endpoint);
+                            },
+                            false => {
+                                println!("Dropping connection on {:?} as {:?} is relocated,
+                                    but not cached, or marked in our RT.",
+                                    endpoint, i_am.public_id.name());
+                                self.relay_map.remove_unknown_connection(&endpoint);
+                                self.connection_manager.drop_node(endpoint);
+                            }
+                        };
+                        Ok(())
+                    }
+                }
+            },
+            // if it is not relocated, we consider the connection for our relay_map
+            // but with unknown connect request we already successfully relay for an relocated node
+            false => {
+                println!("I Am unrelocated {:?} on {:?}. Not Acting on this result.",
+                    i_am.public_id.name(), endpoint);
+                Ok(())
+            }
+        }
+    }
+
+    fn send_who_are_you_msg(&mut self, endpoint: Endpoint) -> RoutingResult {
+        let message = try!(encode(&WhoAreYou {nonce : 0u8}));
+        println!("Sending WhoAreYou to {:?}", endpoint);
+        ignore(self.connection_manager.send(endpoint, message));
+        Ok(())
+    }
+
+    fn send_i_am_msg(&mut self, endpoint: Endpoint, _nonce : u8) -> RoutingResult {
+        // FIXME: sign proper nonce
+        let message = try!(encode(&IAm {public_id : types::PublicId::new(&self.id)}));
+        ignore(self.connection_manager.send(endpoint, message));
+        Ok(())
+    }
+
     // -----Address and various functions----------------------------------------
 
     fn address_in_close_group_range(&self, address: &NameType) -> bool {
@@ -748,7 +941,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // secondly look in the relay_map
             None => match self.relay_map.lookup_endpoint(&endpoint) {
                 Some(name) => Some(ConnectionName::Relay(name)),
-                // finally see if it is our bootstrap_endpoint
+                // check to see if it is our bootstrap_endpoint
                 None => match self.bootstrap_endpoint {
                     Some(ref our_bootstrap) => {
                         if our_bootstrap == endpoint {
@@ -757,7 +950,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             None
                         }
                     },
-                    None => None
+                    None => match self.relay_map.lookup_unknown_connection(&endpoint) {
+                        true => Some(ConnectionName::UnidentifiedConnection),
+                        false => None
+                    }
                 }
             }
         }
@@ -857,10 +1053,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // check whether we have a temporary record of this relocated Id,
         // which we would have stored after the sentinel group consensus
         // of the relocated Id. If the fobs match, add it to routing_table.
-        match self.public_id_cache.remove(&connect_request.requester_fob.name()) {
+        match self.public_id_cache.get(&connect_request.requester_fob.name()) {
             Some(public_id) => {
                 // check the full fob received corresponds, not just the names
-                if public_id == connect_request.requester_fob {
+                if public_id == &connect_request.requester_fob {
+/* FIXME: we will add this node to the routing table on WhoAreYou
                     // Collect the local and external endpoints into a single vector to construct a NodeInfo
                     let mut peer_endpoints = connect_request.local_endpoints.clone();
                     peer_endpoints.extend(connect_request.external_endpoints.clone().into_iter());
@@ -871,14 +1068,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     if !added {
                         return Err(RoutingError::RefusedFromRoutingTable); }
                     println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name());
+*/
                     // Try to connect to the peer.
-                    // FIXME: don't doubly connect as it comes in as a new unknown connection,
-                    //        at the requester side.
-                    // self.connection_manager.connect(connect_request.local_endpoints.clone());
-                    // self.connection_manager.connect(connect_request.external_endpoints.clone());
+                    self.connection_manager.connect(connect_request.local_endpoints.clone());
+                    self.connection_manager.connect(connect_request.external_endpoints.clone());
                     // Send the response containing our details,
                     // and add the original signature as proof of the request
-                    let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
+// FIXME: for TCP rendez-vous connect is not needed
+/*                    let routing_msg = self.construct_connect_response_msg(&original_header, &body, &signature, &connect_request);
                     let serialised_message = try!(encode(&routing_msg));
 
                     // intercept if we can relay it directly
@@ -898,6 +1095,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                     self.send_swarm_or_parallel(&routing_msg.message_header.destination.dest,
                         &serialised_message);
+*/
                 }
             },
             None => {}
@@ -924,6 +1122,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
         let mut peer_endpoints = connect_response.receiver_local_endpoints.clone();
         peer_endpoints.extend(connect_response.receiver_external_endpoints.clone().into_iter());
+  // println!("ConnectResponse from {:?}",  )
+  // for peer in peer_endpoint {
+  //     println!("")
+  // }
         let peer_node_info =
             NodeInfo::new(connect_response.receiver_fob.clone(), peer_endpoints, None);
 
@@ -946,7 +1148,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let put_public_id = try!(decode::<PutPublicId>(&body));
         let our_authority = our_authority(&put_public_id.public_id.name(), &header, &self.routing_table);
-
+        println!("Handle PutPublicId from {:?}.", header.source.from_node);
         match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
             (Authority::ManagedNode, Authority::NaeManager, false) => {
                 let mut put_public_id_relocated = put_public_id.clone();
@@ -972,7 +1174,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             (Authority::NaeManager, Authority::NaeManager, true) => {
                 // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
-                if !self.public_id_cache.check(&put_public_id.public_id.name()) {
+                if !self.public_id_cache.contains_key(&put_public_id.public_id.name()) {
                   self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
                   // Reply with PutPublicIdResponse to the reply_to address
                   let reply_header = header.create_reply(&self.own_name, &our_authority);
@@ -982,6 +1184,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                                         PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
                                                         &self.id.get_crypto_secret_sign_key());
                   let encoded_msg = try!(encode(&routing_msg));
+
+                  // intercept if we can relay it directly
+                  match (routing_msg.message_header.destination.dest.clone(),
+                      routing_msg.message_header.destination.relay_to.clone()) {
+                      (dest, Some(relay)) => {
+                          // if we should directly respond to this message, do so
+                          if dest == self.own_name
+                              && self.relay_map.contains_relay_for(&relay) {
+                              println!("Sending FindGroupResponse directly to relay {:?}", relay);
+                              self.send_out_as_relay(&relay, encoded_msg);
+                              return Ok(());
+                          }
+                      },
+                      _ => {}
+                  };
+
                   // Send this to the relay node as specified in the reply_header
                   self.send_swarm_or_parallel(&destination, &encoded_msg);
                 }
@@ -1124,7 +1342,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // assign_relocated_name
         relocated_public_id.assign_relocated_name(relocated_name.clone());
 
-        if !self.public_id_cache.check(&relocated_name) {
+        if !self.public_id_cache.contains_key(&relocated_name) {
             self.public_id_cache.add(relocated_name, relocated_public_id.clone());
             // Reply with PutPublicIdResponse to the reply_to address
             let reply_header = header.create_reply(&self.own_name, &Authority::NaeManager);
