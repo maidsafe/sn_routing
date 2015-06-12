@@ -22,21 +22,22 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sendable::Sendable;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct Refresh<T> where T: Sendable + Encodable + Decodable {
-    payload: T,
+pub struct Refresh<RefreshType> where RefreshType: Sendable + Encodable + Decodable {
+    payload: RefreshType,
 }
 
-impl<T> Encodable for Refresh<T> where T: Sendable + Encodable + Decodable {
+impl<RefreshType> Encodable for Refresh<RefreshType>
+    where RefreshType: Sendable + Encodable + Decodable {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         CborTagEncode::new(5483_001, &(self.payload)).encode(e)
     }
 }
 
-impl<T> Decodable for Refresh<T> where T: Sendable + Encodable + Decodable {
-    fn decode<D: Decoder>(d: &mut D)->Result<Refresh<T>, D::Error> {
+impl<RefreshType> Decodable for Refresh<RefreshType>
+    where RefreshType: Sendable + Encodable + Decodable {
+    fn decode<D: Decoder>(d: &mut D)->Result<Refresh<RefreshType>, D::Error> {
         try!(d.read_u64());
         let payload = try!(Decodable::decode(d));
         Ok(Refresh { payload: payload })
     }
 }
-
