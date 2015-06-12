@@ -156,7 +156,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             listeners.0.clone());
         let serialised_message = try!(encode(&connect_msg));
 
-        debug_assert!(cm.send(bootstrapped_to.clone(), serialised_message).is_ok());
+        ignore(cm.send(bootstrapped_to.clone(), serialised_message));
 
         // FIXME: for now just write out explicitly in this function the bootstrapping loop
         // - fully check match of returned public id with ours
@@ -179,8 +179,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                         = self.construct_put_public_id_msg(
                                         &types::PublicId::new(&unrelocated_id));
                                     let serialised_message = try!(encode(&put_public_id_msg));
-                                    debug_assert!(cm.send(bootstrapped_to.clone(), serialised_message)
-                                        .is_ok());
+                                    ignore(cm.send(bootstrapped_to.clone(), serialised_message));
                                 },
                                 MessageTypeTag::PutPublicIdResponse => {
                                     let put_public_id_response =
