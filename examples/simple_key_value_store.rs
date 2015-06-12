@@ -406,12 +406,13 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
     let _ = spawn(move || {
+        let _ = copied_client.lock().unwrap().bootstrap(bootstrap_peers, None);
+        thread::sleep_ms(100);
         loop {
             thread::sleep_ms(10);
             copied_client.lock().unwrap().run();
         }
     });
-    let _ = mutate_client.lock().unwrap().bootstrap(bootstrap_peers, None);
     let ref mut command = String::new();
     let docopt: Docopt = Docopt::new(CLI_USAGE).unwrap_or_else(|error| error.exit());
     let mut stdin = io::stdin();

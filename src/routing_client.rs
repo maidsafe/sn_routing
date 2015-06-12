@@ -35,7 +35,6 @@ use messages::connect_response::ConnectResponse;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
 use messages::get_data::GetData;
-use name_type::{NAME_TYPE_LEN};
 use message_header::MessageHeader;
 use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageId, Id, PublicId};
@@ -47,6 +46,7 @@ pub use crust::Endpoint;
 type Bytes = Vec<u8>;
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
+type PortAndProtocol = crust::Port;
 
 pub enum CryptoError {
     Unknown
@@ -165,8 +165,8 @@ impl<F> RoutingClient<F> where F: Interface {
                     Ok(routing_msg) => routing_msg,
                     Err(_) => return
                 };
-                // println!("received a {:?} from {}", routing_msg.message_type,
-                //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
+                println!("received a {:?} from {:?}", routing_msg.message_type,
+                         endpoint );
                 match self.bootstrap_address.1.clone() {
                     Some(ref bootstrap_endpoint) => {
                         // only accept messages from our bootstrap endpoint
@@ -198,32 +198,49 @@ impl<F> RoutingClient<F> where F: Interface {
     /// or use CRUST self-discovery options.
     pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
                      beacon_port: Option<u16>) -> Result<(), RoutingError> {
+         // FIXME: bootstrapping a relay should fully rely on WhoAreYou,
+         // then it is not need for CM to start listening;
+         // but currently connect_request requires endpoint to connect back on to.
+         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
+         let beacon_port = Some(5483u16);
+         let listeners = match self.connection_manager
+             .start_listening2(ports_and_protocols, beacon_port) {
+             Err(reason) => {
+                 println!("Failed to start listening: {:?}", reason);
+                 (vec![], None)
+             }
+             Ok(listeners_and_beacon) => listeners_and_beacon
+         };
+         println!("trying to bootstrapped client");
          let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
                                     .map_err(|_|RoutingError::FailedToBootstrap));
          self.bootstrap_address.1 = Some(bootstrapped_to);
+         println!("bootstrapped client");
          // starts swapping ID with the bootstrap peer
-         self.send_bootstrap_connect_request();
+         self.send_bootstrap_connect_request(listeners.0);
          Ok(())
     }
 
-    fn send_bootstrap_connect_request(&mut self) {
+    fn send_bootstrap_connect_request(&mut self, accepting_on: Vec<Endpoint>) {
         match self.bootstrap_address.clone() {
-            (Some(ref name), Some(ref endpoint)) => {
+            (_, Some(ref endpoint)) => {
+                println!("Sending connect request");
                 let message = RoutingMessage::new(
                     MessageTypeTag::ConnectRequest,
                     MessageHeader::new(
                         // FIXME: after MAID-1126; update these relay fields
                         self.get_next_message_id(),
-                        types::DestinationAddress{ dest: NameType::new([0u8; NAME_TYPE_LEN]),
+                        types::DestinationAddress{ dest: self.public_id.name(),
                             relay_to: None },
-                        types::SourceAddress{ from_node: self.public_id.name().clone(),
+                        types::SourceAddress{ from_node: self.public_id.name(),
                             from_group: None, reply_to: None, relayed_for: Some(self.public_id.name()) },
                         Authority::Client),
                     ConnectRequest {
-                        local_endpoints: vec![],
+                        local_endpoints: accepting_on,
                         external_endpoints: vec![],
                         requester_id: self.public_id.name(),
-                        receiver_id: name.clone(),
+                        // FIXME: this field is ignored; again fixed on WhoAreYou approach
+                        receiver_id: self.public_id.name(),
                         requester_fob: self.public_id.clone() },
                     &self.id.get_crypto_secret_sign_key());
                 let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
