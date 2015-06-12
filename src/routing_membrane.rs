@@ -307,9 +307,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.relay_map.add_ip_node(connect_request.requester_fob, endpoint.clone());
         self.relay_map.remove_unknown_connection(endpoint);
         debug_assert!(self.relay_map.contains_endpoint(&endpoint));
-        debug_assert!(self.connection_manager.send(endpoint.clone(), serialised_message)
-            .is_ok());
-        Ok(())
+        match self.connection_manager.send(endpoint.clone(), serialised_message) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(RoutingError::Io(e))
+        }
     }
 
     /// When CRUST receives a connect to our listening port and establishes a new connection,
@@ -625,9 +626,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 Ok(()) },
             false => match self.bootstrap_endpoint.clone() {
                 Some(ref bootstrap_endpoint) => {
-                    debug_assert!(self.connection_manager.send(bootstrap_endpoint.clone(),
-                    serialised_message).is_ok());
-                    Ok(()) },
+                    match self.connection_manager.send(bootstrap_endpoint.clone(),
+                    serialised_message) {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(RoutingError::Io(e))
+                    }},
                 None => Err(RoutingError::FailedToBootstrap)
             }
         }
@@ -1218,10 +1221,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                                   &self.id.get_crypto_secret_sign_key());
             let encoded_msg = try!(encode(&routing_msg));
             // Send this directly back to the bootstrapping node
-            debug_assert!(self.connection_manager.send(send_to.clone(), encoded_msg)
-                .is_ok());
-        };
-        Ok(())
+            match self.connection_manager.send(send_to.clone(), encoded_msg) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(RoutingError::Io(e))
+            }
+        } else { Err(RoutingError::RejectedPublicId) }
     }
 
     // -----Message Constructors-----------------------------------------------
