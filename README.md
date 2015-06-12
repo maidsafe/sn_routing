@@ -78,7 +78,7 @@ correct name calculation of pure Id
 
 ## [0.1.70] - Activate AccountTransfer
 
-- [ ] [MAID-1068](https://maidsafe.atlassian.net/browse/MAID-1068) Refresh orderable message
+- [ ] [#354](https://github.com/maidsafe/routing/issues/354) Fix release builds
 - [ ] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
 
 ## Future sprints
