@@ -248,8 +248,8 @@ impl routing::client_interface::Interface for TestClient {
     fn handle_put_response(&mut self, _: types::MessageId,
                            response: Result<Vec<u8>, ResponseError>) {
         match response {
-            Ok(_) => println!("Testing client shall not receive a success put_response"),
-            Err(_) => println!("Testing client received error put_response"),
+            Ok(_) => println!("No response expected on put success"),
+            Err(_) => println!("Error put_response"),
         }
     }
 }
