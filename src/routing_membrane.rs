@@ -471,9 +471,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         let reply = self.construct_get_data_response_msg(Authority::ManagedNode,
                                                                          &header, get_data,
                                                                          Ok(data));
+                        // intercept if we can relay it directly
+                        match (reply.message_header.destination.dest.clone(),
+                            reply.message_header.destination.relay_to.clone()) {
+                            (dest, Some(relay)) => {
+                                // if we should directly respond to this message, do so
+                                if dest == self.own_name
+                                    && self.relay_map.contains_relay_for(&relay) {
+                                    self.send_out_as_relay(&relay, try!(encode(&reply)));
+                                    return Ok(());
+                                }
+                            },
+                            _ => {}
+                        };
                         return encode(&reply).map(|reply| {
                             self.send_swarm_or_parallel(&header.send_to().dest, &reply);
-                        }).map_err(From::from);
+                            }).map_err(From::from);
                     },
                     _ => (),
                 },
@@ -835,19 +848,35 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn send_put_reply(&self, destination:   &NameType,
+    fn send_put_reply(&mut self, destination:   &NameType,
                              our_authority: Authority,
                              orig_header:   &MessageHeader,
                              orig_message:  PutData,
                              reply_data:    Result<Vec<u8>, ResponseError>) -> RoutingResult {
         let routing_msg = self.construct_put_data_response_msg(
             our_authority, &orig_header, orig_message, reply_data);
+        let serialised_msg = try!(encode(&routing_msg));
 
-        self.send_swarm_or_parallel(&destination, &try!(encode(&routing_msg)));
+        // intercept if we can relay it directly
+        match (routing_msg.message_header.destination.dest.clone(),
+            routing_msg.message_header.destination.relay_to.clone()) {
+            (dest, Some(relay)) => {
+                // if we should directly respond to this message, do so
+                if dest == self.own_name
+                    && self.relay_map.contains_relay_for(&relay) {
+                    self.send_out_as_relay(&relay, serialised_msg.clone());
+                    return Ok(());
+                }
+            },
+            _ => {}
+        };
+
+        self.send_swarm_or_parallel(&destination, &serialised_msg);
         Ok(())
     }
 
     fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+      println!("Handle PUT data response.");
         let put_data_response = try!(decode::<PutDataResponse>(&body));
         let from_authority = header.from_authority();
         let from = header.from();
@@ -1057,7 +1086,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // if we should directly respond to this message, do so
                 if dest == self.own_name
                     && self.relay_map.contains_relay_for(&relay) {
-                    self.send_out_as_relay(&relay, serialised_msg);
+                    self.send_out_as_relay(&relay, serialised_msg.clone());
                     return Ok(());
                 }
             },
@@ -1090,6 +1119,25 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
                     let routing_msg = self.construct_get_data_response_msg(our_authority, &header, get_data, Ok(data));
+                    let serialised_msg = try!(encode(&routing_msg));
+                    // intercept if we can relay it directly
+                    println!("Reply GetData to {:?} with relay {:?} on node {:?}.",
+                        routing_msg.message_header.destination.dest,
+                        routing_msg.message_header.destination.relay_to,
+                        self.own_name);
+                    match (routing_msg.message_header.destination.dest.clone(),
+                        routing_msg.message_header.destination.relay_to.clone()) {
+                        (dest, Some(relay)) => {
+                            // if we should directly respond to this message, do so
+                            if dest == self.own_name
+                                && self.relay_map.contains_relay_for(&relay) {
+                                self.send_out_as_relay(&relay, serialised_msg.clone());
+                                return Ok(());
+                            }
+                        },
+                        _ => {}
+                    };
+
                     self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
                 },
                 MessageAction::SendOn(dest_nodes) => {
