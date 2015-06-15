@@ -106,7 +106,19 @@ mod test {
         // The performance of get RoutingTable fully populated among certain amount of nodes is machine dependent
         // The stable duration needs to be increased dramatically along with the increase of the total node numbers.
         // for example, you may need i * 1500 when increase total nodes from 8 to 9
-        for i in 0..8 {
+        // The first node must be run in membrane mode
+        let _ = spawn(move || {
+                let mut vault = Vault::new();
+                let _ = vault.routing_node.run_zero_membrane();
+                let thread_guard = spawn(move || {
+                    loop {
+                        thread::sleep_ms(1);
+                    }
+                });
+                let _ = thread_guard.join();
+            });
+        thread::sleep_ms(1000);
+        for i in 1..8 {
             let _ = run_vault(Vault::new());
             thread::sleep_ms(1000 + i * 1000);
         }
