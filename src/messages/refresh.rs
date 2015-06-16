@@ -17,24 +17,30 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use NameType;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Refresh {
     pub type_tag: u64,
+    // This is a redundant information as the header contains it too, but
+    // we can't trust the header as it is not signed. TODO: Would be nice
+    // if we sent the information only once.
+    pub from_group: NameType,
     pub payload: Vec<u8>,
 }
 
 impl Encodable for Refresh {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_001, &(&self.type_tag, &self.payload)).encode(e)
+        CborTagEncode::new(5483_001,
+                           &(&self.type_tag, &self.from_group, &self.payload)).encode(e)
     }
 }
 
 impl Decodable for Refresh {
     fn decode<D: Decoder>(d: &mut D)->Result<Refresh, D::Error> {
         try!(d.read_u64());
-        let (type_tag, payload) = try!(Decodable::decode(d));
-        Ok(Refresh { type_tag: type_tag, payload: payload })
+        let (type_tag, from_group, payload) = try!(Decodable::decode(d));
+        Ok(Refresh { type_tag: type_tag, from_group: from_group, payload: payload })
     }
 }
 

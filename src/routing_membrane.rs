@@ -187,7 +187,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     pub fn refresh_new(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
         let destination = types::DestinationAddress{ dest: from_group.clone(), relay_to: None };
 
-        let request = Refresh { type_tag: type_tag, payload: content };
+        let request = Refresh { type_tag: type_tag, from_group: from_group.clone(), payload: content };
 
         let header = MessageHeader::new(self.get_next_message_id(),
                                         destination,
@@ -989,6 +989,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_refresh(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let refresh = try!(decode::<Refresh>(&body));
         let from_group = try!(header.from_group().ok_or(RoutingError::RefreshNotFromGroup));
+
+        if from_group != refresh.from_group {
+            return Err(RoutingError::BadAuthority);
+        }
 
         let threshold = (self.routing_table.size() as f32) * 0.8; // 80% chosen arbitrary
 
