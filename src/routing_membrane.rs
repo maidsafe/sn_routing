@@ -53,6 +53,7 @@ use message_header::MessageHeader;
 use messages::find_group::FindGroup;
 use messages::find_group_response::FindGroupResponse;
 use messages::get_data::GetData;
+use messages::refresh::Refresh;
 use messages::get_data_response::GetDataResponse;
 use messages::put_data::PutData;
 use messages::put_data_response::PutDataResponse;
@@ -64,6 +65,7 @@ use messages::{RoutingMessage, MessageTypeTag};
 use types::{MessageAction};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::MethodCall;
+use refresh_accumulator::RefreshAccumulator;
 
 // use std::convert::From;
 
@@ -98,6 +100,7 @@ pub struct RoutingMembrane<F : Interface> {
     filter: MessageFilter<types::FilterType>,
     public_id_cache: LruCache<NameType, types::PublicId>,
     connection_cache: BTreeMap<NameType, SteadyTime>,
+    refresh_accumulator: RefreshAccumulator,
     // for Persona logic
     interface: Box<F>
 }
@@ -125,6 +128,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                       filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                       public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
                       connection_cache: BTreeMap::new(),
+                      refresh_accumulator: RefreshAccumulator::new(),
                       interface : Box::new(personas)
                     }
     }
@@ -169,6 +173,28 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 request, &self.id.get_crypto_secret_sign_key());
 
         // FIXME: We might want to return the result.
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
+    }
+
+    /// Refresh the content in the close group nodes of group address content::name.
+    /// This method needs to be called when churn is triggered.
+    /// all the group members need to call this, otherwise it will not be resolved as a valid
+    /// content.
+    pub fn refresh(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
+        let destination = types::DestinationAddress{ dest: from_group.clone(), relay_to: None };
+
+        let request = Refresh { type_tag: type_tag, from_group: from_group.clone(), payload: content };
+
+        let header = MessageHeader::new(self.get_next_message_id(),
+                                        destination,
+                                        self.our_source_address(Some(from_group)),
+                                        Authority::OurCloseGroup);
+
+        let message = RoutingMessage::new(MessageTypeTag::Refresh,
+                                          header,
+                                          request,
+                                          &self.id.get_crypto_secret_sign_key());
+
         ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
     }
 
@@ -545,6 +571,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageTypeTag::PutData => self.handle_put_data(header, body),
                     MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
                     MessageTypeTag::PutPublicId => self.handle_put_public_id(header, body),
+                    MessageTypeTag::Refresh => self.handle_refresh(header, body),
                     _ => {
                         Err(RoutingError::UnknownMessageType)
                     }
@@ -804,16 +831,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
-
-    /// Refresh the content in the close group nodes of group address content::name.
-    /// This method needs to be called when churn is triggered.
-    /// all the group members need to call this, otherwise it will not be resolved as a valid
-    /// content.
-    pub fn refresh(&mut self, content: Box<Sendable>) {
-        self.put(content.name(), content);
-    }
-
     // -----Message Handlers from Routing Table connections----------------------------------------
 
     // Routing handle put_data
@@ -889,7 +906,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match method_call {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
-            MethodCall::Refresh { content: x, } => self.refresh(x),
+            MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
@@ -961,6 +978,37 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             None => {}
         };
+        Ok(())
+    }
+
+    fn handle_refresh(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+        let refresh = try!(decode::<Refresh>(&body));
+        let from_group = try!(header.from_group().ok_or(RoutingError::RefreshNotFromGroup));
+
+        if from_group != refresh.from_group {
+            return Err(RoutingError::BadAuthority);
+        }
+
+        let our_authority = our_authority(&from_group, &header, &self.routing_table);
+
+        if our_authority != Authority::OurCloseGroup {
+            return Err(RoutingError::BadAuthority);
+        }
+
+        let threshold = (self.routing_table.size() as f32) * 0.8; // 80% chosen arbitrary
+
+        let opt_payloads = self.refresh_accumulator.add_message(threshold as usize,
+                                                                refresh.type_tag,
+                                                                header.from_node(),
+                                                                from_group.clone(),
+                                                                refresh.payload);
+
+        let type_tag = refresh.type_tag;
+
+        opt_payloads.map(|payloads| {
+            self.mut_interface().handle_refresh(type_tag, from_group, payloads);
+        });
+
         Ok(())
     }
 
@@ -1181,7 +1229,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match method_call {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
-            MethodCall::Refresh { content: x, } => self.refresh(x),
+            MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
@@ -1336,6 +1384,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                        target_id:    self.own_name.clone()},
             &self.id.get_crypto_secret_sign_key())
     }
+
+    fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 }
 
 fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {

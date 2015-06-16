@@ -315,6 +315,10 @@ impl Interface for TestNode {
         Err(InterfaceError::Abort)
     }
 
+    fn handle_refresh(&mut self, _type_tag: u64, _from_group: NameType, _payloads: Vec<Vec<u8>>) {
+        unimplemented!()
+    }
+
     fn handle_get_response(&mut self, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
         if response.is_ok() {

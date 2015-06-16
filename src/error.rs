@@ -158,6 +158,8 @@ pub enum RoutingError {
     /// routing table did not add the node information,
     /// either because it was already added, or because it did not improve the routing table
     RefusedFromRoutingTable,
+    /// We received a refresh message but it did not contain group source address
+    RefreshNotFromGroup,
     /// interface error
     Interface(InterfaceError),
     /// i/o error
@@ -195,6 +197,7 @@ impl error::Error for RoutingError {
             RoutingError::RoutingTableEmpty => "Routing table empty",
             RoutingError::RejectedPublicId => "Rejected Public Id",
             RoutingError::RefusedFromRoutingTable => "Refused from routing table",
+            RoutingError::RefreshNotFromGroup => "Refresh message not from group",
             RoutingError::Interface(ref e) => "Interface error",
             RoutingError::Io(ref err) => "I/O error",
             RoutingError::Cbor(ref err) => "Serialisation error",
@@ -224,6 +227,7 @@ impl fmt::Display for RoutingError {
             RoutingError::RoutingTableEmpty => fmt::Display::fmt("routing table empty", f),
             RoutingError::RejectedPublicId => fmt::Display::fmt("Rejected Public Id", f),
             RoutingError::RefusedFromRoutingTable => fmt::Display::fmt("Refused from routing table", f),
+            RoutingError::RefreshNotFromGroup => fmt::Display::fmt("Refresh message not from group", f),
             RoutingError::Interface(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Cbor(ref err) => fmt::Display::fmt(err, f),
