@@ -186,6 +186,7 @@ impl Sendable for TestData {
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&self]).unwrap();
         e.into_bytes()
+
     }
 
     fn refresh(&self) -> bool {
@@ -234,20 +235,21 @@ struct TestClient {
 impl routing::client_interface::Interface for TestClient {
     fn handle_get_response(&mut self, _: types::MessageId,
                            response: Result<Vec<u8>, ResponseError>) {
-        if response.is_ok() {
-            let mut d = cbor::Decoder::from_bytes(response.unwrap());
-            let response_data: TestData = d.decode().next().unwrap().unwrap();
-            println!("Testing client received get_response with testdata {:?}", response_data);
-        } else {
-            println!("Testing client received error get_response");
+        match response {
+            Ok(result) => {
+                let mut d = cbor::Decoder::from_bytes(result);
+                let response_data: TestData = d.decode().next().unwrap().unwrap();
+                println!("Testing client received get_response with testdata {:?}", response_data);
+            },
+            Err(_) => println!("Testing client received error get_response"),
         }
     }
+
     fn handle_put_response(&mut self, _: types::MessageId,
                            response: Result<Vec<u8>, ResponseError>) {
-        if response.is_ok() {
-            println!("Testing client shall not receive a success put_response");
-        } else {
-            println!("Testing client received error put_response");
+        match response {
+            Ok(_) => println!("No response expected on put success"),
+            Err(_) => println!("Error put_response"),
         }
     }
 }
@@ -274,6 +276,7 @@ impl Interface for TestNode {
         }
         Err(InterfaceError::Response(ResponseError::NoData))
     }
+
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
                 from_address: NameType, _dest_address: types::DestinationAddress,
                 data_in: Vec<u8>) -> Result<MessageAction, InterfaceError> {
@@ -289,6 +292,7 @@ impl Interface for TestNode {
                      our_authority);
             return Err(InterfaceError::Abort);
         }
+
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         let mut d = cbor::Decoder::from_bytes(data_in);
@@ -304,11 +308,13 @@ impl Interface for TestNode {
         // return with abort to terminate the flow
         Err(InterfaceError::Abort)
     }
+
     fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
                    _from_address: NameType, _name : NameType,
                    _data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
+
     fn handle_get_response(&mut self, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
         if response.is_ok() {
@@ -321,6 +327,7 @@ impl Interface for TestNode {
         }
         routing::node_interface::MethodCall::None
     }
+
     fn handle_put_response(&mut self, _from_authority: Authority, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
         if response.is_ok() {
@@ -330,13 +337,16 @@ impl Interface for TestNode {
         }
         MethodCall::None
     }
+
     fn handle_post_response(&mut self, _from_authority: Authority, _from_address: NameType,
                             _response: Result<Vec<u8>, ResponseError>) {
         unimplemented!();
     }
+
     fn handle_churn(&mut self, _close_group: Vec<NameType>) -> Vec<MethodCall> {
         unimplemented!();
     }
+
     fn handle_cache_get(&mut self, _type_id: u64, name : NameType, _from_authority: Authority,
                         _from_address: NameType) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
@@ -347,6 +357,7 @@ impl Interface for TestNode {
         }
         Err(InterfaceError::Abort)
     }
+
     fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
                         data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
@@ -361,6 +372,7 @@ impl Interface for TestNode {
         stats_value.stats.push((0, in_coming_data));
         Err(InterfaceError::Abort)
     }
+
     fn handle_get_key(&mut self,
                       _type_id: u64,
                       _name: NameType,
@@ -437,17 +449,26 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
         if args.cmd_put {
             // docopt should ensure arg_key and arg_value are valid
             assert!(args.arg_key.is_some() && !args.arg_value.is_empty());
-            let data = TestData::new(args.arg_key.unwrap(), args.arg_value);
-            println!("Putting value of \"{}\" to network under key \"{}\".", data.value(),
-                     data.key());
-            let _ = mutate_client.lock().unwrap().put(data);
+            match args.arg_key {
+                Some(key) => {
+                    let data = TestData::new(key, args.arg_value);
+                    println!("Putting value of \"{}\" to network under key \"{}\".", data.value(),
+                             data.key());
+                    let _ = mutate_client.lock().unwrap().put(data);
+                },
+                None => ()
+            }
         } else if args.cmd_get {
             // docopt should ensure arg_key is valid
             assert!(args.arg_key.is_some());
-            let key = args.arg_key.unwrap();
-            let name = TestData::get_name_from_key(&key);
-            println!("Getting value for key \"{}\" from network.", key);
-            let _ = mutate_client.lock().unwrap().get(201, name);
+            match args.arg_key {
+                Some(key) => {
+                    let name = TestData::get_name_from_key(&key);
+                    println!("Getting value for key \"{}\" from network.", key);
+                    let _ = mutate_client.lock().unwrap().get(201, name);
+                },
+                None => ()
+            }
         } else if args.cmd_stop {
             break;
         }
