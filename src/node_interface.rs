@@ -83,6 +83,11 @@ pub trait Interface : Sync + Send {
                    name : NameType,
                    data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 
+    /// Handle messages internal to the group (triggered by churn events). Payloads
+    /// from these messages are grouped by (type_tag, from_group) key, and once
+    /// there is enough of them, they are returned in the `payloads` argument.
+    fn handle_refresh(&mut self, type_tag: u64, from_group: NameType, payloads: Vec<Vec<u8>>);
+
     /// handles the response to a put request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
     fn handle_get_response(&mut self,

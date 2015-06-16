@@ -999,10 +999,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let opt_payloads = self.refresh_accumulator.add_message(threshold as usize,
                                                                 refresh.type_tag,
                                                                 header.from_node(),
-                                                                from_group,
+                                                                from_group.clone(),
                                                                 refresh.payload);
 
-        opt_payloads.map(|payloads| /* TODO: Handle refresh in the interface */());
+        let type_tag = refresh.type_tag;
+
+        opt_payloads.map(|payloads| {
+            self.mut_interface().handle_refresh(type_tag, from_group, payloads);
+        });
 
         Ok(())
     }
