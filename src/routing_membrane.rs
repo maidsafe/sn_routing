@@ -180,11 +180,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
-    pub fn refresh(&mut self, content: Box<Sendable>) {
-        self.put(content.name(), content);
-    }
-
-    pub fn refresh_new(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
+    pub fn refresh(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
         let destination = types::DestinationAddress{ dest: from_group.clone(), relay_to: None };
 
         let request = Refresh { type_tag: type_tag, from_group: from_group.clone(), payload: content };
@@ -910,8 +906,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match method_call {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
-            MethodCall::Refresh { content: x, } => self.refresh(x),
-            MethodCall::RefreshNew { type_tag, from_group, payload } => self.refresh_new(type_tag, from_group, payload),
+            MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
@@ -1228,8 +1223,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match method_call {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
-            MethodCall::Refresh { content: x, } => self.refresh(x),
-            MethodCall::RefreshNew { type_tag, from_group, payload } => self.refresh_new(type_tag, from_group, payload),
+            MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
