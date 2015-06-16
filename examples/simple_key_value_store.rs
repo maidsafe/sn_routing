@@ -376,15 +376,6 @@ impl Interface for TestNode {
         stats_value.stats.push((0, in_coming_data));
         Err(InterfaceError::Abort)
     }
-
-    fn handle_get_key(&mut self,
-                      _type_id: u64,
-                      _name: NameType,
-                      _our_authority: Authority,
-                      _from_authority: Authority,
-                      _from_address: NameType) -> Result<MessageAction, InterfaceError> {
-        unimplemented!();
-    }
 }
 
 struct TestNodeGenerator;

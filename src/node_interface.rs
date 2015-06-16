@@ -42,16 +42,6 @@ pub enum MethodCall {
 /// The Interface trait introduces the methods expected to be implemented by the user
 /// of RoutingNode
 pub trait Interface : Sync + Send {
-    /// depending on our_authority and from_authority, the public key or address of the node
-    /// potentially storing public key with specified name is returned, on success.
-    /// failure to provide public key or an address is indicated as an InterfaceError.
-    fn handle_get_key(&mut self,
-                      type_id: u64,
-                      name: NameType,
-                      our_authority: Authority,
-                      from_authority: Authority,
-                      from_address: NameType) -> Result<MessageAction, InterfaceError>;
-
     /// depending on our_authority and from_authority, data or address of the node
     /// potentially storing data with specified name and type_id is returned, on success.
     /// failure to provide data or an address is indicated as an InterfaceError.
