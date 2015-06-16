@@ -989,6 +989,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
             return Err(RoutingError::BadAuthority);
         }
 
+        let our_authority = our_authority(&from_group, &header, &self.routing_table);
+
+        if our_authority != Authority::OurCloseGroup {
+            return Err(RoutingError::BadAuthority);
+        }
+
         let threshold = (self.routing_table.size() as f32) * 0.8; // 80% chosen arbitrary
 
         let opt_payloads = self.refresh_accumulator.add_message(threshold as usize,
