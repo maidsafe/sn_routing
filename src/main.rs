@@ -34,8 +34,12 @@
 //!
 //! The resulting executable is the Vault node for the SAFE network.
 //! Refer to https://github.com/dirvine/maidsafe_vault
-#![feature(std_misc)]
+#![feature(convert, core, std_misc)]
 
+extern crate core;
+extern crate crust;
+extern crate docopt;
+extern crate sodiumoxide;
 extern crate rustc_serialize;
 extern crate cbor;
 extern crate time;
@@ -46,8 +50,14 @@ extern crate maidsafe_types;
 #[cfg(test)]
 extern crate rand;
 
+use core::iter::FromIterator;
+use std::net::SocketAddr;
+use std::str::FromStr;
 use std::thread;
 use std::thread::spawn;
+
+use docopt::Docopt;
+use rustc_serialize::{Decodable, Decoder};
 
 mod data_manager;
 mod maid_manager;
@@ -58,6 +68,7 @@ mod pmid_node;
 mod vault;
 mod utils;
 
+use crust::Endpoint;
 use vault::{ VaultFacade, VaultGenerator };
 
 /// Placeholder doc test
@@ -76,10 +87,74 @@ impl Vault {
   }
 }
 
+// ==========================   Program Options   =================================
+static USAGE: &'static str = "
+Usage:
+  maidsafe_vault (--first | --node [<peer>...])
+  maidsafe_vault --help
+
+Options:
+  -f, --first  Node runs as the first vault in the network.
+  -n, --node   Node runs as a non-first vault in the network.
+  -h, --help   Display this help message.
+
+  Running without '--first' requires an existing network to connect to.  If this
+  is the first vault of a new network, the only arg passed should be '--first'.
+
+  The optional <peer>... arg(s) are a list of peer endpoints (other running vaults).
+  If these are supplied, the node will try to connect to one of these in order to
+  join the network.  If no endpoints are supplied, the node will try to connect to
+  an existing network using Crust's discovery protocol.
+";
+
+#[derive(RustcDecodable, Debug)]
+struct Args {
+    arg_peer: Vec<PeerEndpoint>,
+    flag_node: bool,
+    flag_first: bool,
+    flag_help: bool,
+}
+
+#[derive(Debug)]
+enum PeerEndpoint {
+    Tcp(SocketAddr),
+}
+
+impl Decodable for PeerEndpoint {
+    fn decode<D: Decoder>(decoder: &mut D)->Result<PeerEndpoint, D::Error> {
+        let str = try!(decoder.read_str());
+        let address = match SocketAddr::from_str(&str) {
+            Ok(addr) => addr,
+            Err(_) => {
+                return Err(decoder.error(format!(
+                    "Could not decode {} as valid IPv4 or IPv6 address.", str).as_str()));
+            },
+        };
+        Ok(PeerEndpoint::Tcp(address))
+    }
+}
+
 /// Main entry for start up a vault node
 pub fn main () {
+    let args: Args = Docopt::new(USAGE)
+                            .and_then(|docopt| docopt.decode())
+                            .unwrap_or_else(|error| error.exit());
+    // Convert peer endpoints to usable bootstrap list.
+    let bootstrap_peers = if args.arg_peer.is_empty() {
+        None
+    } else {
+        Some(Vec::<Endpoint>::from_iter(args.arg_peer.iter().map(|endpoint| {
+            Endpoint::Tcp(match *endpoint { PeerEndpoint::Tcp(address) => address, })
+        })))
+    };
+
     let mut vault = Vault::new();
-    let _ = vault.routing_node.bootstrap(None, None);
+    if args.flag_first {
+        vault.routing_node.run_zero_membrane();
+    } else {
+        let _ = vault.routing_node.bootstrap(bootstrap_peers, None);
+    }
+
     let thread_guard = spawn(move || {
         loop {
             thread::sleep_ms(1);
@@ -115,7 +190,19 @@ mod test {
         // The performance of get RoutingTable fully populated among certain amount of nodes is machine dependent
         // The stable duration needs to be increased dramatically along with the increase of the total node numbers.
         // for example, you may need i * 1500 when increase total nodes from 8 to 9
-        for i in 0..8 {
+        // The first node must be run in membrane mode
+        let _ = spawn(move || {
+                let mut vault = Vault::new();
+                let _ = vault.routing_node.run_zero_membrane();
+                let thread_guard = spawn(move || {
+                    loop {
+                        thread::sleep_ms(1);
+                    }
+                });
+                let _ = thread_guard.join();
+            });
+        thread::sleep_ms(1000);
+        for i in 1..8 {
             let _ = run_vault(Vault::new());
             thread::sleep_ms(1000 + i * 1000);
         }
@@ -128,9 +215,17 @@ mod test {
     fn executable_test() {
         let mut processes = Vec::new();
         let num_of_nodes = 8;
-        for i in 0..num_of_nodes {
+        // the first vault must be run in zero_membrane mode
+        println!("---------- starting node 0 --------------");
+        processes.push(match Command::new("./target/debug/maidsafe_vault").arg("-f").stdout(Stdio::piped()).spawn() {
+                    Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
+                    Ok(process) => process,
+                });
+        thread::sleep_ms(1000);
+
+        for i in 1..num_of_nodes {
             println!("---------- starting node {} --------------", i);
-            processes.push(match Command::new("./target/debug/maidsafe_vault").stdout(Stdio::piped()).spawn() {
+            processes.push(match Command::new("./target/debug/maidsafe_vault").arg("-n").stdout(Stdio::piped()).spawn() {
                         Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
                         Ok(process) => process,
                     });
@@ -141,18 +236,10 @@ mod test {
             let _ = process.kill();
             let result : Vec<u8> = process.stdout.unwrap().bytes().map(|x| x.unwrap()).collect();
             let s = String::from_utf8(result).unwrap();
-            let v: Vec<&str> = s.split("Marked connected peer_id").collect();
+            let v: Vec<&str> = s.split("added connected node").collect();
             let marked_connections = v.len() - 1;
-            println!("\t  maidsafe_vault {} has {} connected connections in addition to the bootstrapped one.",
-                     processes.len(), marked_connections);
-            // only the first node will have marked connection to all the others
-            // other nodes will only have marked connection to non-bootstrap node
-            if processes.len() == 0 {
-                assert_eq!(num_of_nodes as usize, marked_connections + 1);
-            } else {
-                assert_eq!(num_of_nodes as usize, marked_connections + 2);
-            }
-
+            println!("\t  maidsafe_vault {} has {} connected connections.", processes.len(), marked_connections);
+            assert_eq!(num_of_nodes as usize, marked_connections + 1);
         }
     }
 }
