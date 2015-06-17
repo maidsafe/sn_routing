@@ -380,14 +380,15 @@ impl Interface for TestNode {
 
 struct TestNodeGenerator;
 
-impl CreatePersonas<TestNode> for TestNodeGenerator {
+impl CreatePersonas for TestNodeGenerator {
+    type InterfaceType = TestNode;
     fn create_personas(&mut self) -> TestNode {
         TestNode::new()
     }
 }
 
 fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
-    let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
+    let mut test_node = RoutingNode::<TestNodeGenerator>::new(TestNodeGenerator);
     if is_first {
         test_node.run_zero_membrane();
     } else {
