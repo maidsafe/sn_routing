@@ -1,12 +1,14 @@
 # maidsafe_vault
 
+![](https://img.shields.io/badge/Project%20SAFE-Approved-green.svg) [![](https://img.shields.io/badge/License-GPL3-green.svg)](https://github.com/maidsafe/maidsafe_vault/blob/master/COPYING)
+
 **Primary Maintainer:**     Qi Ma (qi.ma@maidsafe.net)
 
 **Secondary Maintainer:**   Chandra Prakash (prakash@maidsafe.net)
 
-|Crate|Linux|Windows|OSX|Coverage|
-|:------:|:-------:|:-------:|:-------:|:-------:|
-|[![](http://meritbadge.herokuapp.com/maidsafe_vault)](https://crates.io/crates/maidsafe_vault)|[![Build Status](https://travis-ci.org/maidsafe/maidsafe_vault.svg?branch=master)](https://travis-ci.org/maidsafe/maidsafe_vault) | [![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_win64_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_osx_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_osx_status_badge/) |[![Coverage Status](https://coveralls.io/repos/maidsafe/maidsafe_vault/badge.svg)](https://coveralls.io/r/maidsafe/maidsafe_vault)|
+|Crate|Linux|Windows|OSX|Coverage|Issues|
+|:------:|:-------:|:-------:|:-------:|:-------:|:-------:|
+|[![](http://meritbadge.herokuapp.com/maidsafe_vault)](https://crates.io/crates/maidsafe_vault)|[![Build Status](https://travis-ci.org/maidsafe/maidsafe_vault.svg?branch=master)](https://travis-ci.org/maidsafe/maidsafe_vault) | [![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_win64_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_osx_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_osx_status_badge/) |[![Coverage Status](https://coveralls.io/repos/maidsafe/maidsafe_vault/badge.svg)](https://coveralls.io/r/maidsafe/maidsafe_vault)|[![Stories in Ready](https://badge.waffle.io/maidsafe/maidsafe_vault.png?label=ready&title=Ready)](https://waffle.io/maidsafe/maidsafe_vault)|
 
 
 | [API Documentation](http://maidsafe.github.io/maidsafe_vault/) | [SAFENetwork System Documention](http://systemdocs.maidsafe.net/) | [MaidSafe website](http://www.maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
@@ -46,7 +48,7 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
     - [x] farming
     - [x] account
 - [x] [MAID-1021](https://maidsafe.atlassian.net/browse/MAID-1021) Implement handling for Safecoin farming rate
-    - [x] Farming rate determined by the Sacrificial copies.  
+    - [x] Farming rate determined by the Sacrificial copies.
     - [x] Farming rate drops when more copies are available and rises when less copies are available.
 
 
