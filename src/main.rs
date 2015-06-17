@@ -21,21 +21,27 @@
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://dirvine.github.io/dirvine/maidsafe_vault/")]
 #![forbid(bad_style, warnings)]
-#![deny(missing_docs)]
+#![deny(deprecated, improper_ctypes, missing_docs, non_shorthand_field_patterns,
+        overflowing_literals, plugin_as_library, private_no_mangle_fns, private_no_mangle_statics,
+        raw_pointer_derive, stable_features, unconditional_recursion, unknown_lints, unsafe_code,
+        unsigned_negation, unused, unused_allocation, unused_attributes, unused_comparisons,
+        unused_features, unused_parens, while_true)]
+
+#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+        unused_qualifications, variant_size_differences)]
+
 //! MaidSafe Vault provides the interface to SAFE routing.
 //!
 //! The resulting executable is the Vault node for the SAFE network.
 //! Refer to https://github.com/dirvine/maidsafe_vault
 #![feature(std_misc)]
 
-extern crate sodiumoxide;
 extern crate rustc_serialize;
 extern crate cbor;
 extern crate time;
 extern crate lru_time_cache;
 extern crate routing;
 extern crate maidsafe_types;
-extern crate rand;
 
 use std::thread;
 use std::thread::spawn;

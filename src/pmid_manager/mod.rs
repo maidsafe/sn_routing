@@ -21,7 +21,7 @@ mod database;
 
 use maidsafe_types::*;
 use routing::NameType;
-use routing::node_interface::{MethodCall};
+use routing::node_interface::MethodCall;
 use routing::types::{MessageAction, DestinationAddress};
 use routing::error::{ResponseError, InterfaceError};
 use routing::sendable::Sendable;

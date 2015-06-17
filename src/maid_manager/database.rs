@@ -86,7 +86,7 @@ impl Sendable for MaidManagerAccountWrapper {
             data_stored.push(tmp_wrapper.get_account().get_data_stored());
             space_available.push(tmp_wrapper.get_account().get_available_space());
         }
-        assert!(data_stored.len() < (GROUP_SIZE as usize + 1) / 2);
+        assert!(data_stored.len() < (GROUP_SIZE + 1) / 2);
 
         Some(Box::new(MaidManagerAccountWrapper::new(NameType([0u8;64]), MaidManagerAccount {
             data_stored : median(&data_stored),

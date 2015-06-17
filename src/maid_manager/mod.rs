@@ -19,9 +19,9 @@
 
 mod database;
 
-use cbor::{ Decoder };
+use cbor::Decoder;
 use routing::NameType;
-use routing::types::{MessageAction};
+use routing::types::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
 use maidsafe_types;
 use routing::node_interface::MethodCall;

@@ -18,7 +18,7 @@
 #![allow(dead_code)]
 use maidsafe_types;
 use routing::NameType;
-use routing::node_interface::{MethodCall};
+use routing::node_interface::MethodCall;
 use routing::error::{ResponseError, InterfaceError};
 use routing::types::{MessageAction, GROUP_SIZE};
 use chunk_store::ChunkStore;
@@ -75,7 +75,7 @@ impl Sendable for VersionHandlerSendable {
                 data.push(*val as u64);
             }
         }
-        assert!(data.len() < (GROUP_SIZE as usize + 1) / 2);
+        assert!(data.len() < (GROUP_SIZE + 1) / 2);
         Some(Box::new(VersionHandlerSendable::new(NameType([0u8;64]),
             vec![super::utils::median(&data) as u8])))
     }

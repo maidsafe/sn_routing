@@ -20,7 +20,7 @@
 use chunk_store::ChunkStore;
 use maidsafe_types::*;
 use routing::NameType;
-use routing::types::{MessageAction};
+use routing::types::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
 use routing::sendable::Sendable;
 use cbor::Decoder;
