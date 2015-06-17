@@ -36,7 +36,6 @@ mod test {
           string.push(char);
       }
       string
-// String::from_utf8(routing::types::generate_random_vec_u8(length)).unwrap()
   }
 
   fn add_random_name_value_pairs(number: usize, size: usize) -> NameValueContainer {
