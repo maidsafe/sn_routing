@@ -6,9 +6,9 @@
 
 Routing - a specialised storage DHT
 
-|Crate|Linux|Windows|OSX|Coverage|
-|:------:|:-------:|:-------:|:-------:|:-------:|
-|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Build Status](https://travis-ci.org/maidsafe/routing.svg?branch=master)](https://travis-ci.org/maidsafe/routing)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_win64_status_badge)](http://ci.maidsafe.net:8080/job/routing_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_osx_status_badge)](http://ci.maidsafe.net:8080/job/routing_osx_status_badge/)|[![Coverage Status](https://coveralls.io/repos/maidsafe/routing/badge.svg)](https://coveralls.io/r/maidsafe/routing)|
+|Crate|Linux|Windows|OSX|Coverage|Issues|
+|:------:|:-------:|:-------:|:-------:|:-------:|:-------:|
+|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Build Status](https://travis-ci.org/maidsafe/routing.svg?branch=master)](https://travis-ci.org/maidsafe/routing)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_win64_status_badge)](http://ci.maidsafe.net:8080/job/routing_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_osx_status_badge)](http://ci.maidsafe.net:8080/job/routing_osx_status_badge/)|[![Coverage Status](https://coveralls.io/repos/maidsafe/routing/badge.svg)](https://coveralls.io/r/maidsafe/routing)|[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)
 
 | [API Documentation](http://maidsafe.github.io/routing/routing/) | [SAFENetwork System Documention](http://systemdocs.maidsafe.net/) | [MaidSafe website](http://www.maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
 
@@ -81,6 +81,7 @@ correct name calculation of pure Id
 - [x] [#354](https://github.com/maidsafe/routing/issues/354) Fix release builds
 - [x] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
 - [x] [#363](https://github.com/maidsafe/routing/issues/363) Refresh message and ad-hoc accumulator
+- [x] [#290](https://github.com/maidsafe/routing/issues/290) Remove NodeInterface::handle_get_key
 - [x] [#373](https://github.com/maidsafe/routing/issues/373) Reduce group size for QA to 23
 
 ## Future sprints
