@@ -18,7 +18,7 @@
 #![allow(dead_code)]
 use maidsafe_types;
 use routing::NameType;
-use routing::node_interface::{MethodCall};
+use routing::node_interface::MethodCall;
 use routing::error::{ResponseError, InterfaceError};
 use routing::types::{MessageAction, GROUP_SIZE};
 use chunk_store::ChunkStore;
@@ -75,7 +75,7 @@ impl Sendable for VersionHandlerSendable {
                 data.push(*val as u64);
             }
         }
-        assert!(data.len() < (GROUP_SIZE as usize + 1) / 2);
+        assert!(data.len() < (GROUP_SIZE + 1) / 2);
         Some(Box::new(VersionHandlerSendable::new(NameType([0u8;64]),
             vec![super::utils::median(&data) as u8])))
     }
@@ -142,7 +142,6 @@ impl VersionHandler {
 #[cfg(test)]
 mod test {
  use cbor;
- use maidsafe_types;
  use super::*;
  use maidsafe_types::*;
  use routing::types::*;
@@ -178,7 +177,7 @@ mod test {
                 let mut d = cbor::Decoder::from_bytes(x);
                 let obj_after: Payload = d.decode().next().unwrap().unwrap();
                 assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::StructuredData);
-                let sdv_after = obj_after.get_data::<maidsafe_types::StructuredData>();
+                let sdv_after = obj_after.get_data::<StructuredData>();
                 assert_eq!(sdv_after.name(), NameType([3u8;64]));
                 assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
                 assert_eq!(sdv_after.value().len(), 2);
@@ -204,13 +203,13 @@ mod test {
 
     #[test]
     fn version_handler_sendable_serialisation() {
-        let obj_before = super::VersionHandlerSendable::new(NameType([1u8;64]), vec![2,3,45,5]);
+        let obj_before = VersionHandlerSendable::new(NameType([1u8;64]), vec![2,3,45,5]);
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: super::VersionHandlerSendable = d.decode().next().unwrap().unwrap();
+        let obj_after: VersionHandlerSendable = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
     }

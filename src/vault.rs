@@ -27,7 +27,7 @@ use lru_time_cache::LruCache;
 
 use maidsafe_types::*;
 
-use routing::{NameType};
+use routing::NameType;
 use routing::error::{ResponseError, InterfaceError};
 use routing::authority::Authority;
 use routing::node_interface::{ Interface, MethodCall, CreatePersonas };

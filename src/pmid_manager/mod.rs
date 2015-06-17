@@ -21,7 +21,7 @@ mod database;
 
 use maidsafe_types::*;
 use routing::NameType;
-use routing::node_interface::{MethodCall};
+use routing::node_interface::MethodCall;
 use routing::types::{MessageAction, DestinationAddress};
 use routing::error::{ResponseError, InterfaceError};
 use routing::sendable::Sendable;
@@ -91,7 +91,7 @@ impl PmidManager {
 mod test {
   use cbor;
   use routing;
-  use super::{PmidManager};
+  use super::PmidManager;
   use maidsafe_types::*;
   use routing::types::*;
   use super::database::{PmidManagerAccount, PmidManagerAccountWrapper};
@@ -100,7 +100,7 @@ mod test {
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
     let dest = DestinationAddress { dest: routing::test_utils::Random::generate_random(), relay_to: None };
-    let value = routing::types::generate_random_vec_u8(1024);
+    let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
     let mut encoder = cbor::Encoder::from_memory();

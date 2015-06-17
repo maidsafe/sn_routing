@@ -19,11 +19,11 @@
 
 use routing::NameType;
 use routing::sendable::Sendable;
-use routing::types::{GROUP_SIZE};
+use routing::types::GROUP_SIZE;
 use routing::node_interface::MethodCall;
 use std::collections::HashMap;
 use cbor;
-use rustc_serialize::{Encodable};
+use rustc_serialize::Encodable;
 
 type Identity = NameType; // name of the chunk
 type PmidNode = NameType;
@@ -88,7 +88,7 @@ impl Sendable for DataManagerSendable {
     }
 
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
-        if responses.len() == GROUP_SIZE as usize - 1 {
+        if responses.len() == GROUP_SIZE - 1 {
             return None;
         }
         let mut tmp_wrapper: DataManagerSendable;
@@ -222,7 +222,7 @@ mod test {
   use super::*;
   use maidsafe_types::ImmutableData;
   use routing::NameType;
-  use routing::types::{generate_random_vec_u8};
+  use routing::types::generate_random_vec_u8;
   use routing::test_utils::Random;
   use routing::sendable::Sendable;
 

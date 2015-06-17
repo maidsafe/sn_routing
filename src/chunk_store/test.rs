@@ -17,29 +17,22 @@
 
 #[cfg(test)]
 mod test {
-  use rand;
-  use routing;
+  use rand::{thread_rng, Rng};
+
+  use routing::NameType;
   use routing::test_utils::Random;
 
-  use rand::{thread_rng, Rng};
   use chunk_store::ChunkStore;
-  use routing::NameType;
 
   static ONE_KB: usize = 1024;
 
   static K_DEFAULT_MAX_DISK_USAGE: usize = 4 * 1024;// // 4 * OneKB;
 
-  struct NameValueContainer(Vec<(routing::NameType, String)>);
-
-  fn get_random_name_type() ->  routing::NameType {
-      let mut v = [0u8; 64];
-      thread_rng().fill_bytes(&mut v);
-      routing::NameType(v)
-  }
+  struct NameValueContainer(Vec<(NameType, String)>);
 
   fn get_random_non_empty_string(length: usize) -> String {
       let mut string = String::new();
-      for char in rand::thread_rng().gen_ascii_chars().take(length) {
+      for char in thread_rng().gen_ascii_chars().take(length) {
           string.push(char);
       }
       string
@@ -47,9 +40,9 @@ mod test {
 
   fn add_random_name_value_pairs(number: usize, size: usize) -> NameValueContainer {
       let mut i = 0usize;
-      let mut container: Vec<(routing::NameType, String)> = Vec::with_capacity(number);
+      let mut container: Vec<(NameType, String)> = Vec::with_capacity(number);
       loop {
-          container.push((get_random_name_type(), get_random_non_empty_string(size)));
+          container.push((NameType::generate_random(), get_random_non_empty_string(size)));
           i += 1; // i++; is not compiling
           if i == number {
               break;

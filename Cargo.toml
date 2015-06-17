@@ -16,8 +16,10 @@ rustc-serialize = "*"
 cbor = "*"
 time = "*"
 sodiumoxide = "0.0.4"
-rand = "*"
 lru_time_cache = "0.1.7"
 crust = "0.0.*"
 routing = "0.1.64"
 maidsafe_types = "0.1.52"
+
+[dev-dependencies]
+rand = "*"

@@ -21,10 +21,10 @@ mod database;
 
 use std::cmp;
 use routing::{ NameType, closer_to_target };
-use routing::node_interface::{MethodCall};
-use routing::types::{MessageAction};
+use routing::node_interface::MethodCall;
+use routing::types::MessageAction;
 use maidsafe_types;
-use cbor::{ Decoder };
+use cbor::Decoder;
 use cbor;
 use routing::sendable::Sendable;
 use routing::error::{InterfaceError, ResponseError};
@@ -89,7 +89,7 @@ impl Sendable for DataManagerStatsSendable {
             let tmp_senderable: DataManagerStatsSendable = d.decode().next().unwrap().unwrap();
             resource_indexes.push(tmp_senderable.get_resource_index());
         }
-        assert!(resource_indexes.len() < (GROUP_SIZE as usize + 1) / 2);
+        assert!(resource_indexes.len() < (GROUP_SIZE + 1) / 2);
         Some(Box::new(DataManagerStatsSendable::new(NameType([0u8;64]), median(&resource_indexes))))
     }
 }
