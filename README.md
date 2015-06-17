@@ -1,3 +1,4 @@
+[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)
 # Routing
 
 **Primary Maintainer:**     Benjamin Bollen (benjamin.bollen@maidsafe.net)
