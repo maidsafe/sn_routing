@@ -78,8 +78,10 @@ correct name calculation of pure Id
 
 ## [0.1.70] - Activate AccountTransfer
 
-- [ ] [#354](https://github.com/maidsafe/routing/issues/354) Fix release builds
-- [ ] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
+- [x] [#354](https://github.com/maidsafe/routing/issues/354) Fix release builds
+- [x] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
+- [x] [#363](https://github.com/maidsafe/routing/issues/363) Refresh message and ad-hoc accumulator
+- [x] [#373](https://github.com/maidsafe/routing/issues/373) Reduce group size for QA to 23
 
 ## Future sprints
 
