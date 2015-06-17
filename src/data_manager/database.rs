@@ -222,7 +222,7 @@ mod test {
   use super::*;
   use maidsafe_types::ImmutableData;
   use routing::NameType;
-  use routing::types::{generate_random_vec_u8};
+  use routing::types::generate_random_vec_u8;
   use routing::test_utils::Random;
   use routing::sendable::Sendable;
 

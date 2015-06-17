@@ -102,7 +102,7 @@ mod test {
     fn handle_put() {
         let mut maid_manager = MaidManager::new();
         let from: NameType = routing::test_utils::Random::generate_random();
-        let value = routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let data = ImmutableData::new(value);
         let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
         let mut encoder = cbor::Encoder::from_memory();

@@ -43,6 +43,9 @@ extern crate lru_time_cache;
 extern crate routing;
 extern crate maidsafe_types;
 
+#[cfg(test)]
+extern crate rand;
+
 use std::thread;
 use std::thread::spawn;
 

@@ -223,7 +223,6 @@ impl PmidManagerDatabase {
 mod test {
   extern crate cbor;
   extern crate maidsafe_types;
-  extern crate rand;
   extern crate routing;
   use super::{PmidManagerDatabase, PmidManagerAccount, PmidManagerAccountWrapper};
 
@@ -267,13 +266,13 @@ mod test {
 
     #[test]
     fn pmid_manager_account_serialisation() {
-        let obj_before = super::PmidManagerAccount::new();
+        let obj_before = PmidManagerAccount::new();
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: super::PmidManagerAccount = d.decode().next().unwrap().unwrap();
+        let obj_after: PmidManagerAccount = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
     }

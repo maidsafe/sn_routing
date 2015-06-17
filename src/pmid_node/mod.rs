@@ -102,7 +102,6 @@ impl PmidNode {
 #[cfg(test)]
 mod test {
   use cbor;
-  use maidsafe_types;
   use routing;
   use routing::error::InterfaceError;
   use super::*;
@@ -112,7 +111,7 @@ mod test {
 
   #[test]
   fn handle_put_get() {
-    let mut pmid_node = super::PmidNode::new();
+    let mut pmid_node = PmidNode::new();
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
     let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
@@ -133,7 +132,7 @@ mod test {
             let mut d = cbor::Decoder::from_bytes(&x[..]);
             let obj_after: Payload = d.decode().next().unwrap().unwrap();
             assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::ImmutableData);
-            let data_after = obj_after.get_data::<maidsafe_types::ImmutableData>();
+            let data_after = obj_after.get_data::<ImmutableData>();
             assert_eq!(data.name().0.to_vec(), data_after.name().0.to_vec());
             assert_eq!(data.serialised_contents(), data_after.serialised_contents());
         },
