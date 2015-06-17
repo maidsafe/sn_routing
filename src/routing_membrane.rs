@@ -1403,3 +1403,165 @@ fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
 }
 
 fn ignore<R,E>(_restul: Result<R,E>) {}
+
+#[cfg(test)]
+mod test {
+
+use super::*;
+use crust;
+use std::sync::mpsc;
+use name_type::NameType;
+use sendable::Sendable;
+use test_utils::Random;
+use std::sync::{Arc, Mutex};
+use types;
+use node_interface::Interface;
+
+
+#[derive(Clone)]
+struct Stats {
+    call_count: u32,
+    data: Vec<u8>
+}
+
+struct TestData {
+    data: Vec<u8>
+}
+
+impl TestData {
+    fn new(in_data: Vec<u8>) -> TestData {
+        TestData { data: in_data }
+    }
+}
+
+struct TestInterface {
+    stats: Arc<Mutex<Stats>>
+}
+
+impl TestInterface {
+    pub fn new() -> TestInterface {
+        TestInterface { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }
+    }
+}
+
+impl Sendable for TestData {
+    fn name(&self) -> NameType { Random::generate_random() }
+
+    fn type_tag(&self)->u64 { unimplemented!() }
+
+    fn serialised_contents(&self)->Vec<u8> { self.data.clone() }
+
+    fn refresh(&self)->bool {
+        false
+    }
+
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
+}
+
+impl Interface for TestInterface {
+    fn handle_get_key(&mut self, type_id: u64, name : NameType, our_authority: Authority,
+                      from_authority: Authority, from_address: NameType) -> Result<MessageAction, InterfaceError> {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        let data = stats_value.data.clone();
+        Ok(MessageAction::Reply(data))
+    }
+    fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: Authority,
+                  from_authority: Authority, from_address: NameType) -> Result<MessageAction, InterfaceError> {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        Ok(MessageAction::Reply("handle_get called".to_string().into_bytes()))
+    }
+    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                from_address: NameType, dest_address: types::DestinationAddress,
+                data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        stats_value.data = match from_authority {
+            Authority::Unknown => "UnauthorisedPut".to_string().into_bytes(),
+            _   => "AuthorisedPut".to_string().into_bytes(),
+        };
+        Ok(MessageAction::Reply(data))
+    }
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
+                   from_address: NameType, name: NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        stats_value.data = data.clone();
+        Ok(MessageAction::Reply(data))
+    }
+    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
+                           ResponseError>) -> MethodCall {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        stats_value.data = "handle_get_response called".to_string().into_bytes();
+        MethodCall::None
+    }
+    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
+                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        stats_value.data = match response {
+           Ok(data) => data,
+            Err(_) => vec![]
+        };
+        MethodCall::None
+    }
+    fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
+                            response: Result<Vec<u8>, ResponseError>) {
+        unimplemented!();
+    }
+    fn handle_churn(&mut self, close_group: Vec<NameType>)
+        -> Vec<MethodCall> {
+        unimplemented!();
+    }
+    fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
+                        from_address: NameType) -> Result<MessageAction, InterfaceError> {
+        Err(InterfaceError::Abort)
+    }
+    fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
+                        data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+        Err(InterfaceError::Abort)
+    }
+}
+
+fn create_mmebrane() -> RoutingMembrane<TestInterface> {
+    let id = types::Id::new();
+    let own_name = id.get_name();
+    let (event_output, event_input) = mpsc::channel();
+    let mut cm = crust::ConnectionManager::new(event_output);
+    // TODO: Default Protocol and Port need to be passed down
+    let ports_and_protocols : Vec<crust::Port> = Vec::new();
+    // TODO: Beacon port should be passed down
+    let beacon_port = Some(5483u16);
+    let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
+        Err(reason) => {
+            println!("Failed to start listening: {:?}", reason);
+            (vec![], None)
+        }
+        Ok(listeners_and_beacon) => listeners_and_beacon
+    };
+    let original_name = id.get_name();
+    let self_relocated_name = types::calculate_self_relocated_name(
+        &id.get_crypto_public_sign_key(),
+        &id.get_crypto_public_key(),
+        &id.get_validation_token());
+    println!("ZERO listening on {:?}, named {:?}", listeners.0.first(), self_relocated_name);
+    RoutingMembrane::<TestInterface>::new(cm, event_input, None, listeners.0, id.clone(), TestInterface::new());
+}
+
+#[test]
+    fn call_put() {
+        let data = "this is a known string".to_string().into_bytes();
+        let chunk = Box::new(TestData::new(data));
+        let mut n1 = create_mmebrane();
+        let name: NameType = Random::generate_random();
+        n1.put(name, chunk);
+    }
+}
