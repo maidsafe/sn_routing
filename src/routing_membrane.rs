@@ -1469,15 +1469,9 @@ impl TestInterface {
 
 impl Sendable for TestData {
     fn name(&self) -> NameType { Random::generate_random() }
-
     fn type_tag(&self)->u64 { unimplemented!() }
-
     fn serialised_contents(&self)->Vec<u8> { self.data.clone() }
-
-    fn refresh(&self)->bool {
-        false
-    }
-
+    fn refresh(&self)->bool { false }
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
 }
 
@@ -1489,6 +1483,7 @@ impl Interface for TestInterface {
         stats_value.call_count += 1;
         Ok(MessageAction::Reply("handle_get called".to_string().into_bytes()))
     }
+
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: DestinationAddress,
                 data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
@@ -1501,8 +1496,9 @@ impl Interface for TestInterface {
         };
         Ok(MessageAction::Reply(data))
     }
-    fn handle_refresh(&mut self, _type_tag: u64, _from_group: NameType, _payloads: Vec<Vec<u8>>) {
-    }
+
+    fn handle_refresh(&mut self, _type_tag: u64, _from_group: NameType, _payloads: Vec<Vec<u8>>) {}
+
     fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
                    from_address: NameType, name: NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
@@ -1511,6 +1507,7 @@ impl Interface for TestInterface {
         stats_value.data = data.clone();
         Ok(MessageAction::Reply(data))
     }
+
     fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
                            ResponseError>) -> MethodCall {
         let stats = self.stats.clone();
@@ -1519,6 +1516,7 @@ impl Interface for TestInterface {
         stats_value.data = "handle_get_response called".to_string().into_bytes();
         MethodCall::None
     }
+
     fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
         let stats = self.stats.clone();
@@ -1530,18 +1528,22 @@ impl Interface for TestInterface {
         };
         MethodCall::None
     }
+
     fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
                             response: Result<Vec<u8>, ResponseError>) {
         unimplemented!();
     }
+
     fn handle_churn(&mut self, close_group: Vec<NameType>)
         -> Vec<MethodCall> {
         unimplemented!();
     }
+
     fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
                         from_address: NameType) -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
+
     fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
                         data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
@@ -1553,9 +1555,7 @@ fn create_mmebrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     let own_name = id.get_name();
     let (event_output, event_input) = mpsc::channel();
     let mut cm = crust::ConnectionManager::new(event_output);
-    // TODO: Default Protocol and Port need to be passed down
     let ports_and_protocols : Vec<crust::Port> = Vec::new();
-    // TODO: Beacon port should be passed down
     let beacon_port = Some(5483u16);
     let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
         Err(reason) => {
@@ -1711,11 +1711,9 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
         let our_name = routing_node.own_name.clone();
-
         let total_inside : u32 = 50;
         let limit_attempts : u32 = 200;
         let mut stored_public_ids : Vec<PublicId> = Vec::with_capacity(total_inside as usize);
-
         let mut count_inside : u32 = 0;
         let mut count_total : u32 = 0;
         loop {
@@ -1766,11 +1764,9 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
         let our_name = routing_node.own_name.clone();
-
         let total_inside : u32 = 50;
         let limit_attempts : u32 = 200;
         let mut stored_public_ids : Vec<PublicId> = Vec::with_capacity(total_inside as usize);
-
         let mut count_inside : u32 = 0;
         let mut count_total : u32 = 0;
         loop {
