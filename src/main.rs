@@ -48,8 +48,6 @@ extern crate maidsafe_types;
 
 #[cfg(test)]
 extern crate rand;
-#[cfg(test)]
-extern crate sodiumoxide;
 
 use core::iter::FromIterator;
 use std::net::SocketAddr;
