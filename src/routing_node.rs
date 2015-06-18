@@ -23,10 +23,11 @@ use sodiumoxide;
 use std::sync::mpsc;
 use std::boxed::Box;
 use std::thread;
+use std::marker::PhantomData;
 
 use crust;
 use NameType;
-use node_interface::{CreatePersonas};
+use node_interface::{Interface, CreatePersonas};
 use routing_membrane::RoutingMembrane;
 use types;
 use types::{MessageId, Bytes};
@@ -47,8 +48,10 @@ type PortAndProtocol = crust::Port;
 type RoutingResult = Result<(), RoutingError>;
 
 /// DHT node
-pub struct RoutingNode<G> where G : CreatePersonas {
+pub struct RoutingNode<F, G> where F : Interface + 'static,
+                                   G : CreatePersonas<F> {
     genesis: Box<G>,
+    phantom_data: PhantomData<F>,
     id: types::Id,
     own_name: NameType,
     next_message_id: MessageId,
@@ -56,12 +59,14 @@ pub struct RoutingNode<G> where G : CreatePersonas {
     bootstrap_node_id: Option<NameType>,
 }
 
-impl<G> RoutingNode<G> where G : CreatePersonas {
-    pub fn new(genesis: G) -> RoutingNode<G> {
+impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
+                                   G : CreatePersonas<F> {
+    pub fn new(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let id = types::Id::new();
         let own_name = id.get_name();
         RoutingNode { genesis: Box::new(genesis),
+                      phantom_data: PhantomData,
                       id : id,
                       own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),
@@ -101,7 +106,7 @@ impl<G> RoutingNode<G> where G : CreatePersonas {
             self_relocated_name);
         self.id.assign_relocated_name(self_relocated_name);
 
-        let mut membrane = RoutingMembrane::<G::InterfaceType>::new(
+        let mut membrane = RoutingMembrane::<F>::new(
             cm, event_input, None,
             listeners.0, self.id.clone(),
             self.genesis.create_personas());
@@ -211,7 +216,7 @@ impl<G> RoutingNode<G> where G : CreatePersonas {
             Some(relocated_name) => {
                 self.id.assign_relocated_name(relocated_name);
                 debug_assert!(self.id.is_relocated());
-                let mut membrane = RoutingMembrane::<G::InterfaceType>::new(
+                let mut membrane = RoutingMembrane::<F>::new(
                     cm, event_input, Some(bootstrapped_to.clone()),
                     listeners.0, self.id.clone(),
                     self.genesis.create_personas());

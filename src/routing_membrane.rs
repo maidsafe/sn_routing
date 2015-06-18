@@ -1614,8 +1614,8 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
 
 #[test]
     fn check_next_id() {
-      let mut routing_node = RoutingNode::new(TestInterface { stats: Arc::new(Mutex::new(Stats {call_count: 0, data: vec![]})) });
-      assert_eq!(routing_node.get_next_message_id() + 1, routing_node.get_next_message_id());
+        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        assert_eq!(membrane.get_next_message_id() + 1, membrane.get_next_message_id());
     }
 
 #[test]
