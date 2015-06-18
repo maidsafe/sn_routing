@@ -79,18 +79,6 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_get_key(&mut self,
-                      _: u64, // type_id
-                      _: NameType, // name
-                      _: Authority, // our_authority
-                      _: Authority, // from_authority
-                      _: NameType)->Result<MessageAction, InterfaceError> { // from_address
-        // According to the comment in https://maidsafe.atlassian.net/browse/MAID-1109
-        // this trait will be kept as internal to routing only as a resolve to issue
-        // https://github.com/maidsafe/routing/issues/290
-        unimplemented!();
-    }
-
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<MessageAction, InterfaceError> {
         if our_authority == from_authority {
@@ -186,6 +174,13 @@ impl Interface for VaultFacade {
         let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
 
         mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
+    }
+
+    fn handle_refresh(&mut self,
+                      _: u64, // type_tag
+                      _: NameType, // from_group
+                      _: Vec<Vec<u8>>) { // payloads
+        unimplemented!();
     }
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do

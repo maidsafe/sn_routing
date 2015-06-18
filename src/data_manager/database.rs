@@ -17,6 +17,7 @@
 
 #![allow(dead_code)]
 
+use maidsafe_types::{Payload, PayloadTypeTag};
 use routing::NameType;
 use routing::sendable::Sendable;
 use routing::types::GROUP_SIZE;
@@ -209,8 +210,13 @@ impl DataManagerDatabase {
                     name: element.0.clone(),
                 });
             }
+            let data_manager_sendable = DataManagerSendable::new(element.0, element.1);
+            let payload = Payload::new(PayloadTypeTag::DataManagerAccountTransfer, &data_manager_sendable);
+            let mut e = cbor::Encoder::from_memory();
+            e.encode(&[payload]).unwrap();
             actions.push(MethodCall::Refresh {
-                content: Box::new(DataManagerSendable::new(element.0, element.1)),
+                type_tag: data_manager_sendable.type_tag(), from_group: data_manager_sendable.name(),
+                payload: e.as_bytes().to_vec()
             });
         }
         actions

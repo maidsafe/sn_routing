@@ -39,7 +39,6 @@
 extern crate core;
 extern crate crust;
 extern crate docopt;
-extern crate sodiumoxide;
 extern crate rustc_serialize;
 extern crate cbor;
 extern crate time;
@@ -49,6 +48,8 @@ extern crate maidsafe_types;
 
 #[cfg(test)]
 extern crate rand;
+#[cfg(test)]
+extern crate sodiumoxide;
 
 use core::iter::FromIterator;
 use std::net::SocketAddr;

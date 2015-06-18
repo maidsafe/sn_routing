@@ -129,8 +129,14 @@ impl VersionHandler {
        let mut actions = Vec::with_capacity(names.len());
        for name in names {
             let data = self.chunk_store_.get(name.clone());
+            let version_handler_sendable = VersionHandlerSendable::new(name, data);
+            let payload = maidsafe_types::Payload::new(maidsafe_types::PayloadTypeTag::VersionHandlerAccountTransfer,
+                                                       &version_handler_sendable);
+            let mut e = cbor::Encoder::from_memory();
+            e.encode(&[payload]).unwrap();
             actions.push(MethodCall::Refresh {
-                content: Box::new(VersionHandlerSendable::new(name, data)),
+                type_tag: version_handler_sendable.type_tag(), from_group: version_handler_sendable.name(),
+                payload: e.as_bytes().to_vec()
             });
        }
        self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
