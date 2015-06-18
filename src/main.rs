@@ -165,13 +165,8 @@ pub fn main () {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::io::BufRead;
     use std::thread;
     use std::thread::spawn;
-    use std::process::Stdio;
-    use std::process::Command;
-    use std::error::Error;
-    use std::io::Read;
 
     #[test]
     fn lib_test() {
@@ -208,37 +203,4 @@ mod test {
         thread::sleep_ms(10000);
     }
 
-    #[test]
-    // This test requires the executable maidsafe_vault is presented at the same place of the test get executed
-    // also it depends a printout in routing lib. if such printout is changed / muted, this test needs to be updated
-    fn executable_test() {
-        let mut processes = Vec::new();
-        let num_of_nodes = 8;
-        // the first vault must be run in zero_membrane mode
-        println!("---------- starting node 0 --------------");
-        processes.push(match Command::new("./target/debug/maidsafe_vault").arg("-f").stdout(Stdio::piped()).spawn() {
-                    Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
-                    Ok(process) => process,
-                });
-        thread::sleep_ms(1000);
-
-        for i in 1..num_of_nodes {
-            println!("---------- starting node {} --------------", i);
-            processes.push(match Command::new("./target/debug/maidsafe_vault").arg("-n").stdout(Stdio::piped()).spawn() {
-                        Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
-                        Ok(process) => process,
-                    });
-            thread::sleep_ms(1000 + i * 1000);
-        }
-        thread::sleep_ms(10000);
-        while let Some(mut process) = processes.pop() {
-            let _ = process.kill();
-            let result : Vec<u8> = process.stdout.unwrap().bytes().map(|x| x.unwrap()).collect();
-            let s = String::from_utf8(result).unwrap();
-            let v: Vec<&str> = s.split("added connected node").collect();
-            let marked_connections = v.len() - 1;
-            println!("\t  maidsafe_vault {} has {} connected connections.", processes.len(), marked_connections);
-            assert_eq!(num_of_nodes as usize, marked_connections + 1);
-        }
-    }
 }
