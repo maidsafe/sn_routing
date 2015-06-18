@@ -1,4 +1,5 @@
 # Routing
+![](https://img.shields.io/badge/Project%20SAFE-Approved-green.svg) [![](https://img.shields.io/badge/License-GPL3-green.svg)](https://github.com/maidsafe/crust/blob/master/COPYING)
 
 **Primary Maintainer:**     Benjamin Bollen (benjamin.bollen@maidsafe.net)
 
