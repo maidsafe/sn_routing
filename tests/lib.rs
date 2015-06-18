@@ -55,13 +55,18 @@ fn executable_test() {
         thread::sleep_ms(1000 + i * 1000);
     }
     thread::sleep_ms(10000);
+    let mut test_failed = false;
     while let Some(mut process) = processes.pop() {
         let _ = process.kill();
         let result : Vec<u8> = process.stdout.unwrap().bytes().map(|x| x.unwrap()).collect();
         let s = String::from_utf8(result).unwrap();
+        println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
         let v: Vec<&str> = s.split("added connected node").collect();
         let marked_connections = v.len() - 1;
         println!("\t  maidsafe_vault {} has {} connected connections.", processes.len(), marked_connections);
-        assert_eq!(num_of_nodes as usize, marked_connections + 1);
+        if num_of_nodes as usize != marked_connections + 1 {
+        	test_failed = true;
+        }
     }
+    assert_eq!(test_failed, false);
 }
