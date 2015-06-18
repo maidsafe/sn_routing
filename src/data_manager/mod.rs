@@ -246,8 +246,14 @@ impl DataManager {
   pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
     // TODO: as Vault doesn't have access to what ID it is, so here have to use the first one in the closing group as its ID
     let mut result = self.db_.retrieve_all_and_reset(close_group);
+    let data_manager_stats_sendable = DataManagerStatsSendable::new(close_group[0].clone(), self.resource_index);
+    let payload = maidsafe_types::Payload::new(maidsafe_types::PayloadTypeTag::DataManagerStatsTransfer,
+                                               &data_manager_stats_sendable);
+    let mut e = cbor::Encoder::from_memory();
+    e.encode(&[payload]).unwrap();
     result.push(MethodCall::Refresh {
-        content: Box::new(DataManagerStatsSendable::new(close_group[0].clone(), self.resource_index))
+        type_tag: data_manager_stats_sendable.type_tag(), from_group: data_manager_stats_sendable.name(),
+        payload: e.as_bytes().to_vec()
     });
     result
   }

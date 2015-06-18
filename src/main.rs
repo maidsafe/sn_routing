@@ -39,7 +39,6 @@
 extern crate core;
 extern crate crust;
 extern crate docopt;
-extern crate sodiumoxide;
 extern crate rustc_serialize;
 extern crate cbor;
 extern crate time;
