@@ -1635,16 +1635,14 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
         let chunk = Box::new(TestData::new(array.into_iter().map(|&value| value).collect::<Vec<_>>()));
-        let stats = Arc::new(Mutex::new(Stats::new()));
-        let mut membrane = create_mmebrane(stats);
+        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
         membrane.put(name, chunk);
     }
 
 #[test]
     fn call_get() {
-        let stats = Arc::new(Mutex::new(Stats::new()));
-        let mut membrane = create_mmebrane(stats);
+        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
         membrane.get(100u64, name);
     }
@@ -1654,56 +1652,53 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
         let chunk = Box::new(TestData::new(array.into_iter().map(|&value| value).collect::<Vec<_>>()));
-        let stats = Arc::new(Mutex::new(Stats::new()));
-        let mut membrane = create_mmebrane(stats);
+        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
         membrane.unauthorised_put(name, chunk);
     }
 
 #[test]
     fn call_handle_put() {
-        let stats = Arc::new(Mutex::new(Stats::new()));
         let put_data: PutData = Random::generate_random();
-        assert_eq!(call_operation(put_data, MessageTypeTag::PutData, stats).call_count, 1u32);
+        assert_eq!(call_operation(put_data, MessageTypeTag::PutData, Arc::new(Mutex::new(Stats::new()))).call_count, 1u32);
     }
 
 #[test]
 #[ignore]
     fn call_handle_authorised_put() {
-        let stats = Arc::new(Mutex::new(Stats::new()));
         let unauthorised_put: PutData = Random::generate_random();
-        let result_stats = call_operation(unauthorised_put, MessageTypeTag::UnauthorisedPut, stats);
+        let result_stats = call_operation(unauthorised_put, MessageTypeTag::UnauthorisedPut,
+             Arc::new(Mutex::new(Stats::new())));
         assert_eq!(result_stats.call_count, 1u32);
         assert_eq!(result_stats.data, "UnauthorisedPut".to_string().into_bytes());
     }
 
 #[test]
     fn call_handle_put_response() {
-        let stats = Arc::new(Mutex::new(Stats::new()));
         let put_data_response: PutDataResponse = Random::generate_random();
-        assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse, stats).call_count, 1u32);
+        assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse,
+             Arc::new(Mutex::new(Stats::new()))).call_count, 1u32);
     }
 
 #[test]
     fn call_handle_get_data() {
-        let stats = Arc::new(Mutex::new(Stats::new()));
         let get_data: GetData = Random::generate_random();
-        assert_eq!(call_operation(get_data, MessageTypeTag::GetData, stats).call_count, 1u32);
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetData,
+            Arc::new(Mutex::new(Stats::new()))).call_count, 1u32);
     }
 
 #[test]
     fn call_handle_get_data_response() {
-        let stats = Arc::new(Mutex::new(Stats::new()));
         let get_data: GetDataResponse = Random::generate_random();
-        assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse, stats).call_count, 1u32);
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse,
+            Arc::new(Mutex::new(Stats::new()))).call_count, 1u32);
     }
 
 #[test]
 #[ignore]
     fn call_handle_post() {
-        let stats = Arc::new(Mutex::new(Stats::new()));
         let post: Post = Random::generate_random();
-        assert_eq!(call_operation(post, MessageTypeTag::Post, stats).call_count, 1u32);
+        assert_eq!(call_operation(post, MessageTypeTag::Post, Arc::new(Mutex::new(Stats::new()))).call_count, 1u32);
     }
 
 #[test]
