@@ -18,13 +18,15 @@
 #![allow(dead_code)]
 
 use std::collections;
-use routing::NameType;
-use routing::sendable::Sendable;
+use utils::median;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use cbor;
+
+use maidsafe_types::{Payload, PayloadTypeTag};
+use routing::NameType;
+use routing::sendable::Sendable;
 use routing::node_interface::MethodCall;
 use routing::types::GROUP_SIZE;
-use utils::median;
 
 type Identity = NameType; // maid node address
 
@@ -171,16 +173,21 @@ impl MaidManagerDatabase {
       self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
   }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
-      let data: Vec<_> = self.storage.drain().collect();
-      let mut actions = Vec::with_capacity(data.len());
-      for element in data {
-          actions.push(MethodCall::Refresh {
-              content: Box::new(MaidManagerAccountWrapper::new(element.0, element.1)),
-          });
-      }
-      actions
-  }
+    pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
+        let data: Vec<_> = self.storage.drain().collect();
+        let mut actions = Vec::with_capacity(data.len());
+        for element in data {
+            let maid_manager_wrapper = MaidManagerAccountWrapper::new(element.0, element.1);
+            let payload = Payload::new(PayloadTypeTag::MaidManagerAccountTransfer, &maid_manager_wrapper);
+            let mut e = cbor::Encoder::from_memory();
+            e.encode(&[payload]).unwrap();
+            actions.push(MethodCall::Refresh {
+                type_tag: maid_manager_wrapper.type_tag(), from_group: maid_manager_wrapper.name(),
+                payload: e.as_bytes().to_vec()
+            });
+        }
+        actions
+    }
 
   pub fn delete_data(&mut self, name : &Identity, size: u64) {
       match self.storage.get_mut(name) {

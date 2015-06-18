@@ -79,18 +79,6 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_get_key(&mut self,
-                      _: u64, // type_id
-                      _: NameType, // name
-                      _: Authority, // our_authority
-                      _: Authority, // from_authority
-                      _: NameType)->Result<MessageAction, InterfaceError> { // from_address
-        // According to the comment in https://maidsafe.atlassian.net/browse/MAID-1109
-        // this trait will be kept as internal to routing only as a resolve to issue
-        // https://github.com/maidsafe/routing/issues/290
-        unimplemented!();
-    }
-
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<MessageAction, InterfaceError> {
         if our_authority == from_authority {
@@ -186,6 +174,13 @@ impl Interface for VaultFacade {
         let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
 
         mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
+    }
+
+    fn handle_refresh(&mut self,
+                      _: u64, // type_tag
+                      _: NameType, // from_group
+                      _: Vec<Vec<u8>>) { // payloads
+        unimplemented!();
     }
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
@@ -457,16 +452,19 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             assert!(churn_data.len() == 2);
 
             // MaidManagerAccount
-            let maid_manager: maid_manager::MaidManagerAccountWrapper = match churn_data[0] {
-                MethodCall::Refresh {ref content} => {
-                    let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
-                    let mut decoder = cbor::Decoder::from_bytes(data);
-                    decoder.decode().next().unwrap().unwrap()
+            let mm_account_wrapper: maid_manager::MaidManagerAccountWrapper = match churn_data[0] {
+                MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                    assert_eq!(*type_tag, 200);
+                    assert_eq!(*from_group, from);
+                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
+                    let transfer_payload: Payload = d.decode().next().unwrap().unwrap();
+                    assert_eq!(transfer_payload.get_type_tag(), PayloadTypeTag::MaidManagerAccountTransfer);
+                    transfer_payload.get_data()
                 },
                 _ => panic!("Refresh type expected")
             };
-            assert_eq!(maid_manager.name(), from.clone());
-            assert_eq!(maid_manager.get_account().get_data_stored(), 1024);
+            assert_eq!(mm_account_wrapper.name(), from.clone());
+            assert_eq!(mm_account_wrapper.get_account().get_data_stored(), 1024);
             assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
         }
 
@@ -483,21 +481,27 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             assert_eq!(churn_data.len(), 2);
 
             match churn_data[0] {
-                MethodCall::Refresh {ref content} => {
-                    let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
-                    let mut decoder = cbor::Decoder::from_bytes(data0);
-                    let data_manager_sendable: data_manager::DataManagerSendable = decoder.decode().next().unwrap().unwrap();
-                    assert_eq!(data_manager_sendable.name(), data.name().clone());
+                MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                    assert_eq!(*type_tag, 206);
+                    assert_eq!(*from_group, data.name());
+                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
+                    let transfer_payload: Payload = d.decode().next().unwrap().unwrap();
+                    assert_eq!(transfer_payload.get_type_tag(), PayloadTypeTag::DataManagerAccountTransfer);
+                    let data_manager_sendable: data_manager::DataManagerSendable = transfer_payload.get_data();
+                    assert_eq!(data_manager_sendable.name(), data.name());
                 },
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
             };
 
             match churn_data[1] {
-                MethodCall::Refresh {ref content} => {
-                    let data0: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
-                    let mut decoder = cbor::Decoder::from_bytes(data0);
-                    let stats_sendable : data_manager::DataManagerStatsSendable = decoder.decode().next().unwrap().unwrap();
+                MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                    assert_eq!(*type_tag, 220);
+                    assert_eq!(*from_group, close_group[0]);
+                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
+                    let transfer_payload: Payload = d.decode().next().unwrap().unwrap();
+                    assert_eq!(transfer_payload.get_type_tag(), PayloadTypeTag::DataManagerStatsTransfer);
+                    let stats_sendable: data_manager::DataManagerStatsSendable = transfer_payload.get_data();
                     assert_eq!(stats_sendable.get_resource_index(), 1);
                 },
                 MethodCall::Get { .. } => (),
@@ -515,10 +519,13 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             //assert_eq!(churn_data[0].0, from);
 
             let pmid_manager: pmid_manager::PmidManagerAccountWrapper = match churn_data[0] {
-                MethodCall::Refresh {ref content} => {
-                    let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
-                    let mut decoder = cbor::Decoder::from_bytes(data);
-                    decoder.decode().next().unwrap().unwrap()
+                MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                    assert_eq!(*type_tag, 201);
+                    assert_eq!(*from_group, dest.dest);
+                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
+                    let transfer_payload: Payload = d.decode().next().unwrap().unwrap();
+                    assert_eq!(transfer_payload.get_type_tag(), PayloadTypeTag::PmidManagerAccountTransfer);
+                    transfer_payload.get_data()
                 },
                 _ => panic!("Refresh type expected")
             };
@@ -548,10 +555,13 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             assert_eq!(churn_data.len(), 2);
 
             let sendable: version_handler::VersionHandlerSendable = match churn_data[0] {
-                MethodCall::Refresh {ref content} => {
-                    let data: Vec<u8> = routing::types::array_as_vector(&*content.serialised_contents().clone());
-                    let mut decoder = cbor::Decoder::from_bytes(data);
-                    decoder.decode().next().unwrap().unwrap()
+                MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                    assert_eq!(*type_tag, 209);
+                    assert_eq!(*from_group, data.name());
+                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
+                    let transfer_payload: Payload = d.decode().next().unwrap().unwrap();
+                    assert_eq!(transfer_payload.get_type_tag(), PayloadTypeTag::VersionHandlerAccountTransfer);
+                    transfer_payload.get_data()
                 },
                 _ => panic!("Refresh type expected")
             };

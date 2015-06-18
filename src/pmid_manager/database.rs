@@ -17,16 +17,18 @@
 
 #![allow(dead_code)]
 
-extern crate routing;
-extern crate cbor;
-
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::collections;
-use routing::types::GROUP_SIZE;
 use utils::median;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use cbor;
+
+use maidsafe_types::{Payload, PayloadTypeTag};
+use routing::NameType;
+use routing::node_interface::MethodCall;
+use routing::types::GROUP_SIZE;
 use routing::sendable::Sendable;
 
-type Identity = self::routing::NameType; // pmidnode address
+type Identity = NameType; // pmidnode address
 
 /// PmidManagerAccountWrapper implemets the sendable trait from routing, thus making it transporatble
 /// across through the routing layer
@@ -38,7 +40,7 @@ pub struct PmidManagerAccountWrapper {
 }
 
 impl PmidManagerAccountWrapper {
-    pub fn new(name: routing::NameType, account: PmidManagerAccount) -> PmidManagerAccountWrapper {
+    pub fn new(name: NameType, account: PmidManagerAccount) -> PmidManagerAccountWrapper {
         PmidManagerAccountWrapper {
             name: name,
             tag: 201, // FIXME : Change once the tag is freezed
@@ -89,7 +91,7 @@ impl Sendable for PmidManagerAccountWrapper {
            lost_total_size.push(tmp_wrapper.get_account().get_lost_total_size());
            stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
         }
-        Some(Box::new(PmidManagerAccountWrapper::new(routing::NameType([0u8;64]), PmidManagerAccount {
+        Some(Box::new(PmidManagerAccountWrapper::new(NameType([0u8;64]), PmidManagerAccount {
            offered_space : median(&offered_space),
            lost_total_size: median(&lost_total_size),
            stored_total_size: median(&stored_total_size)
@@ -204,13 +206,18 @@ impl PmidManagerDatabase {
         self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<routing::NameType>) -> Vec<routing::node_interface::MethodCall> {
+    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {
         let data: Vec<_> = self.storage.drain().collect();
         let mut actions = Vec::with_capacity(data.len());
         for element in data {
             if close_group.iter().find(|a| **a == element.0).is_some() {
-                actions.push(routing::node_interface::MethodCall::Refresh {
-                    content: Box::new(PmidManagerAccountWrapper::new(element.0, element.1)),
+                let pmid_manager_wrapper = PmidManagerAccountWrapper::new(element.0, element.1);
+                let payload = Payload::new(PayloadTypeTag::PmidManagerAccountTransfer, &pmid_manager_wrapper);
+                let mut e = cbor::Encoder::from_memory();
+                e.encode(&[payload]).unwrap();
+                actions.push(MethodCall::Refresh {
+                    type_tag: pmid_manager_wrapper.type_tag(), from_group: pmid_manager_wrapper.name(),
+                    payload: e.as_bytes().to_vec()
                 });
             }
         }
