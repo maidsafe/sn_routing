@@ -31,16 +31,25 @@ pub struct Refresh {
 
 impl Encodable for Refresh {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        let type_tag_vec = self.type_tag.to_string().into_bytes();
         CborTagEncode::new(5483_001,
-                           &(&self.type_tag, &self.from_group, &self.payload)).encode(e)
+                           &(type_tag_vec, &self.from_group, &self.payload)).encode(e)
     }
 }
 
 impl Decodable for Refresh {
     fn decode<D: Decoder>(d: &mut D)->Result<Refresh, D::Error> {
         try!(d.read_u64());
-        let (type_tag, from_group, payload) = try!(Decodable::decode(d));
+        let (type_tag_vec, from_group, payload) = try!(Decodable::decode(d));
+        let type_tag: u64 = match String::from_utf8(type_tag_vec) {
+            Ok(string) =>  {
+                match string.parse::<u64>() {
+                    Ok(type_tag) => type_tag,
+                    Err(_) => return Err(d.error("Bad Tag Type"))
+                }
+            },
+            Err(_) => return Err(d.error("Bad Tag Type"))
+        };
         Ok(Refresh { type_tag: type_tag, from_group: from_group, payload: payload })
     }
 }
-

@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rand::{random, thread_rng};
+use rand::{random, Rng, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 
 use crust::Endpoint;
@@ -220,5 +220,14 @@ impl Random for messages::put_public_id_response::PutPublicIdResponse {
         messages::put_public_id_response::PutPublicIdResponse {
             public_id: public_id,
         }
+    }
+}
+
+impl Random for messages::refresh::Refresh {
+    fn generate_random() -> messages::refresh::Refresh {
+        let mut array = [0u8; 64];
+        thread_rng().fill_bytes(&mut array);
+        messages::refresh::Refresh { type_tag: 100u64, from_group: Random::generate_random(),
+             payload: array.into_iter().map(|&value| value).collect::<Vec<_>>() }
     }
 }
