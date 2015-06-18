@@ -1,6 +1,6 @@
 # maidsafe_vault
 
-![](https://img.shields.io/badge/Project%20SAFE-Approved-green.svg) [![](https://img.shields.io/badge/License-GPL3-green.svg)](https://github.com/maidsafe/maidsafe_vault/blob/master/COPYING)
+[![](https://img.shields.io/badge/Project%20SAFE-Approved-green.svg)](http://maidsafe.net/applications) [![](https://img.shields.io/badge/License-GPL3-green.svg)](https://github.com/maidsafe/maidsafe_vault/blob/master/COPYING)
 
 **Primary Maintainer:**     Qi Ma (qi.ma@maidsafe.net)
 
