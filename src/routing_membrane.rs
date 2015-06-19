@@ -984,19 +984,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_refresh(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let refresh = try!(decode::<Refresh>(&body));
         let from_group = try!(header.from_group().ok_or(RoutingError::RefreshNotFromGroup));
-
         if from_group != refresh.from_group {
             return Err(RoutingError::BadAuthority);
         }
-
         let our_authority = our_authority(&from_group, &header, &self.routing_table);
-
         if our_authority != Authority::OurCloseGroup {
             return Err(RoutingError::BadAuthority);
         }
-
         let threshold = (self.routing_table.size() as f32) * 0.8; // 80% chosen arbitrary
-
         let opt_payloads = self.refresh_accumulator.add_message(threshold as usize,
                                                                 refresh.type_tag,
                                                                 header.from_node(),
@@ -1006,7 +1001,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         opt_payloads.map(|payloads| {
             self.mut_interface().handle_refresh(type_tag, from_group, payloads);
         });
-
         Ok(())
     }
 
@@ -1497,7 +1491,6 @@ impl Interface for TestInterface {
     }
 
     fn handle_refresh(&mut self, type_tag: u64, _from_group: NameType, payloads: Vec<Vec<u8>>) {
-        println!("333333");
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += type_tag as usize;
@@ -1579,12 +1572,12 @@ fn create_mmebrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
 }
 
 fn call_operation<T>(operation: T, message_type: MessageTypeTag, stats: Arc<Mutex<Stats>>,
-                     authority: Authority,
-                     from_group: Option<NameType>) -> Stats where T: Encodable, T: Decodable {
+                     authority: Authority, from_group: Option<NameType>,
+                     destination: Option<NameType>) -> Stats where T: Encodable, T: Decodable {
     let mut membrane = create_mmebrane(stats.clone());
     let header = MessageHeader {
         message_id:  membrane.get_next_message_id(),
-        destination: types::DestinationAddress { dest: membrane.own_name.clone(), relay_to: None },
+        destination: types::DestinationAddress { dest: match destination { Some(dest) => dest, None => membrane.own_name.clone() }, relay_to: None },
         source: types::SourceAddress { from_node: Random::generate_random(),
              from_group: from_group, reply_to: None, relayed_for: None },
         authority: authority };
@@ -1631,7 +1624,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut enc = Encoder::from_memory();
         let _ = enc.encode(&[public_key]);
         stats.lock().unwrap().data = enc.into_bytes();
-        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey, stats, Authority::NaeManager, None).call_count, 1usize);
+        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey, stats, Authority::NaeManager, None, None).call_count, 1usize);
     }
 
 #[test]
@@ -1676,8 +1669,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let put_data: PutData = Random::generate_random();
         assert_eq!(call_operation(put_data,
             MessageTypeTag::PutData, Arc::new(Mutex::new(Stats::new())),
-            Authority::NaeManager,
-            None).call_count, 1usize);
+            Authority::NaeManager, None, None).call_count, 1usize);
     }
 
 #[test]
@@ -1685,7 +1677,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_authorised_put() {
         let unauthorised_put: PutData = Random::generate_random();
         let result_stats = call_operation(unauthorised_put, MessageTypeTag::UnauthorisedPut,
-             Arc::new(Mutex::new(Stats::new())), Authority::Unknown, None);
+             Arc::new(Mutex::new(Stats::new())), Authority::Unknown, None, None);
         assert_eq!(result_stats.call_count, 1usize);
         assert_eq!(result_stats.data, "UnauthorisedPut".to_string().into_bytes());
     }
@@ -1694,24 +1686,21 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_put_response() {
         let put_data_response: PutDataResponse = Random::generate_random();
         assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse,
-             Arc::new(Mutex::new(Stats::new())),
-             Authority::NaeManager, None).call_count, 1usize);
+             Arc::new(Mutex::new(Stats::new())), Authority::NaeManager, None, None).call_count, 1usize);
     }
 
 #[test]
     fn call_handle_get_data() {
         let get_data: GetData = Random::generate_random();
         assert_eq!(call_operation(get_data, MessageTypeTag::GetData,
-            Arc::new(Mutex::new(Stats::new())),
-            Authority::NaeManager, None).call_count, 1usize);
+            Arc::new(Mutex::new(Stats::new())), Authority::NaeManager, None, None).call_count, 1usize);
     }
 
 #[test]
     fn call_handle_get_data_response() {
         let get_data: GetDataResponse = Random::generate_random();
         assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse,
-            Arc::new(Mutex::new(Stats::new())),
-            Authority::NaeManager, None).call_count, 1usize);
+            Arc::new(Mutex::new(Stats::new())), Authority::NaeManager, None, None).call_count, 1usize);
     }
 
 #[test]
@@ -1719,7 +1708,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_post() {
         let post: Post = Random::generate_random();
         assert_eq!(call_operation(post, MessageTypeTag::Post, Arc::new(Mutex::new(Stats::new())),
-                   Authority::NaeManager, None).call_count, 1usize);
+                   Authority::NaeManager, None, None).call_count, 1usize);
     }
 
 #[test]
@@ -1727,7 +1716,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let refresh: Refresh = Random::generate_random();
         assert_eq!(call_operation(refresh.clone(), MessageTypeTag::Refresh,
             Arc::new(Mutex::new(Stats::new())), Authority::OurCloseGroup,
-            Some(refresh.from_group)).call_count, 1usize);
+            Some(refresh.from_group.clone()), Some(refresh.from_group)).call_count, refresh.type_tag as usize);
     }
 
 #[test]
