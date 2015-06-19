@@ -29,10 +29,11 @@ use message_header;
 use name_type::NameType;
 use sendable::Sendable;
 use types;
-use error::{RoutingError, ResponseError};
+use error::{RoutingError};
 use messages::connect_request::ConnectRequest;
 use messages::connect_response::ConnectResponse;
 use messages::get_data_response::GetDataResponse;
+use messages::put_data_response::PutDataResponse;
 use messages::put_data::PutData;
 use messages::get_data::GetData;
 use message_header::MessageHeader;
@@ -87,7 +88,7 @@ impl<F> RoutingClient<F> where F: Interface {
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) -> Result<MessageId, IoError> {
         let requester = types::SourceAddress {
-            from_node: self.bootstrap_address.0.clone().unwrap(),
+            from_node: self.public_id.name(),
             from_group: None,
             reply_to: None,
             relayed_for: Some(self.public_id.name())
@@ -123,7 +124,7 @@ impl<F> RoutingClient<F> where F: Interface {
                 message_id,
                 types::DestinationAddress {dest: self.public_id.name(), relay_to: None },
                 types::SourceAddress {
-                    from_node: self.bootstrap_address.0.clone().unwrap(),
+                    from_node: self.public_id.name(),
                     from_group: None,
                     reply_to: None,
                     relayed_for: Some(self.public_id.name()),
@@ -143,7 +144,7 @@ impl<F> RoutingClient<F> where F: Interface {
             MessageHeader::new(self.get_next_message_id(),
                 types::DestinationAddress{ dest: destination, relay_to: None },
                 types::SourceAddress {
-                                from_node: self.bootstrap_address.0.clone().unwrap(),
+                                from_node: self.public_id.name(),
                                 from_group: None,
                                 reply_to: None,
                                 relayed_for: Some(self.public_id.name()),
@@ -173,13 +174,16 @@ impl<F> RoutingClient<F> where F: Interface {
                         if bootstrap_endpoint == &endpoint {
                             match routing_msg.message_type {
                                 MessageTypeTag::ConnectResponse => {
-                                    self.handle_connect_response(endpoint, routing_msg.serialised_body);
+                                    self.handle_connect_response(endpoint,
+                                        routing_msg.serialised_body);
                                 },
                                 MessageTypeTag::GetDataResponse => {
-                                    self.handle_get_data_response(routing_msg.message_header, routing_msg.serialised_body);
+                                    self.handle_get_data_response(routing_msg.message_header,
+                                        routing_msg.serialised_body);
                                 },
                                 MessageTypeTag::PutDataResponse => {
-                                    unimplemented!();
+                                    self.handle_put_data_response(routing_msg.message_header,
+                                        routing_msg.serialised_body);
                                 },
                                 _ => {}
                             }
@@ -228,12 +232,12 @@ impl<F> RoutingClient<F> where F: Interface {
                 let message = RoutingMessage::new(
                     MessageTypeTag::ConnectRequest,
                     MessageHeader::new(
-                        // FIXME: after MAID-1126; update these relay fields
                         self.get_next_message_id(),
                         types::DestinationAddress{ dest: self.public_id.name(),
                             relay_to: None },
                         types::SourceAddress{ from_node: self.public_id.name(),
-                            from_group: None, reply_to: None, relayed_for: Some(self.public_id.name()) },
+                            from_group: None, reply_to: None,
+                            relayed_for: Some(self.public_id.name()) },
                         Authority::Client),
                     ConnectRequest {
                         local_endpoints: accepting_on,
@@ -261,7 +265,13 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     fn send_to_bootstrap_node(&mut self, serialised_message: &Vec<u8>) {
-        let _ = self.connection_manager.send(self.bootstrap_address.1.clone().unwrap(), serialised_message.clone());
+        match self.bootstrap_address.1 {
+            Some(ref bootstrap_endpoint) => {
+              let _ = self.connection_manager.send(bootstrap_endpoint.clone(),
+                  serialised_message.clone());
+            },
+            None => {}
+        };
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
@@ -271,13 +281,25 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) {
-        let get_data_response = decode::<GetDataResponse>(&body).unwrap();
-        let response = match get_data_response.data {
-            Ok(data) => Ok(data),
-            Err(_)   => Err(ResponseError::NoData)
+        match decode::<GetDataResponse>(&body) {
+            Ok(get_data_response) => {
+                let mut interface = self.interface.lock().unwrap();
+                interface.handle_get_response(header.message_id,
+                    get_data_response.data);
+            },
+            Err(_) => {}
         };
-        let mut interface = self.interface.lock().unwrap();
-        interface.handle_get_response(header.message_id, response);
+    }
+
+    fn handle_put_data_response(&self, header: MessageHeader, body: Bytes) {
+        match decode::<PutDataResponse>(&body) {
+            Ok(put_data_response) => {
+                let mut interface = self.interface.lock().unwrap();
+                interface.handle_get_response(header.message_id,
+                    put_data_response.data);
+            },
+            Err(_) => {}
+        };
     }
 }
 
