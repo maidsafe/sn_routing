@@ -85,6 +85,13 @@ correct name calculation of pure Id
 - [x] [#290](https://github.com/maidsafe/routing/issues/290) Remove NodeInterface::handle_get_key
 - [x] [#373](https://github.com/maidsafe/routing/issues/373) Reduce group size for QA to 23
 
+## [0.1.71] Finish Rust-2
+
+- [x] [#360](https://github.com/maidsafe/routing/issues/360) Fix intermittent failure in Relay
+- [x] [#372](https://github.com/maidsafe/routing/issues/372) Introduce unit tests for Routing Membrane
+- [x] [#388](https://github.com/maidsafe/routing/issues/388) Handle PutDataResponse for routing_client
+- [x] [#395](https://github.com/maidsafe/routing/issues/395) Preserve message_id
+
 ## Future sprints
 
 - [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
