@@ -118,5 +118,4 @@ pub trait Interface : Sync + Send {
 
 pub trait CreatePersonas<F : Interface> : Sync + Send  {
     fn create_personas(&mut self) -> F;
-
 }

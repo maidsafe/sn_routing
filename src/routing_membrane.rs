@@ -571,7 +571,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageTypeTag::PutData => self.handle_put_data(header, body),
                     MessageTypeTag::PutDataResponse => self.handle_put_data_response(header, body),
                     MessageTypeTag::PutPublicId => self.handle_put_public_id(header, body),
-                    MessageTypeTag::Refresh => self.handle_refresh(header, body),
+                    MessageTypeTag::Refresh => { self.handle_refresh(header, body) },
                     _ => {
                         Err(RoutingError::UnknownMessageType)
                     }
@@ -896,7 +896,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
-      println!("Handle PUT data response.");
+        println!("Handle PUT data response.");
         let put_data_response = try!(decode::<PutDataResponse>(&body));
         let from_authority = header.from_authority();
         let from = header.from();
@@ -984,31 +984,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_refresh(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let refresh = try!(decode::<Refresh>(&body));
         let from_group = try!(header.from_group().ok_or(RoutingError::RefreshNotFromGroup));
-
         if from_group != refresh.from_group {
             return Err(RoutingError::BadAuthority);
         }
-
         let our_authority = our_authority(&from_group, &header, &self.routing_table);
-
         if our_authority != Authority::OurCloseGroup {
             return Err(RoutingError::BadAuthority);
         }
-
         let threshold = (self.routing_table.size() as f32) * 0.8; // 80% chosen arbitrary
-
         let opt_payloads = self.refresh_accumulator.add_message(threshold as usize,
                                                                 refresh.type_tag,
                                                                 header.from_node(),
                                                                 from_group.clone(),
                                                                 refresh.payload);
-
         let type_tag = refresh.type_tag;
-
         opt_payloads.map(|payloads| {
             self.mut_interface().handle_refresh(type_tag, from_group, payloads);
         });
-
         Ok(())
     }
 
@@ -1403,3 +1395,442 @@ fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
 }
 
 fn ignore<R,E>(_restul: Result<R,E>) {}
+
+#[cfg(test)]
+mod test {
+
+use super::*;
+use super::encode;
+use super::ConnectionName;
+use authority::Authority;
+use cbor::{Encoder};
+use crust;
+use error::{ResponseError, InterfaceError};
+use messages::{RoutingMessage, MessageTypeTag};
+use message_header::MessageHeader;
+use messages::get_data::GetData;
+use messages::get_data_response::GetDataResponse;
+use messages::get_client_key::GetKey;
+use messages::post::Post;
+use messages::put_data::PutData;
+use messages::put_data_response::PutDataResponse;
+use messages::put_public_id::PutPublicId;
+use messages::refresh::Refresh;
+use name_type::{NameType, closer_to_target};
+use node_interface::{Interface, MethodCall};
+use rand::{random, Rng, thread_rng};
+use routing_table;
+use rustc_serialize::{Encodable, Decodable};
+use sendable::Sendable;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use test_utils::{Random, random_endpoint, random_endpoints};
+use types;
+use types::{DestinationAddress, Id, MessageAction, PublicId};
+
+#[derive(Clone)]
+struct Stats {
+    call_count: usize,
+    data: Vec<u8>
+}
+
+impl Stats {
+    pub fn new() -> Stats {
+        Stats {call_count: 0, data: vec![]}
+    }
+}
+
+struct TestData {
+    data: Vec<u8>
+}
+
+impl TestData {
+    fn new(in_data: Vec<u8>) -> TestData {
+        TestData { data: in_data }
+    }
+}
+
+struct TestInterface {
+    stats: Arc<Mutex<Stats>>
+}
+
+impl TestInterface {
+    pub fn new() -> TestInterface {
+        TestInterface { stats: Arc::new(Mutex::new(Stats::new())) }
+    }
+}
+
+impl Sendable for TestData {
+    fn name(&self) -> NameType { Random::generate_random() }
+    fn type_tag(&self)->u64 { unimplemented!() }
+    fn serialised_contents(&self)->Vec<u8> { self.data.clone() }
+    fn refresh(&self)->bool { false }
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
+}
+
+impl Interface for TestInterface {
+    fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: Authority,
+                  from_authority: Authority, from_address: NameType) -> Result<MessageAction, InterfaceError> {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        Ok(MessageAction::Reply("handle_get called".to_string().into_bytes()))
+    }
+
+    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                from_address: NameType, dest_address: DestinationAddress,
+                data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        stats_value.data = match from_authority {
+            Authority::Unknown => "UnauthorisedPut".to_string().into_bytes(),
+            _   => "AuthorisedPut".to_string().into_bytes(),
+        };
+        Ok(MessageAction::Reply(data))
+    }
+
+    fn handle_refresh(&mut self, type_tag: u64, _from_group: NameType, payloads: Vec<Vec<u8>>) {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += type_tag as usize;
+        stats_value.data = payloads[0].clone();
+    }
+
+    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
+                   from_address: NameType, name: NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        stats_value.data = data.clone();
+        Ok(MessageAction::Reply(data))
+    }
+
+    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
+                           ResponseError>) -> MethodCall {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        stats_value.data = "handle_get_response called".to_string().into_bytes();
+        MethodCall::None
+    }
+
+    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
+                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        stats_value.data = match response {
+           Ok(data) => data,
+            Err(_) => vec![]
+        };
+        MethodCall::None
+    }
+
+    fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
+                            response: Result<Vec<u8>, ResponseError>) {
+        unimplemented!();
+    }
+
+    fn handle_churn(&mut self, close_group: Vec<NameType>)
+        -> Vec<MethodCall> {
+        unimplemented!();
+    }
+
+    fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
+                        from_address: NameType) -> Result<MessageAction, InterfaceError> {
+        Err(InterfaceError::Abort)
+    }
+
+    fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
+                        data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+        Err(InterfaceError::Abort)
+    }
+}
+
+fn create_mmebrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
+    let mut id = Id::new();
+    let own_name = id.get_name();
+    let (event_output, event_input) = mpsc::channel();
+    let mut cm = crust::ConnectionManager::new(event_output);
+    let ports_and_protocols : Vec<crust::Port> = Vec::new();
+    let beacon_port = Some(5483u16);
+    let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
+        Err(reason) => {
+            println!("Failed to start listening: {:?}", reason);
+            (vec![], None)
+        }
+        Ok(listeners_and_beacon) => listeners_and_beacon
+    };
+    let original_name = id.get_name();
+    let self_relocated_name = types::calculate_self_relocated_name(
+        &id.get_crypto_public_sign_key(),
+        &id.get_crypto_public_key(),
+        &id.get_validation_token());
+    id.assign_relocated_name(self_relocated_name);
+    RoutingMembrane::<TestInterface>::new(cm, event_input, None, listeners.0, id.clone(), TestInterface {stats : stats})
+}
+
+fn call_operation<T>(operation: T, message_type: MessageTypeTag, stats: Arc<Mutex<Stats>>,
+                     authority: Authority, from_group: Option<NameType>,
+                     destination: Option<NameType>) -> Stats where T: Encodable, T: Decodable {
+    let mut membrane = create_mmebrane(stats.clone());
+    let header = MessageHeader {
+        message_id:  membrane.get_next_message_id(),
+        destination: types::DestinationAddress { dest: match destination { Some(dest) => dest, None => membrane.own_name.clone() }, relay_to: None },
+        source: types::SourceAddress { from_node: Random::generate_random(),
+             from_group: from_group, reply_to: None, relayed_for: None },
+        authority: authority };
+
+    let message = RoutingMessage::new( message_type, header.clone(), operation, &membrane.id.get_crypto_secret_sign_key());
+    let serialised_msssage = encode(&message).unwrap();
+    let connection_name = ConnectionName::Routing(header.source.from_node);
+    let _ = membrane.message_received(&connection_name, serialised_msssage, false);
+    let stats = stats.clone();
+    let stats_value = stats.lock().unwrap();
+    stats_value.clone()
+}
+
+fn populate_routing_node() -> RoutingMembrane<TestInterface> {
+    let stats = Arc::new(Mutex::new(Stats::new()));
+    let mut membrane = create_mmebrane(stats);
+
+    let mut count : usize = 0;
+    loop {
+        membrane.routing_table.add_node(routing_table::NodeInfo::new(
+                                        PublicId::new(&Id::new()), random_endpoints(),
+                                        Some(random_endpoint())));
+        count += 1;
+        if membrane.routing_table.size() >=
+            routing_table::RoutingTable::get_optimal_size() { break; }
+        if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
+            panic!("Routing table does not fill up."); }
+    }
+    membrane
+}
+
+#[test]
+    fn check_next_id() {
+        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        assert_eq!(membrane.get_next_message_id() + 1, membrane.get_next_message_id());
+    }
+
+#[test]
+#[ignore]
+    fn call_handle_get_key() {
+        let stats = Arc::new(Mutex::new(Stats::new()));
+        let get_key: GetKey = Random::generate_random();
+        let public_key: types::PublicSignKey = Random::generate_random();
+        let mut enc = Encoder::from_memory();
+        let _ = enc.encode(&[public_key]);
+        stats.lock().unwrap().data = enc.into_bytes();
+        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey, stats, Authority::NaeManager, None, None).call_count, 1usize);
+    }
+
+#[test]
+    fn call_put() {
+        let mut array = [0u8; 64];
+        thread_rng().fill_bytes(&mut array);
+        let chunk = Box::new(TestData::new(array.into_iter().map(|&value| value).collect::<Vec<_>>()));
+        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        let name: NameType = Random::generate_random();
+        membrane.put(name, chunk);
+    }
+
+#[test]
+    fn call_get() {
+        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        let name: NameType = Random::generate_random();
+        membrane.get(100u64, name);
+    }
+
+#[test]
+    fn call_unauthorised_put() {
+        let mut array = [0u8; 64];
+        thread_rng().fill_bytes(&mut array);
+        let chunk = Box::new(TestData::new(array.into_iter().map(|&value| value).collect::<Vec<_>>()));
+        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        let name: NameType = Random::generate_random();
+        membrane.unauthorised_put(name, chunk);
+    }
+
+#[test]
+    fn call_refresh() {
+        let mut array = [0u8; 64];
+        thread_rng().fill_bytes(&mut array);
+        let content = array.into_iter().map(|&value| value).collect::<Vec<_>>();
+        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        let name: NameType = Random::generate_random();
+        membrane.refresh(100u64, name, content);
+    }
+
+#[test]
+    fn call_handle_put() {
+        let put_data: PutData = Random::generate_random();
+        assert_eq!(call_operation(put_data,
+            MessageTypeTag::PutData, Arc::new(Mutex::new(Stats::new())),
+            Authority::NaeManager, None, None).call_count, 1usize);
+    }
+
+#[test]
+#[ignore]
+    fn call_handle_authorised_put() {
+        let unauthorised_put: PutData = Random::generate_random();
+        let result_stats = call_operation(unauthorised_put, MessageTypeTag::UnauthorisedPut,
+             Arc::new(Mutex::new(Stats::new())), Authority::Unknown, None, None);
+        assert_eq!(result_stats.call_count, 1usize);
+        assert_eq!(result_stats.data, "UnauthorisedPut".to_string().into_bytes());
+    }
+
+#[test]
+    fn call_handle_put_response() {
+        let put_data_response: PutDataResponse = Random::generate_random();
+        assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse,
+             Arc::new(Mutex::new(Stats::new())), Authority::NaeManager, None, None).call_count, 1usize);
+    }
+
+#[test]
+    fn call_handle_get_data() {
+        let get_data: GetData = Random::generate_random();
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetData,
+            Arc::new(Mutex::new(Stats::new())), Authority::NaeManager, None, None).call_count, 1usize);
+    }
+
+#[test]
+    fn call_handle_get_data_response() {
+        let get_data: GetDataResponse = Random::generate_random();
+        assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse,
+            Arc::new(Mutex::new(Stats::new())), Authority::NaeManager, None, None).call_count, 1usize);
+    }
+
+#[test]
+#[ignore]
+    fn call_handle_post() {
+        let post: Post = Random::generate_random();
+        assert_eq!(call_operation(post, MessageTypeTag::Post, Arc::new(Mutex::new(Stats::new())),
+                   Authority::NaeManager, None, None).call_count, 1usize);
+    }
+
+#[test]
+    fn call_handle_refresh() {
+        let refresh: Refresh = Random::generate_random();
+        assert_eq!(call_operation(refresh.clone(), MessageTypeTag::Refresh,
+            Arc::new(Mutex::new(Stats::new())), Authority::OurCloseGroup,
+            Some(refresh.from_group.clone()), Some(refresh.from_group)).call_count, refresh.type_tag as usize);
+    }
+
+#[test]
+    fn relocate_original_public_id() {
+        let mut routing_node = populate_routing_node();
+        let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
+        let our_name = routing_node.own_name.clone();
+        let total_inside : u32 = 50;
+        let limit_attempts : u32 = 200;
+        let mut stored_public_ids : Vec<PublicId> = Vec::with_capacity(total_inside as usize);
+        let mut count_inside : u32 = 0;
+        let mut count_total : u32 = 0;
+        loop {
+            let put_public_id = PutPublicId{ public_id :  PublicId::new(&Id::new()) };
+            let put_public_id_header : MessageHeader = MessageHeader {
+                message_id : random::<u32>(),
+                destination : types::DestinationAddress {
+                    dest : put_public_id.public_id.name(), relay_to : None },
+                source : types::SourceAddress {
+                    from_node : Random::generate_random(),  // Bootstrap node or ourself
+                    from_group : None, reply_to : None, relayed_for : None },
+                authority : Authority::ManagedNode
+            };
+            let serialised_msg = encode(&put_public_id).unwrap();
+            let result = routing_node.handle_put_public_id(put_public_id_header,
+                serialised_msg);
+            if closer_to_target(&put_public_id.public_id.name(),
+                                &furthest_closest_node,
+                                &our_name) {
+                assert!(result.is_ok());
+                stored_public_ids.push(put_public_id.public_id);
+                count_inside += 1;
+            } else {
+                assert!(result.is_err());
+            }
+            count_total += 1;
+            if count_inside >= total_inside {
+                break; // succcess
+            }
+            if count_total >= limit_attempts {
+                if count_inside > 0 {
+                    println!("Could only verify {} successful public_ids inside
+                            our group before limit reached.", count_inside);
+                    break;
+                } else { panic!("No PublicIds were found inside our close group!"); }
+            }
+        }
+        // no original public_ids should be cached
+        for public_id in stored_public_ids {
+            assert!(!routing_node.public_id_cache.check(&public_id.name()));
+        }
+        // assert no original ids were cached
+        assert_eq!(routing_node.public_id_cache.len(), 0usize);
+    }
+
+#[test]
+    fn cache_relocated_public_id() {
+        let mut routing_node = populate_routing_node();
+        let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
+        let our_name = routing_node.own_name.clone();
+        let total_inside : u32 = 50;
+        let limit_attempts : u32 = 200;
+        let mut stored_public_ids : Vec<PublicId> = Vec::with_capacity(total_inside as usize);
+        let mut count_inside : u32 = 0;
+        let mut count_total : u32 = 0;
+        loop {
+            let original_public_id = PublicId::generate_random();
+            let mut close_nodes_to_original_name : Vec<NameType> = Vec::new();
+            for i in 0..types::GROUP_SIZE {
+                close_nodes_to_original_name.push(Random::generate_random());
+            }
+            let relocated_name = types::calculate_relocated_name(close_nodes_to_original_name.clone(),
+                                    &original_public_id.name()).unwrap();
+            let mut relocated_public_id = original_public_id.clone();
+            assert!(relocated_public_id.assign_relocated_name(relocated_name.clone()));
+
+            let put_public_id = PutPublicId{ public_id :  relocated_public_id };
+
+            let put_public_id_header : MessageHeader = MessageHeader {
+                message_id : random::<u32>(),
+                destination : types::DestinationAddress {
+                    dest : put_public_id.public_id.name(), relay_to : None },
+                source : types::SourceAddress {
+                    from_node : close_nodes_to_original_name[0].clone(),  // from original name group member
+                    from_group : Some(original_public_id.name()), reply_to : None, relayed_for : None },
+                authority : Authority::NaeManager
+            };
+            let serialised_msg = encode(&put_public_id).unwrap();
+            let result = routing_node.handle_put_public_id(put_public_id_header, serialised_msg);
+            if closer_to_target(&put_public_id.public_id.name(),
+                                &furthest_closest_node,
+                                &our_name) {
+                assert!(result.is_ok());
+                stored_public_ids.push(put_public_id.public_id);
+                count_inside += 1;
+            } else {
+                assert!(result.is_err());
+            }
+            count_total += 1;
+            if count_inside >= total_inside {
+                break; // succcess
+            }
+            if count_total >= limit_attempts {
+                if count_inside > 0 {
+                    println!("Could only verify {} successful public_ids inside
+                            our group before limit reached.", count_inside);
+                    break;
+                } else { panic!("No PublicIds were found inside our close group!"); }
+            }
+        }
+        for public_id in stored_public_ids {
+            assert!(routing_node.public_id_cache.check(&public_id.name()));
+        }
+        // assert no outside keys were cached
+        assert_eq!(routing_node.public_id_cache.len(), total_inside as usize);
+    }
+}
