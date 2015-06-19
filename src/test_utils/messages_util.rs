@@ -190,6 +190,16 @@ impl Random for messages::put_data::PutData {
     }
 }
 
+impl Random for messages::refresh::Refresh {
+    fn generate_random() -> messages::refresh::Refresh {
+        messages::refresh::Refresh {
+            type_tag: random(),
+            from_group: Random::generate_random(),
+            payload: generate_random_vec_u8(random::<usize>() % 512 + 512),
+        }
+    }
+}
+
 impl Random for messages::put_data_response::PutDataResponse {
      fn generate_random() -> messages::put_data_response::PutDataResponse {
          let data = if random::<bool>() {
