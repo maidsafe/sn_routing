@@ -98,7 +98,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let message = messages::RoutingMessage::new(
             messages::MessageTypeTag::GetData,
             message_header::MessageHeader::new(
-                self.get_next_message_id(),
+                message_id,
                 types::DestinationAddress {
                     dest: name.clone(),
                     relay_to: None
