@@ -275,9 +275,8 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
-        let current = self.next_message_id;
-        self.next_message_id += 1;
-        current
+        self.next_message_id = self.next_message_id.wrapping_add(1);
+        self.next_message_id
     }
 
     fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) {
