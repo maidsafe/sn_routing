@@ -1275,7 +1275,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                          find_group: &FindGroup,
                                          group: Vec<types::PublicId>) -> RoutingMessage {
 
-        let header = MessageHeader::new(self.get_next_message_id(),
+        let header = MessageHeader::new(original_header.message_id(),
                                         original_header.send_to(),
                                         self.our_source_address(Some(find_group.target_id.clone())),
                                         Authority::NaeManager);
