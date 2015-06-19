@@ -26,7 +26,7 @@ use routing::error::{ResponseError, InterfaceError};
 use maidsafe_types;
 use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
-pub use self::database::MaidManagerAccountWrapper;
+pub use self::database::{MaidManagerAccountWrapper, MaidManagerAccount};
 
 type Address = NameType;
 
