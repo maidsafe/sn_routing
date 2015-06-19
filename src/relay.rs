@@ -214,9 +214,11 @@ mod test {
         assert_eq!(false, relay_map.add_ip_node(our_public_id.clone(), generate_random_endpoint()));
         assert_eq!(0, relay_map.relay_map.len());
         assert_eq!(0, relay_map.lookup_map.len());
-        for _ in 0..super::MAX_RELAY {
-            assert_eq!(true, relay_map.add_ip_node(PublicId::new(&Id::new()),
-                             generate_random_endpoint()));
+        while relay_map.relay_map.len() < super::MAX_RELAY {
+            let new_endpoint = generate_random_endpoint();
+            if !relay_map.contains_endpoint(&new_endpoint) {
+                assert_eq!(true, relay_map.add_ip_node(PublicId::new(&Id::new()),
+                    new_endpoint)); };
         }
         assert_eq!(false, relay_map.add_ip_node(PublicId::new(&Id::new()),
                           generate_random_endpoint()));
@@ -264,13 +266,22 @@ mod test {
         assert!(super::MAX_RELAY - 1 > 0);
         // ensure relay_map is all but full, so multiple endpoints are not counted as different
         // relays.
-        for _ in 0..super::MAX_RELAY - 1 {
-            assert_eq!(true, relay_map.add_ip_node(PublicId::new(&Id::new()),
-                             generate_random_endpoint()));
+        while relay_map.relay_map.len() < super::MAX_RELAY - 1 {
+            let new_endpoint = generate_random_endpoint();
+            if !relay_map.contains_endpoint(&new_endpoint) {
+                assert_eq!(true, relay_map.add_ip_node(PublicId::new(&Id::new()),
+                    new_endpoint)); };
         }
         let test_public_id = PublicId::new(&Id::new());
-        let test_endpoint_1 = generate_random_endpoint();
-        let test_endpoint_2 = generate_random_endpoint();
+
+        let mut test_endpoint_1 = generate_random_endpoint();
+        let mut test_endpoint_2 = generate_random_endpoint();
+        loop {
+            if !relay_map.contains_endpoint(&test_endpoint_1) { break; }
+            test_endpoint_1 = generate_random_endpoint(); };
+        loop {
+            if !relay_map.contains_endpoint(&test_endpoint_2) { break; }
+            test_endpoint_2 = generate_random_endpoint(); };
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint_1.clone()));
         assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
