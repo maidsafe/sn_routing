@@ -88,7 +88,7 @@ impl<F> RoutingClient<F> where F: Interface {
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, type_id: u64, name: NameType) -> Result<MessageId, IoError> {
         let requester = types::SourceAddress {
-            from_node: self.bootstrap_address.0.clone().unwrap(),
+            from_node: self.public_id.name(),
             from_group: None,
             reply_to: None,
             relayed_for: Some(self.public_id.name())
@@ -124,7 +124,7 @@ impl<F> RoutingClient<F> where F: Interface {
                 message_id,
                 types::DestinationAddress {dest: self.public_id.name(), relay_to: None },
                 types::SourceAddress {
-                    from_node: self.bootstrap_address.0.clone().unwrap(),
+                    from_node: self.public_id.name(),
                     from_group: None,
                     reply_to: None,
                     relayed_for: Some(self.public_id.name()),
@@ -144,7 +144,7 @@ impl<F> RoutingClient<F> where F: Interface {
             MessageHeader::new(self.get_next_message_id(),
                 types::DestinationAddress{ dest: destination, relay_to: None },
                 types::SourceAddress {
-                                from_node: self.bootstrap_address.0.clone().unwrap(),
+                                from_node: self.public_id.name(),
                                 from_group: None,
                                 reply_to: None,
                                 relayed_for: Some(self.public_id.name()),
