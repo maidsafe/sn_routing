@@ -71,6 +71,7 @@ pub trait Mergeable {
 }
 
 pub type MessageId = u32;
+pub const MESSAGE_ID_MAX: MessageId = ::std::u32::MAX;
 pub type NodeAddress = NameType; // (Address, NodeTag)
 pub type GroupAddress = NameType; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
