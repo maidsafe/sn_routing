@@ -31,16 +31,38 @@ pub struct Refresh {
 
 impl Encodable for Refresh {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+        // For some strange reason we can't put the `type_tag` at
+        // the beginning of the tripple because it confuses the CBOR
+        // parser.
         CborTagEncode::new(5483_001,
-                           &(&self.type_tag, &self.from_group, &self.payload)).encode(e)
+                           &(&self.from_group, &self.type_tag, &self.payload)).encode(e)
     }
 }
 
 impl Decodable for Refresh {
     fn decode<D: Decoder>(d: &mut D)->Result<Refresh, D::Error> {
         try!(d.read_u64());
-        let (type_tag, from_group, payload) = try!(Decodable::decode(d));
+        let (from_group, type_tag, payload) = try!(Decodable::decode(d));
         Ok(Refresh { type_tag: type_tag, from_group: from_group, payload: payload })
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+    use cbor;
+    use test_utils::Random;
+
+    #[test]
+    fn refresh_message() {
+        let obj_before: Refresh = Random::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: Refresh = d.decode().next().unwrap().unwrap();
+
+        assert_eq!(obj_before, obj_after);
+    }
+}
