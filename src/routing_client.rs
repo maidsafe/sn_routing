@@ -33,6 +33,7 @@ use error::{RoutingError, ResponseError};
 use messages::connect_request::ConnectRequest;
 use messages::connect_response::ConnectResponse;
 use messages::get_data_response::GetDataResponse;
+use messages::put_data_response::PutDataResponse;
 use messages::put_data::PutData;
 use messages::get_data::GetData;
 use message_header::MessageHeader;
@@ -173,13 +174,16 @@ impl<F> RoutingClient<F> where F: Interface {
                         if bootstrap_endpoint == &endpoint {
                             match routing_msg.message_type {
                                 MessageTypeTag::ConnectResponse => {
-                                    self.handle_connect_response(endpoint, routing_msg.serialised_body);
+                                    self.handle_connect_response(endpoint,
+                                        routing_msg.serialised_body);
                                 },
                                 MessageTypeTag::GetDataResponse => {
-                                    self.handle_get_data_response(routing_msg.message_header, routing_msg.serialised_body);
+                                    self.handle_get_data_response(routing_msg.message_header,
+                                        routing_msg.serialised_body);
                                 },
                                 MessageTypeTag::PutDataResponse => {
-                                    unimplemented!();
+                                    self.handle_put_data_response(routing_msg.message_header,
+                                        routing_msg.serialised_body);
                                 },
                                 _ => {}
                             }
@@ -278,6 +282,17 @@ impl<F> RoutingClient<F> where F: Interface {
         };
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(header.message_id, response);
+    }
+
+    fn handle_put_data_response(&self, header: MessageHeader, body: Bytes) {
+        match decode::<PutDataResponse>(&body) {
+            Ok(put_data_response) => {
+                let mut interface = self.interface.lock().unwrap();
+                interface.handle_get_response(header.message_id,
+                    put_data_response.data);
+            },
+            Err(_) => {}
+        };
     }
 }
 
