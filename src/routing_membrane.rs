@@ -82,6 +82,7 @@ enum ConnectionName {
     Routing(NameType),
     OurBootstrap,
     UnidentifiedConnection,
+    // ClaimedConnection(PublicId),
 }
 
 /// Routing Membrane
