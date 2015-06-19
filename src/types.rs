@@ -110,7 +110,11 @@ impl Decodable for NameAndTypeId {
   }
 }
 
-pub type FilterType = (NameType, MessageId);
+//                        +-> from_node name
+//                        |           +-> preserve the message_id when sending on
+//                        |           |         +-> destination name
+//                        |           |         |
+pub type FilterType = (NameType, MessageId, NameType);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct Signature {

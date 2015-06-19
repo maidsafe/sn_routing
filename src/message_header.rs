@@ -109,7 +109,7 @@ impl MessageHeader {
 
     // FIXME: add from_authority to filter value
     pub fn get_filter(&self) -> types::FilterType {
-        (self.source.from_node.clone(), self.message_id)
+        (self.source.from_node.clone(), self.message_id, self.destination.dest.clone())
     }
 
     pub fn from_authority(&self) -> Authority {
