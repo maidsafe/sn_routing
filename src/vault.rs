@@ -39,7 +39,7 @@ use data_manager::{DataManager, DataManagerSendable, DataManagerStatsSendable};
 use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
 use pmid_manager::{PmidManager, PmidManagerAccountWrapper, PmidManagerAccount};
 use pmid_node::PmidNode;
-use version_handler::VersionHandler;
+use version_handler::{VersionHandler, VersionHandlerSendable};
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -76,11 +76,13 @@ fn merge_payload(type_tag: u64, from_group: NameType, payloads: Vec<Vec<u8>>) ->
         Some(merge_refreashable(PmidManagerAccountWrapper::new(from_group, PmidManagerAccount::new()),
                                 PayloadTypeTag::PmidManagerAccountTransfer, payloads))
       }
-      // TODO: a seed SDV needs to be parsed out first
-      // 209 => {
-      //   Some(merge_refreashable::<VersionHandler::VersionHandlerSendable>(
-      //       VersionHandler::VersionHandlerSendable::new(), PayloadTypeTag::VersionHandlerAccountTransfer, payloads))
-      // }
+      209 => {
+        let seed_sdv_payload = payloads[0].clone();
+        let mut d = Decoder::from_bytes(&seed_sdv_payload[..]);
+        let payload: Payload = d.decode().next().unwrap().unwrap();
+        let transfer_entry : VersionHandlerSendable = payload.get_data();
+        Some(merge_refreashable(transfer_entry, PayloadTypeTag::VersionHandlerAccountTransfer, payloads))
+      }
       _ => None
     }
 }
