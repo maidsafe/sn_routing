@@ -96,7 +96,6 @@ mod test {
     use routing::types::*;
     use routing::NameType;
     use routing::sendable::Sendable;
-    use super::database::MaidManagerAccount;
 
     #[test]
     fn handle_put() {
