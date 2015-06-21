@@ -37,15 +37,15 @@
 //! tag: 5483_1 -> XXXXXXXXXXXXXX
 //! ```
 
-#![feature(collections, bitvec, split_off)]
+#![feature(collections, bitvec, split_off, clone_from_slice)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://dirvine.github.io/routing")]
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features, unused_attributes)]
 #![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core,
            thread_sleep, ip_addr, convert, scoped)]
-#![forbid(bad_style, warnings)]
+// #![forbid(bad_style, warnings)]
 
 extern crate cbor;
 extern crate rand;
@@ -80,6 +80,6 @@ pub mod test_utils;
 pub mod types;
 pub mod error;
 pub mod authority;
-
+pub mod fixed_structured_data;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};

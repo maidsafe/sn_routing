@@ -100,6 +100,42 @@ impl Decodable for ResponseError {
 
 //------------------------------------------------------------------------------
 #[derive(PartialEq, Eq, Clone, Debug)]
+pub enum DataError {
+    SignatureFailed,
+    InvalidKey,
+    UnknownKey,
+    NotEnoughSignatures,
+}
+
+impl error::Error for DataError {
+    fn description(&self) -> &str {
+        match *self {
+            DataError::SignatureFailed => "Could not validate signature",
+            DataError::InvalidKey => "Not a valid PublicKey",
+            DataError::UnknownKey => "Key not listed as owner",
+            DataError::NotEnoughSignatures => "Not 50% of owners signed",
+        }
+    }
+
+    fn cause(&self) -> Option<&error::Error> {
+            None
+    }
+}
+
+impl fmt::Display for DataError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            DataError::SignatureFailed => fmt::Display::fmt("DataError::SignatureFailed", f),
+            DataError::InvalidKey => fmt::Display::fmt("DataError::InvalidKey", f),
+            DataError::UnknownKey => fmt::Display::fmt("DataError::UnknownKey", f),
+            DataError::NotEnoughSignatures => fmt::Display::fmt("DataError::NotEnoughSignatures", f),
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum InterfaceError {
     Abort,
     Response(ResponseError),
@@ -160,6 +196,8 @@ pub enum RoutingError {
     RefusedFromRoutingTable,
     /// We received a refresh message but it did not contain group source address
     RefreshNotFromGroup,
+    /// Data errors
+    Data(DataError),
     /// interface error
     Interface(InterfaceError),
     /// i/o error
@@ -168,6 +206,10 @@ pub enum RoutingError {
     Cbor(CborError),
     /// invalid response
     Response(ResponseError),
+}
+
+impl From<DataError> for RoutingError {
+    fn from(e: DataError) -> RoutingError { RoutingError::Data(e) }
 }
 
 impl From<ResponseError> for RoutingError {
@@ -198,6 +240,7 @@ impl error::Error for RoutingError {
             RoutingError::RejectedPublicId => "Rejected Public Id",
             RoutingError::RefusedFromRoutingTable => "Refused from routing table",
             RoutingError::RefreshNotFromGroup => "Refresh message not from group",
+            RoutingError::Data(ref e) => "Data error",
             RoutingError::Interface(ref e) => "Interface error",
             RoutingError::Io(ref err) => "I/O error",
             RoutingError::Cbor(ref err) => "Serialisation error",
@@ -208,6 +251,7 @@ impl error::Error for RoutingError {
     fn cause(&self) -> Option<&error::Error> {
         match *self {
             RoutingError::Interface(ref err) => Some(err as &error::Error),
+            RoutingError::Data(ref err) => Some(err as &error::Error),
             RoutingError::Io(ref err) => Some(err as &error::Error),
             // RoutingError::Cbor(ref err) => Some(err as &error::Error),
             RoutingError::Response(ref err) => Some(err as &error::Error),
@@ -228,6 +272,7 @@ impl fmt::Display for RoutingError {
             RoutingError::RejectedPublicId => fmt::Display::fmt("Rejected Public Id", f),
             RoutingError::RefusedFromRoutingTable => fmt::Display::fmt("Refused from routing table", f),
             RoutingError::RefreshNotFromGroup => fmt::Display::fmt("Refresh message not from group", f),
+            RoutingError::Data(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Interface(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Cbor(ref err) => fmt::Display::fmt(err, f),
