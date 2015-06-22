@@ -553,7 +553,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // pre-sentinel message handling
         match message.message_type {
             // FIXME: Unauthorised Put needs review
-        //     MessageTypeTag::UnauthorisedPut => self.handle_put_data(header, body),
+            MessageTypeTag::UnauthorisedPut => self.handle_put_data(header, body),
             // MessageTypeTag::GetKey => self.handle_get_key(header, body),
             // MessageTypeTag::GetGroupKey => self.handle_get_group_key(header, body),
             MessageTypeTag::ConnectRequest => self.handle_connect_request(header, body, message.signature),
