@@ -174,10 +174,9 @@ impl MaidManagerDatabase {
   }
 
     pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
-        let data: Vec<_> = self.storage.drain().collect();
-        let mut actions = Vec::with_capacity(data.len());
-        for element in data {
-            let maid_manager_wrapper = MaidManagerAccountWrapper::new(element.0, element.1);
+        let mut actions = Vec::with_capacity(self.storage.len());
+        for (key, value) in self.storage.iter() {
+            let maid_manager_wrapper = MaidManagerAccountWrapper::new((*key).clone(), (*value).clone());
             let payload = Payload::new(PayloadTypeTag::MaidManagerAccountTransfer, &maid_manager_wrapper);
             let mut e = cbor::Encoder::from_memory();
             e.encode(&[payload]).unwrap();
@@ -186,6 +185,7 @@ impl MaidManagerDatabase {
                 payload: e.as_bytes().to_vec()
             });
         }
+        self.storage.clear();
         actions
     }
 
@@ -255,7 +255,7 @@ mod test {
         assert_eq!(db.put_data(&name, 0), true);
         assert_eq!(db.put_data(&name, 1073741823), true);
         assert_eq!(db.put_data(&name, 2), false);
-        
+
         let mut account = MaidManagerAccount::new();
         account.put_data(1073741822);
         {

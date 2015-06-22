@@ -201,16 +201,15 @@ impl DataManagerDatabase {
             *it.1 = new_pmid_nodes;
         }
 
-        let data: Vec<_> = self.storage.drain().collect();
         let mut actions = Vec::<MethodCall>::new();
-        for element in data {
-            if self.temp_storage_after_churn.get(&element.0).unwrap().len() < 3 {
+        for (key, value) in self.storage.iter() {
+            if self.temp_storage_after_churn.get(key).unwrap().len() < 3 {
                 actions.push(MethodCall::Get {
                     type_id: 206, //TODO Get type_tag correct
-                    name: element.0.clone(),
+                    name: (*key).clone(),
                 });
             }
-            let data_manager_sendable = DataManagerSendable::new(element.0, element.1);
+            let data_manager_sendable = DataManagerSendable::new((*key).clone(), (*value).clone());
             let payload = Payload::new(PayloadTypeTag::DataManagerAccountTransfer, &data_manager_sendable);
             let mut e = cbor::Encoder::from_memory();
             e.encode(&[payload]).unwrap();
@@ -219,6 +218,7 @@ impl DataManagerDatabase {
                 payload: e.as_bytes().to_vec()
             });
         }
+        self.storage.clear();
         actions
     }
 }

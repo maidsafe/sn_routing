@@ -34,7 +34,7 @@
 //!
 //! The resulting executable is the Vault node for the SAFE network.
 //! Refer to https://github.com/dirvine/maidsafe_vault
-#![feature(convert, core, std_misc)]
+#![feature(convert, core)]
 
 extern crate core;
 extern crate crust;
