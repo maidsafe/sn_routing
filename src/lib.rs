@@ -37,15 +37,13 @@
 //! tag: 5483_1 -> XXXXXXXXXXXXXX
 //! ```
 
-#![feature(collections, bitvec, split_off, clone_from_slice)]
+#![feature(bitvec, split_off, convert)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
-              html_root_url = "http://dirvine.github.io/routing")]
-#![warn(missing_docs)]
+              html_root_url = "http://maidsafe.github.io/routing")]
+// #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features, unused_attributes)]
-#![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core,
-           thread_sleep, ip_addr, convert, scoped)]
-// #![forbid(bad_style, warnings)]
+#![forbid(bad_style, warnings)]
 
 extern crate cbor;
 extern crate rand;
