@@ -33,66 +33,9 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 General note: please document code you touch, and introduce property-based unit tests where applicable.
 
-## [0.1.60] - essential logical corrections
-- [x] [MAID-1007](https://maidsafe.atlassian.net/browse/MAID-1007) limit swarm to targeted group
- - [x] [MAID-1105](https://maidsafe.atlassian.net/browse/MAID-1105) delay RoutingTable new ConnectRequests
- - [x] [MAID-1106](https://maidsafe.atlassian.net/browse/MAID-1106) examine Not For Us
-- [x] [MAID-1032](https://maidsafe.atlassian.net/browse/MAID-1032)
-correct name calculation of pure Id
-- [x] [MAID-1034](https://maidsafe.atlassian.net/browse/MAID-1034) ConnectResponse needs to include original signed ConnectRequest
-- [x] [MAID-1043](https://maidsafe.atlassian.net/browse/MAID-1043) remove old sentinel
-- [x] [MAID-1059](https://maidsafe.atlassian.net/browse/MAID-1059) rename types::Action -> types::MessageAction; rename RoutingNodeAction -> MethodCall
-
-## [0.1.61] - Relay module, relocatable Id, update NodeInterface
-
-- [x] [MAID-1114](https://maidsafe.atlassian.net/browse/MAID-1114) Relay module
-- [x] [MAID-1060](https://maidsafe.atlassian.net/browse/MAID-1060) update Interface for Vaults
-- [x] [MAID-1040](https://maidsafe.atlassian.net/browse/MAID-1040) enable Id, PublicId and NodeInfo with 'relocated' name
-
-## [0.1.62] - restructure core of routing
-
-- [x] [MAID-1037](https://maidsafe.atlassian.net/browse/MAID-1037) Address relocation
-  - [x] [MAID-1038](https://maidsafe.atlassian.net/browse/MAID-1038) Integrate handlers with RelayMap
-  - [x] [MAID-1039](https://maidsafe.atlassian.net/browse/MAID-1039) put_public_id handler
-- [x] [MAID-1052](https://maidsafe.atlassian.net/browse/MAID-1052) Message Handling
-  - [x] [MAID-1055](https://maidsafe.atlassian.net/browse/MAID-1055) full review of implementation of handlers
-  - [x] [MAID-1057](https://maidsafe.atlassian.net/browse/MAID-1057) make event loop in routing_node internal
-- [x] [MAID-1062](https://maidsafe.atlassian.net/browse/MAID-1062) extract all_connections into a module
-- [x] [MAID-1070](https://maidsafe.atlassian.net/browse/MAID-1070) drop_bootstrap in coordination with CRUST
-- [x] [MAID-1071](https://maidsafe.atlassian.net/browse/MAID-1071) Implement relay id exchange for client node
-- [x] [MAID-1066](https://maidsafe.atlassian.net/browse/MAID-1066) Routing Example : update to internal event loop
-
-## [0.1.63] - bug fixes
-
-- [x] [#314](https://github.com/maidsafe/routing/issues/314) simple_key_value_store input validation lacking
-- [x] [#324](https://github.com/maidsafe/routing/issues/324) simple_key_value_store peer option
-- [x] [#336](https://github.com/maidsafe/routing/issues/336) Routing `0.1.62` causes API inconsistency in usage of RoutingClient
-
-## [0.1.64] - bug fixes
-
-- [x] [#330](https://github.com/maidsafe/routing/issues/330) Who-Are-You / I-Am message for identifying new connections
-- [x] [#312](https://github.com/maidsafe/routing/issues/312) Fix never-connecting client
-- [x] [#343](https://github.com/maidsafe/routing/issues/343) Filter escalating number of connect requests
-- [x] [#342](https://github.com/maidsafe/routing/issues/342) Clean up overloaded debug command line printout
-- [x] [#347](https://github.com/maidsafe/routing/issues/347) Relay GetDataResponses and cached GetDataResponses back to relayed node
-
-
-## [0.1.70] - Activate AccountTransfer
-
-- [x] [#354](https://github.com/maidsafe/routing/issues/354) Fix release builds
-- [x] [MAID-1069](https://maidsafe.atlassian.net/browse/MAID-1069) OurCloseGroup Authority
-- [x] [#363](https://github.com/maidsafe/routing/issues/363) Refresh message and ad-hoc accumulator
-- [x] [#290](https://github.com/maidsafe/routing/issues/290) Remove NodeInterface::handle_get_key
-- [x] [#373](https://github.com/maidsafe/routing/issues/373) Reduce group size for QA to 23
-
-## [0.1.71] Finish Rust-2
-
-- [x] [#360](https://github.com/maidsafe/routing/issues/360) Fix intermittent failure in Relay
-- [x] [#372](https://github.com/maidsafe/routing/issues/372) Introduce unit tests for Routing Membrane
-- [x] [#388](https://github.com/maidsafe/routing/issues/388) Handle PutDataResponse for routing_client
-- [x] [#395](https://github.com/maidsafe/routing/issues/395) Preserve message_id
-
 ## Future sprints
+
+Note 2015-06-22: below tasks will be affected by [proposed RFC: Remove Transaction Managers](https://github.com/maidsafe/rfcs/pull/1) ([view draft](https://github.com/dirvine/rfcs/blob/master/proposed/0000-Remove-Transaction-Managers.md))
 
 - [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
     - [ ] [MAID-1064](https://maidsafe.atlassian.net/browse/MAID-1064) POC first and move UnauthorisedPut into explicit message structure.

@@ -40,7 +40,7 @@
 #![feature(collections, bitvec, split_off)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
-              html_root_url = "http://dirvine.github.io/routing")]
+              html_root_url = "http://maidsafe.github.io/routing")]
 // #![warn(missing_docs)]
 #![allow(dead_code, unused_variables, unused_features, unused_attributes)]
 #![feature(custom_derive, rand, collection, std_misc, unsafe_destructor, unboxed_closures, io, core,
