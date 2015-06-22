@@ -207,11 +207,10 @@ impl PmidManagerDatabase {
     }
 
     pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {
-        let data: Vec<_> = self.storage.drain().collect();
-        let mut actions = Vec::with_capacity(data.len());
-        for element in data {
-            if close_group.iter().find(|a| **a == element.0).is_some() {
-                let pmid_manager_wrapper = PmidManagerAccountWrapper::new(element.0, element.1);
+        let mut actions = Vec::with_capacity(self.storage.len());
+        for (key, value) in self.storage.iter() {
+            if close_group.iter().find(|a| **a == *key).is_some() {
+                let pmid_manager_wrapper = PmidManagerAccountWrapper::new((*key).clone(), (*value).clone());
                 let payload = Payload::new(PayloadTypeTag::PmidManagerAccountTransfer, &pmid_manager_wrapper);
                 let mut e = cbor::Encoder::from_memory();
                 e.encode(&[payload]).unwrap();
@@ -221,6 +220,7 @@ impl PmidManagerDatabase {
                 });
             }
         }
+        self.storage.clear();
         actions
     }
 }

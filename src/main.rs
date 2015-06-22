@@ -34,7 +34,7 @@
 //!
 //! The resulting executable is the Vault node for the SAFE network.
 //! Refer to https://github.com/dirvine/maidsafe_vault
-#![feature(convert, core, std_misc)]
+#![feature(convert, core)]
 
 extern crate core;
 extern crate crust;
@@ -50,10 +50,9 @@ extern crate maidsafe_types;
 extern crate rand;
 
 use core::iter::FromIterator;
+use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::thread;
-use std::thread::spawn;
 
 use docopt::Docopt;
 use rustc_serialize::{Decodable, Decoder};
@@ -154,12 +153,17 @@ pub fn main () {
         let _ = vault.routing_node.bootstrap(bootstrap_peers, None);
     }
 
-    let thread_guard = spawn(move || {
-        loop {
-            thread::sleep_ms(1);
+    let ref mut command = String::new();
+    loop {
+        command.clear();
+        println!("Enter command (stop)>");
+        let _ = io::stdin().read_line(command);
+        let x: &[_] = &['\r', '\n'];
+        match command.trim_right_matches(x) {
+            "stop" => break,
+            _ => println!("Invalid command.")
         }
-    });
-    let _ = thread_guard.join();
+    }
 }
 
 #[cfg(test)]
