@@ -1,5 +1,11 @@
 # Routing - Change Log
 
+## [0.1.72] - documentation
+
+- Fix master documentation url in readme
+- [#406](https://github.com/maidsafe/routing/pull/406) enable handler for unauthorised put
+- [#369](https://github.com/maidsafe/routing/issues/369) clean up unneeded features
+
 ## [0.1.71] - Finish Rust-2
 
 - [#360](https://github.com/maidsafe/routing/issues/360) Fix intermittent failure in Relay
