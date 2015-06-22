@@ -26,6 +26,8 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
     - complete put flow
     - complete get flow
 - [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
+- [ ] code clean up
+    - [Issue 113](https://github.com/maidsafe/maidsafe_vault/issues/113) using unwrap unsafely
 
 
 
