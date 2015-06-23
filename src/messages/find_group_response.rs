@@ -19,33 +19,11 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use frequency::Frequency;
-use types::{PublicId, GROUP_SIZE, QUORUM_SIZE, Mergeable};
+use types::{PublicId};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FindGroupResponse {
   pub group : Vec<PublicId>
-}
-
-impl Mergeable for FindGroupResponse {
-    fn merge<'a, I>(responses: I) -> Option<Self> where I: Iterator<Item=&'a Self> {
-        let mut frequency = Frequency::new();
-
-        for response in responses {
-            for public_id in &response.group {
-                frequency.update(public_id.clone());
-            }
-        }
-
-        let merged_group = frequency.sort_by_highest().into_iter()
-                           .filter(|&(_, ref count)| *count >= QUORUM_SIZE as usize)
-                           .take(GROUP_SIZE as usize)
-                           .map(|(k, _)| k)
-                           .collect::<Vec<_>>();
-
-        if merged_group.is_empty() { return None; }
-        Some(FindGroupResponse{ group: merged_group })
-    }
 }
 
 impl Encodable for FindGroupResponse {
@@ -66,12 +44,7 @@ impl Decodable for FindGroupResponse {
 mod test {
     use super::*;
     use cbor;
-    use types;
-    use types::{PublicId, GROUP_SIZE, QUORUM_SIZE};
     use test_utils::Random;
-    use rand::{thread_rng, Rng};
-    use rand::distributions::{IndependentSample, Range};
-
 
     #[test]
     fn find_group_response_serialisation() {
@@ -84,51 +57,5 @@ mod test {
         let obj_after: FindGroupResponse = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
-    }
-
-    #[test]
-    fn merge() {
-        let ids: FindGroupResponse = Random::generate_random();
-        // ids.group.len() == types::GROUP_SIZE + 20
-        assert!(ids.group.len() >= GROUP_SIZE as usize);
-
-        let group_size = GROUP_SIZE as usize;
-        let quorum_size = QUORUM_SIZE as usize;
-
-        // get random GROUP_SIZE groups
-        let mut groups = Vec::<PublicId>::with_capacity(quorum_size);
-        let mut rng = thread_rng();
-        let range = Range::new(0, ids.group.len());
-
-        loop {
-            let index = range.ind_sample(&mut rng);
-            if groups.contains(&ids.group[index]) { continue; }
-            groups.push(ids.group[index].clone());
-            if groups.len() == quorum_size { break; }
-        };
-
-        let mut responses = Vec::<FindGroupResponse>::with_capacity(quorum_size);
-
-        for _ in 0..quorum_size {
-            let mut response = FindGroupResponse{ group: Vec::new() };
-            // Take the first QUORUM_SIZE as common...
-            for i in 0..quorum_size {
-                response.group.push(groups[i].clone());
-            }
-            // ...and the remainder arbitrary
-            for _ in quorum_size..group_size {
-                response.group.push(PublicId::generate_random());
-            }
-
-            rng.shuffle(&mut response.group[..]);
-            responses.push(response);
-        }
-
-        let merged = types::Mergeable::merge(responses.iter());
-        assert!(merged.is_some());
-        let merged_response = merged.unwrap();
-        for i in 0..quorum_size {
-            assert!(groups.iter().find(|a| **a == merged_response.group[i]).is_some());
-        }
     }
 }
