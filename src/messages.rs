@@ -17,16 +17,10 @@
 
 #![allow(unused_assignments)]
 
-#[path="messages/bootstrap_id_request.rs"]
-pub mod bootstrap_id_request;
-#[path="messages/bootstrap_id_response.rs"]
-pub mod bootstrap_id_response;
 #[path="messages/connect_request.rs"]
 pub mod connect_request;
 #[path="messages/connect_response.rs"]
 pub mod connect_response;
-#[path="messages/connect_success.rs"]
-pub mod connect_success;
 #[path="messages/find_group.rs"]
 pub mod find_group;
 #[path="messages/find_group_response.rs"]

@@ -83,15 +83,6 @@ impl Random for messages::connect_response::ConnectResponse {
     }
 }
 
-impl Random for messages::connect_success::ConnectSuccess {
-    fn generate_random() -> messages::connect_success::ConnectSuccess {
-        messages::connect_success::ConnectSuccess {
-            peer_id: Random::generate_random(),
-            peer_fob: Random::generate_random(),
-        }
-    }
-}
-
 impl Random for messages::find_group::FindGroup {
     fn generate_random() -> messages::find_group::FindGroup {
         messages::find_group::FindGroup {
