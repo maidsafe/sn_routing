@@ -34,7 +34,7 @@ static OPTIMAL_SIZE: usize = 64;
 // #[derive(Clone)]
 // pub struct KeyFob {
 //     pub id: NameType,
-//     keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
+//     keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
 //     signature: crypto::sign::Signature,
 // }
 
@@ -607,7 +607,7 @@ mod test {
     //     let sig = crypto::sign::Signature(types::vector_as_u8_64_array(id.0.clone()));
     //     KeyFob {
     //         id: id,
-    //         keys: (crypto::sign::gen_keypair().0, crypto::asymmetricbox::gen_keypair().0),
+    //         keys: (crypto::sign::gen_keypair().0, crypto::box_::gen_keypair().0),
     //         signature: sig,
     //     }
     // }
