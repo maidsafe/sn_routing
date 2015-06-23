@@ -20,15 +20,34 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 
 #Todo Items
 
-## [0.1.1] - vault network integration test with churn
+## [0.1.1] - code clean up
+- [Issue 113](https://github.com/maidsafe/maidsafe_vault/issues/113) using unwrap unsafely
+- [Issue 117](https://github.com/maidsafe/maidsafe_vault/issues/117) meaningful type_tag
+
+## [0.1.2] - integration test with client having churn event
 - [ ] integration test with client
     - client log in / log out
     - complete put flow
     - complete get flow
 - [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
-- [ ] code clean up
-    - [Issue 113](https://github.com/maidsafe/maidsafe_vault/issues/113) using unwrap unsafely
+- account transfer
 
+## [0.1.3] - persona update
+- remove Version Handler
+- proper PmidNode initialize (max diskspace)
+
+## [0.1.5] - messaging
+- documentation
+- messaging account management
+- sending message
+- retrieving message
+- withdraw message
+
+## [0.1.6] - safe coin implementation
+- documentation
+- account management
+- farming
+- transferring
 
 
 #Detailed documentation
