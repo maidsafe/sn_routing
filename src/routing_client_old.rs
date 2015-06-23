@@ -58,13 +58,13 @@ pub enum CryptoError {
 
 #[derive(Clone)]
 pub struct ClientIdPacket {
-    public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-    secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
+    public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
+    secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey),
 }
 
 impl ClientIdPacket {
-    pub fn new(public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-               secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey)) -> ClientIdPacket {
+    pub fn new(public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
+               secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey)) -> ClientIdPacket {
         ClientIdPacket {
             public_keys: public_keys,
             secret_keys: secret_keys
@@ -96,7 +96,7 @@ impl ClientIdPacket {
       NameType::new(self.get_id())
     }
 
-    pub fn get_public_keys(&self) -> &(crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey){
+    pub fn get_public_keys(&self) -> &(crypto::sign::PublicKey, crypto::box_::PublicKey){
         &self.public_keys
     }
 
@@ -108,23 +108,23 @@ impl ClientIdPacket {
         return crypto::sign::sign_detached(&data, &self.secret_keys.0)
     }
 
-    pub fn encrypt(&self, data : &[u8], to : &crypto::asymmetricbox::PublicKey) -> (Vec<u8>, crypto::asymmetricbox::Nonce) {
-        let nonce = crypto::asymmetricbox::gen_nonce();
-        let encrypted = crypto::asymmetricbox::seal(data, &nonce, &to, &self.secret_keys.1);
+    pub fn encrypt(&self, data : &[u8], to : &crypto::box_::PublicKey) -> (Vec<u8>, crypto::box_::Nonce) {
+        let nonce = crypto::box_::gen_nonce();
+        let encrypted = crypto::box_::seal(data, &nonce, &to, &self.secret_keys.1);
         return (encrypted, nonce);
     }
 
-    pub fn decrypt(&self, data : &[u8], nonce : &crypto::asymmetricbox::Nonce,
-                   from : &crypto::asymmetricbox::PublicKey) -> Result<Vec<u8>, CryptoError> {
-        return crypto::asymmetricbox::open(&data, &nonce, &from, &self.secret_keys.1).ok_or(CryptoError::Unknown);
+    pub fn decrypt(&self, data : &[u8], nonce : &crypto::box_::Nonce,
+                   from : &crypto::box_::PublicKey) -> Result<Vec<u8>, CryptoError> {
+        return crypto::box_::open(&data, &nonce, &from, &self.secret_keys.1).ok_or(CryptoError::Unknown);
     }
 
 }
 
 impl Encodable for ClientIdPacket {
     fn encode<E: rustc_serialize::Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let (crypto::sign::PublicKey(pub_sign_vec), crypto::asymmetricbox::PublicKey(pub_asym_vec)) = self.public_keys;
-        let (crypto::sign::SecretKey(sec_sign_vec), crypto::asymmetricbox::SecretKey(sec_asym_vec)) = self.secret_keys;
+        let (crypto::sign::PublicKey(pub_sign_vec), crypto::box_::PublicKey(pub_asym_vec)) = self.public_keys;
+        let (crypto::sign::SecretKey(sec_sign_vec), crypto::box_::SecretKey(sec_asym_vec)) = self.secret_keys;
 
         cbor::CborTagEncode::new(5483_001, &(
             pub_sign_vec.as_ref(),
@@ -141,19 +141,19 @@ impl Decodable for ClientIdPacket {
 
         let pub_sign_arr = container_of_u8_to_array!(pub_sign_vec, crypto::sign::PUBLICKEYBYTES);
         let pub_asym_arr =
-            container_of_u8_to_array!(pub_asym_vec, crypto::asymmetricbox::PUBLICKEYBYTES);
+            container_of_u8_to_array!(pub_asym_vec, crypto::box_::PUBLICKEYBYTES);
         let sec_sign_arr = container_of_u8_to_array!(sec_sign_vec, crypto::sign::SECRETKEYBYTES);
         let sec_asym_arr =
-            container_of_u8_to_array!(sec_asym_vec, crypto::asymmetricbox::SECRETKEYBYTES);
+            container_of_u8_to_array!(sec_asym_vec, crypto::box_::SECRETKEYBYTES);
 
         if pub_sign_arr.is_none() || pub_asym_arr.is_none() || sec_sign_arr.is_none() || sec_asym_arr.is_none() {
             return Err(d.error("Bad Maid size"));
         }
 
         let pub_keys = (crypto::sign::PublicKey(pub_sign_arr.unwrap()),
-                        crypto::asymmetricbox::PublicKey(pub_asym_arr.unwrap()));
+                        crypto::box_::PublicKey(pub_asym_arr.unwrap()));
         let sec_keys = (crypto::sign::SecretKey(sec_sign_arr.unwrap()),
-                        crypto::asymmetricbox::SecretKey(sec_asym_arr.unwrap()));
+                        crypto::box_::SecretKey(sec_asym_arr.unwrap()));
         Ok(ClientIdPacket{ public_keys: pub_keys, secret_keys: sec_keys })
     }
 }
