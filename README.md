@@ -20,7 +20,7 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 
 #Todo Items
 
-## [0.0.5] - vault network integration test with churn
+## [0.1.1] - vault network integration test with churn
 - [ ] integration test with client
     - client log in / log out
     - complete put flow
