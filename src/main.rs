@@ -50,9 +50,11 @@ extern crate maidsafe_types;
 extern crate rand;
 
 use core::iter::FromIterator;
-use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::thread;
+use std::thread::spawn;
+
 
 use docopt::Docopt;
 use rustc_serialize::{Decodable, Decoder};
@@ -152,20 +154,13 @@ pub fn main () {
     } else {
         let _ = vault.routing_node.bootstrap(bootstrap_peers, None);
     }
-
-    let ref mut command = String::new();
-    loop {
-        command.clear();
-        println!("Enter command (stop)>");
-        let _ = io::stdin().read_line(command);
-        let x: &[_] = &['\r', '\n'];
-        match command.trim_right_matches(x) {
-            "stop" => break,
-            _ => println!("Invalid command.")
+    let thread_guard = spawn(move || {
+        loop {
+            thread::sleep_ms(10000);
         }
-    }
+    });
+    let _ = thread_guard.join();
 }
-
 #[cfg(test)]
 mod test {
     use super::*;
