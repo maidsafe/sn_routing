@@ -15,13 +15,13 @@ homepage = "http://maidsafe.net"
 rustc-serialize = "*"
 cbor = "*"
 time = "*"
-sodiumoxide = "0.0.4"
 rand = "*"
 message_filter = "*"
 lru_time_cache = "0.1.5"
 accumulator = "0.0.1"
 crust = "0.0.*"
 docopt = "*"
+sodiumoxide = { git = "https://github.com/dirvine/sodiumoxide"}
 
 [[example]]
 name = "simple_key_value_store"

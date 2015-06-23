@@ -37,7 +37,7 @@
 //! tag: 5483_1 -> XXXXXXXXXXXXXX
 //! ```
 
-#![feature(bitvec, split_off, convert)]
+#![feature(bitvec, split_off, convert, clone_from_slice)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://maidsafe.github.io/routing")]

@@ -15,18 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor;
-use cbor::{Encoder, Decoder, DirectDecoder, Cbor, CborBytes, CborTagEncode};
+use cbor::{Encoder, Decoder};
 use rustc_serialize::{Decodable, Encodable};
 use rustc_serialize;
-use rustc_serialize::json::{self, Json, ToJson};
-use std::collections::BTreeMap;
-// use helper::*;
 use error::{RoutingError, DataError};
 use NameType;
 use sendable::Sendable;
-use std::fmt;
-use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto;
 
 // fn serialise(&self) -> cbor::CborResult<Vec<u8>> {
@@ -184,9 +178,9 @@ impl Decodable for Signature {
 }
 
 
-/// FixedStructuredData
+/// StructuredData
 #[derive(Clone, RustcDecodable, RustcEncodable)]
-pub struct FixedStructuredData {
+pub struct StructuredData {
     type_tag: u64,
     data: Vec<u8>,
     owner_keys: Vec<PublicSignKey>,
@@ -195,11 +189,11 @@ pub struct FixedStructuredData {
 }
 
 
-impl FixedStructuredData {
+impl StructuredData {
     /// Constructor
-    pub fn new(type_tag: u64, data: Vec<u8>, owner_keys: Vec<PublicSignKey>, version: u64, signatures: Vec<Signature>) -> Result<FixedStructuredData, RoutingError> {
+    pub fn new(type_tag: u64, data: Vec<u8>, owner_keys: Vec<PublicSignKey>, version: u64, signatures: Vec<Signature>) -> Result<StructuredData, RoutingError> {
         
-        Ok(FixedStructuredData { 
+        Ok(StructuredData { 
                    type_tag: type_tag,
                    data: data,
                    owner_keys: owner_keys,
@@ -232,17 +226,17 @@ impl FixedStructuredData {
 
 //
 //
-// impl Encodable for FixedStructuredData {
+// impl Encodable for StructuredData {
 //     fn encode<E: Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
 //         cbor::CborTagEncode::new(5483_003, &(&self.type_tag, &self.data, &self.owner_keys, &self.version, &self.signatures)).encode(e)
 //     }
 // }
 
-// impl Decodable for FixedStructuredData {
-//     fn decode<D: Decoder>(d: &mut D) -> Result<FixedStructuredData, D::Error> {
+// impl Decodable for StructuredData {
+//     fn decode<D: Decoder>(d: &mut D) -> Result<StructuredData, D::Error> {
 //         try!(d.read_u64());
 //         let (type_tag, data, owner_keys, version, signatures) = try!(Decodable::decode(d));
-//         let s = FixedStructuredData { 
+//         let s = StructuredData { 
 //                                   type_tag: type_tag,
 //                                   data: data,
 //                                   owner_keys: owner_keys,
@@ -255,7 +249,7 @@ impl FixedStructuredData {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    // use super::*;
 
     #[test]
     fn works() {
