@@ -2,7 +2,7 @@
 ## [0.2.3]
 
 - [#416](https://github.com/maidsafe/routing/pull/416) Activate HandleChurn (but don't act on the resulting MethodCall yet)
-- 
+
 ## [0.2.2] 
 
 - Update sodiumoxide dependency to `*`
