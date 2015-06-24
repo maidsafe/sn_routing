@@ -1,11 +1,15 @@
 # Routing - Change Log
 
-## [0.2.2] 
+## [0.2.3]
+
+- [#416](https://github.com/maidsafe/routing/pull/416) Activate HandleChurn (but don't act on the resulting MethodCall yet)
+
+## [0.2.2]
 
 - Update sodiumoxide dependency to `*`
 - Update crust dependency to `*`
 
-## [0.2.1] 
+## [0.2.1]
 
 - Update sodiumoxide dependency to `0.0.5`
 
