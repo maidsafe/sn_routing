@@ -160,7 +160,7 @@ impl Interface for VaultFacade {
     }
 
     // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1011
-    fn handle_post_response(&mut self, 
+    fn handle_post_response(&mut self,
                             _: Authority, // from_authority
                             _: NameType, // from_address
                             _: Result<Vec<u8>, ResponseError>) { // response
@@ -172,6 +172,7 @@ impl Interface for VaultFacade {
         let vh = self.version_handler.retrieve_all_and_reset();
         let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
+        self.nodes_in_table = close_group;
 
         mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
     }
