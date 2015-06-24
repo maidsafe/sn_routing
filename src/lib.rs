@@ -61,7 +61,6 @@ mod macros;
 mod message_header;
 mod messages;
 mod name_type;
-mod frequency;
 mod routing_table;
 mod relay;
 mod utils;

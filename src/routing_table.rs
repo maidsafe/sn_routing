@@ -25,18 +25,10 @@ use common_bits::*;
 use types::PublicId;
 use name_type::{closer_to_target, closer_to_target_or_equal, NameType};
 use types;
-//use NameType;
 
 static BUCKET_SIZE: usize = 1;
 pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
-
-// #[derive(Clone)]
-// pub struct KeyFob {
-//     pub id: NameType,
-//     keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
-//     signature: crypto::sign::Signature,
-// }
 
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
@@ -601,16 +593,6 @@ mod test {
         }
         arr
     }
-
-    // fn create_random_fob() -> KeyFob {
-    //     let id = NameType::generate_random();
-    //     let sig = crypto::sign::Signature(types::vector_as_u8_64_array(id.0.clone()));
-    //     KeyFob {
-    //         id: id,
-    //         keys: (crypto::sign::gen_keypair().0, crypto::box_::gen_keypair().0),
-    //         signature: sig,
-    //     }
-    // }
 
     fn create_random_node_info() -> NodeInfo {
         let public_id = types::PublicId::new(&types::Id::new());
