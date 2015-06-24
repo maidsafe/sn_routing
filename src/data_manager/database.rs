@@ -182,7 +182,6 @@ impl DataManagerDatabase {
     }
 
     pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
-        assert!(close_group.len() >= 3);
         self.temp_storage_after_churn = self.storage.clone();
         let mut close_grp_already_stored = false;
 
