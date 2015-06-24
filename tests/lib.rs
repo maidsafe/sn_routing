@@ -48,7 +48,7 @@ fn executable_test() {
 
     for i in 1..num_of_nodes {
         println!("---------- starting node {} --------------", i);
-        processes.push(match Command::new("./target/debug/maidsafe_vault").arg("-n").stdout(Stdio::piped()).spawn() {
+        processes.push(match Command::new("./target/debug/maidsafe_vault").stdout(Stdio::piped()).spawn() {
                     Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
                     Ok(process) => process,
                 });
