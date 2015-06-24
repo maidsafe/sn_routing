@@ -386,9 +386,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // The relay map will automatically drop the Name if the last endpoint to it is dropped
         self.relay_map.remove_unknown_connection(&endpoint);
         self.relay_map.drop_endpoint(&endpoint);
+        let mut trigger_handle_churn = false;
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => {
-                let _ = self.routing_table.address_in_our_close_group_range(&name);
+                trigger_handle_churn = self.routing_table
+                    .address_in_our_close_group_range(&name);
                 self.routing_table.drop_node(&name);
                 println!("RT (size : {:?}) connection {:?} disconnected for {:?}.",
                     self.routing_table.size(), endpoint, name);
@@ -407,7 +409,26 @@ impl<F> RoutingMembrane<F> where F: Interface {
             None => {}
         };
         if drop_bootstrap { self.bootstrap_endpoint = None; }
-        // TODO: trigger churn on boolean
+
+        if trigger_handle_churn {
+            println!("Handle CHURN lost node");
+            let mut close_group : Vec<NameType> = self.routing_table
+                    .our_close_group().iter()
+                    .map(|node_info| node_info.fob.name())
+                    .collect::<Vec<NameType>>();
+            close_group.insert(0, self.own_name.clone());
+            match self.mut_interface().handle_churn(close_group) {
+                _ => {} // for now don't act on this MethodCall
+                // MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                // MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                // MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                // MethodCall::Post => unimplemented!(),
+                // MethodCall::None => (),
+                // MethodCall::SendOn { destination } =>
+                //     ignore(self.send_on(&put_data_response.name, &header,
+                //                  destination, MessageTypeTag::PutDataResponse, body)),
+            };
+        };
     }
 
     /// Parse and update the header with us as a relay node;
@@ -685,6 +706,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn handle_i_am(&mut self, endpoint: Endpoint, i_am: IAm) -> RoutingResult {
+        let mut trigger_handle_churn = false;
         match i_am.public_id.is_relocated() {
             // if it is relocated, we consider the connection for our routing table
             true => {
@@ -708,13 +730,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 return Err(RoutingError::RefusedFromRoutingTable); }
                             println!("RT (size : {:?}) added connected node {:?} on {:?}",
                                 self.routing_table.size(), peer_node_info.fob.name(), endpoint);
+                            trigger_handle_churn = self.routing_table
+                                .address_in_our_close_group_range(&peer_node_info.fob.name());
                         } else {
                             println!("I Am, relocated name {:?} conflicted with cached fob.",
                                 i_am.public_id.name());
                             self.relay_map.remove_unknown_connection(&endpoint);
                             self.connection_manager.drop_node(endpoint);
                         }
-                        Ok(())
                     },
                     None => {
                         // if we are connecting to an existing group
@@ -742,6 +765,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                     return Err(RoutingError::RefusedFromRoutingTable); }
                                 println!("RT (size : {:?}) added connected node {:?} on {:?}",
                                     self.routing_table.size(), peer_node_info.fob.name(), endpoint);
+                                trigger_handle_churn = self.routing_table
+                                    .address_in_our_close_group_range(&peer_node_info.fob.name());
                             },
                             false => {
                                 println!("Dropping connection on {:?} as {:?} is relocated,
@@ -751,7 +776,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 self.connection_manager.drop_node(endpoint);
                             }
                         };
-                        Ok(())
                     }
                 }
             },
@@ -760,9 +784,28 @@ impl<F> RoutingMembrane<F> where F: Interface {
             false => {
                 println!("I Am unrelocated {:?} on {:?}. Not Acting on this result.",
                     i_am.public_id.name(), endpoint);
-                Ok(())
             }
+        };
+        if trigger_handle_churn {
+            println!("Handle CHURN new node {:?}", i_am.public_id.name());
+            let mut close_group : Vec<NameType> = self.routing_table
+                    .our_close_group().iter()
+                    .map(|node_info| node_info.fob.name())
+                    .collect::<Vec<NameType>>();
+            close_group.insert(0, self.own_name.clone());
+            match self.mut_interface().handle_churn(close_group) {
+                _ => {} // for now don't act on this MethodCall
+                // MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                // MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                // MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                // MethodCall::Post => unimplemented!(),
+                // MethodCall::None => (),
+                // MethodCall::SendOn { destination } =>
+                //     ignore(self.send_on(&put_data_response.name, &header,
+                //                  destination, MessageTypeTag::PutDataResponse, body)),
+            };
         }
+        Ok(())
     }
 
     fn send_who_are_you_msg(&mut self, endpoint: Endpoint) -> RoutingResult {

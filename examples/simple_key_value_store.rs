@@ -348,7 +348,7 @@ impl Interface for TestNode {
     }
 
     fn handle_churn(&mut self, _close_group: Vec<NameType>) -> Vec<MethodCall> {
-        unimplemented!();
+        vec![MethodCall::None]
     }
 
     fn handle_cache_get(&mut self, _type_id: u64, name : NameType, _from_authority: Authority,
