@@ -233,23 +233,29 @@ struct TestClient {
 }
 
 impl routing::client_interface::Interface for TestClient {
-    fn handle_get_response(&mut self, _: types::MessageId,
+    fn handle_get_response(&mut self, message_id: types::MessageId,
                            response: Result<Vec<u8>, ResponseError>) {
         match response {
             Ok(result) => {
                 let mut d = cbor::Decoder::from_bytes(result);
                 let response_data: TestData = d.decode().next().unwrap().unwrap();
-                println!("Testing client received get_response with testdata {:?}", response_data);
+                println!("Testing client received get_response {:?} with testdata {:?}",
+                    message_id, response_data);
             },
             Err(_) => println!("Testing client received error get_response"),
         }
     }
 
-    fn handle_put_response(&mut self, _: types::MessageId,
+    fn handle_put_response(&mut self, message_id: types::MessageId,
                            response: Result<Vec<u8>, ResponseError>) {
         match response {
-            Ok(_) => println!("No response expected on put success"),
-            Err(_) => println!("Error put_response"),
+            Ok(result) => {
+                let mut d = cbor::Decoder::from_bytes(result);
+                let response_data: TestData = d.decode().next().unwrap().unwrap();
+                println!("Testing client received put_response {:?} with testdata {:?}",
+                    message_id, response_data);
+            },
+            Err(e) => println!("Error put_respons: {:?}", e),
         }
     }
 }
