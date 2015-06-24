@@ -1,10 +1,9 @@
 [package]
-
 name = "routing"
 version = "0.2.2"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A secured storage DHT"
-documentation = "http://maidsafe.github.io/routing/latest/"
+documentation = "http://maidsafe.net/routing/latest"
 repository = "https://github.com/maidsafe/routing"
 readme = "README.md"
 license = "GPL-3.0"
