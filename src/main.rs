@@ -90,12 +90,12 @@ impl Vault {
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage:
-  maidsafe_vault (--first | --node [<peer>...])
+  maidsafe_vault [<peer>...]
+  maidsafe_vault --first
   maidsafe_vault --help
 
 Options:
   -f, --first  Node runs as the first vault in the network.
-  -n, --node   Node runs as a non-first vault in the network.
   -h, --help   Display this help message.
 
   Running without '--first' requires an existing network to connect to.  If this
@@ -110,7 +110,6 @@ Options:
 #[derive(RustcDecodable, Debug)]
 struct Args {
     arg_peer: Vec<PeerEndpoint>,
-    flag_node: bool,
     flag_first: bool,
     flag_help: bool,
 }
