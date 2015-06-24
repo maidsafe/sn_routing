@@ -294,7 +294,7 @@ impl<F> RoutingClient<F> where F: Interface {
         match decode::<PutDataResponse>(&body) {
             Ok(put_data_response) => {
                 let mut interface = self.interface.lock().unwrap();
-                interface.handle_get_response(header.message_id,
+                interface.handle_put_response(header.message_id,
                     put_data_response.data);
             },
             Err(_) => {}

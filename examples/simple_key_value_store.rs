@@ -280,33 +280,33 @@ impl Interface for TestNode {
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
                 from_address: NameType, _dest_address: types::DestinationAddress,
                 data_in: Vec<u8>) -> Result<MessageAction, InterfaceError> {
-        if our_authority != Authority::NaeManager {
-            if our_authority == Authority::ClientManager {
+        match our_authority {
+            Authority::ClientManager => {
                 let mut d = cbor::Decoder::from_bytes(data_in);
                 let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
                 println!("ClientManager forwarding data to DataManager around {:?}",
                          in_coming_data.name());
                 return Ok(MessageAction::SendOn(vec![in_coming_data.name()]));
-            }
-            println!("returning as our_authority is {:?} which is not supposed to handle_put",
-                     our_authority);
-            return Err(InterfaceError::Abort);
-        }
-
-        let stats = self.stats.clone();
-        let mut stats_value = stats.lock().unwrap();
-        let mut d = cbor::Decoder::from_bytes(data_in);
-        let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
-        println!("testing node handle put request from {} of data {:?}", from_address,
-                 in_coming_data);
-        for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
-            data.0 += 1;
-            // return with abort to terminate the flow
-            return Err(InterfaceError::Abort);
-        }
-        stats_value.stats.push((1, in_coming_data));
-        // return with abort to terminate the flow
-        Err(InterfaceError::Abort)
+            },
+            Authority::NaeManager => {
+                let stats = self.stats.clone();
+                let mut stats_value = stats.lock().unwrap();
+                let mut d = cbor::Decoder::from_bytes(data_in.clone());
+                let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
+                println!("testing node handle put request from {} of data {:?}", from_address,
+                         in_coming_data);
+                for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
+                    data.0 += 1;
+                    // return with abort to terminate the flow
+                    return Err(InterfaceError::Abort);
+                }
+                stats_value.stats.push((1, in_coming_data));
+                // return with abort to terminate the flow
+                println!("MessageAction::Reply on PutResponse.");
+                return Ok(MessageAction::Reply(data_in));
+            },
+            _ => return Err(InterfaceError::Response(ResponseError::InvalidRequest))
+        };
     }
 
     fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
@@ -335,7 +335,7 @@ impl Interface for TestNode {
     fn handle_put_response(&mut self, _from_authority: Authority, from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
         if response.is_ok() {
-            println!("testing node shall not receive a put_response in case of success");
+            println!("received successful put_response - not acting on it in interface");
         } else {
             println!("testing node received error put_response from {}", from_address);
         }
@@ -347,7 +347,10 @@ impl Interface for TestNode {
         unimplemented!();
     }
 
-    fn handle_churn(&mut self, _close_group: Vec<NameType>) -> Vec<MethodCall> {
+    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<MethodCall> {
+        for name in close_group {
+          println!("RT: {:?}", name);
+        }
         vec![MethodCall::None]
     }
 
