@@ -112,6 +112,7 @@ impl<F> RoutingClient<F> where F: Interface {
         );
 
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        println!("Get sent out with message_id {:?}", message_id);
         Ok(message_id)
     }
 
@@ -135,6 +136,7 @@ impl<F> RoutingClient<F> where F: Interface {
             &self.id.get_crypto_secret_sign_key()
         );
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        println!("Put sent out with message_id {:?}", message_id);
         Ok(message_id)
     }
 
