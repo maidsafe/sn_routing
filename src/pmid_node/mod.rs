@@ -104,33 +104,33 @@ mod test {
 
   #[test]
   fn handle_put_get() {
-    // let mut pmid_node = PmidNode::new();
-    // let value = routing::types::generate_random_vec_u8(1024);
-    // let data = ImmutableData::new(value);
-    // let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
-    // let mut encoder = cbor::Encoder::from_memory();
-    // let encode_result = encoder.encode(&[&payload]);
-    // assert_eq!(encode_result.is_ok(), true);
-    // let bytes = array_as_vector(encoder.as_bytes());
-    // let put_result = pmid_node.handle_put(bytes.clone());
-    // assert_eq!(put_result.is_ok(), true);
-    // match put_result {
-    //   Err(InterfaceError::Abort) => panic!("Unexpected"),
-    //   Ok(MessageAction::Reply(reply_bytes)) => assert_eq!(reply_bytes, bytes),
-    //   _ => panic!("Unexpected"),
-    // }
-    // let get_result = pmid_node.handle_get(data.name());
-    // assert_eq!(get_result.is_err(), false);
-    // match get_result.ok().unwrap() {
-    //     MessageAction::Reply(ref x) => {
-    //         let mut d = cbor::Decoder::from_bytes(&x[..]);
-    //         let obj_after: Payload = d.decode().next().unwrap().unwrap();
-    //         assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::ImmutableData);
-    //         let data_after = obj_after.get_data::<ImmutableData>();
-    //         assert_eq!(data.name().0.to_vec(), data_after.name().0.to_vec());
-    //         assert_eq!(data.serialised_contents(), data_after.serialised_contents());
-    //     },
-    //     _ => panic!("Unexpected"),
-    // }
+    let mut pmid_node = PmidNode::new();
+    let value = routing::types::generate_random_vec_u8(1024);
+    let data = ImmutableData::new(value);
+    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
+    let mut encoder = cbor::Encoder::from_memory();
+    let encode_result = encoder.encode(&[&payload]);
+    assert_eq!(encode_result.is_ok(), true);
+    let bytes = array_as_vector(encoder.as_bytes());
+    let put_result = pmid_node.handle_put(bytes.clone());
+    assert_eq!(put_result.is_ok(), true);
+    match put_result {
+      Err(InterfaceError::Abort) => panic!("Unexpected"),
+      Ok(MessageAction::Reply(reply_bytes)) => assert_eq!(reply_bytes, bytes),
+      _ => panic!("Unexpected"),
+    }
+    let get_result = pmid_node.handle_get(data.name());
+    assert_eq!(get_result.is_err(), false);
+    match get_result.ok().unwrap() {
+        MessageAction::Reply(ref x) => {
+            let mut d = cbor::Decoder::from_bytes(&x[..]);
+            let obj_after: Payload = d.decode().next().unwrap().unwrap();
+            assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::ImmutableData);
+            let data_after = obj_after.get_data::<ImmutableData>();
+            assert_eq!(data.name().0.to_vec(), data_after.name().0.to_vec());
+            assert_eq!(data.serialised_contents(), data_after.serialised_contents());
+        },
+        _ => panic!("Unexpected"),
+    }
   }
 }
