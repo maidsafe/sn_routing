@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 #![allow(dead_code)]
-use maidsafe_types;
+use maidsafe_types::data_tags;
 use maidsafe_types::StructuredData;
 use routing::NameType;
 use routing::node_interface::MethodCall;
@@ -26,19 +26,19 @@ use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use cbor;
+use data_parser::Data;
+use transfer_parser::transfer_tags::VERSION_HANDLER_ACCOUNT_TAG;
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct VersionHandlerSendable {
     name: NameType,
-    tag: u64,
-    data: Vec<u8>,
+    data: Vec<u8>
 }
 
 impl VersionHandlerSendable {
     pub fn new(name: NameType, data: Vec<u8>) -> VersionHandlerSendable {
         VersionHandlerSendable {
             name: name,
-            tag: 209, // FIXME : Change once the tag is freezed
             data: data,
         }
     }
@@ -53,7 +53,7 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn type_tag(&self) -> u64 {
-        self.tag.clone()
+      VERSION_HANDLER_ACCOUNT_TAG
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
@@ -110,25 +110,40 @@ impl VersionHandler {
   }
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
-    let mut data_name : NameType;
-    let mut d = cbor::Decoder::from_bytes(&data[..]);
-    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
-    match payload.get_type_tag() {
-      maidsafe_types::PayloadTypeTag::StructuredData => {
-        data_name = payload.get_data::<StructuredData>().name();
+    let mut version_name : NameType;
+    let version_handler_sendable: Box<Sendable>;
+    let mut decoder = cbor::Decoder::from_bytes(&data[..]);
+    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+      match parsed_data {
+          Data::Structured(parsed) => version_handler_sendable = Box::new(parsed),
+          _ => return Err(From::from(ResponseError::InvalidRequest)),
       }
-       _ => return Err(From::from(ResponseError::InvalidRequest))
+    } else {
+      return Err(From::from(ResponseError::InvalidRequest));
     }
+
+    version_name = version_handler_sendable.name();
     // the type_tag needs to be stored as well, ChunkStore::put is overwritable
-    self.chunk_store_.put(data_name.clone(), data.clone());
-    return Ok(MessageAction::Reply(data));
+    self.chunk_store_.put(version_name.clone(), version_handler_sendable.clone());
+    return Ok(MessageAction::Reply(version_handler_sendable));
   }
 
-  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
-      let version_handler_sendable : VersionHandlerSendable = payload.get_data();
-      // TODO: Assuming the incoming merged entry has the priority and shall also be trusted first
-      self.chunk_store_.delete(version_handler_sendable.name());
-      self.chunk_store_.put(version_handler_sendable.name(), version_handler_sendable.get_data().clone());
+  pub fn handle_account_transfer(&mut self, data : Vec<u8>) {
+      let mut version_name : NameType;
+      let version_handler_sendable: Box<Sendable>;
+      let mut decoder = cbor::Decoder::from_bytes(&data[..]);
+      if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+        match parsed_data {
+            Data::Structured(parsed) => version_handler_sendable = Box::new(parsed),
+            _ => return Err(From::from(ResponseError::InvalidRequest)),
+        }
+      } else {
+        return Err(From::from(ResponseError::InvalidRequest));
+      }
+
+      version_name = version_handler_sendable.name();
+      self.chunk_store_.delete(version_name.clone());
+      self.chunk_store_.put(version_name.clone(), version_handler_sendable.clone());
   }
 
   pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
@@ -137,19 +152,33 @@ impl VersionHandler {
        for name in names {
             let data = self.chunk_store_.get(name.clone());
             let version_handler_sendable = VersionHandlerSendable::new(name, data);
-            let payload = maidsafe_types::Payload::new(maidsafe_types::PayloadTypeTag::VersionHandlerAccountTransfer,
-                                                       &version_handler_sendable);
-            let mut e = cbor::Encoder::from_memory();
-            e.encode(&[payload]).unwrap();
+            let mut encoder = cbor::Encoder::from_memory();
+            encoder.encode(&[version_handler_sendable]).unwrap();
             actions.push(MethodCall::Refresh {
-                type_tag: version_handler_sendable.type_tag(), from_group: version_handler_sendable.name(),
-                payload: e.as_bytes().to_vec()
+                type_tag: version_handler_sendable.type_tag(),
+                from_group: version_handler_sendable.name(),
+                payload: encoder.as_bytes().to_vec()
             });
        }
        self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
        actions
   }
 
+}
+
+impl Encodable for VersionHandlerSendable {
+    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
+        cbor::CborTagEncode::new(VERSION_HANDLER_ACCOUNT_TAG,
+            &(&self.name, &self.data)).encode(encoder)
+    }
+}
+
+impl Decodable for VersionHandlerSendable {
+    fn decode<D: Decoder>(decoder: &mut D)->Result<VersionHandlerSendable, D::Error> {
+        let (name, data) = try!(Decodable::decode(decoder));
+        let value = VersionHandlerSendable {name: name, data: data};
+        Ok(value)
+    }
 }
 
 #[cfg(test)]
