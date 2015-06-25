@@ -151,7 +151,7 @@ impl<F> RoutingClient<F> where F: Interface {
                                 reply_to: None,
                                 relayed_for: Some(self.public_id.name()),
                             },
-                Authority::Unknown),
+                Authority::ManagedNode),
             PutData{ name: content.name(), data: content.serialised_contents() },
             &self.id.get_crypto_secret_sign_key());
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
