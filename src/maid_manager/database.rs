@@ -22,7 +22,6 @@ use utils::median;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use cbor;
 
-use maidsafe_types::{Payload, PayloadTypeTag};
 use routing::NameType;
 use routing::sendable::Sendable;
 use routing::node_interface::MethodCall;

@@ -23,7 +23,7 @@ use std::cmp;
 use routing::{ NameType, closer_to_target };
 use routing::node_interface::MethodCall;
 use routing::types::MessageAction;
-use maidsafe_types;
+use maidsafe_types::data_tags;
 use cbor::Decoder;
 use cbor;
 use routing::sendable::Sendable;
@@ -31,6 +31,7 @@ use routing::error::{InterfaceError, ResponseError};
 type Address = NameType;
 use routing::types::GROUP_SIZE;
 use utils::median;
+use data_parser::Data;
 
 pub use self::database::DataManagerSendable;
 
@@ -113,26 +114,23 @@ impl DataManager {
   }
 
   pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<MessageAction, InterfaceError> {
-    let mut name : NameType;
-    let mut d = Decoder::from_bytes(&data[..]);
-    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
-    match payload.get_type_tag() {
-      maidsafe_types::PayloadTypeTag::ImmutableData => {
-        name = payload.get_data::<maidsafe_types::ImmutableData>().name();
+    let data: Box<Sendable>;
+    let mut decoder = Decoder::from_bytes(&data[..]);
+    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+      match parsed_data {
+        Data::Immutable(parsed) => data = Box::new(parsed),
+        Data::ImmutableBackup(parsed) => data = Box::new(parsed),
+        Data::ImmutableSacrificial(parsed) => data = Box::new(parsed),
+        Data::Structured(parsed) => data = Box::new(parsed),
+        Data::PublicMaid(parsed) => data = Box::new(parsed),
+        Data::PublicMpid(parsed) => data = Box::new(parsed),
+        _ => return Err(From::from(ResponseError::InvalidRequest)),
       }
-      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
-        name = payload.get_data::<maidsafe_types::ImmutableDataBackup>().name();
-      }
-      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
-        name = payload.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
-      }
-      maidsafe_types::PayloadTypeTag::PublicMaid => {
-        name = payload.get_data::<maidsafe_types::PublicIdType>().name();
-      }
-      _ => return Err(From::from(ResponseError::InvalidRequest))
+    } else {
+      return Err(From::from(ResponseError::InvalidRequest));
     }
 
-    let data_name = NameType::new(name.get_id());
+    let data_name = data.name();
     if self.db_.exist(&data_name) {
       return Err(InterfaceError::Abort);
     }
@@ -144,12 +142,12 @@ impl DataManager {
           cmp::Ordering::Greater
         });
     let pmid_nodes_num = cmp::min(nodes_in_table.len(), PARALLELISM);
-    let mut dest_pmids : Vec<NameType> = Vec::new();
+    let mut dest_pmids: Vec<NameType> = Vec::new();
     for index in 0..pmid_nodes_num {
       dest_pmids.push(nodes_in_table[index].clone());
     }
     self.db_.put_pmid_nodes(&data_name, dest_pmids.clone());
-    if payload.get_type_tag() == maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial {
+    if data.type_tag() == data_tags::IMMUTABLE_DATA_SACRIFICIAL_TAG {
       self.resource_index = cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
     }
     Ok(MessageAction::SendOn(dest_pmids))
@@ -275,7 +273,7 @@ impl DataManager {
                           close_grp_node_to_add = close_grp_it.clone();
                           break;
                       }
-                  }                  
+                  }
                   return Some(close_grp_node_to_add);
               }
           },

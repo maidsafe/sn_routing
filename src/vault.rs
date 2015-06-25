@@ -13,8 +13,7 @@
 // KIND, either express or implied.
 //
 // Please review the Licences for the specific language governing permissions and limitations
-// relating to use of the SAFE Network Software.                                                              */
-
+// relating to use of the SAFE Network Software.
 
 #![deny(missing_docs)]
 
@@ -40,6 +39,7 @@ use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
 use pmid_manager::{PmidManager, PmidManagerAccountWrapper, PmidManagerAccount};
 use pmid_node::PmidNode;
 use version_handler::{VersionHandler, VersionHandlerSendable};
+use data_parser::Data;
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
