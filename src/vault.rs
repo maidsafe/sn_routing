@@ -112,12 +112,14 @@ impl Interface for VaultFacade {
             Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
             Authority::NaeManager => {
                 // both DataManager and VersionHandler are NaeManagers
-                // However Put request to DataManager is from ClientManager (MaidManager)
-                // meanwhile Put request to VersionHandler is from Node
-                match from_authority {
-                  Authority::ClientManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
-                  Authority::ManagedNode => { return self.version_handler.handle_put(data); }
-                  _ => { return Err(From::from(ResponseError::InvalidRequest)); }
+                // client put PublicMaid will directly goes to DM (i.e. from_authority is ManagedNode)
+                // client put other data types (Immutable, StructuredData) will all goes to MaidManager first,
+                // then goes to DataManager (i.e. from_authority is always ClientManager)
+                let mut d = Decoder::from_bytes(&data[..]);
+                let payload: Payload = d.decode().next().unwrap().unwrap();
+                match payload.get_type_tag() {
+                    PayloadTypeTag::StructuredData => self.version_handler.handle_put(data),
+                    _ => self.data_manager.handle_put(&data, &mut (self.nodes_in_table)),
                 }
             }
             Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
