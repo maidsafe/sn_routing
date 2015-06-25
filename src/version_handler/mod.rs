@@ -120,8 +120,8 @@ impl VersionHandler {
        _ => return Err(From::from(ResponseError::InvalidRequest))
     }
     // the type_tag needs to be stored as well, ChunkStore::put is overwritable
-    self.chunk_store_.put(data_name, data);
-    return Err(InterfaceError::Abort);
+    self.chunk_store_.put(data_name.clone(), data.clone());
+    return Ok(MessageAction::Reply(data));
   }
 
   pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
@@ -173,12 +173,13 @@ mod test {
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
     assert_eq!(encode_result.is_ok(), true);
-
-    let put_result = version_handler.handle_put(array_as_vector(encoder.as_bytes()));
-    assert_eq!(put_result.is_err(), true);
-    match put_result.err().unwrap() {
-        InterfaceError::Abort => assert_eq!(true, true),
-        _ => assert_eq!(true, false),
+    let bytes = array_as_vector(encoder.as_bytes());
+    let put_result = version_handler.handle_put(bytes.clone());
+    assert_eq!(put_result.is_ok(), true);
+    match put_result {
+        Err(InterfaceError::Abort) => panic!("Unexpected"),
+        Ok(MessageAction::Reply(replied_bytes)) => assert_eq!(replied_bytes, bytes),
+        _ => panic!("Unexpected"),
     }
 
     let data_name = NameType::new(sdv.name().0);
