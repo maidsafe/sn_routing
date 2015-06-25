@@ -44,6 +44,7 @@ impl PmidNode {
   }
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
+    println!("PN PUT");
     let mut data_name : NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: Payload = d.decode().next().unwrap().unwrap();
@@ -67,8 +68,8 @@ impl PmidNode {
     }
     if self.chunk_store_.has_disk_space(data.len()) {
       // the type_tag needs to be stored as well
-      self.chunk_store_.put(data_name, data);
-      return Err(InterfaceError::Abort);
+      self.chunk_store_.put(data_name, data.clone());
+      return Ok(MessageAction::Reply(data));
     }
     // TODO: due to the limitation of current return type, only one notification can be sent out
     //       so we will try to remove the first Sacrificial copy larger enough to free up space

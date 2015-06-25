@@ -113,8 +113,8 @@ impl VersionHandler {
        _ => return Err(From::from(ResponseError::InvalidRequest))
     }
     // the type_tag needs to be stored as well, ChunkStore::put is overwritable
-    self.chunk_store_.put(data_name, data);
-    return Err(InterfaceError::Abort);
+    self.chunk_store_.put(data_name.clone(), data.clone());
+    return Ok(MessageAction::Reply(data));
   }
 
   pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
