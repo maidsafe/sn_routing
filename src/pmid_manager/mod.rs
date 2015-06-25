@@ -56,25 +56,21 @@ impl PmidManager {
     if response.is_err() {
       return MethodCall::None;
     }
+
     let data = response.clone().unwrap();
     self.db_.delete_data(from_address, data.len() as u64);
+
     let mut decoder = Decoder::from_bytes(&data[..]);
-    let removed_copy: Payload = decoder.decode().next().unwrap().unwrap();
-    let mut name : NameType;
-    match removed_copy.get_type_tag() {
-      PayloadTypeTag::ImmutableData => {
-        name = removed_copy.get_data::<ImmutableData>().name();
-      }
-      PayloadTypeTag::ImmutableDataBackup => {
-        name = removed_copy.get_data::<ImmutableDataBackup>().name();
-      }
-      PayloadTypeTag::ImmutableDataSacrificial => {
-        name = removed_copy.get_data::<ImmutableDataSacrificial>().name();
-      }
-      _ => { return MethodCall::None; }
+    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+        match parsed_data {
+            Data::Immutable(parsed) => return MethodCall::SendOn { destination: parsed.name() },
+            Data::ImmutableBackup(parsed) => return MethodCall::SendOn { destination: parsed.name() },
+            Data::ImmutableSacrificial(parsed) => return MethodCall::SendOn { destination: parsed.name() },
+            _ => return MethodCall::None,
+        }
     }
-    // Routing holds the payload and will attach it to compose the response message to DataManager
-    MethodCall::SendOn { destination: name }
+
+    MethodCall::None
   }
 
   pub fn handle_account_transfer(&mut self, payload : Payload) {
