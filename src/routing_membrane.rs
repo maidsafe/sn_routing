@@ -889,14 +889,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                               to, put_data.data.clone()) {
             Ok(action) => match action {
                 MessageAction::Reply(reply_data) => {
-                    let reply_to = match our_authority {
-                        Authority::ClientManager => match header.reply_to() {
-                            Some(client) => client,
-                            None => header.from()
-                        },
-                        _ => header.from()
-                    };
-                    try!(self.send_put_reply(&reply_to, our_authority, &header, put_data, Ok(reply_data)));
+                    // different pattern to accommodate for "PUT reply only from CM goes to client"
+                    // FIXME: such a different pattern needs to be activated for disabling PutResponse
+                    //        can be revised an handled better at different places in code
+                    // let reply_to = match our_authority {
+                    //     Authority::ClientManager => match header.reply_to() {
+                    //         Some(client) => client,
+                    //         None => header.from()
+                    //     },
+                    //     _ => header.from()
+                    // };
+                    let reply_to = header.send_to().dest;
+                    try!(self.send_put_reply(&reply_to, our_authority, &header,
+                        &put_data, Ok(reply_data)));
                 },
                 MessageAction::SendOn(destinations) => {
                     for destination in destinations {
@@ -904,9 +909,30 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     }
                 },
             },
-            Err(InterfaceError::Abort) => {;},
+            Err(InterfaceError::Abort) => {},
+            Err(InterfaceError::Response(ResponseError::FailedToStoreData(deleted_data))) => {
+                // patched for Vaults - this behaviour needs to be put back in Vaults
+                if deleted_data != put_data.data
+                    && our_authority == Authority::ManagedNode {
+                    // first send the Successful put reply
+                    let reply_to = header.send_to().dest;
+                    try!(self.send_put_reply(&reply_to, our_authority.clone(), &header,
+                        &put_data, Ok(put_data.data.clone())));
+                    // then send under a new message_id the error reply
+                    let reply_to = header.from();
+                    let mut header_for_new_flow = header.clone();
+                    // bad approach to generating a new deterministic message_id
+                    header_for_new_flow.message_id = header_for_new_flow.message_id.wrapping_add(12345u32);
+                    try!(self.send_put_reply(&reply_to, our_authority, &header_for_new_flow,
+                        &put_data, Ok(deleted_data)));
+                } else {
+                    try!(self.send_put_reply(&header.from(), our_authority, &header,
+                        &put_data, Err(ResponseError::FailedToStoreData(deleted_data))));
+                }
+            },
             Err(InterfaceError::Response(error)) => {
-                try!(self.send_put_reply(&header.from(), our_authority, &header, put_data, Err(error)));
+                try!(self.send_put_reply(&header.from(), our_authority, &header,
+                    &put_data, Err(error)));
             }
         }
         Ok(())
@@ -915,7 +941,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn send_put_reply(&mut self, destination:   &NameType,
                              our_authority: Authority,
                              orig_header:   &MessageHeader,
-                             orig_message:  PutData,
+                             orig_message:  &PutData,
                              reply_data:    Result<Vec<u8>, ResponseError>) -> RoutingResult {
         let routing_msg = self.construct_put_data_response_msg(
             our_authority, &orig_header, orig_message, reply_data);
@@ -1390,7 +1416,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn construct_put_data_response_msg(&self,
                                        our_authority: Authority,
                                        orig_header: &MessageHeader,
-                                       orig_message: PutData,
+                                       orig_message: &PutData,
                                        reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage
     {
         let reply_header = orig_header.create_reply(&self.own_name, &our_authority);
