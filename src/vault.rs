@@ -13,8 +13,7 @@
 // KIND, either express or implied.
 //
 // Please review the Licences for the specific language governing permissions and limitations
-// relating to use of the SAFE Network Software.                                                              */
-
+// relating to use of the SAFE Network Software.
 
 #![deny(missing_docs)]
 
@@ -40,6 +39,7 @@ use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
 use pmid_manager::{PmidManager, PmidManagerAccountWrapper, PmidManagerAccount};
 use pmid_node::PmidNode;
 use version_handler::{VersionHandler, VersionHandlerSendable};
+use data_parser::Data;
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -122,7 +122,7 @@ impl Interface for VaultFacade {
         }
     }
 
-    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+    fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
                 from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<MessageAction, InterfaceError> {
         match our_authority {
             Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
@@ -196,7 +196,7 @@ impl Interface for VaultFacade {
     }
 
     fn handle_refresh(&mut self,
-                      type_tag: u64, 
+                      type_tag: u64,
                       from_group: NameType,
                       payloads: Vec<Vec<u8>>) { // payloads
         // TODO: The assumption of the incoming payloads is that it is a vector of serialized Payload type

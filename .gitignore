@@ -6,3 +6,8 @@ build/
 build-tests/
 target/
 /.idea
+/.project
+*.sublime-*
+*.bootstrap.cache
+/bin/
+.cargo/
