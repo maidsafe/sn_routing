@@ -36,7 +36,7 @@ _PmidNode_ ->> |__PmidManager__ {Delete.Sy, So}
 __PmidNode__ { [PutFailure(RemoveSacrificial(D))], [Store ? Flow_Completed : PutFailure] }
 
 Note: for each removed Sacrificial data, a PutFailure will be sent out
-Note - patch: Routing will interpret here that a FailureToStoreData with different data from a ManagedNode indicates a Success on storing the original data and send the error to preceding group as normal, but with different (deterministic message_id) 
+Note - patch: Routing will interpret here that a FailureToStoreData with different data from a ManagedNode indicates a Success on storing the original data and send the error to preceding group as normal, but with different (deterministic message_id) refer to routing issue [#423](https://github.com/maidsafe/routing/issues/423)
 
 --
 <dd>Description: Get D from TempStore or network, then PutRequest(D).</ddt>
