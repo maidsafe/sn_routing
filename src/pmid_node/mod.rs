@@ -67,8 +67,8 @@ impl PmidNode {
     }
     if self.chunk_store_.has_disk_space(data.len()) {
       // the type_tag needs to be stored as well
-      self.chunk_store_.put(data_name, data);
-      return Err(InterfaceError::Abort);
+      self.chunk_store_.put(data_name, data.clone());
+      return Ok(MessageAction::Reply(data));
     }
     // TODO: due to the limitation of current return type, only one notification can be sent out
     //       so we will try to remove the first Sacrificial copy larger enough to free up space
@@ -118,11 +118,12 @@ mod test {
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
     assert_eq!(encode_result.is_ok(), true);
-
-    let put_result = pmid_node.handle_put(array_as_vector(encoder.as_bytes()));
-    assert_eq!(put_result.is_err(), true);
-    match put_result.err().unwrap() {
-      InterfaceError::Abort => { }
+    let bytes = array_as_vector(encoder.as_bytes());
+    let put_result = pmid_node.handle_put(bytes.clone());
+    assert_eq!(put_result.is_ok(), true);
+    match put_result {
+      Err(InterfaceError::Abort) => panic!("Unexpected"),
+      Ok(MessageAction::Reply(reply_bytes)) => assert_eq!(reply_bytes, bytes),
       _ => panic!("Unexpected"),
     }
     let get_result = pmid_node.handle_get(data.name());

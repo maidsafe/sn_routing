@@ -12,11 +12,12 @@ For each removed Sacrificial copy, a PutFailure will be sent out from PmidNode t
 _Client_   =>> |__ClientManager__ (Primary, Backup, Sacrificial)[Allow ? So : PutFailure]
           *->> |__DataManager__  [Exist(D) ? Terminate_Flow : {AddPmid.Sy, So}]
           *->> |__PmidManager__ {Put.Sy, So}
-          *->  |_PmidNode_ [Store ? Flow_Completed : Primary? TryToRemoveSacrificial : PutFailure]
+          *->  |_PmidNode_ [Store ? Flow_Completed_and_Reply : Primary? TryToRemoveSacrificial : PutFailure]
 
 Note : with the current routing API design, the put request of Backup and Sacrificial copies will be sent using the same put request as Primary.
 However, the DestinationAddress will be used to differentiate the different type of copy.
 i.e. requiring a hash verification process in DataManager and PmidNode to replace the data_name
+Note : an active discussion remains whether Put flow needs to Reply on success.
 
 --
 #####MaidManager::PutFailure
@@ -35,6 +36,7 @@ _PmidNode_ ->> |__PmidManager__ {Delete.Sy, So}
 __PmidNode__ { [PutFailure(RemoveSacrificial(D))], [Store ? Flow_Completed : PutFailure] }
 
 Note: for each removed Sacrificial data, a PutFailure will be sent out
+Note - patch: Routing will interpret here that a FailureToStoreData with different data from a ManagedNode indicates a Success on storing the original data and send the error to preceding group as normal, but with different (deterministic message_id) refer to routing issue [#423](https://github.com/maidsafe/routing/issues/423)
 
 --
 <dd>Description: Get D from TempStore or network, then PutRequest(D).</ddt>

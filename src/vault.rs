@@ -382,9 +382,10 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             let dest = DestinationAddress{ dest : NameType::new([6u8; 64]), relay_to: None };
             let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager, from.clone(), dest,
                                              routing::types::array_as_vector(encoder.as_bytes()));
-            assert_eq!(put_result.is_err(), true);
-            match put_result.err().unwrap() {
-             InterfaceError::Abort => { }
+            assert_eq!(put_result.is_ok(), true);
+            match put_result {
+             Err(InterfaceError::Abort) => panic!("Unexpected"),
+             Ok(MessageAction::Reply(_)) => {},
              _ => panic!("Unexpected"),
             }
             let from = NameType::new([7u8; 64]);
@@ -457,9 +458,10 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                         payload: Vec<u8>) {
         let put_result = vault.handle_put(Authority::NaeManager, Authority::ManagedNode,
             from.clone(), dest, payload);
-        assert_eq!(put_result.is_err(), true);
-        match put_result.err().unwrap() {
-             InterfaceError::Abort => { },
+        assert_eq!(put_result.is_ok(), true);
+        match put_result {
+             Err(InterfaceError::Abort) => panic!("Unexpected"),
+             Ok(MessageAction::Reply(_)) => {},
              _ => panic!("Unexpected"),
         }
     }
