@@ -417,16 +417,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .map(|node_info| node_info.fob.name())
                     .collect::<Vec<NameType>>();
             close_group.insert(0, self.own_name.clone());
-            match self.mut_interface().handle_churn(close_group) {
-                MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
-                MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-                MethodCall::Post => unimplemented!(),
-                MethodCall::None => (),
-                MethodCall::SendOn { destination } =>
-                    ignore(self.send_on(&put_data_response.name, &header,
-                                 destination, MessageTypeTag::PutDataResponse, body)),
-            };
+            let churn_actions = self.mut_interface().handle_churn(close_group);
+            for action in churn_actions {
+                match action {
+                    MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                    MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                    MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                    MethodCall::Post => unimplemented!(),
+                    MethodCall::None => (),
+                    MethodCall::SendOn { destination } =>
+                        println!("IGNORED: on handle_churn MethodCall:SendOn is not a Valid action")
+                };
+            }
         };
     }
 
@@ -792,16 +794,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .map(|node_info| node_info.fob.name())
                     .collect::<Vec<NameType>>();
             close_group.insert(0, self.own_name.clone());
-            match self.mut_interface().handle_churn(close_group) {
-                MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
-                MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-                MethodCall::Post => unimplemented!(),
-                MethodCall::None => (),
-                MethodCall::SendOn { destination } =>
-                    ignore(self.send_on(&put_data_response.name, &header,
-                                 destination, MessageTypeTag::PutDataResponse, body)),
-            };
+            let churn_actions = self.mut_interface().handle_churn(close_group);
+            for action in churn_actions {
+                match action {
+                    MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                    MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                    MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                    MethodCall::Post => unimplemented!(),
+                    MethodCall::None => (),
+                    MethodCall::SendOn { destination } =>
+                        println!("IGNORED: on handle_churn MethodCall:SendOn is not a Valid action")
+                };
+            }
         }
         Ok(())
     }
