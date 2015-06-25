@@ -40,6 +40,8 @@ use pmid_manager::{PmidManager, PmidManagerAccountWrapper, PmidManagerAccount};
 use pmid_node::PmidNode;
 use version_handler::{VersionHandler, VersionHandlerSendable};
 use data_parser::Data;
+use transfer_parser::transfer_tags::{MAID_MANAGER_ACCOUNT_TAG, DATA_MANAGER_ACCOUNT_TAG,
+    PMID_MANAGER_ACCOUNT_TAG, VERSION_HANDLER_ACCOUNT_TAG, DATA_MANAGER_STATS_TAG};
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -64,7 +66,7 @@ fn merge_payload(type_tag: u64, from_group: NameType, payloads: Vec<Vec<u8>>) ->
         Some(merge_refreashable(MaidManagerAccountWrapper::new(from_group, MaidManagerAccount::new()),
                                 PayloadTypeTag::MaidManagerAccountTransfer, payloads))
       }
-      ::transfer_tags::DATA_MANAGER_ACCOUNT_TAG => {
+      DATA_MANAGER_ACCOUNT_TAG => {
         Some(merge_refreashable(DataManagerSendable::new(from_group, vec![]),
                                 PayloadTypeTag::DataManagerAccountTransfer, payloads))
       }
@@ -525,7 +527,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
 
             match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
-                    assert_eq!(*type_tag, ::transfer_tags::DATA_MANAGER_ACCOUNT_TAG);
+                    assert_eq!(*type_tag, DATA_MANAGER_ACCOUNT_TAG);
                     assert_eq!(*from_group, data.name());
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     let transfer_payload: Payload = d.decode().next().unwrap().unwrap();
