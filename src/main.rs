@@ -66,6 +66,7 @@ mod version_handler;
 mod chunk_store;
 mod pmid_node;
 mod data_parser;
+mod transfer_parser;
 mod vault;
 mod utils;
 
@@ -86,17 +87,6 @@ impl Vault {
       routing_node: routing::routing_node::RoutingNode::<VaultFacade, VaultGenerator>::new(VaultGenerator),
     }
   }
-}
-
-mod transfer_tags {
-    use maidsafe_types;
-    pub const MAIDSAFE_TRANSFER_TAG: u64 = maidsafe_types::MAIDSAFE_TAG + 200;
-
-    pub const MAID_MANAGER_ACCOUNT_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 1;
-    pub const DATA_MANAGER_ACCOUNT_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 2;
-    pub const PMID_MANAGER_ACCOUNT_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 3;
-    pub const VERSION_HANDLER_ACCOUNT_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 4;
-    pub const DATA_MANAGER_STATS_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 5;
 }
 
 // ==========================   Program Options   =================================

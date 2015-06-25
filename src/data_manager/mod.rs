@@ -20,18 +20,22 @@
 mod database;
 
 use std::cmp;
-use routing::{ NameType, closer_to_target };
-use routing::node_interface::MethodCall;
-use routing::types::MessageAction;
-use maidsafe_types::data_tags;
-use cbor::Decoder;
 use cbor;
-use routing::sendable::Sendable;
+use cbor::CborTagEncode;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+
+use maidsafe_types::data_tags;
+use routing::{closer_to_target, NameType};
 use routing::error::{InterfaceError, ResponseError};
-type Address = NameType;
-use routing::types::GROUP_SIZE;
-use utils::median;
+use routing::node_interface::MethodCall;
+use routing::sendable::Sendable;
+use routing::types::{GROUP_SIZE, MessageAction};
+
 use data_parser::Data;
+use transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG;
+use utils::median;
+
+type Address = NameType;
 
 pub use self::database::DataManagerSendable;
 
@@ -43,10 +47,9 @@ pub struct DataManager {
   resource_index : u64
 }
 
-#[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct DataManagerStatsSendable {
     name: NameType,
-    tag: u64,
     resource_index: u64
 }
 
@@ -54,7 +57,6 @@ impl DataManagerStatsSendable {
     pub fn new(name: NameType, resource_index: u64) -> DataManagerStatsSendable {
         DataManagerStatsSendable {
             name: name,
-            tag: 220, // FIXME : Change once the tag is freezed
             resource_index: resource_index
         }
     }
@@ -70,7 +72,7 @@ impl Sendable for DataManagerStatsSendable {
     }
 
     fn type_tag(&self) -> u64 {
-        self.tag.clone()
+        DATA_MANAGER_STATS_TAG
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
@@ -91,9 +93,30 @@ impl Sendable for DataManagerStatsSendable {
             resource_indexes.push(tmp_senderable.get_resource_index());
         }
         assert!(resource_indexes.len() < (GROUP_SIZE + 1) / 2);
-        Some(Box::new(DataManagerStatsSendable::new(NameType([0u8;64]), median(&resource_indexes))))
+        Some(Box::new(DataManagerStatsSendable::new(NameType([0u8; 64]),
+                                                    median(&resource_indexes))))
     }
 }
+
+impl Encodable for DataManagerStatsSendable {
+    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
+        CborTagEncode::new(DATA_MANAGER_STATS_TAG,
+                           &(&self.name, &self.resource_index)).encode(encoder)
+    }
+}
+
+impl Decodable for DataManagerStatsSendable {
+    fn decode<D: Decoder>(decoder: &mut D)->Result<DataManagerStatsSendable, D::Error> {
+        let (name, resource_index) = try!(Decodable::decode(decoder));
+        let value = DataManagerStatsSendable {
+            name: name,
+            resource_index: resource_index,
+        };
+        Ok(value)
+    }
+}
+
+
 
 impl DataManager {
   pub fn new() -> DataManager {
@@ -113,9 +136,10 @@ impl DataManager {
 	  Ok(MessageAction::SendOn(dest_pmids))
   }
 
-  pub fn handle_put(&mut self, data : &Vec<u8>, nodes_in_table : &mut Vec<NameType>) ->Result<MessageAction, InterfaceError> {
-    let data: Box<Sendable>;
-    let mut decoder = Decoder::from_bytes(&data[..]);
+  pub fn handle_put(&mut self, serialised_data : &Vec<u8>,
+                    nodes_in_table : &mut Vec<NameType>) -> Result<MessageAction, InterfaceError> {
+    let mut data: Box<Sendable>;
+    let mut decoder = Decoder::from_bytes(&serialised_data[..]);
     if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
       match parsed_data {
         Data::Immutable(parsed) => data = Box::new(parsed),
@@ -155,16 +179,15 @@ impl DataManager {
 
   pub fn handle_get_response(&mut self, response: Vec<u8>) -> MethodCall {
       let mut name: NameType;
-      let mut d = Decoder::from_bytes(&response[..]);
-      let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
-      match payload.get_type_tag() {
-        maidsafe_types::PayloadTypeTag::ImmutableData => {
-          name = payload.get_data::<maidsafe_types::ImmutableData>().name();
-        }
-        maidsafe_types::PayloadTypeTag::PublicMaid => {
-          name = payload.get_data::<maidsafe_types::PublicIdType>().name();
-        }
-        _ => return MethodCall::None,
+      let mut decoder = Decoder::from_bytes(&response[..]);
+      if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+          match parsed_data {
+              Data::Immutable(parsed) => name = parsed.name(),
+              Data::PublicMaid(parsed) => name = parsed.name(),
+              _ => return MethodCall::None,
+          }
+      } else {
+          return MethodCall::None;
       }
 
       let replicate_to = self.replicate_to(&name);

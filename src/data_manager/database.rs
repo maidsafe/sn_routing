@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use cbor;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
 
 type Identity = NameType; // name of the chunk
 type PmidNode = NameType;
@@ -68,7 +69,7 @@ impl Sendable for DataManagerSendable {
     }
 
     fn type_tag(&self) -> u64 {
-        ::transfer_tags::DATA_MANAGER_ACCOUNT_TAG
+        DATA_MANAGER_ACCOUNT_TAG
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
@@ -120,7 +121,7 @@ impl Sendable for DataManagerSendable {
 
 impl Encodable for DataManagerSendable {
     fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(::transfer_tags::DATA_MANAGER_ACCOUNT_TAG,
+        CborTagEncode::new(DATA_MANAGER_ACCOUNT_TAG,
             &(&self.name, &self.data_holders, &self.preserialised_content,
                 &self.has_preserialised_content)).encode(encoder)
     }
@@ -224,7 +225,7 @@ impl DataManagerDatabase {
         for (key, value) in self.storage.iter() {
             if self.temp_storage_after_churn.get(key).unwrap().len() < 3 {
                 actions.push(MethodCall::Get {
-                    type_id: 206, //TODO Get type_tag correct
+                    type_id: DATA_MANAGER_ACCOUNT_TAG,
                     name: (*key).clone(),
                 });
             }
