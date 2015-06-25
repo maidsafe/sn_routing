@@ -932,7 +932,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(InterfaceError::Response(error)) => {
                 try!(self.send_put_reply(&header.from(), our_authority, &header,
-                &put_data, Err(error)));
+                    &put_data, Err(error)));
             }
         }
         Ok(())
