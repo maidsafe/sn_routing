@@ -1796,7 +1796,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
         let our_name = routing_node.own_name.clone();
-        let total_inside : u32 = 30;
+        let total_inside : u32 = 5;
         let limit_attempts : u32 = 300;
         let mut stored_public_ids : Vec<PublicId> = Vec::with_capacity(total_inside as usize);
         let mut count_inside : u32 = 0;
@@ -1849,7 +1849,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
         let our_name = routing_node.own_name.clone();
-        let total_inside : u32 = 30;
+        let total_inside : u32 = 5;
         let limit_attempts : u32 = 300;
         let mut stored_public_ids : Vec<PublicId> = Vec::with_capacity(total_inside as usize);
         let mut count_inside : u32 = 0;
