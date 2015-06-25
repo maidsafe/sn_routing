@@ -44,7 +44,6 @@ impl PmidNode {
   }
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
-    println!("PN PUT");
     let mut data_name : NameType;
     let mut d = Decoder::from_bytes(&data[..]);
     let payload: Payload = d.decode().next().unwrap().unwrap();
