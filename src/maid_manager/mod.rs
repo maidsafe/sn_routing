@@ -44,6 +44,13 @@ impl MaidManager {
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     let mut destinations : Vec<NameType> = Vec::new();
     match payload.get_type_tag() {
+      maidsafe_types::PayloadTypeTag::StructuredData => {
+        let structured_data : maidsafe_types::StructuredData = payload.get_data();
+        if !self.db_.put_data(from, structured_data.value().len() as u64) {
+          return Err(From::from(ResponseError::InvalidRequest));
+        }
+        destinations.push(NameType::new(structured_data.name().get_id()));
+      }
       maidsafe_types::PayloadTypeTag::ImmutableData => {
         let immutable_data : maidsafe_types::ImmutableData = payload.get_data();
         if !self.db_.put_data(from, immutable_data.value().len() as u64) {
