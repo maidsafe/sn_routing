@@ -1,4 +1,8 @@
 # Routing - Change Log
+## [0.2.5]
+
+- [#421](https://github.com/maidsafe/routing/pull/421) Set Authority unauthorised put to ManagedNode to accommodate Vaults for now
+
 ## [0.2.4]
 
 - [#419](https://github.com/maidsafe/routing/pull/419) Correct ClientInterface::HandlePutResponse
