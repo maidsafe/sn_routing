@@ -25,7 +25,7 @@ use routing::node_interface::MethodCall;
 use routing::types::{MessageAction, DestinationAddress};
 use routing::error::{ResponseError, InterfaceError};
 use routing::sendable::Sendable;
-pub use self::database::PmidManagerAccountWrapper;
+pub use self::database::{PmidManagerAccountWrapper, PmidManagerAccount};
 
 use cbor::Decoder;
 

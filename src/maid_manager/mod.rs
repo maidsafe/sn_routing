@@ -26,7 +26,7 @@ use routing::error::{ResponseError, InterfaceError};
 use maidsafe_types;
 use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
-pub use self::database::MaidManagerAccountWrapper;
+pub use self::database::{MaidManagerAccountWrapper, MaidManagerAccount};
 
 type Address = NameType;
 
@@ -96,7 +96,6 @@ mod test {
     use routing::types::*;
     use routing::NameType;
     use routing::sendable::Sendable;
-    use super::database::MaidManagerAccount;
 
     #[test]
     fn handle_put() {
