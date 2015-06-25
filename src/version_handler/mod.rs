@@ -17,6 +17,7 @@
 
 #![allow(dead_code)]
 use maidsafe_types;
+use maidsafe_types::StructuredData;
 use routing::NameType;
 use routing::node_interface::MethodCall;
 use routing::error::{ResponseError, InterfaceError};
@@ -67,17 +68,23 @@ impl Sendable for VersionHandlerSendable {
 
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
         let mut tmp_wrapper: VersionHandlerSendable;
-        let mut data: Vec<u64> = Vec::new();
+        let mut sdvs: Vec<Box<Sendable>> = Vec::new();
         for value in responses {
             let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
             tmp_wrapper = d.decode().next().unwrap().unwrap();
-            for val in tmp_wrapper.get_data().iter() {
-                data.push(*val as u64);
-            }
+            let mut d_sdv = cbor::Decoder::from_bytes(&tmp_wrapper.get_data()[..]);
+            let sdv: StructuredData = d_sdv.decode().next().unwrap().unwrap();
+            sdvs.push(Box::new(sdv));
         }
-        assert!(data.len() < (GROUP_SIZE + 1) / 2);
-        Some(Box::new(VersionHandlerSendable::new(NameType([0u8;64]),
-            vec![super::utils::median(&data) as u8])))
+        assert!(sdvs.len() < (GROUP_SIZE + 1) / 2);
+        let mut d = cbor::Decoder::from_bytes(&self.data[..]);
+        let seed_sdv: StructuredData = d.decode().next().unwrap().unwrap();
+        match seed_sdv.merge(sdvs) {
+            Some(merged_sdv) => {
+                Some(Box::new(VersionHandlerSendable::new(self.name.clone(), merged_sdv.serialised_contents())))
+            }
+            None => None
+        }
     }
 
 }
@@ -108,7 +115,7 @@ impl VersionHandler {
     let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
     match payload.get_type_tag() {
       maidsafe_types::PayloadTypeTag::StructuredData => {
-        data_name = payload.get_data::<maidsafe_types::StructuredData>().name();
+        data_name = payload.get_data::<StructuredData>().name();
       }
        _ => return Err(From::from(ResponseError::InvalidRequest))
     }

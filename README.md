@@ -19,40 +19,6 @@
 An autonomous network capable of data storage/publishing/sharing as well as computation, value transfer (crypto currency support) and more. Please see below for a more detailed description of the operations involved in data storage.
 
 
-#Todo Items
-
-## [0.0.4] - integrate with routing and safecoin farming initial work
-- [x] [MAID-1107](https://maidsafe.atlassian.net/browse/MAID-1107) Rename actions (changes in routing v0.1.60)
-- [x] [MAID-1008](https://maidsafe.atlassian.net/browse/MAID-1008) Documentation
-    - [x] [MAID-1009](https://maidsafe.atlassian.net/browse/MAID-1009) Personas
-        - [x] ClientManager : MaidManager
-        - [x] NodeManager : PmidManager
-        - [x] Node : PmidNode
-        - [x] NAE : DataManager, VersionHandler
-    - [x] [MAID-1011](https://maidsafe.atlassian.net/browse/MAID-1011) Accounting
-        - [x] MaidAccount : create, update and monitor
-        - [x] PmidAccount : create, update and monitor
-    - [x] [MAID-1010](https://maidsafe.atlassian.net/browse/MAID-1010) Flows
-        - [x] PutData / PutResponse
-        - [x] GetData / GetResponse
-        - [x] PostData
-- [x] [MAID-1013](https://maidsafe.atlassian.net/browse/MAID-1013) Complete unfinished code (if it will be covered by the later-on tasks in this sprint, explicitly mention it as in-code TODO comment), especially in vault.rs
-    - [x] [MAID-1109](https://maidsafe.atlassian.net/browse/MAID-1109) handle_get_key
-    - [x] [MAID-1112](https://maidsafe.atlassian.net/browse/MAID-1112) handle_put_response
-    - [x] [MAID-1113](https://maidsafe.atlassian.net/browse/MAID-1113) handle_cache_get
-    - [x] [MAID-1113](https://maidsafe.atlassian.net/browse/MAID-1113) handle_cache_put
-- [ ] [MAID-1014](https://maidsafe.atlassian.net/browse/MAID-1014) Integration test with new routing and crust (vaults bootstrap and network setup)
-    - [x] [MAID-1028](https://maidsafe.atlassian.net/browse/MAID-1028) local joining test (process counting)
-    - [x] [MAID-1016](https://maidsafe.atlassian.net/browse/MAID-1016) network example (nodes populating)
-    - [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
-- [x] [MAID-1012](https://maidsafe.atlassian.net/browse/MAID-1012) SafeCoin farming (new persona may need to be introduced, the task needs to be ‘expandable’ ) documentation
-    - [x] farming
-    - [x] account
-- [x] [MAID-1021](https://maidsafe.atlassian.net/browse/MAID-1021) Implement handling for Safecoin farming rate
-    - [x] Farming rate determined by the Sacrificial copies.
-    - [x] Farming rate drops when more copies are available and rises when less copies are available.
-
-
 #Detailed documentation
 
 ### Overview

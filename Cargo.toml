@@ -1,6 +1,6 @@
 [package]
 name = "maidsafe_vault"
-version = "0.0.3"
+version = "0.1.0"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
 documentation = "http://maidsafe.net/maidsafe_vault/latest"

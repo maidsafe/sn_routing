@@ -22,6 +22,7 @@ use std::convert::From;
 
 use time::Duration;
 use cbor::Decoder;
+use rustc_serialize::{Decodable, Encodable};
 
 use lru_time_cache::LruCache;
 
@@ -34,11 +35,11 @@ use routing::node_interface::{ Interface, MethodCall, CreatePersonas };
 use routing::sendable::Sendable;
 use routing::types::{MessageAction, DestinationAddress};
 
-use data_manager::DataManager;
-use maid_manager::MaidManager;
-use pmid_manager::PmidManager;
+use data_manager::{DataManager, DataManagerSendable, DataManagerStatsSendable};
+use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
+use pmid_manager::{PmidManager, PmidManagerAccountWrapper, PmidManagerAccount};
 use pmid_node::PmidNode;
-use version_handler::VersionHandler;
+use version_handler::{VersionHandler, VersionHandlerSendable};
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -55,6 +56,48 @@ impl Clone for VaultFacade {
     fn clone(&self) -> VaultFacade {
         VaultFacade::new()
     }
+}
+
+fn merge_payload(type_tag: u64, from_group: NameType, payloads: Vec<Vec<u8>>) -> Option<Payload> {
+    match type_tag {
+      200 => {
+        Some(merge_refreashable(MaidManagerAccountWrapper::new(from_group, MaidManagerAccount::new()),
+                                PayloadTypeTag::MaidManagerAccountTransfer, payloads))
+      }
+      206 => {
+        Some(merge_refreashable(DataManagerSendable::new(from_group, vec![]),
+                                PayloadTypeTag::DataManagerAccountTransfer, payloads))
+      }
+      220 => {
+        Some(merge_refreashable(DataManagerStatsSendable::new(from_group, 0),
+                                PayloadTypeTag::DataManagerStatsTransfer, payloads))
+      }
+      201 => {
+        Some(merge_refreashable(PmidManagerAccountWrapper::new(from_group, PmidManagerAccount::new()),
+                                PayloadTypeTag::PmidManagerAccountTransfer, payloads))
+      }
+      209 => {
+        let seed_sdv_payload = payloads[0].clone();
+        let mut d = Decoder::from_bytes(&seed_sdv_payload[..]);
+        let payload: Payload = d.decode().next().unwrap().unwrap();
+        let transfer_entry : VersionHandlerSendable = payload.get_data();
+        Some(merge_refreashable(transfer_entry, PayloadTypeTag::VersionHandlerAccountTransfer, payloads))
+      }
+      _ => None
+    }
+}
+
+fn merge_refreashable<T>(merged_entry: T, payload_type: PayloadTypeTag,
+                         payloads: Vec<Vec<u8>>) -> Payload where T: for<'a> Sendable + Encodable + Decodable + 'static {
+    let mut transfer_entries = Vec::<Box<Sendable>>::new();
+    for it in payloads.iter() {
+        let mut d = Decoder::from_bytes(&it[..]);
+        let payload: Payload = d.decode().next().unwrap().unwrap();
+        let transfer_entry : T = payload.get_data();
+        transfer_entries.push(Box::new(transfer_entry));
+    }
+    merged_entry.merge(transfer_entries);
+    Payload::new(payload_type, &merged_entry)
 }
 
 impl Interface for VaultFacade {
@@ -81,43 +124,18 @@ impl Interface for VaultFacade {
 
     fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
                 from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<MessageAction, InterfaceError> {
-        if our_authority == from_authority {
-            // Account Transfer entries will be passed down from routing as a put request,
-            // however having the same authority of from and own
-            // The incoming data is a serialized PaylodType, whose data is one entry of a serialised account data
-            let mut d = Decoder::from_bytes(&data[..]);
-            let payload: Payload = d.decode().next().unwrap().unwrap();
-            match payload.get_type_tag() {
-              PayloadTypeTag::MaidManagerAccountTransfer => {
-                self.maid_manager.handle_account_transfer(payload);
-              }
-              PayloadTypeTag::DataManagerAccountTransfer => {
-                self.data_manager.handle_account_transfer(payload);
-              }
-              PayloadTypeTag::DataManagerStatsTransfer => {
-                self.data_manager.handle_stats_transfer(payload);
-              }
-              PayloadTypeTag::PmidManagerAccountTransfer => {
-                self.pmid_manager.handle_account_transfer(payload);
-              }
-              PayloadTypeTag::VersionHandlerAccountTransfer => {
-                self.version_handler.handle_account_transfer(payload);
-              }
-              _ => {}
-            }
-            // The return from this handling branch shall always be TERMINATE of the flow
-            return Err(InterfaceError::Abort);
-        }
         match our_authority {
             Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
             Authority::NaeManager => {
                 // both DataManager and VersionHandler are NaeManagers
-                // However Put request to DataManager is from ClientManager (MaidManager)
-                // meanwhile Put request to VersionHandler is from Node
-                match from_authority {
-                  Authority::ClientManager => { return self.data_manager.handle_put(&data, &mut (self.nodes_in_table)); }
-                  Authority::ManagedNode => { return self.version_handler.handle_put(data); }
-                  _ => { return Err(From::from(ResponseError::InvalidRequest)); }
+                // client put PublicMaid will directly goes to DM (i.e. from_authority is ManagedNode)
+                // client put other data types (Immutable, StructuredData) will all goes to MaidManager first,
+                // then goes to DataManager (i.e. from_authority is always ClientManager)
+                let mut d = Decoder::from_bytes(&data[..]);
+                let payload: Payload = d.decode().next().unwrap().unwrap();
+                match payload.get_type_tag() {
+                    PayloadTypeTag::StructuredData => self.version_handler.handle_put(data),
+                    _ => self.data_manager.handle_put(&data, &mut (self.nodes_in_table)),
                 }
             }
             Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
@@ -178,10 +196,34 @@ impl Interface for VaultFacade {
     }
 
     fn handle_refresh(&mut self,
-                      _: u64, // type_tag
-                      _: NameType, // from_group
-                      _: Vec<Vec<u8>>) { // payloads
-        unimplemented!();
+                      type_tag: u64, 
+                      from_group: NameType,
+                      payloads: Vec<Vec<u8>>) { // payloads
+        // TODO: The assumption of the incoming payloads is that it is a vector of serialized Payload type
+        //       holding the transferring account entry from the close group nodes of from_group
+        match merge_payload(type_tag, from_group, payloads) {
+            Some(payload) => {
+                match payload.get_type_tag() {
+                    PayloadTypeTag::MaidManagerAccountTransfer => {
+                        self.maid_manager.handle_account_transfer(payload);
+                    }
+                    PayloadTypeTag::DataManagerAccountTransfer => {
+                        self.data_manager.handle_account_transfer(payload);
+                    }
+                    PayloadTypeTag::DataManagerStatsTransfer => {
+                        self.data_manager.handle_stats_transfer(payload);
+                    }
+                    PayloadTypeTag::PmidManagerAccountTransfer => {
+                        self.pmid_manager.handle_account_transfer(payload);
+                    }
+                    PayloadTypeTag::VersionHandlerAccountTransfer => {
+                        self.version_handler.handle_account_transfer(payload);
+                    }
+                    _ => {}
+                }
+            }
+            None => {}
+        }
     }
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
@@ -219,15 +261,15 @@ impl Interface for VaultFacade {
 }
 
 impl VaultFacade {
-   /// Initialise all the personas in the Vault interface.
-  pub fn new() -> VaultFacade {
-    VaultFacade {
-        data_manager: DataManager::new(), maid_manager: MaidManager::new(),
-        pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
-        version_handler: VersionHandler::new(), nodes_in_table: Vec::new(),
-        data_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(10), 100),
+    /// Initialise all the personas in the Vault interface.
+    pub fn new() -> VaultFacade {
+        VaultFacade {
+            data_manager: DataManager::new(), maid_manager: MaidManager::new(),
+            pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
+            version_handler: VersionHandler::new(), nodes_in_table: Vec::new(),
+            data_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(10), 100),
+        }
     }
-  }
 
 }
 
