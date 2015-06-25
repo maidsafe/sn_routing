@@ -138,8 +138,8 @@ impl DataManager {
 
   pub fn handle_put(&mut self, serialised_data : &Vec<u8>,
                     nodes_in_table : &mut Vec<NameType>) -> Result<MessageAction, InterfaceError> {
-    let mut data: Box<Sendable>;
     let mut decoder = Decoder::from_bytes(&serialised_data[..]);
+    let mut data: Box<Sendable>;
     if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
       match parsed_data {
         Data::Immutable(parsed) => data = Box::new(parsed),
@@ -208,37 +208,41 @@ impl DataManager {
                              from_address: &NameType) -> MethodCall {
     // TODO: assumption is the content in Result is the full payload of failed to store data
     //       or the removed Sacrificial copy, which indicates as a failure response.
-    let mut name : NameType;
     if response.is_err() {
       return MethodCall::None;
     }
     let data = response.clone().unwrap();
-    let mut d = Decoder::from_bytes(&data[..]);
-    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
+    let mut decoder = Decoder::from_bytes(&data[..]);
+    let mut name: NameType;
     let mut replicate = false;
-    match payload.get_type_tag() {
-      maidsafe_types::PayloadTypeTag::ImmutableData => {
-        name = payload.get_data::<maidsafe_types::ImmutableData>().name();
-        replicate = true;
+    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+      match parsed_data {
+        Data::Immutable(parsed) => {
+          name = parsed.name();
+          replicate = true;
+        },
+        Data::ImmutableBackup(parsed) => name = parsed.name(),
+        Data::ImmutableSacrificial(parsed) => {
+          name = parsed.name();
+          self.resource_index = cmp::max(1, self.resource_index - 1);
+        },
+        Data::PublicMaid(parsed) => {
+          name = parsed.name();
+          replicate = true;
+        },
+        _ => return MethodCall::None,
       }
-      maidsafe_types::PayloadTypeTag::ImmutableDataBackup => {
-        name = payload.get_data::<maidsafe_types::ImmutableDataBackup>().name();
-      }
-      maidsafe_types::PayloadTypeTag::ImmutableDataSacrificial => {
-        name = payload.get_data::<maidsafe_types::ImmutableDataSacrificial>().name();
-        self.resource_index = cmp::max(1, self.resource_index - 1);
-      }
-      maidsafe_types::PayloadTypeTag::PublicMaid => {
-        name = payload.get_data::<maidsafe_types::PublicIdType>().name();
-        replicate = true;
-      }
-      _ => return MethodCall::None
+    } else {
+      return MethodCall::None;
     }
+
     self.db_.remove_pmid_node(&name, from_address.clone());
+
     // No replication for Backup and Sacrificial copies.
     if !replicate {
       return MethodCall::None;
     }
+
     let replicate_to = self.replicate_to(&name);
     match replicate_to {
         Some(pmid_node) => {
