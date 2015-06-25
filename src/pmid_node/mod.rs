@@ -44,27 +44,19 @@ impl PmidNode {
   }
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
-    let mut data_name : NameType;
-    let mut d = Decoder::from_bytes(&data[..]);
-    let payload: Payload = d.decode().next().unwrap().unwrap();
-    let mut remove_sacrificial = false;
-    match payload.get_type_tag() {
-      PayloadTypeTag::ImmutableData => {
-        data_name = payload.get_data::<ImmutableData>().name();
-        remove_sacrificial = true;
-      }
-      PayloadTypeTag::ImmutableDataBackup => {
-        data_name = payload.get_data::<ImmutableDataBackup>().name();
-      }
-      PayloadTypeTag::ImmutableDataSacrificial => {
-        data_name = payload.get_data::<ImmutableDataSacrificial>().name();
-      }
-      PayloadTypeTag::PublicMaid => {
-        data_name = payload.get_data::<PublicIdType>().name();
-        remove_sacrificial = true;
-      }
-      _ => return Err(From::from(ResponseError::InvalidRequest))
+    let mut decoder = Decoder::from_bytes(&data[..]);
+    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+      let (data_name, remove_sacrificial) = match parsed_data {
+        Data::Immutable(parsed) => (parsed.name(), true),
+        Data::ImmutableBackup(parsed) => (parsed.name(), false),
+        Data::ImmutableSacrificial(parsed) => (parsed.name(), false),
+        Data::PublicMaid(parsed) => (parsed.name(), true),
+        _ => return Err(From::from(ResponseError::InvalidRequest)),
+      };
+    } else {
+      return Err(From::from(ResponseError::InvalidRequest));
     }
+
     if self.chunk_store_.has_disk_space(data.len()) {
       // the type_tag needs to be stored as well
       self.chunk_store_.put(data_name, data.clone());
@@ -81,24 +73,25 @@ impl PmidNode {
     for name in names.iter() {
       let fetched_data = self.chunk_store_.get(name.clone());
       let mut decoder = Decoder::from_bytes(&fetched_data[..]);
-      let fetched_payload: Payload = decoder.decode().next().unwrap().unwrap();
-      // Only remove Sacrificial copy
-      match fetched_payload.get_type_tag() {
-        PayloadTypeTag::ImmutableDataSacrificial => {
-          if fetched_data.len() > required_space {
-            self.chunk_store_.delete(name.clone());
-            self.chunk_store_.put(data_name, data);
-            // TODO: ideally, the InterfaceError shall have an option holding a list of copies
-            return Err(From::from(ResponseError::FailedToStoreData(fetched_data)));
-          }
+      if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+        match parsed_data {
+          Data::ImmutableSacrificial(parsed) => {
+            if fetched_data.len() > required_space {
+              self.chunk_store_.delete(name.clone());
+              self.chunk_store_.put(data_name, data);
+              // TODO: ideally, the InterfaceError shall have an option holding a list of copies
+              return Err(From::from(ResponseError::FailedToStoreData(fetched_data)));
+            }
+          },
+          _ => {}
         }
-        _ => {}
+        Err(From::from(ResponseError::InvalidRequest))
       }
     }
-    Err(From::from(ResponseError::InvalidRequest))
   }
 
 }
+
 #[cfg(test)]
 mod test {
   use cbor;
