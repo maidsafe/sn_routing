@@ -118,11 +118,12 @@ mod test {
     let mut encoder = cbor::Encoder::from_memory();
     let encode_result = encoder.encode(&[&payload]);
     assert_eq!(encode_result.is_ok(), true);
-
-    let put_result = pmid_node.handle_put(array_as_vector(encoder.as_bytes()));
-    assert_eq!(put_result.is_err(), true);
-    match put_result.err().unwrap() {
-      InterfaceError::Abort => { }
+    let bytes = array_as_vector(encoder.as_bytes());
+    let put_result = pmid_node.handle_put(bytes.clone());
+    assert_eq!(put_result.is_ok(), true);
+    match put_result {
+      Err(InterfaceError::Abort) => panic!("Unexpected"),
+      Ok(MessageAction::Reply(reply_bytes)) => assert_eq!(reply_bytes, bytes),
       _ => panic!("Unexpected"),
     }
     let get_result = pmid_node.handle_get(data.name());
