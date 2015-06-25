@@ -50,9 +50,11 @@ extern crate maidsafe_types;
 extern crate rand;
 
 use core::iter::FromIterator;
-use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::thread;
+use std::thread::spawn;
+
 
 use docopt::Docopt;
 use rustc_serialize::{Decodable, Decoder};
@@ -88,12 +90,12 @@ impl Vault {
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage:
-  maidsafe_vault (--first | --node [<peer>...])
+  maidsafe_vault [<peer>...]
+  maidsafe_vault --first
   maidsafe_vault --help
 
 Options:
   -f, --first  Node runs as the first vault in the network.
-  -n, --node   Node runs as a non-first vault in the network.
   -h, --help   Display this help message.
 
   Running without '--first' requires an existing network to connect to.  If this
@@ -108,7 +110,6 @@ Options:
 #[derive(RustcDecodable, Debug)]
 struct Args {
     arg_peer: Vec<PeerEndpoint>,
-    flag_node: bool,
     flag_first: bool,
     flag_help: bool,
 }
@@ -152,20 +153,13 @@ pub fn main () {
     } else {
         let _ = vault.routing_node.bootstrap(bootstrap_peers, None);
     }
-
-    let ref mut command = String::new();
-    loop {
-        command.clear();
-        println!("Enter command (stop)>");
-        let _ = io::stdin().read_line(command);
-        let x: &[_] = &['\r', '\n'];
-        match command.trim_right_matches(x) {
-            "stop" => break,
-            _ => println!("Invalid command.")
+    let thread_guard = spawn(move || {
+        loop {
+            thread::sleep_ms(10000);
         }
-    }
+    });
+    let _ = thread_guard.join();
 }
-
 #[cfg(test)]
 mod test {
     use super::*;

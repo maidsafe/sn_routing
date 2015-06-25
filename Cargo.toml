@@ -1,25 +1,24 @@
 [package]
-
 name = "maidsafe_vault"
-version = "0.0.3"
+version = "0.1.0"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
-documentation = "http://maidsafe.github.io/maidsafe_vault/latest/"
+documentation = "http://maidsafe.net/maidsafe_vault/latest"
 repository = "https://github.com/maidsafe/maidsafe_vault"
 readme = "README.md"
 license = "GPL-3.0"
-homepage = "http://www.maidsafe.net"
+homepage = "http://maidsafe.net"
 
 [dependencies]
 docopt = "*"
 rustc-serialize = "*"
 cbor = "*"
 time = "*"
-sodiumoxide = "0.0.4"
-lru_time_cache = "0.1.7"
-crust = "0.0.*"
-routing = "0.1.70"
-maidsafe_types = "0.1.52"
+sodiumoxide = "*"
+lru_time_cache = "*"
+crust = "*"
+routing = "*"
+maidsafe_types = "*"
 
 [dev-dependencies]
 rand = "*"
