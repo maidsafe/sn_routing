@@ -294,14 +294,12 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
  mod test {
     use std::convert::From;
     use super::*;
+    use data_parser::Data;
     use data_manager;
     use routing;
     use cbor;
     use maidsafe_types;
-    use maid_manager;
-    use pmid_manager;
-    use version_handler;
-    use transfer_parser::transfer_tags;
+    use transfer_parser::{Transfer, transfer_tags};
 
     use routing::authority::Authority;
     use routing::types:: { MessageAction, DestinationAddress };
@@ -398,9 +396,15 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             match get_result.ok().unwrap() {
                 MessageAction::Reply(ref x) => {
                     let mut d = cbor::Decoder::from_bytes(&x[..]);
-                    let data_retrieved: maidsafe_types::ImmutableData = d.decode().next().unwrap().unwrap();
-                    assert_eq!(data.name().0.to_vec(), data_retrieved.name().0.to_vec());
-                    assert_eq!(data.serialised_contents(), data_retrieved.serialised_contents());
+                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                        match parsed_data {
+                            Data::Immutable(data_retrieved) => {
+                                assert_eq!(data.name().0.to_vec(), data_retrieved.name().0.to_vec());
+                                assert_eq!(data.serialised_contents(), data_retrieved.serialised_contents());
+                            },
+                            _ => panic!("Unexpected"),
+                        }
+                    }
                 },
                 _ => panic!("Unexpected"),
             }
@@ -488,17 +492,23 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             assert!(churn_data.len() == 2);
 
             // MaidManagerAccount
-            let mm_account_wrapper: maid_manager::MaidManagerAccountWrapper = match churn_data[0] {
+            match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
-                    assert_eq!(*type_tag, 200);
+                    assert_eq!(*type_tag, transfer_tags::MAID_MANAGER_ACCOUNT_TAG);
                     assert_eq!(*from_group, from);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    d.decode().next().unwrap().unwrap()
+                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                        match parsed_data {
+                            Transfer::MaidManagerAccount(mm_account_wrapper) => {
+                                assert_eq!(mm_account_wrapper.name(), from.clone());
+                                assert_eq!(mm_account_wrapper.get_account().get_data_stored(), 1024);
+                            },
+                            _ => panic!("Unexpected"),
+                        }
+                    }
                 },
                 _ => panic!("Refresh type expected")
             };
-            assert_eq!(mm_account_wrapper.name(), from.clone());
-            assert_eq!(mm_account_wrapper.get_account().get_data_stored(), 1024);
             assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
         }
 
@@ -519,8 +529,14 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                     assert_eq!(*type_tag, transfer_tags::DATA_MANAGER_ACCOUNT_TAG);
                     assert_eq!(*from_group, data.name());
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    let data_manager_sendable: data_manager::DataManagerSendable = d.decode().next().unwrap().unwrap();
-                    assert_eq!(data_manager_sendable.name(), data.name());
+                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                        match parsed_data {
+                            Transfer::DataManagerAccount(data_manager_sendable) => {
+                                assert_eq!(data_manager_sendable.name(), data.name());
+                            },
+                            _ => panic!("Unexpected"),
+                        }
+                    }
                 },
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
@@ -528,11 +544,17 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
 
             match churn_data[1] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
-                    assert_eq!(*type_tag, 220);
+                    assert_eq!(*type_tag, transfer_tags::DATA_MANAGER_STATS_TAG);
                     assert_eq!(*from_group, close_group[0]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    let stats_sendable: data_manager::DataManagerStatsSendable = d.decode().next().unwrap().unwrap();
-                    assert_eq!(stats_sendable.get_resource_index(), 1);
+                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                        match parsed_data {
+                            Transfer::DataManagerStats(stats_sendable) => {
+                                assert_eq!(stats_sendable.get_resource_index(), 1);
+                            },
+                            _ => panic!("Unexpected"),
+                        }
+                    }
                 },
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
@@ -548,17 +570,22 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             assert_eq!(churn_data.len(), 2);
             //assert_eq!(churn_data[0].0, from);
 
-            let pmid_manager: pmid_manager::PmidManagerAccountWrapper = match churn_data[0] {
+            match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
-                    assert_eq!(*type_tag, 201);
+                    assert_eq!(*type_tag, transfer_tags::PMID_MANAGER_ACCOUNT_TAG);
                     assert_eq!(*from_group, dest.dest);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    d.decode().next().unwrap().unwrap()
+                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                        match parsed_data {
+                            Transfer::PmidManagerAccount(account_wrapper) => {
+                                assert_eq!(account_wrapper.name(), dest.dest);
+                            },
+                            _ => panic!("Unexpected"),
+                        }
+                    }
                 },
                 _ => panic!("Refresh type expected")
             };
-            assert_eq!(pmid_manager.name(), dest.dest);
-
             assert!(vault.pmid_manager.retrieve_all_and_reset(&Vec::new()).is_empty());
         }
 
@@ -577,16 +604,23 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             // DataManagerStatsTransfer will always be included in the return
             assert_eq!(churn_data.len(), 2);
 
-            let sendable: version_handler::VersionHandlerSendable = match churn_data[0] {
+            match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
-                    assert_eq!(*type_tag, 209);
+                    assert_eq!(*type_tag, transfer_tags::VERSION_HANDLER_ACCOUNT_TAG);
                     assert_eq!(*from_group, data.name());
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    d.decode().next().unwrap().unwrap()
+                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                        match parsed_data {
+                            Transfer::VersionHandlerAccount(sendable) => {
+                                assert_eq!(sendable.name(), data.name());
+                            },
+                            _ => panic!("Unexpected"),
+                        }
+                    }
                 },
                 _ => panic!("Refresh type expected")
             };
-            assert_eq!(sendable.name(), data.name());
+            
 
             assert!(vault.version_handler.retrieve_all_and_reset().is_empty());
         }
@@ -617,11 +651,17 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                                                     Authority::ManagedNode, NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
-                MessageAction::Reply(ref x) => {
+                MessageAction::Reply(x) => {
                     let mut d = cbor::Decoder::from_bytes(&x[..]);
-                    let data_retrieved: maidsafe_types::ImmutableData = d.decode().next().unwrap().unwrap();
-                    assert_eq!(data.name().0.to_vec(), data_retrieved.name().0.to_vec());
-                    assert_eq!(data.serialised_contents(), data_retrieved.serialised_contents());
+                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                        match parsed_data {
+                            Data::Immutable(data_retrieved) => {
+                                assert_eq!(data.name().0.to_vec(), data_retrieved.name().0.to_vec());
+                                assert_eq!(data.serialised_contents(), data_retrieved.serialised_contents());
+                            },
+                            _ => panic!("Unexpected"),
+                        }
+                    }
                 },
                 _ => panic!("Unexpected"),
             }

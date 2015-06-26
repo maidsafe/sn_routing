@@ -146,6 +146,7 @@ impl VersionHandler {
 mod test {
  use cbor;
  use super::*;
+ use data_parser::Data;
  use maidsafe_types::*;
  use routing::types::*;
  use routing::error::InterfaceError;
@@ -175,12 +176,18 @@ mod test {
         MessageAction::SendOn(_) => panic!("Unexpected"),
         MessageAction::Reply(x) => {
                 let mut d = cbor::Decoder::from_bytes(x);
-                let sdv_after: StructuredData = d.decode().next().unwrap().unwrap();
-                assert_eq!(sdv_after.name(), NameType([3u8;64]));
-                assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
-                assert_eq!(sdv_after.value().len(), 2);
-                assert_eq!(sdv_after.value()[0], NameType([5u8;64]));
-                assert_eq!(sdv_after.value()[1], NameType([6u8;64]));
+                if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                    match parsed_data {
+                        Data::Structured(sdv_after) => {
+                            assert_eq!(sdv_after.name(), NameType([3u8;64]));
+                            assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
+                            assert_eq!(sdv_after.value().len(), 2);
+                            assert_eq!(sdv_after.value()[0], NameType([5u8;64]));
+                            assert_eq!(sdv_after.value()[1], NameType([6u8;64]));
+                        },
+                        _ => panic!("Unexpected"),
+                    }
+                }
             }
         }
     }

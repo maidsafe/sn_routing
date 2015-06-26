@@ -101,6 +101,7 @@ mod test {
   use maidsafe_types::*;
   use routing::types::MessageAction;
   use routing::sendable::Sendable;
+  use data_parser::Data;
 
   #[test]
   fn handle_put_get() {
@@ -118,11 +119,17 @@ mod test {
     let get_result = pmid_node.handle_get(data.name());
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
-        MessageAction::Reply(ref x) => {
+        MessageAction::Reply(x) => {
             let mut d = cbor::Decoder::from_bytes(&x[..]);
-            let data_after: ImmutableData = d.decode().next().unwrap().unwrap();
-            assert_eq!(data.name().0.to_vec(), data_after.name().0.to_vec());
-            assert_eq!(data.serialised_contents(), data_after.serialised_contents());
+            if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                match parsed_data {
+                    Data::Immutable(data_after) => {
+                        assert_eq!(data.name().0.to_vec(), data_after.name().0.to_vec());
+                        assert_eq!(data.serialised_contents(), data_after.serialised_contents());
+                    },
+                    _ => panic!("Unexpected"),
+                }
+            }
         },
         _ => panic!("Unexpected"),
     }
