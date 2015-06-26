@@ -100,8 +100,7 @@ impl MaidManager {
 
 #[cfg(test)]
 mod test {
-    use cbor;
-    use maidsafe_types::{ImmutableData};
+    use maidsafe_types::ImmutableData;
     use routing;
     use super::*;
     use routing::types::*;
@@ -114,11 +113,7 @@ mod test {
         let from: NameType = routing::test_utils::Random::generate_random();
         let value = generate_random_vec_u8(1024);
         let data = ImmutableData::new(value);
-        let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
-        let mut encoder = cbor::Encoder::from_memory();
-        let encode_result = encoder.encode(&[&payload]);
-        assert_eq!(encode_result.is_ok(), true);
-        let put_result = maid_manager.handle_put(&from, &array_as_vector(encoder.as_bytes()));
+        let put_result = maid_manager.handle_put(&from, &data.serialised_contents());
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
             MessageAction::SendOn(ref x) => {
@@ -134,8 +129,7 @@ mod test {
         let mut maid_manager = MaidManager::new();
         let name : NameType = routing::test_utils::Random::generate_random();
         let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), MaidManagerAccount::new());
-        let payload = Payload::new(PayloadTypeTag::MaidManagerAccountTransfer, &account_wrapper);
-        maid_manager.handle_account_transfer(payload);
+        maid_manager.handle_account_transfer(account_wrapper);
         assert_eq!(maid_manager.db_.exist(&name), true);
     }
 }

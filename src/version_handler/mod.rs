@@ -159,12 +159,8 @@ mod test {
     let owner = NameType([4u8; 64]);
     let value = vec![NameType([5u8; 64]), NameType([6u8; 64])];
     let sdv = StructuredData::new(name, owner, value);
-    let payload = Payload::new(PayloadTypeTag::StructuredData, &sdv);
-    let mut encoder = cbor::Encoder::from_memory();
-    let encode_result = encoder.encode(&[&payload]);
-    assert_eq!(encode_result.is_ok(), true);
-    let bytes = array_as_vector(encoder.as_bytes());
-    let put_result = version_handler.handle_put(bytes.clone());
+    let bytes = sdv.serialised_contents();
+    let put_result = version_handler.handle_put(bytes.clone(), sdv.clone());
     assert_eq!(put_result.is_ok(), true);
     match put_result {
         Err(InterfaceError::Abort) => panic!("Unexpected"),
@@ -179,9 +175,7 @@ mod test {
         MessageAction::SendOn(_) => panic!("Unexpected"),
         MessageAction::Reply(x) => {
                 let mut d = cbor::Decoder::from_bytes(x);
-                let obj_after: Payload = d.decode().next().unwrap().unwrap();
-                assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::StructuredData);
-                let sdv_after = obj_after.get_data::<StructuredData>();
+                let sdv_after: StructuredData = d.decode().next().unwrap().unwrap();
                 assert_eq!(sdv_after.name(), NameType([3u8;64]));
                 assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
                 assert_eq!(sdv_after.value().len(), 2);
@@ -199,9 +193,8 @@ mod test {
         let sdv = StructuredData::new(name.clone(), owner, value);
 
         let mut version_handler = VersionHandler::new();
-        let payload = Payload::new(PayloadTypeTag::VersionHandlerAccountTransfer,
-                                   &VersionHandlerSendable::new(name.clone(), sdv.serialised_contents()));
-        version_handler.handle_account_transfer(payload);
+        version_handler.handle_account_transfer(
+            VersionHandlerSendable::new(name.clone(), sdv.serialised_contents()));
         assert_eq!(version_handler.chunk_store_.has_chunk(name), true);
     }
 

@@ -284,8 +284,8 @@ mod test {
 
   use super::{DataManager, DataManagerStatsSendable};
   use super::database::DataManagerSendable;
-  use maidsafe_types::{ImmutableData, PayloadTypeTag, Payload};
-  use routing::types::{MessageAction, array_as_vector};
+  use maidsafe_types::ImmutableData;
+  use routing::types::MessageAction;
   use routing::NameType;
   use routing::sendable::Sendable;
 
@@ -294,13 +294,9 @@ mod test {
     let mut data_manager = DataManager::new();
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
-    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
-    let mut encoder = cbor::Encoder::from_memory();
-    let encode_result = encoder.encode(&[&payload]);
-    assert_eq!(encode_result.is_ok(), true);
     let mut nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
                                   NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
-    let put_result = data_manager.handle_put(&array_as_vector(encoder.as_bytes()), &mut nodes_in_table);
+    let put_result = data_manager.handle_put(data.clone(), &mut nodes_in_table);
     assert_eq!(put_result.is_err(), false);
     match put_result.ok().unwrap() {
       MessageAction::SendOn(ref x) => {
@@ -332,8 +328,7 @@ mod test {
         let mut data_manager = DataManager::new();
         let name : NameType = routing::test_utils::Random::generate_random();
         let account_wrapper = DataManagerSendable::new(name.clone(), vec![]);
-        let payload = Payload::new(PayloadTypeTag::DataManagerAccountTransfer, &account_wrapper);
-        data_manager.handle_account_transfer(payload);
+        data_manager.handle_account_transfer(account_wrapper);
         assert_eq!(data_manager.db_.exist(&name), true);
     }
 
@@ -342,8 +337,7 @@ mod test {
         let mut data_manager = DataManager::new();
         let name : NameType = routing::test_utils::Random::generate_random();
         let stats_sendable = DataManagerStatsSendable::new(name.clone(), 1023);
-        let payload = Payload::new(PayloadTypeTag::DataManagerStatsTransfer, &stats_sendable);
-        data_manager.handle_stats_transfer(payload);
+        data_manager.handle_stats_transfer(stats_sendable);
         assert_eq!(data_manager.resource_index, 512);
     }
 }

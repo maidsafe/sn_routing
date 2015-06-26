@@ -92,11 +92,11 @@ impl PmidManager {
 
 #[cfg(test)]
 mod test {
-  use cbor;
   use routing;
   use super::PmidManager;
   use maidsafe_types::*;
   use routing::types::*;
+  use routing::sendable::Sendable;
   use super::database::{PmidManagerAccount, PmidManagerAccountWrapper};
 
   #[test]
@@ -105,12 +105,7 @@ mod test {
     let dest = DestinationAddress { dest: routing::test_utils::Random::generate_random(), relay_to: None };
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
-    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
-    let mut encoder = cbor::Encoder::from_memory();
-    let encode_result = encoder.encode(&[&payload]);
-    assert_eq!(encode_result.is_ok(), true);
-
-    let put_result = pmid_manager.handle_put(&dest, &array_as_vector(encoder.as_bytes()));
+    let put_result = pmid_manager.handle_put(&dest, &data.serialised_contents());
     assert_eq!(put_result.is_err(), false);
     match put_result.ok().unwrap() {
       MessageAction::SendOn(ref x) => {
@@ -126,8 +121,7 @@ mod test {
         let mut pmid_manager = PmidManager::new();
         let name : routing::NameType = routing::test_utils::Random::generate_random();
         let account_wrapper = PmidManagerAccountWrapper::new(name.clone(), PmidManagerAccount::new());
-        let payload = Payload::new(PayloadTypeTag::PmidManagerAccountTransfer, &account_wrapper);
-        pmid_manager.handle_account_transfer(payload);
+        pmid_manager.handle_account_transfer(account_wrapper);
         assert_eq!(pmid_manager.db_.exist(&name), true);
     }
 }

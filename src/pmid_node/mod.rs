@@ -99,7 +99,7 @@ mod test {
   use routing::error::InterfaceError;
   use super::*;
   use maidsafe_types::*;
-  use routing::types::{ MessageAction, array_as_vector};
+  use routing::types::MessageAction;
   use routing::sendable::Sendable;
 
   #[test]
@@ -107,11 +107,7 @@ mod test {
     let mut pmid_node = PmidNode::new();
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
-    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
-    let mut encoder = cbor::Encoder::from_memory();
-    let encode_result = encoder.encode(&[&payload]);
-    assert_eq!(encode_result.is_ok(), true);
-    let bytes = array_as_vector(encoder.as_bytes());
+    let bytes = data.serialised_contents();
     let put_result = pmid_node.handle_put(bytes.clone());
     assert_eq!(put_result.is_ok(), true);
     match put_result {
@@ -124,9 +120,7 @@ mod test {
     match get_result.ok().unwrap() {
         MessageAction::Reply(ref x) => {
             let mut d = cbor::Decoder::from_bytes(&x[..]);
-            let obj_after: Payload = d.decode().next().unwrap().unwrap();
-            assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::ImmutableData);
-            let data_after = obj_after.get_data::<ImmutableData>();
+            let data_after: ImmutableData = d.decode().next().unwrap().unwrap();
             assert_eq!(data.name().0.to_vec(), data_after.name().0.to_vec());
             assert_eq!(data.serialised_contents(), data_after.serialised_contents());
         },
