@@ -33,7 +33,7 @@ type PmidNode = NameType;
 
 pub type PmidNodes = Vec<PmidNode>;
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct DataManagerSendable {
     name: NameType,
     data_holders: PmidNodes,
@@ -211,7 +211,7 @@ impl DataManagerDatabase {
             }
             let data_manager_sendable = DataManagerSendable::new((*key).clone(), (*value).clone());
             let mut encoder = cbor::Encoder::from_memory();
-            if encoder.encode(&[data_manager_sendable]).is_ok() {
+            if encoder.encode(&[data_manager_sendable.clone()]).is_ok() {
                 actions.push(MethodCall::Refresh {
                     type_tag: DATA_MANAGER_ACCOUNT_TAG,
                     from_group: data_manager_sendable.name(),

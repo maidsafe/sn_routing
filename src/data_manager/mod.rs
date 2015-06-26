@@ -239,7 +239,7 @@ impl DataManager {
       let data_manager_stats_sendable =
           DataManagerStatsSendable::new(close_group[0].clone(), self.resource_index);
       let mut encoder = cbor::Encoder::from_memory();
-      if encoder.encode(&[data_manager_stats_sendable]).is_ok() {
+      if encoder.encode(&[data_manager_stats_sendable.clone()]).is_ok() {
           result.push(MethodCall::Refresh {
               type_tag: DATA_MANAGER_STATS_TAG, from_group: data_manager_stats_sendable.name(),
               payload: encoder.as_bytes().to_vec()

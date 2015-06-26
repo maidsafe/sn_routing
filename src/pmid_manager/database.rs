@@ -212,7 +212,7 @@ impl PmidManagerDatabase {
                 let pmid_manager_wrapper =
                     PmidManagerAccountWrapper::new((*key).clone(), (*value).clone());
                 let mut encoder = cbor::Encoder::from_memory();
-                if encoder.encode(&[pmid_manager_wrapper]).is_ok() {
+                if encoder.encode(&[pmid_manager_wrapper.clone()]).is_ok() {
                     actions.push(MethodCall::Refresh {
                         type_tag: PMID_MANAGER_ACCOUNT_TAG, from_group: pmid_manager_wrapper.name(),
                         payload: encoder.as_bytes().to_vec()

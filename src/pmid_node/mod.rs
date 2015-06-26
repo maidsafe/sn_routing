@@ -18,7 +18,6 @@
 #![allow(dead_code)]
 
 use chunk_store::ChunkStore;
-use maidsafe_types::*;
 use routing::NameType;
 use routing::types::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
@@ -46,7 +45,6 @@ impl PmidNode {
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
     let mut decoder = Decoder::from_bytes(&data[..]);
     let mut data_name_and_remove_sacrificial: (NameType, bool);
-    let mut remove_sacrificial = false;
     if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
       data_name_and_remove_sacrificial = match parsed_data {
         Data::Immutable(parsed) => (parsed.name(), true),
@@ -77,7 +75,7 @@ impl PmidNode {
       let mut decoder = Decoder::from_bytes(&fetched_data[..]);
       if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
         match parsed_data {
-          Data::ImmutableSacrificial(parsed) => {
+          Data::ImmutableSacrificial(_) => {
             if fetched_data.len() > required_space {
               self.chunk_store_.delete(name.clone());
               self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);

@@ -17,10 +17,9 @@
 
 use rustc_serialize::{Decodable, Decoder};
 
-use data_manager::DataManagerStatsSendable;
-use data_manager::database::DataManagerSendable;
-use maid_manager::database::MaidManagerAccountWrapper;
-use pmid_manager::database::PmidManagerAccountWrapper;
+use data_manager::{DataManagerSendable, DataManagerStatsSendable};
+use maid_manager::MaidManagerAccountWrapper;
+use pmid_manager::PmidManagerAccountWrapper;
 use version_handler::VersionHandlerSendable;
 
 pub mod transfer_tags {

@@ -178,7 +178,7 @@ impl MaidManagerDatabase {
             let maid_manager_wrapper =
                 MaidManagerAccountWrapper::new((*key).clone(), (*value).clone());
             let mut encoder = cbor::Encoder::from_memory();
-            if encoder.encode(&[maid_manager_wrapper]).is_ok() {
+            if encoder.encode(&[maid_manager_wrapper.clone()]).is_ok() {
                 actions.push(MethodCall::Refresh {
                     type_tag: MAID_MANAGER_ACCOUNT_TAG, from_group: maid_manager_wrapper.name(),
                     payload: encoder.as_bytes().to_vec()

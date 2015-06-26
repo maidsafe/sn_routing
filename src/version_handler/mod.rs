@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 #![allow(dead_code)]
-use maidsafe_types::data_tags;
 use maidsafe_types::StructuredData;
 use routing::NameType;
 use routing::node_interface::MethodCall;
@@ -26,7 +25,6 @@ use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use cbor;
-use data_parser::Data;
 use transfer_parser::transfer_tags::VERSION_HANDLER_ACCOUNT_TAG;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Clone, Debug)]
@@ -128,7 +126,7 @@ impl VersionHandler {
             let data = self.chunk_store_.get(name.clone());
             let version_handler_sendable = VersionHandlerSendable::new(name, data);
             let mut encoder = cbor::Encoder::from_memory();
-            if encoder.encode(&[version_handler_sendable]).is_ok() {
+            if encoder.encode(&[version_handler_sendable.clone()]).is_ok() {
                 actions.push(MethodCall::Refresh {
                     type_tag: VERSION_HANDLER_ACCOUNT_TAG,
                     from_group: version_handler_sendable.name(),

@@ -25,8 +25,6 @@ use rustc_serialize::{Decodable, Encodable};
 
 use lru_time_cache::LruCache;
 
-use maidsafe_types::*;
-
 use routing::NameType;
 use routing::error::{ResponseError, InterfaceError};
 use routing::authority::Authority;
@@ -67,7 +65,7 @@ fn merge_refreshable<T>(merged_entry: T, payloads: Vec<Vec<u8>>) ->
         let mut decoder = Decoder::from_bytes(&it[..]);
         if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
             let parsed: T = parsed_entry;
-            transfer_entries.push(Box::<Sendable>::new(parsed));
+            transfer_entries.push(Box::new(parsed));
         }
     }
     merged_entry.merge(transfer_entries);
