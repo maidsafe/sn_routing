@@ -202,9 +202,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
         // First send FindGroup request
+        let our_name = self.own_name.clone();
         match self.bootstrap_endpoint.clone() {
             Some(ref bootstrap_endpoint) => {
-                let find_group_msg = self.construct_find_group_msg(true);
+                let find_group_msg = self.construct_find_group_msg(&our_name);
                 // FIXME: act on error to send; don't over clone bootstrap_endpoint
                 ignore(encode(&find_group_msg).map(|msg|self.connection_manager
                     .send(bootstrap_endpoint.clone(), msg)));
@@ -344,6 +345,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
       println!("CRUST::NewConnection on {:?}", endpoint);
+        self.drop_bootstrap();
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::Routing(name)) => {
                 // should not occur; if the endpoint is in the lookup map of routing table,
@@ -413,21 +415,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
         if trigger_handle_churn {
             println!("Handle CHURN lost node");
             let mut close_group : Vec<NameType> = self.routing_table
-                    .our_close_group().iter()
-                    .map(|node_info| node_info.fob.name())
-                    .collect::<Vec<NameType>>();
+                .our_close_group().iter()
+                .map(|node_info| node_info.fob.name())
+                .collect::<Vec<NameType>>();
             close_group.insert(0, self.own_name.clone());
-            match self.mut_interface().handle_churn(close_group) {
-                _ => {} // for now don't act on this MethodCall
-                // MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                // MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
-                // MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-                // MethodCall::Post => unimplemented!(),
-                // MethodCall::None => (),
-                // MethodCall::SendOn { destination } =>
-                //     ignore(self.send_on(&put_data_response.name, &header,
-                //                  destination, MessageTypeTag::PutDataResponse, body)),
-            };
+            let churn_actions = self.mut_interface().handle_churn(close_group);
+            for action in churn_actions {
+                match action {
+                    MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                    MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                    MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                    MethodCall::Post => unimplemented!(),
+                    MethodCall::None => (),
+                    MethodCall::SendOn { destination } =>
+                        println!("IGNORED: on handle_churn MethodCall:SendOn is not a Valid action")
+                };
+            }
         };
     }
 
@@ -489,9 +492,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
         // add to filter
         self.filter.add(header.get_filter());
-
-        // check if we can add source to rt
-        self.refresh_routing_table(&header.source.from_node);
 
         // add to cache
         if message.message_type == MessageTypeTag::GetDataResponse {
@@ -557,7 +557,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
             };
         }
 
-        if !self.address_in_close_group_range(&header.destination.dest) {
+        let address_in_close_group_range =
+            self.address_in_close_group_range(&header.destination.dest);
+        // Handle FindGroupResponse
+        if message.message_type == MessageTypeTag::FindGroupResponse {
+            ignore(self.handle_find_group_response(header, body,
+                &address_in_close_group_range));
+            return Ok(());
+        }
+
+        if !address_in_close_group_range {
             return Ok(());
         }
 
@@ -585,7 +594,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 match message.message_type {
                     MessageTypeTag::ConnectResponse => self.handle_connect_response(body),
                     MessageTypeTag::FindGroup => self.handle_find_group(header, body),
-                    MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
+                    // MessageTypeTag::FindGroupResponse => self.handle_find_group_response(header, body),
                     MessageTypeTag::GetData => self.handle_get_data(header, body),
                     MessageTypeTag::GetDataResponse => self.handle_get_data_response(header, body),
         //             MessageTypeTag::Post => self.handle_post(header, body),
@@ -609,19 +618,20 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// TODO: The behaviour of this function has been adapted to serve as a filter
     /// to cover for the lack of a filter on FindGroupResponse
     fn refresh_routing_table(&mut self, from_node : &NameType) {
+      // disable refresh when scanning on small routing_table size
       let time_now = SteadyTime::now();
-      if self.routing_table.check_node(from_node) {
-          // hold off connect request if it was already in cache
-          if !self.connection_cache.contains_key(&from_node) {
+      if !self.connection_cache.contains_key(from_node) {
+          if self.routing_table.check_node(from_node) {
               ignore(self.send_connect_request_msg(&from_node));
           }
           self.connection_cache.entry(from_node.clone())
               .or_insert(time_now);
        }
+
        let mut prune_blockage : Vec<NameType> = Vec::new();
        for (blocked_node, time) in self.connection_cache.iter_mut() {
            // clear block for nodes
-           if time_now - *time > Duration::seconds(5) {
+           if time_now - *time > Duration::seconds(10) {
                prune_blockage.push(blocked_node.clone());
            }
        }
@@ -793,17 +803,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .map(|node_info| node_info.fob.name())
                     .collect::<Vec<NameType>>();
             close_group.insert(0, self.own_name.clone());
-            match self.mut_interface().handle_churn(close_group) {
-                _ => {} // for now don't act on this MethodCall
-                // MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                // MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
-                // MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-                // MethodCall::Post => unimplemented!(),
-                // MethodCall::None => (),
-                // MethodCall::SendOn { destination } =>
-                //     ignore(self.send_on(&put_data_response.name, &header,
-                //                  destination, MessageTypeTag::PutDataResponse, body)),
-            };
+            let churn_actions = self.mut_interface().handle_churn(close_group);
+            for action in churn_actions {
+                match action {
+                    MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                    MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                    MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                    MethodCall::Post => unimplemented!(),
+                    MethodCall::None => (),
+                    MethodCall::SendOn { destination } =>
+                        println!("IGNORED: on handle_churn MethodCall:SendOn is not a Valid action")
+                };
+            }
         }
         Ok(())
     }
@@ -822,6 +833,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     // -----Address and various functions----------------------------------------
+
+    fn drop_bootstrap(&mut self) {
+        let mut clear_bootstrap = false;
+        match self.bootstrap_endpoint {
+            Some(ref connected_bootstrap_endpoint) => {
+                if self.routing_table.size() > 0 {
+                    println!("Dropped bootstrap on {:?}", connected_bootstrap_endpoint);
+                    self.connection_manager.drop_node(connected_bootstrap_endpoint.clone());
+                    clear_bootstrap = true;
+                }
+            },
+            None => {}
+        };
+        if clear_bootstrap { self.bootstrap_endpoint = None; }
+    }
 
     fn address_in_close_group_range(&self, address: &NameType) -> bool {
         if self.routing_table.size() < RoutingTable::get_group_size() {
@@ -1020,6 +1046,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     // Try to connect to the peer.
                     self.connection_manager.connect(connect_request.local_endpoints.clone());
                     self.connection_manager.connect(connect_request.external_endpoints.clone());
+                    self.connection_cache.entry(public_id.name())
+                        .or_insert(SteadyTime::now());
                     // Send the response containing our details,
                     // and add the original signature as proof of the request
 // FIXME: for TCP rendez-vous connect is not needed
@@ -1124,16 +1152,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 let mut put_public_id_relocated = put_public_id.clone();
 
                 // FIXME: we should add ourselves
-                let close_group_node_ids = self.routing_table.our_close_group().into_iter()
-                                               .map(|node_info| node_info.id())
-                                               .collect::<Vec<_>>();
-
-                let relocated_name =  try!(types::calculate_relocated_name(
-                                            close_group_node_ids,
-                                            &put_public_id.public_id.name()));
+                let mut close_group : Vec<NameType> =
+                    self.routing_table.our_close_group().into_iter()
+                    .map(|node_info| node_info.id())
+                    .collect::<Vec<NameType>>();
+                close_group.insert(0, self.own_name.clone());
+                let relocated_name = try!(types::calculate_relocated_name(
+                    close_group, &put_public_id.public_id.name()));
                 // assign_relocated_name
                 put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
 
+                println!("RELOCATED {:?} to {:?}",
+                    put_public_id.public_id.name(), relocated_name);
                 // SendOn to relocated_name group, which will actually store the relocated public id
                 try!(self.send_on(&put_public_id.public_id.name(),
                                   &header,
@@ -1146,6 +1176,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
                 if !self.public_id_cache.contains_key(&put_public_id.public_id.name()) {
                   self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
+                  println!("CACHED RELOCATED {:?}",
+                      put_public_id.public_id.name());
                   // Reply with PutPublicIdResponse to the reply_to address
                   let reply_header = header.create_reply(&self.own_name, &our_authority);
                   let destination = reply_header.destination.dest.clone();
@@ -1200,7 +1232,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 if dest == self.own_name
                     && self.relay_map.contains_relay_for(&relay) {
                     self.send_out_as_relay(&relay, serialised_msg.clone());
-                    return Ok(());
                 }
             },
             _ => {}
@@ -1211,10 +1242,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
+    fn handle_find_group_response(&mut self, original_header: MessageHeader, body: Bytes,
+        refresh_our_own_group: &bool) -> RoutingResult {
         let find_group_response = try!(decode::<FindGroupResponse>(&body));
         for peer in find_group_response.group {
             self.refresh_routing_table(&peer.name());
+        }
+        if *refresh_our_own_group {
+            let our_name = self.own_name.clone();
+            if !self.connection_cache.contains_key(&our_name) {
+                let find_group_msg = self.construct_find_group_msg(&our_name);
+                let serialised_msg = try!(encode(&find_group_msg));
+                println!("REFLECT OUR GROUP");
+                self.send_swarm_or_parallel(&our_name, &serialised_msg);
+                self.connection_cache.entry(our_name)
+                    .or_insert(SteadyTime::now());
+            }
         }
         Ok(())
     }
@@ -1430,8 +1473,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             &self.id.get_crypto_secret_sign_key())
     }
 
-    // FIXME: remove for_bootstrap_connection
-    fn construct_find_group_msg(&mut self, _for_bootstrap_connection: bool) -> RoutingMessage {
+    fn construct_find_group_msg(&mut self, node : &NameType) -> RoutingMessage {
         let header = MessageHeader::new(
               self.get_next_message_id(),
               types::DestinationAddress {
@@ -1443,7 +1485,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         RoutingMessage::new(MessageTypeTag::FindGroup, header,
             FindGroup{ requester_id: self.own_name.clone(),
-                       target_id:    self.own_name.clone()},
+                       target_id:    node.clone()},
             &self.id.get_crypto_secret_sign_key())
     }
 
@@ -1794,7 +1836,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
         let our_name = routing_node.own_name.clone();
-        let total_inside : u32 = 30;
+        let total_inside : u32 = 5;
         let limit_attempts : u32 = 300;
         let mut stored_public_ids : Vec<PublicId> = Vec::with_capacity(total_inside as usize);
         let mut count_inside : u32 = 0;
@@ -1847,7 +1889,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
         let our_name = routing_node.own_name.clone();
-        let total_inside : u32 = 30;
+        let total_inside : u32 = 5;
         let limit_attempts : u32 = 300;
         let mut stored_public_ids : Vec<PublicId> = Vec::with_capacity(total_inside as usize);
         let mut count_inside : u32 = 0;

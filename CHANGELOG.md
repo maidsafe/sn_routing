@@ -1,24 +1,16 @@
 # Routing - Change Log
-## [0.2.5]
+## [0.2.6] - Temporary patch for Vault behaviour
 
-- [#421](https://github.com/maidsafe/routing/pull/421) Set Authority unauthorised put to ManagedNode to accommodate Vaults for now
+- [#424](https://github.com/maidsafe/routing/pull/424) Patch for Vaults handle put behaviour
 
-## [0.2.4]
+## [0.2.1 - 0.2.5] - debug with upper layers
 
-- [#419](https://github.com/maidsafe/routing/pull/419) Correct ClientInterface::HandlePutResponse
-
-## [0.2.3]
-
-- [#416](https://github.com/maidsafe/routing/pull/416) Activate HandleChurn (but don't act on the resulting MethodCall yet)
-
-## [0.2.2]
-
-- Update sodiumoxide dependency to `*`
-- Update crust dependency to `*`
-
-## [0.2.1]
-
-- Update sodiumoxide dependency to `0.0.5`
+- [0.2.5] [#421](https://github.com/maidsafe/routing/pull/421) Set Authority unauthorised put to ManagedNode to accommodate Vaults for now
+- [0.2.4] [#419](https://github.com/maidsafe/routing/pull/419) Correct ClientInterface::HandlePutResponse
+- [0.2.3] [#416](https://github.com/maidsafe/routing/pull/416) Activate HandleChurn (but don't act on the resulting MethodCall yet)
+- [0.2.2] Update sodiumoxide dependency to `*`
+- [0.2.2] Update crust dependency to `*`
+- [0.2.1] Update sodiumoxide dependency to `0.0.5`
 
 ## [0.1.72] - documentation
 
