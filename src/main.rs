@@ -65,6 +65,8 @@ mod pmid_manager;
 mod version_handler;
 mod chunk_store;
 mod pmid_node;
+mod data_parser;
+mod transfer_parser;
 mod vault;
 mod utils;
 

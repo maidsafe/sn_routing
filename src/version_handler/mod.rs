@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 #![allow(dead_code)]
-use maidsafe_types;
 use maidsafe_types::StructuredData;
 use routing::NameType;
 use routing::node_interface::MethodCall;
@@ -26,19 +25,18 @@ use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use cbor;
+use transfer_parser::transfer_tags::VERSION_HANDLER_ACCOUNT_TAG;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Clone, Debug)]
 pub struct VersionHandlerSendable {
     name: NameType,
-    tag: u64,
-    data: Vec<u8>,
+    data: Vec<u8>
 }
 
 impl VersionHandlerSendable {
     pub fn new(name: NameType, data: Vec<u8>) -> VersionHandlerSendable {
         VersionHandlerSendable {
             name: name,
-            tag: 209, // FIXME : Change once the tag is freezed
             data: data,
         }
     }
@@ -53,7 +51,7 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn type_tag(&self) -> u64 {
-        self.tag.clone()
+        VERSION_HANDLER_ACCOUNT_TAG
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
@@ -109,26 +107,16 @@ impl VersionHandler {
     Ok(MessageAction::Reply(data))
   }
 
-  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
-    let mut data_name : NameType;
-    let mut d = cbor::Decoder::from_bytes(&data[..]);
-    let payload: maidsafe_types::Payload = d.decode().next().unwrap().unwrap();
-    match payload.get_type_tag() {
-      maidsafe_types::PayloadTypeTag::StructuredData => {
-        data_name = payload.get_data::<StructuredData>().name();
-      }
-       _ => return Err(From::from(ResponseError::InvalidRequest))
-    }
+  pub fn handle_put(&mut self, serialised_data: Vec<u8>,
+                    structured_data: StructuredData) ->Result<MessageAction, InterfaceError> {
     // the type_tag needs to be stored as well, ChunkStore::put is overwritable
-    self.chunk_store_.put(data_name.clone(), data.clone());
-    return Ok(MessageAction::Reply(data));
+    self.chunk_store_.put(structured_data.name(), serialised_data.clone());
+    return Ok(MessageAction::Reply(serialised_data));
   }
 
-  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
-      let version_handler_sendable : VersionHandlerSendable = payload.get_data();
-      // TODO: Assuming the incoming merged entry has the priority and shall also be trusted first
-      self.chunk_store_.delete(version_handler_sendable.name());
-      self.chunk_store_.put(version_handler_sendable.name(), version_handler_sendable.get_data().clone());
+  pub fn handle_account_transfer(&mut self, merged_account: VersionHandlerSendable) {
+      self.chunk_store_.delete(merged_account.name());
+      self.chunk_store_.put(merged_account.name(), merged_account.get_data().clone());
   }
 
   pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
@@ -137,14 +125,14 @@ impl VersionHandler {
        for name in names {
             let data = self.chunk_store_.get(name.clone());
             let version_handler_sendable = VersionHandlerSendable::new(name, data);
-            let payload = maidsafe_types::Payload::new(maidsafe_types::PayloadTypeTag::VersionHandlerAccountTransfer,
-                                                       &version_handler_sendable);
-            let mut e = cbor::Encoder::from_memory();
-            e.encode(&[payload]).unwrap();
-            actions.push(MethodCall::Refresh {
-                type_tag: version_handler_sendable.type_tag(), from_group: version_handler_sendable.name(),
-                payload: e.as_bytes().to_vec()
-            });
+            let mut encoder = cbor::Encoder::from_memory();
+            if encoder.encode(&[version_handler_sendable.clone()]).is_ok() {
+                actions.push(MethodCall::Refresh {
+                    type_tag: VERSION_HANDLER_ACCOUNT_TAG,
+                    from_group: version_handler_sendable.name(),
+                    payload: encoder.as_bytes().to_vec()
+                });
+            }
        }
        self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
        actions
@@ -152,10 +140,13 @@ impl VersionHandler {
 
 }
 
+
+
 #[cfg(test)]
 mod test {
  use cbor;
  use super::*;
+ use data_parser::Data;
  use maidsafe_types::*;
  use routing::types::*;
  use routing::error::InterfaceError;
@@ -169,12 +160,8 @@ mod test {
     let owner = NameType([4u8; 64]);
     let value = vec![NameType([5u8; 64]), NameType([6u8; 64])];
     let sdv = StructuredData::new(name, owner, value);
-    let payload = Payload::new(PayloadTypeTag::StructuredData, &sdv);
-    let mut encoder = cbor::Encoder::from_memory();
-    let encode_result = encoder.encode(&[&payload]);
-    assert_eq!(encode_result.is_ok(), true);
-    let bytes = array_as_vector(encoder.as_bytes());
-    let put_result = version_handler.handle_put(bytes.clone());
+    let bytes = sdv.serialised_contents();
+    let put_result = version_handler.handle_put(bytes.clone(), sdv.clone());
     assert_eq!(put_result.is_ok(), true);
     match put_result {
         Err(InterfaceError::Abort) => panic!("Unexpected"),
@@ -189,14 +176,18 @@ mod test {
         MessageAction::SendOn(_) => panic!("Unexpected"),
         MessageAction::Reply(x) => {
                 let mut d = cbor::Decoder::from_bytes(x);
-                let obj_after: Payload = d.decode().next().unwrap().unwrap();
-                assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::StructuredData);
-                let sdv_after = obj_after.get_data::<StructuredData>();
-                assert_eq!(sdv_after.name(), NameType([3u8;64]));
-                assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
-                assert_eq!(sdv_after.value().len(), 2);
-                assert_eq!(sdv_after.value()[0], NameType([5u8;64]));
-                assert_eq!(sdv_after.value()[1], NameType([6u8;64]));
+                if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                    match parsed_data {
+                        Data::Structured(sdv_after) => {
+                            assert_eq!(sdv_after.name(), NameType([3u8;64]));
+                            assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
+                            assert_eq!(sdv_after.value().len(), 2);
+                            assert_eq!(sdv_after.value()[0], NameType([5u8;64]));
+                            assert_eq!(sdv_after.value()[1], NameType([6u8;64]));
+                        },
+                        _ => panic!("Unexpected"),
+                    }
+                }
             }
         }
     }
@@ -209,9 +200,8 @@ mod test {
         let sdv = StructuredData::new(name.clone(), owner, value);
 
         let mut version_handler = VersionHandler::new();
-        let payload = Payload::new(PayloadTypeTag::VersionHandlerAccountTransfer,
-                                   &VersionHandlerSendable::new(name.clone(), sdv.serialised_contents()));
-        version_handler.handle_account_transfer(payload);
+        version_handler.handle_account_transfer(
+            VersionHandlerSendable::new(name.clone(), sdv.serialised_contents()));
         assert_eq!(version_handler.chunk_store_.has_chunk(name), true);
     }
 

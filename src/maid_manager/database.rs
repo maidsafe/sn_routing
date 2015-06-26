@@ -17,25 +17,25 @@
 
 #![allow(dead_code)]
 
-use std::collections;
-use utils::median;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use cbor;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use std::collections;
 
-use maidsafe_types::{Payload, PayloadTypeTag};
 use routing::NameType;
-use routing::sendable::Sendable;
 use routing::node_interface::MethodCall;
+use routing::sendable::Sendable;
 use routing::types::GROUP_SIZE;
+
+use transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG;
+use utils::median;
 
 type Identity = NameType; // maid node address
 
-/// MaidManagerAccountWrapper implemets the sendable trait from routing, thus making it transporatble
-/// across through the routing layer
+/// MaidManagerAccountWrapper implements the sendable trait from Routing, thus making it
+/// transportable through the Routing layer.
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
 pub struct MaidManagerAccountWrapper {
     name: NameType,
-    tag: u64,
     account: MaidManagerAccount
 }
 
@@ -43,7 +43,6 @@ impl MaidManagerAccountWrapper {
     pub fn new(name: NameType, account: MaidManagerAccount) -> MaidManagerAccountWrapper {
         MaidManagerAccountWrapper {
             name: name,
-            tag: 200, // FIXME : Change once the tag is freezed
             account: account
         }
     }
@@ -65,7 +64,7 @@ impl Sendable for MaidManagerAccountWrapper {
     }
 
     fn type_tag(&self) -> u64 {
-        self.tag.clone()
+        MAID_MANAGER_ACCOUNT_TAG
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
@@ -176,14 +175,15 @@ impl MaidManagerDatabase {
     pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
         let mut actions = Vec::with_capacity(self.storage.len());
         for (key, value) in self.storage.iter() {
-            let maid_manager_wrapper = MaidManagerAccountWrapper::new((*key).clone(), (*value).clone());
-            let payload = Payload::new(PayloadTypeTag::MaidManagerAccountTransfer, &maid_manager_wrapper);
-            let mut e = cbor::Encoder::from_memory();
-            e.encode(&[payload]).unwrap();
-            actions.push(MethodCall::Refresh {
-                type_tag: maid_manager_wrapper.type_tag(), from_group: maid_manager_wrapper.name(),
-                payload: e.as_bytes().to_vec()
-            });
+            let maid_manager_wrapper =
+                MaidManagerAccountWrapper::new((*key).clone(), (*value).clone());
+            let mut encoder = cbor::Encoder::from_memory();
+            if encoder.encode(&[maid_manager_wrapper.clone()]).is_ok() {
+                actions.push(MethodCall::Refresh {
+                    type_tag: MAID_MANAGER_ACCOUNT_TAG, from_group: maid_manager_wrapper.name(),
+                    payload: encoder.as_bytes().to_vec()
+                });
+            }
         }
         self.storage.clear();
         actions

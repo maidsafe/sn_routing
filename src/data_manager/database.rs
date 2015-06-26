@@ -17,23 +17,25 @@
 
 #![allow(dead_code)]
 
-use maidsafe_types::{Payload, PayloadTypeTag};
-use routing::NameType;
-use routing::sendable::Sendable;
-use routing::types::GROUP_SIZE;
-use routing::node_interface::MethodCall;
-use std::collections::HashMap;
 use cbor;
 use rustc_serialize::Encodable;
+use std::collections::HashMap;
+
+use routing::NameType;
+use routing::node_interface::MethodCall;
+use routing::sendable::Sendable;
+use routing::types::GROUP_SIZE;
+
+use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
 
 type Identity = NameType; // name of the chunk
 type PmidNode = NameType;
+
 pub type PmidNodes = Vec<PmidNode>;
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct DataManagerSendable {
     name: NameType,
-    tag: u64,
     data_holders: PmidNodes,
     preserialised_content: Vec<u8>,
     has_preserialised_content: bool,
@@ -43,7 +45,6 @@ impl DataManagerSendable {
     pub fn new(name: NameType, data_holders: PmidNodes) -> DataManagerSendable {
         DataManagerSendable {
             name: name,
-            tag: 206, // FIXME : Change once the tag is freezed
             data_holders: data_holders,
             preserialised_content: Vec::new(),
             has_preserialised_content: false,
@@ -53,7 +54,6 @@ impl DataManagerSendable {
     pub fn with_content(name: NameType, preserialised_content: Vec<u8>) -> DataManagerSendable {
         DataManagerSendable {
             name: name,
-            tag: 206, // FIXME : Change once the tag is freezed
             data_holders: PmidNodes::new(),
             preserialised_content: preserialised_content,
             has_preserialised_content: true,
@@ -71,7 +71,7 @@ impl Sendable for DataManagerSendable {
     }
 
     fn type_tag(&self) -> u64 {
-        self.tag.clone()
+        DATA_MANAGER_ACCOUNT_TAG
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
@@ -120,6 +120,7 @@ impl Sendable for DataManagerSendable {
     }
 
 }
+
 
 
 pub struct DataManagerDatabase {
@@ -204,18 +205,19 @@ impl DataManagerDatabase {
         for (key, value) in self.storage.iter() {
             if self.temp_storage_after_churn.get(key).unwrap().len() < 3 {
                 actions.push(MethodCall::Get {
-                    type_id: 206, //TODO Get type_tag correct
+                    type_id: DATA_MANAGER_ACCOUNT_TAG,
                     name: (*key).clone(),
                 });
             }
             let data_manager_sendable = DataManagerSendable::new((*key).clone(), (*value).clone());
-            let payload = Payload::new(PayloadTypeTag::DataManagerAccountTransfer, &data_manager_sendable);
-            let mut e = cbor::Encoder::from_memory();
-            e.encode(&[payload]).unwrap();
-            actions.push(MethodCall::Refresh {
-                type_tag: data_manager_sendable.type_tag(), from_group: data_manager_sendable.name(),
-                payload: e.as_bytes().to_vec()
-            });
+            let mut encoder = cbor::Encoder::from_memory();
+            if encoder.encode(&[data_manager_sendable.clone()]).is_ok() {
+                actions.push(MethodCall::Refresh {
+                    type_tag: DATA_MANAGER_ACCOUNT_TAG,
+                    from_group: data_manager_sendable.name(),
+                    payload: encoder.as_bytes().to_vec()
+                });
+            }
         }
         self.storage.clear();
         actions

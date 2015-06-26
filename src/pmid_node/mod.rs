@@ -18,13 +18,12 @@
 #![allow(dead_code)]
 
 use chunk_store::ChunkStore;
-use maidsafe_types::*;
 use routing::NameType;
 use routing::types::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
 use routing::sendable::Sendable;
 use cbor::Decoder;
-
+use data_parser::Data;
 
 pub struct PmidNode {
   chunk_store_ : ChunkStore
@@ -44,36 +43,29 @@ impl PmidNode {
   }
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
-    let mut data_name : NameType;
-    let mut d = Decoder::from_bytes(&data[..]);
-    let payload: Payload = d.decode().next().unwrap().unwrap();
-    let mut remove_sacrificial = false;
-    match payload.get_type_tag() {
-      PayloadTypeTag::ImmutableData => {
-        data_name = payload.get_data::<ImmutableData>().name();
-        remove_sacrificial = true;
-      }
-      PayloadTypeTag::ImmutableDataBackup => {
-        data_name = payload.get_data::<ImmutableDataBackup>().name();
-      }
-      PayloadTypeTag::ImmutableDataSacrificial => {
-        data_name = payload.get_data::<ImmutableDataSacrificial>().name();
-      }
-      PayloadTypeTag::PublicMaid => {
-        data_name = payload.get_data::<PublicIdType>().name();
-        remove_sacrificial = true;
-      }
-      _ => return Err(From::from(ResponseError::InvalidRequest))
+    let mut decoder = Decoder::from_bytes(&data[..]);
+    let mut data_name_and_remove_sacrificial: (NameType, bool);
+    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+      data_name_and_remove_sacrificial = match parsed_data {
+        Data::Immutable(parsed) => (parsed.name(), true),
+        Data::ImmutableBackup(parsed) => (parsed.name(), false),
+        Data::ImmutableSacrificial(parsed) => (parsed.name(), false),
+        Data::PublicMaid(parsed) => (parsed.name(), true),
+        _ => return Err(From::from(ResponseError::InvalidRequest)),
+      };
+    } else {
+      return Err(From::from(ResponseError::InvalidRequest));
     }
+
     if self.chunk_store_.has_disk_space(data.len()) {
       // the type_tag needs to be stored as well
-      self.chunk_store_.put(data_name, data.clone());
+      self.chunk_store_.put(data_name_and_remove_sacrificial.0, data.clone());
       return Ok(MessageAction::Reply(data));
     }
     // TODO: due to the limitation of current return type, only one notification can be sent out
     //       so we will try to remove the first Sacrificial copy larger enough to free up space
     //       if such Sacrifical copy does not exist, then return with error
-    if !remove_sacrificial {
+    if !data_name_and_remove_sacrificial.1 {
       return Err(From::from(ResponseError::InvalidRequest))
     }
     let required_space = data.len() - (self.chunk_store_.max_disk_usage() - self.chunk_store_.current_disk_usage());
@@ -81,24 +73,25 @@ impl PmidNode {
     for name in names.iter() {
       let fetched_data = self.chunk_store_.get(name.clone());
       let mut decoder = Decoder::from_bytes(&fetched_data[..]);
-      let fetched_payload: Payload = decoder.decode().next().unwrap().unwrap();
-      // Only remove Sacrificial copy
-      match fetched_payload.get_type_tag() {
-        PayloadTypeTag::ImmutableDataSacrificial => {
-          if fetched_data.len() > required_space {
-            self.chunk_store_.delete(name.clone());
-            self.chunk_store_.put(data_name, data);
-            // TODO: ideally, the InterfaceError shall have an option holding a list of copies
-            return Err(From::from(ResponseError::FailedToStoreData(fetched_data)));
-          }
+      if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+        match parsed_data {
+          Data::ImmutableSacrificial(_) => {
+            if fetched_data.len() > required_space {
+              self.chunk_store_.delete(name.clone());
+              self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
+              // TODO: ideally, the InterfaceError shall have an option holding a list of copies
+              return Err(From::from(ResponseError::FailedToStoreData(fetched_data)));
+            }
+          },
+          _ => {}
         }
-        _ => {}
       }
     }
     Err(From::from(ResponseError::InvalidRequest))
   }
 
 }
+
 #[cfg(test)]
 mod test {
   use cbor;
@@ -106,19 +99,16 @@ mod test {
   use routing::error::InterfaceError;
   use super::*;
   use maidsafe_types::*;
-  use routing::types::{ MessageAction, array_as_vector};
+  use routing::types::MessageAction;
   use routing::sendable::Sendable;
+  use data_parser::Data;
 
   #[test]
   fn handle_put_get() {
     let mut pmid_node = PmidNode::new();
     let value = routing::types::generate_random_vec_u8(1024);
     let data = ImmutableData::new(value);
-    let payload = Payload::new(PayloadTypeTag::ImmutableData, &data);
-    let mut encoder = cbor::Encoder::from_memory();
-    let encode_result = encoder.encode(&[&payload]);
-    assert_eq!(encode_result.is_ok(), true);
-    let bytes = array_as_vector(encoder.as_bytes());
+    let bytes = data.serialised_contents();
     let put_result = pmid_node.handle_put(bytes.clone());
     assert_eq!(put_result.is_ok(), true);
     match put_result {
@@ -129,13 +119,17 @@ mod test {
     let get_result = pmid_node.handle_get(data.name());
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
-        MessageAction::Reply(ref x) => {
+        MessageAction::Reply(x) => {
             let mut d = cbor::Decoder::from_bytes(&x[..]);
-            let obj_after: Payload = d.decode().next().unwrap().unwrap();
-            assert_eq!(obj_after.get_type_tag(), PayloadTypeTag::ImmutableData);
-            let data_after = obj_after.get_data::<ImmutableData>();
-            assert_eq!(data.name().0.to_vec(), data_after.name().0.to_vec());
-            assert_eq!(data.serialised_contents(), data_after.serialised_contents());
+            if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
+                match parsed_data {
+                    Data::Immutable(data_after) => {
+                        assert_eq!(data.name().0.to_vec(), data_after.name().0.to_vec());
+                        assert_eq!(data.serialised_contents(), data_after.serialised_contents());
+                    },
+                    _ => panic!("Unexpected"),
+                }
+            }
         },
         _ => panic!("Unexpected"),
     }
