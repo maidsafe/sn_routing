@@ -23,7 +23,7 @@ use maid_manager::database::MaidManagerAccountWrapper;
 use pmid_manager::database::PmidManagerAccountWrapper;
 use version_handler::VersionHandlerSendable;
 
-mod transfer_tags {
+pub mod transfer_tags {
     use maidsafe_types;
     pub const MAIDSAFE_TRANSFER_TAG: u64 = maidsafe_types::MAIDSAFE_TAG + 200;
 
@@ -47,11 +47,16 @@ impl Decodable for Transfer {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Transfer, D::Error> {
         let tag = try!(decoder.read_u64());
         match tag {
-            transfer_tags::MAID_MANAGER_ACCOUNT_TAG => Ok(Transfer::MaidManagerAccount(try!(Decodable::decode(decoder)))),
-            transfer_tags::DATA_MANAGER_ACCOUNT_TAG => Ok(Transfer::DataManagerAccount(try!(Decodable::decode(decoder)))),
-            transfer_tags::PMID_MANAGER_ACCOUNT_TAG => Ok(Transfer::PmidManagerAccount(try!(Decodable::decode(decoder)))),
-            transfer_tags::VERSION_HANDLER_ACCOUNT_TAG => Ok(Transfer::VersionHandlerAccount(try!(Decodable::decode(decoder)))),
-            transfer_tags::DATA_MANAGER_STATS_TAG => Ok(Transfer::DataManagerStats(try!(Decodable::decode(decoder)))),
+            transfer_tags::MAID_MANAGER_ACCOUNT_TAG =>
+                Ok(Transfer::MaidManagerAccount(try!(Decodable::decode(decoder)))),
+            transfer_tags::DATA_MANAGER_ACCOUNT_TAG =>
+                Ok(Transfer::DataManagerAccount(try!(Decodable::decode(decoder)))),
+            transfer_tags::PMID_MANAGER_ACCOUNT_TAG =>
+                Ok(Transfer::PmidManagerAccount(try!(Decodable::decode(decoder)))),
+            transfer_tags::VERSION_HANDLER_ACCOUNT_TAG =>
+                Ok(Transfer::VersionHandlerAccount(try!(Decodable::decode(decoder)))),
+            transfer_tags::DATA_MANAGER_STATS_TAG =>
+                Ok(Transfer::DataManagerStats(try!(Decodable::decode(decoder)))),
             _ => Ok(Transfer::Unknown(tag)),
         }
     }

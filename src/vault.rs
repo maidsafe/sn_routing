@@ -60,46 +60,18 @@ impl Clone for VaultFacade {
     }
 }
 
-fn merge_payload(type_tag: u64, from_group: NameType, payloads: Vec<Vec<u8>>) -> Option<Payload> {
-    match type_tag {
-      200 => {
-        Some(merge_refreashable(MaidManagerAccountWrapper::new(from_group, MaidManagerAccount::new()),
-                                PayloadTypeTag::MaidManagerAccountTransfer, payloads))
-      }
-      DATA_MANAGER_ACCOUNT_TAG => {
-        Some(merge_refreashable(DataManagerSendable::new(from_group, vec![]),
-                                PayloadTypeTag::DataManagerAccountTransfer, payloads))
-      }
-      220 => {
-        Some(merge_refreashable(DataManagerStatsSendable::new(from_group, 0),
-                                PayloadTypeTag::DataManagerStatsTransfer, payloads))
-      }
-      201 => {
-        Some(merge_refreashable(PmidManagerAccountWrapper::new(from_group, PmidManagerAccount::new()),
-                                PayloadTypeTag::PmidManagerAccountTransfer, payloads))
-      }
-      209 => {
-        let seed_sdv_payload = payloads[0].clone();
-        let mut d = Decoder::from_bytes(&seed_sdv_payload[..]);
-        let payload: Payload = d.decode().next().unwrap().unwrap();
-        let transfer_entry : VersionHandlerSendable = payload.get_data();
-        Some(merge_refreashable(transfer_entry, PayloadTypeTag::VersionHandlerAccountTransfer, payloads))
-      }
-      _ => None
-    }
-}
-
-fn merge_refreashable<T>(merged_entry: T, payload_type: PayloadTypeTag,
-                         payloads: Vec<Vec<u8>>) -> Payload where T: for<'a> Sendable + Encodable + Decodable + 'static {
+fn merge_refreshable<T>(merged_entry: T, payloads: Vec<Vec<u8>>) ->
+        T where T: for<'a> Sendable + Encodable + Decodable + 'static {
     let mut transfer_entries = Vec::<Box<Sendable>>::new();
     for it in payloads.iter() {
-        let mut d = Decoder::from_bytes(&it[..]);
-        let payload: Payload = d.decode().next().unwrap().unwrap();
-        let transfer_entry : T = payload.get_data();
-        transfer_entries.push(Box::new(transfer_entry));
+        let mut decoder = Decoder::from_bytes(&it[..]);
+        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
+            let parsed: T = parsed_entry;
+            transfer_entries.push(Box::<Sendable>::new(parsed));
+        }
     }
     merged_entry.merge(transfer_entries);
-    Payload::new(payload_type, &merged_entry)
+    merged_entry
 }
 
 impl Interface for VaultFacade {
@@ -125,24 +97,53 @@ impl Interface for VaultFacade {
     }
 
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
-                from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<MessageAction, InterfaceError> {
+                from_address: NameType, dest_address: DestinationAddress,
+                serialised_data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         match our_authority {
-            Authority::ClientManager => { return self.maid_manager.handle_put(&from_address, &data); }
+            Authority::ClientManager => {
+                return self.maid_manager.handle_put(&from_address, &serialised_data);
+            }
             Authority::NaeManager => {
                 // both DataManager and VersionHandler are NaeManagers
                 // client put PublicMaid will directly goes to DM (i.e. from_authority is ManagedNode)
                 // client put other data types (Immutable, StructuredData) will all goes to MaidManager first,
                 // then goes to DataManager (i.e. from_authority is always ClientManager)
-                let mut d = Decoder::from_bytes(&data[..]);
-                let payload: Payload = d.decode().next().unwrap().unwrap();
-                match payload.get_type_tag() {
-                    PayloadTypeTag::StructuredData => self.version_handler.handle_put(data),
-                    _ => self.data_manager.handle_put(&data, &mut (self.nodes_in_table)),
+                let mut decoder = Decoder::from_bytes(&serialised_data[..]);
+                if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+                    match parsed_data {
+                        Data::Immutable(data) => {
+                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
+                        }
+                        Data::ImmutableBackup(data) => {
+                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
+                        }
+                        Data::ImmutableSacrificial(data) => {
+                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
+                        }
+                        Data::PublicMaid(data) => {
+                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
+                        }
+                        Data::PublicMpid(data) => {
+                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
+                        }
+                        Data::Structured(data) => {
+                            self.version_handler.handle_put(serialised_data, data)
+                        }
+                        _ => return Err(From::from(ResponseError::InvalidRequest)),
+                    }
+                } else {
+                    return Err(From::from(ResponseError::InvalidRequest));
                 }
             }
-            Authority::NodeManager => { return self.pmid_manager.handle_put(&dest_address, &data); }
-            Authority::ManagedNode => { return self.pmid_node.handle_put(data); }
-            _ => { return Err(From::from(ResponseError::InvalidRequest)); }
+            Authority::NodeManager => {
+                return self.pmid_manager.handle_put(&dest_address, &serialised_data);
+            }
+            Authority::ManagedNode => {
+                return self.pmid_node.handle_put(serialised_data);
+            }
+            _ => {
+                return Err(From::from(ResponseError::InvalidRequest));
+            }
         }
     }
 
@@ -200,31 +201,40 @@ impl Interface for VaultFacade {
     fn handle_refresh(&mut self,
                       type_tag: u64,
                       from_group: NameType,
-                      payloads: Vec<Vec<u8>>) { // payloads
-        // TODO: The assumption of the incoming payloads is that it is a vector of serialized Payload type
-        //       holding the transferring account entry from the close group nodes of from_group
-        match merge_payload(type_tag, from_group, payloads) {
-            Some(payload) => {
-                match payload.get_type_tag() {
-                    PayloadTypeTag::MaidManagerAccountTransfer => {
-                        self.maid_manager.handle_account_transfer(payload);
-                    }
-                    PayloadTypeTag::DataManagerAccountTransfer => {
-                        self.data_manager.handle_account_transfer(payload);
-                    }
-                    PayloadTypeTag::DataManagerStatsTransfer => {
-                        self.data_manager.handle_stats_transfer(payload);
-                    }
-                    PayloadTypeTag::PmidManagerAccountTransfer => {
-                        self.pmid_manager.handle_account_transfer(payload);
-                    }
-                    PayloadTypeTag::VersionHandlerAccountTransfer => {
-                        self.version_handler.handle_account_transfer(payload);
-                    }
-                    _ => {}
-                }
-            }
-            None => {}
+                      payloads: Vec<Vec<u8>>) {
+        // TODO: The assumption of the incoming payloads is that it is a vector of serialised
+        //       account entries from the close group nodes of `from_group`
+        match type_tag {
+            MAID_MANAGER_ACCOUNT_TAG => {
+                let merged_account = merge_refreshable(
+                    MaidManagerAccountWrapper::new(from_group, MaidManagerAccount::new()),
+                    payloads);
+                self.maid_manager.handle_account_transfer(merged_account);
+            },
+            DATA_MANAGER_ACCOUNT_TAG => {
+                let merged_account = merge_refreshable(DataManagerSendable::new(from_group, vec![]),
+                                                       payloads);
+                self.data_manager.handle_account_transfer(merged_account);
+            },
+            PMID_MANAGER_ACCOUNT_TAG => {
+                let merged_account = merge_refreshable(
+                    PmidManagerAccountWrapper::new(from_group, PmidManagerAccount::new()),
+                    payloads);
+                self.pmid_manager.handle_account_transfer(merged_account);
+            },
+            VERSION_HANDLER_ACCOUNT_TAG => {
+                let seed_sdv_payload = payloads[0].clone();
+                let mut d = Decoder::from_bytes(&seed_sdv_payload[..]);
+                let transfer_entry: VersionHandlerSendable = d.decode().next().unwrap().unwrap();
+                let merged_account = merge_refreshable(transfer_entry, payloads);
+                self.version_handler.handle_account_transfer(merged_account);
+            },
+            DATA_MANAGER_STATS_TAG => {
+                let merged_stats = merge_refreshable(DataManagerStatsSendable::new(from_group, 0),
+                                                     payloads);
+                self.data_manager.handle_stats_transfer(merged_stats);
+            },
+            _ => {},
         }
     }
 
@@ -243,22 +253,20 @@ impl Interface for VaultFacade {
     fn handle_cache_put(&mut self,
                         _: Authority, // from_authority
                         _: NameType, // from_address
-                        data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
-        let mut data_name : NameType;
-        let mut d = Decoder::from_bytes(&data[..]);
-        let payload: Payload = d.decode().next().unwrap().unwrap();
-        match payload.get_type_tag() {
-          PayloadTypeTag::ImmutableData => {
-            data_name = payload.get_data::<ImmutableData>().name();
-          }
-          PayloadTypeTag::PublicMaid => {
-            data_name = payload.get_data::<PublicIdType>().name();
-          }
-          _ => return Err(From::from(ResponseError::InvalidRequest))
+                        serialised_data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+        let mut decoder = Decoder::from_bytes(&serialised_data[..]);
+        if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+            let data_name = match parsed_data {
+                Data::Immutable(parsed) => parsed.name(),
+                Data::PublicMaid(parsed) => parsed.name(),
+                Data::PublicMpid(parsed) => parsed.name(),
+                _ => return Err(From::from(ResponseError::InvalidRequest)),
+            };
+            // the type_tag needs to be stored as well
+            self.data_cache.add(data_name, serialised_data);
+            return Err(InterfaceError::Abort);
         }
-        // the type_tag needs to be stored as well
-        self.data_cache.add(data_name, data);
-        Err(InterfaceError::Abort)
+        Err(From::from(ResponseError::InvalidRequest))
     }
 }
 

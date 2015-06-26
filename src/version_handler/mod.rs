@@ -29,7 +29,7 @@ use cbor;
 use data_parser::Data;
 use transfer_parser::transfer_tags::VERSION_HANDLER_ACCOUNT_TAG;
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Clone, Debug)]
 pub struct VersionHandlerSendable {
     name: NameType,
     data: Vec<u8>
@@ -53,7 +53,7 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn type_tag(&self) -> u64 {
-      VERSION_HANDLER_ACCOUNT_TAG
+        VERSION_HANDLER_ACCOUNT_TAG
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
@@ -109,41 +109,16 @@ impl VersionHandler {
     Ok(MessageAction::Reply(data))
   }
 
-  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
-    let mut version_name : NameType;
-    let version_handler_sendable: Box<Sendable>;
-    let mut decoder = cbor::Decoder::from_bytes(&data[..]);
-    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-      match parsed_data {
-          Data::Structured(parsed) => version_handler_sendable = Box::new(parsed),
-          _ => return Err(From::from(ResponseError::InvalidRequest)),
-      }
-    } else {
-      return Err(From::from(ResponseError::InvalidRequest));
-    }
-
-    version_name = version_handler_sendable.name();
+  pub fn handle_put(&mut self, serialised_data: Vec<u8>,
+                    structured_data: StructuredData) ->Result<MessageAction, InterfaceError> {
     // the type_tag needs to be stored as well, ChunkStore::put is overwritable
-    self.chunk_store_.put(version_name.clone(), version_handler_sendable.clone());
-    return Ok(MessageAction::Reply(version_handler_sendable));
+    self.chunk_store_.put(structured_data.name(), serialised_data.clone());
+    return Ok(MessageAction::Reply(serialised_data));
   }
 
-  pub fn handle_account_transfer(&mut self, data : Vec<u8>) {
-      let mut version_name : NameType;
-      let version_handler_sendable: Box<Sendable>;
-      let mut decoder = cbor::Decoder::from_bytes(&data[..]);
-      if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-        match parsed_data {
-            Data::Structured(parsed) => version_handler_sendable = Box::new(parsed),
-            _ => return Err(From::from(ResponseError::InvalidRequest)),
-        }
-      } else {
-        return Err(From::from(ResponseError::InvalidRequest));
-      }
-
-      version_name = version_handler_sendable.name();
-      self.chunk_store_.delete(version_name.clone());
-      self.chunk_store_.put(version_name.clone(), version_handler_sendable.clone());
+  pub fn handle_account_transfer(&mut self, merged_account: VersionHandlerSendable) {
+      self.chunk_store_.delete(merged_account.name());
+      self.chunk_store_.put(merged_account.name(), merged_account.get_data().clone());
   }
 
   pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
@@ -153,12 +128,13 @@ impl VersionHandler {
             let data = self.chunk_store_.get(name.clone());
             let version_handler_sendable = VersionHandlerSendable::new(name, data);
             let mut encoder = cbor::Encoder::from_memory();
-            encoder.encode(&[version_handler_sendable]).unwrap();
-            actions.push(MethodCall::Refresh {
-                type_tag: version_handler_sendable.type_tag(),
-                from_group: version_handler_sendable.name(),
-                payload: encoder.as_bytes().to_vec()
-            });
+            if encoder.encode(&[version_handler_sendable]).is_ok() {
+                actions.push(MethodCall::Refresh {
+                    type_tag: VERSION_HANDLER_ACCOUNT_TAG,
+                    from_group: version_handler_sendable.name(),
+                    payload: encoder.as_bytes().to_vec()
+                });
+            }
        }
        self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
        actions
@@ -166,20 +142,7 @@ impl VersionHandler {
 
 }
 
-impl Encodable for VersionHandlerSendable {
-    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
-        cbor::CborTagEncode::new(VERSION_HANDLER_ACCOUNT_TAG,
-            &(&self.name, &self.data)).encode(encoder)
-    }
-}
 
-impl Decodable for VersionHandlerSendable {
-    fn decode<D: Decoder>(decoder: &mut D)->Result<VersionHandlerSendable, D::Error> {
-        let (name, data) = try!(Decodable::decode(decoder));
-        let value = VersionHandlerSendable {name: name, data: data};
-        Ok(value)
-    }
-}
 
 #[cfg(test)]
 mod test {

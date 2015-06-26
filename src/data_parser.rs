@@ -35,9 +35,12 @@ impl Decodable for Data {
         let tag = try!(decoder.read_u64());
         match tag {
             data_tags::IMMUTABLE_DATA_TAG => Ok(Data::Immutable(try!(Decodable::decode(decoder)))),
-            data_tags::IMMUTABLE_DATA_BACKUP_TAG => Ok(Data::ImmutableBackup(try!(Decodable::decode(decoder)))),
-            data_tags::IMMUTABLE_DATA_SACRIFICIAL_TAG => Ok(Data::ImmutableSacrificial(try!(Decodable::decode(decoder)))),
-            data_tags::STRUCTURED_DATA_TAG => Ok(Data::Structured(try!(Decodable::decode(decoder)))),
+            data_tags::IMMUTABLE_DATA_BACKUP_TAG =>
+                Ok(Data::ImmutableBackup(try!(Decodable::decode(decoder)))),
+            data_tags::IMMUTABLE_DATA_SACRIFICIAL_TAG =>
+                Ok(Data::ImmutableSacrificial(try!(Decodable::decode(decoder)))),
+            data_tags::STRUCTURED_DATA_TAG =>
+                Ok(Data::Structured(try!(Decodable::decode(decoder)))),
             data_tags::PUBLIC_MAID_TAG => Ok(Data::PublicMaid(try!(Decodable::decode(decoder)))),
             data_tags::PUBLIC_MPID_TAG => Ok(Data::PublicMpid(try!(Decodable::decode(decoder)))),
             _ => Ok(Data::Unknown(tag)),

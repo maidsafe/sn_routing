@@ -21,8 +21,8 @@ mod database;
 
 use std::cmp;
 use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use cbor::Decoder;
+use rustc_serialize::Encodable;
 
 use maidsafe_types::data_tags;
 use routing::{closer_to_target, NameType};
@@ -47,7 +47,7 @@ pub struct DataManager {
   resource_index : u64
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
 pub struct DataManagerStatsSendable {
     name: NameType,
     resource_index: u64
@@ -98,24 +98,6 @@ impl Sendable for DataManagerStatsSendable {
     }
 }
 
-impl Encodable for DataManagerStatsSendable {
-    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(DATA_MANAGER_STATS_TAG,
-                           &(&self.name, &self.resource_index)).encode(encoder)
-    }
-}
-
-impl Decodable for DataManagerStatsSendable {
-    fn decode<D: Decoder>(decoder: &mut D)->Result<DataManagerStatsSendable, D::Error> {
-        let (name, resource_index) = try!(Decodable::decode(decoder));
-        let value = DataManagerStatsSendable {
-            name: name,
-            resource_index: resource_index,
-        };
-        Ok(value)
-    }
-}
-
 
 
 impl DataManager {
@@ -136,24 +118,8 @@ impl DataManager {
 	  Ok(MessageAction::SendOn(dest_pmids))
   }
 
-  pub fn handle_put(&mut self, serialised_data : &Vec<u8>,
-                    nodes_in_table : &mut Vec<NameType>) -> Result<MessageAction, InterfaceError> {
-    let mut decoder = Decoder::from_bytes(&serialised_data[..]);
-    let mut data: Box<Sendable>;
-    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-      match parsed_data {
-        Data::Immutable(parsed) => data = Box::new(parsed),
-        Data::ImmutableBackup(parsed) => data = Box::new(parsed),
-        Data::ImmutableSacrificial(parsed) => data = Box::new(parsed),
-        Data::Structured(parsed) => data = Box::new(parsed),
-        Data::PublicMaid(parsed) => data = Box::new(parsed),
-        Data::PublicMpid(parsed) => data = Box::new(parsed),
-        _ => return Err(From::from(ResponseError::InvalidRequest)),
-      }
-    } else {
-      return Err(From::from(ResponseError::InvalidRequest));
-    }
-
+  pub fn handle_put<Data: Sendable>(&mut self, data: Data, nodes_in_table: &mut Vec<NameType>)
+          -> Result<MessageAction, InterfaceError> {
     let data_name = data.name();
     if self.db_.exist(&data_name) {
       return Err(InterfaceError::Abort);
@@ -257,30 +223,29 @@ impl DataManager {
     MethodCall::None
   }
 
-  pub fn handle_account_transfer(&mut self, payload : maidsafe_types::Payload) {
-      let datamanager_account_wrapper : DataManagerSendable = payload.get_data();
-      self.db_.handle_account_transfer(&datamanager_account_wrapper);
+  pub fn handle_account_transfer(&mut self, merged_account: DataManagerSendable) {
+      self.db_.handle_account_transfer(&merged_account);
   }
 
-  pub fn handle_stats_transfer(&mut self, payload : maidsafe_types::Payload) {
-      let stats_sendable : DataManagerStatsSendable = payload.get_data();
+  pub fn handle_stats_transfer(&mut self, merged_stats: DataManagerStatsSendable) {
       // TODO: shall give more priority to the incoming stats?
-      self.resource_index = (self.resource_index + stats_sendable.get_resource_index()) / 2;
+      self.resource_index = (self.resource_index + merged_stats.get_resource_index()) / 2;
   }
 
   pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
-    // TODO: as Vault doesn't have access to what ID it is, so here have to use the first one in the closing group as its ID
-    let mut result = self.db_.retrieve_all_and_reset(close_group);
-    let data_manager_stats_sendable = DataManagerStatsSendable::new(close_group[0].clone(), self.resource_index);
-    let payload = maidsafe_types::Payload::new(maidsafe_types::PayloadTypeTag::DataManagerStatsTransfer,
-                                               &data_manager_stats_sendable);
-    let mut e = cbor::Encoder::from_memory();
-    e.encode(&[payload]).unwrap();
-    result.push(MethodCall::Refresh {
-        type_tag: data_manager_stats_sendable.type_tag(), from_group: data_manager_stats_sendable.name(),
-        payload: e.as_bytes().to_vec()
-    });
-    result
+      // TODO: as Vault doesn't have access to what ID it is, we have to use the first one in the
+      //       close group as its ID
+      let mut result = self.db_.retrieve_all_and_reset(close_group);
+      let data_manager_stats_sendable =
+          DataManagerStatsSendable::new(close_group[0].clone(), self.resource_index);
+      let mut encoder = cbor::Encoder::from_memory();
+      if encoder.encode(&[data_manager_stats_sendable]).is_ok() {
+          result.push(MethodCall::Refresh {
+              type_tag: DATA_MANAGER_STATS_TAG, from_group: data_manager_stats_sendable.name(),
+              payload: encoder.as_bytes().to_vec()
+          });
+      }
+      result
   }
 
   fn replicate_to(&mut self, name : &NameType) -> Option<NameType> {

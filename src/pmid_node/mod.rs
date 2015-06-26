@@ -45,8 +45,10 @@ impl PmidNode {
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
     let mut decoder = Decoder::from_bytes(&data[..]);
+    let mut data_name_and_remove_sacrificial: (NameType, bool);
+    let mut remove_sacrificial = false;
     if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-      let (data_name, remove_sacrificial) = match parsed_data {
+      data_name_and_remove_sacrificial = match parsed_data {
         Data::Immutable(parsed) => (parsed.name(), true),
         Data::ImmutableBackup(parsed) => (parsed.name(), false),
         Data::ImmutableSacrificial(parsed) => (parsed.name(), false),
@@ -59,13 +61,13 @@ impl PmidNode {
 
     if self.chunk_store_.has_disk_space(data.len()) {
       // the type_tag needs to be stored as well
-      self.chunk_store_.put(data_name, data.clone());
+      self.chunk_store_.put(data_name_and_remove_sacrificial.0, data.clone());
       return Ok(MessageAction::Reply(data));
     }
     // TODO: due to the limitation of current return type, only one notification can be sent out
     //       so we will try to remove the first Sacrificial copy larger enough to free up space
     //       if such Sacrifical copy does not exist, then return with error
-    if !remove_sacrificial {
+    if !data_name_and_remove_sacrificial.1 {
       return Err(From::from(ResponseError::InvalidRequest))
     }
     let required_space = data.len() - (self.chunk_store_.max_disk_usage() - self.chunk_store_.current_disk_usage());
@@ -78,16 +80,16 @@ impl PmidNode {
           Data::ImmutableSacrificial(parsed) => {
             if fetched_data.len() > required_space {
               self.chunk_store_.delete(name.clone());
-              self.chunk_store_.put(data_name, data);
+              self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
               // TODO: ideally, the InterfaceError shall have an option holding a list of copies
               return Err(From::from(ResponseError::FailedToStoreData(fetched_data)));
             }
           },
           _ => {}
         }
-        Err(From::from(ResponseError::InvalidRequest))
       }
     }
+    Err(From::from(ResponseError::InvalidRequest))
   }
 
 }

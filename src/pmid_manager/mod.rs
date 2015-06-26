@@ -19,68 +19,75 @@
 
 mod database;
 
-use maidsafe_types::*;
-use routing::NameType;
-use routing::node_interface::MethodCall;
-use routing::types::{MessageAction, DestinationAddress};
-use routing::error::{ResponseError, InterfaceError};
-use routing::sendable::Sendable;
-pub use self::database::{PmidManagerAccountWrapper, PmidManagerAccount};
-
 use cbor::Decoder;
 
+use routing::error::{ResponseError, InterfaceError};
+use routing::NameType;
+use routing::node_interface::MethodCall;
+use routing::sendable::Sendable;
+use routing::types::{MessageAction, DestinationAddress};
+
+use data_parser::Data;
+
+pub use self::database::{PmidManagerAccountWrapper, PmidManagerAccount};
+
 pub struct PmidManager {
-  db_ : database::PmidManagerDatabase
+    db_ : database::PmidManagerDatabase
 }
 
 impl PmidManager {
-  pub fn new() -> PmidManager {
-    PmidManager { db_: database::PmidManagerDatabase::new() }
-  }
-
-  pub fn handle_put(&mut self, dest_address: &DestinationAddress, data : &Vec<u8>) ->Result<MessageAction, InterfaceError> {
-    if self.db_.put_data(&dest_address.dest, data.len() as u64) {
-      let mut destinations : Vec<NameType> = Vec::new();
-      destinations.push(dest_address.dest.clone());
-      Ok(MessageAction::SendOn(destinations))
-    } else {
-      Err(From::from(ResponseError::InvalidRequest))
-    }
-  }
-
-  pub fn handle_put_response(&mut self, from_address: &NameType,
-                             response: &Result<Vec<u8>, ResponseError>) -> MethodCall {
-    // TODO: here the assumption is pmid_node's routing will send back the whole original payload data,
-    //       when the return from pmid_node->handle_put() is Err(InvalidRequest)
-    // The content in response is payload for the failing to store data or the removed Sacrificial copy
-    if response.is_err() {
-      return MethodCall::None;
-    }
-
-    let data = response.clone().unwrap();
-    self.db_.delete_data(from_address, data.len() as u64);
-
-    let mut decoder = Decoder::from_bytes(&data[..]);
-    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-        match parsed_data {
-            Data::Immutable(parsed) => return MethodCall::SendOn { destination: parsed.name() },
-            Data::ImmutableBackup(parsed) => return MethodCall::SendOn { destination: parsed.name() },
-            Data::ImmutableSacrificial(parsed) => return MethodCall::SendOn { destination: parsed.name() },
-            _ => return MethodCall::None,
+    pub fn new() -> PmidManager {
+        PmidManager {
+            db_: database::PmidManagerDatabase::new()
         }
     }
 
-    MethodCall::None
-  }
+    pub fn handle_put(&mut self, dest_address: &DestinationAddress,
+                      data: &Vec<u8>) ->Result<MessageAction, InterfaceError> {
+        if self.db_.put_data(&dest_address.dest, data.len() as u64) {
+            let mut destinations : Vec<NameType> = Vec::new();
+            destinations.push(dest_address.dest.clone());
+            Ok(MessageAction::SendOn(destinations))
+        } else {
+            Err(From::from(ResponseError::InvalidRequest))
+        }
+    }
 
-  pub fn handle_account_transfer(&mut self, payload : Payload) {
-      let pmidmanager_account_wrapper : PmidManagerAccountWrapper = payload.get_data();
-      self.db_.handle_account_transfer(&pmidmanager_account_wrapper);
-  }
+    pub fn handle_put_response(&mut self, from_address: &NameType,
+                               response: &Result<Vec<u8>, ResponseError>) -> MethodCall {
+        // TODO: here the assumption is pmid_node's routing will send back the whole original
+        //       payload data, when the return from pmid_node->handle_put() is Err(InvalidRequest).
+        //       The content in response is payload for the failing to store data or the removed
+        //       Sacrificial copy.
+        if response.is_err() {
+            return MethodCall::None;
+        }
 
-  pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {
-    self.db_.retrieve_all_and_reset(close_group)
-  }
+        let data = response.clone().unwrap();
+        self.db_.delete_data(from_address, data.len() as u64);
+
+        let mut decoder = Decoder::from_bytes(&data[..]);
+        if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+            match parsed_data {
+                Data::Immutable(parsed) => return MethodCall::SendOn { destination: parsed.name() },
+                Data::ImmutableBackup(parsed) =>
+                    return MethodCall::SendOn { destination: parsed.name() },
+                Data::ImmutableSacrificial(parsed) =>
+                    return MethodCall::SendOn { destination: parsed.name() },
+                _ => return MethodCall::None,
+            }
+        }
+
+        MethodCall::None
+    }
+
+    pub fn handle_account_transfer(&mut self, merged_account: PmidManagerAccountWrapper) {
+        self.db_.handle_account_transfer(&merged_account);
+    }
+
+    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {
+        self.db_.retrieve_all_and_reset(close_group)
+    }
 }
 
 #[cfg(test)]

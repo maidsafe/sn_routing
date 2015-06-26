@@ -17,21 +17,23 @@
 
 #![allow(dead_code)]
 
+use cbor;
+use rustc_serialize::Encodable;
+use std::collections::HashMap;
+
 use routing::NameType;
+use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
 use routing::types::GROUP_SIZE;
-use routing::node_interface::MethodCall;
-use std::collections::HashMap;
-use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+
 use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
 
 type Identity = NameType; // name of the chunk
 type PmidNode = NameType;
+
 pub type PmidNodes = Vec<PmidNode>;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
 pub struct DataManagerSendable {
     name: NameType,
     data_holders: PmidNodes,
@@ -117,28 +119,6 @@ impl Sendable for DataManagerSendable {
         None
     }
 
-}
-
-impl Encodable for DataManagerSendable {
-    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(DATA_MANAGER_ACCOUNT_TAG,
-            &(&self.name, &self.data_holders, &self.preserialised_content,
-                &self.has_preserialised_content)).encode(encoder)
-    }
-}
-
-impl Decodable for DataManagerSendable {
-    fn decode<D: Decoder>(decoder: &mut D)->Result<DataManagerSendable, D::Error> {
-        let (name, data_holders, preserialised_content, has_preserialised_content) =
-            try!(Decodable::decode(decoder));
-        let value = DataManagerSendable {
-            name: name,
-            data_holders: data_holders,
-            preserialised_content: preserialised_content,
-            has_preserialised_content: has_preserialised_content,
-        };
-        Ok(value)
-    }
 }
 
 
@@ -231,12 +211,13 @@ impl DataManagerDatabase {
             }
             let data_manager_sendable = DataManagerSendable::new((*key).clone(), (*value).clone());
             let mut encoder = cbor::Encoder::from_memory();
-            encoder.encode(&[data_manager_sendable]).unwrap();
-            actions.push(MethodCall::Refresh {
-                type_tag: data_manager_sendable.type_tag(),
-                from_group: data_manager_sendable.name(),
-                payload: encoder.as_bytes().to_vec()
-            });
+            if encoder.encode(&[data_manager_sendable]).is_ok() {
+                actions.push(MethodCall::Refresh {
+                    type_tag: DATA_MANAGER_ACCOUNT_TAG,
+                    from_group: data_manager_sendable.name(),
+                    payload: encoder.as_bytes().to_vec()
+                });
+            }
         }
         self.storage.clear();
         actions
