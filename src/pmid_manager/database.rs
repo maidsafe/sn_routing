@@ -91,9 +91,9 @@ impl Sendable for PmidManagerAccountWrapper {
            stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
         }
         Some(Box::new(PmidManagerAccountWrapper::new(NameType([0u8;64]), PmidManagerAccount {
-           offered_space : median(&offered_space),
-           lost_total_size: median(&lost_total_size),
-           stored_total_size: median(&stored_total_size)
+           offered_space : median(offered_space),
+           lost_total_size: median(lost_total_size),
+           stored_total_size: median(stored_total_size)
         })))
     }
 }
