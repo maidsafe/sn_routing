@@ -32,6 +32,12 @@ use std::process::Command;
 use std::error::Error;
 use std::io::Read;
 
+#[cfg(debug_assertions)]
+static EXECUTABLE_PATH: &'static str = "./target/debug/maidsafe_vault";
+
+#[cfg(not(debug_assertions))]
+static EXECUTABLE_PATH: &'static str = "./target/release/maidsafe_vault";
+
 #[test]
 // This test requires the executable maidsafe_vault is presented at the same place of the test get executed
 // also it depends a printout in routing lib. if such printout is changed / muted, this test needs to be updated
@@ -40,7 +46,7 @@ fn executable_test() {
     let num_of_nodes = 8;
     // the first vault must be run in zero_membrane mode
     println!("---------- starting node 0 --------------");
-    processes.push(match Command::new("./target/debug/maidsafe_vault").arg("-f").stdout(Stdio::piped()).spawn() {
+    processes.push(match Command::new(EXECUTABLE_PATH).arg("-f").stdout(Stdio::piped()).spawn() {
                 Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
                 Ok(process) => process,
             });
@@ -48,7 +54,7 @@ fn executable_test() {
 
     for i in 1..num_of_nodes {
         println!("---------- starting node {} --------------", i);
-        processes.push(match Command::new("./target/debug/maidsafe_vault").stdout(Stdio::piped()).spawn() {
+        processes.push(match Command::new(EXECUTABLE_PATH).stdout(Stdio::piped()).spawn() {
                     Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
                     Ok(process) => process,
                 });
