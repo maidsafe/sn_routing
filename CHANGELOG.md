@@ -30,7 +30,6 @@
     - Farming rate determined by the Sacrificial copies.
     - Farming rate drops when more copies are available and rises when less copies are available.
 
-
 ## [0.0.0 - 0.0.3]
 - VaultFacade initial implementation
 - Chunkstore implementation and test
@@ -46,4 +45,3 @@
     - Complete Create Maid Account Flow
 - Installers (linux deb/rpm 32/64 bit, Windows 32 / 64. OSX)
 - Coverage analysis
-
