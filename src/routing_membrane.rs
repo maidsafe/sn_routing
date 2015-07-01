@@ -388,10 +388,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // The relay map will automatically drop the Name if the last endpoint to it is dropped
         self.relay_map.remove_unknown_connection(&endpoint);
         self.relay_map.drop_endpoint(&endpoint);
-        let mut trigger_handle_churn = false;
+        let mut close_node_lost = false;
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => {
-                trigger_handle_churn = self.routing_table
+                close_node_lost = self.routing_table
                     .address_in_our_close_group_range(&name);
                 self.routing_table.drop_node(&name);
                 println!("RT (size : {:?}) connection {:?} disconnected for {:?}.",
@@ -412,7 +412,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
         if drop_bootstrap { self.bootstrap_endpoint = None; }
 
-        if trigger_handle_churn {
+        if close_node_lost {
+            self.send_find_group_request();
             println!("Handle CHURN lost node");
             let mut close_group : Vec<NameType> = self.routing_table
                 .our_close_group().iter()
@@ -430,6 +431,34 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::SendOn { destination } =>
                         println!("IGNORED: on handle_churn MethodCall:SendOn is not a Valid action")
                 };
+            }
+        };
+    }
+
+    /// If routing table is not empty, the find group request is sent through available node(s),
+    /// else if bootstrap_endpoint is non-empty, request sent through bootstrap_endpoint.
+    /// If routing table is empty & bootstrap_endpoint is empty, attempt is made to
+    /// send the request through the endpoint acheived from re-bootstrapping.
+    fn send_find_group_request(&mut self) {
+        let our_name = self.own_name.clone();
+        let find_group_msg = self.construct_find_group_msg(&our_name);
+        let serialised_msg = match encode(&find_group_msg) {
+            Ok(msg) => msg,
+            Err(_) => panic!("Failure to serialise find group message.")
+        };
+
+        if self.routing_table.size() != 0 {
+            return self.send_swarm_or_parallel(&our_name, &serialised_msg);
+        }
+
+        loop {
+            if self.bootstrap_endpoint.clone().map_or(false, |ref bootstrap_endpoint|
+                self.connection_manager.send(bootstrap_endpoint.clone(), serialised_msg.clone()).is_ok()) {
+                break;
+            }
+            self.bootstrap_endpoint = match self.connection_manager.bootstrap(None, Some(5483u16)) {
+                Ok(bootstrap) => Some(bootstrap),
+                Err(_) => panic!("Failure to bootstrap.")
             }
         };
     }
