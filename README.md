@@ -11,7 +11,8 @@
 |[![](http://meritbadge.herokuapp.com/maidsafe_vault)](https://crates.io/crates/maidsafe_vault)|[![Build Status](https://travis-ci.org/maidsafe/maidsafe_vault.svg?branch=master)](https://travis-ci.org/maidsafe/maidsafe_vault) | [![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_win64_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_osx_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_osx_status_badge/) |[![Coverage Status](https://coveralls.io/repos/maidsafe/maidsafe_vault/badge.svg)](https://coveralls.io/r/maidsafe/maidsafe_vault)|[![Stories in Ready](https://badge.waffle.io/maidsafe/maidsafe_vault.png?label=ready&title=Ready)](https://waffle.io/maidsafe/maidsafe_vault)|
 
 
-| [API Documentation - Master branch ](http://maidsafe.github.io/maidsafe_vault/) | [SAFENetwork System Documention](http://systemdocs.maidsafe.net/) | [MaidSafe website](http://www.maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
+| [API Documentation - master branch ](http://maidsafe.net/maidsafe_vault/master) | [SAFE Network System Documention](http://systemdocs.maidsafe.net) | [MaidSafe website](http://maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
+|:------:|:-------:|:-------:|:-------:|
 
 #Overview
 
@@ -21,33 +22,33 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 #Todo Items
 
 ## [0.1.1] - code clean up
-- [Issue 113](https://github.com/maidsafe/maidsafe_vault/issues/113) using unwrap unsafely
-- [Issue 117](https://github.com/maidsafe/maidsafe_vault/issues/117) meaningful type_tag
+- [ ][Issue 113](https://github.com/maidsafe/maidsafe_vault/issues/113) using unwrap unsafely
+- [ ][Issue 117](https://github.com/maidsafe/maidsafe_vault/issues/117) meaningful type_tag
 
 ## [0.1.2] - integration test with client having churn event
 - [ ] integration test with client
-    - client log in / log out
-    - complete put flow
-    - complete get flow
+    - [ ]client log in / log out
+    - [ ]complete put flow
+    - [ ]complete get flow
 - [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
-- account transfer
+- [ ] account transfer
 
 ## [0.1.3] - persona update
-- remove Version Handler
-- proper PmidNode initialize (max diskspace)
+- [ ]remove Version Handler
+- [ ]proper PmidNode initialize (max diskspace)
 
 ## [0.1.5] - messaging
-- documentation
-- messaging account management
-- sending message
-- retrieving message
-- withdraw message
+- [ ]documentation
+- [ ]messaging account management
+- [ ]sending message
+- [ ]retrieving message
+- [ ]withdraw message
 
 ## [0.1.6] - safe coin implementation
-- documentation
-- account management
-- farming
-- transferring
+- [ ]documentation
+- [ ]account management
+- [ ]farming
+- [ ]transferring
 
 
 #Detailed documentation
