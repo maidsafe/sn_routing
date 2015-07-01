@@ -32,21 +32,23 @@ use std::process::Command;
 use std::error::Error;
 use std::io::Read;
 
-#[cfg(debug_assertions)]
-static EXECUTABLE_PATH: &'static str = "./target/debug/maidsafe_vault";
-
-#[cfg(not(debug_assertions))]
-static EXECUTABLE_PATH: &'static str = "./target/release/maidsafe_vault";
-
 #[test]
 // This test requires the executable maidsafe_vault is presented at the same place of the test get executed
 // also it depends a printout in routing lib. if such printout is changed / muted, this test needs to be updated
 fn executable_test() {
     let mut processes = Vec::new();
     let num_of_nodes = 8;
+    let executable_path = match std::env::current_exe() {
+        Ok(mut exe_path) => {
+            exe_path.pop();
+            std::path::Path::new("./target").join(exe_path.iter().last().unwrap()).join("maidsafe_vault")
+        }
+        Err(e) => panic!("Failed to get current integration test path: {}", e),
+    };
+    println!("Expecting vault executable at the path of {}", executable_path.to_path_buf().display());
     // the first vault must be run in zero_membrane mode
     println!("---------- starting node 0 --------------");
-    processes.push(match Command::new(EXECUTABLE_PATH).arg("-f").stdout(Stdio::piped()).spawn() {
+    processes.push(match Command::new(executable_path.to_path_buf()).arg("-f").stdout(Stdio::piped()).spawn() {
                 Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
                 Ok(process) => process,
             });
@@ -54,7 +56,7 @@ fn executable_test() {
 
     for i in 1..num_of_nodes {
         println!("---------- starting node {} --------------", i);
-        processes.push(match Command::new(EXECUTABLE_PATH).stdout(Stdio::piped()).spawn() {
+        processes.push(match Command::new(executable_path.to_path_buf()).stdout(Stdio::piped()).spawn() {
                     Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
                     Ok(process) => process,
                 });
