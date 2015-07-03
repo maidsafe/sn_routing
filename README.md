@@ -22,33 +22,41 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 #Todo Items
 
 ## [0.1.1] - code clean up
-- [ ][Issue 113](https://github.com/maidsafe/maidsafe_vault/issues/113) using unwrap unsafely
-- [ ][Issue 117](https://github.com/maidsafe/maidsafe_vault/issues/117) meaningful type_tag
+- [ ][MAID 1185](https://maidsafe.atlassian.net/browse/MAID-1185) using unwrap unsafely
+- [x][Issue 117](https://github.com/maidsafe/maidsafe_vault/issues/117) meaningful type_tag
 
 ## [0.1.2] - integration test with client having churn event
-- [ ] integration test with client
-    - [ ]client log in / log out
-    - [ ]complete put flow
-    - [ ]complete get flow
-- [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
-- [ ] account transfer
+- [x][PR 124](https://github.com/maidsafe/maidsafe_vault/pull/124) integration test with client
+    - [x] client log in / log out
+    - [x] complete put flow
+    - [x] complete get flow
+- [ ][MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
 
 ## [0.1.3] - persona update
-- [ ]remove Version Handler
-- [ ]proper PmidNode initialize (max diskspace)
+- [ ][MAID-1186](https://maidsafe.atlassian.net/browse/MAID-1186) Handling of unified Structrued Data
+    - [ ][MAID-1187](https://maidsafe.atlassian.net/browse/MAID-1187) Updating Version Handler
+    - [ ][MAID-1188](https://maidsafe.atlassian.net/browse/MAID-1188) Updating other personas if required
+- [ ][MAID-1189](https://maidsafe.atlassian.net/browse/MAID-1189) Proper PmidNode Initialisation (max diskspace)
 
-## [0.1.5] - messaging
-- [ ]documentation
-- [ ]messaging account management
-- [ ]sending message
-- [ ]retrieving message
-- [ ]withdraw message
+## [0.1.4] - account creation
+- [ ][MAID-1190](https://maidsafe.atlassian.net/browse/MAID-1190) Proper MaidManager account entry creation (allownance)
+- [ ][MAID-1191](https://maidsafe.atlassian.net/browse/MAID-1191) Proper PmidManager account entry creation (pmidnode diskspace info)
 
-## [0.1.6] - safe coin implementation
-- [ ]documentation
-- [ ]account management
-- [ ]farming
-- [ ]transferring
+## [0.2.0] - messaging
+- [ ][MAID-1192](https://maidsafe.atlassian.net/browse/MAID-1192) messaging
+    - [ ][MAID-1193](https://maidsafe.atlassian.net/browse/MAID-1193) documentation
+    - [ ][MAID-1195](https://maidsafe.atlassian.net/browse/MAID-1195) messaging account management
+    - [ ][MAID-1198](https://maidsafe.atlassian.net/browse/MAID-1198) sending message
+    - [ ][MAID-1199](https://maidsafe.atlassian.net/browse/MAID-1199) retrieving message
+    - [ ][MAID-1200](https://maidsafe.atlassian.net/browse/MAID-1200) withdraw message
+
+## [0.3.0] - initial safe coin implementation
+- [ ][MAID-1201](https://maidsafe.atlassian.net/browse/MAID-1201) initial safe coin implementation
+    - [ ][MAID-1202](https://maidsafe.atlassian.net/browse/MAID-1202) documentation
+    - [ ][MAID-1203](https://maidsafe.atlassian.net/browse/MAID-1203) wallet management
+    - [ ][MAID-1204](https://maidsafe.atlassian.net/browse/MAID-1204) farming
+    - [ ][MAID-1205](https://maidsafe.atlassian.net/browse/MAID-1205) consuming for space
+    - [ ][MAID-1206](https://maidsafe.atlassian.net/browse/MAID-1206) transferring
 
 
 #Detailed documentation
