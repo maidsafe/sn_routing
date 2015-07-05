@@ -19,7 +19,6 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use NameType;
 
 /// PlainData
-/// hash == SHA512
 #[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Debug)]
 pub struct PlainData {
     name: NameType,

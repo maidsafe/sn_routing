@@ -57,6 +57,7 @@ impl StructuredData {
     }
     /// replace this data item with an updated version if such exists, otherwise fail.
     /// Returns the replaced (new) StructuredData 
+    /// This is done this way to allow types to be created and signatures added one by one
     pub fn replace_with_other(self, other: StructuredData) -> Result<StructuredData, RoutingError> {
         if try!(other.name()) != try!(self.name()) { return Err(RoutingError::UnknownMessageType)}
         if other.version != self.version + 1 { return Err(RoutingError::UnknownMessageType)}
@@ -105,16 +106,17 @@ impl StructuredData {
         try!(enc.encode(&self.identifier[..])); 
         try!(enc.encode(&self.data));
         try!(enc.encode(&self.owner_keys)); 
+        try!(enc.encode(&self.previous_owner_keys)); 
         try!(enc.encode(self.version.to_string().as_bytes()));
         Ok(enc.as_bytes().into_iter().map(|&x| x).collect())
     }
 
     /// Returns number of signatures still required (if any, 0 means this is complete)
-    pub fn add_signature(mut self, secret_key: &crypto::sign::SecretKey) -> Result<usize, RoutingError> {
+    pub fn add_signature(mut self, secret_key: &crypto::sign::SecretKey) -> Result<isize, RoutingError> {
         let data = try!(self.data_to_sign());
         let sig = crypto::sign::sign_detached(&data, secret_key);
         self.signatures.push(sig);
-        Ok((&self.owner_keys.len() / 2) - &self.signatures.len())
+        Ok((self.owner_keys.len() as isize / 2) - self.signatures.len() as isize)
     }
 }
 
