@@ -55,8 +55,26 @@ impl StructuredData {
                    signatures: signatures
                  })
     }
-
-
+    /// replace this data item with an updated version if such exists, otherwise fail.
+    /// Returns the replaced (new) StructuredData 
+    pub fn replace_with_other(self, other: StructuredData) -> Result<StructuredData, RoutingError> {
+        if try!(other.name()) != try!(self.name()) { return Err(RoutingError::UnknownMessageType)}
+        if other.version != self.version + 1 { return Err(RoutingError::UnknownMessageType)}
+        if other.previous_owner_keys != self.owner_keys || other.owner_keys != self.owner_keys { 
+            return Err(RoutingError::UnknownMessageType)
+        }
+        try!(other.verify_signatures());
+        
+        Ok(StructuredData { 
+                   type_tag: other.type_tag,
+                   identifier: other.identifier,
+                   data: other.data,
+                   owner_keys: other.owner_keys,
+                   version: other.version,
+                   previous_owner_keys : other.previous_owner_keys,
+                   signatures: other.signatures
+                 })
+    }
 
     /// Returns name and validates invariants
     pub fn name(&self) -> Result<NameType, RoutingError> {
@@ -92,11 +110,11 @@ impl StructuredData {
     }
 
     /// Returns number of signatures still required (if any, 0 means this is complete)
-    pub fn add_signature(mut self, secret_key: &crypto::sign::SecretKey) -> Result<(), RoutingError> {
+    pub fn add_signature(mut self, secret_key: &crypto::sign::SecretKey) -> Result<usize, RoutingError> {
         let data = try!(self.data_to_sign());
         let sig = crypto::sign::sign_detached(&data, secret_key);
         self.signatures.push(sig);
-        Ok(())
+        Ok((&self.owner_keys.len() / 2) - &self.signatures.len())
     }
 }
 

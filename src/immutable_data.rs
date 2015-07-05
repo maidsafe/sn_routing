@@ -15,9 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use routing::NameType;
-use error::{RoutingError, DataError};
+use rustc_serialize::{Decoder, Encodable, Encoder};
+use NameType;
 use sodiumoxide::crypto;
 
 #[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Debug)]
@@ -38,7 +37,7 @@ pub struct ImmutableData {
 impl ImmutableData {
     
     /// Creates a new instance of ImmutableData
-    pub fn new(type_tag: u8, value: Vec<u8>) -> ImmutableData {
+    pub fn new(type_tag: ImmutableDataType, value: Vec<u8>) -> ImmutableData {
         ImmutableData {
             type_tag: type_tag,
             value: value,
@@ -54,10 +53,10 @@ impl ImmutableData {
     /// Returns name ensuring invariant
     pub fn name(&self) -> NameType {
         let digest = crypto::hash::sha512::hash(&self.value);
-        match type_tag {
+        match self.type_tag {
         ImmutableDataType::Normal => return NameType(digest.0),
         ImmutableDataType::Backup => return NameType(crypto::hash::sha512::hash(&digest.0).0),        
-        ImmutableDataType::Sacrificaial => return NameType(crypto::hash::sha512::hash(&crypto::hash::sha512::hash(&digest.0)).0)
+        ImmutableDataType::Sacrificaial => return NameType(crypto::hash::sha512::hash(&crypto::hash::sha512::hash(&digest.0).0).0)
         }
     }
 

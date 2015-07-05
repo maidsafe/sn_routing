@@ -78,5 +78,7 @@ pub mod types;
 pub mod error;
 pub mod authority;
 pub mod structured_data;
+pub mod immutable_data;
+pub mod plain_data;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
