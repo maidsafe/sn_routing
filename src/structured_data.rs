@@ -17,7 +17,7 @@
 
 use rustc_serialize::{Encodable, Encoder, Decoder};
 use cbor;
-use error::{RoutingError, DataError};
+use error::RoutingError;
 use NameType;
 use sodiumoxide::crypto;
 use std::str;
@@ -56,6 +56,8 @@ impl StructuredData {
                  })
     }
 
+
+
     /// Returns name and validates invariants
     pub fn name(&self) -> Result<NameType, RoutingError> {
         let test = try!(str::from_utf8(&self.identifier.0)).to_owned() + &self.type_tag.to_string();
@@ -90,7 +92,7 @@ impl StructuredData {
     }
 
     /// Returns number of signatures still required (if any, 0 means this is complete)
-    pub fn add_signatures(mut self, secret_key: &crypto::sign::SecretKey) -> Result<(), RoutingError> {
+    pub fn add_signature(mut self, secret_key: &crypto::sign::SecretKey) -> Result<(), RoutingError> {
         let data = try!(self.data_to_sign());
         let sig = crypto::sign::sign_detached(&data, secret_key);
         self.signatures.push(sig);
