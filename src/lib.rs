@@ -61,7 +61,6 @@ mod macros;
 mod message_header;
 mod messages;
 mod name_type;
-mod frequency;
 mod routing_table;
 mod relay;
 mod utils;
@@ -78,6 +77,6 @@ pub mod test_utils;
 pub mod types;
 pub mod error;
 pub mod authority;
-pub mod fixed_structured_data;
+pub mod structured_data;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};

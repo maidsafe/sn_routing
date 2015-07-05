@@ -1,15 +1,13 @@
 [package]
-
 name = "routing"
-version = "0.1.72"
+version = "0.2.7"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A secured storage DHT"
-documentation = "http://maidsafe.github.io/routing/latest/"
+documentation = "http://maidsafe.net/routing/latest"
 repository = "https://github.com/maidsafe/routing"
 readme = "README.md"
 license = "GPL-3.0"
 homepage = "http://maidsafe.net"
-
 
 [dependencies]
 rustc-serialize = "*"
@@ -19,9 +17,12 @@ rand = "*"
 message_filter = "*"
 lru_time_cache = "0.1.5"
 accumulator = "0.0.1"
-crust = "0.0.*"
+crust = "*"
 docopt = "*"
-sodiumoxide = { git = "https://github.com/dirvine/sodiumoxide"}
+
+[dependencies.sodiumoxide]
+git = "https://github.com/Fraser999/sodiumoxide.git"
+branch = "use_git_repo"
 
 [[example]]
 name = "simple_key_value_store"

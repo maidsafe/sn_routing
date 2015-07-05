@@ -1,4 +1,25 @@
 # Routing - Change Log
+## [0.2.7] - Activate act on churn
+
+- [#426](https://github.com/maidsafe/routing/pull/426) close bootstrap connection
+- [#426](https://github.com/maidsafe/routing/pull/426) routing acts on churn
+- [#426](https://github.com/maidsafe/routing/pull/426) group size 8; quorum 6
+- [#426](https://github.com/maidsafe/routing/pull/426) improve refresh routing_table
+- [#426](https://github.com/maidsafe/routing/pull/426) cache on connect_response
+- [#426](https://github.com/maidsafe/routing/pull/426) reflect own group: on FindGroupResponse in our range is seen, ask for FindGroup for our name.
+
+## [0.2.6] - Temporary patch for Vault behaviour
+
+- [#424](https://github.com/maidsafe/routing/pull/424) Patch for Vaults handle put behaviour
+
+## [0.2.1 - 0.2.5] - debug with upper layers
+
+- [0.2.5] [#421](https://github.com/maidsafe/routing/pull/421) Set Authority unauthorised put to ManagedNode to accommodate Vaults for now
+- [0.2.4] [#419](https://github.com/maidsafe/routing/pull/419) Correct ClientInterface::HandlePutResponse
+- [0.2.3] [#416](https://github.com/maidsafe/routing/pull/416) Activate HandleChurn (but don't act on the resulting MethodCall yet)
+- [0.2.2] Update sodiumoxide dependency to `*`
+- [0.2.2] Update crust dependency to `*`
+- [0.2.1] Update sodiumoxide dependency to `0.0.5`
 
 ## [0.1.72] - documentation
 

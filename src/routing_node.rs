@@ -194,7 +194,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                     break;
                                 },
                                 _ => {
-                                    println!("Received unexpected message");
+                                    println!("Received unexpected message {:?}",
+                                        message.message_type);
                                 }
                             }
                         },

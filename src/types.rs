@@ -24,7 +24,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
 use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::asymmetricbox;
+use sodiumoxide::crypto::box_;
 use std::cmp;
 use NameType;
 use name_type::closer_to_target;
@@ -63,8 +63,8 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-pub static GROUP_SIZE: usize = 23;
-pub static QUORUM_SIZE: usize = 19;
+pub static GROUP_SIZE: usize = 8;
+pub static QUORUM_SIZE: usize = 6;
 
 pub trait Mergeable {
     fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
@@ -81,7 +81,7 @@ pub type Bytes = Vec<u8>;
 //#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
   sign_public_key: crypto::sign::PublicKey,
-  encrypt_public_key: crypto::asymmetricbox::PublicKey,
+  encrypt_public_key: crypto::box_::PublicKey,
   signature: crypto::sign::Signature, // detached signature
 }
 
@@ -193,14 +193,14 @@ pub struct PublicKey {
 }
 
 impl PublicKey {
-  pub fn new(public_key : crypto::asymmetricbox::PublicKey) -> PublicKey {
+  pub fn new(public_key : crypto::box_::PublicKey) -> PublicKey {
     PublicKey{
       public_key : public_key.0.to_vec()
     }
   }
 
-  pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
-    crypto::asymmetricbox::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
+  pub fn get_crypto_public_key(&self) -> crypto::box_::PublicKey {
+    crypto::box_::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
   }
 }
 
@@ -246,7 +246,7 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
 // A self_relocated id, is purely used for a zero-node to bootstrap a network.
 // Such a node will be rejected by the network once routing tables fill up.
 pub fn calculate_self_relocated_name(public_key: &crypto::sign::PublicKey,
-                           public_sign_key: &crypto::asymmetricbox::PublicKey,
+                           public_sign_key: &crypto::box_::PublicKey,
                            validation_token: &Signature) -> NameType {
     let original_name = calculate_original_name(public_key, public_sign_key,
         validation_token);
@@ -255,7 +255,7 @@ pub fn calculate_self_relocated_name(public_key: &crypto::sign::PublicKey,
 
 // TODO(Team): Below method should be modified and reused in constructor of Id.
 fn calculate_original_name(public_key: &crypto::sign::PublicKey,
-                           public_sign_key: &crypto::asymmetricbox::PublicKey,
+                           public_sign_key: &crypto::box_::PublicKey,
                            validation_token: &Signature) -> NameType {
     let combined_iter = public_key.0.into_iter().chain(public_sign_key.0.into_iter())
           .chain((&validation_token.signature).into_iter());
@@ -343,8 +343,8 @@ impl Decodable for PublicId {
 // TODO (ben 2015-04-01) : implement order based on name
 #[derive(Clone)]
 pub struct Id {
-  public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-  secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey),
+  public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
+  secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey),
   validation_token: Signature,
   name: NameType,
 }
@@ -352,12 +352,12 @@ pub struct Id {
 impl Id {
   pub fn new() -> Id {
     let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
-    let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::asymmetricbox::gen_keypair();
+    let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::box_::gen_keypair();
 
     let sign_key = &pub_sign_key.0;
     let asym_key = &pub_asym_key.0;
 
-    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + asymmetricbox::PUBLICKEYBYTES;
+    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + box_::PUBLICKEYBYTES;
 
     let mut keys = [0u8; KEYS_SIZE];
 
@@ -390,12 +390,12 @@ impl Id {
     }
   }
 
-  pub fn with_keys(public_keys: (crypto::sign::PublicKey, crypto::asymmetricbox::PublicKey),
-                   secret_keys: (crypto::sign::SecretKey, crypto::asymmetricbox::SecretKey)) -> Id {
+  pub fn with_keys(public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
+                   secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey)) -> Id {
     let sign_key = &(public_keys.0).0;
     let asym_key = &(public_keys.1).0;
 
-    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + asymmetricbox::PUBLICKEYBYTES;
+    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + box_::PUBLICKEYBYTES;
 
     let mut keys = [0u8; KEYS_SIZE];
 
@@ -438,10 +438,10 @@ impl Id {
   pub fn get_public_sign_key(&self) -> PublicSignKey {
       PublicSignKey::new(self.public_keys.0.clone())
   }
-  pub fn get_crypto_public_key(&self) -> crypto::asymmetricbox::PublicKey {
+  pub fn get_crypto_public_key(&self) -> crypto::box_::PublicKey {
       self.public_keys.1.clone()
   }
-  pub fn get_crypto_secret_key(&self) -> crypto::asymmetricbox::SecretKey {
+  pub fn get_crypto_secret_key(&self) -> crypto::box_::SecretKey {
       self.secret_keys.1.clone()
   }
   pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
@@ -574,7 +574,7 @@ mod test {
   #[test]
   fn construct_id_with_keys() {
     let sign_keys = crypto::sign::gen_keypair();
-    let asym_keys = crypto::asymmetricbox::gen_keypair();
+    let asym_keys = crypto::box_::gen_keypair();
 
     let public_keys = (sign_keys.0, asym_keys.0);
     let secret_keys = (sign_keys.1, asym_keys.1);
@@ -584,7 +584,7 @@ mod test {
     let sign_key = &(public_keys.0).0;
     let asym_key = &(public_keys.1).0;
 
-    const KEYS_SIZE: usize = crypto::sign::PUBLICKEYBYTES + crypto::asymmetricbox::PUBLICKEYBYTES;
+    const KEYS_SIZE: usize = crypto::sign::PUBLICKEYBYTES + crypto::box_::PUBLICKEYBYTES;
 
     let mut keys = [0u8; KEYS_SIZE];
 

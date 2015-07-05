@@ -112,6 +112,7 @@ impl<F> RoutingClient<F> where F: Interface {
         );
 
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        println!("Get sent out with message_id {:?}", message_id);
         Ok(message_id)
     }
 
@@ -135,6 +136,7 @@ impl<F> RoutingClient<F> where F: Interface {
             &self.id.get_crypto_secret_sign_key()
         );
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        println!("Put sent out with message_id {:?}", message_id);
         Ok(message_id)
     }
 
@@ -149,7 +151,7 @@ impl<F> RoutingClient<F> where F: Interface {
                                 reply_to: None,
                                 relayed_for: Some(self.public_id.name()),
                             },
-                Authority::Unknown),
+                Authority::ManagedNode),
             PutData{ name: content.name(), data: content.serialised_contents() },
             &self.id.get_crypto_secret_sign_key());
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
@@ -294,7 +296,7 @@ impl<F> RoutingClient<F> where F: Interface {
         match decode::<PutDataResponse>(&body) {
             Ok(put_data_response) => {
                 let mut interface = self.interface.lock().unwrap();
-                interface.handle_get_response(header.message_id,
+                interface.handle_put_response(header.message_id,
                     put_data_response.data);
             },
             Err(_) => {}
