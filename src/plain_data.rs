@@ -51,28 +51,38 @@ impl PlainData {
 
 #[cfg(test)]
 mod test {
+
     extern crate rand;
 
-    use super::*;
+    use NameType;
+    use super::PlainData;
     use self::rand::Rng;
-    use Random;
+    use sodiumoxide::crypto;
+    use rustc_serialize::hex::ToHex;
 
-    #[allow(unused_variables)]
-    impl Random for PlainData {
-        fn generate_random() -> PlainData {
-            let size = 64;
+        fn generate_random() -> Vec<u8> {
+            let size = 1025;
             let mut data = Vec::with_capacity(size);
             let mut rng = rand::thread_rng();
             for i in 0..size {
                 data.push(rng.gen::<u8>());
             }
-            PlainData::new(NameType.ran(), data)
+            data
         }
-    }
+
 
     #[test]
-    fn creation() {
-        assert!(PlainData.generate_random() != PlainData::generate_random());
+    fn basic_check() {
+        let name1 = NameType(crypto::hash::sha512::hash(&generate_random()).0);
+        let name2 = NameType(crypto::hash::sha512::hash(&generate_random()).0);
+        let value1 = generate_random();
+        let value2 = generate_random();
+        let plain_data1 = PlainData::new(name1, value1.clone());
+        let plain_data2 = PlainData::new(name2, value2.clone());
+        assert!(plain_data1.name() != plain_data2.name());
+        assert!(plain_data1.value().to_hex() != plain_data2.value().to_hex());
+        assert_eq!(plain_data1.value().to_hex(), value1.to_hex());
+        assert_eq!(plain_data2.value().to_hex(), value2.to_hex());
     }
 
 }

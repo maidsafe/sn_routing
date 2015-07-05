@@ -19,6 +19,7 @@ lru_time_cache = "0.1.5"
 accumulator = "0.0.1"
 crust = "*"
 docopt = "*"
+itertools = "*"
 
 [dependencies.sodiumoxide]
 git = "https://github.com/Fraser999/sodiumoxide.git"

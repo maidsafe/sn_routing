@@ -67,123 +67,55 @@ impl ImmutableData {
 mod test {
     extern crate rand;
 
-    use super::*;
+    use super::{ImmutableData, ImmutableDataType};
     use self::rand::Rng;
-    use cbor::{ Encoder, Decoder};
-    use rustc_serialize::{Decodable, Encodable};
-    use Random;
-    use routing::sendable::Sendable;
-    use routing::types::array_as_vector;
+    use rustc_serialize::hex::ToHex;
     use sodiumoxide::crypto;
 
-    #[allow(unused_variables)]
-    impl Random for ImmutableData {
-        fn generate_random() -> ImmutableData {
+        fn generate_random() -> Vec<u8> {
             let size = 64;
             let mut data = Vec::with_capacity(size);
             let mut rng = rand::thread_rng();
             for i in 0..size {
-                data.push(rng.gen());
+                data.push(rng.gen::<u8>());
             }
-            ImmutableData::new(data)
+            data
         }
-    }
 
     #[test]
-    fn creation() {
-        use rustc_serialize::hex::ToHex;
+    fn deterministic_test() {
 
         let value = "immutable data value".to_string().into_bytes();
-
-        let immutable_data = ImmutableData::new(value);
+        // Normal 
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
         let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
         let expected_immutable_data_name =
                 "9f1c9e526f47e36d782de464ea9df0a31a5c19c321f2a5d9c8faacdda4d59abc\
                  713445c8c853e1842d7c2c2311650df1ee24107371935b6be88a10cbf4cd2f8f";
         assert_eq!(&expected_immutable_data_name, &immutable_data_name);
-
-        let immutable_data_backup = ImmutableDataBackup::new(immutable_data.clone());
+        // Backup 
+        let immutable_data_backup = ImmutableData::new(ImmutableDataType::Backup, immutable_data.value().clone());
         let immutable_data_backup_name = immutable_data_backup.name().0.as_ref().to_hex();
-        let expected_immutable_data_backup_name =
-                "8c6377c848321dd3c6886a53b1a2bc28a5bc8ce35ac85d10d75467a5df9434ab\
-                 aee19ce2c710507533d306302b165b4387458b752579fc15e520daaf984a2e38";       
+        let expected_immutable_data_backup_name = "8c6377c848321dd3c6886a53b1a2bc28a5bc8ce35ac85d10d75467\
+                                                   a5df9434abaee19ce2c710507533d306302b165b4387458b752579fc15e520daaf984a2e38";
         assert_eq!(&expected_immutable_data_backup_name, &immutable_data_backup_name);
-
-        let immutable_data_sacrificial = ImmutableDataSacrificial::new(immutable_data);
+        // Sacrificial 
+        let immutable_data_sacrificial = ImmutableData::new(ImmutableDataType::Sacrificaial, immutable_data.value().clone());
         let immutable_data_sacrificial_name = immutable_data_sacrificial.name().0.as_ref().to_hex();
-        let expected_immutable_data_sacrificial_name =
-                "ecb6c761c35d4da33b25057fbf6161e68711f9e0c11122732e62661340e630d3\
-                 c59f7c165f4862d51db5254a38ab9b15a9b8af431e8500a4eb558b9136bd4135";
+        let expected_immutable_data_sacrificial_name ="ecb6c761c35d4da33b25057fbf6161e68711f9e0c11122732e62661\
+                                                     340e630d3c59f7c165f4862d51db5254a38ab9b15a9b8af431e8500a4eb558b9136bd4135";
         assert_eq!(&expected_immutable_data_sacrificial_name, &immutable_data_sacrificial_name);
     }
-
+  
     #[test]
-    fn serialisation() {
-        let immutable_data = ImmutableData::generate_random();
-        let immutable_data_backup = ImmutableDataBackup::new(immutable_data.clone());
-        let immutable_data_sacrificial = ImmutableDataSacrificial::new(immutable_data.clone());
-
-        // ImmutableData
-        let mut immutable_data_encoder = Encoder::from_memory();
-        immutable_data_encoder.encode(&[&immutable_data]).unwrap();
-        let mut immutable_data_decoder =
-                Decoder::from_bytes(immutable_data_encoder.as_bytes());
-        match immutable_data_decoder.decode().next().unwrap().unwrap() {
-            ::test_utils::Parser::ImmutData(decoded_immutable_data) => assert_eq!(immutable_data, decoded_immutable_data),
-            _ => panic!("Unexpected!"),
-        }
-
-        // ImmutableDataBackup
-        let mut immutable_data_backup_encoder = Encoder::from_memory();
-        immutable_data_backup_encoder.encode(&[&immutable_data_backup]).unwrap();
-        let mut immutable_data_backup_decoder =
-                Decoder::from_bytes(immutable_data_backup_encoder.as_bytes());
-        match immutable_data_backup_decoder.decode().next().unwrap().unwrap() {
-            ::test_utils::Parser::ImmutDataBkup(decoded_immutable_data_backup) => assert_eq!(immutable_data_backup, decoded_immutable_data_backup),
-            _ => panic!("Unexpected!"),
-        }
-
-        // ImmutableDataSacrificial
-        let mut immutable_data_sacrificial_encoder = Encoder::from_memory();
-        immutable_data_sacrificial_encoder.encode(&[&immutable_data_sacrificial]).unwrap();
-        let mut immutable_data_sacrificial_decoder =
-                Decoder::from_bytes(immutable_data_sacrificial_encoder.as_bytes());
-        match immutable_data_sacrificial_decoder.decode().next().unwrap().unwrap() {
-            ::test_utils::Parser::ImmutDataSacrificial(decoded_immutable_data_sacrificial) => assert_eq!(immutable_data_sacrificial, decoded_immutable_data_sacrificial),
-            _ => panic!("Unexpected!"),
-        }
+    fn name_is_hash_of_lesser_type_name() {
+        let value = generate_random();
+        let normal = ImmutableData::new(ImmutableDataType::Normal, value.clone());    
+        let backup = ImmutableData::new(ImmutableDataType::Backup, value.clone());    
+        let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificaial, value.clone());    
+        assert_eq!(normal.name().0.as_ref().to_hex(), crypto::hash::sha512::hash(&value).0.to_hex());
+        assert_eq!(backup.name().0.as_ref().to_hex(), crypto::hash::sha512::hash(&normal.name().0).0.to_hex());
+        assert_eq!(sacrificial.name().0.as_ref().to_hex(), crypto::hash::sha512::hash(&backup.name().0).0.to_hex());
     }
 
-    #[test]
-    fn equality() {
-        let immutable_data_first = ImmutableData::generate_random();
-        let immutable_data_second = ImmutableData::generate_random();
-        let immutable_data_second_clone = immutable_data_second.clone();
-
-        assert!(immutable_data_first != immutable_data_second);
-        assert!(immutable_data_second_clone == immutable_data_second);
-
-        let immutable_data_backup_first = ImmutableDataBackup::new(immutable_data_first.clone());
-        let immutable_data_backup_second = ImmutableDataBackup::new(immutable_data_second.clone());
-        let immutable_data_backup_second_clone = immutable_data_backup_second.clone();
-
-        assert!(immutable_data_backup_first != immutable_data_backup_second);
-        assert!(immutable_data_backup_second_clone == immutable_data_backup_second);
-
-        let immutable_data_sacrificial_first = ImmutableDataSacrificial::new(immutable_data_first.clone());
-        let immutable_data_sacrificial_second = ImmutableDataSacrificial::new(immutable_data_second.clone());
-        let immutable_data_sacrificial_second_clone = immutable_data_sacrificial_second.clone();
-
-        assert!(immutable_data_sacrificial_first != immutable_data_sacrificial_second);
-        assert!(immutable_data_sacrificial_second_clone == immutable_data_sacrificial_second);
-    }
-
-    #[test]
-    fn invariant_check() {
-        let immutable_data = ImmutableData::generate_random();
-        let immutable_data_name = array_as_vector(&immutable_data.name().get_id());
-        let hash_value = array_as_vector(&crypto::hash::sha512::hash(&immutable_data.value()).0);
-
-        assert_eq!(immutable_data_name, hash_value);
-    }
 }

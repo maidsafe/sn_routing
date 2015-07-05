@@ -40,6 +40,7 @@ extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
+extern crate itertools;
 
 extern crate crust;
 extern crate accumulator;
