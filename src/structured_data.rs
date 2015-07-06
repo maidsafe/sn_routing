@@ -36,16 +36,16 @@ pub struct StructuredData {
 
 
 impl StructuredData {
-    
+
     /// Constructor
     pub fn new(type_tag: u64,
                identifier: crypto::hash::sha512::Digest,
-               data: Vec<u8>, 
-               owner_keys: Vec<crypto::sign::PublicKey>, 
-               version: u64, previous_owner_keys: Vec<crypto::sign::PublicKey>, 
+               data: Vec<u8>,
+               owner_keys: Vec<crypto::sign::PublicKey>,
+               version: u64, previous_owner_keys: Vec<crypto::sign::PublicKey>,
                signatures: Vec<crypto::sign::Signature>) -> StructuredData {
-        
-        StructuredData { 
+
+        StructuredData {
                    type_tag: type_tag,
                    identifier: identifier,
                    data: data,
@@ -56,17 +56,17 @@ impl StructuredData {
                  }
     }
     /// replace this data item with an updated version if such exists, otherwise fail.
-    /// Returns the replaced (new) StructuredData 
+    /// Returns the replaced (new) StructuredData
     /// This is done this way to allow types to be created and signatures added one by one
     pub fn replace_with_other(self, other: StructuredData) -> Result<StructuredData, RoutingError> {
         if try!(other.name()) != try!(self.name()) { return Err(RoutingError::UnknownMessageType)}
         if other.version != self.version + 1 { return Err(RoutingError::UnknownMessageType)}
-        if other.previous_owner_keys != self.owner_keys || other.owner_keys != self.owner_keys { 
+        if other.previous_owner_keys != self.owner_keys || other.owner_keys != self.owner_keys {
             return Err(RoutingError::UnknownMessageType)
         }
         try!(other.verify_signatures());
-        
-        Ok(StructuredData { 
+
+        Ok(StructuredData {
                    type_tag: other.type_tag,
                    identifier: other.identifier,
                    data: other.data,
@@ -82,43 +82,43 @@ impl StructuredData {
         let test = try!(str::from_utf8(&self.identifier.0)).to_owned() + &self.type_tag.to_string();
         Ok(NameType::new(crypto::hash::sha512::hash(&test.as_bytes()).0))
     }
-    
-    /// Confirms *unique and valid* signatures are at least 50% of total owners 
+
+    /// Confirms *unique and valid* signatures are at least 50% of total owners
     pub fn verify_signatures(&self) -> Result<(), RoutingError> {
          // Refuse any duplicate signatures (people can have many owner keys)
          // Any duplicates invalidates this type
          if self.signatures.iter().filter(|&sig| self.signatures.iter()
                                   .any(|ref sig_check| NameType(sig.0) == NameType(sig_check.0)))
                                   .count() > (self.owner_keys.len() + 1) /2 {
-                                        
-            return Err(RoutingError::DuplicateSignatures); 
+
+            return Err(RoutingError::DuplicateSignatures);
          }
          // Refuse when not enough signatures found
-         if self.signatures.len() < (self.owner_keys.len()  + 1 ) / 2 { 
-             return Err(RoutingError::NotEnoughSignatures); 
-         } 
-         
+         if self.signatures.len() < (self.owner_keys.len()  + 1 ) / 2 {
+             return Err(RoutingError::NotEnoughSignatures);
+         }
+
          let data = try!(self.data_to_sign());
-         // Count valid signatures and refuse if quantity is not enough  
+         // Count valid signatures and refuse if quantity is not enough
          if self.signatures.iter()
                         .filter(|&sig| self.owner_keys
                           .iter()
                           .any(|ref pub_key| crypto::sign::verify_detached(&sig, &data, &pub_key)))
-                            .count() < self.owner_keys.len() / 2 { 
-            return Err(RoutingError::NotEnoughSignatures); 
+                            .count() < self.owner_keys.len() / 2 {
+            return Err(RoutingError::NotEnoughSignatures);
          }
-         Ok(()) 
+         Ok(())
     }
-    
+
     fn data_to_sign(&self)->Result<Vec<u8>, RoutingError> {
         // seems overkill to use serialisation here, but done
         // to ensure cross platform signature handling is OK
         let mut enc = cbor::Encoder::from_memory();
         try!(enc.encode(self.type_tag.to_string().as_bytes()));
-        try!(enc.encode(&self.identifier[..])); 
+        try!(enc.encode(&self.identifier[..]));
         try!(enc.encode(&self.data));
-        try!(enc.encode(&self.owner_keys)); 
-        try!(enc.encode(&self.previous_owner_keys)); 
+        try!(enc.encode(&self.owner_keys));
+        try!(enc.encode(&self.previous_owner_keys));
         try!(enc.encode(self.version.to_string().as_bytes()));
         Ok(enc.as_bytes().into_iter().map(|&x| x).collect())
     }
@@ -143,28 +143,16 @@ mod test {
     fn single_owner() {
         let keys = crypto::sign::gen_keypair();
 
-        let mut structured_data =   StructuredData::new(0, 
+        let mut structured_data =   StructuredData::new(0,
                                 crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
-                                vec![], 
-                                vec![keys.0], 
+                                vec![],
+                                vec![keys.0],
                                 0,
-                                vec![], 
+                                vec![],
                                 vec![]);
-        match structured_data.verify_signatures() {
-            Ok(()) => panic!("Should not verifiy signature"),
-            Err(e) => println!("Passed with error {}", e),
-            }
-        
-        match structured_data.add_signature(&keys.1) {
-            Err(ref e) => println!("Error {}", e),
-            Ok(o) => println!("Signed, now {} sigs remaining", o),    
-        }
-        
-        match structured_data.verify_signatures() {
-            Ok(()) => println!("All good"),
-            Err(e) => panic!("Error {}", e),
-            }
-
+        assert_eq!(structured_data.verify_signatures().ok(), None);
+        assert_eq!(structured_data.add_signature(&keys.1).ok(), Some(0));
+        assert_eq!(structured_data.verify_signatures().ok(), Some(()));
     }
 
     #[test]
@@ -172,31 +160,17 @@ mod test {
         let keys1 = crypto::sign::gen_keypair();
         let keys2 = crypto::sign::gen_keypair();
         let keys3 = crypto::sign::gen_keypair();
-        
-        let mut structured_data =   StructuredData::new(0, 
+
+        let mut structured_data =   StructuredData::new(0,
                                 crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
-                                vec![], 
-                                vec![keys1.0, keys2.0, keys3.0], 
+                                vec![],
+                                vec![keys1.0, keys2.0, keys3.0],
                                 0,
-                                vec![], 
+                                vec![],
                                 vec![]);
-       
-        match structured_data.add_signature(&keys1.1) {
-            Err(ref e) => println!("Error {}", e),
-            Ok(o) => println!("Signed, now {} sigs remaining", o),    
-        }
-        match structured_data.verify_signatures() {
-            Ok(()) => panic!("Should not pass"),
-            Err(e) => println!("Expected failure {}", e),
-            }
-        match structured_data.add_signature(&keys2.1) {
-            Err(ref e) => println!("Error {}", e),
-            Ok(o) => println!("Signed, now {} sigs remaining", o),    
-        }
-        match structured_data.verify_signatures() {
-            Ok(()) => println!("All good"),
-            Err(e) => panic!("Error {}", e),
-            }
+        assert_eq!(structured_data.add_signature(&keys1.1).ok(), Some(1));
+        assert_eq!(structured_data.verify_signatures().ok(), None);
+        assert_eq!(structured_data.add_signature(&keys2.1).ok(), Some(0));
+        assert_eq!(structured_data.verify_signatures().ok(), Some(()));
     }
 }
-
