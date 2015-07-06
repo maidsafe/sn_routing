@@ -89,7 +89,7 @@ impl StructuredData {
          // Any duplicates invalidates this type
          if self.signatures.iter().filter(|&sig| self.signatures.iter()
                                   .any(|ref sig_check| NameType(sig.0) == NameType(sig_check.0)))
-                                  .count() > 0 {
+                                  .count() > (self.owner_keys.len() + 1) /2 {
                                         
             return Err(RoutingError::DuplicateSignatures); 
          }
@@ -124,7 +124,7 @@ impl StructuredData {
     }
 
     /// Returns number of signatures still required (if any, 0 means this is complete)
-    pub fn add_signature(mut self, secret_key: &crypto::sign::SecretKey) -> Result<isize, RoutingError> {
+    pub fn add_signature(&mut self, secret_key: &crypto::sign::SecretKey) -> Result<isize, RoutingError> {
         let data = try!(self.data_to_sign());
         let sig = crypto::sign::sign_detached(&data, secret_key);
         self.signatures.push(sig);
@@ -143,7 +143,7 @@ mod test {
     fn single_owner() {
         let keys = crypto::sign::gen_keypair();
 
-        let structured_data =   StructuredData::new(0, 
+        let mut structured_data =   StructuredData::new(0, 
                                 crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
                                 vec![], 
                                 vec![keys.0], 
@@ -156,34 +156,47 @@ mod test {
             }
         
         match structured_data.add_signature(&keys.1) {
-            Ok(o) => println!("Added sig, {} remaining", o),
-            Err(e) => panic!("Error {}" , e),    
+            Err(ref e) => println!("Error {}", e),
+            Ok(o) => println!("Signed, now {} sigs remaining", o),    
         }
+        
+        match structured_data.verify_signatures() {
+            Ok(()) => println!("All good"),
+            Err(e) => panic!("Error {}", e),
+            }
 
     }
 
     #[test]
-    fn dual_owners() {
+    fn three_owners() {
         let keys1 = crypto::sign::gen_keypair();
         let keys2 = crypto::sign::gen_keypair();
-        let structured_data =   StructuredData::new(0, 
+        let keys3 = crypto::sign::gen_keypair();
+        
+        let mut structured_data =   StructuredData::new(0, 
                                 crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
                                 vec![], 
-                                vec![keys1.0, keys2.0], 
+                                vec![keys1.0, keys2.0, keys3.0], 
                                 0,
                                 vec![], 
                                 vec![]);
-       { 
-        match structured_data.add_signature(&keys1.1.clone()) {
-            Err(ref e) => println!("Added sig, {} remaining", e),
-            Ok(o) => panic!("Error should not pass with {} sigs remaining", o),    
+       
+        match structured_data.add_signature(&keys1.1) {
+            Err(ref e) => println!("Error {}", e),
+            Ok(o) => println!("Signed, now {} sigs remaining", o),    
         }
-       }
-        // match structured_data.add_signature(&keys2.1.clone()) {
-        //     Ok(o) => println!("Added sig, {} remaining", o),
-        //     Err(ref e) => panic!("Error {}" , e),    
-        // }
-    
+        match structured_data.verify_signatures() {
+            Ok(()) => panic!("Should not pass"),
+            Err(e) => println!("Expected failure {}", e),
+            }
+        match structured_data.add_signature(&keys2.1) {
+            Err(ref e) => println!("Error {}", e),
+            Ok(o) => println!("Signed, now {} sigs remaining", o),    
+        }
+        match structured_data.verify_signatures() {
+            Ok(()) => println!("All good"),
+            Err(e) => panic!("Error {}", e),
+            }
     }
 }
 
