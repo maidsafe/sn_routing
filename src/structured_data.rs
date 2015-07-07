@@ -23,15 +23,17 @@ use sodiumoxide::crypto;
 use std::str;
 
 /// StructuredData
+/// These types may be stored unsigned with previous and current owner keys
+/// set to the same keys. Updates though require a signature to validate
 #[derive(Clone, RustcDecodable, RustcEncodable)]
 pub struct StructuredData {
     type_tag: u64,
     identifier: crypto::hash::sha512::Digest,
     data: Vec<u8>,
-    owner_keys: Vec<crypto::sign::PublicKey>,
-    version: u64,
     previous_owner_keys: Vec<crypto::sign::PublicKey>,
-    signatures: Vec<crypto::sign::Signature>
+    version: u64,
+    current_owner_keys: Vec<crypto::sign::PublicKey>,
+    previous_owner_signatures: Vec<crypto::sign::Signature>
 }
 
 
@@ -41,39 +43,41 @@ impl StructuredData {
     pub fn new(type_tag: u64,
                identifier: crypto::hash::sha512::Digest,
                data: Vec<u8>,
-               owner_keys: Vec<crypto::sign::PublicKey>,
-               version: u64, previous_owner_keys: Vec<crypto::sign::PublicKey>,
-               signatures: Vec<crypto::sign::Signature>) -> StructuredData {
+               previous_owner_keys: Vec<crypto::sign::PublicKey>,
+               version: u64, 
+               current_owner_keys: Vec<crypto::sign::PublicKey>,
+               previous_owner_signatures: Vec<crypto::sign::Signature>) -> StructuredData {
 
         StructuredData {
                    type_tag: type_tag,
                    identifier: identifier,
                    data: data,
-                   owner_keys: owner_keys,
+                   previous_owner_keys: previous_owner_keys,
                    version: version,
-                   previous_owner_keys : previous_owner_keys,
-                   signatures: signatures
+                   current_owner_keys : current_owner_keys,
+                   previous_owner_signatures: previous_owner_signatures
                  }
     }
     /// replace this data item with an updated version if such exists, otherwise fail.
     /// Returns the replaced (new) StructuredData
-    /// This is done this way to allow types to be created and signatures added one by one
+    /// This is done this way to allow types to be created and previous_owner_signatures added one by one
     pub fn replace_with_other(self, other: StructuredData) -> Result<StructuredData, RoutingError> {
-        if try!(other.name()) != try!(self.name()) { return Err(RoutingError::UnknownMessageType)}
-        if other.version != self.version + 1 { return Err(RoutingError::UnknownMessageType)}
-        if other.previous_owner_keys != self.owner_keys || other.owner_keys != self.owner_keys {
+        if      other.type_tag != self.type_tag     || 
+                other.identifier != self.identifier ||
+                other.version != self.version + 1   || 
+                other.previous_owner_keys != self.current_owner_keys  {
             return Err(RoutingError::UnknownMessageType)
         }
-        try!(other.verify_signatures());
+        try!(other.verify_previous_owner_signatures());
 
         Ok(StructuredData {
                    type_tag: other.type_tag,
                    identifier: other.identifier,
                    data: other.data,
-                   owner_keys: other.owner_keys,
+                   previous_owner_keys: other.previous_owner_keys,
                    version: other.version,
-                   previous_owner_keys : other.previous_owner_keys,
-                   signatures: other.signatures
+                   current_owner_keys : other.current_owner_keys,
+                   previous_owner_signatures: other.previous_owner_signatures
                  })
     }
 
@@ -83,28 +87,30 @@ impl StructuredData {
         Ok(NameType::new(crypto::hash::sha512::hash(&test.as_bytes()).0))
     }
 
-    /// Confirms *unique and valid* signatures are at least 50% of total owners
-    pub fn verify_signatures(&self) -> Result<(), RoutingError> {
-         // Refuse any duplicate signatures (people can have many owner keys)
+    /// Confirms *unique and valid* previous_owner_signatures are at least 50% of total owners
+    fn verify_previous_owner_signatures(&self) -> Result<(), RoutingError> {
+         // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
          // Any duplicates invalidates this type
-         if self.signatures.iter().filter(|&sig| self.signatures.iter()
+         if self.previous_owner_signatures.iter().filter(|&sig| self.previous_owner_signatures.iter()
                                   .any(|ref sig_check| NameType(sig.0) == NameType(sig_check.0)))
-                                  .count() > (self.owner_keys.len() + 1) /2 {
+                                  .count() > (self.previous_owner_keys.len() + 1) /2 {
 
             return Err(RoutingError::DuplicateSignatures);
          }
-         // Refuse when not enough signatures found
-         if self.signatures.len() < (self.owner_keys.len()  + 1 ) / 2 {
+         
+         
+         // Refuse when not enough previous_owner_signatures found
+         if self.previous_owner_signatures.len() < (self.previous_owner_keys.len()  + 1 ) / 2 {
              return Err(RoutingError::NotEnoughSignatures);
          }
 
          let data = try!(self.data_to_sign());
-         // Count valid signatures and refuse if quantity is not enough
-         if self.signatures.iter()
-                        .filter(|&sig| self.owner_keys
+         // Count valid previous_owner_signatures and refuse if quantity is not enough
+         if self.previous_owner_signatures.iter()
+                        .filter(|&sig| self.previous_owner_keys
                           .iter()
                           .any(|ref pub_key| crypto::sign::verify_detached(&sig, &data, &pub_key)))
-                            .count() < self.owner_keys.len() / 2 {
+                            .count() < self.previous_owner_keys.len() / 2 {
             return Err(RoutingError::NotEnoughSignatures);
          }
          Ok(())
@@ -117,18 +123,19 @@ impl StructuredData {
         try!(enc.encode(self.type_tag.to_string().as_bytes()));
         try!(enc.encode(&self.identifier[..]));
         try!(enc.encode(&self.data));
-        try!(enc.encode(&self.owner_keys));
         try!(enc.encode(&self.previous_owner_keys));
+        try!(enc.encode(&self.current_owner_keys));
         try!(enc.encode(self.version.to_string().as_bytes()));
         Ok(enc.as_bytes().into_iter().map(|&x| x).collect())
     }
 
-    /// Returns number of signatures still required (if any, 0 means this is complete)
+    /// Returns number of previous_owner_signatures still required (if any, 0 means this is complete)
     pub fn add_signature(&mut self, secret_key: &crypto::sign::SecretKey) -> Result<isize, RoutingError> {
         let data = try!(self.data_to_sign());
         let sig = crypto::sign::sign_detached(&data, secret_key);
-        self.signatures.push(sig);
-        Ok(((self.owner_keys.len() + 1) as isize / 2) - self.signatures.len() as isize)
+        self.previous_owner_signatures.push(sig);
+        Ok(((self.previous_owner_keys.len() + 1) as isize / 2) - 
+             self.previous_owner_signatures.len() as isize)
     }
 }
 
@@ -150,9 +157,9 @@ mod test {
                                 0,
                                 vec![],
                                 vec![]);
-        assert_eq!(structured_data.verify_signatures().ok(), None);
+        assert_eq!(structured_data.verify_previous_owner_signatures().ok(), None);
         assert_eq!(structured_data.add_signature(&keys.1).ok(), Some(0));
-        assert_eq!(structured_data.verify_signatures().ok(), Some(()));
+        assert_eq!(structured_data.verify_previous_owner_signatures().ok(), Some(()));
     }
 
     #[test]
@@ -169,8 +176,45 @@ mod test {
                                 vec![],
                                 vec![]);
         assert_eq!(structured_data.add_signature(&keys1.1).ok(), Some(1));
-        assert_eq!(structured_data.verify_signatures().ok(), None);
+        assert_eq!(structured_data.verify_previous_owner_signatures().ok(), None);
         assert_eq!(structured_data.add_signature(&keys2.1).ok(), Some(0));
-        assert_eq!(structured_data.verify_signatures().ok(), Some(()));
+        assert_eq!(structured_data.verify_previous_owner_signatures().ok(), Some(()));
     }
+    
+    #[test]
+    fn transfer_owners() {
+        let keys1       = crypto::sign::gen_keypair();
+        let keys2       = crypto::sign::gen_keypair();
+        let keys3       = crypto::sign::gen_keypair();
+        let new_owner   = crypto::sign::gen_keypair();
+
+        let mut orig_structured_data =   StructuredData::new(0,
+                                crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
+                                vec![],
+                                vec![keys1.0, keys2.0, keys3.0],
+                                0,
+                                vec![keys1.0, keys2.0, keys3.0],
+                                vec![]);
+        assert_eq!(orig_structured_data.add_signature(&keys1.1).ok(), Some(1));
+        assert_eq!(orig_structured_data.add_signature(&keys2.1).ok(), Some(0));
+        assert_eq!(orig_structured_data.verify_previous_owner_signatures().ok(), Some(()));
+        
+        let mut new_structured_data =   StructuredData::new(0,
+                                crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
+                                vec![],
+                                vec![keys1.0, keys2.0, keys3.0],
+                                1,
+                                vec![new_owner.0],
+                                vec![]);
+        assert_eq!(new_structured_data.add_signature(&keys1.1).ok(), Some(1));
+        assert_eq!(new_structured_data.add_signature(&keys2.1).ok(), Some(0));
+        assert_eq!(new_structured_data.verify_previous_owner_signatures().ok(), Some(()));
+        match orig_structured_data.replace_with_other(new_structured_data) {
+            Ok(structured_data) => println!("All good"),
+            Err(e) => panic!("Error {}", e), 
+        }
+        
+
+    }
+
 }
