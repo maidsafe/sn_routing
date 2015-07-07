@@ -104,7 +104,7 @@ impl<F> RoutingClient<F> where F: Interface {
                     relay_to: None
                 },
                 requester.clone(),
-                Authority::Client
+                Authority::Client(self.id.signing_public_key())
             ),
             GetData {requester: requester.clone(), name_and_type_id: types::NameAndTypeId {
                 name: name.clone(), type_id: type_id }},
@@ -130,7 +130,7 @@ impl<F> RoutingClient<F> where F: Interface {
                     reply_to: None,
                     relayed_for: Some(self.public_id.name()),
                 },
-                Authority::Client
+                Authority::Client(self.id.signing_public_key())
             ),
             PutData {name: content.name(), data: content.serialised_contents()},
             &self.id.get_crypto_secret_sign_key()
@@ -151,7 +151,7 @@ impl<F> RoutingClient<F> where F: Interface {
                                 reply_to: None,
                                 relayed_for: Some(self.public_id.name()),
                             },
-                Authority::ManagedNode),
+                Authority::ManagedNode(self.public_id.name())),
             PutData{ name: content.name(), data: content.serialised_contents() },
             &self.id.get_crypto_secret_sign_key());
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
@@ -240,7 +240,7 @@ impl<F> RoutingClient<F> where F: Interface {
                         types::SourceAddress{ from_node: self.public_id.name(),
                             from_group: None, reply_to: None,
                             relayed_for: Some(self.public_id.name()) },
-                        Authority::Client),
+                        Authority::Client(self.id.signing_public_key())),
                     ConnectRequest {
                         local_endpoints: accepting_on,
                         external_endpoints: vec![],

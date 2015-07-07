@@ -22,6 +22,7 @@ use crust::Endpoint;
 use NameType;
 use types;
 use types::Bytes;
+use sodiumoxide::crypto::sign::Signature;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ConnectResponse {
@@ -33,7 +34,7 @@ pub struct ConnectResponse {
     pub receiver_id: NameType,
     pub receiver_fob: types::PublicId,
     pub serialised_connect_request: Bytes,
-    pub connect_request_signature: types::Signature
+    pub connect_request_signature: Signature
 }
 
 impl Encodable for ConnectResponse {
@@ -70,7 +71,7 @@ impl Decodable for ConnectResponse {
                   NameType,
                   types::PublicId,
                   Bytes,
-                  types::Signature) = try!(Decodable::decode(decoder));
+                  Signature) = try!(Decodable::decode(decoder));
         Ok(ConnectResponse { requester_local_endpoints: requester_local,
                              requester_external_endpoints: requester_external,
                              receiver_local_endpoints: receiver_local,

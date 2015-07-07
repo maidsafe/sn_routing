@@ -17,7 +17,7 @@
 
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-
+use sodiumoxide::crypto;
 use crust::Endpoint;
 use error::ResponseError;
 use messages;
@@ -78,7 +78,7 @@ impl Random for messages::connect_response::ConnectResponse {
             receiver_id: Random::generate_random(),
             receiver_fob: Random::generate_random(),
             serialised_connect_request: generate_random_vec_u8(64),
-            connect_request_signature: Random::generate_random()
+            connect_request_signature: crypto::sign::Signature([0; 64]),
         }
     }
 }

@@ -232,7 +232,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         accepting_on: Vec<Endpoint>) -> RoutingMessage {
         let header = MessageHeader::new(self.get_next_message_id(),
             types::DestinationAddress {dest: destination.clone(), relay_to: None },
-            self.our_source_address(), Authority::ManagedNode);
+            self.our_source_address(), Authority::ManagedNode(self.id.get_name()));
 
         // FIXME: We're sending all accepting connections as local since we don't differentiate
         // between local and external yet.
@@ -252,7 +252,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         our_unrelocated_id: &types::PublicId) -> RoutingMessage {
         let header = MessageHeader::new(self.get_next_message_id(),
             types::DestinationAddress{dest: our_unrelocated_id.name(), relay_to: None},
-            self.our_source_address(), Authority::ManagedNode);
+            self.our_source_address(), Authority::ManagedNode(self.id.get_name()));
         let put_public_id = PutPublicId { public_id : our_unrelocated_id.clone() };
         RoutingMessage::new(MessageTypeTag::PutPublicId, header, put_public_id,
             &self.id.get_crypto_secret_sign_key())

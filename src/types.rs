@@ -24,6 +24,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
 use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto::sign::Signature;
 use sodiumoxide::crypto::box_;
 use std::cmp;
 use NameType;
@@ -115,38 +116,6 @@ impl Decodable for NameAndTypeId {
 //                        |           |         +-> destination name
 //                        |           |         |
 pub type FilterType = (NameType, MessageId, NameType);
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct Signature {
-  pub signature : Vec<u8>
-}
-
-impl Signature {
-  pub fn new(signature : crypto::sign::Signature) -> Signature {
-    assert_eq!(signature.0.len(), 64);
-    Signature {
-      signature : signature.0.to_vec()
-    }
-  }
-
-  pub fn get_crypto_signature(&self) -> crypto::sign::Signature {
-    crypto::sign::Signature(vector_as_u8_64_array(self.signature.clone()))
-  }
-}
-
-impl Encodable for Signature {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_000, &(&self.signature)).encode(e)
-  }
-}
-
-impl Decodable for Signature {
-  fn decode<D: Decoder>(d: &mut D)->Result<Signature, D::Error> {
-    try!(d.read_u64());
-    let signature = try!(Decodable::decode(d));
-    Ok(Signature { signature: signature })
-  }
-}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct PublicSignKey {
@@ -258,7 +227,7 @@ fn calculate_original_name(public_key: &crypto::sign::PublicKey,
                            public_sign_key: &crypto::box_::PublicKey,
                            validation_token: &Signature) -> NameType {
     let combined_iter = public_key.0.into_iter().chain(public_sign_key.0.into_iter())
-          .chain((&validation_token.signature).into_iter());
+          .chain((&validation_token[..]).into_iter());
     let mut combined: Vec<u8> = Vec::new();
     for iter in combined_iter {
         combined.push(*iter);
@@ -368,17 +337,11 @@ impl Id {
         keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
     }
 
-    let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &sec_sign_key));
+    let validation_token = crypto::sign::sign_detached(&keys, &sec_sign_key);
+    
+    let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
+          .chain((&validation_token[..]).iter()).map(|x| *x).collect();
 
-    let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
-
-    for i in 0..KEYS_SIZE {
-        combined[i] = keys[i];
-    }
-
-    for i in 0..sign::SIGNATUREBYTES {
-        combined[KEYS_SIZE + i] = validation_token.signature[i];
-    }
 
     let digest = crypto::hash::sha512::hash(&combined);
 
@@ -389,7 +352,10 @@ impl Id {
       name : NameType::new(digest.0),
     }
   }
-
+  pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
+    self.public_keys.0.clone()    
+  }
+  
   pub fn with_keys(public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
                    secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey)) -> Id {
     let sign_key = &(public_keys.0).0;
@@ -406,17 +372,11 @@ impl Id {
         keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
     }
 
-    let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &secret_keys.0));
+    let validation_token = crypto::sign::sign_detached(&keys, &secret_keys.0);
+    
+    let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
+          .chain((&validation_token[..]).iter()).map(|x| *x).collect();
 
-    let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
-
-    for i in 0..KEYS_SIZE {
-        combined[i] = keys[i];
-    }
-
-    for i in 0..sign::SIGNATUREBYTES {
-        combined[KEYS_SIZE + i] = validation_token.signature[i];
-    }
 
     let digest = crypto::hash::sha512::hash(&combined);
 

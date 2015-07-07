@@ -32,7 +32,7 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
 }
 
 /// NameType can be created using the new function by passing ID as it’s parameter.
-#[derive(Eq)]
+#[derive(Eq, Copy)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {

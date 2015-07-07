@@ -15,58 +15,26 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encodable, Encoder};
 use routing_table::RoutingTable;
 use message_header::MessageHeader;
 use NameType;
+use sodiumoxide::crypto;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone)]
 pub enum Authority {
-  ClientManager,  // from a node in our range but not routing table
-  NaeManager,     // target (name()) is in the group we are in
-  OurCloseGroup,  // for account transfer where the source = the destination (= the element)
+  ClientManager(NameType),  // from a node in our range but not routing table
+  NaeManager(NameType),     // target (name()) is in the group we are in
+  OurCloseGroup(NameType),  // for account transfer where the source = the destination (= the element)
                   // this reflects a NAE back onto itself, but on a refreshed group
                   // TODO: find a better name, this name is a bit of a misnomer
-  NodeManager,    // received from a node in our routing table (handle refresh here)
-  ManagedNode,    // in our group and routing table
-  ManagedClient,  // in our group
-  Client,         // detached
-  Unknown
+  NodeManager(NameType),    // received from a node in our routing table (handle refresh here)
+  ManagedNode(NameType),    // in our group and routing table
+  ManagedClient(NameType),  // in our group
+  Client(crypto::sign::PublicKey),         // detached
+  Unknown,
 }
 
-impl Encodable for Authority {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    let authority = match *self {
-      Authority::ClientManager => "ClientManager",
-      Authority::NaeManager => "NaeManager",
-      Authority::OurCloseGroup => "OurCloseGroup",
-      Authority::NodeManager => "NodeManager",
-      Authority::ManagedNode => "ManagedNode",
-      Authority::ManagedClient => "ManagedClient",
-      Authority::Client => "Client",
-      Authority::Unknown => "Unknown",
-    };
-    CborTagEncode::new(5483_100, &(&authority)).encode(e)
-  }
-}
-
-impl Decodable for Authority {
-  fn decode<D: Decoder>(d: &mut D)->Result<Authority, D::Error> {
-    try!(d.read_u64());
-    let authority: String = try!(Decodable::decode(d));
-    match &authority[..] {
-      "ClientManager" => Ok(Authority::ClientManager),
-      "NaeManager" => Ok(Authority::NaeManager),
-      "OurCloseGroup" => Ok(Authority::OurCloseGroup),
-      "NodeManager" => Ok(Authority::NodeManager),
-      "ManagedNode" => Ok(Authority::ManagedNode),
-      "ManagedClient" => Ok(Authority::ManagedClient),
-      "Client" => Ok(Authority::Client),
-      _ => Ok(Authority::Unknown)
-    }
-  }
-}
 
 /// This returns our calculated authority with regards
 /// to the element passed in from the message and the message header.
@@ -92,33 +60,33 @@ impl Decodable for Authority {
 ///       and the destination is our id
 ///    -> Managed Node
 /// f) otherwise return Unknown Authority
-pub fn our_authority(element : &NameType, header : &MessageHeader,
+pub fn our_authority(element : NameType, header : &MessageHeader,
                      routing_table : &RoutingTable) -> Authority {
     if !header.is_from_group()
        && routing_table.address_in_our_close_group_range(&header.from_node())
-       && header.destination.dest != *element {
-        return Authority::ClientManager; }
-    else if routing_table.address_in_our_close_group_range(element)
-       && header.destination.dest == *element
+       && header.destination.dest != element {
+        return Authority::ClientManager(element); }
+    else if routing_table.address_in_our_close_group_range(&element)
+       && header.destination.dest == element
        && match header.from_group() {
           Some(group_source) => {
              group_source != header.destination.dest},
           None => true } {
-        return Authority::NaeManager; }
-    else if routing_table.address_in_our_close_group_range(element)
-       && header.destination.dest == *element
-       && header.from() == *element
+        return Authority::NaeManager(element); }
+    else if routing_table.address_in_our_close_group_range(&element)
+       && header.destination.dest == element
+       && header.from() == element
        && header.is_from_group() {
-         return Authority::OurCloseGroup; }
+         return Authority::OurCloseGroup(element); }
     else if header.is_from_group()
        && routing_table.address_in_our_close_group_range(&header.destination.dest)
        && header.destination.dest != routing_table.our_name() {
-        return Authority::NodeManager; }
+        return Authority::NodeManager(element); }
     else if header.from_group()
                   .map(|group| routing_table.address_in_our_close_group_range(&group))
                   .unwrap_or(false)
        && header.destination.dest == routing_table.our_name() {
-        return Authority::ManagedNode; }
+        return Authority::ManagedNode(element); }
     return Authority::Unknown;
 }
 

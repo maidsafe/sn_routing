@@ -38,7 +38,7 @@
 extern crate cbor;
 extern crate rand;
 extern crate rustc_serialize;
-extern crate sodiumoxide;
+extern crate maidsafe_sodiumoxide as sodiumoxide;
 extern crate time;
 extern crate itertools;
 

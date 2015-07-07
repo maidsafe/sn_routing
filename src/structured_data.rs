@@ -59,8 +59,9 @@ impl StructuredData {
                  }
     }
     /// replace this data item with an updated version if such exists, otherwise fail.
-    /// Returns the replaced (new) StructuredData
     /// This is done this way to allow types to be created and previous_owner_signatures added one by one
+    /// To transfer ownership the current owner signs over the data, the previous owners field
+    /// must have the previous owners of version - 1 as the current owners of that last version.
     pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), RoutingError> {
         // TODO(dirvine) Increase error types to be more descriptive  :07/07/2015
         if      other.type_tag != self.type_tag     || 

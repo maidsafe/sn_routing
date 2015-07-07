@@ -21,9 +21,8 @@ crust = "*"
 docopt = "*"
 itertools = "*"
 
-[dependencies.sodiumoxide]
-git = "https://github.com/Fraser999/sodiumoxide.git"
-branch = "use_git_repo"
+[dependencies.maidsafe_sodiumoxide]
+git = "https://github.com/dirvine/sodiumoxide.git"
 
 [[example]]
 name = "simple_key_value_store"
