@@ -40,9 +40,9 @@ extern crate cbor;
 extern crate core;
 extern crate docopt;
 extern crate rustc_serialize;
-extern crate sodiumoxide;
 
 extern crate crust;
+extern crate maidsafe_sodiumoxide as sodiumoxide;
 extern crate routing;
 
 use core::iter::FromIterator;
