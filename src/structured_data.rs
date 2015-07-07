@@ -61,7 +61,8 @@ impl StructuredData {
     /// replace this data item with an updated version if such exists, otherwise fail.
     /// Returns the replaced (new) StructuredData
     /// This is done this way to allow types to be created and previous_owner_signatures added one by one
-    pub fn replace_with_other(self, other: StructuredData) -> Result<StructuredData, RoutingError> {
+    pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), RoutingError> {
+        // TODO(dirvine) Increase error types to be more descriptive  :07/07/2015
         if      other.type_tag != self.type_tag     || 
                 other.identifier != self.identifier ||
                 other.version != self.version + 1   || 
@@ -70,15 +71,14 @@ impl StructuredData {
         }
         try!(other.verify_previous_owner_signatures());
 
-        Ok(StructuredData {
-                   type_tag: other.type_tag,
-                   identifier: other.identifier,
-                   data: other.data,
-                   previous_owner_keys: other.previous_owner_keys,
-                   version: other.version,
-                   current_owner_keys : other.current_owner_keys,
-                   previous_owner_signatures: other.previous_owner_signatures
-                 })
+                   self.type_tag = other.type_tag;
+                   self.identifier = other.identifier;
+                   self.data = other.data;
+                   self.previous_owner_keys = other.previous_owner_keys;
+                   self.version = other.version;
+                   self.current_owner_keys  = other.current_owner_keys;
+                   self.previous_owner_signatures = other.previous_owner_signatures;
+                   Ok(())
     }
 
     /// Returns name and validates invariants
@@ -187,7 +187,7 @@ mod test {
         let keys2       = crypto::sign::gen_keypair();
         let keys3       = crypto::sign::gen_keypair();
         let new_owner   = crypto::sign::gen_keypair();
-
+        // Owned by keys1 keys2 and keys3
         let mut orig_structured_data =   StructuredData::new(0,
                                 crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
                                 vec![],
@@ -198,7 +198,7 @@ mod test {
         assert_eq!(orig_structured_data.add_signature(&keys1.1).ok(), Some(1));
         assert_eq!(orig_structured_data.add_signature(&keys2.1).ok(), Some(0));
         assert_eq!(orig_structured_data.verify_previous_owner_signatures().ok(), Some(()));
-        
+        // Transfer ownership and update to new owner
         let mut new_structured_data =   StructuredData::new(0,
                                 crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
                                 vec![],
@@ -210,7 +210,21 @@ mod test {
         assert_eq!(new_structured_data.add_signature(&keys2.1).ok(), Some(0));
         assert_eq!(new_structured_data.verify_previous_owner_signatures().ok(), Some(()));
         match orig_structured_data.replace_with_other(new_structured_data) {
-            Ok(structured_data) => println!("All good"),
+            Ok(()) => println!("All good"),
+            Err(e) => panic!("Error {}", e), 
+        }
+        // transfer ownership back to keys1 only
+        let mut another_new_structured_data =   StructuredData::new(0,
+                                crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
+                                vec![],
+                                vec![new_owner.0],
+                                2,
+                                vec![keys1.0],
+                                vec![]);
+        assert_eq!(another_new_structured_data.add_signature(&new_owner.1).ok(), Some(0));
+        assert_eq!(another_new_structured_data.verify_previous_owner_signatures().ok(), Some(()));
+        match orig_structured_data.replace_with_other(another_new_structured_data) {
+            Ok(()) => println!("All good"),
             Err(e) => panic!("Error {}", e), 
         }
         
