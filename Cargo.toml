@@ -21,6 +21,9 @@ accumulator = "0.0.1"
 crust = "*"
 docopt = "*"
 
+[dev-dependencies]
+bit-vec = "*"
+
 [[example]]
 name = "simple_key_value_store"
 path = "examples/simple_key_value_store.rs"
