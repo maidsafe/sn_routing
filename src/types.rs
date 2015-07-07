@@ -235,7 +235,7 @@ fn calculate_original_name(public_key: &crypto::sign::PublicKey,
     NameType(crypto::hash::sha512::hash(&combined).0)
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct PublicId {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
@@ -286,25 +286,6 @@ impl PublicId {
         self.name = relocated_name;
         return true;
     }
-}
-
-impl Encodable for PublicId {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.public_key,
-                                   &self.public_sign_key,
-                                   &self.validation_token,
-                                   &self.name)).encode(e)
-  }
-}
-
-impl Decodable for PublicId {
-  fn decode<D: Decoder>(d: &mut D)->Result<PublicId, D::Error> {
-    try!(d.read_u64());
-    let (public_key, public_sign_key, validation_token, name) = try!(Decodable::decode(d));
-    Ok(PublicId { public_key: public_key,
-                    public_sign_key : public_sign_key,
-                    validation_token: validation_token, name : name})
-  }
 }
 
 // Note: name field is initially same as original_name, this should be later overwritten by
@@ -436,27 +417,13 @@ impl Id {
   }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct AccountTransferInfo {
   pub name : NameType
 }
 
-impl Encodable for AccountTransferInfo {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_000, &(&self.name)).encode(e)
-  }
-}
-
-impl Decodable for AccountTransferInfo {
-  fn decode<D: Decoder>(d: &mut D)->Result<AccountTransferInfo, D::Error> {
-    try!(d.read_u64());
-    let name = try!(Decodable::decode(d));
-    Ok(AccountTransferInfo { name: name })
-  }
-}
-
 /// Address of the source of the message
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct SourceAddress {
   pub from_node   : NameType,
   pub from_group  : Option<NameType>,
@@ -464,42 +431,14 @@ pub struct SourceAddress {
   pub relayed_for : Option<NameType>
 }
 
-impl Encodable for SourceAddress {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_102 , &(&self.from_node, &self.from_group,
-        &self.reply_to, &self.relayed_for)).encode(e)
-  }
-}
-
-impl Decodable for SourceAddress {
-  fn decode<D: Decoder>(d: &mut D)->Result<SourceAddress, D::Error> {
-    try!(d.read_u64());
-    let (from_node, from_group, reply_to, relayed_for) = try!(Decodable::decode(d));
-    Ok(SourceAddress { from_node: from_node, from_group: from_group,
-        reply_to: reply_to, relayed_for: relayed_for })
-  }
-}
 
 /// Address of the destination of the message
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct DestinationAddress {
   pub dest     : NameType,
   pub relay_to : Option<NameType>
 }
 
-impl Encodable for DestinationAddress {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_101, &(&self.dest, &self.relay_to)).encode(e)
-  }
-}
-
-impl Decodable for DestinationAddress {
-  fn decode<D: Decoder>(d: &mut D)->Result<DestinationAddress, D::Error> {
-    try!(d.read_u64());
-    let (dest, relay_to) = try!(Decodable::decode(d));
-    Ok(DestinationAddress { dest: dest, relay_to: relay_to })
-  }
-}
 
 #[cfg(test)]
 #[allow(deprecated)]
