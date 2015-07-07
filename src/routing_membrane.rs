@@ -37,6 +37,7 @@ use std::sync::mpsc::Receiver;
 use time::{Duration, SteadyTime};
 
 use crust;
+use crust::{ConnectionManager, Event, Endpoint};
 use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
@@ -67,13 +68,6 @@ use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::MethodCall;
 use refresh_accumulator::RefreshAccumulator;
 
-// use std::convert::From;
-
-
-type ConnectionManager = crust::ConnectionManager;
-type Event = crust::Event;
-type Endpoint = crust::Endpoint;
-type PortAndProtocol = crust::Port;
 
 type RoutingResult = Result<(), RoutingError>;
 
