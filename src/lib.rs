@@ -48,12 +48,12 @@
 extern crate cbor;
 extern crate rand;
 extern crate rustc_serialize;
-extern crate sodiumoxide;
 extern crate time;
 
-extern crate crust;
 extern crate accumulator;
+extern crate crust;
 extern crate lru_time_cache;
+extern crate maidsafe_sodiumoxide as sodiumoxide;
 extern crate message_filter;
 
 mod common_bits;

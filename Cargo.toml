@@ -13,13 +13,16 @@ homepage = "http://maidsafe.net"
 rustc-serialize = "*"
 cbor = "*"
 time = "*"
-sodiumoxide = "*"
+maidsafe_sodiumoxide = "*"
 rand = "*"
 message_filter = "*"
 lru_time_cache = "0.1.5"
 accumulator = "0.0.1"
 crust = "*"
 docopt = "*"
+
+[dev-dependencies]
+bit-vec = "*"
 
 [[example]]
 name = "simple_key_value_store"

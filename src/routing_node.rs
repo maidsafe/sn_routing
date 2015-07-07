@@ -149,7 +149,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         thread::sleep_ms(100);
 
         let unrelocated_id = self.id.clone();
-        let mut relocated_name : Option<NameType>;
+        let relocated_name : Option<NameType>;
 
         // FIXME: connect request should not require the knowledge of the name you're connecting to
         let connect_msg = self.construct_connect_request_msg(&unrelocated_id.get_name(),
