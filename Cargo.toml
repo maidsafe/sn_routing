@@ -24,6 +24,9 @@ itertools = "*"
 [dependencies.maidsafe_sodiumoxide]
 git = "https://github.com/dirvine/sodiumoxide.git"
 
+[dev-dependencies]
+bit-vec = "*"
+
 [[example]]
 name = "simple_key_value_store"
 path = "examples/simple_key_value_store.rs"
