@@ -34,10 +34,52 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 General note: please document code you touch, and introduce property-based unit tests where applicable.
 
+## [0.3.0] RUST-3 Sprint tasks
+
+### Unified Data
+- [ ] [MAID-1158](https://maidsafe.atlassian.net/browse/MAID-1158) Unified Data
+    - [ ] [MAID-1159](https://maidsafe.atlassian.net/browse/MAID-1159) Implement PlainData
+    - [ ] [MAID-1160](https://maidsafe.atlassian.net/browse/MAID-1160) Implement ImmutableData
+    - [ ] [MAID-1163](https://maidsafe.atlassian.net/browse/MAID-1163) Implement StructuredData
+    - [ ] [MAID-1165](https://maidsafe.atlassian.net/browse/MAID-1165) StructuredData::is_valid_successor
+    - [ ] [MAID-1166](https://maidsafe.atlassian.net/browse/MAID-1166) Unit Tests for PlainData and ImmutableData
+    - [ ] [MAID-1167](https://maidsafe.atlassian.net/browse/MAID-1167) Unit Tests for StructuredData
+    - [ ] [MAID-1168](https://maidsafe.atlassian.net/browse/MAID-1168) Unit Test IsValidSuccessor for StructuredData
+    - [ ] [MAID-1171](https://maidsafe.atlassian.net/browse/MAID-1171) Implement UnifiedData enum
+    - [ ] [MAID-1172](https://maidsafe.atlassian.net/browse/MAID-1172) Update with UnifiedData: GetData and GetDataResponse
+    - [ ] [MAID-1173](https://maidsafe.atlassian.net/browse/MAID-1173) Update with UnifiedData: PutData and PutDataResponse
+    - [ ] [MAID-1175](https://maidsafe.atlassian.net/browse/MAID-1175) Update with UnifiedData: RoutingMembrane RoutingClient Put and Get
+    - [ ] [MAID-1176](https://maidsafe.atlassian.net/browse/MAID-1176) Update with UnifiedData: Interfaces and churn
+- [ ] [MAID-1179](https://maidsafe.atlassian.net/browse/MAID-1179) Implement Post and PostResponse
+- [ ] [MAID-1178](https://maidsafe.atlassian.net/browse/MAID-1178) Enable Churn in Routing simple_key_value_store
+- [ ] [MAID-1181](https://maidsafe.atlassian.net/browse/MAID-1181) Integration test for routing
+- [ ] [MAID-1170](https://maidsafe.atlassian.net/browse/MAID-1170) Update RoutingClient and relay node: RoutingMessage
+
+### Sentinel
+- [ ] [MAID-1152](https://maidsafe.atlassian.net/browse/MAID-1152) Implement Sentinels into Routing (group task)
+    - [ ] [MAID-1154](https://maidsafe.atlassian.net/browse/MAID-1154) MAID-1152 Implement PureSentinel in RoutingMembrane::handle_put_data
+    - [ ] [MAID-1157](https://maidsafe.atlassian.net/browse/MAID-1157) MAID-1152 Implement KeySentinel for FindGroupResponse messages
+    - [ ] [MAID-1164](https://maidsafe.atlassian.net/browse/MAID-1164) MAID-1152 Refactor RoutingMembrane::handle_put_data as preparation for adding PureSentinel
+    - [ ] [MAID-1169](https://maidsafe.atlassian.net/browse/MAID-1169) MAID-1152 Refactor RoutingMembrane::handle_{get,put}_data_response as preparation for use with PureSentinel
+    - [ ] [MAID-1180](https://maidsafe.atlassian.net/browse/MAID-1180) MAID-1152 Modify GetDataResponse and PutDataResponse to also contain source group keys
+    - [ ] [MAID-1182](https://maidsafe.atlassian.net/browse/MAID-1182) MAID-1152 Implement PureSentinel in RoutingMembrane::handle_put_data_response
+    - [ ] [MAID-1183](https://maidsafe.atlassian.net/browse/MAID-1183) MAID-1152 Implement PureSentinel in RoutingMembrane::handle_get_data_response
+    - [ ] [MAID-1194](https://maidsafe.atlassian.net/browse/MAID-1194) MAID-1152 Create test for from_group PUT messages
+    - [ ] [MAID-1196](https://maidsafe.atlassian.net/browse/MAID-1196) MAID-1152 Create test for from_group PUT response messages
+    - [ ] [MAID-1197](https://maidsafe.atlassian.net/browse/MAID-1197) MAID-1152 Create test for from_group GET response messages
+    - [ ] [MAID-1207](https://maidsafe.atlassian.net/browse/MAID-1207) MAID-1152 Implement PureSentinel for POST and DELETE messages
+
+### Use public key for all messages
+- [ ] [MAID-1255](https://maidsafe.atlassian.net/browse/MAID-1255) RFC 0001 - Use public key for id on all messages
+    - [ ] [MAID-1256](https://maidsafe.atlassian.net/browse/MAID-1256) MAID-1255 Remove redundant field header.source.reply_to
+    - [ ] [MAID-1257](https://maidsafe.atlassian.net/browse/MAID-1257) MAID-1255 Modify Authority enum
+
+
 ## Future sprints
 
 Note 2015-06-22: below tasks will be affected by [proposed RFC: Remove Transaction Managers](https://github.com/maidsafe/rfcs/pull/1) ([view draft](https://github.com/dirvine/rfcs/blob/master/proposed/0000-Remove-Transaction-Managers.md))
 
+### Old tasks for reference
 - [ ] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
     - [ ] [MAID-1064](https://maidsafe.atlassian.net/browse/MAID-1064) POC first and move UnauthorisedPut into explicit message structure.
 - [ ] [MAID-1065](https://maidsafe.atlassian.net/browse/MAID-1065) Return Result for Put Get Post-
@@ -49,3 +91,4 @@ Note 2015-06-22: below tasks will be affected by [proposed RFC: Remove Transacti
     - [ ]  update signature of handler functions to request and claim
     - [ ] [MAID-1051](https://maidsafe.atlassian.net/browse/MAID-1051) update construction of message_header
     - [ ] [MAID-1050](https://maidsafe.atlassian.net/browse/MAID-1050) block messages at filter once Sentinel has resolved
+

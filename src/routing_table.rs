@@ -443,9 +443,11 @@ impl RoutingTable {
 
 #[cfg(test)]
 mod test {
+    extern crate bit_vec;
+
     use super::*;
     use std::cmp;
-    use std::collections::BitVec;
+    use self::bit_vec::BitVec;
     use std::collections::{HashMap};
     use types::PublicId;
     use name_type::closer_to_target;
