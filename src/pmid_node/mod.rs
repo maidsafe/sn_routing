@@ -44,7 +44,7 @@ impl PmidNode {
 
   pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
     let mut decoder = Decoder::from_bytes(&data[..]);
-    let mut data_name_and_remove_sacrificial: (NameType, bool);
+    let data_name_and_remove_sacrificial: (NameType, bool);
     if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
       data_name_and_remove_sacrificial = match parsed_data {
         Data::Immutable(parsed) => (parsed.name(), true),
