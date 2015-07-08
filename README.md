@@ -55,17 +55,13 @@ General note: please document code you touch, and introduce property-based unit 
 
 ### Sentinel
 - [ ] [MAID-1152](https://maidsafe.atlassian.net/browse/MAID-1152) Implement Sentinels into Routing (group task)
-    - [ ] [MAID-1151](https://maidsafe.atlassian.net/browse/MAID-1151) MAID-1152 Rename Sentinel to PureSentinel in routing
-    - [ ] [MAID-1153](https://maidsafe.atlassian.net/browse/MAID-1153) MAID-1152 Modify PureSentinel to use dynamic threshold values
     - [ ] [MAID-1154](https://maidsafe.atlassian.net/browse/MAID-1154) MAID-1152 Implement PureSentinel in RoutingMembrane::handle_put_data
-    - [ ] [MAID-1155](https://maidsafe.atlassian.net/browse/MAID-1155) MAID-1152 Modify KeySentinel to use dynamic threshold values
     - [ ] [MAID-1157](https://maidsafe.atlassian.net/browse/MAID-1157) MAID-1152 Implement KeySentinel for FindGroupResponse messages
     - [ ] [MAID-1164](https://maidsafe.atlassian.net/browse/MAID-1164) MAID-1152 Refactor RoutingMembrane::handle_put_data as preparation for adding PureSentinel
     - [ ] [MAID-1169](https://maidsafe.atlassian.net/browse/MAID-1169) MAID-1152 Refactor RoutingMembrane::handle_{get,put}_data_response as preparation for use with PureSentinel
     - [ ] [MAID-1180](https://maidsafe.atlassian.net/browse/MAID-1180) MAID-1152 Modify GetDataResponse and PutDataResponse to also contain source group keys
     - [ ] [MAID-1182](https://maidsafe.atlassian.net/browse/MAID-1182) MAID-1152 Implement PureSentinel in RoutingMembrane::handle_put_data_response
     - [ ] [MAID-1183](https://maidsafe.atlassian.net/browse/MAID-1183) MAID-1152 Implement PureSentinel in RoutingMembrane::handle_get_data_response
-    - [ ] [MAID-1184](https://maidsafe.atlassian.net/browse/MAID-1184) MAID-1152 Replace the AccountSentinel with the accumulator we have in Routing
     - [ ] [MAID-1194](https://maidsafe.atlassian.net/browse/MAID-1194) MAID-1152 Create test for from_group PUT messages
     - [ ] [MAID-1196](https://maidsafe.atlassian.net/browse/MAID-1196) MAID-1152 Create test for from_group PUT response messages
     - [ ] [MAID-1197](https://maidsafe.atlassian.net/browse/MAID-1197) MAID-1152 Create test for from_group GET response messages
