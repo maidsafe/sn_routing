@@ -198,7 +198,7 @@ mod test {
                     reply_to: None,
                     relayed_for: None
                 },
-                authority: Authority::ManagedNode(from_node)
+                authority: Authority::ManagedNode
             });
     }
 }

@@ -224,7 +224,7 @@ fn our_authority_full_routing_table() {
     assert_eq!(our_authority(name_outside_close_group,
                              &managed_node_header,
                              &routing_table),
-               Authority::ManagedNode(name_outside_close_group));
+               Authority::ManagedNode);
 }
 
 }
