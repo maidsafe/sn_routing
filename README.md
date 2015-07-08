@@ -34,6 +34,8 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 General note: please document code you touch, and introduce property-based unit tests where applicable.
 
+## [0.2.9] RUST-3 Sprint tasks
+
 ### Unified Data
 - [ ] [MAID-1158](https://maidsafe.atlassian.net/browse/MAID-1158) Unified Data
     - [ ] [MAID-1159](https://maidsafe.atlassian.net/browse/MAID-1159) Implement PlainData
@@ -73,7 +75,7 @@ General note: please document code you touch, and introduce property-based unit 
     - [ ] [MAID-1257](https://maidsafe.atlassian.net/browse/MAID-1257) MAID-1255 Modify Authority enum
 
 
-## Future sprints
+## [0.3.0] Future sprints
 
 Note 2015-06-22: below tasks will be affected by [proposed RFC: Remove Transaction Managers](https://github.com/maidsafe/rfcs/pull/1) ([view draft](https://github.com/dirvine/rfcs/blob/master/proposed/0000-Remove-Transaction-Managers.md))
 
