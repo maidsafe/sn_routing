@@ -62,7 +62,7 @@ impl RefreshAccumulator {
                 return None;
             }
 
-            Some(map.iter().map(|(name, msg)| msg.clone()).collect())
+            Some(map.iter().map(|(_, msg)| msg.clone()).collect())
 
         }.map(|messages| {
             self.requests.remove(&request);

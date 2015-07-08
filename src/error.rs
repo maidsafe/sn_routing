@@ -22,6 +22,7 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::error;
 use std::fmt;
+use std::str;
 
 //------------------------------------------------------------------------------
 #[deny(missing_docs)]
@@ -115,7 +116,7 @@ impl error::Error for InterfaceError {
     fn description(&self) -> &str {
         match *self {
             InterfaceError::Abort => "Aborted",
-            InterfaceError::Response(ref err) => "Invalid response",
+            InterfaceError::Response(_) => "Invalid response",
         }
     }
 
@@ -147,6 +148,12 @@ pub enum RoutingError {
     AlreadyConnected,
     /// received message having unknown type
     UnknownMessageType,
+    /// Failed signature check
+    FailedSignature,
+    /// Not Enough signatures
+    NotEnoughSignatures,
+    /// Duplicate signatures
+    DuplicateSignatures,
     /// duplicate request received
     FilterCheckFailed,
     /// failure to bootstrap off the provided endpoints
@@ -160,6 +167,8 @@ pub enum RoutingError {
     RefusedFromRoutingTable,
     /// We received a refresh message but it did not contain group source address
     RefreshNotFromGroup,
+    /// String errors
+    Utf8(str::Utf8Error),
     /// interface error
     Interface(InterfaceError),
     /// i/o error
@@ -169,6 +178,11 @@ pub enum RoutingError {
     /// invalid response
     Response(ResponseError),
 }
+
+impl From<str::Utf8Error> for RoutingError {
+    fn from(e: str::Utf8Error) -> RoutingError { RoutingError::Utf8(e) }
+}
+
 
 impl From<ResponseError> for RoutingError {
     fn from(e: ResponseError) -> RoutingError { RoutingError::Response(e) }
@@ -193,15 +207,19 @@ impl error::Error for RoutingError {
             RoutingError::AlreadyConnected => "Already connected",
             RoutingError::UnknownMessageType => "Invalid message type",
             RoutingError::FilterCheckFailed => "Filter check failure",
+            RoutingError::FailedSignature => "Signature check failure",
+            RoutingError::NotEnoughSignatures => "Not enough signatures",
+            RoutingError::DuplicateSignatures => "Not enough signatures",
             RoutingError::FailedToBootstrap => "Could not bootstrap",
             RoutingError::RoutingTableEmpty => "Routing table empty",
             RoutingError::RejectedPublicId => "Rejected Public Id",
             RoutingError::RefusedFromRoutingTable => "Refused from routing table",
             RoutingError::RefreshNotFromGroup => "Refresh message not from group",
-            RoutingError::Interface(ref e) => "Interface error",
-            RoutingError::Io(ref err) => "I/O error",
-            RoutingError::Cbor(ref err) => "Serialisation error",
-            RoutingError::Response(ref err) => "Response error",
+            RoutingError::Utf8(_) => "String/Utf8 error",
+            RoutingError::Interface(_) => "Interface error",
+            RoutingError::Io(_) => "I/O error",
+            RoutingError::Cbor(_) => "Serialisation error",
+            RoutingError::Response(_) => "Response error",
         }
     }
 
@@ -223,11 +241,15 @@ impl fmt::Display for RoutingError {
             RoutingError::AlreadyConnected => fmt::Display::fmt("already connected", f),
             RoutingError::UnknownMessageType => fmt::Display::fmt("Unknown message", f),
             RoutingError::FilterCheckFailed => fmt::Display::fmt("filter check failed", f),
+            RoutingError::FailedSignature => fmt::Display::fmt("Signature check failed", f),
+            RoutingError::NotEnoughSignatures => fmt::Display::fmt("Not enough signatures (multi-sig)", f),
+            RoutingError::DuplicateSignatures => fmt::Display::fmt("Duplicated signatures (multi-sig)", f),
             RoutingError::FailedToBootstrap => fmt::Display::fmt("could not bootstrap", f),
             RoutingError::RoutingTableEmpty => fmt::Display::fmt("routing table empty", f),
             RoutingError::RejectedPublicId => fmt::Display::fmt("Rejected Public Id", f),
             RoutingError::RefusedFromRoutingTable => fmt::Display::fmt("Refused from routing table", f),
             RoutingError::RefreshNotFromGroup => fmt::Display::fmt("Refresh message not from group", f),
+            RoutingError::Utf8(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Interface(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Cbor(ref err) => fmt::Display::fmt(err, f),

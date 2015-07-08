@@ -79,19 +79,6 @@ impl RelayMap {
         true
     }
 
-    /// This removes the ip_node from the relay map.
-    pub fn drop_ip_node(&mut self, ip_node_to_drop: &NameType) {
-        match self.relay_map.get(&ip_node_to_drop) {
-            Some(relay_entry) => {
-                for endpoint in relay_entry.1.iter() {
-                    self.lookup_map.remove(endpoint);
-                }
-            },
-            None => return
-        };
-        self.relay_map.remove(ip_node_to_drop);
-    }
-
     /// This removes the provided endpoint and returns a NameType if this endpoint
     /// was the last endpoint assocoiated with this Name; otherwise returns None.
     pub fn drop_endpoint(&mut self, endpoint_to_drop: &Endpoint) -> Option<NameType> {
@@ -148,16 +135,6 @@ impl RelayMap {
         self.relay_map.get(relay_name)
     }
 
-    /// This changes our name and drops any endpoint that would be stored under that name.
-    /// The motivation for this behaviour is that our claim for a name will overrule any unverified
-    /// other node claiming this name.
-    pub fn change_our_name(&mut self, new_name: &NameType) {
-        if self.relay_map.contains_key(new_name) {
-            self.drop_ip_node(new_name);
-        }
-
-        self.our_name = new_name.clone();
-    }
 
     /// On unknown NewConnection, register the endpoint we are connected to.
     pub fn register_unknown_connection(&mut self, endpoint: Endpoint) {
@@ -168,7 +145,7 @@ impl RelayMap {
     /// When we receive an "I am" message on this connection, drop it
     pub fn remove_unknown_connection(&mut self, endpoint: &Endpoint) -> Option<Endpoint> {
         match self.unknown_connections.remove(endpoint) {
-            Some(addded_timestamp) => Some(endpoint.clone()), // return the endpoint
+            Some(_) => Some(endpoint.clone()), // return the endpoint
             None => None
         }
     }
@@ -184,13 +161,6 @@ impl RelayMap {
         self.self_relocated
     }
 }
-
-/// Bootstrap endpoints are used to connect to the network before
-/// routing table connections are established.
-pub struct BootstrapEndpoints {
-    bootstrap_endpoints: Vec<Endpoint>,
-}
-
 
 #[cfg(test)]
 mod test {

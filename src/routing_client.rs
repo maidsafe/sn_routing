@@ -104,7 +104,7 @@ impl<F> RoutingClient<F> where F: Interface {
                     relay_to: None
                 },
                 requester.clone(),
-                Authority::Client
+                Authority::Client(self.id.signing_public_key())
             ),
             GetData {requester: requester.clone(), name_and_type_id: types::NameAndTypeId {
                 name: name.clone(), type_id: type_id }},
@@ -130,7 +130,7 @@ impl<F> RoutingClient<F> where F: Interface {
                     reply_to: None,
                     relayed_for: Some(self.public_id.name()),
                 },
-                Authority::Client
+                Authority::Client(self.id.signing_public_key())
             ),
             PutData {name: content.name(), data: content.serialised_contents()},
             &self.id.get_crypto_secret_sign_key()
@@ -202,8 +202,7 @@ impl<F> RoutingClient<F> where F: Interface {
 
     /// Use bootstrap to attempt connecting the client to previously known nodes,
     /// or use CRUST self-discovery options.
-    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
-                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
+    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
          // FIXME: bootstrapping a relay should fully rely on WhoAreYou,
          // then it is not need for CM to start listening;
          // but currently connect_request requires endpoint to connect back on to.
@@ -229,7 +228,7 @@ impl<F> RoutingClient<F> where F: Interface {
 
     fn send_bootstrap_connect_request(&mut self, accepting_on: Vec<Endpoint>) {
         match self.bootstrap_address.clone() {
-            (_, Some(ref endpoint)) => {
+            (_, Some(_)) => {
                 println!("Sending connect request");
                 let message = RoutingMessage::new(
                     MessageTypeTag::ConnectRequest,
@@ -240,7 +239,7 @@ impl<F> RoutingClient<F> where F: Interface {
                         types::SourceAddress{ from_node: self.public_id.name(),
                             from_group: None, reply_to: None,
                             relayed_for: Some(self.public_id.name()) },
-                        Authority::Client),
+                        Authority::Client(self.id.signing_public_key())),
                     ConnectRequest {
                         local_endpoints: accepting_on,
                         external_endpoints: vec![],

@@ -15,39 +15,27 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use types::PublicId;
+use rustc_serialize::{Decoder, Encodable, Encoder};
+pub use structured_data::StructuredData;
+pub use immutable_data::ImmutableData;
+pub use plain_data::PlainData;
 
-#[derive(RustcEncodable, RustcDecodable, Debug, Eq, PartialEq)]
-pub struct WhoAreYou {
-    pub nonce: u8  // FIXME: a placeholder for nonce
-}
-// TODO: add nonce to be signed for added security later
-
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct IAm {
-    pub public_id: PublicId,
-    // FIXME: return signed nonce
+/// This is the data types routing handles in the public interface
+#[derive(Clone, RustcEncodable, RustcDecodable)]
+pub enum Data {
+    StructuredData(StructuredData),
+    ImmutableData(ImmutableData),
+    PlainData(PlainData)
 }
 
-impl Encodable for IAm {
-    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_001, &(&self.public_id)).encode(encoder)
-    }
-}
-
-impl Decodable for IAm {
-    fn decode<D: Decoder>(decoder: &mut D)->Result<IAm, D::Error> {
-        try!(decoder.read_u64());
-        let public_id = try!(Decodable::decode(decoder));
-        Ok(IAm { public_id: public_id })
-    }
-}
 
 #[cfg(test)]
 mod test {
-    // TODO: add encode / decode test
-    // TODO: add validation test
+
+    // use super::*;
+
+    #[test]
+    fn creation() {
+    }
+
 }

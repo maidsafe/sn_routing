@@ -29,12 +29,6 @@ impl Random for NameAndTypeId {
     }
 }
 
-impl Random for Signature {
-    fn generate_random() -> Signature {
-        Signature { signature: generate_random_vec_u8(32) }
-    }
-}
-
 impl Random for PublicSignKey {
     fn generate_random() -> PublicSignKey {
         PublicSignKey { public_sign_key: generate_random_vec_u8(32) }

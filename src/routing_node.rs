@@ -56,7 +56,6 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     own_name: NameType,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
-    bootstrap_node_id: Option<NameType>,
 }
 
 impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
@@ -71,7 +70,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                       own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap_endpoint: None,
-                      bootstrap_node_id: None,
                     }
     }
 
@@ -97,7 +95,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
-        let original_name = self.id.get_name();
         let self_relocated_name = types::calculate_self_relocated_name(
             &self.id.get_crypto_public_sign_key(),
             &self.id.get_crypto_public_key(),
@@ -122,8 +119,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     /// inside the membrane.
     //  TODO: a (two-way) channel should be passed in to control the membrane.
     pub fn bootstrap(&mut self,
-            bootstrap_list: Option<Vec<Endpoint>>,
-            beacon_port: Option<u16>) -> Result<(), RoutingError>  {
+            bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError>  {
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
@@ -167,7 +163,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         loop {
             match event_input.recv() {
                 Err(_) => {},
-                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                Ok(crust::Event::NewMessage(_, bytes)) => {
                     match decode::<RoutingMessage>(&bytes) {
                         Ok(message) => {
                             match message.message_type {
@@ -207,7 +203,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 Ok(crust::Event::NewConnection(endpoint)) => {
                     println!("NewConnection on {:?} while waiting on network.", endpoint);
                 },
-                Ok(crust::Event::LostConnection(endpoint)) => {
+                Ok(crust::Event::LostConnection(_)) => {
                     return Err(RoutingError::FailedToBootstrap);
                 }
             }

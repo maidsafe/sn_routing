@@ -56,6 +56,7 @@ use cbor;
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto;
+use sodiumoxide::crypto::sign::Signature;
 
 use message_header;
 use types;
@@ -157,7 +158,7 @@ pub struct RoutingMessage {
     pub message_type: MessageTypeTag,
     pub message_header: message_header::MessageHeader,
     pub serialised_body: Vec<u8>,
-    pub signature : types::Signature
+    pub signature : Signature
 }
 
 impl Encodable for RoutingMessage {
@@ -181,8 +182,7 @@ impl RoutingMessage {
                   message : T, private_sign_key : &crypto::sign::SecretKey) -> RoutingMessage where T: for<'a> Encodable + Decodable {
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&message]).unwrap();
-        let signature = types::Signature::new(crypto::sign::sign_detached(&e.as_bytes(),
-                                              &private_sign_key));
+        let signature = crypto::sign::sign_detached(&e.as_bytes(), &private_sign_key);
         RoutingMessage {
             message_type: message_type,
             message_header: message_header,

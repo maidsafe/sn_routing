@@ -95,8 +95,6 @@ impl RoutingTable {
 
     pub fn get_group_size() -> usize { types::GROUP_SIZE }
 
-    pub fn get_quorum_size() -> usize { types::QUORUM_SIZE }
-
     /// Adds a contact to the routing table.  If the contact is added, the first return arg is true,
     /// otherwise false.  If adding the contact caused another contact to be dropped, the dropped
     /// one is returned in the second field, otherwise the optional field is empty.  The following
@@ -190,7 +188,6 @@ impl RoutingTable {
             return true;
         }
         let group_size = RoutingTable::get_group_size() - 1;
-        let thier_id_clone = their_id.clone();
         if closer_to_target(&their_id, &self.routing_table[group_size].id(), &self.our_id) {
             return true;
         }
@@ -275,14 +272,14 @@ impl RoutingTable {
         result
     }
 
-    /// This returns the public key for the given node if the node is in our table.
-    pub fn public_id(&self, their_id: &NameType)->Option<PublicId> {
-        debug_assert!(self.is_nodes_sorted(), "RT::public_id: Nodes are not sorted");
-        match self.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
-            Some(node) => Some(node.fob.clone()),
-            None => None,
-        }
-    }
+    // /// This returns the public key for the given node if the node is in our table.
+    // pub fn public_id(&self, their_id: &NameType)->Option<PublicId> {
+    //     debug_assert!(self.is_nodes_sorted(), "RT::public_id: Nodes are not sorted");
+    //     match self.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
+    //         Some(node) => Some(node.fob.clone()),
+    //         None => None,
+    //     }
+    // }
 
     pub fn lookup_endpoint(&self, their_endpoint: &Endpoint) -> Option<NameType> {
         debug_assert!(self.is_nodes_sorted(), "RT::Lookup: Nodes are not sorted");

@@ -24,6 +24,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
 use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto::sign::Signature;
 use sodiumoxide::crypto::box_;
 use std::cmp;
 use NameType;
@@ -57,7 +58,7 @@ pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
 
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for i in 0..size {
+    for _ in 0..size {
         vec.push(random::<u8>());
     }
     vec
@@ -78,11 +79,10 @@ pub type IdNode = NameType;
 pub type IdNodes = Vec<IdNode>;
 pub type Bytes = Vec<u8>;
 
-//#[derive(RustcEncodable, RustcDecodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
   sign_public_key: crypto::sign::PublicKey,
   encrypt_public_key: crypto::box_::PublicKey,
-  signature: crypto::sign::Signature, // detached signature
 }
 
 pub enum MessageAction {
@@ -115,38 +115,6 @@ impl Decodable for NameAndTypeId {
 //                        |           |         +-> destination name
 //                        |           |         |
 pub type FilterType = (NameType, MessageId, NameType);
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct Signature {
-  pub signature : Vec<u8>
-}
-
-impl Signature {
-  pub fn new(signature : crypto::sign::Signature) -> Signature {
-    assert_eq!(signature.0.len(), 64);
-    Signature {
-      signature : signature.0.to_vec()
-    }
-  }
-
-  pub fn get_crypto_signature(&self) -> crypto::sign::Signature {
-    crypto::sign::Signature(vector_as_u8_64_array(self.signature.clone()))
-  }
-}
-
-impl Encodable for Signature {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_000, &(&self.signature)).encode(e)
-  }
-}
-
-impl Decodable for Signature {
-  fn decode<D: Decoder>(d: &mut D)->Result<Signature, D::Error> {
-    try!(d.read_u64());
-    let signature = try!(Decodable::decode(d));
-    Ok(Signature { signature: signature })
-  }
-}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct PublicSignKey {
@@ -258,7 +226,7 @@ fn calculate_original_name(public_key: &crypto::sign::PublicKey,
                            public_sign_key: &crypto::box_::PublicKey,
                            validation_token: &Signature) -> NameType {
     let combined_iter = public_key.0.into_iter().chain(public_sign_key.0.into_iter())
-          .chain((&validation_token.signature).into_iter());
+          .chain((&validation_token[..]).into_iter());
     let mut combined: Vec<u8> = Vec::new();
     for iter in combined_iter {
         combined.push(*iter);
@@ -266,7 +234,7 @@ fn calculate_original_name(public_key: &crypto::sign::PublicKey,
     NameType(crypto::hash::sha512::hash(&combined).0)
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct PublicId {
   pub public_key: PublicKey,
   pub public_sign_key: PublicSignKey,
@@ -319,25 +287,6 @@ impl PublicId {
     }
 }
 
-impl Encodable for PublicId {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.public_key,
-                                   &self.public_sign_key,
-                                   &self.validation_token,
-                                   &self.name)).encode(e)
-  }
-}
-
-impl Decodable for PublicId {
-  fn decode<D: Decoder>(d: &mut D)->Result<PublicId, D::Error> {
-    try!(d.read_u64());
-    let (public_key, public_sign_key, validation_token, name) = try!(Decodable::decode(d));
-    Ok(PublicId { public_key: public_key,
-                    public_sign_key : public_sign_key,
-                    validation_token: validation_token, name : name})
-  }
-}
-
 // Note: name field is initially same as original_name, this should be later overwritten by
 // relocated name provided by the network using assign_relocated_name method
 // TODO (ben 2015-04-01) : implement order based on name
@@ -368,17 +317,11 @@ impl Id {
         keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
     }
 
-    let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &sec_sign_key));
+    let validation_token = crypto::sign::sign_detached(&keys, &sec_sign_key);
+    
+    let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
+          .chain((&validation_token[..]).iter()).map(|x| *x).collect();
 
-    let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
-
-    for i in 0..KEYS_SIZE {
-        combined[i] = keys[i];
-    }
-
-    for i in 0..sign::SIGNATUREBYTES {
-        combined[KEYS_SIZE + i] = validation_token.signature[i];
-    }
 
     let digest = crypto::hash::sha512::hash(&combined);
 
@@ -389,7 +332,10 @@ impl Id {
       name : NameType::new(digest.0),
     }
   }
-
+  pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
+    self.public_keys.0.clone()    
+  }
+  
   pub fn with_keys(public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
                    secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey)) -> Id {
     let sign_key = &(public_keys.0).0;
@@ -406,17 +352,11 @@ impl Id {
         keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
     }
 
-    let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &secret_keys.0));
+    let validation_token = crypto::sign::sign_detached(&keys, &secret_keys.0);
+    
+    let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
+          .chain((&validation_token[..]).iter()).map(|x| *x).collect();
 
-    let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
-
-    for i in 0..KEYS_SIZE {
-        combined[i] = keys[i];
-    }
-
-    for i in 0..sign::SIGNATUREBYTES {
-        combined[KEYS_SIZE + i] = validation_token.signature[i];
-    }
 
     let digest = crypto::hash::sha512::hash(&combined);
 
@@ -476,27 +416,13 @@ impl Id {
   }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct AccountTransferInfo {
   pub name : NameType
 }
 
-impl Encodable for AccountTransferInfo {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_000, &(&self.name)).encode(e)
-  }
-}
-
-impl Decodable for AccountTransferInfo {
-  fn decode<D: Decoder>(d: &mut D)->Result<AccountTransferInfo, D::Error> {
-    try!(d.read_u64());
-    let name = try!(Decodable::decode(d));
-    Ok(AccountTransferInfo { name: name })
-  }
-}
-
 /// Address of the source of the message
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct SourceAddress {
   pub from_node   : NameType,
   pub from_group  : Option<NameType>,
@@ -504,42 +430,14 @@ pub struct SourceAddress {
   pub relayed_for : Option<NameType>
 }
 
-impl Encodable for SourceAddress {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_102 , &(&self.from_node, &self.from_group,
-        &self.reply_to, &self.relayed_for)).encode(e)
-  }
-}
-
-impl Decodable for SourceAddress {
-  fn decode<D: Decoder>(d: &mut D)->Result<SourceAddress, D::Error> {
-    try!(d.read_u64());
-    let (from_node, from_group, reply_to, relayed_for) = try!(Decodable::decode(d));
-    Ok(SourceAddress { from_node: from_node, from_group: from_group,
-        reply_to: reply_to, relayed_for: relayed_for })
-  }
-}
 
 /// Address of the destination of the message
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct DestinationAddress {
   pub dest     : NameType,
   pub relay_to : Option<NameType>
 }
 
-impl Encodable for DestinationAddress {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_101, &(&self.dest, &self.relay_to)).encode(e)
-  }
-}
-
-impl Decodable for DestinationAddress {
-  fn decode<D: Decoder>(d: &mut D)->Result<DestinationAddress, D::Error> {
-    try!(d.read_u64());
-    let (dest, relay_to) = try!(Decodable::decode(d));
-    Ok(DestinationAddress { dest: dest, relay_to: relay_to })
-  }
-}
 
 #[cfg(test)]
 #[allow(deprecated)]
