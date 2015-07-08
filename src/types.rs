@@ -85,11 +85,6 @@ struct SignedKey {
   encrypt_public_key: crypto::box_::PublicKey,
 }
 
-pub enum MessageAction {
-  Reply(Vec<u8>),
-  SendOn(Vec<NameType>),
-}
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct NameAndTypeId {
   pub name : NameType,

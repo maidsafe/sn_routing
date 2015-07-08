@@ -28,6 +28,12 @@ pub enum Data {
     PlainData(PlainData)
 }
 
+#[derive(Clone, RustcEncodable, RustcDecodable)]
+pub enum DataRequest {
+    StructuredData(u64),
+    ImmutableData(ImmutableDataType),
+    PlainData,
+}
 
 #[cfg(test)]
 mod test {

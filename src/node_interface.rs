@@ -15,25 +15,32 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use sendable::Sendable;
+use data::Data;
 use name_type::NameType;
 use types::DestinationAddress;
 use authority::Authority;
-use types::MessageAction;
 use error::{InterfaceError, ResponseError};
+
+/// Reply or send the existing message on to next persona / Authority type
+pub enum MessageAction {
+  Reply(Vec<u8>),
+  SendOn(Vec<NameType>),
+}
 
 /// MethodCall denotes a specific request to be carried out by routing.
 pub enum MethodCall {
     /// request for no action
     None,
     /// request to have `destination` to handle put for the `content`
-    Put { destination: NameType, content: Box<Sendable>, },
+    Put { destination: NameType, content: Box<Data> },
     /// request to retreive data with specified type and name from network
-    Get { type_id: u64, name: NameType, },
+    Get { name: NameType, data: Data },
     /// request to post
-    Post,
+    Post { destination: NameType, content: Box<Data> },
+    /// Request delete
+    Delete { name: NameType, data : Data },
     /// request to refresh
-    Refresh { type_tag: u64, from_group: NameType, payload: Vec<u8>, },
+    Refresh { type_tag: u64, from_group: NameType, payload: Vec<u8> },
     /// request to send on the request to destination for further handling
     SendOn { destination: NameType },
 }

@@ -45,6 +45,7 @@ use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
 use sendable::Sendable;
+use data::{Data, DataRequest};
 use types;
 use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
@@ -62,9 +63,8 @@ use messages::connect_response::ConnectResponse;
 use messages::put_public_id::PutPublicId;
 use messages::put_public_id_response::PutPublicIdResponse;
 use messages::{RoutingMessage, MessageTypeTag};
-use types::{MessageAction};
 use error::{RoutingError, ResponseError, InterfaceError};
-use node_interface::MethodCall;
+use node_interface::{MethodCall, MessageAction};
 use refresh_accumulator::RefreshAccumulator;
 
 
@@ -128,8 +128,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, type_id: u64, name: NameType) {
-        let destination = types::DestinationAddress{ dest: name.clone(), relay_to: None };
+    pub fn get(&mut self, location: NameType, name: NameType, data : DataRequest) {
+        let destination = types::DestinationAddress{ dest: location.clone(), relay_to: None };
         let header = MessageHeader::new(self.get_next_message_id(),
                                         destination, self.our_source_address(None),
                                         Authority::Client(self.id.signing_public_key()));
@@ -157,18 +157,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
     }
 
-    /// Add something to the network
-    pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let destination = types::DestinationAddress{ dest: destination, relay_to: None };
-        let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(self.get_next_message_id(), destination,
-                                        self.our_source_address(None), Authority::Unknown);
-        let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut, header,
-                request, &self.id.get_crypto_secret_sign_key());
-
-        // FIXME: We might want to return the result.
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
-    }
 
     /// Refresh the content in the close group nodes of group address content::name.
     /// This method needs to be called when churn is triggered.
@@ -416,9 +404,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             for action in churn_actions {
                 match action {
                     MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                    MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                    MethodCall::Get { name: x, data: y } => self.get(x, y),
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-                    MethodCall::Post => unimplemented!(),
+                    MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                     MethodCall::None => (),
                     MethodCall::SendOn { destination } =>
                         println!("IGNORED: on handle_churn MethodCall:SendOn {} is not a Valid action", destination)
