@@ -26,7 +26,7 @@ use types;
 use id::Id;
 use public_id::PublicId;
 use types::{DestinationAddress, SourceAddress, FromAddress, ToAddress, NodeAddress};
-use error::ResponseError;
+use error::{RoutingError, ResponseError};
 use NameType;
 use cbor;
 
@@ -55,7 +55,9 @@ pub struct ConnectResponse {
 }
 
 
-
+/// These are the messageTypes routing provides
+/// many are internal to routing and woudl not be useful 
+/// to users.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum MessageType {
     BootstrapIdRequest,
@@ -66,6 +68,8 @@ pub enum MessageType {
     FindGroupResponse(Vec<crypto::sign::PublicKey>),
     GetData(DataRequest),
     GetDataResponse(Result<Data, ResponseError>),
+    DeleteData(DataRequest),
+    DeleteDataResponse(Result<DataRequest, ResponseError>),
     GetKey,
     GetKeyResponse(NameType, crypto::sign::PublicKey),
     GetGroupKey,
@@ -81,7 +85,7 @@ pub enum MessageType {
     Refresh(u64, Vec<u8>),
     Unknown,
 }
-
+/// the bare (unsigned) routing message
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
     pub destination     : DestinationAddress,
@@ -92,9 +96,6 @@ pub struct RoutingMessage {
 }
 
 impl RoutingMessage {
-    pub fn new(destination: DestinationAddress, message_type: MessageType)->RoutingMessage {
-      
-    }
     
     pub fn message_id(&self) -> types::MessageId {
         self.message_id
@@ -134,7 +135,7 @@ impl RoutingMessage {
 
     // FIXME: add from_authority to filter value
     pub fn get_filter(&self) -> types::FilterType {
-        (self.source.from_node.clone(), self.message_id, self.destination.dest.clone())
+        (self.source.clone(), self.message_id, self.destination.clone())
     }
 
     pub fn from_authority(&self) -> Authority {
@@ -146,56 +147,60 @@ impl RoutingMessage {
         self.source.relayed_for = Some(relay_for.clone());
     }
 
-    /// This creates a new header for Action::SendOn. It clones all the fields,
+    /// This creates a new message for Action::SendOn. It clones all the fields,
     /// and then mutates the destination and source accordingly.
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
     pub fn create_send_on(&self, our_name : &NameType, our_authority : &Authority,
-                          destination : &NameType) -> MessageHeader {
+                          destination : &NameType) -> RoutingMessage {
         // implicitly preserve all non-mutated fields.
-        let mut send_on_header = self.clone();
-        send_on_header.source = types::SourceAddress {
+        // TODO(dirvine) Investigate why copy and not change in place  :08/07/2015
+        let mut send_on_message = self.clone();
+        
+        send_on_message.source = types::SourceAddress {
             from_node : our_name.clone(),
             from_group : Some(self.destination.dest.clone()),
             reply_to : self.source.reply_to.clone(),
             relayed_for : self.source.relayed_for.clone()
         };
-        send_on_header.destination = types::DestinationAddress {
-            dest : destination.clone(),
-            relay_to : self.destination.relay_to.clone()
+        send_on_message.source = match self.source {
+              SourceAddress::RelayedForClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
+              SourceAddress::RelayedForNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone, b),
+              SourceAddress::Direct(a)              => SourceAddress::Direct(our_name.clone()),  
         };
-        send_on_header.authority = our_authority.clone();
-        send_on_header
+
+        send_on_message.destination = match self.destination {
+            DestinationAddress::RelayToClient(_, b) => DestinationAddress::RelayToClient(destination, b),
+            DestinationAddress::RelayToNode(_, b)   => DestinationAddress::RelayToNode(destination, b),
+            DestinationAddress::Direct(_)           => DestinationAddress::Direct(destination),
+        };
+        send_on_message.authority = our_authority.clone();
+        send_on_message
     }
 
-    /// This creates a new header for Action::Reply. It clones all the fields,
+    /// This creates a new message for Action::Reply. It clones all the fields,
     /// and then mutates the destination and source accordingly.
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
     pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)
-                        -> MessageHeader {
+                        -> RoutingMessage {
         // implicitly preserve all non-mutated fields.
-        let mut reply_header = self.clone();
-        reply_header.source = types::SourceAddress {
-            from_node : our_name.clone(),
-            from_group : Some(self.destination.dest.clone()),
-            reply_to : None,
-            relayed_for: None
+        // TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
+        let mut reply_message = self.clone();
+        reply_message.source  = match self.destination {
+            DestinationAddress::RelayToClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
+            DestinationAddress::RelayToNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone()), 
+            DestinationAddress::Direct(_)           => SourceAddress::Direct(our_name.clone()),
         };
-        reply_header.destination = types::DestinationAddress {
-            dest : match self.source.reply_to.clone() {
-                       Some(reply_to) => reply_to,
-                       None => match self.source.from_group.clone() {
-                           Some(group_name) => group_name,
-                           None => self.source.from_node.clone()
-                       }
-                   },
-            relay_to : self.source.relayed_for.clone()
+        reply_message.destination = match self.source {
+            SourceAddress::RelayedForClient(a, b) => DestinationAddress::RelayToClient(a, b),
+            SourceAddress::RelayedForNode(a, b)   => DestinationAddress::RelayToNode(a, b),
+            SourceAddress::Direct(a)              => DestinationAddress::Direct(a),
         };
-        reply_header.authority = our_authority.clone();
-        reply_header
+        reply_message.authority = our_authority.clone();
+        reply_message
     }
 }
 
@@ -209,9 +214,9 @@ impl SignedRoutingMessage {
     pub fn new(routing_message: &RoutingMessage,
                private_sign_key : &crypto::sign::SecretKey)
                 ->Result<RoutingError, SignedRoutingMessage> {
-        let mut e = cbor::Encoder::from_memory();
+        let mut enc = cbor::Encoder::from_memory();
         try!(enc.encode(&[routing_message]));
-        let signature = crypto::sign::sign_detached(&e.as_bytes(), &private_sign_key);
+        let signature = crypto::sign::sign_detached(&enc.as_bytes(), &private_sign_key);
         Ok(SignedRoutingMessage {
             encoded_routing_message : enc.as_bytes(),
             signature : signature, 

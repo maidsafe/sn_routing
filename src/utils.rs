@@ -20,6 +20,7 @@ use sodiumoxide;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto::sign::Signature;
 use sodiumoxide::crypto::box_;
+use sodiumoxide::crypto;
 use std::cmp;
 use NameType;
 use name_type::closer_to_target;

@@ -35,10 +35,10 @@ use error::{RoutingError};
 // TODO (ben 2015-04-01) : implement order based on name
 #[derive(Clone)]
 pub struct Id {
-  public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
-  secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey),
+  pub public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
+  pub secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey),
   validation_token: Signature,
-  name: NameType,
+  pub name: NameType,
 }
 
 impl Id {
