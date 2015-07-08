@@ -34,6 +34,8 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 General note: please document code you touch, and introduce property-based unit tests where applicable.
 
+## [0.3.0] RUST-3 Sprint tasks
+
 ### Unified Data
 - [ ] [MAID-1158](https://maidsafe.atlassian.net/browse/MAID-1158) Unified Data
     - [ ] [MAID-1159](https://maidsafe.atlassian.net/browse/MAID-1159) Implement PlainData
