@@ -75,18 +75,6 @@ impl MessageHeader {
         self.source.from_group.is_some()
     }
 
-    pub fn is_relayed(&self) -> bool {
-        self.source.relayed_for.is_some()
-    }
-
-    pub fn reply_to(&self) -> Option<NameType> {
-        if self.source.reply_to.is_some() {
-            self.source.reply_to.clone()
-        } else {
-            None
-        }
-    }
-
     pub fn from(&self) -> NameType {
         match self.from_group() {
             Some(address) => address,

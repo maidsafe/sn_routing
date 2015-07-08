@@ -116,7 +116,7 @@ impl error::Error for InterfaceError {
     fn description(&self) -> &str {
         match *self {
             InterfaceError::Abort => "Aborted",
-            InterfaceError::Response(ref err) => "Invalid response",
+            InterfaceError::Response(_) => "Invalid response",
         }
     }
 
@@ -215,11 +215,11 @@ impl error::Error for RoutingError {
             RoutingError::RejectedPublicId => "Rejected Public Id",
             RoutingError::RefusedFromRoutingTable => "Refused from routing table",
             RoutingError::RefreshNotFromGroup => "Refresh message not from group",
-            RoutingError::Utf8(ref e) => "String/Utf8 error",
-            RoutingError::Interface(ref e) => "Interface error",
-            RoutingError::Io(ref err) => "I/O error",
-            RoutingError::Cbor(ref err) => "Serialisation error",
-            RoutingError::Response(ref err) => "Response error",
+            RoutingError::Utf8(_) => "String/Utf8 error",
+            RoutingError::Interface(_) => "Interface error",
+            RoutingError::Io(_) => "I/O error",
+            RoutingError::Cbor(_) => "Serialisation error",
+            RoutingError::Response(_) => "Response error",
         }
     }
 

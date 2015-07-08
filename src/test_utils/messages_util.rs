@@ -58,16 +58,6 @@ impl Random for messages::connect_request::ConnectRequest {
 
 impl Random for messages::connect_response::ConnectResponse {
     fn generate_random() -> messages::connect_response::ConnectResponse {
-        use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
-
-        // TODO: IPv6 and non-TCP
-        let random_endpoint = || -> Endpoint {
-            Endpoint::Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>(),
-                                                           random::<u8>()),
-                                             random::<u16>())))
-        };
 
         messages::connect_response::ConnectResponse {
             requester_local_endpoints: random_endpoints(),
@@ -96,7 +86,7 @@ impl Random for messages::find_group_response::FindGroupResponse {
     fn generate_random() -> messages::find_group_response::FindGroupResponse {
         let total = GROUP_SIZE as usize + 20;
         let mut vec = Vec::<PublicId>::with_capacity(total);
-        for i in 0..total {
+        for _ in 0..total {
             let public_id : PublicId = Random::generate_random();
             vec.push(public_id);
         }
@@ -154,7 +144,7 @@ impl Random for messages::get_group_key_response::GetGroupKeyResponse {
     fn generate_random() -> messages::get_group_key_response::GetGroupKeyResponse {
         let total: usize = GROUP_SIZE as usize + 7;
         let mut vec = Vec::<(NameType, PublicSignKey)>::with_capacity(total);
-        for i in 0..total {
+        for _ in 0..total {
             vec.push((Random::generate_random(), Random::generate_random()));
         }
         messages::get_group_key_response::GetGroupKeyResponse {

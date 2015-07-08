@@ -27,12 +27,12 @@
 //! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
 //!
 
-#![feature(bitvec, split_off, convert, clone_from_slice)]
+#![feature(convert)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://maidsafe.github.io/routing")]
 // #![warn(missing_docs)]
-#![allow(dead_code, unused_variables, unused_features, unused_attributes)]
+#![deny(dead_code, unused_variables, unused_features, unused_attributes)]
 #![forbid(bad_style, warnings)]
 
 extern crate cbor;

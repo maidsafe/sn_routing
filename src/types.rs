@@ -58,7 +58,7 @@ pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
 
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for i in 0..size {
+    for _ in 0..size {
         vec.push(random::<u8>());
     }
     vec
@@ -79,11 +79,10 @@ pub type IdNode = NameType;
 pub type IdNodes = Vec<IdNode>;
 pub type Bytes = Vec<u8>;
 
-//#[derive(RustcEncodable, RustcDecodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
   sign_public_key: crypto::sign::PublicKey,
   encrypt_public_key: crypto::box_::PublicKey,
-  signature: crypto::sign::Signature, // detached signature
 }
 
 pub enum MessageAction {

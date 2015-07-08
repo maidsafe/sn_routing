@@ -202,8 +202,7 @@ impl<F> RoutingClient<F> where F: Interface {
 
     /// Use bootstrap to attempt connecting the client to previously known nodes,
     /// or use CRUST self-discovery options.
-    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>,
-                     beacon_port: Option<u16>) -> Result<(), RoutingError> {
+    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
          // FIXME: bootstrapping a relay should fully rely on WhoAreYou,
          // then it is not need for CM to start listening;
          // but currently connect_request requires endpoint to connect back on to.
@@ -229,7 +228,7 @@ impl<F> RoutingClient<F> where F: Interface {
 
     fn send_bootstrap_connect_request(&mut self, accepting_on: Vec<Endpoint>) {
         match self.bootstrap_address.clone() {
-            (_, Some(ref endpoint)) => {
+            (_, Some(_)) => {
                 println!("Sending connect request");
                 let message = RoutingMessage::new(
                     MessageTypeTag::ConnectRequest,
