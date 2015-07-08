@@ -170,16 +170,28 @@ mod test {
     use std::net::SocketAddr;
     use std::str::FromStr;
     use rand::random;
+    use NameType;
 
     fn generate_random_endpoint() -> Endpoint {
         Endpoint::Tcp(SocketAddr::from_str(&format!("127.0.0.1:{}", random::<u16>())).unwrap())
+    }
+
+    fn drop_ip_node(relay_map: &mut RelayMap, ip_node_to_drop: &NameType) {
+        match relay_map.relay_map.get(&ip_node_to_drop) {
+            Some(relay_entry) => {
+                for endpoint in relay_entry.1.iter() {
+                    relay_map.lookup_map.remove(endpoint);
+                }
+            },
+            None => return
+        };
+        relay_map.relay_map.remove(ip_node_to_drop);
     }
 
     #[test]
     fn add() {
         let our_id : Id = Id::new();
         let our_public_id = PublicId::new(&our_id);
-        let our_name = our_id.get_name();
         let mut relay_map = RelayMap::new(&our_id);
         assert_eq!(false, relay_map.add_ip_node(our_public_id.clone(), generate_random_endpoint()));
         assert_eq!(0, relay_map.relay_map.len());
@@ -197,7 +209,6 @@ mod test {
     #[test]
     fn drop() {
         let our_id : Id = Id::new();
-        let our_name = our_id.get_name();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
         let test_endpoint = generate_random_endpoint();
@@ -205,7 +216,7 @@ mod test {
                                                test_endpoint.clone()));
         assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint));
-        relay_map.drop_ip_node(&test_public_id.name());
+        drop_ip_node(&mut relay_map, &test_public_id.name());
         assert_eq!(false, relay_map.contains_relay_for(&test_public_id.name()));
         assert_eq!(false, relay_map.contains_endpoint(&test_endpoint));
         assert_eq!(None, relay_map.get_endpoints(&test_public_id.name()));
@@ -214,7 +225,6 @@ mod test {
     #[test]
     fn add_conflicting_endpoints() {
         let our_id : Id = Id::new();
-        let our_name = our_id.get_name();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
         let test_endpoint = generate_random_endpoint();
@@ -231,7 +241,6 @@ mod test {
     #[test]
     fn add_multiple_endpoints() {
         let our_id : Id = Id::new();
-        let our_name = our_id.get_name();
         let mut relay_map = RelayMap::new(&our_id);
         assert!(super::MAX_RELAY - 1 > 0);
         // ensure relay_map is all but full, so multiple endpoints are not counted as different

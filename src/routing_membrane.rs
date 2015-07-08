@@ -1556,31 +1556,25 @@ struct TestInterface {
     stats: Arc<Mutex<Stats>>
 }
 
-impl TestInterface {
-    pub fn new() -> TestInterface {
-        TestInterface { stats: Arc::new(Mutex::new(Stats::new())) }
-    }
-}
-
 impl Sendable for TestData {
     fn name(&self) -> NameType { Random::generate_random() }
     fn type_tag(&self)->u64 { unimplemented!() }
     fn serialised_contents(&self)->Vec<u8> { self.data.clone() }
     fn refresh(&self)->bool { false }
-    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
+    fn merge(&self, _responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
 }
 
 impl Interface for TestInterface {
-    fn handle_get(&mut self, type_id: u64, name : NameType, our_authority: Authority,
-                  from_authority: Authority, from_address: NameType) -> Result<MessageAction, InterfaceError> {
+    fn handle_get(&mut self, _type_id: u64, _name : NameType, _our_authority: Authority,
+                  _from_authority: Authority, _from_address: NameType) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         Ok(MessageAction::Reply("handle_get called".to_string().into_bytes()))
     }
 
-    fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-                from_address: NameType, dest_address: DestinationAddress,
+    fn handle_put(&mut self, _our_authority: Authority, from_authority: Authority,
+                _from_address: NameType, _dest_address: DestinationAddress,
                 data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
@@ -1599,8 +1593,8 @@ impl Interface for TestInterface {
         stats_value.data = payloads[0].clone();
     }
 
-    fn handle_post(&mut self, our_authority: Authority, from_authority: Authority,
-                   from_address: NameType, name: NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+    fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
+                   _from_address: NameType, _name: NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1608,7 +1602,7 @@ impl Interface for TestInterface {
         Ok(MessageAction::Reply(data))
     }
 
-    fn handle_get_response(&mut self, from_address: NameType, response: Result<Vec<u8>,
+    fn handle_get_response(&mut self, _from_address: NameType, _response: Result<Vec<u8>,
                            ResponseError>) -> MethodCall {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
@@ -1617,7 +1611,7 @@ impl Interface for TestInterface {
         MethodCall::None
     }
 
-    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
+    fn handle_put_response(&mut self, _from_authority: Authority, _from_address: NameType,
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
@@ -1629,30 +1623,29 @@ impl Interface for TestInterface {
         MethodCall::None
     }
 
-    fn handle_post_response(&mut self, from_authority: Authority, from_address: NameType,
-                            response: Result<Vec<u8>, ResponseError>) {
+    fn handle_post_response(&mut self, _from_authority: Authority, _from_address: NameType,
+                            _response: Result<Vec<u8>, ResponseError>) {
         unimplemented!();
     }
 
-    fn handle_churn(&mut self, close_group: Vec<NameType>)
+    fn handle_churn(&mut self, _close_group: Vec<NameType>)
         -> Vec<MethodCall> {
         unimplemented!();
     }
 
-    fn handle_cache_get(&mut self, type_id: u64, name : NameType, from_authority: Authority,
-                        from_address: NameType) -> Result<MessageAction, InterfaceError> {
+    fn handle_cache_get(&mut self, _type_id: u64, _name : NameType, _from_authority: Authority,
+                        _from_address: NameType) -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 
-    fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
-                        data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+    fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
+                        _data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 }
 
 fn create_mmebrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     let mut id = Id::new();
-    let own_name = id.get_name();
     let (event_output, event_input) = mpsc::channel();
     let mut cm = crust::ConnectionManager::new(event_output);
     let ports_and_protocols : Vec<crust::Port> = Vec::new();
@@ -1664,7 +1657,7 @@ fn create_mmebrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
         }
         Ok(listeners_and_beacon) => listeners_and_beacon
     };
-    let original_name = id.get_name();
+
     let self_relocated_name = types::calculate_self_relocated_name(
         &id.get_crypto_public_sign_key(),
         &id.get_crypto_public_key(),
@@ -1726,7 +1719,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut enc = Encoder::from_memory();
         let _ = enc.encode(&[public_key]);
         stats.lock().unwrap().data = enc.into_bytes();
-        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey, stats, Authority::NaeManager, None, None).call_count, 1usize);
+        assert_eq!(call_operation(get_key, MessageTypeTag::GetKey, stats, Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
     }
 
 #[test]
@@ -1771,7 +1764,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let put_data: PutData = Random::generate_random();
         assert_eq!(call_operation(put_data,
             MessageTypeTag::PutData, Arc::new(Mutex::new(Stats::new())),
-            Authority::NaeManager, None, None).call_count, 1usize);
+            Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
     }
 
 #[test]
@@ -1788,21 +1781,21 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_put_response() {
         let put_data_response: PutDataResponse = Random::generate_random();
         assert_eq!(call_operation(put_data_response, MessageTypeTag::PutDataResponse,
-             Arc::new(Mutex::new(Stats::new())), Authority::NaeManager, None, None).call_count, 1usize);
+             Arc::new(Mutex::new(Stats::new())), Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
     }
 
 #[test]
     fn call_handle_get_data() {
         let get_data: GetData = Random::generate_random();
         assert_eq!(call_operation(get_data, MessageTypeTag::GetData,
-            Arc::new(Mutex::new(Stats::new())), Authority::NaeManager, None, None).call_count, 1usize);
+            Arc::new(Mutex::new(Stats::new())), Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
     }
 
 #[test]
     fn call_handle_get_data_response() {
         let get_data: GetDataResponse = Random::generate_random();
         assert_eq!(call_operation(get_data, MessageTypeTag::GetDataResponse,
-            Arc::new(Mutex::new(Stats::new())), Authority::NaeManager, None, None).call_count, 1usize);
+            Arc::new(Mutex::new(Stats::new())), Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
     }
 
 #[test]
@@ -1810,14 +1803,14 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_post() {
         let post: Post = Random::generate_random();
         assert_eq!(call_operation(post, MessageTypeTag::Post, Arc::new(Mutex::new(Stats::new())),
-                   Authority::NaeManager, None, None).call_count, 1usize);
+                   Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
     }
 
 #[test]
     fn call_handle_refresh() {
         let refresh: Refresh = Random::generate_random();
         assert_eq!(call_operation(refresh.clone(), MessageTypeTag::Refresh,
-            Arc::new(Mutex::new(Stats::new())), Authority::OurCloseGroup,
+            Arc::new(Mutex::new(Stats::new())), Authority::OurCloseGroup(Random::generate_random()),
             Some(refresh.from_group.clone()), Some(refresh.from_group)).call_count, refresh.type_tag as usize);
     }
 
@@ -1887,7 +1880,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         loop {
             let original_public_id = PublicId::generate_random();
             let mut close_nodes_to_original_name : Vec<NameType> = Vec::new();
-            for i in 0..types::GROUP_SIZE {
+            for _ in 0..types::GROUP_SIZE {
                 close_nodes_to_original_name.push(Random::generate_random());
             }
             let relocated_name = types::calculate_relocated_name(close_nodes_to_original_name.clone(),
@@ -1904,7 +1897,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
                 source : types::SourceAddress {
                     from_node : close_nodes_to_original_name[0].clone(),  // from original name group member
                     from_group : Some(original_public_id.name()), reply_to : None, relayed_for : None },
-                authority : Authority::NaeManager
+                authority : Authority::NaeManager(Random::generate_random())
             };
             let serialised_msg = encode(&put_public_id).unwrap();
             let result = routing_node.handle_put_public_id(put_public_id_header, serialised_msg);

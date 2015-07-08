@@ -40,7 +40,7 @@ extern crate cbor;
 extern crate core;
 extern crate docopt;
 extern crate rustc_serialize;
-extern crate sodiumoxide;
+extern crate maidsafe_sodiumoxide as sodiumoxide;
 
 extern crate crust;
 extern crate routing;
@@ -287,14 +287,14 @@ impl Interface for TestNode {
                 from_address: NameType, _dest_address: types::DestinationAddress,
                 data_in: Vec<u8>) -> Result<MessageAction, InterfaceError> {
         match our_authority {
-            Authority::ClientManager => {
+            Authority::ClientManager(_) => {
                 let mut d = cbor::Decoder::from_bytes(data_in);
                 let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
                 println!("ClientManager forwarding data to DataManager around {:?}",
                          in_coming_data.name());
                 return Ok(MessageAction::SendOn(vec![in_coming_data.name()]));
             },
-            Authority::NaeManager => {
+            Authority::NaeManager(_) => {
                 let stats = self.stats.clone();
                 let mut stats_value = stats.lock().unwrap();
                 let mut d = cbor::Decoder::from_bytes(data_in.clone());
@@ -400,7 +400,7 @@ fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
     if is_first {
         test_node.run_zero_membrane();
     } else {
-        let _ = test_node.bootstrap(bootstrap_peers, None);
+        let _ = test_node.bootstrap(bootstrap_peers);
     }
     let ref mut command = String::new();
     loop {
@@ -422,7 +422,7 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
     let _ = spawn(move || {
-        let _ = copied_client.lock().unwrap().bootstrap(bootstrap_peers, None);
+        let _ = copied_client.lock().unwrap().bootstrap(bootstrap_peers);
         thread::sleep_ms(100);
         loop {
             thread::sleep_ms(10);

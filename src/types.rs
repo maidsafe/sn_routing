@@ -318,7 +318,7 @@ impl Id {
     }
 
     let validation_token = crypto::sign::sign_detached(&keys, &sec_sign_key);
-    
+
     let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
           .chain((&validation_token[..]).iter()).map(|x| *x).collect();
 
@@ -333,9 +333,9 @@ impl Id {
     }
   }
   pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
-    self.public_keys.0.clone()    
+    self.public_keys.0.clone()
   }
-  
+
   pub fn with_keys(public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
                    secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey)) -> Id {
     let sign_key = &(public_keys.0).0;
@@ -353,7 +353,7 @@ impl Id {
     }
 
     let validation_token = crypto::sign::sign_detached(&keys, &secret_keys.0);
-    
+
     let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
           .chain((&validation_token[..]).iter()).map(|x| *x).collect();
 
@@ -446,20 +446,12 @@ mod test {
   use super::*;
   use sodiumoxide::crypto;
   use std::cmp;
-  use rand::random;
   use rustc_serialize::{Decodable, Encodable};
   use test_utils::Random;
   use authority::Authority;
   use NameType;
   use name_type::closer_to_target;
-
-  pub fn generate_address() -> Vec<u8> {
-    let mut address: Vec<u8> = vec![];
-    for _ in (0..64) {
-      address.push(random::<u8>());
-    }
-    address
-  }
+  use sodiumoxide::crypto::sign;
 
   fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
     let mut e = cbor::Encoder::from_memory();
@@ -493,7 +485,7 @@ mod test {
         keys[crypto::sign::PUBLICKEYBYTES + i] = asym_key[i];
     }
 
-    let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &secret_keys.0));
+    let validation_token = crypto::sign::sign_detached(&keys, &secret_keys.0);
 
     let mut combined = [0u8; KEYS_SIZE + crypto::sign::SIGNATUREBYTES];
 
@@ -502,7 +494,7 @@ mod test {
     }
 
     for i in 0..crypto::sign::SIGNATUREBYTES {
-        combined[KEYS_SIZE + i] = validation_token.signature[i];
+        combined[KEYS_SIZE + i] = validation_token.0[i];
     }
 
     let digest = crypto::hash::sha512::hash(&combined);
@@ -513,11 +505,12 @@ mod test {
 
   #[test]
   fn test_authority() {
-    test_object(Authority::ClientManager);
-    test_object(Authority::NaeManager);
-    test_object(Authority::NodeManager);
+    test_object(Authority::ClientManager(Random::generate_random()));
+    test_object(Authority::NaeManager(Random::generate_random()));
+    test_object(Authority::NodeManager(Random::generate_random()));
     test_object(Authority::ManagedNode);
-    test_object(Authority::Client);
+    let (pub_sign_key, _) = sign::gen_keypair();
+    test_object(Authority::Client(pub_sign_key));
     test_object(Authority::Unknown);
   }
 
@@ -575,7 +568,7 @@ mod test {
 
         // populated closed nodes
         let mut close_nodes : Vec<NameType> = Vec::new();
-        for i in 0..GROUP_SIZE {
+        for _ in 0..GROUP_SIZE {
             close_nodes.push(Random::generate_random());
         }
         let actual_relocated_name = calculate_relocated_name(close_nodes.clone(),

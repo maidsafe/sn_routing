@@ -26,11 +26,11 @@ pub struct PlainData {
 }
 
 impl PlainData {
-    
+
     /// Creates a new instance of PlainData
     pub fn new(name: NameType, value: Vec<u8>) -> PlainData {
         PlainData {
-            name: name, 
+            name: name,
             value: value,
         }
     }
@@ -64,7 +64,7 @@ mod test {
             let size = 1025;
             let mut data = Vec::with_capacity(size);
             let mut rng = rand::thread_rng();
-            for i in 0..size {
+            for _ in 0..size {
                 data.push(rng.gen::<u8>());
             }
             data

@@ -101,6 +101,7 @@ mod test {
     use name_type::{closer_to_target, NameType};
     use message_header::MessageHeader;
     use authority::{Authority, our_authority};
+    use sodiumoxide::crypto::sign;
 
 #[test]
 fn our_authority_full_routing_table() {
@@ -157,12 +158,13 @@ fn our_authority_full_routing_table() {
         source : types::SourceAddress {
             from_node : nae_or_client_in_our_close_group.clone(),
             from_group : None, reply_to : None, relayed_for : None },
-        authority : Authority::Client
+        authority : { let (pub_sign_key, _) = sign::gen_keypair();
+                      Authority::Client(pub_sign_key) }
     };
-    assert_eq!(our_authority(&name_outside_close_group,
+    assert_eq!(our_authority(name_outside_close_group,
                              &client_manager_header,
                              &routing_table),
-               Authority::ClientManager);
+               Authority::ClientManager(Random::generate_random()));
 
     // assert to get a nae_manager Authority
     let nae_manager_header : MessageHeader = MessageHeader {
@@ -172,11 +174,11 @@ fn our_authority_full_routing_table() {
         source : types::SourceAddress {
             from_node : Random::generate_random(),
             from_group : Some(name_outside_close_group.clone()), reply_to : None, relayed_for : None },
-        authority : Authority::ClientManager
+        authority : Authority::ClientManager(Random::generate_random())
     };
-    assert_eq!(our_authority(&nae_or_client_in_our_close_group,
+    assert_eq!(our_authority(nae_or_client_in_our_close_group,
                              &nae_manager_header, &routing_table),
-               Authority::NaeManager);
+               Authority::NaeManager(Random::generate_random()));
 
     // assert to get a our_close_group Authority
     let our_close_group_header : MessageHeader = MessageHeader {
@@ -187,11 +189,11 @@ fn our_authority_full_routing_table() {
             from_node : Random::generate_random(),
             from_group : Some(nae_or_client_in_our_close_group.clone()),
             reply_to : None, relayed_for : None },
-        authority : Authority::NaeManager
+        authority : Authority::NaeManager(Random::generate_random())
     };
-    assert_eq!(our_authority(&nae_or_client_in_our_close_group,
-                            &our_close_group_header, &routing_table),
-              Authority::OurCloseGroup);
+    assert_eq!(our_authority(nae_or_client_in_our_close_group,
+                             &our_close_group_header, &routing_table),
+              Authority::OurCloseGroup(Random::generate_random()));
 
     // assert to get a node_manager Authority
     let node_manager_header : MessageHeader = MessageHeader {
@@ -202,12 +204,12 @@ fn our_authority_full_routing_table() {
             from_node : Random::generate_random(),
             from_group : Some(name_outside_close_group.clone()),
             reply_to : None, relayed_for : None },
-        authority : Authority::NaeManager
+        authority : Authority::NaeManager(Random::generate_random())
     };
-    assert_eq!(our_authority(&name_outside_close_group,
+    assert_eq!(our_authority(name_outside_close_group,
                              &node_manager_header,
                              &routing_table),
-               Authority::NodeManager);
+               Authority::NodeManager(Random::generate_random()));
 
     // assert to get a managed_node Authority
     let managed_node_header : MessageHeader = MessageHeader {
@@ -218,9 +220,9 @@ fn our_authority_full_routing_table() {
             from_node : Random::generate_random(),
             from_group : Some(second_closest_node_in_our_close_group.id.clone()),
             reply_to : None, relayed_for : None },
-        authority : Authority::NodeManager
+        authority : Authority::NodeManager(Random::generate_random())
     };
-    assert_eq!(our_authority(&name_outside_close_group,
+    assert_eq!(our_authority(name_outside_close_group,
                              &managed_node_header,
                              &routing_table),
                Authority::ManagedNode);
