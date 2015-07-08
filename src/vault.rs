@@ -40,6 +40,7 @@ use version_handler::{VersionHandler, VersionHandlerSendable};
 use data_parser::Data;
 use transfer_parser::transfer_tags::{MAID_MANAGER_ACCOUNT_TAG, DATA_MANAGER_ACCOUNT_TAG,
     PMID_MANAGER_ACCOUNT_TAG, VERSION_HANDLER_ACCOUNT_TAG, DATA_MANAGER_STATS_TAG};
+use utils::decode;
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -158,10 +159,9 @@ impl Interface for VaultFacade {
     fn handle_get_response(&mut self,
                            _: NameType, // from_address
                            response: Result<Vec<u8>, ResponseError>) -> MethodCall {
-        if response.is_ok() {
-            self.data_manager.handle_get_response(response.ok().unwrap())
-        } else {
-            MethodCall::None
+        match response {
+            Ok(result) => self.data_manager.handle_get_response(result),
+            Err(_) => MethodCall::None
         }
     }
 
@@ -221,9 +221,10 @@ impl Interface for VaultFacade {
                 self.pmid_manager.handle_account_transfer(merged_account);
             },
             VERSION_HANDLER_ACCOUNT_TAG => {
-                let seed_sdv_payload = payloads[0].clone();
-                let mut d = Decoder::from_bytes(&seed_sdv_payload[..]);
-                let transfer_entry: VersionHandlerSendable = d.decode().next().unwrap().unwrap();
+                let transfer_entry = match decode::<VersionHandlerSendable>(&payloads[0].clone()) {
+                        Ok(result) => result,
+                        Err(_) => return
+                    };
                 let merged_account = merge_refreshable(transfer_entry, payloads);
                 self.version_handler.handle_account_transfer(merged_account);
             },

@@ -18,7 +18,7 @@
 #![allow(dead_code)]
 
 use cbor;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
 
 use routing::NameType;
@@ -27,7 +27,7 @@ use routing::sendable::Sendable;
 use routing::types::GROUP_SIZE;
 
 use transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG;
-use utils::median;
+use utils::{median, encode, decode};
 
 type Identity = NameType; // maid node address
 
@@ -68,9 +68,10 @@ impl Sendable for MaidManagerAccountWrapper {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
-        e.into_bytes()
+        match encode(&self) {
+            Ok(result) => result,
+            Err(_) => Vec::new()
+        }
     }
 
     fn refresh(&self)->bool {
@@ -78,14 +79,15 @@ impl Sendable for MaidManagerAccountWrapper {
     }
 
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
-        let mut tmp_wrapper: MaidManagerAccountWrapper;
         let mut data_stored: Vec<u64> = Vec::new();
         let mut space_available: Vec<u64> = Vec::new();
         for value in responses {
-            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
-            tmp_wrapper = d.decode().next().unwrap().unwrap();
-            data_stored.push(tmp_wrapper.get_account().get_data_stored());
-            space_available.push(tmp_wrapper.get_account().get_available_space());
+            let wrapper = match decode::<MaidManagerAccountWrapper>(&value.serialised_contents()) {
+                    Ok(result) => result,
+                    Err(_) => { continue }
+                };
+            data_stored.push(wrapper.get_account().get_data_stored());
+            space_available.push(wrapper.get_account().get_available_space());
         }
         assert!(data_stored.len() < (GROUP_SIZE + 1) / 2);
 

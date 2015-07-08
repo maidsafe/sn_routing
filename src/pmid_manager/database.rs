@@ -18,7 +18,7 @@
 #![allow(dead_code)]
 
 use cbor;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
 
 use routing::NameType;
@@ -27,7 +27,7 @@ use routing::types::GROUP_SIZE;
 use routing::sendable::Sendable;
 
 use transfer_parser::transfer_tags::PMID_MANAGER_ACCOUNT_TAG;
-use utils::median;
+use utils::{median, encode, decode};
 
 type Identity = NameType; // pmidnode address
 
@@ -68,9 +68,10 @@ impl Sendable for PmidManagerAccountWrapper {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
-        e.into_bytes()
+        match encode(&self) {
+            Ok(result) => result,
+            Err(_) => Vec::new()
+        }
     }
 
     fn refresh(&self)->bool {
@@ -78,22 +79,23 @@ impl Sendable for PmidManagerAccountWrapper {
     }
 
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
-        let mut tmp_wrapper: PmidManagerAccountWrapper;
         let mut offered_space: Vec<u64> = Vec::with_capacity(responses.len());
         let mut lost_total_size: Vec<u64> = Vec::with_capacity(responses.len());
         let mut stored_total_size: Vec<u64> = Vec::with_capacity(responses.len());
         assert!(responses.len() < (GROUP_SIZE + 1) / 2);
         for value in responses {
-           let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
-           tmp_wrapper = d.decode().next().unwrap().unwrap();
-           offered_space.push(tmp_wrapper.get_account().get_offered_space());
-           lost_total_size.push(tmp_wrapper.get_account().get_lost_total_size());
-           stored_total_size.push(tmp_wrapper.get_account().get_stored_total_size());
+            let wrapper = match decode::<PmidManagerAccountWrapper>(&value.serialised_contents()) {
+                    Ok(result) => result,
+                    Err(_) => { continue }
+                };
+            offered_space.push(wrapper.get_account().get_offered_space());
+            lost_total_size.push(wrapper.get_account().get_lost_total_size());
+            stored_total_size.push(wrapper.get_account().get_stored_total_size());
         }
         Some(Box::new(PmidManagerAccountWrapper::new(NameType([0u8;64]), PmidManagerAccount {
-           offered_space : median(offered_space),
-           lost_total_size: median(lost_total_size),
-           stored_total_size: median(stored_total_size)
+            offered_space : median(offered_space),
+            lost_total_size: median(lost_total_size),
+            stored_total_size: median(stored_total_size)
         })))
     }
 }

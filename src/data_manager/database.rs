@@ -28,6 +28,8 @@ use routing::types::GROUP_SIZE;
 
 use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
 
+use utils::{encode, decode};
+
 type Identity = NameType; // name of the chunk
 type PmidNode = NameType;
 
@@ -78,9 +80,10 @@ impl Sendable for DataManagerSendable {
         if self.has_preserialised_content {
             self.preserialised_content.clone()
         } else {
-            let mut e = cbor::Encoder::from_memory();
-            e.encode(&[&self]).unwrap();
-            e.into_bytes()
+            match encode(&self) {
+                Ok(result) => result,
+                Err(_) => Vec::new()
+            }
         }
     }
 
@@ -92,28 +95,24 @@ impl Sendable for DataManagerSendable {
         if responses.len() == GROUP_SIZE - 1 {
             return None;
         }
-        let mut tmp_wrapper: DataManagerSendable;
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for it in responses.iter() {
-            let mut d = cbor::Decoder::from_bytes(it.serialised_contents());
-            tmp_wrapper = d.decode().next().unwrap().unwrap();
-            let mut push_in_vec = false;
-            {
-                let find_res = stats.iter_mut().find(|a| a.0 == tmp_wrapper.get_data_holders());
-                if find_res.is_some() {
-                    find_res.unwrap().1 += 1
-                } else {
-                    push_in_vec = true;
-                }
-            }
-
+            let wrapper = match decode::<DataManagerSendable>(&it.serialised_contents()) {
+                    Ok(result) => result,
+                    Err(_) => { continue }
+                };
+            let push_in_vec = match stats.iter_mut().find(|a| a.0 == wrapper.get_data_holders()) {
+                    Some(find_res) => { find_res.1 += 1; false }
+                    None => { true }
+                };
             if push_in_vec {
-                stats.push((tmp_wrapper.get_data_holders(), 1));
+                stats.push((wrapper.get_data_holders(), 1));
             }
         }
         stats.sort_by(|a, b| b.1.cmp(&a.1));
         let (pmids, count) = stats[0].clone();
         if count < (GROUP_SIZE as u64 + 1) / 2 {
+            // TODO: need to testify whether NameType([0u8;64]) is valid to be used here
             return Some(Box::new(DataManagerSendable::new(NameType([0u8;64]), pmids)));
         }
         None
@@ -167,11 +166,9 @@ impl DataManagerDatabase {
     }
 
     pub fn get_pmid_nodes(&mut self, name : &Identity) -> PmidNodes {
-        let entry = self.storage.get(&name);
-        if entry.is_some() {
-            entry.unwrap().clone()
-        } else {
-            Vec::<PmidNode>::new()
+        match self.storage.get(&name) {
+            Some(entry) => entry.clone(),
+            None => Vec::<PmidNode>::new()
         }
     }
 
@@ -203,11 +200,14 @@ impl DataManagerDatabase {
 
         let mut actions = Vec::<MethodCall>::new();
         for (key, value) in self.storage.iter() {
-            if self.temp_storage_after_churn.get(key).unwrap().len() < 3 {
-                actions.push(MethodCall::Get {
-                    type_id: DATA_MANAGER_ACCOUNT_TAG,
-                    name: (*key).clone(),
-                });
+            match self.temp_storage_after_churn.get(key) {
+                Some(result) => { if result.len() < 3 {
+                    actions.push(MethodCall::Get {
+                        type_id: DATA_MANAGER_ACCOUNT_TAG,
+                        name: (*key).clone(),
+                    });
+                }}
+                None => continue
             }
             let data_manager_sendable = DataManagerSendable::new((*key).clone(), (*value).clone());
             let mut encoder = cbor::Encoder::from_memory();

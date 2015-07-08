@@ -33,7 +33,7 @@ use routing::types::{GROUP_SIZE, MessageAction};
 
 use data_parser::Data;
 use transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG;
-use utils::median;
+use utils::{median, encode, decode};
 
 type Address = NameType;
 
@@ -76,9 +76,10 @@ impl Sendable for DataManagerStatsSendable {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
-        e.into_bytes()
+        match encode(&self) {
+            Ok(result) => result,
+            Err(_) => Vec::new()
+        }
     }
 
     fn refresh(&self)->bool {
@@ -88,9 +89,10 @@ impl Sendable for DataManagerStatsSendable {
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
         let mut resource_indexes: Vec<u64> = Vec::new();
         for value in responses {
-            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
-            let tmp_senderable: DataManagerStatsSendable = d.decode().next().unwrap().unwrap();
-            resource_indexes.push(tmp_senderable.get_resource_index());
+            match decode::<DataManagerStatsSendable>(&value.serialised_contents()) {
+                Ok(senderable) => { resource_indexes.push(senderable.get_resource_index()); }
+                Err(_) => {}
+            }
         }
         assert!(resource_indexes.len() < (GROUP_SIZE + 1) / 2);
         Some(Box::new(DataManagerStatsSendable::new(NameType([0u8; 64]),
@@ -177,7 +179,10 @@ impl DataManager {
     if response.is_err() {
       return MethodCall::None;
     }
-    let data = response.clone().unwrap();
+    let data = match response.clone() {
+        Ok(response) => response,
+        Err(_) => return MethodCall::None,
+    };
     let mut decoder = Decoder::from_bytes(&data[..]);
     let mut name: NameType;
     let mut replicate = false;
