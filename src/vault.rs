@@ -145,7 +145,7 @@ impl Interface for VaultFacade {
         }
     }
 
-    // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1010
+    // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1110
     fn handle_post(&mut self,
                    _: Authority, // our_authority
                    _: Authority, // from_authority
@@ -178,8 +178,8 @@ impl Interface for VaultFacade {
         }
     }
 
-    // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1011
-    fn handle_post_response(&mut self,
+    // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1111
+    fn handle_post_response(&mut self, 
                             _: Authority, // from_authority
                             _: NameType, // from_address
                             _: Result<Vec<u8>, ResponseError>) { // response
