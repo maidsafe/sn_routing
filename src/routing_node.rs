@@ -145,7 +145,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         thread::sleep_ms(100);
 
         let unrelocated_id = self.id.clone();
-        let mut relocated_name : Option<NameType>;
+        let relocated_name : Option<NameType>;
 
         // FIXME: connect request should not require the knowledge of the name you're connecting to
         let connect_msg = self.construct_connect_request_msg(&unrelocated_id.get_name(),
@@ -228,7 +228,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         accepting_on: Vec<Endpoint>) -> RoutingMessage {
         let header = MessageHeader::new(self.get_next_message_id(),
             types::DestinationAddress {dest: destination.clone(), relay_to: None },
-            self.our_source_address(), Authority::ManagedNode(self.id.get_name()));
+            self.our_source_address(), Authority::ManagedNode);
 
         // FIXME: We're sending all accepting connections as local since we don't differentiate
         // between local and external yet.
@@ -248,7 +248,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         our_unrelocated_id: &types::PublicId) -> RoutingMessage {
         let header = MessageHeader::new(self.get_next_message_id(),
             types::DestinationAddress{dest: our_unrelocated_id.name(), relay_to: None},
-            self.our_source_address(), Authority::ManagedNode(self.id.get_name()));
+            self.our_source_address(), Authority::ManagedNode);
         let put_public_id = PutPublicId { public_id : our_unrelocated_id.clone() };
         RoutingMessage::new(MessageTypeTag::PutPublicId, header, put_public_id,
             &self.id.get_crypto_secret_sign_key())
