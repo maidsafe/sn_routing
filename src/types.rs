@@ -509,8 +509,7 @@ mod test {
     test_object(Authority::NaeManager(Random::generate_random()));
     test_object(Authority::NodeManager(Random::generate_random()));
     test_object(Authority::ManagedNode);
-    let (pub_sign_key, _) = sign::gen_keypair();
-    test_object(Authority::Client(pub_sign_key));
+    test_object(Authority::Client(sign::gen_keypair().0));
     test_object(Authority::Unknown);
   }
 

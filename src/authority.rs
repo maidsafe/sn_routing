@@ -158,8 +158,7 @@ fn our_authority_full_routing_table() {
         source : types::SourceAddress {
             from_node : nae_or_client_in_our_close_group.clone(),
             from_group : None, reply_to : None, relayed_for : None },
-        authority : { let (pub_sign_key, _) = sign::gen_keypair();
-                      Authority::Client(pub_sign_key) }
+        authority : { Authority::Client(sign::gen_keypair().0) }
     };
     assert_eq!(our_authority(name_outside_close_group,
                              &client_manager_header,
