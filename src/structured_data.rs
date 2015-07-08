@@ -127,7 +127,7 @@ impl StructuredData {
         try!(enc.encode(&self.previous_owner_keys));
         try!(enc.encode(&self.current_owner_keys));
         try!(enc.encode(self.version.to_string().as_bytes()));
-        Ok(enc.as_bytes().into_iter().map(|&x| x).collect())
+        Ok(enc.into_bytes())
     }
 
     /// Returns number of previous_owner_signatures still required (if any, 0 means this is complete)

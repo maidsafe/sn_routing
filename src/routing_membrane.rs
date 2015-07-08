@@ -149,7 +149,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let request = PutData{ name: content.name(), data: content.serialised_contents() };
         let header = MessageHeader::new(self.get_next_message_id(),
                                         destination, self.our_source_address(None),
-                                        Authority::ManagedNode(self.id.get_name()));
+                                        Authority::ManagedNode);
         let message = RoutingMessage::new(MessageTypeTag::PutData, header,
                 request, &self.id.get_crypto_secret_sign_key());
 
@@ -510,7 +510,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             match retrieved_data {
                 Ok(action) => match action {
                     MessageAction::Reply(data) => {
-                        let reply = self.construct_get_data_response_msg(Authority::ManagedNode(self.id.get_name()),
+                        let reply = self.construct_get_data_response_msg(Authority::ManagedNode,
                                                                          &header, get_data,
                                                                          Ok(data));
                         // intercept if we can relay it directly
@@ -931,7 +931,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Err(InterfaceError::Response(ResponseError::FailedToStoreData(deleted_data))) => {
                 // patched for Vaults - this behaviour needs to be put back in Vaults
                 if deleted_data != put_data.data
-                    && our_authority == Authority::ManagedNode(self.id.get_name()) {
+                    && our_authority == Authority::ManagedNode {
                     // first send the Successful put reply
                     let reply_to = header.send_to().dest;
                     try!(self.send_put_reply(&reply_to, our_authority.clone(), &header,
@@ -1139,7 +1139,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let put_public_id = try!(decode::<PutPublicId>(&body));
         let our_authority = our_authority(put_public_id.public_id.name(), &header, &self.routing_table);
         match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
-            (Authority::ManagedNode(_), Authority::NaeManager(_), false) => {
+            (Authority::ManagedNode, Authority::NaeManager(_), false) => {
                 let mut put_public_id_relocated = put_public_id.clone();
 
                 // FIXME: we should add ourselves
@@ -1391,7 +1391,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn construct_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingMessage {
         let header = MessageHeader::new(self.get_next_message_id(),
             types::DestinationAddress {dest: peer_id.clone(), relay_to: None },
-            self.our_source_address(None), Authority::ManagedNode(self.id.get_name()));
+            self.our_source_address(None), Authority::ManagedNode);
 
         // FIXME: We're sending all accepting connections as local since we don't differentiate
         // between local and external yet.
@@ -1414,7 +1414,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         let header = MessageHeader::new(original_header.message_id(),
             original_header.send_to(), self.our_source_address(None),
-            Authority::ManagedNode(self.id.get_name()));
+            Authority::ManagedNode);
 
         // FIXME: We're sending all accepting connections as local since we don't differentiate
         // between local and external yet.
@@ -1471,7 +1471,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                    relay_to: None
               },
               self.our_source_address(None),
-              Authority::ManagedNode(self.id.get_name()));
+              Authority::ManagedNode);
 
         RoutingMessage::new(MessageTypeTag::FindGroup, header,
             FindGroup{ requester_id: self.own_name.clone(),

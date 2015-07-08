@@ -29,8 +29,8 @@ pub enum Authority {
                   // this reflects a NAE back onto itself, but on a refreshed group
                   // TODO: find a better name, this name is a bit of a misnomer
   NodeManager(NameType),    // received from a node in our routing table (handle refresh here)
-  ManagedNode(NameType),    // in our group and routing table
-  ManagedClient(NameType),  // in our group
+  ManagedNode,    // in our group and routing table
+  ManagedClient(crypto::sign::PublicKey),  // in our group
   Client(crypto::sign::PublicKey),         // detached
   Unknown,
 }
@@ -86,7 +86,7 @@ pub fn our_authority(element : NameType, header : &MessageHeader,
                   .map(|group| routing_table.address_in_our_close_group_range(&group))
                   .unwrap_or(false)
        && header.destination.dest == routing_table.our_name() {
-        return Authority::ManagedNode(element); }
+        return Authority::ManagedNode; }
     return Authority::Unknown;
 }
 
