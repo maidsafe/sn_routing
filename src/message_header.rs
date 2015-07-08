@@ -172,22 +172,33 @@ mod test {
     use cbor;
     use test_utils::Random;
     use authority::Authority;
+    use NameType;
 
     fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
         let obj_after: T = d.decode().next().unwrap().unwrap();
-        assert_eq!(obj_after == obj_before, true)
+        assert!(obj_after == obj_before)
     }
 
     #[test]
     fn test_message_header() {
-        test_object(MessageHeader {
-            message_id : random::<u32>(),
-            destination : types::DestinationAddress{ dest: Random::generate_random(), relay_to: None },
-            source : types::SourceAddress { from_node : Random::generate_random(),
-                                            from_group : None, reply_to: None, relayed_for: None },
-            authority : Authority::ManagedNode });
+        let from_node: NameType = Random::generate_random();
+        test_object(
+            MessageHeader {
+                message_id: random::<u32>(),
+                destination: types::DestinationAddress {
+                    dest: Random::generate_random(),
+                    relay_to: None
+                },
+                source: types::SourceAddress {
+                    from_node: from_node,
+                    from_group: None,
+                    reply_to: None,
+                    relayed_for: None
+                },
+                authority: Authority::ManagedNode
+            });
     }
 }
