@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused_assignments)]
-
 use sodiumoxide::crypto;
 use cbor;
 use cbor::CborTagEncode;
@@ -73,6 +71,8 @@ pub trait Mergeable {
 
 pub type MessageId = u32;
 pub type NodeAddress = NameType; // (Address, NodeTag)
+pub type FromAddress = NameType; // (Address, NodeTag)
+pub type ToAddress = NameType; // (Address, NodeTag)
 pub type GroupAddress = NameType; // (Address, GroupTag)
 pub type SerialisedMessage = Vec<u8>;
 pub type IdNode = NameType;
@@ -85,352 +85,33 @@ struct SignedKey {
   encrypt_public_key: crypto::box_::PublicKey,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct NameAndTypeId {
   pub name : NameType,
   pub type_id : u64
 }
 
-impl Encodable for NameAndTypeId {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_000, &(&self.name, &self.type_id)).encode(e)
-  }
-}
-
-impl Decodable for NameAndTypeId {
-  fn decode<D: Decoder>(d: &mut D)->Result<NameAndTypeId, D::Error> {
-    try!(d.read_u64());
-    let (name, type_id) = try!(Decodable::decode(d));
-    Ok(NameAndTypeId { name: name, type_id: type_id })
-  }
-}
 
 //                        +-> from_node name
 //                        |           +-> preserve the message_id when sending on
 //                        |           |         +-> destination name
 //                        |           |         |
-pub type FilterType = (NameType, MessageId, NameType);
+pub type FilterType = (SourceAddress, MessageId, DestinationAddress);
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct PublicSignKey {
-  pub public_sign_key : Vec<u8>
-}
-
-impl PublicSignKey {
-  pub fn new(public_sign_key : crypto::sign::PublicKey) -> PublicSignKey {
-    assert_eq!(public_sign_key.0.len(), 32);
-    PublicSignKey{
-      public_sign_key : public_sign_key.0.to_vec()
-    }
-  }
-
-  pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
-    crypto::sign::PublicKey(vector_as_u8_32_array(self.public_sign_key.clone()))
-  }
-}
-
-impl fmt::Debug for PublicSignKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PublicSignKey({:?})", self.public_sign_key.iter().take(6).collect::<Vec<_>>())
-    }
-}
-
-
-impl Encodable for PublicSignKey {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_000, &(&self.public_sign_key)).encode(e)
-  }
-}
-
-impl Decodable for PublicSignKey {
-  fn decode<D: Decoder>(d: &mut D)->Result<PublicSignKey, D::Error> {
-    try!(d.read_u64());
-    let public_sign_key = try!(Decodable::decode(d));
-    Ok(PublicSignKey { public_sign_key: public_sign_key })
-  }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct PublicKey {
-  pub public_key : Vec<u8>
-}
-
-impl PublicKey {
-  pub fn new(public_key : crypto::box_::PublicKey) -> PublicKey {
-    PublicKey{
-      public_key : public_key.0.to_vec()
-    }
-  }
-
-  pub fn get_crypto_public_key(&self) -> crypto::box_::PublicKey {
-    crypto::box_::PublicKey(vector_as_u8_32_array(self.public_key.clone()))
-  }
-}
-
-impl Encodable for PublicKey {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_000, &(&self.public_key)).encode(e)
-  }
-}
-
-impl Decodable for PublicKey {
-  fn decode<D: Decoder>(d: &mut D)->Result<PublicKey, D::Error> {
-    try!(d.read_u64());
-    let public_key = try!(Decodable::decode(d));
-    Ok(PublicKey { public_key: public_key })
-  }
-}
-
-// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
-// In case of only one close node provided (in initial network setup scenario),
-// relocated_name = Hash(original_name + 1st closest node id)
-pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
-                                original_name: &NameType) -> Result<NameType, RoutingError> {
-    if close_nodes.is_empty() {
-        return Err(RoutingError::RoutingTableEmpty);
-    }
-    close_nodes.sort_by(|a, b| if closer_to_target(&a, &b, original_name) {
-                                  cmp::Ordering::Less
-                                } else {
-                                    cmp::Ordering::Greater
-                                });
-    close_nodes.truncate(2usize);
-    close_nodes.insert(0, original_name.clone());
-
-    let mut combined: Vec<u8> = Vec::new();
-    for node_id in close_nodes {
-      for i in node_id.get_id().iter() {
-        combined.push(*i);
-      }
-    }
-    Ok(NameType(crypto::hash::sha512::hash(&combined).0))
-}
-
-// A self_relocated id, is purely used for a zero-node to bootstrap a network.
-// Such a node will be rejected by the network once routing tables fill up.
-pub fn calculate_self_relocated_name(public_key: &crypto::sign::PublicKey,
-                           public_sign_key: &crypto::box_::PublicKey,
-                           validation_token: &Signature) -> NameType {
-    let original_name = calculate_original_name(public_key, public_sign_key,
-        validation_token);
-    NameType(crypto::hash::sha512::hash(&original_name.0.to_vec()).0)
-}
-
-// TODO(Team): Below method should be modified and reused in constructor of Id.
-fn calculate_original_name(public_key: &crypto::sign::PublicKey,
-                           public_sign_key: &crypto::box_::PublicKey,
-                           validation_token: &Signature) -> NameType {
-    let combined_iter = public_key.0.into_iter().chain(public_sign_key.0.into_iter())
-          .chain((&validation_token[..]).into_iter());
-    let mut combined: Vec<u8> = Vec::new();
-    for iter in combined_iter {
-        combined.push(*iter);
-    }
-    NameType(crypto::hash::sha512::hash(&combined).0)
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct PublicId {
-  pub public_key: PublicKey,
-  pub public_sign_key: PublicSignKey,
-  pub validation_token: Signature,
-  name: NameType,
-}
-
-impl PublicId {
-    pub fn new(id : &Id) -> PublicId {
-      PublicId {
-        public_key : id.get_public_key(),
-        public_sign_key : id.get_public_sign_key(),
-        validation_token : id.get_validation_token(),
-        name : id.get_name(),
-      }
-    }
-
-    pub fn name(&self) -> NameType {
-      self.name.clone()
-    }
-
-    pub fn serialised_contents(&self)->Vec<u8> {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
-        e.into_bytes()
-    }
-
-    // checks if the name is updated to a relocated name
-    pub fn is_relocated(&self) -> bool {
-        self.name !=  calculate_original_name(&self.public_sign_key.get_crypto_public_sign_key(),
-                                              &self.public_key.get_crypto_public_key(),
-                                              &self.validation_token)
-    }
-
-    // checks if the name is equal to the self_relocated name
-    pub fn is_self_relocated(&self) -> bool {
-        self.name ==  calculate_self_relocated_name(
-            &self.public_sign_key.get_crypto_public_sign_key(),
-            &self.public_key.get_crypto_public_key(), &self.validation_token)
-    }
-
-    // name field is initially same as original_name, this should be replaced by relocated name
-    // calculated by the nodes close to original_name by using this method
-    pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
-        if self.is_relocated() || self.name == relocated_name {
-            return false;
-        }
-        self.name = relocated_name;
-        return true;
-    }
-}
-
-// Note: name field is initially same as original_name, this should be later overwritten by
-// relocated name provided by the network using assign_relocated_name method
-// TODO (ben 2015-04-01) : implement order based on name
-#[derive(Clone)]
-pub struct Id {
-  public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
-  secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey),
-  validation_token: Signature,
-  name: NameType,
-}
-
-impl Id {
-  pub fn new() -> Id {
-    let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
-    let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::box_::gen_keypair();
-
-    let sign_key = &pub_sign_key.0;
-    let asym_key = &pub_asym_key.0;
-
-    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + box_::PUBLICKEYBYTES;
-
-    let mut keys = [0u8; KEYS_SIZE];
-
-    for i in 0..sign_key.len() {
-        keys[i] = sign_key[i];
-    }
-    for i in 0..asym_key.len() {
-        keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
-    }
-
-    let validation_token = crypto::sign::sign_detached(&keys, &sec_sign_key);
-    
-    let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
-          .chain((&validation_token[..]).iter()).map(|x| *x).collect();
-
-
-    let digest = crypto::hash::sha512::hash(&combined);
-
-    Id {
-      public_keys : (pub_sign_key, pub_asym_key),
-      secret_keys : (sec_sign_key, sec_asym_key),
-      validation_token : validation_token,
-      name : NameType::new(digest.0),
-    }
-  }
-  pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
-    self.public_keys.0.clone()    
-  }
-  
-  pub fn with_keys(public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
-                   secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey)) -> Id {
-    let sign_key = &(public_keys.0).0;
-    let asym_key = &(public_keys.1).0;
-
-    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + box_::PUBLICKEYBYTES;
-
-    let mut keys = [0u8; KEYS_SIZE];
-
-    for i in 0..sign_key.len() {
-        keys[i] = sign_key[i];
-    }
-    for i in 0..asym_key.len() {
-        keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
-    }
-
-    let validation_token = crypto::sign::sign_detached(&keys, &secret_keys.0);
-    
-    let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
-          .chain((&validation_token[..]).iter()).map(|x| *x).collect();
-
-
-    let digest = crypto::hash::sha512::hash(&combined);
-
-    Id {
-      public_keys : public_keys,
-      secret_keys : secret_keys,
-      validation_token : validation_token,
-      name : NameType::new(digest.0),
-    }
-  }
-
-  pub fn get_name(&self) -> NameType {
-      self.name.clone()
-  }
-
-  pub fn get_public_key(&self) -> PublicKey {
-      PublicKey::new(self.public_keys.1.clone())
-  }
-  pub fn get_public_sign_key(&self) -> PublicSignKey {
-      PublicSignKey::new(self.public_keys.0.clone())
-  }
-  pub fn get_crypto_public_key(&self) -> crypto::box_::PublicKey {
-      self.public_keys.1.clone()
-  }
-  pub fn get_crypto_secret_key(&self) -> crypto::box_::SecretKey {
-      self.secret_keys.1.clone()
-  }
-  pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
-      self.public_keys.0.clone()
-  }
-  pub fn get_crypto_secret_sign_key(&self) -> crypto::sign::SecretKey {
-      self.secret_keys.0.clone()
-  }
-  pub fn get_validation_token(&self) -> Signature {
-      self.validation_token.clone()
-  }
-  // checks if the name is updated to a relocated name
-  pub fn is_relocated(&self) -> bool {
-      self.name !=  calculate_original_name(&self.public_keys.0,
-          &self.public_keys.1, &self.validation_token)
-  }
-
-  // checks if the name is equal to the self_relocated name
-  pub fn is_self_relocated(&self) -> bool {
-      self.name ==  calculate_self_relocated_name(&self.public_keys.0,
-          &self.public_keys.1, &self.validation_token)
-  }
-
-  // name field is initially same as original_name, this should be later overwritten by
-  // relocated name provided by the network using this method
-  pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
-      if self.is_relocated() || self.name == relocated_name {
-          return false;
-      }
-      self.name = relocated_name;
-      return true;
-  }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct AccountTransferInfo {
-  pub name : NameType
-}
 
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct SourceAddress {
-  pub from_node   : NameType,
-  pub from_group  : Option<NameType>,
-  pub reply_to    : Option<NameType>,
-  pub relayed_for : Option<NameType>
+pub enum SourceAddress {
+    RelayedForClient(FromAddress, crypto::sign::PublicKey),
+    RelayedForNode(FromAddress, NodeAddress),
+    Direct(FromAddress),
 }
 
-
-/// Address of the destination of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct DestinationAddress {
-  pub dest     : NameType,
-  pub relay_to : Option<NameType>
+pub enum DestinationAddress {
+    RelayToClient(crypto::sign::PublicKey, ToAddress),
+    RelayToNode(NodeAddress, ToAddress),
+    Direct(ToAddress),
 }
 
 

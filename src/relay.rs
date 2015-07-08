@@ -24,7 +24,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use time::{SteadyTime};
 use crust::Endpoint;
-use types::{Id, PublicId};
+use id::Id;
+use public_id::PublicId;
 use NameType;
 
 const MAX_RELAY : usize = 100;

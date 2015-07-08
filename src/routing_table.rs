@@ -22,7 +22,7 @@ use std::collections::{HashMap};
 use crust::Endpoint;
 
 use common_bits::*;
-use types::PublicId;
+use public_id::PublicId;
 use name_type::{closer_to_target, closer_to_target_or_equal, NameType};
 use types;
 
@@ -446,7 +446,8 @@ mod test {
     use std::cmp;
     use self::bit_vec::BitVec;
     use std::collections::{HashMap};
-    use types::PublicId;
+    use public_id::PublicId;
+    use id::Id;
     use name_type::closer_to_target;
     use types;
     use NameType;
@@ -594,7 +595,7 @@ mod test {
     }
 
     fn create_random_node_info() -> NodeInfo {
-        let public_id = types::PublicId::new(&types::Id::new());
+        let public_id = PublicId::new(&Id::new());
         NodeInfo {
             id: public_id.name(),
             fob: public_id,
@@ -1119,13 +1120,13 @@ mod test {
     fn our_close_group_and_in_range() {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
-        let our_id_name = types::Id::new().get_name();
+        let our_id_name = Id::new().get_name();
         let mut routing_table: RoutingTable = RoutingTable::new(&our_id_name);
 
         let mut count: usize = 0;
         loop {
             routing_table.add_node(
-                NodeInfo::new(types::PublicId::new(&types::Id::new()), random_endpoints(),
+                NodeInfo::new(PublicId::new(&Id::new()), random_endpoints(),
                               None));
             count += 1;
             if routing_table.size() >=

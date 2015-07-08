@@ -17,7 +17,7 @@
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
 pub use structured_data::StructuredData;
-pub use immutable_data::ImmutableData;
+pub use immutable_data::{ImmutableData, ImmutableDataType};
 pub use plain_data::PlainData;
 
 /// This is the data types routing handles in the public interface
