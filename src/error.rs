@@ -63,7 +63,7 @@ impl fmt::Display for ResponseError {
 
 impl Encodable for ResponseError {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let mut type_tag;
+        let type_tag;
         let mut data : Option<Vec<u8>> = None;
         match *self {
             ResponseError::NoData => type_tag = "NoData",
