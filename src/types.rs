@@ -98,6 +98,130 @@ pub struct NameAndTypeId {
 //                        |           |         |
 pub type FilterType = (SourceAddress, MessageId, DestinationAddress);
 
+<<<<<<< HEAD
+=======
+impl Id {
+  pub fn new() -> Id {
+    let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
+    let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::box_::gen_keypair();
+
+    let sign_key = &pub_sign_key.0;
+    let asym_key = &pub_asym_key.0;
+
+    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + box_::PUBLICKEYBYTES;
+
+    let mut keys = [0u8; KEYS_SIZE];
+
+    for i in 0..sign_key.len() {
+        keys[i] = sign_key[i];
+    }
+    for i in 0..asym_key.len() {
+        keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
+    }
+
+    let validation_token = crypto::sign::sign_detached(&keys, &sec_sign_key);
+
+    let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
+          .chain((&validation_token[..]).iter()).map(|x| *x).collect();
+
+
+    let digest = crypto::hash::sha512::hash(&combined);
+
+    Id {
+      public_keys : (pub_sign_key, pub_asym_key),
+      secret_keys : (sec_sign_key, sec_asym_key),
+      validation_token : validation_token,
+      name : NameType::new(digest.0),
+    }
+  }
+  pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
+    self.public_keys.0.clone()
+  }
+
+  pub fn with_keys(public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
+                   secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey)) -> Id {
+    let sign_key = &(public_keys.0).0;
+    let asym_key = &(public_keys.1).0;
+
+    const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + box_::PUBLICKEYBYTES;
+
+    let mut keys = [0u8; KEYS_SIZE];
+
+    for i in 0..sign_key.len() {
+        keys[i] = sign_key[i];
+    }
+    for i in 0..asym_key.len() {
+        keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
+    }
+
+    let validation_token = crypto::sign::sign_detached(&keys, &secret_keys.0);
+
+    let combined : Vec<u8> = asym_key.iter().chain(sign_key.iter())
+          .chain((&validation_token[..]).iter()).map(|x| *x).collect();
+
+
+    let digest = crypto::hash::sha512::hash(&combined);
+
+    Id {
+      public_keys : public_keys,
+      secret_keys : secret_keys,
+      validation_token : validation_token,
+      name : NameType::new(digest.0),
+    }
+  }
+
+  pub fn get_name(&self) -> NameType {
+      self.name.clone()
+  }
+
+  pub fn get_public_key(&self) -> PublicKey {
+      PublicKey::new(self.public_keys.1.clone())
+  }
+  pub fn get_public_sign_key(&self) -> PublicSignKey {
+      PublicSignKey::new(self.public_keys.0.clone())
+  }
+  pub fn get_crypto_public_key(&self) -> crypto::box_::PublicKey {
+      self.public_keys.1.clone()
+  }
+  pub fn get_crypto_secret_key(&self) -> crypto::box_::SecretKey {
+      self.secret_keys.1.clone()
+  }
+  pub fn get_crypto_public_sign_key(&self) -> crypto::sign::PublicKey {
+      self.public_keys.0.clone()
+  }
+  pub fn get_crypto_secret_sign_key(&self) -> crypto::sign::SecretKey {
+      self.secret_keys.0.clone()
+  }
+  pub fn get_validation_token(&self) -> Signature {
+      self.validation_token.clone()
+  }
+  // checks if the name is updated to a relocated name
+  pub fn is_relocated(&self) -> bool {
+      self.name !=  calculate_original_name(&self.public_keys.0,
+          &self.public_keys.1, &self.validation_token)
+  }
+
+  // checks if the name is equal to the self_relocated name
+  pub fn is_self_relocated(&self) -> bool {
+      self.name ==  calculate_self_relocated_name(&self.public_keys.0,
+          &self.public_keys.1, &self.validation_token)
+  }
+
+  // name field is initially same as original_name, this should be later overwritten by
+  // relocated name provided by the network using this method
+  pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
+      if self.is_relocated() || self.name == relocated_name {
+          return false;
+      }
+      self.name = relocated_name;
+      return true;
+  }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+pub struct AccountTransferInfo {
+  pub name : NameType
+}
 
 /// Address of the source of the message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -122,20 +246,12 @@ mod test {
   use super::*;
   use sodiumoxide::crypto;
   use std::cmp;
-  use rand::random;
   use rustc_serialize::{Decodable, Encodable};
   use test_utils::Random;
   use authority::Authority;
   use NameType;
   use name_type::closer_to_target;
-
-  pub fn generate_address() -> Vec<u8> {
-    let mut address: Vec<u8> = vec![];
-    for _ in (0..64) {
-      address.push(random::<u8>());
-    }
-    address
-  }
+  use sodiumoxide::crypto::sign;
 
   fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
     let mut e = cbor::Encoder::from_memory();
@@ -169,7 +285,7 @@ mod test {
         keys[crypto::sign::PUBLICKEYBYTES + i] = asym_key[i];
     }
 
-    let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &secret_keys.0));
+    let validation_token = crypto::sign::sign_detached(&keys, &secret_keys.0);
 
     let mut combined = [0u8; KEYS_SIZE + crypto::sign::SIGNATUREBYTES];
 
@@ -178,7 +294,7 @@ mod test {
     }
 
     for i in 0..crypto::sign::SIGNATUREBYTES {
-        combined[KEYS_SIZE + i] = validation_token.signature[i];
+        combined[KEYS_SIZE + i] = validation_token.0[i];
     }
 
     let digest = crypto::hash::sha512::hash(&combined);
@@ -189,11 +305,11 @@ mod test {
 
   #[test]
   fn test_authority() {
-    test_object(Authority::ClientManager);
-    test_object(Authority::NaeManager);
-    test_object(Authority::NodeManager);
+    test_object(Authority::ClientManager(Random::generate_random()));
+    test_object(Authority::NaeManager(Random::generate_random()));
+    test_object(Authority::NodeManager(Random::generate_random()));
     test_object(Authority::ManagedNode);
-    test_object(Authority::Client);
+    test_object(Authority::Client(sign::gen_keypair().0));
     test_object(Authority::Unknown);
   }
 
@@ -251,7 +367,7 @@ mod test {
 
         // populated closed nodes
         let mut close_nodes : Vec<NameType> = Vec::new();
-        for i in 0..GROUP_SIZE {
+        for _ in 0..GROUP_SIZE {
             close_nodes.push(Random::generate_random());
         }
         let actual_relocated_name = calculate_relocated_name(close_nodes.clone(),
