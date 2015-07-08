@@ -52,8 +52,6 @@ pub mod refresh;
 
 
 
-use cbor;
-use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::sign::Signature;
@@ -61,7 +59,7 @@ use sodiumoxide::crypto::sign::Signature;
 use message_header;
 use types;
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum MessageTypeTag {
     BootstrapIdRequest,
     BootstrapIdResponse,
@@ -88,72 +86,72 @@ pub enum MessageTypeTag {
     Unknown,
 }
 
-impl Encodable for MessageTypeTag {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let mut type_tag = "";
-        match *self {
-            MessageTypeTag::BootstrapIdRequest => type_tag = "BootstrapIdRequest",
-            MessageTypeTag::BootstrapIdResponse => type_tag = "BootstrapIdResponse",
-            MessageTypeTag::ConnectRequest => type_tag = "ConnectRequest",
-            MessageTypeTag::ConnectResponse => type_tag = "ConnectResponse",
-            MessageTypeTag::FindGroup => type_tag = "FindGroup",
-            MessageTypeTag::FindGroupResponse => type_tag = "FindGroupResponse",
-            MessageTypeTag::GetData => type_tag = "GetData",
-            MessageTypeTag::GetDataResponse => type_tag = "GetDataResponse",
-            MessageTypeTag::GetKey => type_tag = "GetKey",
-            MessageTypeTag::GetKeyResponse => type_tag = "GetKeyResponse",
-            MessageTypeTag::GetGroupKey => type_tag = "GetGroupKey",
-            MessageTypeTag::GetGroupKeyResponse => type_tag = "GetGroupKeyResponse",
-            MessageTypeTag::Post => type_tag = "Post",
-            MessageTypeTag::PostResponse => type_tag = "PostResponse",
-            MessageTypeTag::PutData => type_tag = "PutData",
-            MessageTypeTag::PutDataResponse => type_tag = "PutDataResponse",
-            MessageTypeTag::UnauthorisedPut => type_tag = "UnauthorisedPut",
-            MessageTypeTag::PutKey => type_tag = "PutKey",
-            MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
-            MessageTypeTag::PutPublicId => type_tag = "PutPublicId",
-            MessageTypeTag::PutPublicIdResponse => type_tag = "PutPublicIdResponse",
-            MessageTypeTag::Refresh => type_tag = "Refresh",
-            MessageTypeTag::Unknown => type_tag = "Unknown",
-        };
-        CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
-    }
-}
-
-impl Decodable for MessageTypeTag {
-    fn decode<D: Decoder>(d: &mut D)->Result<MessageTypeTag, D::Error> {
-        try!(d.read_u64());
-        let mut type_tag : String = String::new();
-        type_tag = try!(Decodable::decode(d));
-        match &type_tag[..] {
-            "BootstrapIdRequest" => Ok(MessageTypeTag::BootstrapIdRequest),
-            "BootstrapIdResponse" => Ok(MessageTypeTag::BootstrapIdResponse),
-            "ConnectRequest" => Ok(MessageTypeTag::ConnectRequest),
-            "ConnectResponse" => Ok(MessageTypeTag::ConnectResponse),
-            "FindGroup" => Ok(MessageTypeTag::FindGroup),
-            "FindGroupResponse" => Ok(MessageTypeTag::FindGroupResponse),
-            "GetData" => Ok(MessageTypeTag::GetData),
-            "GetDataResponse" => Ok(MessageTypeTag::GetDataResponse),
-            "GetKey" => Ok(MessageTypeTag::GetKey),
-            "GetKeyResponse" => Ok(MessageTypeTag::GetKeyResponse),
-            "GetGroupKey" => Ok(MessageTypeTag::GetGroupKey),
-            "GetGroupKeyResponse" => Ok(MessageTypeTag::GetGroupKeyResponse),
-            "Post" => Ok(MessageTypeTag::Post),
-            "PostResponse" => Ok(MessageTypeTag::PostResponse),
-            "PutData" => Ok(MessageTypeTag::PutData),
-            "PutDataResponse" => Ok(MessageTypeTag::PutDataResponse),
-            "UnauthorisedPut" => Ok(MessageTypeTag::UnauthorisedPut),
-            "PutKey" => Ok(MessageTypeTag::PutKey),
-            "PutPublicId" => Ok(MessageTypeTag::PutPublicId),
-            "PutPublicIdResponse" => Ok(MessageTypeTag::PutPublicIdResponse),
-            "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),
-            "Refresh" => Ok(MessageTypeTag::Refresh),
-            _ => Ok(MessageTypeTag::Unknown)
-        }
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Debug)]
+// impl Encodable for MessageTypeTag {
+//     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+//         let mut type_tag = "";
+//         match *self {
+//             MessageTypeTag::BootstrapIdRequest => type_tag = "BootstrapIdRequest",
+//             MessageTypeTag::BootstrapIdResponse => type_tag = "BootstrapIdResponse",
+//             MessageTypeTag::ConnectRequest => type_tag = "ConnectRequest",
+//             MessageTypeTag::ConnectResponse => type_tag = "ConnectResponse",
+//             MessageTypeTag::FindGroup => type_tag = "FindGroup",
+//             MessageTypeTag::FindGroupResponse => type_tag = "FindGroupResponse",
+//             MessageTypeTag::GetData => type_tag = "GetData",
+//             MessageTypeTag::GetDataResponse => type_tag = "GetDataResponse",
+//             MessageTypeTag::GetKey => type_tag = "GetKey",
+//             MessageTypeTag::GetKeyResponse => type_tag = "GetKeyResponse",
+//             MessageTypeTag::GetGroupKey => type_tag = "GetGroupKey",
+//             MessageTypeTag::GetGroupKeyResponse => type_tag = "GetGroupKeyResponse",
+//             MessageTypeTag::Post => type_tag = "Post",
+//             MessageTypeTag::PostResponse => type_tag = "PostResponse",
+//             MessageTypeTag::PutData => type_tag = "PutData",
+//             MessageTypeTag::PutDataResponse => type_tag = "PutDataResponse",
+//             MessageTypeTag::UnauthorisedPut => type_tag = "UnauthorisedPut",
+//             MessageTypeTag::PutKey => type_tag = "PutKey",
+//             MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
+//             MessageTypeTag::PutPublicId => type_tag = "PutPublicId",
+//             MessageTypeTag::PutPublicIdResponse => type_tag = "PutPublicIdResponse",
+//             MessageTypeTag::Refresh => type_tag = "Refresh",
+//             MessageTypeTag::Unknown => type_tag = "Unknown",
+//         };
+//         CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
+//     }
+// }
+//
+// impl Decodable for MessageTypeTag {
+//     fn decode<D: Decoder>(d: &mut D)->Result<MessageTypeTag, D::Error> {
+//         try!(d.read_u64());
+//         let mut type_tag : String = String::new();
+//         type_tag = try!(Decodable::decode(d));
+//         match &type_tag[..] {
+//             "BootstrapIdRequest" => Ok(MessageTypeTag::BootstrapIdRequest),
+//             "BootstrapIdResponse" => Ok(MessageTypeTag::BootstrapIdResponse),
+//             "ConnectRequest" => Ok(MessageTypeTag::ConnectRequest),
+//             "ConnectResponse" => Ok(MessageTypeTag::ConnectResponse),
+//             "FindGroup" => Ok(MessageTypeTag::FindGroup),
+//             "FindGroupResponse" => Ok(MessageTypeTag::FindGroupResponse),
+//             "GetData" => Ok(MessageTypeTag::GetData),
+//             "GetDataResponse" => Ok(MessageTypeTag::GetDataResponse),
+//             "GetKey" => Ok(MessageTypeTag::GetKey),
+//             "GetKeyResponse" => Ok(MessageTypeTag::GetKeyResponse),
+//             "GetGroupKey" => Ok(MessageTypeTag::GetGroupKey),
+//             "GetGroupKeyResponse" => Ok(MessageTypeTag::GetGroupKeyResponse),
+//             "Post" => Ok(MessageTypeTag::Post),
+//             "PostResponse" => Ok(MessageTypeTag::PostResponse),
+//             "PutData" => Ok(MessageTypeTag::PutData),
+//             "PutDataResponse" => Ok(MessageTypeTag::PutDataResponse),
+//             "UnauthorisedPut" => Ok(MessageTypeTag::UnauthorisedPut),
+//             "PutKey" => Ok(MessageTypeTag::PutKey),
+//             "PutPublicId" => Ok(MessageTypeTag::PutPublicId),
+//             "PutPublicIdResponse" => Ok(MessageTypeTag::PutPublicIdResponse),
+//             "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),
+//             "Refresh" => Ok(MessageTypeTag::Refresh),
+//             _ => Ok(MessageTypeTag::Unknown)
+//         }
+//     }
+// }
+//
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
     pub message_type: MessageTypeTag,
     pub message_header: message_header::MessageHeader,
@@ -161,21 +159,21 @@ pub struct RoutingMessage {
     pub signature : Signature
 }
 
-impl Encodable for RoutingMessage {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_001, &(&self.message_type, &self.message_header,
-            &self.serialised_body, &self.signature)).encode(e)
-    }
-}
-
-impl Decodable for RoutingMessage {
-    fn decode<D: Decoder>(d: &mut D)->Result<RoutingMessage, D::Error> {
-        try!(d.read_u64());
-        let (message_type, message_header, serialised_body, signature) = try!(Decodable::decode(d));
-        Ok(RoutingMessage { message_type: message_type, message_header: message_header,
-            serialised_body: serialised_body, signature : signature })
-    }
-}
+// impl Encodable for RoutingMessage {
+//     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+//         CborTagEncode::new(5483_001, &(&self.message_type, &self.message_header,
+//             &self.serialised_body, &self.signature)).encode(e)
+//     }
+// }
+//
+// impl Decodable for RoutingMessage {
+//     fn decode<D: Decoder>(d: &mut D)->Result<RoutingMessage, D::Error> {
+//         try!(d.read_u64());
+//         let (message_type, message_header, serialised_body, signature) = try!(Decodable::decode(d));
+//         Ok(RoutingMessage { message_type: message_type, message_header: message_header,
+//             serialised_body: serialised_body, signature : signature })
+//     }
+// }
 
 impl RoutingMessage {
     pub fn new<T>(message_type: MessageTypeTag, message_header: message_header::MessageHeader,
