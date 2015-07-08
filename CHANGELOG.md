@@ -1,4 +1,10 @@
 # Routing - Change Log
+
+## [0.2.8] - Version updates and minor fixes
+
+- Updated dependencies' versions
+- Fixed lint warnings caused by latest Rust nightly
+
 ## [0.2.7] - Activate act on churn
 
 - [#426](https://github.com/maidsafe/routing/pull/426) close bootstrap connection
