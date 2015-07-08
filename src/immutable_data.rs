@@ -72,15 +72,15 @@ mod test {
     use rustc_serialize::hex::ToHex;
     use sodiumoxide::crypto;
 
-        fn generate_random() -> Vec<u8> {
-            let size = 64;
-            let mut data = Vec::with_capacity(size);
-            let mut rng = rand::thread_rng();
-            for i in 0..size {
-                data.push(rng.gen::<u8>());
-            }
-            data
+    fn generate_random() -> Vec<u8> {
+        let size = 64;
+        let mut data = Vec::with_capacity(size);
+        let mut rng = rand::thread_rng();
+        for _ in 0..size {
+            data.push(rng.gen::<u8>());
         }
+        data
+    }
 
     #[test]
     fn deterministic_test() {
