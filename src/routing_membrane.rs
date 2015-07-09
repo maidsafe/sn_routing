@@ -950,18 +950,25 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // intercept if we can relay it directly
         match unsigned_message.destination {
-            RelayToClient(dest, ) => {
+            RelayToClient(dest, public_id) => {
                 // if we should directly respond to this message, do so
                 if dest == self.own_name
-                    && self.relay_map.contains_relay_for(&relay) {
+                    && self.relay_map.contains_relay_for(&public_id) {
+                    self.send_out_as_relay(&relay, serialised_msg.clone());
+                    return Ok(());
+                }
+            },
+            RelayedForNode(dest, node_id) => {
+                // if we should directly respond to this message, do so
+                if dest == self.own_name
+                    && self.relay_map.contains_relay_for(&node_id) {
                     self.send_out_as_relay(&relay, serialised_msg.clone());
                     return Ok(());
                 }
             },
             _ => {}
         };
-
-        self.send_swarm_or_parallel(&destination, &serialised_msg);
+        self.send_swarm_or_parallel(&unsigned_message.destination, &serialised_msg);
         Ok(())
     }
 
@@ -1425,23 +1432,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             orig_header.create_reply(&self.own_name, &our_authority),
                             GetDataResponse{ name_and_type_id: orig_message.name_and_type_id,
                                              data: reply_data },
-                            &self.id.get_crypto_secret_sign_key())
-    }
-
-    fn construct_put_data_response_msg(&self,
-                                       our_authority: Authority,
-                                       orig_header: &MessageHeader,
-                                       orig_message: &PutData,
-                                       reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage
-    {
-        let reply_header = orig_header.create_reply(&self.own_name, &our_authority);
-        let put_data_response = PutDataResponse {
-            name : orig_message.name.clone(),
-            data : reply_data,
-        };
-        RoutingMessage::new(MessageType::PutDataResponse,
-                            reply_header,
-                            put_data_response,
                             &self.id.get_crypto_secret_sign_key())
     }
 
