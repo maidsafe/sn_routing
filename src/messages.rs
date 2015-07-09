@@ -29,6 +29,8 @@ use types::{DestinationAddress, SourceAddress, FromAddress, ToAddress, NodeAddre
 use error::{RoutingError, ResponseError};
 use NameType;
 use cbor;
+use utils::{encode};
+use cbor::{CborError};
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectRequest {
@@ -187,8 +189,26 @@ impl RoutingMessage {
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct SignedRoutingMessage {
+    // FIXME: The field `encoded_routing_message` should be private to
+    // avoid setting it with data that represent something other than
+    // serialised RoutingMessage. (`signature` should probably be
+    // private as well for similar reason).
     pub encoded_routing_message : Vec<u8>,
     pub signature               : Signature
+}
+
+impl SignedRoutingMessage {
+    pub fn new(message: &RoutingMessage, secret_key: &crypto::sign::SecretKey)
+        -> Result<SignedRoutingMessage, CborError>
+    {
+        let encoded_message = try!(encode(&message));
+        let signature = crypto::sign::sign_detached(&encoded_message,
+                                                    secret_key);
+        let message = SignedRoutingMessage {
+            encoded_routing_message : encoded_message,
+            signature               : signature,
+        };
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]

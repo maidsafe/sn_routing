@@ -86,12 +86,12 @@ impl<F> RoutingClient<F> where F: Interface {
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, IoError> {
         let message_id = self.get_next_message_id();
-        let message =  Message::Unsigned(RoutingMessage { 
+        let message =  Message::Unsigned(RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
             message_type: MessageType::GetData(data),
             message_id  : message_id.clone(),
-            authority   : Authority::Client(self.id.signing_public_key()),  
+            authority   : Authority::Client(self.id.signing_public_key()),
             } );
 
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
@@ -101,69 +101,53 @@ impl<F> RoutingClient<F> where F: Interface {
     /// Add something to the network, will always go via ClientManager group
     pub fn put(&mut self, location: NameType, data : Data) -> Result<MessageId, IoError> {
         let message_id = self.get_next_message_id();
-        let unsigned_message =  Message::Unsigned(RoutingMessage { 
+
+        let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
             message_type: MessageType::PutData(data),
             message_id  : message_id.clone(),
-            authority   : Authority::Client(self.id.signing_public_key()),  
-        });
-            
-        let encoded_routing_message = encode(&unsigned_message);
-        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+            authority   : Authority::Client(self.id.signing_public_key()),
+        };
 
-        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
-            encoded_routing_message : encoded_routing_message,
-            signature               : signature,
-        });
-        
-        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+
+        let _ = encode(&signed_message).map(|msg| self.send_to_bootstrap_node(&msg));
         Ok(message_id)
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
     pub fn post(&mut self, location: NameType, data : Data) -> Result<MessageId, IoError> {
         let message_id = self.get_next_message_id();
-        let unsigned_message =  Message::Unsigned(RoutingMessage { 
+
+        let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
             message_type: MessageType::PostData(data),
             message_id  : message_id.clone(),
-            authority   : Authority::Client(self.id.signing_public_key()),  
-        });
-            
-        let encoded_routing_message = encode(&unsigned_message);
-        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+            authority   : Authority::Client(self.id.signing_public_key()),
+        };
 
-        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
-            encoded_routing_message : encoded_routing_message,
-            signature               : signature,
-        });
-        
-        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_key.0);
+
+        let _ = encode(&signed_message).map(|msg| self.send_to_bootstrap_node(&msg));
         Ok(message_id)
     }
-    
+
     /// Mutate something one the network (you must own it and provide a proper update)
     pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, IoError> {
         let message_id = self.get_next_message_id();
-        let unsigned_message =  Message::Unsigned(RoutingMessage { 
+        let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
             message_type: MessageType::DeleteData(data),
             message_id  : message_id.clone(),
-            authority   : Authority::Client(self.id.signing_public_key()),  
-        });
-            
-        let encoded_routing_message = encode(&unsigned_message);
-        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+            authority   : Authority::Client(self.id.signing_public_key()),
+        };
 
-        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
-            encoded_routing_message : encoded_routing_message,
-            signature               : signature,
-        });
-        
-        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_key.0);
+
+        let _ = encode(&signed_message).map(|msg| self.send_to_bootstrap_node(&msg));
         Ok(message_id)
     }
 
