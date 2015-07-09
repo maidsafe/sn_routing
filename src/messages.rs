@@ -29,6 +29,8 @@ use types::{DestinationAddress, SourceAddress, FromAddress, ToAddress, NodeAddre
 use error::{RoutingError, ResponseError};
 use NameType;
 use cbor;
+use utils::{encode};
+use cbor::{CborError};
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectRequest {
@@ -196,14 +198,16 @@ pub struct SignedRoutingMessage {
 }
 
 impl SignedRoutingMessage {
-    pub fn new(message: &RoutingMessage, secret_key: &crypto::sign::SecretKey) {
-        let encoded_message = encode(&message);
+    pub fn new(message: &RoutingMessage, secret_key: &crypto::sign::SecretKey)
+        -> Result<SignedRoutingMessage, CborError>
+    {
+        let encoded_message = try!(encode(&message));
         let signature = crypto::sign::sign_detached(&encoded_message,
                                                     secret_key);
         let message = SignedRoutingMessage {
-            encoded_routing_message : encoded_routing_message,
+            encoded_routing_message : encoded_message,
             signature               : signature,
-        });
+        };
     }
 }
 
