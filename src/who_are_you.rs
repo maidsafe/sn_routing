@@ -17,7 +17,7 @@
 
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use types::PublicId;
+use public_id::PublicId;
 
 #[derive(RustcEncodable, RustcDecodable, Debug, Eq, PartialEq)]
 pub struct WhoAreYou {

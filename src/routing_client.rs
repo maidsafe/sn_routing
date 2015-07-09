@@ -18,6 +18,7 @@
 
 use rand;
 use sodiumoxide;
+use sodiumoxide::crypto;
 use std::io::Error as IoError;
 use std::sync::{Mutex, Arc, mpsc};
 use std::sync::mpsc::Receiver;
@@ -30,17 +31,14 @@ use name_type::NameType;
 use sendable::Sendable;
 use types;
 use error::{RoutingError};
-use messages::connect_request::ConnectRequest;
-use messages::connect_response::ConnectResponse;
-use messages::get_data_response::GetDataResponse;
-use messages::put_data_response::PutDataResponse;
-use messages::put_data::PutData;
-use messages::get_data::GetData;
 use message_header::MessageHeader;
-use messages::{RoutingMessage, MessageTypeTag};
-use types::{MessageId, Id, PublicId};
+use messages::{Message, SignedRoutingMessage, RoutingMessage, MessageType, ConnectResponse, ConnectRequest};
+use types::{MessageId, DestinationAddress, SourceAddress};
+use id::Id;
+use public_id::PublicId;
 use authority::Authority;
 use utils::*;
+use data::{Data, DataRequest};
 
 pub use crust::Endpoint;
 
@@ -86,76 +84,91 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, type_id: u64, name: NameType) -> Result<MessageId, IoError> {
-        let requester = types::SourceAddress {
-            from_node: self.public_id.name(),
-            from_group: None,
-            reply_to: None,
-            relayed_for: Some(self.public_id.name())
-        };
-
+    pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, IoError> {
         let message_id = self.get_next_message_id();
-        let message = messages::RoutingMessage::new(
-            messages::MessageTypeTag::GetData,
-            message_header::MessageHeader::new(
-                message_id,
-                types::DestinationAddress {
-                    dest: name.clone(),
-                    relay_to: None
-                },
-                requester.clone(),
-                Authority::Client(self.id.signing_public_key())
-            ),
-            GetData {requester: requester.clone(), name_and_type_id: types::NameAndTypeId {
-                name: name.clone(), type_id: type_id }},
-            &self.id.get_crypto_secret_sign_key()
-        );
+        let message =  Message::Unsigned(RoutingMessage { 
+            destination : DestinationAddress::Direct(location),
+            source      : SourceAddress::RelayedForClient(location, self.public_id.name()),
+            message_type: MessageType::GetData(data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Client(self.id.signing_public_key()),  
+            } );
 
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
-        println!("Get sent out with message_id {:?}", message_id);
         Ok(message_id)
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put<T>(&mut self, content: T) -> Result<MessageId, IoError> where T: Sendable {
+    pub fn put(&mut self, location: NameType, data : Data) -> Result<MessageId, IoError> {
         let message_id = self.get_next_message_id();
-        let message = messages::RoutingMessage::new(
-            messages::MessageTypeTag::PutData,
-            MessageHeader::new(
-                message_id,
-                types::DestinationAddress {dest: self.public_id.name(), relay_to: None },
-                types::SourceAddress {
-                    from_node: self.public_id.name(),
-                    from_group: None,
-                    reply_to: None,
-                    relayed_for: Some(self.public_id.name()),
-                },
-                Authority::Client(self.id.signing_public_key())
-            ),
-            PutData {name: content.name(), data: content.serialised_contents()},
-            &self.id.get_crypto_secret_sign_key()
-        );
+        let unsigned_message =  Message::Unsigned(RoutingMessage { 
+            destination : DestinationAddress::Direct(location),
+            source      : SourceAddress::RelayedForClient(location, self.public_id.name()),
+            message_type: MessageType::PutData(data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Client(self.id.signing_public_key()),  
+        });
+            
+        let encoded_routing_message = encode(&unsigned_message);
+        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+
+        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
+            encoded_routing_message : encoded_routing_message,
+            signature               : signature,
+        });
+        
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
-        println!("Put sent out with message_id {:?}", message_id);
         Ok(message_id)
     }
 
-    /// Add content to the network
-    pub fn unauthorised_put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let message = RoutingMessage::new(MessageTypeTag::UnauthorisedPut,
-            MessageHeader::new(self.get_next_message_id(),
-                types::DestinationAddress{ dest: destination, relay_to: None },
-                types::SourceAddress {
-                                from_node: self.public_id.name(),
-                                from_group: None,
-                                reply_to: None,
-                                relayed_for: Some(self.public_id.name()),
-                            },
-                Authority::ManagedNode),
-            PutData{ name: content.name(), data: content.serialised_contents() },
-            &self.id.get_crypto_secret_sign_key());
+    /// Mutate something one the network (you must own it and provide a proper update)
+    pub fn post(&mut self, location: NameType, data : Data) -> Result<MessageId, IoError> {
+        let message_id = self.get_next_message_id();
+        let unsigned_message =  Message::Unsigned(RoutingMessage { 
+            destination : DestinationAddress::Direct(location),
+            source      : SourceAddress::RelayedForClient(location, self.public_id.name()),
+            message_type: MessageType::PostData(data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Client(self.id.signing_public_key()),  
+        });
+            
+        let encoded_routing_message = encode(&unsigned_message);
+        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+
+        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
+            encoded_routing_message : encoded_routing_message,
+            signature               : signature,
+        });
+        
         let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        Ok(message_id)
     }
+    
+    /// Mutate something one the network (you must own it and provide a proper update)
+    pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, IoError> {
+        let message_id = self.get_next_message_id();
+        let unsigned_message =  Message::Unsigned(RoutingMessage { 
+            destination : DestinationAddress::Direct(location),
+            source      : SourceAddress::RelayedForClient(location, self.public_id.name()),
+            message_type: MessageType::DeleteData(data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Client(self.id.signing_public_key()),  
+        });
+            
+        let encoded_routing_message = encode(&unsigned_message);
+        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+
+        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
+            encoded_routing_message : encoded_routing_message,
+            signature               : signature,
+        });
+        
+        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        Ok(message_id)
+    }
+
+//######################################## API ABOVE this point ##################
+
 
     pub fn run(&mut self) {
         match self.event_input.try_recv() {
@@ -175,15 +188,15 @@ impl<F> RoutingClient<F> where F: Interface {
                         // only accept messages from our bootstrap endpoint
                         if bootstrap_endpoint == &endpoint {
                             match routing_msg.message_type {
-                                MessageTypeTag::ConnectResponse => {
+                                MessageType::ConnectResponse => {
                                     self.handle_connect_response(endpoint,
                                         routing_msg.serialised_body);
                                 },
-                                MessageTypeTag::GetDataResponse => {
+                                MessageType::GetDataResponse => {
                                     self.handle_get_data_response(routing_msg.message_header,
                                         routing_msg.serialised_body);
                                 },
-                                MessageTypeTag::PutDataResponse => {
+                                MessageType::PutDataResponse => {
                                     self.handle_put_data_response(routing_msg.message_header,
                                         routing_msg.serialised_body);
                                 },
@@ -231,7 +244,7 @@ impl<F> RoutingClient<F> where F: Interface {
             (_, Some(_)) => {
                 println!("Sending connect request");
                 let message = RoutingMessage::new(
-                    MessageTypeTag::ConnectRequest,
+                    MessageType::ConnectRequest,
                     MessageHeader::new(
                         self.get_next_message_id(),
                         types::DestinationAddress{ dest: self.public_id.name(),

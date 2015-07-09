@@ -66,6 +66,8 @@ pub mod refresh_accumulator;
 pub mod sendable;
 pub mod test_utils;
 pub mod types;
+pub mod id;
+pub mod public_id;
 pub mod error;
 pub mod authority;
 pub mod structured_data;

@@ -15,178 +15,186 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused_assignments)]
-
-#[path="messages/connect_request.rs"]
-pub mod connect_request;
-#[path="messages/connect_response.rs"]
-pub mod connect_response;
-#[path="messages/find_group.rs"]
-pub mod find_group;
-#[path="messages/find_group_response.rs"]
-pub mod find_group_response;
-#[path="messages/get_key.rs"]
-pub mod get_client_key;
-#[path="messages/get_key_response.rs"]
-pub mod get_client_key_response;
-#[path="messages/get_data.rs"]
-pub mod get_data;
-#[path="messages/get_data_response.rs"]
-pub mod get_data_response;
-#[path="messages/get_group_key.rs"]
-pub mod get_group_key;
-#[path="messages/get_group_key_response.rs"]
-pub mod get_group_key_response;
-#[path="messages/post.rs"]
-pub mod post;
-#[path="messages/put_data.rs"]
-pub mod put_data;
-#[path="messages/put_data_response.rs"]
-pub mod put_data_response;
-#[path="messages/put_public_id.rs"]
-pub mod put_public_id;
-#[path="messages/put_public_id_response.rs"]
-pub mod put_public_id_response;
-#[path="messages/refresh.rs"]
-pub mod refresh;
-
-
-
-use cbor;
-use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::sign::Signature;
-
+use crust::Endpoint;
 use message_header;
+use authority::Authority;
+use data::{Data, DataRequest};
 use types;
+use id::Id;
+use public_id::PublicId;
+use types::{DestinationAddress, SourceAddress, FromAddress, ToAddress, NodeAddress};
+use error::{RoutingError, ResponseError};
+use NameType;
+use cbor;
 
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub enum MessageTypeTag {
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+pub struct ConnectRequest {
+    pub local_endpoints: Vec<Endpoint>,
+    pub external_endpoints: Vec<Endpoint>,
+    // TODO: redundant, already in fob
+    pub requester_id: NameType,
+    // TODO: make optional, for now simply ignore if requester_fob is not relocated
+    pub receiver_id: NameType,
+    pub requester_fob: PublicId
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+pub struct ConnectResponse {
+    pub requester_local_endpoints: Vec<Endpoint>,
+    pub requester_external_endpoints: Vec<Endpoint>,
+    pub receiver_local_endpoints: Vec<Endpoint>,
+    pub receiver_external_endpoints: Vec<Endpoint>,
+    pub requester_id: NameType,
+    pub receiver_id: NameType,
+    pub receiver_fob: PublicId,
+    pub serialised_connect_request: Vec<u8>,
+    pub connect_request_signature: Signature
+}
+
+/// These are the messageTypes routing provides
+/// many are internal to routing and woudl not be useful 
+/// to users.
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+pub enum MessageType {
     BootstrapIdRequest,
     BootstrapIdResponse,
-    ConnectRequest,
-    ConnectResponse,
-    FindGroup,
-    FindGroupResponse,
-    GetData,
-    GetDataResponse,
+    ConnectRequest(ConnectRequest),
+    ConnectResponse(ConnectResponse),
+    FindGroup(NameType),
+    FindGroupResponse(Vec<crypto::sign::PublicKey>),
+    GetData(DataRequest),
+    GetDataResponse(Result<Data, ResponseError>),
+    DeleteData(DataRequest),
+    DeleteDataResponse(Result<DataRequest, ResponseError>),
     GetKey,
-    GetKeyResponse,
+    GetKeyResponse(NameType, crypto::sign::PublicKey),
     GetGroupKey,
-    GetGroupKeyResponse,
-    Post,
-    PostResponse,
-    PutData,
-    PutDataResponse,
-    UnauthorisedPut,
+    GetGroupKeyResponse(Vec<(NameType, crypto::sign::PublicKey)>),
+    Post(Data),
+    PostResponse(Result<Data, ResponseError>),
+    PutData(Data),
+    PutDataResponse(Result<Data, ResponseError>),
     PutKey,
-    AccountTransfer,
-    PutPublicId,
-    PutPublicIdResponse,
-    Refresh,
+    AccountTransfer(NameType),
+    PutPublicId(PublicId),
+    PutPublicIdResponse(PublicId),
+    Refresh(u64, Vec<u8>),
     Unknown,
 }
 
-impl Encodable for MessageTypeTag {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let mut type_tag = "";
-        match *self {
-            MessageTypeTag::BootstrapIdRequest => type_tag = "BootstrapIdRequest",
-            MessageTypeTag::BootstrapIdResponse => type_tag = "BootstrapIdResponse",
-            MessageTypeTag::ConnectRequest => type_tag = "ConnectRequest",
-            MessageTypeTag::ConnectResponse => type_tag = "ConnectResponse",
-            MessageTypeTag::FindGroup => type_tag = "FindGroup",
-            MessageTypeTag::FindGroupResponse => type_tag = "FindGroupResponse",
-            MessageTypeTag::GetData => type_tag = "GetData",
-            MessageTypeTag::GetDataResponse => type_tag = "GetDataResponse",
-            MessageTypeTag::GetKey => type_tag = "GetKey",
-            MessageTypeTag::GetKeyResponse => type_tag = "GetKeyResponse",
-            MessageTypeTag::GetGroupKey => type_tag = "GetGroupKey",
-            MessageTypeTag::GetGroupKeyResponse => type_tag = "GetGroupKeyResponse",
-            MessageTypeTag::Post => type_tag = "Post",
-            MessageTypeTag::PostResponse => type_tag = "PostResponse",
-            MessageTypeTag::PutData => type_tag = "PutData",
-            MessageTypeTag::PutDataResponse => type_tag = "PutDataResponse",
-            MessageTypeTag::UnauthorisedPut => type_tag = "UnauthorisedPut",
-            MessageTypeTag::PutKey => type_tag = "PutKey",
-            MessageTypeTag::AccountTransfer => type_tag = "AccountTransfer",
-            MessageTypeTag::PutPublicId => type_tag = "PutPublicId",
-            MessageTypeTag::PutPublicIdResponse => type_tag = "PutPublicIdResponse",
-            MessageTypeTag::Refresh => type_tag = "Refresh",
-            MessageTypeTag::Unknown => type_tag = "Unknown",
-        };
-        CborTagEncode::new(5483_100, &(&type_tag)).encode(e)
-    }
-}
-
-impl Decodable for MessageTypeTag {
-    fn decode<D: Decoder>(d: &mut D)->Result<MessageTypeTag, D::Error> {
-        try!(d.read_u64());
-        let mut type_tag : String = String::new();
-        type_tag = try!(Decodable::decode(d));
-        match &type_tag[..] {
-            "BootstrapIdRequest" => Ok(MessageTypeTag::BootstrapIdRequest),
-            "BootstrapIdResponse" => Ok(MessageTypeTag::BootstrapIdResponse),
-            "ConnectRequest" => Ok(MessageTypeTag::ConnectRequest),
-            "ConnectResponse" => Ok(MessageTypeTag::ConnectResponse),
-            "FindGroup" => Ok(MessageTypeTag::FindGroup),
-            "FindGroupResponse" => Ok(MessageTypeTag::FindGroupResponse),
-            "GetData" => Ok(MessageTypeTag::GetData),
-            "GetDataResponse" => Ok(MessageTypeTag::GetDataResponse),
-            "GetKey" => Ok(MessageTypeTag::GetKey),
-            "GetKeyResponse" => Ok(MessageTypeTag::GetKeyResponse),
-            "GetGroupKey" => Ok(MessageTypeTag::GetGroupKey),
-            "GetGroupKeyResponse" => Ok(MessageTypeTag::GetGroupKeyResponse),
-            "Post" => Ok(MessageTypeTag::Post),
-            "PostResponse" => Ok(MessageTypeTag::PostResponse),
-            "PutData" => Ok(MessageTypeTag::PutData),
-            "PutDataResponse" => Ok(MessageTypeTag::PutDataResponse),
-            "UnauthorisedPut" => Ok(MessageTypeTag::UnauthorisedPut),
-            "PutKey" => Ok(MessageTypeTag::PutKey),
-            "PutPublicId" => Ok(MessageTypeTag::PutPublicId),
-            "PutPublicIdResponse" => Ok(MessageTypeTag::PutPublicIdResponse),
-            "AccountTransfer" => Ok(MessageTypeTag::AccountTransfer),
-            "Refresh" => Ok(MessageTypeTag::Refresh),
-            _ => Ok(MessageTypeTag::Unknown)
-        }
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Debug)]
+/// the bare (unsigned) routing message
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
-    pub message_type: MessageTypeTag,
-    pub message_header: message_header::MessageHeader,
-    pub serialised_body: Vec<u8>,
-    pub signature : Signature
-}
-
-impl Encodable for RoutingMessage {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_001, &(&self.message_type, &self.message_header,
-            &self.serialised_body, &self.signature)).encode(e)
-    }
-}
-
-impl Decodable for RoutingMessage {
-    fn decode<D: Decoder>(d: &mut D)->Result<RoutingMessage, D::Error> {
-        try!(d.read_u64());
-        let (message_type, message_header, serialised_body, signature) = try!(Decodable::decode(d));
-        Ok(RoutingMessage { message_type: message_type, message_header: message_header,
-            serialised_body: serialised_body, signature : signature })
-    }
+    pub destination     : DestinationAddress,
+    pub source          : SourceAddress,
+    pub message_type    : MessageType,
+    pub message_id      : types::MessageId,
+    pub authority       : Authority
 }
 
 impl RoutingMessage {
-    pub fn new<T>(message_type: MessageTypeTag, message_header: message_header::MessageHeader,
-                  message : T, private_sign_key : &crypto::sign::SecretKey) -> RoutingMessage where T: for<'a> Encodable + Decodable {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&message]).unwrap();
-        let signature = crypto::sign::sign_detached(&e.as_bytes(), &private_sign_key);
-        RoutingMessage {
-            message_type: message_type,
-            message_header: message_header,
-            serialised_body: types::array_as_vector(e.as_bytes()),
-            signature: signature }
+    
+    pub fn message_id(&self) -> types::MessageId {
+        self.message_id
+    }
+
+    pub fn send_to(&self) -> types::DestinationAddress {
+        types::DestinationAddress {
+            dest: match self.source.reply_to.clone() {
+                       Some(reply_to) => reply_to,
+                       None => match self.source.from_group.clone() {
+                           Some(group_name) => group_name,
+                           None => self.source.from_node.clone()
+                       }
+            },
+            relay_to: self.source.relayed_for.clone()
+        }
+    }
+
+    // FIXME: add from_authority to filter value
+    pub fn get_filter(&self) -> types::FilterType {
+        (self.source.clone(), self.message_id, self.destination.clone())
+    }
+
+    pub fn from_authority(&self) -> Authority {
+        self.authority.clone()
+    }
+
+    pub fn set_relay_name(&mut self, reply_to: &NameType, relay_for: &NameType) {
+        self.source.reply_to = Some(reply_to.clone());
+        self.source.relayed_for = Some(relay_for.clone());
+    }
+
+    /// This creates a new message for Action::SendOn. It clones all the fields,
+    /// and then mutates the destination and source accordingly.
+    /// Authority is changed at this point as this method is called after
+    /// the interface has processed the message.
+    /// Note: this is not for XOR-forwarding; then the header is preserved!
+    pub fn create_send_on(&self, our_name : &NameType, our_authority : &Authority,
+                          destination : &NameType) -> RoutingMessage {
+        // implicitly preserve all non-mutated fields.
+        // TODO(dirvine) Investigate why copy and not change in place  :08/07/2015
+        let mut send_on_message = self.clone();
+        
+        send_on_message.source = types::SourceAddress {
+            from_node : our_name.clone(),
+            from_group : Some(self.destination.dest.clone()),
+            reply_to : self.source.reply_to.clone(),
+            relayed_for : self.source.relayed_for.clone()
+        };
+        send_on_message.source = match self.source {
+              SourceAddress::RelayedForClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
+              SourceAddress::RelayedForNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone, b),
+              SourceAddress::Direct(a)              => SourceAddress::Direct(our_name.clone()),  
+        };
+
+        send_on_message.destination = match self.destination {
+            DestinationAddress::RelayToClient(_, b) => DestinationAddress::RelayToClient(destination, b),
+            DestinationAddress::RelayToNode(_, b)   => DestinationAddress::RelayToNode(destination, b),
+            DestinationAddress::Direct(_)           => DestinationAddress::Direct(destination),
+        };
+        send_on_message.authority = our_authority.clone();
+        send_on_message
+    }
+
+    /// This creates a new message for Action::Reply. It clones all the fields,
+    /// and then mutates the destination and source accordingly.
+    /// Authority is changed at this point as this method is called after
+    /// the interface has processed the message.
+    /// Note: this is not for XOR-forwarding; then the header is preserved!
+    pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)
+                        -> RoutingMessage {
+        // implicitly preserve all non-mutated fields.
+        // TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
+        let mut reply_message = self.clone();
+        reply_message.source  = match self.destination {
+            DestinationAddress::RelayToClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
+            DestinationAddress::RelayToNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone()), 
+            DestinationAddress::Direct(_)           => SourceAddress::Direct(our_name.clone()),
+        };
+        reply_message.destination = match self.source {
+            SourceAddress::RelayedForClient(a, b) => DestinationAddress::RelayToClient(a, b),
+            SourceAddress::RelayedForNode(a, b)   => DestinationAddress::RelayToNode(a, b),
+            SourceAddress::Direct(a)              => DestinationAddress::Direct(a),
+        };
+        reply_message.authority = our_authority.clone();
+        reply_message
     }
 }
+
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+pub struct SignedRoutingMessage {
+    pub encoded_routing_message : Vec<u8>,
+    pub signature               : Signature
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+enum Message {
+Signed(SignedRoutingMessage),
+Unsigned(RoutingMessage)    
+}
+
+

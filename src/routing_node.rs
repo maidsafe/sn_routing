@@ -32,10 +32,7 @@ use routing_membrane::RoutingMembrane;
 use types;
 use types::{MessageId, Bytes};
 use authority::{Authority};
-use messages::connect_request::ConnectRequest;
-use messages::put_public_id::PutPublicId;
-use messages::put_public_id_response::PutPublicIdResponse;
-use messages::{RoutingMessage, MessageTypeTag};
+use messages::{RoutingMessage, MessageType, ConnectResponse, ConnectRequest};
 use message_header::MessageHeader;
 use error::{RoutingError};
 use std::thread::spawn;
@@ -167,7 +164,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                     match decode::<RoutingMessage>(&bytes) {
                         Ok(message) => {
                             match message.message_type {
-                                MessageTypeTag::ConnectResponse => {
+                                MessageType::ConnectResponse => {
                                     // for now, ignore the actual response message
                                     // bootstrap node responded, try to put our id to the network
                                     println!("Received connect response");
@@ -177,7 +174,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                     let serialised_message = try!(encode(&put_public_id_msg));
                                     ignore(cm.send(bootstrapped_to.clone(), serialised_message));
                                 },
-                                MessageTypeTag::PutPublicIdResponse => {
+                                MessageType::PutPublicIdResponse => {
                                     let put_public_id_response =
                                         try!(decode::<PutPublicIdResponse>(&message.serialised_body));
                                     relocated_name = Some(put_public_id_response.public_id.name());
@@ -240,7 +237,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             requester_fob: types::PublicId::new(&self.id),
         };
 
-        RoutingMessage::new(MessageTypeTag::ConnectRequest, header, connect_request,
+        RoutingMessage::new(MessageType::ConnectRequest, header, connect_request,
             &self.id.get_crypto_secret_sign_key())
     }
 
@@ -250,7 +247,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             types::DestinationAddress{dest: our_unrelocated_id.name(), relay_to: None},
             self.our_source_address(), Authority::ManagedNode);
         let put_public_id = PutPublicId { public_id : our_unrelocated_id.clone() };
-        RoutingMessage::new(MessageTypeTag::PutPublicId, header, put_public_id,
+        RoutingMessage::new(MessageType::PutPublicId, header, put_public_id,
             &self.id.get_crypto_secret_sign_key())
     }
 

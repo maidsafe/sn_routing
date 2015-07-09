@@ -15,15 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-
 use types;
 use NameType;
 use authority::Authority;
 
 /// Header of various message types used on routing level
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct MessageHeader {
     pub message_id: types::MessageId,
     pub destination: types::DestinationAddress,
@@ -31,22 +29,22 @@ pub struct MessageHeader {
     pub authority: Authority
 }
 
-impl Encodable for MessageHeader {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_004,
-                           &(&self.message_id, &self.destination, &self.source,
-                             &self.authority)).encode(e)
-    }
-}
-
-impl Decodable for MessageHeader {
-    fn decode<D: Decoder>(d: &mut D)->Result<MessageHeader, D::Error> {
-        try!(d.read_u64());
-        let (message_id, destination, source, authority) = try!(Decodable::decode(d));
-        Ok(MessageHeader{ message_id : message_id, destination : destination,
-            source : source, authority : authority })
-    }
-}
+// impl Encodable for MessageHeader {
+//     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
+//         CborTagEncode::new(5483_004,
+//                            &(&self.message_id, &self.destination, &self.source,
+//                              &self.authority)).encode(e)
+//     }
+// }
+//
+// impl Decodable for MessageHeader {
+//     fn decode<D: Decoder>(d: &mut D)->Result<MessageHeader, D::Error> {
+//         try!(d.read_u64());
+//         let (message_id, destination, source, authority) = try!(Decodable::decode(d));
+//         Ok(MessageHeader{ message_id : message_id, destination : destination,
+//             source : source, authority : authority })
+//     }
+// }
 
 impl MessageHeader {
     pub fn new(message_id : types::MessageId,
@@ -161,7 +159,7 @@ impl MessageHeader {
         reply_header
     }
 }
-
+/*
 #[cfg(test)]
 #[allow(deprecated)]
 mod test {
@@ -201,4 +199,4 @@ mod test {
                 authority: Authority::ManagedNode
             });
     }
-}
+} */
