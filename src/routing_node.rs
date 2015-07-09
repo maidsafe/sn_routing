@@ -225,13 +225,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     }
 
     fn construct_connect_request_msg(&mut self, destination: &NameType,
-        accepting_on: Vec<Endpoint>) -> RoutingMessage {
-        let header = MessageHeader::new(self.get_next_message_id(),
-            types::DestinationAddress {dest: destination.clone(), relay_to: None },
-            self.our_source_address(), Authority::ManagedNode);
-
-        // FIXME: We're sending all accepting connections as local since we don't differentiate
-        // between local and external yet.
+            accepting_on: Vec<Endpoint>) -> Message {
+        let message_id = self.get_next_message_id();
         let connect_request = ConnectRequest {
             local_endpoints: accepting_on,
             external_endpoints: vec![],
@@ -239,21 +234,24 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             receiver_id: destination.clone(),
             requester_fob: PublicId::new(&self.id),
         };
+        let unsigned_message =  Message::Unsigned(RoutingMessage {
+            destination  : DestinationAddress::Direct(destination.clone()),
+            source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
+            message_type : MessageType::ConnectRequest(connect_request),
+            message_id   : message_id.clone(),
+            authority    : Authority::ManagedNode,
+        });
 
-        RoutingMessage::new(MessageType::ConnectRequest, header, connect_request,
-            &self.id.get_crypto_secret_sign_key())
+        let encoded_routing_message = encode(&unsigned_message);
+        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+
+        Message::SignedRoutingMessage(SignedRoutingMessage {
+            encoded_routing_message : encoded_routing_message,
+            signature               : signature,
+        })
     }
 
     fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId) -> Message {
-        // let header = MessageHeader::new(self.get_next_message_id(),
-        //     types::DestinationAddress{dest: our_unrelocated_id.name(), relay_to: None},
-        //     self.our_source_address(), Authority::ManagedNode);
-        // let public_id = PublicId { public_id : our_unrelocated_id.clone() };
-        // let put_public_id = MessageType::PutPublicId(public_id);
-        // RoutingMessage::new(MessageType::PutPublicId, header, put_public_id,
-        //     &self.id.get_crypto_secret_sign_key())
-
-
         let message_id = self.get_next_message_id();
         let unsigned_message =  Message::Unsigned(RoutingMessage { 
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
