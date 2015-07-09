@@ -934,19 +934,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn send_put_reply(&mut self, routing_message:  &RoutingMessage,
                              our_authority: Authority,
                              reply_data:    Result<Data, ResponseError>) -> RoutingResult {
-        let unsigned_message = routing_message.create_reply(self.own_name(), our_authority);
-        unsigned_message.message_type = reply_data;
-        unsigned_message.authority = authority;
+        let message = routing_message.create_reply(self.own_name(), our_authority);
+        message.message_type = reply_data;
+        message.authority = authority;
 
-        let encoded_routing_message = encode(&unsigned_message);
+        let encoded_routing_message = encode(&message);
         let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
 
-        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
+        let signed_message = Message::SignedRoutingMessage(SignedRoutingMessage {
             encoded_routing_message : encoded_routing_message,
             signature               : signature,
         });
 
-        let serialised_msg = try!(encode(&message));
+        let serialised_msg = try!(encode(&signed_message));
 
         // intercept if we can relay it directly
         match unsigned_message.destination {
