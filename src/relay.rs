@@ -30,11 +30,16 @@ use NameType;
 
 const MAX_RELAY : usize = 100;
 
+pub enum IdType {
+    Node(NameType),
+    Client(PublicId)
+}
+
 /// The relay map is used to maintain a list of contacts for whom
 /// we are relaying messages, when we are ourselves connected to the network.
 pub struct RelayMap {
-    relay_map: BTreeMap<NameType, (PublicId, BTreeSet<Endpoint>)>,
-    lookup_map: HashMap<Endpoint, NameType>,
+    relay_map: BTreeMap<IdType, (PublicId, BTreeSet<Endpoint>)>,
+    lookup_map: HashMap<Endpoint, IdType>,
     // FIXME : we don't want to store a value; but LRUcache can clear itself out
     // however, we want the explicit timestamp stored and clear it at routing,
     // to drop the connection on clearing; for now CM will just keep all these connections
@@ -114,7 +119,7 @@ impl RelayMap {
     }
 
     /// Returns true if we keep relay endpoints for given name.
-    pub fn contains_relay_for(&self, relay_name: &NameType) -> bool {
+    pub fn contains_relay_for(&self, relay_name: &IdType) -> bool {
         self.relay_map.contains_key(relay_name)
     }
 
