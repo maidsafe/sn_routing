@@ -112,7 +112,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let encoded_routing_message = encode(&unsigned_message);
         let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
 
-        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
+        let message = Message::Signed(SignedRoutingMessage {
             encoded_routing_message : encoded_routing_message,
             signature               : signature,
         });
@@ -135,7 +135,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let encoded_routing_message = encode(&unsigned_message);
         let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
 
-        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
+        let message = Message::Signed(SignedRoutingMessage {
             encoded_routing_message : encoded_routing_message,
             signature               : signature,
         });
@@ -158,7 +158,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let encoded_routing_message = encode(&unsigned_message);
         let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
 
-        let message = Message::SignedRoutingMessage(SignedRoutingMessage {
+        let message = Message::Signed(SignedRoutingMessage {
             encoded_routing_message : encoded_routing_message,
             signature               : signature,
         });
