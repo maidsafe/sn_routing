@@ -30,7 +30,7 @@ use message_header;
 use name_type::NameType;
 use sendable::Sendable;
 use types;
-use error::{RoutingError};
+use error::{RoutingError, ResponseError};
 use message_header::MessageHeader;
 use messages::{Message, SignedRoutingMessage, RoutingMessage, MessageType, ConnectResponse, ConnectRequest};
 use types::{MessageId, DestinationAddress, SourceAddress};
@@ -192,12 +192,11 @@ impl<F> RoutingClient<F> where F: Interface {
                                     self.handle_connect_response(endpoint,
                                         routing_msg.serialised_body);
                                 },
-                                MessageType::GetDataResponse => {
-                                    self.handle_get_data_response(routing_msg.message_header,
-                                        routing_msg.serialised_body);
+                                MessageType::GetDataResponse(result) => {
+                                    self.handle_get_data_response(routing_msg.message_id, result);
                                 },
                                 MessageType::PutDataResponse => {
-                                    self.handle_put_data_response(routing_msg.message_header,
+                                    self.handle_put_data_response(routing_msg.message_id,
                                         routing_msg.serialised_body);
                                 },
                                 _ => {}
@@ -293,26 +292,14 @@ impl<F> RoutingClient<F> where F: Interface {
         self.next_message_id
     }
 
-    fn handle_get_data_response(&self, header: MessageHeader, body: Bytes) {
-        match decode::<GetDataResponse>(&body) {
-            Ok(get_data_response) => {
-                let mut interface = self.interface.lock().unwrap();
-                interface.handle_get_response(header.message_id,
-                    get_data_response.data);
-            },
-            Err(_) => {}
-        };
+    fn handle_get_data_response(&self, message_id: MessageId, result: Result<Data, ResponseError>) {
+        let mut interface = self.interface.lock().unwrap();
+        interface.handle_get_response(message_id, result);
     }
 
-    fn handle_put_data_response(&self, header: MessageHeader, body: Bytes) {
-        match decode::<PutDataResponse>(&body) {
-            Ok(put_data_response) => {
-                let mut interface = self.interface.lock().unwrap();
-                interface.handle_put_response(header.message_id,
-                    put_data_response.data);
-            },
-            Err(_) => {}
-        };
+    fn handle_put_data_response(&self, message_id: MessageId, result: Result<Data, ResponseError>) {
+        let mut interface = self.interface.lock().unwrap();
+        interface.handle_put_response(message_id, result);
     }
 }
 
