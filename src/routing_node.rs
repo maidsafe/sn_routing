@@ -245,7 +245,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let encoded_routing_message = encode(&unsigned_message);
         let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
 
-        Message::SignedRoutingMessage(SignedRoutingMessage {
+        Message::Signed(SignedRoutingMessage {
             encoded_routing_message : encoded_routing_message,
             signature               : signature,
         })
@@ -264,7 +264,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let encoded_routing_message = encode(&unsigned_message);
         let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
 
-        Message::SignedRoutingMessage(SignedRoutingMessage {
+        Message::Signed(SignedRoutingMessage {
             encoded_routing_message : encoded_routing_message,
             signature               : signature,
         })
