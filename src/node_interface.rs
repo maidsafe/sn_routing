@@ -67,7 +67,7 @@ pub trait Interface : Sync + Send {
                   from_authority: Authority,
                   from_address: NameType,
                   dest_address: DestinationAddress,
-                  data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                  data: Data) -> Result<MessageAction, InterfaceError>;
 
     /// depending on our_authority and from_authority, post request is handled by current node or
     /// an address for further handling of the request is provided. Failure is indicated as an
