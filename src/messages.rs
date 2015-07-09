@@ -54,7 +54,6 @@ pub struct ConnectResponse {
     pub connect_request_signature: Signature
 }
 
-
 /// These are the messageTypes routing provides
 /// many are internal to routing and woudl not be useful 
 /// to users.
@@ -85,6 +84,7 @@ pub enum MessageType {
     Refresh(u64, Vec<u8>),
     Unknown,
 }
+
 /// the bare (unsigned) routing message
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
@@ -99,25 +99,6 @@ impl RoutingMessage {
     
     pub fn message_id(&self) -> types::MessageId {
         self.message_id
-    }
-
-    pub fn from_node(&self) -> NameType {
-        self.source.from_node.clone()
-    }
-
-    pub fn from_group(&self) -> Option<NameType> {
-        self.source.from_group.clone()
-    }
-
-    pub fn is_from_group(&self) -> bool {
-        self.source.from_group.is_some()
-    }
-
-    pub fn from(&self) -> NameType {
-        match self.from_group() {
-            Some(address) => address,
-            None => self.from_node()
-        }
     }
 
     pub fn send_to(&self) -> types::DestinationAddress {
@@ -208,20 +189,6 @@ impl RoutingMessage {
 pub struct SignedRoutingMessage {
     pub encoded_routing_message : Vec<u8>,
     pub signature               : Signature
-}
-
-impl SignedRoutingMessage {
-    pub fn new(routing_message: &RoutingMessage,
-               private_sign_key : &crypto::sign::SecretKey)
-                ->Result<RoutingError, SignedRoutingMessage> {
-        let mut enc = cbor::Encoder::from_memory();
-        try!(enc.encode(&[routing_message]));
-        let signature = crypto::sign::sign_detached(&enc.as_bytes(), &private_sign_key);
-        Ok(SignedRoutingMessage {
-            encoded_routing_message : enc.as_bytes(),
-            signature : signature, 
-        })
-    }   
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]

@@ -88,8 +88,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let message_id = self.get_next_message_id();
         let message =  Message::Unsigned(RoutingMessage { 
             destination : DestinationAddress::Direct(location),
-        // FIXME(dirvine) THIS IS WRONG WE NEED BOOSTRAP NODES HERE :08/07/2015
-            source      : SourceAddress::RelayedForClient(location, self.public_id.name()),
+            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
             message_type: MessageType::GetData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),  
@@ -104,8 +103,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let message_id = self.get_next_message_id();
         let unsigned_message =  Message::Unsigned(RoutingMessage { 
             destination : DestinationAddress::Direct(location),
-        // FIXME(dirvine) THIS IS WRONG WE NEED BOOSTRAP NODES HERE :08/07/2015
-            source      : SourceAddress::RelayedForClient(location, self.public_id.name()),
+            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
             message_type: MessageType::PutData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),  
@@ -128,8 +126,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let message_id = self.get_next_message_id();
         let unsigned_message =  Message::Unsigned(RoutingMessage { 
             destination : DestinationAddress::Direct(location),
-        // FIXME(dirvine) THIS IS WRONG WE NEED BOOSTRAP NODES HERE :08/07/2015
-            source      : SourceAddress::RelayedForClient(location, self.public_id.name()),
+            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
             message_type: MessageType::PostData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),  
@@ -152,8 +149,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let message_id = self.get_next_message_id();
         let unsigned_message =  Message::Unsigned(RoutingMessage { 
             destination : DestinationAddress::Direct(location),
-        // FIXME(dirvine) THIS IS WRONG WE NEED BOOSTRAP NODES HERE :08/07/2015
-            source      : SourceAddress::RelayedForClient(location, self.public_id.name()),
+            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
             message_type: MessageType::DeleteData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),  
