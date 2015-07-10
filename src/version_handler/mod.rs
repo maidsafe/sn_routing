@@ -23,9 +23,10 @@ use routing::error::{ResponseError, InterfaceError};
 use routing::types::{MessageAction, GROUP_SIZE};
 use chunk_store::ChunkStore;
 use routing::sendable::Sendable;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encodable, Encoder};
 use cbor;
 use transfer_parser::transfer_tags::VERSION_HANDLER_ACCOUNT_TAG;
+use utils::{encode, decode};
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Clone, Debug)]
 pub struct VersionHandlerSendable {
@@ -55,9 +56,10 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
-        e.into_bytes()
+        match encode(&self) {
+            Ok(result) => result,
+            Err(_) => Vec::new()
+        }
     }
 
     fn refresh(&self) -> bool {
@@ -65,18 +67,23 @@ impl Sendable for VersionHandlerSendable {
     }
 
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
-        let mut tmp_wrapper: VersionHandlerSendable;
         let mut sdvs: Vec<Box<Sendable>> = Vec::new();
         for value in responses {
-            let mut d = cbor::Decoder::from_bytes(value.serialised_contents());
-            tmp_wrapper = d.decode().next().unwrap().unwrap();
-            let mut d_sdv = cbor::Decoder::from_bytes(&tmp_wrapper.get_data()[..]);
-            let sdv: StructuredData = d_sdv.decode().next().unwrap().unwrap();
+            let wrapper = match decode::<VersionHandlerSendable>(&value.serialised_contents()) {
+                    Ok(result) => result,
+                    Err(_) => { continue }
+                };
+            let sdv = match decode::<StructuredData>(&wrapper.get_data()) {
+                    Ok(result) => result,
+                    Err(_) => { continue }
+                };
             sdvs.push(Box::new(sdv));
         }
         assert!(sdvs.len() < (GROUP_SIZE + 1) / 2);
-        let mut d = cbor::Decoder::from_bytes(&self.data[..]);
-        let seed_sdv: StructuredData = d.decode().next().unwrap().unwrap();
+        let seed_sdv = match decode::<StructuredData>(&self.data) {
+                Ok(result) => result,
+                Err(_) => { return None; }
+            };
         match seed_sdv.merge(sdvs) {
             Some(merged_sdv) => {
                 Some(Box::new(VersionHandlerSendable::new(self.name.clone(), merged_sdv.serialised_contents())))
