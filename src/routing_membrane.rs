@@ -446,11 +446,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
     fn message_received(&mut self, received_from : &ConnectionName,
-        message: RoutingMessage, received_from_relay: bool) -> RoutingResult {
+        message_wrap: Message, received_from_relay: bool) -> RoutingResult {
         match received_from {
             &ConnectionName::Routing(_) => { },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
+        let message = routing_message(message_wrap);
         if received_from_relay {
             // then this message was explicitly for us
             message.destination = DestinationAddress::Direct(self.own_name.clone());
@@ -496,7 +497,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
 
         // SendOn in address space
-        self.send_swarm_or_parallel(&header.destination.dest, &serialised_msg);
+        self.send_swarm_or_parallel(&header.destination.dest, message_wrap);
 
         // handle relay request/response
         if header.destination.dest == self.own_name {
@@ -616,11 +617,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn send_swarm_or_parallel(&self, name : &NameType, msg: &Bytes) {
+    fn send_swarm_or_parallel(&self, name : &NameType, msg: &Message) {
         for peer in self.routing_table.target_nodes(name) {
             match peer.connected_endpoint {
                 Some(peer_endpoint) => {
-                    ignore(self.connection_manager.send(peer_endpoint, msg.clone()));
+                    ignore(encode(&msg).map(|msg|self.connection_manager.send(peer_endpoint, msg));
                 },
                 None => {}
             };

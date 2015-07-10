@@ -56,7 +56,7 @@ pub struct ConnectResponse {
 }
 
 /// These are the messageTypes routing provides
-/// many are internal to routing and woudl not be useful 
+/// many are internal to routing and woudl not be useful
 /// to users.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum MessageType {
@@ -97,7 +97,7 @@ pub struct RoutingMessage {
 }
 
 impl RoutingMessage {
-    
+
     pub fn message_id(&self) -> types::MessageId {
         self.message_id
     }
@@ -177,7 +177,7 @@ impl RoutingMessage {
         // implicitly preserve all non-mutated fields.
         // TODO(dirvine) Investigate why copy and not change in place  :08/07/2015
         let mut send_on_message = self.clone();
-        
+
         send_on_message.source = types::SourceAddress {
             from_node : our_name.clone(),
             from_group : Some(self.destination.dest.clone()),
@@ -187,7 +187,7 @@ impl RoutingMessage {
         send_on_message.source = match self.source {
               SourceAddress::RelayedForClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
               SourceAddress::RelayedForNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone, b),
-              SourceAddress::Direct(a)              => SourceAddress::Direct(our_name.clone()),  
+              SourceAddress::Direct(a)              => SourceAddress::Direct(our_name.clone()),
         };
 
         send_on_message.destination = match self.destination {
@@ -211,7 +211,7 @@ impl RoutingMessage {
         let mut reply_message = self.clone();
         reply_message.source  = match self.destination {
             DestinationAddress::RelayToClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
-            DestinationAddress::RelayToNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone()), 
+            DestinationAddress::RelayToNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone()),
             DestinationAddress::Direct(_)           => SourceAddress::Direct(our_name.clone()),
         };
         reply_message.destination = match self.source {
@@ -250,8 +250,6 @@ impl SignedRoutingMessage {
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 enum Message {
-Signed(SignedRoutingMessage),
-Unsigned(RoutingMessage)    
+    Signed(SignedRoutingMessage),
+    Unsigned(RoutingMessage)
 }
-
-

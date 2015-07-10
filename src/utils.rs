@@ -86,3 +86,10 @@ fn calculate_original_name(public_key: &crypto::sign::PublicKey,
     }
     NameType(crypto::hash::sha512::hash(&combined).0)
 }
+
+fn routing_message(msg: &Message) -> RoutingMessage {
+    match {
+        Signed(message) => { decode::<RoutingMessage>(message.encoded_routing_message) },
+        Unsigned(message) => { message }
+    }
+}
