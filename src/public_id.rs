@@ -22,20 +22,21 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide;
 use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::sign::Signature;
+use sodiumoxide::crypto::sign::{Signature};
 use sodiumoxide::crypto::box_;
 use std::cmp;
 use NameType;
 use name_type::closer_to_target;
 use std::fmt;
 use error::{RoutingError};
+use id::Id;
+use utils;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct PublicId {
-  pub public_key: PublicKey,
-  pub public_sign_key: PublicSignKey,
-  pub validation_token: Signature,
-  name: NameType,
+  public_key: box_::PublicKey,
+  public_sign_key: sign::PublicKey,
+  name: Option<NameType>,
 }
 
 impl PublicId {
@@ -43,8 +44,7 @@ impl PublicId {
       PublicId {
         public_key : id.get_public_key(),
         public_sign_key : id.get_public_sign_key(),
-        validation_token : id.get_validation_token(),
-        name : id.get_name(),
+        name : id.name,
       }
     }
 
@@ -52,22 +52,15 @@ impl PublicId {
       self.name.clone()
     }
 
-    pub fn serialised_contents(&self)->Vec<u8> {
+    pub fn serialised_contents(&self)->Result<RoutingError, Vec<u8>> {
         let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
+        try!(e.encode(&[&self]));
         e.into_bytes()
-    }
-
-    // checks if the name is updated to a relocated name
-    pub fn is_relocated(&self) -> bool {
-        self.name !=  calculate_original_name(&self.public_sign_key.get_crypto_public_sign_key(),
-                                              &self.public_key.get_crypto_public_key(),
-                                              &self.validation_token)
     }
 
     // checks if the name is equal to the self_relocated name
     pub fn is_self_relocated(&self) -> bool {
-        self.name ==  calculate_self_relocated_name(
+        self.name ==  utils::calculate_self_relocated_name(
             &self.public_sign_key.get_crypto_public_sign_key(),
             &self.public_key.get_crypto_public_key(), &self.validation_token)
     }
@@ -75,7 +68,7 @@ impl PublicId {
     // name field is initially same as original_name, this should be replaced by relocated name
     // calculated by the nodes close to original_name by using this method
     pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
-        if self.is_relocated() || self.name == relocated_name {
+        if None(self.name) || self.name == relocated_name {
             return false;
         }
         self.name = relocated_name;
