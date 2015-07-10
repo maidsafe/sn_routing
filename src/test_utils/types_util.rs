@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(test)] 
+mod test {
 use types::*;
 use name_type::NameType;
 use rand::random;
@@ -58,4 +60,5 @@ impl Random for NameType {
     fn generate_random() -> NameType {
         NameType(vector_as_u8_64_array(generate_random_vec_u8(64)))
     }
+}
 }

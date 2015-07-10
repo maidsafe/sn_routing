@@ -20,6 +20,7 @@ use cbor::{Decoder, Encoder, CborError};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
+use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::boxed::Box;
 use std::thread;
@@ -29,11 +30,13 @@ use crust;
 use NameType;
 use node_interface::{Interface, CreatePersonas};
 use routing_membrane::RoutingMembrane;
+use id::Id;
+use public_id::PublicId;
 use types;
-use types::{MessageId, Bytes};
+use types::{MessageId, Bytes, SourceAddress, DestinationAddress};
+use utils;
 use authority::{Authority};
-use messages::{RoutingMessage, MessageType, ConnectResponse, ConnectRequest};
-use message_header::MessageHeader;
+use messages::{RoutingMessage, SignedRoutingMessage, Message, MessageType, ConnectResponse, ConnectRequest};
 use error::{RoutingError};
 use std::thread::spawn;
 
@@ -49,7 +52,7 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
                                    G : CreatePersonas<F> {
     genesis: Box<G>,
     phantom_data: PhantomData<F>,
-    id: types::Id,
+    id: Id,
     own_name: NameType,
     next_message_id: MessageId,
     bootstrap_endpoint: Option<Endpoint>,
@@ -59,7 +62,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                    G : CreatePersonas<F> {
     pub fn new(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let id = types::Id::new();
+        let id = Id::new();
         let own_name = id.get_name();
         RoutingNode { genesis: Box::new(genesis),
                       phantom_data: PhantomData,
@@ -92,7 +95,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
             Ok(listeners_and_beacon) => listeners_and_beacon
         };
-        let self_relocated_name = types::calculate_self_relocated_name(
+        let self_relocated_name = utils::calculate_self_relocated_name(
             &self.id.get_crypto_public_sign_key(),
             &self.id.get_crypto_public_key(),
             &self.id.get_validation_token());
@@ -168,15 +171,14 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                     // for now, ignore the actual response message
                                     // bootstrap node responded, try to put our id to the network
                                     println!("Received connect response");
-                                    let put_public_id_msg
-                                        = self.construct_put_public_id_msg(
-                                        &types::PublicId::new(&unrelocated_id));
+                                    let put_public_id_msg = self.construct_put_public_id_msg(
+                                        &PublicId::new(&unrelocated_id));
                                     let serialised_message = try!(encode(&put_public_id_msg));
                                     ignore(cm.send(bootstrapped_to.clone(), serialised_message));
                                 },
                                 MessageType::PutPublicIdResponse => {
                                     let put_public_id_response =
-                                        try!(decode::<PutPublicIdResponse>(&message.serialised_body));
+                                        try!(decode::<MessageType>(&message.serialised_body));
                                     relocated_name = Some(put_public_id_response.public_id.name());
                                     debug_assert!(put_public_id_response.public_id.is_relocated());
                                     if put_public_id_response.public_id.validation_token
@@ -222,33 +224,49 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     }
 
     fn construct_connect_request_msg(&mut self, destination: &NameType,
-        accepting_on: Vec<Endpoint>) -> RoutingMessage {
-        let header = MessageHeader::new(self.get_next_message_id(),
-            types::DestinationAddress {dest: destination.clone(), relay_to: None },
-            self.our_source_address(), Authority::ManagedNode);
-
-        // FIXME: We're sending all accepting connections as local since we don't differentiate
-        // between local and external yet.
+            accepting_on: Vec<Endpoint>) -> Message {
+        let message_id = self.get_next_message_id();
         let connect_request = ConnectRequest {
             local_endpoints: accepting_on,
             external_endpoints: vec![],
             requester_id: self.own_name.clone(),
             receiver_id: destination.clone(),
-            requester_fob: types::PublicId::new(&self.id),
+            requester_fob: PublicId::new(&self.id),
         };
+        let unsigned_message =  Message::Unsigned(RoutingMessage {
+            destination  : DestinationAddress::Direct(destination.clone()),
+            source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
+            message_type : MessageType::ConnectRequest(connect_request),
+            message_id   : message_id.clone(),
+            authority    : Authority::ManagedNode,
+        });
 
-        RoutingMessage::new(MessageType::ConnectRequest, header, connect_request,
-            &self.id.get_crypto_secret_sign_key())
+        let encoded_routing_message = encode(&unsigned_message);
+        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+
+        Message::Signed(SignedRoutingMessage {
+            encoded_routing_message : encoded_routing_message,
+            signature               : signature,
+        })
     }
 
-    fn construct_put_public_id_msg(&mut self,
-        our_unrelocated_id: &types::PublicId) -> RoutingMessage {
-        let header = MessageHeader::new(self.get_next_message_id(),
-            types::DestinationAddress{dest: our_unrelocated_id.name(), relay_to: None},
-            self.our_source_address(), Authority::ManagedNode);
-        let put_public_id = PutPublicId { public_id : our_unrelocated_id.clone() };
-        RoutingMessage::new(MessageType::PutPublicId, header, put_public_id,
-            &self.id.get_crypto_secret_sign_key())
+    fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId) -> Message {
+        let message_id = self.get_next_message_id();
+        let unsigned_message =  Message::Unsigned(RoutingMessage { 
+            destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
+            source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
+            message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
+            message_id   : message_id.clone(),
+            authority    : Authority::ManagedNode,  
+        });
+
+        let encoded_routing_message = encode(&unsigned_message);
+        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+
+        Message::Signed(SignedRoutingMessage {
+            encoded_routing_message : encoded_routing_message,
+            signature               : signature,
+        })
     }
 
     fn our_source_address(&self) -> types::SourceAddress {
