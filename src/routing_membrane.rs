@@ -47,10 +47,10 @@ use relay::RelayMap;
 use sendable::Sendable;
 use data::{Data, DataRequest};
 use types;
-use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress};
+use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress, SourceAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
-use messages::{RoutingMessage, MessageType};
+use messages::{Message, RoutingMessage, SignedRoutingMessage, MessageType};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::{MethodCall, MessageAction};
 use refresh_accumulator::RefreshAccumulator;
@@ -1427,8 +1427,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                        our_authority: Authority,
                                        orig_header: &MessageHeader,
                                        orig_message: GetData,
-                                       reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage
-    {
+                                       reply_data: Result<Vec<u8>, ResponseError>) -> RoutingMessage {
         RoutingMessage::new(MessageType::GetDataResponse,
                             orig_header.create_reply(&self.own_name, &our_authority),
                             GetDataResponse{ name_and_type_id: orig_message.name_and_type_id,
@@ -1436,20 +1435,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             &self.id.get_crypto_secret_sign_key())
     }
 
-    fn construct_find_group_msg(&mut self, node : &NameType) -> RoutingMessage {
-        let header = MessageHeader::new(
-              self.get_next_message_id(),
-              types::DestinationAddress {
-                   dest:     self.own_name.clone(),
-                   relay_to: None
-              },
-              self.our_source_address(None),
-              Authority::ManagedNode);
+    fn construct_find_group_msg(&mut self, node : &NameType) -> Message {
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(self.own_name.clone()),
+            source      : SourceAddress::Direct(self.own_name.clone()),
+            message_type: MessageType::FindGroup(node.clone()),
+            message_id  : message_id.clone(),
+            authority   : Authority::ManagedNode,
+        };
 
-        RoutingMessage::new(MessageType::FindGroup, header,
-            FindGroup{ requester_id: self.own_name.clone(),
-                       target_id:    node.clone()},
-            &self.id.get_crypto_secret_sign_key())
+        SignedRoutingMessage::new(message, &self.id.secret_key.0)
     }
 
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
