@@ -19,6 +19,7 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 pub use structured_data::StructuredData;
 pub use immutable_data::{ImmutableData, ImmutableDataType};
 pub use plain_data::PlainData;
+use NameType;
 
 /// This is the data types routing handles in the public interface
 #[derive(Clone, RustcEncodable, RustcDecodable)]
@@ -26,6 +27,16 @@ pub enum Data {
     StructuredData(StructuredData),
     ImmutableData(ImmutableData),
     PlainData(PlainData)
+}
+
+impl Data {
+    fn name(&self) -> NameType {
+        match self {
+            Data::StructuredData(d) => d.name(),
+            Data::ImmutableData(d)  => d.name(),
+            Data::PlainData(d)      => d.name(),
+        }
+    }
 }
 
 #[derive(Clone, RustcEncodable, RustcDecodable)]

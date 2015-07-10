@@ -83,9 +83,12 @@ impl StructuredData {
     }
 
     /// Returns name and validates invariants
-    pub fn name(&self) -> Result<NameType, RoutingError> {
-        let test = try!(str::from_utf8(&self.identifier.0)).to_owned() + &self.type_tag.to_string();
-        Ok(NameType::new(crypto::hash::sha512::hash(&test.as_bytes()).0))
+    pub fn name(&self) -> NameType {
+        let chain = self.identifier.0.iter()
+                    .chain(self.tag_type.to_string().as_bytes().iter())
+                    .map(|a|*a);
+
+        NameType(crypto::hash::sha512::hash(chain.collect::<Vec<_>>()[..]))
     }
 
     /// Confirms *unique and valid* previous_owner_signatures are at least 50% of total owners

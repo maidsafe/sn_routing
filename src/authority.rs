@@ -19,6 +19,7 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use routing_table::RoutingTable;
 use NameType;
 use sodiumoxide::crypto;
+use messages::{RoutingMessage, MessageType};
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone)]
 pub enum Authority {
@@ -59,9 +60,42 @@ pub enum Authority {
 ///       and the destination is our id
 ///    -> Managed Node
 /// f) otherwise return Unknown Authority
-pub fn our_authority(element       : NameType,
-                     message       : &RoutingMessage,
+pub fn our_authority(message       : &RoutingMessage,
                      routing_table : &RoutingTable) -> Authority {
+    type M = MessageType;
+
+    let element = match message.message_type {
+        M::BootstrapIdRequest     => None,
+        M::BootstrapIdResponse    => None,
+        M::ConnectRequest(_)      => None,
+        M::ConnectResponse(_)     => None,
+        M::FindGroup(_)           => None,
+        M::FindGroupResponse(_)   => None,
+        M::GetData(data_request)  => Some(message.non_relayed_destination()),
+        M::GetDataResponse(_)     => None,
+        M::DeleteData(_)          => None,
+        M::DeleteDataResponse(_)  => None,
+        M::GetKey                 => None,
+        M::GetKeyResponse(_,_)    => None,
+        M::GetGroupKey            => None,
+        M::GetGroupKeyResponse(_) => None,
+        M::Post(_)                => None,
+        M::PostResponse(_)        => None,
+        M::PutData(data)          => Some(data.name()),
+        M::PutDataResponse(_)     => None,
+        M::PutKey                 => None,
+        M::AccountTransfer(_)     => None,
+        M::PutPublicId(public_id) => Some(public_id.name()),
+        M::PutPublicIdResponse(_) => None,
+        M::Refresh(_, _)          => Some(message.from_group()),
+        M::Unknown                => None,
+    };
+
+    let element = match element {
+        Some(e) => e,
+        None    => { return Authority::Unknown; }
+    };
+
     if message.client_key_as_name().map(|name|routing_table.address_in_our_close_group_range(&name)).unwrap_or(false)
        && message.non_relayed_destination() != element {
         return Authority::ClientManager(element); }
