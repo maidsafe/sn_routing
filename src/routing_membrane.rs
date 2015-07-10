@@ -125,8 +125,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             source      : SourceAddress::Direct(self.own_name()),
             message_type: MessageType::GetData(data),
             message_id  : message_id.clone(),
-            authority   : Authority::Unknown),
-            });
+            authority   : Authority::Unknown
+        });
         ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(data.unwrap().name(), &msg)));
     }
 
@@ -138,7 +138,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             source      : SourceAddress::Direct(self.own_name()),
             message_type: MessageType::PutData(data),
             message_id  : message_id.clone(),
-            authority   : Authority::Unknown),
+            authority   : Authority::Unknown,
         };
 
         let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
@@ -156,7 +156,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             source      : SourceAddress::Direct(self.own_name()),
             message_type: MessageType::Refresh(type_tag, data),
             message_id  : message_id.clone(),
-            authority   : Authority::Unknown),
+            authority   : Authority::Unknown,
         };
 
         let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
@@ -466,7 +466,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // add to cache
         match message.message_type {
-            MessageType::GetDataResponse(result) {
+            MessageType::GetDataResponse(result) => {
                 match result {
                     Ok(data) => {
                         if data.len() != 0 {
@@ -482,18 +482,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // cache check / response
         match message.message_type {
-            MessageType::GetData(data_request) {
+            MessageType::GetData(data_request) => {
                 match self.mut_interface().handle_cache_get(data_request, header.from_authority(), header.from()) {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
                             let reply = message.create_reply(self.own_name(), NodeManager(self.own_name()));
-                            self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(data)));
+                            self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(data));
                             return Ok();
                         },
                         _ => (),
                     },
                     Err(_) => (),
-                };
+                }
+            }
         }
 
         // SendOn in address space
@@ -621,7 +622,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         for peer in self.routing_table.target_nodes(name) {
             match peer.connected_endpoint {
                 Some(peer_endpoint) => {
-                    ignore(encode(&msg).map(|msg|self.connection_manager.send(peer_endpoint, msg));
+                    ignore(encode(&msg).map(|msg|self.connection_manager.send(peer_endpoint, msg)));
                 },
                 None => {}
             };
@@ -1227,9 +1228,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
                     self.send_reply(message, our_authority, GetDataResponse(Ok(data)));
+                },
                 MessageAction::SendOn(dest_nodes) => {
                     for destination in dest_nodes {
-                        ignore(self.send_on(message, our_authority, destination);
+                        ignore(self.send_on(message, our_authority, destination));
                     }
                 }
             },
