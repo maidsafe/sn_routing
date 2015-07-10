@@ -224,25 +224,25 @@ impl<F> RoutingClient<F> where F: Interface {
         match self.bootstrap_address.clone() {
             (_, Some(_)) => {
                 println!("Sending connect request");
-                let message = RoutingMessage::new(
-                    MessageType::ConnectRequest,
-                    MessageHeader::new(
-                        self.get_next_message_id(),
-                        types::DestinationAddress{ dest: self.public_id.name(),
-                            relay_to: None },
-                        types::SourceAddress{ from_node: self.public_id.name(),
-                            from_group: None, reply_to: None,
-                            relayed_for: Some(self.public_id.name()) },
-                        Authority::Client(self.id.signing_public_key())),
-                    ConnectRequest {
+
+                let message = RoutingMessage {
+                    destination : DestinationAddress::Direct(self.public_id.name()),
+                    source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
+                    message_type: MessageType::ConnectRequest(messages::ConnectRequest {
                         local_endpoints: accepting_on,
                         external_endpoints: vec![],
                         requester_id: self.public_id.name(),
                         // FIXME: this field is ignored; again fixed on WhoAreYou approach
                         receiver_id: self.public_id.name(),
-                        requester_fob: self.public_id.clone() },
-                    &self.id.get_crypto_secret_sign_key());
-                let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+                        requester_fob: self.public_id.clone()
+                    }),
+                    message_id  : self.get_next_message_id(),
+                    authority   : Authority::Client(self.id.signing_public_key()),
+                };
+
+                let signed_message = SignedRoutingMessage::new(message, &self.id.secret_key.0);
+
+                let _ = encode(&signed_message).map(|msg| self.send_to_bootstrap_node(&msg));
             },
             _ => {}
         }
