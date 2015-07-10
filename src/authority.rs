@@ -62,8 +62,7 @@ pub enum Authority {
 pub fn our_authority(element       : NameType,
                      message       : &RoutingMessage,
                      routing_table : &RoutingTable) -> Authority {
-    if !message.from_group().is_some()
-       && message.client_key_as_name().map(|name|routing_table.address_in_our_close_group_range(&name)).unwrap_or(false)
+    if message.client_key_as_name().map(|name|routing_table.address_in_our_close_group_range(&name)).unwrap_or(false)
        && message.xor_destination() != element {
         return Authority::ClientManager(element); }
     else if routing_table.address_in_our_close_group_range(&element)
