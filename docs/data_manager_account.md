@@ -13,7 +13,7 @@ The `data_manager` is the persona that is responsible for data avalibility and i
 
 ## Motivation
 
-The main motiviation for re-factoring this persona is efficiency: unlike the other personas the data manager has currently no easy win in terms of reducing the amount of information the persona holds. There is a very valid opportunity though via a better holding mechnaism (via sqlite) and also the length of the keys held. So there are two factors involved in this case: more efficient engine for managing the data and also the size of the data we are managing.
+The main motiviation for re-factoring this persona is efficiency: unlike the other personas the data manager has currently no easy win in terms of reducing the amount of information the persona holds. There is a very valid opportunity though via a better holding mechanism (via sqlite) and also the length of the keys held. So there are two factors involved in this case: more efficient engine for managing the data and also the size of the data we are managing.
 
 ## Overview
 
