@@ -28,7 +28,7 @@ use types::{DestinationAddress, SourceAddress, FromAddress, ToAddress, NodeAddre
 use error::{RoutingError, ResponseError};
 use NameType;
 use cbor;
-use utils::{encode};
+use utils;
 use cbor::{CborError};
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -146,8 +146,7 @@ impl RoutingMessage {
     }
 
     pub fn client_key_as_name(&self) -> Option<NameType> {
-        self.client_key().map(
-            |key| NameType(crypto::hash::sha512::hash(&key[..])))
+        self.client_key().map(utils::public_key_to_client_name)
     }
 
     pub fn from_group(&self) -> Option<NameType /* Group name */> {
@@ -238,7 +237,7 @@ impl SignedRoutingMessage {
     pub fn new(message: &RoutingMessage, secret_key: &crypto::sign::SecretKey)
         -> Result<SignedRoutingMessage, CborError>
     {
-        let encoded_message = try!(encode(&message));
+        let encoded_message = try!(utils::encode(&message));
         let signature = crypto::sign::sign_detached(&encoded_message,
                                                     secret_key);
         let message = SignedRoutingMessage {
