@@ -262,7 +262,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.authority();
         let from = message.source;
-        let to = header.send_to();
 
         // only accept unrelocated Ids from unknown connections
         if connect_request.requester_fob.is_relocated() {
@@ -447,76 +446,53 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
     fn message_received(&mut self, received_from : &ConnectionName,
-        serialised_msg : Bytes, received_from_relay: bool) -> RoutingResult {
+        message: RoutingMessage, received_from_relay: bool) -> RoutingResult {
         match received_from {
             &ConnectionName::Routing(_) => { },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
-        // Parse
-        let message = try!(decode::<RoutingMessage>(&serialised_msg));
-        let mut header = message.message_header;
-        let body = message.serialised_body;
         if received_from_relay {
             // then this message was explicitly for us
-            header.destination.dest = self.own_name.clone();
-            header.destination.relay_to = None;
+            message.destination = DestinationAddress::Direct(self.own_name.clone());
         }
         // filter check
-        if self.filter.check(&header.get_filter()) {
+        if self.filter.check(&message.get_filter()) {
             // should just return quietly
             return Err(RoutingError::FilterCheckFailed);
         }
         // add to filter
-        self.filter.add(header.get_filter());
+        self.filter.add(message.get_filter());
 
         // add to cache
-        if message.message_type == MessageType::GetDataResponse {
-            let get_data_response = try!(decode::<GetDataResponse>(&body));
-            let _ = get_data_response.data.map(|data| {
-                if data.len() != 0 {
-                    let _ = self.mut_interface().handle_cache_put(
-                        header.from_authority(), header.from(), data);
+        match message.message_type {
+            MessageType::GetDataResponse(result) {
+                match result {
+                    Ok(data) => {
+                        if data.len() != 0 {
+                            let _ = self.mut_interface().handle_cache_put(
+                                header.from_authority(), header.from(), data);
+                        }
+                    },
+                    Err(_) => {}
                 }
-            });
+            },
+            _ => {}
         }
 
         // cache check / response
-        if message.message_type == MessageType::GetData {
-            let get_data = try!(decode::<GetData>(&body));
-
-            let retrieved_data = self.mut_interface().handle_cache_get(
-                get_data.name_and_type_id.type_id.clone() as u64,
-                get_data.name_and_type_id.name.clone(),
-                header.from_authority(),
-                header.from());
-
-            match retrieved_data {
-                Ok(action) => match action {
-                    MessageAction::Reply(data) => {
-                        let reply = self.construct_get_data_response_msg(Authority::ManagedNode,
-                                                                         &header, get_data,
-                                                                         Ok(data));
-                        // intercept if we can relay it directly
-                        match (reply.message_header.destination.dest.clone(),
-                            reply.message_header.destination.relay_to.clone()) {
-                            (dest, Some(relay)) => {
-                                // if we should directly respond to this message, do so
-                                if dest == self.own_name
-                                    && self.relay_map.contains_relay_for(&relay) {
-                                    self.send_out_as_relay(&relay, try!(encode(&reply)));
-                                    return Ok(());
-                                }
-                            },
-                            _ => {}
-                        };
-                        return encode(&reply).map(|reply| {
-                            self.send_swarm_or_parallel(&header.send_to().dest, &reply);
-                            }).map_err(From::from);
+        match message.message_type {
+            MessageType::GetData(data_request) {
+                match self.mut_interface().handle_cache_get(data_request, header.from_authority(), header.from()) {
+                    Ok(action) => match action {
+                        MessageAction::Reply(data) => {
+                            let reply = message.create_reply(self.own_name(), NodeManager(self.own_name()));
+                            self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(data)));
+                            return Ok();
+                        },
+                        _ => (),
                     },
-                    _ => (),
-                },
-                Err(_) => (),
-            };
+                    Err(_) => (),
+                };
         }
 
         // SendOn in address space

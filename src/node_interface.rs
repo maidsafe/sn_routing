@@ -119,7 +119,7 @@ pub trait Interface : Sync + Send {
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
                         from_address: NameType,
-                        data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                        data: Data) -> Result<MessageAction, InterfaceError>;
 }
 
 pub trait CreatePersonas<F : Interface> : Sync + Send  {
