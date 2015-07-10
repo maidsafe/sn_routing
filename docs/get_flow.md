@@ -1,6 +1,6 @@
 # Workflow for getting data from Vault Network
 Client send get requests to network which will be handled by NAE(DataManager) first.
-Attempts to fectch Backup and Sacrificial copies will be carried by client at the same time.
+Attempts to fetch Backup and Sacrificial copies will be carried by client at the same time.
 i.e. there will be three get requests fired to network at the same time,
      and DMs around data_name(Hash(data)) for Primary copy, Hash(data_name) for Backup copy,
          and Hash(Hash(data_name)) for Sacrificial copy will be queried at the same time.
