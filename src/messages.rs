@@ -252,3 +252,13 @@ enum Message {
     Signed(SignedRoutingMessage),
     Unsigned(RoutingMessage)
 }
+
+impl Message {
+    pub fn routing_message(&self) -> Result<RoutingMessage, CborError> {
+        match self {
+            Message::Signed(m)   => utils::decode::<RoutingMessage>(m.encoded_routing_message),
+            Message::Unsigned(m) => Ok(m)
+        }
+    }
+}
+

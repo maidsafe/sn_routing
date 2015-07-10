@@ -92,9 +92,3 @@ fn calculate_original_name(public_key: &crypto::sign::PublicKey,
     NameType(crypto::hash::sha512::hash(&combined).0)
 }
 
-fn routing_message(msg: &Message) -> Result<RoutingMessage, CborError> {
-    match msg {
-        Message::Signed(m)   => decode::<RoutingMessage>(m.encoded_routing_message),
-        Message::Unsigned(m) => Ok(m)
-    }
-}
