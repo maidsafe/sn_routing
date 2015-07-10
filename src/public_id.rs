@@ -52,6 +52,10 @@ impl PublicId {
       self.name.clone()
     }
 
+    pub fn client_name(&self) -> NameType {
+        utils::public_key_to_client_name(&self.public_sign_key)
+    }
+
     pub fn serialised_contents(&self)->Result<RoutingError, Vec<u8>> {
         let mut e = cbor::Encoder::from_memory();
         try!(e.encode(&[&self]));

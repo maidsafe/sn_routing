@@ -43,6 +43,10 @@ pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, CborError> where T: Decodable {
     }
 }
 
+pub fn public_key_to_client_name(key: &sign::PublicKey) -> NameType {
+    NameType(crypto::hash::sha512::hash(&key[..]))
+}
+
 // relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
 // In case of only one close node provided (in initial network setup scenario),
 // relocated_name = Hash(original_name + 1st closest node id)
