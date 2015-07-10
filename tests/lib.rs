@@ -60,9 +60,9 @@ fn executable_test() {
                     Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
                     Ok(process) => process,
                 });
-        thread::sleep_ms(1000 + i * 1000);
+        thread::sleep_ms(1000 + i * 1500);
     }
-    thread::sleep_ms(10000);
+    thread::sleep_ms(15000);
     let mut test_failed = false;
     while let Some(mut process) = processes.pop() {
         let _ = process.kill();
