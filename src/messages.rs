@@ -115,6 +115,17 @@ impl RoutingMessage {
         }
     }
 
+    // Destination within the XOR space, that is, not accounting
+    // for nodes out of XOR space to which relay nodes will forward
+    // the message.
+    pub fn xor_destination(&self) -> NameType {
+        match self.destination {
+            DestinationAddress::RelayToClient(to_address, _) => to_address,
+            DestinationAddress::RelayToNode(to_address, _)   => to_address,
+            DestinationAddress::Direct(to_address)           => to_address,
+        }
+    }
+
     // FIXME: add from_authority to filter value
     pub fn get_filter(&self) -> types::FilterType {
         (self.source.clone(), self.message_id, self.destination.clone())
@@ -127,6 +138,36 @@ impl RoutingMessage {
     pub fn set_relay_name(&mut self, reply_to: &NameType, relay_for: &NameType) {
         self.source.reply_to = Some(reply_to.clone());
         self.source.relayed_for = Some(relay_for.clone());
+    }
+
+    pub fn client_key(&self) -> Option<crypto::sign::PublicKey> {
+        match self.source {
+            SourceAddress::RelayedForClient(_, client_key) => Some(client_key),
+            SourceAddress::RelayedForNode(_, _)            => None,
+            SourceAddress::Direct(_)                       => None,
+        }
+    }
+
+    pub fn client_key_as_name(&self) -> Option<NameType> {
+        self.client_key().map(
+            |key| NameType(crypto::hash::sha512::hash(&key[..])))
+    }
+
+    pub fn from_group(&self) -> Option<NameType /* Group name */> {
+        match self.source {
+            SourceAddress::RelayedForClient(_, _) => None,
+            SourceAddress::RelayedForNode(_, _)   => None,
+            SourceAddress::Direct(_) => match self.authority {
+                Authority::ClientManager(n) => Some(n),
+                Authority::NaeManager(n)    => Some(n),
+                Authority::OurCloseGroup(n) => Some(n),
+                Authority::NodeManager(n)   => Some(n),
+                Authority::ManagedNode      => None,
+                Authority::ManagedClient(_) => None,
+                Authority::Client(_)        => None,
+                Authority::Unknown          => None,
+            },
+        }
     }
 
     /// This creates a new message for Action::SendOn. It clones all the fields,

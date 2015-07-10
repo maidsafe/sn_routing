@@ -59,32 +59,32 @@ pub enum Authority {
 ///       and the destination is our id
 ///    -> Managed Node
 /// f) otherwise return Unknown Authority
-pub fn our_authority(element : NameType, header : &MessageHeader,
+pub fn our_authority(element       : NameType,
+                     message       : &RoutingMessage,
                      routing_table : &RoutingTable) -> Authority {
-    if !header.is_from_group()
-       && routing_table.address_in_our_close_group_range(&header.from_node())
-       && header.destination.dest != element {
+    if !message.from_group().is_some()
+       && message.client_key_as_name().map(|name|routing_table.address_in_our_close_group_range(&name)).unwrap_or(false)
+       && message.xor_destination() != element {
         return Authority::ClientManager(element); }
     else if routing_table.address_in_our_close_group_range(&element)
-       && header.destination.dest == element
-       && match header.from_group() {
+       && message.xor_destination() == element
+       && match message.from_group() {
           Some(group_source) => {
-             group_source != header.destination.dest},
+             group_source != message.xor_destination()},
           None => true } {
         return Authority::NaeManager(element); }
     else if routing_table.address_in_our_close_group_range(&element)
-       && header.destination.dest == element
-       && header.from() == element
-       && header.is_from_group() {
+       && message.xor_destination() == element
+       && message.from_group().map(|grp| grp == element).unwrap_or(false) {
          return Authority::OurCloseGroup(element); }
-    else if header.is_from_group()
-       && routing_table.address_in_our_close_group_range(&header.destination.dest)
-       && header.destination.dest != routing_table.our_name() {
+    else if message.from_group().is_some()
+       && routing_table.address_in_our_close_group_range(&message.xor_destination())
+       && message.xor_destination() != routing_table.our_name() {
         return Authority::NodeManager(element); }
-    else if header.from_group()
-                  .map(|group| routing_table.address_in_our_close_group_range(&group))
-                  .unwrap_or(false)
-       && header.destination.dest == routing_table.our_name() {
+    else if message.from_group()
+                   .map(|group| routing_table.address_in_our_close_group_range(&group))
+                   .unwrap_or(false)
+       && message.xor_destination() == routing_table.our_name() {
         return Authority::ManagedNode; }
     return Authority::Unknown;
 }
