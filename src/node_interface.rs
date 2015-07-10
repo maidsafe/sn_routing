@@ -94,7 +94,7 @@ pub trait Interface : Sync + Send {
     fn handle_put_response(&mut self,
                            from_authority: Authority,
                            from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall;
+                           response: Result<Data, ResponseError>) -> MethodCall;
 
     /// handles the response to a post request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.

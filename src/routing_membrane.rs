@@ -951,13 +951,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+    fn handle_put_data_response(&mut self, message: RoutingMessage) -> RoutingResult {
         println!("Handle PUT data response.");
-        let put_data_response = try!(decode::<PutDataResponse>(&body));
-        let from_authority = header.from_authority();
-        let from = header.from();
-        let method_call = self.mut_interface().handle_put_response(from_authority,
-                                                                   from, put_data_response.data);
+        let put_response = match message.message_type {
+            PutDataResponse(response) => response,
+            _ => Err(InterfaceError::Abort), // To be changed to Parse error
+        };
+        let our_authority = our_authority(put_response.name(), &message, &self.routing_table);
+        let from_authority = message.authority();
+        let from = message.source;
+        let to = header.send_to();
+
+        let method_call = self.mut_interface().handle_put_response(from_authority, from, put_response);
 
         match method_call {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
@@ -966,8 +971,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
-                ignore(self.send_on(&put_data_response.name, &header,
-                             destination, MessageType::PutDataResponse, body)),
+                ignore(self.send_on(&message, our_authority, destination)),
         }
         Ok(())
     }
