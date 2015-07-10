@@ -63,27 +63,27 @@ pub fn our_authority(element       : NameType,
                      message       : &RoutingMessage,
                      routing_table : &RoutingTable) -> Authority {
     if message.client_key_as_name().map(|name|routing_table.address_in_our_close_group_range(&name)).unwrap_or(false)
-       && message.xor_destination() != element {
+       && message.non_relayed_destination() != element {
         return Authority::ClientManager(element); }
     else if routing_table.address_in_our_close_group_range(&element)
-       && message.xor_destination() == element
+       && message.non_relayed_destination() == element
        && match message.from_group() {
           Some(group_source) => {
-             group_source != message.xor_destination()},
+             group_source != message.non_relayed_destination()},
           None => true } {
         return Authority::NaeManager(element); }
     else if routing_table.address_in_our_close_group_range(&element)
-       && message.xor_destination() == element
+       && message.non_relayed_destination() == element
        && message.from_group().map(|grp| grp == element).unwrap_or(false) {
          return Authority::OurCloseGroup(element); }
     else if message.from_group().is_some()
-       && routing_table.address_in_our_close_group_range(&message.xor_destination())
-       && message.xor_destination() != routing_table.our_name() {
+       && routing_table.address_in_our_close_group_range(&message.non_relayed_destination())
+       && message.non_relayed_destination() != routing_table.our_name() {
         return Authority::NodeManager(element); }
     else if message.from_group()
                    .map(|group| routing_table.address_in_our_close_group_range(&group))
                    .unwrap_or(false)
-       && message.xor_destination() == routing_table.our_name() {
+       && message.non_relayed_destination() == routing_table.our_name() {
         return Authority::ManagedNode; }
     return Authority::Unknown;
 }

@@ -115,10 +115,7 @@ impl RoutingMessage {
         }
     }
 
-    // Destination within the XOR space, that is, not accounting
-    // for nodes out of XOR space to which relay nodes will forward
-    // the message.
-    pub fn xor_destination(&self) -> NameType {
+    pub fn non_relayed_destination(&self) -> NameType {
         match self.destination {
             DestinationAddress::RelayToClient(to_address, _) => to_address,
             DestinationAddress::RelayToNode(to_address, _)   => to_address,
