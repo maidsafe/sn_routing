@@ -459,15 +459,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // add to cache
         match message.message_type {
             MessageType::GetDataResponse(result) => {
-                match result {
-                    Ok(data) => {
-                        if data.len() != 0 {
-                            let _ = self.mut_interface().handle_cache_put(
-                                header.from_authority(), header.from(), data);
-                        }
-                    },
-                    Err(_) => {}
-                }
+                result.map(|data| {
+                    if data.is_empty() { return; }
+                    ignore(self.mut_interface().handle_cache_put(
+                           message.authority, message.non_relayed_source(), data));
+                })
             },
             _ => {}
         }
@@ -475,10 +471,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // cache check / response
         match message.message_type {
             MessageType::GetData(data_request) => {
-                match self.mut_interface().handle_cache_get(data_request, header.from_authority(), header.from()) {
+                match self.mut_interface().handle_cache_get(data_request, message.authority(), message.non_relayed_source()) {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
-                            let reply = message.create_reply(self.own_name(), NodeManager(self.own_name()));
+                            let reply = message.create_reply(self.own_name(), Authority::NodeManager(self.own_name()));
                             self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(data));
                             return Ok();
                         },
@@ -489,22 +485,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
             }
         }
 
-        // SendOn in address space
-        self.send_swarm_or_parallel(&header.destination.dest, message_wrap);
-
-        // handle relay request/response
-        if header.destination.dest == self.own_name {
-            match header.destination.relay_to {
-                Some(relay) => {
-                    self.send_out_as_relay(&relay, serialised_msg);
-                    return Ok(());
-                },
-                None => {}
-            };
-        }
+        // Forward
+        self.send_swarm_or_parallel_or_relay(&message.destination, message_wrap);
 
         let address_in_close_group_range =
-            self.address_in_close_group_range(&header.destination.dest);
+            self.address_in_close_group_range(&message.non_relayed_destination());
+
         // Handle FindGroupResponse
         if message.message_type == MessageType::FindGroupResponse {
             ignore(self.handle_find_group_response(body, &address_in_close_group_range));
@@ -618,6 +604,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 None => {}
             };
+        }
+    }
+
+    fn send_swarm_or_parallel_or_relay(&self, dst : &DestinationAddress, msg: &Message) {
+        if dst.non_relayed_destination() == self.own_name {
+            match dst {
+                DestinationAddress::RelayToClient(_, public_key) => {
+                    self.send_out_as_relay(&public_key, serialised_msg.clone());
+                },
+                DestinationAddress::RelayToNode(_, node_address) => {
+                    self.send_out_as_relay(&node_address, serialised_msg.clone());
+                },
+                DestinationAddress::Direct(_) => {},
+            }
+        }
+        else {
+            send_swarm_or_parallel(dst.non_relayed_destination(), msg);
         }
     }
 
@@ -909,27 +912,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         let serialised_msg = try!(encode(&signed_message));
 
-        // intercept if we can relay it directly
-        match message.destination {
-            RelayToClient(dest, public_id) => {
-                // if we should directly respond to this message, do so
-                if dest == self.own_name
-                    && self.relay_map.contains_relay_for(&public_id) {
-                    self.send_out_as_relay(&relay, serialised_msg.clone());
-                    return Ok(());
-                }
-            },
-            RelayedForNode(dest, node_id) => {
-                // if we should directly respond to this message, do so
-                if dest == self.own_name
-                    && self.relay_map.contains_relay_for(&node_id) {
-                    self.send_out_as_relay(&relay, serialised_msg.clone());
-                    return Ok(());
-                }
-            },
-            _ => {}
-        };
-        self.send_swarm_or_parallel(&message.destination, &serialised_msg);
+        self.send_swarm_or_parallel_or_relay(&message.destination, &serialised_msg);
         Ok(())
     }
 
@@ -1165,24 +1148,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .chain(Some(types::PublicId::new(&self.id)).into_iter())
                     .collect::<Vec<_>>();
 
-        let routing_msg = self.construct_find_group_response_msg(&original_header, &find_group, group);
+        let routing_response = self.construct_find_group_response_msg(&original_header, &find_group, group);
 
-        let serialised_msg = try!(encode(&routing_msg));
+        let serialised_response = try!(encode(&routing_response));
 
-        // intercept if we can relay it directly
-        match (routing_msg.message_header.destination.dest.clone(),
-            routing_msg.message_header.destination.relay_to.clone()) {
-            (dest, Some(relay)) => {
-                // if we should directly respond to this message, do so
-                if dest == self.own_name
-                    && self.relay_map.contains_relay_for(&relay) {
-                    self.send_out_as_relay(&relay, serialised_msg.clone());
-                }
-            },
-            _ => {}
-        };
-
-        self.send_swarm_or_parallel(&original_header.send_to().dest, &serialised_msg);
+        self.send_swarm_or_parallel_or_relay(&routing_response.destination, &serialised_response);
 
         Ok(())
     }

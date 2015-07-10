@@ -115,6 +115,14 @@ impl RoutingMessage {
         }
     }
 
+    pub fn non_relayed_source(&self) -> NameType {
+        match self.source {
+            SourceAddress::RelayedForClient(addr, _) => addr,
+            SourceAddress::RelayedForNode(addr, _)   => addr,
+            SourceAddress::Direct(addr)              => addr,
+        }
+    }
+
     pub fn non_relayed_destination(&self) -> NameType {
         match self.destination {
             DestinationAddress::RelayToClient(to_address, _) => to_address,
