@@ -65,9 +65,10 @@ use routing::routing_client::RoutingClient;
 use routing::routing_node::RoutingNode;
 use routing::sendable::Sendable;
 use routing::types;
+use routing::id::Id;
 use routing::authority::Authority;
 use routing::NameType;
-use routing::types::MessageAction;
+use routing::node_interface::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
 
 // ==========================   Program Options   =================================
@@ -278,7 +279,7 @@ impl Interface for TestNode {
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
-            return Ok(MessageAction::Reply(data.1.serialised_contents().clone()));
+            return Ok(MessageAction::Reply(data));
         }
         Err(InterfaceError::Response(ResponseError::NoData))
     }
@@ -292,7 +293,7 @@ impl Interface for TestNode {
                 let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
                 println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
                          node_name, in_coming_data.name());
-                return Ok(MessageAction::SendOn(vec![in_coming_data.name()]));
+                return Ok(MessageAction::SendOn(in_coming_data));
             },
             Authority::NaeManager(group_name) => {
                 let stats = self.stats.clone();
@@ -366,7 +367,7 @@ impl Interface for TestNode {
         let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
             println!("testing node find data {} in cache", name);
-            return Ok(MessageAction::Reply(data.1.serialised_contents().clone()));
+            return Ok(MessageAction::Reply(data));
         }
         Err(InterfaceError::Abort)
     }
@@ -418,7 +419,7 @@ fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
 fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
     let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient {
         stats: Arc::new(Mutex::new(Stats {
-            stats: Vec::<(u32, TestData)>::new()})) })), types::Id::new());
+            stats: Vec::<(u32, TestData)>::new()})) })), Id::new());
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
     let _ = spawn(move || {
