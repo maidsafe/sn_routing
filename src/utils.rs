@@ -26,6 +26,7 @@ use NameType;
 use name_type::closer_to_target;
 use std::fmt;
 use error::{RoutingError};
+use messages::{Message, RoutingMessage};
 
 use rustc_serialize::{Decodable, Encodable};
 
@@ -91,9 +92,9 @@ fn calculate_original_name(public_key: &crypto::sign::PublicKey,
     NameType(crypto::hash::sha512::hash(&combined).0)
 }
 
-fn routing_message(msg: &Message) -> RoutingMessage {
+fn routing_message(msg: &Message) -> Result<RoutingMessage, CborError> {
     match msg {
-        Signed(message) => { decode::<RoutingMessage>(message.encoded_routing_message) },
-        Unsigned(message) => { message }
+        Message::Signed(m)   => decode::<RoutingMessage>(m.encoded_routing_message),
+        Message::Unsigned(m) => Ok(m)
     }
 }
