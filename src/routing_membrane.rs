@@ -254,30 +254,42 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     ///
-    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, serialised_msg : Bytes)
-        -> RoutingResult {
+    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: RoutingMessage) -> RoutingResult {
+        let connect_request = match message.message_type {
+            ConnectRequest(request) => request,
+            _ => Err(InterfaceError::Abort), // To be changed to Parse error
+        };
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from_authority = message.authority();
+        let from = message.source;
+        let to = header.send_to();
 
-        let message = try!(decode::<RoutingMessage>(&serialised_msg));
-        let header = message.message_header;
-        let body = message.serialised_body;
-        let signature = message.signature;
-        //  from unknown endpoints only accept ConnectRequest messages
-        let connect_request = try!(decode::<ConnectRequest>(&body));
-        // first verify that the message is correctly self-signed
-        if !verify_detached(&signature,
-                            &body[..], &connect_request.requester_fob.public_sign_key
-                                                       .get_crypto_public_sign_key()) {
-            return Err(RoutingError::Response(ResponseError::InvalidRequest));
-        }
         // only accept unrelocated Ids from unknown connections
         if connect_request.requester_fob.is_relocated() {
             return Err(RoutingError::RejectedPublicId); }
         // if the PublicId is not relocated,
         // only accept the connection into the RelayMap.
         // This will enable this connection to bootstrap or act as a client.
-        let routing_msg = self.construct_connect_response_msg(&header, &body,
-            &signature, &connect_request);
-        let serialised_message = try!(encode(&routing_msg));
+        let routing_msg = message.create_reply(self.own_name(), our_authority);
+        routing_msg.message_type = ConnectResponse {
+                    requester_local_endpoints: connect_request.local_endpoints.clone(),
+                    requester_external_endpoints: connect_request.external_endpoints.clone(),
+                    receiver_local_endpoints: self.accepting_on.clone(),
+                    receiver_external_endpoints: vec![],
+                    requester_id: connect_request.requester_id.clone(),
+                    receiver_id: self.own_name.clone(),
+                    receiver_fob: types::PublicId::new(&self.id),
+                    serialised_connect_request: body.clone(),
+                    connect_request_signature: signature.clone()
+                };
+        routing_msg.authority = our_authority;
+        let signature = crypto::sign::sign_detached(&routing_msg, &self.id.secret_keys.0);
+        let signed_message = Message::SignedRoutingMessage(SignedRoutingMessage {
+            encoded_routing_message : encoded_routing_message,
+            signature               : signature,
+        });
+
+        let serialised_msg = try!(encode(&signed_message));
         // Try to connect to the peer.
         // when CRUST succeeds at establishing a connection,
         // we use this register to retrieve the PublicId
@@ -918,7 +930,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         message.authority = authority;
 
         let encoded_routing_message = encode(&message);
-        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+        let signature = crypto::sign::sign_detached(&message, &self.id.secret_keys.0);
 
         let signed_message = Message::SignedRoutingMessage(SignedRoutingMessage {
             encoded_routing_message : encoded_routing_message,
@@ -1358,32 +1370,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         RoutingMessage::new(MessageType::ConnectRequest, header, connect_request,
             &self.id.get_crypto_secret_sign_key())
-    }
-
-    fn construct_connect_response_msg(&mut self, original_header : &MessageHeader, body: &Bytes, signature: &Signature,
-                                      connect_request: &ConnectRequest) -> RoutingMessage {
-        // FIXME: connect_request should remove receiver_id,
-        // as we can bootstrap to an unknown endpoint
-
-        let header = MessageHeader::new(original_header.message_id(),
-            original_header.send_to(), self.our_source_address(None),
-            Authority::ManagedNode);
-
-        // FIXME: We're sending all accepting connections as local since we don't differentiate
-        // between local and external yet.
-        let connect_response = ConnectResponse {
-            requester_local_endpoints: connect_request.local_endpoints.clone(),
-            requester_external_endpoints: connect_request.external_endpoints.clone(),
-            receiver_local_endpoints: self.accepting_on.clone(),
-            receiver_external_endpoints: vec![],
-            requester_id: connect_request.requester_id.clone(),
-            receiver_id: self.own_name.clone(),
-            receiver_fob: types::PublicId::new(&self.id),
-            serialised_connect_request: body.clone(),
-            connect_request_signature: signature.clone() };
-
-        RoutingMessage::new(MessageType::ConnectResponse, header,
-            connect_response, &self.id.get_crypto_secret_sign_key())
     }
 
     fn construct_get_data_response_msg(&self,
