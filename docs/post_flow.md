@@ -12,8 +12,8 @@ Client later on can send post request to network which will be handled by the Ve
 If the client proved to be the owner of that versionable data, VersionHandlers will update it.
 There will be no response being sent back no matter such update is succeed or fail.
 
-###Put(VD)
+### Put(VD)
 _Client_  *->> |__VersionHanlder__  [Exist(VD) ? Terminate_Flow : Register(VD)]
 
-###Post(VD_name, newV)
+### Post(VD_name, newV)
 _Client_  *->> |__VersionHanlder__  [Exist(VD_name) ? Update(VD_name, newV) : Terminate_Flow]

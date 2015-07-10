@@ -1,15 +1,15 @@
-#WIP - Do not use !!!
-#Introduction
+# WIP - Do not use !!!
+# Introduction
 
 The `DataManager` [base type == `NaeManager`] is the persona that is responsible for data availability and integrity. To do so these personas must know where the data currently resides and the state of that data. This state is twofold, is the `Pmid Node` [base type ==`Node`] on-line and is the data itself intact and secure. The former is arguably the main issue as the data itself is self-validating (i.e. to construct an immutable chunk itself validates the content). To ensure this, a `DataManager` must know which nodes hold the data, and whether they are currently on or off line. These are currently the most data-heavy personas and under constant scrutiny to reduce the amount of data they hold.
 
-##Motivation
+## Motivation
 
 Unlike the other personas the data manager has currently no easy win in terms of reducing the amount of information the persona holds. There is a very valid opportunity though via a better holding mechnaism (via sqlite) and also the length of the keys held. So there are two factors involved in this case: more efficient engine for managing the data and also the size of the data we are managing.
 
 In the SAFE network there are three `DataManager` groups per chunk and each group will ensure two copies are stored. These groups are deterministic and are either group zero (where hash of content == name) or group 1 (where hash(hash of content) == name, or group 3 where hash(hash(hash of content)) == name).
 
-##Overview
+## Overview
 
 The heart of the `DataManager` will be a mini SQL database. This will be managed via sqlite3. The table structure will be very simple.
 

@@ -8,7 +8,7 @@ When PmidNode doesn't have enough space to store the copy, it will try to remove
 For each removed Sacrificial copy, a PutFailure will be sent out from PmidNode to PmidManager then to DataManager to ensure each persona get proper informed.
 
 
-###Put(D)
+### Put(D)
 _Client_   =>> |__ClientManager__ (Primary, Backup, Sacrificial)[Allow ? So : PutFailure]
           *->> |__DataManager__  [Exist(D) ? Terminate_Flow : {AddPmid.Sy, So}]
           *->> |__PmidManager__ {Put.Sy, So}
@@ -20,11 +20,11 @@ i.e. requiring a hash verification process in DataManager and PmidNode to replac
 Note : an active discussion remains whether Put flow needs to Reply on success.
 
 --
-#####MaidManager::PutFailure
+##### MaidManager::PutFailure
 __ClientManager__ *-> |_Client_
 
 --
-#####PmidNode::PutFailure
+##### PmidNode::PutFailure
 _PmidNode_ ->> |__PmidManager__ {Delete.Sy, So}
           *->> |__DataManager__ { [Value.Pmids.Count <= Threshold ? Replicate(D) ],
                                   RemovePmid.Sy,
@@ -32,7 +32,7 @@ _PmidNode_ ->> |__PmidManager__ {Delete.Sy, So}
 
 --
 <dd>Try to remove Sacrificial data to empty space</ddt>
-#####PmidNode::TryToRemoveSacrificial
+##### PmidNode::TryToRemoveSacrificial
 __PmidNode__ { [PutFailure(RemoveSacrificial(D))], [Store ? Flow_Completed : PutFailure] }
 
 Note: for each removed Sacrificial data, a PutFailure will be sent out
@@ -40,5 +40,5 @@ Note - patch: Routing will interpret here that a FailureToStoreData with differe
 
 --
 <dd>Description: Get D from TempStore or network, then PutRequest(D).</ddt>
-#####DataManager::Replicate
+##### DataManager::Replicate
 __DataManager__ ([!TempStoreHas(D) ? NetworkGet(D)])(PutRequest.So(D))
