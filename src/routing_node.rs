@@ -227,11 +227,11 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             accepting_on: Vec<Endpoint>) -> Message {
         let message_id = self.get_next_message_id();
         let connect_request = ConnectRequest {
-            local_endpoints: accepting_on,
-            external_endpoints: vec![],
-            requester_id: self.own_name.clone(),
-            receiver_id: destination.clone(),
-            requester_fob: PublicId::new(&self.id),
+            local_endpoints    : accepting_on,
+            external_endpoints : vec![],
+            requester_id       : self.own_name.clone(),
+            receiver_id        : destination.clone(),
+            requester_fob      : PublicId::new(&self.id),
         };
         let unsigned_message =  Message::Unsigned(RoutingMessage {
             destination  : DestinationAddress::Direct(destination.clone()),
