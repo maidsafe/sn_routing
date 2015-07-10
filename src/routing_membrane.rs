@@ -897,7 +897,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     //     },
                     //     _ => header.from()
                     // };
-                    try!(self.send_put_reply(&message, our_authority.clone(), Ok(reply_data)));
+                    try!(self.send_reply(&message, our_authority.clone(), Ok(reply_data)));
                 },
                 MessageAction::SendOn(destinations) => {
                     for destination in destinations {
@@ -906,35 +906,20 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
             },
             Err(InterfaceError::Abort) => {},
-            Err(InterfaceError::Response(ResponseError::FailedToStoreData(deleted_data))) => {
-                // patched for Vaults - this behaviour needs to be put back in Vaults
-                if deleted_data != message.data
-                    && our_authority == Authority::ManagedNode {
-                    // first send the Successful put reply
-                    let reply_to = header.send_to().dest;
-                    try!(self.send_put_reply(&message, our_authority.clone(), Ok(data.clone())));
-                    // then send under a new message_id the error reply
-                    let reply_to = header.from();
-                    let mut header_for_new_flow = header.clone();
-                    // bad approach to generating a new deterministic message_id
-                    header_for_new_flow.message_id = header_for_new_flow.message_id.wrapping_add(12345u32);
-                    try!(self.send_put_reply(&reply_to, our_authority, &header_for_new_flow,
-                        &put_data, Ok(deleted_data)));
-                } else {
-                    try!(self.send_put_reply(&message, our_authority.clone(),
-                        Err(ResponseError::FailedToStoreData(deleted_data))));
-                }
+            Err(InterfaceError::Response(ResponseError::FailedToStoreData(_))) => {
+                try!(self.send_reply(&message, our_authority.clone(),
+                        Err(ResponseError::FailedToStoreData(data))));
             },
             Err(InterfaceError::Response(error)) => {
-                try!(self.send_put_reply(&message, our_authority.clone(), Err(error)));
+                try!(self.send_reply(&message, our_authority.clone(), Err(error)));
             }
         }
         Ok(())
     }
 
-    fn send_put_reply(&mut self, routing_message:  &RoutingMessage,
-                             our_authority: Authority,
-                             reply_data:    Result<Data, ResponseError>) -> RoutingResult {
+    fn send_reply(&mut self, routing_message:  &RoutingMessage,
+                         our_authority: Authority,
+                         reply_data:    Result<Data, ResponseError>) -> RoutingResult {
         let message = routing_message.create_reply(self.own_name(), our_authority);
         message.message_type = reply_data;
         message.authority = authority;
@@ -950,7 +935,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let serialised_msg = try!(encode(&signed_message));
 
         // intercept if we can relay it directly
-        match unsigned_message.destination {
+        match message.destination {
             RelayToClient(dest, public_id) => {
                 // if we should directly respond to this message, do so
                 if dest == self.own_name
@@ -969,7 +954,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             _ => {}
         };
-        self.send_swarm_or_parallel(&unsigned_message.destination, &serialised_msg);
+        self.send_swarm_or_parallel(&message.destination, &serialised_msg);
         Ok(())
     }
 
@@ -1243,50 +1228,28 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
-        let get_data = try!(decode::<GetData>(&body));
-        let type_id = get_data.name_and_type_id.type_id.clone();
-        let our_authority = our_authority(get_data.name_and_type_id.name, &header,
-                                          &self.routing_table);
-        let from_authority = header.from_authority();
-        let from = header.from();
-        let name = get_data.name_and_type_id.name.clone();
+    fn handle_get_data(&mut self, message: RoutingMessage) -> RoutingResult {
+        let data_request = match message.message_type {
+            GetData(request) => request,
+            _ => Err(InterfaceError::Abort), // To be changed to Parse error
+        };
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from_authority = message.authority();
+        let from = header.source();
 
-        match self.mut_interface().handle_get(type_id, name.clone(), our_authority.clone(), from_authority, from) {
+        match self.mut_interface().handle_get(data_request, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
-                    let routing_msg = self.construct_get_data_response_msg(our_authority, &header, get_data, Ok(data));
-                    let serialised_msg = try!(encode(&routing_msg));
-                    // intercept if we can relay it directly
-                    println!("Reply GetData to {:?} with relay {:?} on node {:?}.",
-                        routing_msg.message_header.destination.dest,
-                        routing_msg.message_header.destination.relay_to,
-                        self.own_name);
-                    match (routing_msg.message_header.destination.dest.clone(),
-                        routing_msg.message_header.destination.relay_to.clone()) {
-                        (dest, Some(relay)) => {
-                            // if we should directly respond to this message, do so
-                            if dest == self.own_name
-                                && self.relay_map.contains_relay_for(&relay) {
-                                self.send_out_as_relay(&relay, serialised_msg.clone());
-                                return Ok(());
-                            }
-                        },
-                        _ => {}
-                    };
-
-                    self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
-                },
+                    self.send_reply(message, our_authority, GetDataResponse(Ok(data)));
                 MessageAction::SendOn(dest_nodes) => {
                     for destination in dest_nodes {
-                        ignore(self.send_on(&name, &header, destination, MessageType::GetData, get_data.clone()));
+                        ignore(self.send_on(message, our_authority, destination);
                     }
                 }
             },
             Err(InterfaceError::Abort) => {;},
             Err(InterfaceError::Response(error)) => {
-                let routing_msg = self.construct_get_data_response_msg(our_authority, &header, get_data, Err(error));
-                self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
+                self.send_reply(message, our_authority, GetDataResponse(Err(error)));
             }
         }
         Ok(())

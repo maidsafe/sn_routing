@@ -23,7 +23,7 @@ use error::{InterfaceError, ResponseError};
 
 /// Reply or send the existing message on to next persona / Authority type
 pub enum MessageAction {
-  Reply(Vec<u8>),
+  Reply(Data),
   SendOn(Vec<NameType>),
 }
 
@@ -53,8 +53,7 @@ pub trait Interface : Sync + Send {
     /// potentially storing data with specified name and type_id is returned, on success.
     /// failure to provide data or an address is indicated as an InterfaceError.
     fn handle_get(&mut self,
-                  type_id: u64,
-                  name: NameType,
+                  data_request: DataRequest,
                   our_authority: Authority,
                   from_authority: Authority,
                   from_address: NameType) -> Result<MessageAction, InterfaceError>;
