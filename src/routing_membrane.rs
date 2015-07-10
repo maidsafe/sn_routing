@@ -118,56 +118,49 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, location: NameType, name: NameType, data : DataRequest) {
-        let destination = types::DestinationAddress{ dest: location.clone(), relay_to: None };
-        let header = MessageHeader::new(self.get_next_message_id(),
-                                        destination, self.our_source_address(None),
-                                        Authority::Client(self.id.signing_public_key()));
-        let request = GetData{ requester: self.our_source_address(None),
-                               name_and_type_id: NameAndTypeId{name: name.clone(),
-                                                               type_id: type_id} };
-        let message = RoutingMessage::new(MessageType::GetData, header,
-                                          request, &self.id.get_crypto_secret_sign_key());
-
-        // FIXME: We might want to return the result.
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&name, &msg)));
+    pub fn get(&mut self, location: NameType, data : DataRequest) {
+        let message_id = self.get_next_message_id();
+        let message =  Message::Unsigned(RoutingMessage {
+            destination : DestinationAddress::Direct(location),
+            source      : SourceAddress::Direct(self.own_name()),
+            message_type: MessageType::GetData(data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Unknown),
+            });
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(data.unwrap().name(), &msg)));
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let destination = types::DestinationAddress{ dest: destination, relay_to: None };
-        let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(self.get_next_message_id(),
-                                        destination, self.our_source_address(None),
-                                        Authority::ManagedNode);
-        let message = RoutingMessage::new(MessageType::PutData, header,
-                request, &self.id.get_crypto_secret_sign_key());
+    pub fn put(&mut self, destination: NameType, data : Data) {
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(location),
+            source      : SourceAddress::Direct(self.own_name()),
+            message_type: MessageType::PutData(data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Unknown),
+        };
 
-        // FIXME: We might want to return the result.
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
+        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(data.unwrap().name(), &msg)));
     }
-
 
     /// Refresh the content in the close group nodes of group address content::name.
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
     pub fn refresh(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
-        let destination = types::DestinationAddress{ dest: from_group.clone(), relay_to: None };
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(from_group.clone()),
+            source      : SourceAddress::Direct(self.own_name()),
+            message_type: MessageType::Refresh(type_tag, data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Unknown),
+        };
 
-        let request = Refresh { type_tag: type_tag, from_group: from_group.clone(), payload: content };
-
-        let header = MessageHeader::new(self.get_next_message_id(),
-                                        destination,
-                                        self.our_source_address(Some(from_group.clone())),
-                                        Authority::OurCloseGroup(from_group));
-
-        let message = RoutingMessage::new(MessageType::Refresh,
-                                          header,
-                                          request,
-                                          &self.id.get_crypto_secret_sign_key());
-
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
+        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(from_group, &msg)));
     }
 
     /// RoutingMembrane::Run starts the membrane
