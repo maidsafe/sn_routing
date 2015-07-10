@@ -92,7 +92,7 @@ impl<F> RoutingClient<F> where F: Interface {
             authority   : Authority::Client(self.id.signing_public_key()),
             } );
 
-        let _ = encode(&message).map(|msg| self.send_to_bootstrap_node(&msg));
+        self.send_to_bootstrap_node(&message);
         Ok(message_id)
     }
 
@@ -110,7 +110,7 @@ impl<F> RoutingClient<F> where F: Interface {
 
         let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
 
-        let _ = encode(&signed_message).map(|msg| self.send_to_bootstrap_node(&msg));
+        self.send_to_bootstrap_node(&message);
         Ok(message_id)
     }
 
@@ -128,7 +128,7 @@ impl<F> RoutingClient<F> where F: Interface {
 
         let signed_message = SignedRoutingMessage::new(message, &self.id.secret_key.0);
 
-        let _ = encode(&signed_message).map(|msg| self.send_to_bootstrap_node(&msg));
+        self.send_to_bootstrap_node(&message);
         Ok(message_id)
     }
 
@@ -145,7 +145,7 @@ impl<F> RoutingClient<F> where F: Interface {
 
         let signed_message = SignedRoutingMessage::new(message, &self.id.secret_key.0);
 
-        let _ = encode(&signed_message).map(|msg| self.send_to_bootstrap_node(&msg));
+        self.send_to_bootstrap_node(&message);
         Ok(message_id)
     }
 
@@ -259,11 +259,11 @@ impl<F> RoutingClient<F> where F: Interface {
         };
     }
 
-    fn send_to_bootstrap_node(&mut self, serialised_message: &Vec<u8>) {
+    fn send_to_bootstrap_node(&mut self, message: &Message) {
         match self.bootstrap_address.1 {
             Some(ref bootstrap_endpoint) => {
-              let _ = self.connection_manager.send(bootstrap_endpoint.clone(),
-                  serialised_message.clone());
+                let _ = self.connection_manager.send(
+                    bootstrap_endpoint.clone(), encode(&message));
             },
             None => {}
         };
