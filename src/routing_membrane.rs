@@ -1267,20 +1267,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
-        let get_data_response = try!(decode::<GetDataResponse>(&body));
-        let from = header.from();
-        let method_call = self.mut_interface().handle_get_response(from, get_data_response.data);
+    fn handle_get_data_response(&mut self, message: RoutingMessage) -> RoutingResult {
+        let get_response = match message.message_type {
+            GetData(response) => response,
+            _ => Err(InterfaceError::Abort), // To be changed to Parse error
+        };
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from_authority = message.authority();
+        let from = header.source();
 
-        match method_call {
+        match self.mut_interface().handle_get_response(from, get_response) {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
-                ignore(self.send_on(&get_data_response.name_and_type_id.name, &header,
-                             destination, MessageType::GetDataResponse, body)),
+                ignore(self.send_on(message, our_authority, destination)),
         }
         Ok(())
     }
