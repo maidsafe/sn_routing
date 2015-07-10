@@ -50,13 +50,12 @@ use types;
 use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
-use message_header::MessageHeader;
 use messages::{RoutingMessage, MessageType};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::{MethodCall, MessageAction};
 use refresh_accumulator::RefreshAccumulator;
-use id::Id;
-use public_id::PublicId;
+use id;
+use public_id;
 
 
 type RoutingResult = Result<(), RoutingError>;
@@ -77,13 +76,13 @@ pub struct RoutingMembrane<F : Interface> {
     accepting_on: Vec<crust::Endpoint>,
     bootstrap_endpoint: Option<crust::Endpoint>,
     // for Routing
-    id: Id,
+    id: id::Id,
     own_name: NameType,
     routing_table: RoutingTable,
     relay_map: RelayMap,
     next_message_id: MessageId,
     filter: MessageFilter<types::FilterType>,
-    public_id_cache: LruCache<NameType, PublicId>,
+    public_id_cache: LruCache<NameType, public_id::PublicId>,
     connection_cache: BTreeMap<NameType, SteadyTime>,
     refresh_accumulator: RefreshAccumulator,
     // for Persona logic
@@ -96,7 +95,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                event_input: Receiver<crust::Event>,
                bootstrap_endpoint: Option<crust::Endpoint>,
                accepting_on: Vec<crust::Endpoint>,
-               relocated_id: Id,
+               relocated_id: id::Id,
                personas: F) -> RoutingMembrane<F> {
         debug_assert!(relocated_id.is_relocated());
         let own_name = relocated_id.get_name();
@@ -878,7 +877,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_put_data(&mut self, message: RoutingMessage) -> RoutingResult {
         let data = match message.message_type {
             PutData(put_data) => put_data,
-            _ => Err(InterfaceError::Abort) // To be changed to Parse error
+            _ => Err(InterfaceError::Abort), // To be changed to Parse error
         };
         let our_authority = our_authority(data.name, &message, &self.routing_table);
         let from_authority = message.authority();

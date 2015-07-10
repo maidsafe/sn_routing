@@ -19,7 +19,6 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::sign::Signature;
 use crust::Endpoint;
-use message_header;
 use authority::Authority;
 use data::{Data, DataRequest};
 use types;

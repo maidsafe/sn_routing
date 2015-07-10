@@ -25,6 +25,8 @@ use NameType;
 use super::random_trait::Random;
 use types::*;
 
+#[cfg(test)] 
+mod test {
 // TODO: Use IPv6 and non-TCP
 pub fn random_endpoint() -> Endpoint {
     use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
@@ -43,7 +45,7 @@ pub fn random_endpoints() -> Vec<Endpoint> {
     endpoints
 }
 
-impl Random for messages::connect_request::ConnectRequest {
+impl Random for messages::ConnectRequest {
     fn generate_random() -> messages::connect_request::ConnectRequest {
         messages::connect_request::ConnectRequest {
             local_endpoints: random_endpoints(),
@@ -56,7 +58,7 @@ impl Random for messages::connect_request::ConnectRequest {
 }
 
 
-impl Random for messages::connect_response::ConnectResponse {
+impl Random for messages::ConnectResponse {
     fn generate_random() -> messages::connect_response::ConnectResponse {
 
         messages::connect_response::ConnectResponse {
@@ -72,144 +74,4 @@ impl Random for messages::connect_response::ConnectResponse {
         }
     }
 }
-
-impl Random for messages::find_group::FindGroup {
-    fn generate_random() -> messages::find_group::FindGroup {
-        messages::find_group::FindGroup {
-            requester_id: Random::generate_random(),
-            target_id: Random::generate_random(),
-        }
-    }
-}
-
-impl Random for messages::find_group_response::FindGroupResponse {
-    fn generate_random() -> messages::find_group_response::FindGroupResponse {
-        let total = GROUP_SIZE as usize + 20;
-        let mut vec = Vec::<PublicId>::with_capacity(total);
-        for _ in 0..total {
-            let public_id : PublicId = Random::generate_random();
-            vec.push(public_id);
-        }
-
-        messages::find_group_response::FindGroupResponse { group: vec }
-    }
-}
-
-impl Random for messages::get_client_key::GetKey {
-    fn generate_random() -> messages::get_client_key::GetKey {
-        messages::get_client_key::GetKey {
-            requester_id: Random::generate_random(),
-            target_id: Random::generate_random(),
-        }
-    }
-}
-
-impl Random for messages::get_client_key_response::GetKeyResponse {
-    fn generate_random() -> messages::get_client_key_response::GetKeyResponse {
-        messages::get_client_key_response::GetKeyResponse {
-            address: Random::generate_random(),
-            public_sign_key: Random::generate_random(),
-        }
-    }
-}
-
-impl Random for messages::get_data::GetData {
-    fn generate_random() -> messages::get_data::GetData {
-        messages::get_data::GetData {
-            requester: Random::generate_random(),
-            name_and_type_id: Random::generate_random(),
-        }
-    }
-}
-
-impl Random for messages::get_data_response::GetDataResponse {
-    fn generate_random() -> messages::get_data_response::GetDataResponse {
-        messages::get_data_response::GetDataResponse {
-            name_and_type_id: Random::generate_random(),
-            data: Ok(generate_random_vec_u8(99)),
-        }
-    }
-}
-
-
-impl Random for messages::get_group_key::GetGroupKey {
-    fn generate_random() -> messages::get_group_key::GetGroupKey {
-        messages::get_group_key::GetGroupKey {
-            target_id: Random::generate_random(),
-        }
-    }
-}
-
-impl Random for messages::get_group_key_response::GetGroupKeyResponse {
-    fn generate_random() -> messages::get_group_key_response::GetGroupKeyResponse {
-        let total: usize = GROUP_SIZE as usize + 7;
-        let mut vec = Vec::<(NameType, PublicSignKey)>::with_capacity(total);
-        for _ in 0..total {
-            vec.push((Random::generate_random(), Random::generate_random()));
-        }
-        messages::get_group_key_response::GetGroupKeyResponse {
-            public_sign_keys: vec,
-        }
-    }
-}
-
-impl Random for messages::post::Post {
-    fn generate_random() -> messages::post::Post {
-        messages::post::Post {
-            name: Random::generate_random(),
-            data: generate_random_vec_u8(99),
-        }
-    }
-}
-
-impl Random for messages::put_data::PutData {
-    fn generate_random() -> messages::put_data::PutData {
-        messages::put_data::PutData {
-            name: Random::generate_random(),
-            data: generate_random_vec_u8(99),
-        }
-    }
-}
-
-impl Random for messages::refresh::Refresh {
-    fn generate_random() -> messages::refresh::Refresh {
-        messages::refresh::Refresh {
-            type_tag: random(),
-            from_group: Random::generate_random(),
-            payload: generate_random_vec_u8(random::<usize>() % 512 + 512),
-        }
-    }
-}
-
-impl Random for messages::put_data_response::PutDataResponse {
-     fn generate_random() -> messages::put_data_response::PutDataResponse {
-         let data = if random::<bool>() {
-             Ok(generate_random_vec_u8(99))
-         } else {
-             Err(ResponseError::NoData)
-         };
-
-         messages::put_data_response::PutDataResponse {
-             name: Random::generate_random(),
-             data: data,
-         }
-    }
-}
-
-impl Random for messages::put_public_id::PutPublicId {
-    fn generate_random() -> messages::put_public_id::PutPublicId {
-        let public_id : PublicId = Random::generate_random();
-        messages::put_public_id::PutPublicId {
-            public_id: public_id,
-        }
-    }
-}
-
-impl Random for messages::put_public_id_response::PutPublicIdResponse {
-    fn generate_random() -> messages::put_public_id_response::PutPublicIdResponse {
-        let public_id : PublicId = Random::generate_random();
-        messages::put_public_id_response::PutPublicIdResponse {
-            public_id: public_id,
-        }
-    }
 }
