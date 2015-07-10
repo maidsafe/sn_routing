@@ -225,7 +225,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
                             // only expect WhoAreYou or IAm message
-                            match self.handle_unknown_connect_request(&endpoint, bytes.clone()) {
+                            match self.handle_unknown_connect_request(&endpoint, message) {
                                 Ok(_) => {
                                     },
                                 Err(_) => {
@@ -239,7 +239,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // FIXME: probably the 'unidentified connection' is useless state;
                             // only good for pruning later on.
                             // If we don't know the sender, only accept a connect request
-                            match self.handle_unknown_connect_request(&endpoint, bytes.clone()) {
+                            match self.handle_unknown_connect_request(&endpoint, message) {
                                 Ok(_) => {},
                                 Err(_) => {
                                     // on any error, handle as WhoAreYou/IAm
@@ -260,14 +260,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     ///
-    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: RoutingMessage) -> RoutingResult {
-        let connect_request = match message.message_type {
+    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: Message) -> RoutingResult {
+        let (serialised_connect_request, signature) = match message.clone() {
+            Message::Signed(serialised_cr, signature) => (serialised_cr, signature),
+            Message::Unsigned(_) => return Err(RoutingError::NotEnoughSignatures)
+        };
+
+        let routing_message = try!(message.routing_message());
+        let connect_request = match routing_message.message_type {
             MessageType::ConnectRequest(request) => request,
             _ => Err(InterfaceError::Abort), // To be changed to Parse error
         };
-        let our_authority = our_authority(&message, &self.routing_table);
-        let from_authority = message.authority();
-        let from = message.source;
+        let our_authority = our_authority(&routing_message, &self.routing_table);
 
         // only accept unrelocated Ids from unknown connections
         if connect_request.requester_fob.is_relocated() {
@@ -277,7 +281,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // if the PublicId is not relocated,
         // only accept the connection into the RelayMap.
         // This will enable this connection to bootstrap or act as a client.
-        let routing_msg = message.create_reply(self.own_name(), our_authority);
+        let routing_msg = routing_message.create_reply(self.own_name(), our_authority);
         routing_msg.message_type = MessageType::ConnectResponse {
                     requester_local_endpoints: connect_request.local_endpoints.clone(),
                     requester_external_endpoints: connect_request.external_endpoints.clone(),
@@ -286,21 +290,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     requester_id: connect_request.requester_id.clone(),
                     receiver_id: self.own_name.clone(),
                     receiver_fob: public_id::PublicId::new(&self.id),
-                    serialised_connect_request: body.clone(),
+                    serialised_connect_request: serialised_connect_request,
                     connect_request_signature: signature.clone()
                 };
-        routing_msg.authority = our_authority;
-        let signature = crypto::sign::sign_detached(&routing_msg, &self.id.secret_keys.0);
-        let signed_message = Message::SignedRoutingMessage(SignedRoutingMessage {
-            encoded_routing_message : encoded_routing_message,
-            signature               : signature,
-        });
 
+        let signed_message = SignedRoutingMessage::new(routing_msg, &self.id.secret_keys.0);
         let serialised_msg = try!(encode(&signed_message));
+
         self.relay_map.add_ip_node(connect_request.requester_fob, endpoint.clone());
         self.relay_map.remove_unknown_connection(endpoint);
+
         debug_assert!(self.relay_map.contains_endpoint(&endpoint));
-        match self.connection_manager.send(endpoint.clone(), serialised_message) {
+
+        match self.connection_manager.send(endpoint.clone(), serialised_msg) {
             Ok(_)  => Ok(()),
             Err(e) => Err(RoutingError::Io(e))
         }
