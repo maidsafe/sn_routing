@@ -118,56 +118,49 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, location: NameType, name: NameType, data : DataRequest) {
-        let destination = types::DestinationAddress{ dest: location.clone(), relay_to: None };
-        let header = MessageHeader::new(self.get_next_message_id(),
-                                        destination, self.our_source_address(None),
-                                        Authority::Client(self.id.signing_public_key()));
-        let request = GetData{ requester: self.our_source_address(None),
-                               name_and_type_id: NameAndTypeId{name: name.clone(),
-                                                               type_id: type_id} };
-        let message = RoutingMessage::new(MessageType::GetData, header,
-                                          request, &self.id.get_crypto_secret_sign_key());
-
-        // FIXME: We might want to return the result.
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&name, &msg)));
+    pub fn get(&mut self, location: NameType, data : DataRequest) {
+        let message_id = self.get_next_message_id();
+        let message =  Message::Unsigned(RoutingMessage {
+            destination : DestinationAddress::Direct(location),
+            source      : SourceAddress::Direct(self.own_name()),
+            message_type: MessageType::GetData(data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Unknown),
+            });
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(data.unwrap().name(), &msg)));
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, destination: NameType, content: Box<Sendable>) {
-        let destination = types::DestinationAddress{ dest: destination, relay_to: None };
-        let request = PutData{ name: content.name(), data: content.serialised_contents() };
-        let header = MessageHeader::new(self.get_next_message_id(),
-                                        destination, self.our_source_address(None),
-                                        Authority::ManagedNode);
-        let message = RoutingMessage::new(MessageType::PutData, header,
-                request, &self.id.get_crypto_secret_sign_key());
+    pub fn put(&mut self, destination: NameType, data : Data) {
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(location),
+            source      : SourceAddress::Direct(self.own_name()),
+            message_type: MessageType::PutData(data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Unknown),
+        };
 
-        // FIXME: We might want to return the result.
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
+        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(data.unwrap().name(), &msg)));
     }
-
 
     /// Refresh the content in the close group nodes of group address content::name.
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
     pub fn refresh(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
-        let destination = types::DestinationAddress{ dest: from_group.clone(), relay_to: None };
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(from_group.clone()),
+            source      : SourceAddress::Direct(self.own_name()),
+            message_type: MessageType::Refresh(type_tag, data),
+            message_id  : message_id.clone(),
+            authority   : Authority::Unknown),
+        };
 
-        let request = Refresh { type_tag: type_tag, from_group: from_group.clone(), payload: content };
-
-        let header = MessageHeader::new(self.get_next_message_id(),
-                                        destination,
-                                        self.our_source_address(Some(from_group.clone())),
-                                        Authority::OurCloseGroup(from_group));
-
-        let message = RoutingMessage::new(MessageType::Refresh,
-                                          header,
-                                          request,
-                                          &self.id.get_crypto_secret_sign_key());
-
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(&self.own_name, &msg)));
+        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(from_group, &msg)));
     }
 
     /// RoutingMembrane::Run starts the membrane
@@ -261,30 +254,41 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     ///
-    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, serialised_msg : Bytes)
-        -> RoutingResult {
+    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: RoutingMessage) -> RoutingResult {
+        let connect_request = match message.message_type {
+            ConnectRequest(request) => request,
+            _ => Err(InterfaceError::Abort), // To be changed to Parse error
+        };
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from_authority = message.authority();
+        let from = message.source;
 
-        let message = try!(decode::<RoutingMessage>(&serialised_msg));
-        let header = message.message_header;
-        let body = message.serialised_body;
-        let signature = message.signature;
-        //  from unknown endpoints only accept ConnectRequest messages
-        let connect_request = try!(decode::<ConnectRequest>(&body));
-        // first verify that the message is correctly self-signed
-        if !verify_detached(&signature,
-                            &body[..], &connect_request.requester_fob.public_sign_key
-                                                       .get_crypto_public_sign_key()) {
-            return Err(RoutingError::Response(ResponseError::InvalidRequest));
-        }
         // only accept unrelocated Ids from unknown connections
         if connect_request.requester_fob.is_relocated() {
             return Err(RoutingError::RejectedPublicId); }
         // if the PublicId is not relocated,
         // only accept the connection into the RelayMap.
         // This will enable this connection to bootstrap or act as a client.
-        let routing_msg = self.construct_connect_response_msg(&header, &body,
-            &signature, &connect_request);
-        let serialised_message = try!(encode(&routing_msg));
+        let routing_msg = message.create_reply(self.own_name(), our_authority);
+        routing_msg.message_type = ConnectResponse {
+                    requester_local_endpoints: connect_request.local_endpoints.clone(),
+                    requester_external_endpoints: connect_request.external_endpoints.clone(),
+                    receiver_local_endpoints: self.accepting_on.clone(),
+                    receiver_external_endpoints: vec![],
+                    requester_id: connect_request.requester_id.clone(),
+                    receiver_id: self.own_name.clone(),
+                    receiver_fob: types::PublicId::new(&self.id),
+                    serialised_connect_request: body.clone(),
+                    connect_request_signature: signature.clone()
+                };
+        routing_msg.authority = our_authority;
+        let signature = crypto::sign::sign_detached(&routing_msg, &self.id.secret_keys.0);
+        let signed_message = Message::SignedRoutingMessage(SignedRoutingMessage {
+            encoded_routing_message : encoded_routing_message,
+            signature               : signature,
+        });
+
+        let serialised_msg = try!(encode(&signed_message));
         // Try to connect to the peer.
         // when CRUST succeeds at establishing a connection,
         // we use this register to retrieve the PublicId
@@ -442,80 +446,58 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
     fn message_received(&mut self, received_from : &ConnectionName,
-        serialised_msg : Bytes, received_from_relay: bool) -> RoutingResult {
+        message_wrap: Message, received_from_relay: bool) -> RoutingResult {
         match received_from {
             &ConnectionName::Routing(_) => { },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
-        // Parse
-        let message = try!(decode::<RoutingMessage>(&serialised_msg));
-        let mut header = message.message_header;
-        let body = message.serialised_body;
+        let message = routing_message(message_wrap);
         if received_from_relay {
             // then this message was explicitly for us
-            header.destination.dest = self.own_name.clone();
-            header.destination.relay_to = None;
+            message.destination = DestinationAddress::Direct(self.own_name.clone());
         }
         // filter check
-        if self.filter.check(&header.get_filter()) {
+        if self.filter.check(&message.get_filter()) {
             // should just return quietly
             return Err(RoutingError::FilterCheckFailed);
         }
         // add to filter
-        self.filter.add(header.get_filter());
+        self.filter.add(message.get_filter());
 
         // add to cache
-        if message.message_type == MessageType::GetDataResponse {
-            let get_data_response = try!(decode::<GetDataResponse>(&body));
-            let _ = get_data_response.data.map(|data| {
-                if data.len() != 0 {
-                    let _ = self.mut_interface().handle_cache_put(
-                        header.from_authority(), header.from(), data);
+        match message.message_type {
+            MessageType::GetDataResponse(result) {
+                match result {
+                    Ok(data) => {
+                        if data.len() != 0 {
+                            let _ = self.mut_interface().handle_cache_put(
+                                header.from_authority(), header.from(), data);
+                        }
+                    },
+                    Err(_) => {}
                 }
-            });
+            },
+            _ => {}
         }
 
         // cache check / response
-        if message.message_type == MessageType::GetData {
-            let get_data = try!(decode::<GetData>(&body));
-
-            let retrieved_data = self.mut_interface().handle_cache_get(
-                get_data.name_and_type_id.type_id.clone() as u64,
-                get_data.name_and_type_id.name.clone(),
-                header.from_authority(),
-                header.from());
-
-            match retrieved_data {
-                Ok(action) => match action {
-                    MessageAction::Reply(data) => {
-                        let reply = self.construct_get_data_response_msg(Authority::ManagedNode,
-                                                                         &header, get_data,
-                                                                         Ok(data));
-                        // intercept if we can relay it directly
-                        match (reply.message_header.destination.dest.clone(),
-                            reply.message_header.destination.relay_to.clone()) {
-                            (dest, Some(relay)) => {
-                                // if we should directly respond to this message, do so
-                                if dest == self.own_name
-                                    && self.relay_map.contains_relay_for(&relay) {
-                                    self.send_out_as_relay(&relay, try!(encode(&reply)));
-                                    return Ok(());
-                                }
-                            },
-                            _ => {}
-                        };
-                        return encode(&reply).map(|reply| {
-                            self.send_swarm_or_parallel(&header.send_to().dest, &reply);
-                            }).map_err(From::from);
+        match message.message_type {
+            MessageType::GetData(data_request) {
+                match self.mut_interface().handle_cache_get(data_request, header.from_authority(), header.from()) {
+                    Ok(action) => match action {
+                        MessageAction::Reply(data) => {
+                            let reply = message.create_reply(self.own_name(), NodeManager(self.own_name()));
+                            self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(data)));
+                            return Ok();
+                        },
+                        _ => (),
                     },
-                    _ => (),
-                },
-                Err(_) => (),
-            };
+                    Err(_) => (),
+                };
         }
 
         // SendOn in address space
-        self.send_swarm_or_parallel(&header.destination.dest, &serialised_msg);
+        self.send_swarm_or_parallel(&header.destination.dest, message_wrap);
 
         // handle relay request/response
         if header.destination.dest == self.own_name {
@@ -635,11 +617,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn send_swarm_or_parallel(&self, name : &NameType, msg: &Bytes) {
+    fn send_swarm_or_parallel(&self, name : &NameType, msg: &Message) {
         for peer in self.routing_table.target_nodes(name) {
             match peer.connected_endpoint {
                 Some(peer_endpoint) => {
-                    ignore(self.connection_manager.send(peer_endpoint, msg.clone()));
+                    ignore(encode(&msg).map(|msg|self.connection_manager.send(peer_endpoint, msg));
                 },
                 None => {}
             };
@@ -897,7 +879,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     //     },
                     //     _ => header.from()
                     // };
-                    try!(self.send_put_reply(&message, our_authority.clone(), Ok(reply_data)));
+                    try!(self.send_reply(&message, our_authority.clone(), Ok(reply_data)));
                 },
                 MessageAction::SendOn(destinations) => {
                     for destination in destinations {
@@ -906,41 +888,26 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
             },
             Err(InterfaceError::Abort) => {},
-            Err(InterfaceError::Response(ResponseError::FailedToStoreData(deleted_data))) => {
-                // patched for Vaults - this behaviour needs to be put back in Vaults
-                if deleted_data != message.data
-                    && our_authority == Authority::ManagedNode {
-                    // first send the Successful put reply
-                    let reply_to = header.send_to().dest;
-                    try!(self.send_put_reply(&message, our_authority.clone(), Ok(data.clone())));
-                    // then send under a new message_id the error reply
-                    let reply_to = header.from();
-                    let mut header_for_new_flow = header.clone();
-                    // bad approach to generating a new deterministic message_id
-                    header_for_new_flow.message_id = header_for_new_flow.message_id.wrapping_add(12345u32);
-                    try!(self.send_put_reply(&reply_to, our_authority, &header_for_new_flow,
-                        &put_data, Ok(deleted_data)));
-                } else {
-                    try!(self.send_put_reply(&message, our_authority.clone(),
-                        Err(ResponseError::FailedToStoreData(deleted_data))));
-                }
+            Err(InterfaceError::Response(ResponseError::FailedToStoreData(_))) => {
+                try!(self.send_reply(&message, our_authority.clone(),
+                        Err(ResponseError::FailedToStoreData(data))));
             },
             Err(InterfaceError::Response(error)) => {
-                try!(self.send_put_reply(&message, our_authority.clone(), Err(error)));
+                try!(self.send_reply(&message, our_authority.clone(), Err(error)));
             }
         }
         Ok(())
     }
 
-    fn send_put_reply(&mut self, routing_message:  &RoutingMessage,
-                             our_authority: Authority,
-                             reply_data:    Result<Data, ResponseError>) -> RoutingResult {
+    fn send_reply(&mut self, routing_message:  &RoutingMessage,
+                         our_authority: Authority,
+                         reply_data:    Result<Data, ResponseError>) -> RoutingResult {
         let message = routing_message.create_reply(self.own_name(), our_authority);
         message.message_type = reply_data;
         message.authority = authority;
 
         let encoded_routing_message = encode(&message);
-        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
+        let signature = crypto::sign::sign_detached(&message, &self.id.secret_keys.0);
 
         let signed_message = Message::SignedRoutingMessage(SignedRoutingMessage {
             encoded_routing_message : encoded_routing_message,
@@ -950,7 +917,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let serialised_msg = try!(encode(&signed_message));
 
         // intercept if we can relay it directly
-        match unsigned_message.destination {
+        match message.destination {
             RelayToClient(dest, public_id) => {
                 // if we should directly respond to this message, do so
                 if dest == self.own_name
@@ -969,17 +936,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             _ => {}
         };
-        self.send_swarm_or_parallel(&unsigned_message.destination, &serialised_msg);
+        self.send_swarm_or_parallel(&message.destination, &serialised_msg);
         Ok(())
     }
 
-    fn handle_put_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
+    fn handle_put_data_response(&mut self, message: RoutingMessage) -> RoutingResult {
         println!("Handle PUT data response.");
-        let put_data_response = try!(decode::<PutDataResponse>(&body));
-        let from_authority = header.from_authority();
-        let from = header.from();
-        let method_call = self.mut_interface().handle_put_response(from_authority,
-                                                                   from, put_data_response.data);
+        let put_response = match message.message_type {
+            PutDataResponse(response) => response,
+            _ => Err(InterfaceError::Abort), // To be changed to Parse error
+        };
+        let our_authority = our_authority(put_response.name(), &message, &self.routing_table);
+        let from_authority = message.authority();
+        let from = message.source;
+        let to = header.send_to();
+
+        let method_call = self.mut_interface().handle_put_response(from_authority, from, put_response);
 
         match method_call {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
@@ -988,8 +960,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
-                ignore(self.send_on(&put_data_response.name, &header,
-                             destination, MessageType::PutDataResponse, body)),
+                ignore(self.send_on(&message, our_authority, destination)),
         }
         Ok(())
     }
@@ -1243,50 +1214,28 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
-        let get_data = try!(decode::<GetData>(&body));
-        let type_id = get_data.name_and_type_id.type_id.clone();
-        let our_authority = our_authority(get_data.name_and_type_id.name, &header,
-                                          &self.routing_table);
-        let from_authority = header.from_authority();
-        let from = header.from();
-        let name = get_data.name_and_type_id.name.clone();
+    fn handle_get_data(&mut self, message: RoutingMessage) -> RoutingResult {
+        let data_request = match message.message_type {
+            GetData(request) => request,
+            _ => Err(InterfaceError::Abort), // To be changed to Parse error
+        };
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from_authority = message.authority();
+        let from = header.source();
 
-        match self.mut_interface().handle_get(type_id, name.clone(), our_authority.clone(), from_authority, from) {
+        match self.mut_interface().handle_get(data_request, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
-                    let routing_msg = self.construct_get_data_response_msg(our_authority, &header, get_data, Ok(data));
-                    let serialised_msg = try!(encode(&routing_msg));
-                    // intercept if we can relay it directly
-                    println!("Reply GetData to {:?} with relay {:?} on node {:?}.",
-                        routing_msg.message_header.destination.dest,
-                        routing_msg.message_header.destination.relay_to,
-                        self.own_name);
-                    match (routing_msg.message_header.destination.dest.clone(),
-                        routing_msg.message_header.destination.relay_to.clone()) {
-                        (dest, Some(relay)) => {
-                            // if we should directly respond to this message, do so
-                            if dest == self.own_name
-                                && self.relay_map.contains_relay_for(&relay) {
-                                self.send_out_as_relay(&relay, serialised_msg.clone());
-                                return Ok(());
-                            }
-                        },
-                        _ => {}
-                    };
-
-                    self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
-                },
+                    self.send_reply(message, our_authority, GetDataResponse(Ok(data)));
                 MessageAction::SendOn(dest_nodes) => {
                     for destination in dest_nodes {
-                        ignore(self.send_on(&name, &header, destination, MessageType::GetData, get_data.clone()));
+                        ignore(self.send_on(message, our_authority, destination);
                     }
                 }
             },
             Err(InterfaceError::Abort) => {;},
             Err(InterfaceError::Response(error)) => {
-                let routing_msg = self.construct_get_data_response_msg(our_authority, &header, get_data, Err(error));
-                self.send_swarm_or_parallel(&header.send_to().dest, &try!(encode(&routing_msg)));
+                self.send_reply(message, our_authority, GetDataResponse(Err(error)));
             }
         }
         Ok(())
@@ -1307,20 +1256,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data_response(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
-        let get_data_response = try!(decode::<GetDataResponse>(&body));
-        let from = header.from();
-        let method_call = self.mut_interface().handle_get_response(from, get_data_response.data);
+    fn handle_get_data_response(&mut self, message: RoutingMessage) -> RoutingResult {
+        let get_response = match message.message_type {
+            GetData(response) => response,
+            _ => Err(InterfaceError::Abort), // To be changed to Parse error
+        };
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from_authority = message.authority();
+        let from = header.source();
 
-        match method_call {
+        match self.mut_interface().handle_get_response(from, get_response) {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::SendOn { destination } =>
-                ignore(self.send_on(&get_data_response.name_and_type_id.name, &header,
-                             destination, MessageType::GetDataResponse, body)),
+                ignore(self.send_on(message, our_authority, destination)),
         }
         Ok(())
     }
@@ -1395,32 +1347,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         RoutingMessage::new(MessageType::ConnectRequest, header, connect_request,
             &self.id.get_crypto_secret_sign_key())
-    }
-
-    fn construct_connect_response_msg(&mut self, original_header : &MessageHeader, body: &Bytes, signature: &Signature,
-                                      connect_request: &ConnectRequest) -> RoutingMessage {
-        // FIXME: connect_request should remove receiver_id,
-        // as we can bootstrap to an unknown endpoint
-
-        let header = MessageHeader::new(original_header.message_id(),
-            original_header.send_to(), self.our_source_address(None),
-            Authority::ManagedNode);
-
-        // FIXME: We're sending all accepting connections as local since we don't differentiate
-        // between local and external yet.
-        let connect_response = ConnectResponse {
-            requester_local_endpoints: connect_request.local_endpoints.clone(),
-            requester_external_endpoints: connect_request.external_endpoints.clone(),
-            receiver_local_endpoints: self.accepting_on.clone(),
-            receiver_external_endpoints: vec![],
-            requester_id: connect_request.requester_id.clone(),
-            receiver_id: self.own_name.clone(),
-            receiver_fob: types::PublicId::new(&self.id),
-            serialised_connect_request: body.clone(),
-            connect_request_signature: signature.clone() };
-
-        RoutingMessage::new(MessageType::ConnectResponse, header,
-            connect_response, &self.id.get_crypto_secret_sign_key())
     }
 
     fn construct_get_data_response_msg(&self,

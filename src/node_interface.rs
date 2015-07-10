@@ -23,7 +23,7 @@ use error::{InterfaceError, ResponseError};
 
 /// Reply or send the existing message on to next persona / Authority type
 pub enum MessageAction {
-  Reply(Vec<u8>),
+  Reply(Data),
   SendOn(Vec<NameType>),
 }
 
@@ -53,8 +53,7 @@ pub trait Interface : Sync + Send {
     /// potentially storing data with specified name and type_id is returned, on success.
     /// failure to provide data or an address is indicated as an InterfaceError.
     fn handle_get(&mut self,
-                  type_id: u64,
-                  name: NameType,
+                  data_request: DataRequest,
                   our_authority: Authority,
                   from_authority: Authority,
                   from_address: NameType) -> Result<MessageAction, InterfaceError>;
@@ -88,14 +87,14 @@ pub trait Interface : Sync + Send {
     /// type MethodCall is requested.
     fn handle_get_response(&mut self,
                            from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall;
+                           response: Result<Data, ResponseError>) -> MethodCall;
 
     /// handles the response to a put request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
     fn handle_put_response(&mut self,
                            from_authority: Authority,
                            from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall;
+                           response: Result<Data, ResponseError>) -> MethodCall;
 
     /// handles the response to a post request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
@@ -120,7 +119,7 @@ pub trait Interface : Sync + Send {
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
                         from_address: NameType,
-                        data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                        data: Data) -> Result<MessageAction, InterfaceError>;
 }
 
 pub trait CreatePersonas<F : Interface> : Sync + Send  {
