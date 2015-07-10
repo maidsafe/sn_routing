@@ -17,7 +17,6 @@
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use routing_table::RoutingTable;
-use message_header::MessageHeader;
 use NameType;
 use sodiumoxide::crypto;
 

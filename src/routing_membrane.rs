@@ -50,7 +50,6 @@ use types;
 use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
-use message_header::MessageHeader;
 use messages::{RoutingMessage, MessageType};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::{MethodCall, MessageAction};

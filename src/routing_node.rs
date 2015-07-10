@@ -37,7 +37,6 @@ use types::{MessageId, Bytes, SourceAddress, DestinationAddress};
 use utils;
 use authority::{Authority};
 use messages::{RoutingMessage, SignedRoutingMessage, Message, MessageType, ConnectResponse, ConnectRequest};
-use message_header::MessageHeader;
 use error::{RoutingError};
 use std::thread::spawn;
 

@@ -49,7 +49,6 @@ extern crate message_filter;
 
 mod common_bits;
 mod macros;
-mod message_header;
 mod messages;
 mod name_type;
 mod routing_table;
