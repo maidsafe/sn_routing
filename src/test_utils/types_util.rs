@@ -18,6 +18,8 @@
 #[cfg(test)] 
 mod test {
 use types::*;
+use public_id::PublicId;
+use id::Id;
 use name_type::NameType;
 use rand::random;
 use super::random_trait::Random;
@@ -28,18 +30,6 @@ impl Random for NameAndTypeId {
             name: Random::generate_random(),
             type_id: random::<u64>(),
         }
-    }
-}
-
-impl Random for PublicSignKey {
-    fn generate_random() -> PublicSignKey {
-        PublicSignKey { public_sign_key: generate_random_vec_u8(32) }
-    }
-}
-
-impl Random for PublicKey {
-    fn generate_random() -> PublicKey {
-        PublicKey { public_key: generate_random_vec_u8(32) }
     }
 }
 
