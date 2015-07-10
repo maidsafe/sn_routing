@@ -1,6 +1,6 @@
 [package]
 name = "maidsafe_vault"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
 documentation = "http://maidsafe.net/maidsafe_vault/latest"
@@ -15,10 +15,10 @@ rustc-serialize = "*"
 cbor = "*"
 time = "*"
 sodiumoxide = "*"
-lru_time_cache = "*"
-crust = "*"
-routing = "*"
-maidsafe_types = "*"
+lru_time_cache = "0.2.*"
+crust = "0.1.*"
+routing = "0.2.*"
+maidsafe_types = "0.2.*"
 
 [dev-dependencies]
 rand = "*"

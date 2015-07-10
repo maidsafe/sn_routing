@@ -146,7 +146,7 @@ impl DataManager {
   }
 
   pub fn handle_get_response(&mut self, response: Vec<u8>) -> MethodCall {
-      let mut name: NameType;
+      let name: NameType;
       let mut decoder = Decoder::from_bytes(&response[..]);
       if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
           match parsed_data {
@@ -184,7 +184,7 @@ impl DataManager {
         Err(_) => return MethodCall::None,
     };
     let mut decoder = Decoder::from_bytes(&data[..]);
-    let mut name: NameType;
+    let name: NameType;
     let mut replicate = false;
     if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
       match parsed_data {

@@ -19,6 +19,41 @@
 An autonomous network capable of data storage/publishing/sharing as well as computation, value transfer (crypto currency support) and more. Please see below for a more detailed description of the operations involved in data storage.
 
 
+#Todo Items
+
+## [0.1.2] - code clean up
+- [ ] [MAID 1185](https://maidsafe.atlassian.net/browse/MAID-1185) using unwrap unsafely
+
+## [0.1.3] - integration test with client having churn event
+- [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
+
+## [0.1.4] - persona update
+- [ ] [MAID-1186](https://maidsafe.atlassian.net/browse/MAID-1186) Handling of unified Structrued Data
+    - [ ] [MAID-1187](https://maidsafe.atlassian.net/browse/MAID-1187) Updating Version Handler
+    - [ ] [MAID-1188](https://maidsafe.atlassian.net/browse/MAID-1188) Updating other personas if required
+- [ ] [MAID-1189](https://maidsafe.atlassian.net/browse/MAID-1189) Proper PmidNode Initialisation (max diskspace)
+
+## [0.1.5] - account creation
+- [ ] [MAID-1190](https://maidsafe.atlassian.net/browse/MAID-1190) Proper MaidManager account entry creation (allownance)
+- [ ] [MAID-1191](https://maidsafe.atlassian.net/browse/MAID-1191) Proper PmidManager account entry creation (pmidnode diskspace info)
+
+## [0.2.0] - messaging
+- [ ] [MAID-1192](https://maidsafe.atlassian.net/browse/MAID-1192) messaging
+    - [ ] [MAID-1193](https://maidsafe.atlassian.net/browse/MAID-1193) documentation
+    - [ ] [MAID-1195](https://maidsafe.atlassian.net/browse/MAID-1195) messaging account management
+    - [ ] [MAID-1198](https://maidsafe.atlassian.net/browse/MAID-1198) sending message
+    - [ ] [MAID-1199](https://maidsafe.atlassian.net/browse/MAID-1199) retrieving message
+    - [ ] [MAID-1200](https://maidsafe.atlassian.net/browse/MAID-1200) withdraw message
+
+## [0.3.0] - initial safe coin implementation
+- [ ] [MAID-1201](https://maidsafe.atlassian.net/browse/MAID-1201) initial safe coin implementation
+    - [ ] [MAID-1202](https://maidsafe.atlassian.net/browse/MAID-1202) documentation
+    - [ ] [MAID-1203](https://maidsafe.atlassian.net/browse/MAID-1203) wallet management
+    - [ ] [MAID-1204](https://maidsafe.atlassian.net/browse/MAID-1204) farming
+    - [ ] [MAID-1205](https://maidsafe.atlassian.net/browse/MAID-1205) consuming for space
+    - [ ] [MAID-1206](https://maidsafe.atlassian.net/browse/MAID-1206) transferring
+
+
 #Detailed documentation
 
 ### Overview
