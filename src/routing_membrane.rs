@@ -95,7 +95,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                event_input: Receiver<crust::Event>,
                bootstrap_endpoint: Option<crust::Endpoint>,
                accepting_on: Vec<crust::Endpoint>,
-               relocated_id: public_id::Id,
+               relocated_id: id::Id,
                personas: F) -> RoutingMembrane<F> {
         debug_assert!(relocated_id.is_relocated());
         let own_name = relocated_id.get_name();
