@@ -462,8 +462,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MessageType::GetDataResponse(result) => {
                 result.map(|data| {
                     if data.is_empty() { return; }
+
+                    let from = message.from_group()
+                                      .unwrap_or(message.non_relayed_source());
+
                     ignore(self.mut_interface().handle_cache_put(
-                           message.authority, message.non_relayed_source(), data));
+                           message.authority, from, data));
                 })
             },
             _ => {}
@@ -472,7 +476,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // cache check / response
         match message.message_type {
             MessageType::GetData(data_request) => {
-                match self.mut_interface().handle_cache_get(data_request, message.authority(), message.non_relayed_source()) {
+                let from = message.from_group()
+                                  .unwrap_or(message.non_relayed_source());
+
+                match self.mut_interface().handle_cache_get(data_request,
+                                                            message.authority(),
+                                                            from) {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
                             let reply = message.create_reply(self.own_name(), Authority::NodeManager(self.own_name()));
@@ -1156,8 +1165,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_find_group_response(&mut self,  body: Bytes,
-        refresh_our_own_group: &bool) -> RoutingResult {
+    fn handle_find_group_response(&mut self,
+                                  body: Bytes,
+                                  refresh_our_own_group: &bool) -> RoutingResult {
         let find_group_response = try!(decode::<MessageType::FindGroupResponse>(&body));
         for peer in find_group_response.group {
             self.refresh_routing_table(&peer.name());
