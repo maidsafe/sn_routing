@@ -192,12 +192,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
             match self.event_input.recv() {
                 Err(_) => (),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    let message = match decode::<Message>(&bytes) {
+                        Ok(message) => message,
+                        Err(_)      => continue,
+                    };
+
                     match self.lookup_endpoint(&endpoint) {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
-                            let _ = self.message_received(&ConnectionName::Routing(name),
-                            bytes, false);
+                            ignore(self.message_received(&ConnectionName::Routing(name),
+                                                         message,
+                                                         false));
                         },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
@@ -206,7 +212,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // FIXME: later limit which messages are sent forward,
                             // limiting our exposure.
                             let _ = self.relay_message_received(
-                                &ConnectionName::Relay(name), bytes, endpoint);
+                                &ConnectionName::Relay(name), message, endpoint);
                         },
                         Some(ConnectionName::OurBootstrap) => {
                             // FIXME: This is a short-cut and should be improved upon.
@@ -214,13 +220,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // note: the destination address of header needs
                             // to be pointed to our relocated name; bypassed with flag
                             let placeholder_name = self.own_name.clone();
-                            let _ = self.message_received(
-                                &ConnectionName::Routing(placeholder_name),
-                                bytes, true);
+                            ignore(self.message_received(
+                                       &ConnectionName::Routing(placeholder_name),
+                                       message, true));
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
                             // only expect WhoAreYou or IAm message
-                            match self.handle_unknown_connect_request(&endpoint, bytes.clone()) {
+                            match self.handle_unknown_connect_request(&endpoint, message) {
                                 Ok(_) => {
                                     },
                                 Err(_) => {
@@ -234,7 +240,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // FIXME: probably the 'unidentified connection' is useless state;
                             // only good for pruning later on.
                             // If we don't know the sender, only accept a connect request
-                            match self.handle_unknown_connect_request(&endpoint, bytes.clone()) {
+                            match self.handle_unknown_connect_request(&endpoint, message) {
                                 Ok(_) => {},
                                 Err(_) => {
                                     // on any error, handle as WhoAreYou/IAm
@@ -255,23 +261,29 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     ///
-    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: SignedRoutingMessage) -> RoutingResult {
-        let connect_request = match message.message_type {
+    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: Message) -> RoutingResult {
+        let (serialised_connect_request, signature) = match message.clone() {
+            Message::Signed(serialised_cr, signature) => (serialised_cr, signature),
+            Message::Unsigned(_) => return Err(RoutingError::NotEnoughSignatures)
+        };
+
+        let routing_message = try!(message.routing_message());
+        let connect_request = match routing_message.message_type {
             MessageType::ConnectRequest(request) => request,
             _ => Err(InterfaceError::Abort), // To be changed to Parse error
         };
-        let our_authority = our_authority(&message, &self.routing_table);
-        let from_authority = message.authority();
-        let from = message.source;
+        let our_authority = our_authority(&routing_message, &self.routing_table);
 
         // only accept unrelocated Ids from unknown connections
         if connect_request.requester_fob.is_relocated() {
-            return Err(RoutingError::RejectedPublicId); }
+            return Err(RoutingError::RejectedPublicId);
+        }
+
         // if the PublicId is not relocated,
         // only accept the connection into the RelayMap.
         // This will enable this connection to bootstrap or act as a client.
-        let routing_message = message.create_reply(self.own_name(), our_authority);
-        routing_message.message_type = MessageType::ConnectResponse(ConnectResponse {
+        let routing_msg = routing_message.create_reply(self.own_name(), our_authority);
+        routing_msg.message_type = MessageType::ConnectResponse {
                     requester_local_endpoints: connect_request.local_endpoints.clone(),
                     requester_external_endpoints: connect_request.external_endpoints.clone(),
                     receiver_local_endpoints: self.accepting_on.clone(),
@@ -279,41 +291,20 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     requester_id: connect_request.requester_id.clone(),
                     receiver_id: self.own_name.clone(),
                     receiver_fob: PublicId::new(&self.id),
-                    serialised_connect_request: message.encoded_routing_message,
-                    connect_request_signature: message.signature
-                });
+                    serialised_connect_request: serialised_connect_request,
+                    connect_request_signature: signature.clone()
+                };
 
-        routing_message.authority = our_authority;
-        let signature = sign_detached(&routing_message, &self.id.secret_keys.0);
-        let signed_message = Message::SignedRoutingMessage(SignedRoutingMessage {
-            encoded_routing_message : encode(&routing_message),
-            signature               : signature,
-        });
+        let signed_message = SignedRoutingMessage::new(routing_msg, &self.id.secret_keys.0);
+        let serialised_msg = try!(encode(&signed_message));
 
-        let serialised_message = try!(encode(&signed_message));
-        // Try to connect to the peer.
-        // when CRUST succeeds at establishing a connection,
-        // we use this register to retrieve the PublicId
-        // FIXME: remove the 'our_endpoints' from connect_request
-        // self.relay_map.register_accepted_connect_request(&connect_request.external_endpoints,
-        //     &connect_request.requester_fob);
-        // self.connection_manager.connect(connect_request.external_endpoints);
-        // self.relay_map.register_accepted_connect_request(&connect_request.local_endpoints,
-        //     &connect_request.requester_fob);
-        // self.connection_manager.connect(connect_request.local_endpoints);
-        // println!("registering accepting endpoint {:?}", endpoint);
-        // self.relay_map.register_accepted_connect_request(&vec![endpoint.clone()],
-        //     &connect_request.requester_fob);
-        println!("Added endpoint {:?} to relay map, named {:?}", endpoint, connect_request.requester_fob.name());
-        // self.connection_manager.connect(vec![endpoint.clone()]);
-        // FIXME: as a patch directly add this to the relay map
-        // Send the response containing our details.  Possibly use a ConnectSuccess message
-        // to confirm.
         self.relay_map.add_ip_node(connect_request.requester_fob, endpoint.clone());
         self.relay_map.remove_unknown_connection(endpoint);
+
         debug_assert!(self.relay_map.contains_endpoint(&endpoint));
-        match self.connection_manager.send(endpoint.clone(), serialised_message) {
-            Ok(_) => Ok(()),
+
+        match self.connection_manager.send(endpoint.clone(), serialised_msg) {
+            Ok(_)  => Ok(()),
             Err(e) => Err(RoutingError::Io(e))
         }
     }
@@ -414,14 +405,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// Parse and update the header with us as a relay node;
     /// Intercept PutPublicId messages if we are the only zero node.
     fn relay_message_received(&mut self, received_from: &ConnectionName,
-        serialised_message: Bytes, endpoint: Endpoint) -> RoutingResult {
+                                         message: Message,
+                                         endpoint: Endpoint) -> RoutingResult {
         match received_from {
             &ConnectionName::Relay(ref name) => {
                 // Parse as mutable to change header
-                let mut message = try!(decode::<RoutingMessage>(&serialised_message));
+                let mut routing_message = try!(message.routing_message());
 
                 // intercept PutPublicId for zero node without connections
-                if message.message_type == MessageType::PutPublicId
+                if routing_message.message_type == MessageType::PutPublicId
                     && self.relay_map.zero_node()
                     && self.routing_table.size() == 0 {
                     let header = message.message_header;
@@ -431,10 +423,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     return Ok(());
                 }
 
-                // update header and normal message_received
-                message.message_header.set_relay_name(&self.own_name, &name);
                 ignore(self.message_received(&ConnectionName::Routing(name.clone()),
-                    try!(encode(&message)), false));
+                                             message,
+                                             false));
             },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
@@ -453,7 +444,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             &ConnectionName::Routing(_) => { },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
-        let message = utils::routing_message(message_wrap);
+        let message = try!(message_wrap.routing_message());
         if received_from_relay {
             // then this message was explicitly for us
             message.destination = DestinationAddress::Direct(self.own_name.clone());
@@ -469,15 +460,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // add to cache
         match message.message_type {
             MessageType::GetDataResponse(result) => {
-                match result {
-                    Ok(data) => {
-                        if data.len() != 0 {
-                            let _ = self.mut_interface().handle_cache_put(
-                                header.from_authority(), header.from(), data);
-                        }
-                    },
-                    Err(_) => {}
-                }
+                result.map(|data| {
+                    if data.is_empty() { return; }
+                    ignore(self.mut_interface().handle_cache_put(
+                           message.authority, message.non_relayed_source(), data));
+                })
             },
             _ => {}
         }
@@ -485,7 +472,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // cache check / response
         match message.message_type {
             MessageType::GetData(data_request) => {
-                match self.mut_interface().handle_cache_get(data_request, header.from_authority(), header.from()) {
+                match self.mut_interface().handle_cache_get(data_request, message.authority(), message.non_relayed_source()) {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
                             let reply = message.create_reply(self.own_name(), Authority::NodeManager(self.own_name()));
@@ -499,22 +486,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
             }
         }
 
-        // SendOn in address space
-        self.send_swarm_or_parallel(&header.destination.dest, message_wrap);
-
-        // handle relay request/response
-        if header.destination.dest == self.own_name {
-            match header.destination.relay_to {
-                Some(relay) => {
-                    self.send_out_as_relay(&relay, serialised_msg);
-                    return Ok(());
-                },
-                None => {}
-            };
-        }
+        // Forward
+        self.send_swarm_or_parallel_or_relay(&message.destination, message_wrap);
 
         let address_in_close_group_range =
-            self.address_in_close_group_range(&header.destination.dest);
+            self.address_in_close_group_range(&message.non_relayed_destination());
+
         // Handle FindGroupResponse
         if message.message_type == MessageType::FindGroupResponse {
             ignore(self.handle_find_group_response(body, &address_in_close_group_range));
@@ -628,6 +605,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 None => {}
             };
+        }
+    }
+
+    fn send_swarm_or_parallel_or_relay(&self, dst : &DestinationAddress, msg: &Message) {
+        if dst.non_relayed_destination() == self.own_name {
+            match dst {
+                DestinationAddress::RelayToClient(_, public_key) => {
+                    self.send_out_as_relay(&public_key, serialised_msg.clone());
+                },
+                DestinationAddress::RelayToNode(_, node_address) => {
+                    self.send_out_as_relay(&node_address, serialised_msg.clone());
+                },
+                DestinationAddress::Direct(_) => {},
+            }
+        }
+        else {
+            send_swarm_or_parallel(dst.non_relayed_destination(), msg);
         }
     }
 
@@ -917,28 +911,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         });
 
         let serialised_msg = try!(encode(&signed_message));
-
-        // intercept if we can relay it directly
-        match message.destination {
-            DestinationAddress::RelayToClient(dest, public_id) => {
-                // if we should directly respond to this message, do so
-                if dest == self.own_name
-                    && self.relay_map.contains_relay_for(&public_id) {
-                    self.send_out_as_relay(&relay, serialised_msg.clone());
-                    return Ok(());
-                }
-            },
-            SourceAddress::RelayedForNode(dest, node_id) => {
-                // if we should directly respond to this message, do so
-                if dest == self.own_name
-                    && self.relay_map.contains_relay_for(&node_id) {
-                    self.send_out_as_relay(&relay, serialised_msg.clone());
-                    return Ok(());
-                }
-            },
-            _ => {}
-        };
-        self.send_swarm_or_parallel(&message.destination, &serialised_msg);
+        self.send_swarm_or_parallel_or_relay(&message.destination, &serialised_msg);
         Ok(())
     }
 
@@ -1174,24 +1147,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .chain(Some(PublicId::new(&self.id)).into_iter())
                     .collect::<Vec<_>>();
 
-        let routing_msg = self.construct_find_group_response_msg(&original_header, &find_group, group);
+        let routing_response = self.construct_find_group_response_msg(&original_header, &find_group, group);
 
-        let serialised_msg = try!(encode(&routing_msg));
+        let serialised_response = try!(encode(&routing_response));
 
-        // intercept if we can relay it directly
-        match (routing_msg.message_header.destination.dest.clone(),
-            routing_msg.message_header.destination.relay_to.clone()) {
-            (dest, Some(relay)) => {
-                // if we should directly respond to this message, do so
-                if dest == self.own_name
-                    && self.relay_map.contains_relay_for(&relay) {
-                    self.send_out_as_relay(&relay, serialised_msg.clone());
-                }
-            },
-            _ => {}
-        };
-
-        self.send_swarm_or_parallel(&original_header.send_to().dest, &serialised_msg);
+        self.send_swarm_or_parallel_or_relay(&routing_response.destination, &serialised_response);
 
         Ok(())
     }
