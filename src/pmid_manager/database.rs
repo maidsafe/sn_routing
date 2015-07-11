@@ -108,74 +108,73 @@ pub struct PmidManagerAccount {
 }
 
 impl Clone for PmidManagerAccount {
-  fn clone(&self) -> Self {
-    PmidManagerAccount {
-      stored_total_size : self.stored_total_size,
-      lost_total_size : self.lost_total_size,
-      offered_space : self.offered_space
+    fn clone(&self) -> Self {
+        PmidManagerAccount {
+            stored_total_size : self.stored_total_size,
+            lost_total_size : self.lost_total_size,
+            offered_space : self.offered_space
+        }
     }
-  }
 }
 
 impl PmidManagerAccount {
-  pub fn new() -> PmidManagerAccount {
+    pub fn new() -> PmidManagerAccount {
     // FIXME : to bypass the AccountCreation process for simple network, capacity is assumed automatically
-    PmidManagerAccount { stored_total_size: 0, lost_total_size: 0, offered_space: 1073741824 }
-  }
+        PmidManagerAccount { stored_total_size: 0, lost_total_size: 0, offered_space: 1073741824 }
+    }
 
   // TODO: Always return true to allow pmid_node carry out removal of Sacrificial copies
   //       Otherwise PmidManagerAccount need to remember storage info of Primary, Backup and Sacrificial
   //       copies separately to trigger an early alert
-  pub fn put_data(&mut self, size : u64) -> bool {
-    // if (self.stored_total_size + size) > self.offered_space {
-    //   return false;
-    // }
-    self.stored_total_size += size;
-    true
-  }
-
-  pub fn delete_data(&mut self, size : u64) {
-    if self.stored_total_size < size {
-      self.stored_total_size = 0;
-    } else {
-      self.stored_total_size -= size;
+    pub fn put_data(&mut self, size : u64) -> bool {
+        // if (self.stored_total_size + size) > self.offered_space {
+        //   return false;
+        // }
+        self.stored_total_size += size;
+        true
     }
-  }
 
-  pub fn handle_lost_data(&mut self, size : u64) {
-    self.delete_data(size);
-    self.lost_total_size += size;
-  }
-
-  pub fn handle_falure(&mut self, size : u64) {
-    self.handle_lost_data(size);
-  }
-
-  pub fn set_available_size(&mut self, available_size : u64) {
-    self.offered_space = available_size;
-  }
-
-  pub fn update_account(&mut self, diff_size : u64) {
-    if self.stored_total_size < diff_size {
-      self.stored_total_size = 0;
-    } else {
-      self.stored_total_size -= diff_size;
+    pub fn delete_data(&mut self, size : u64) {
+        if self.stored_total_size < size {
+            self.stored_total_size = 0;
+        } else {
+            self.stored_total_size -= size;
+        }
     }
-    self.lost_total_size += diff_size;
-  }
 
-  pub fn get_offered_space(&self) -> u64 {
-      self.offered_space.clone()
-  }
+    pub fn handle_lost_data(&mut self, size : u64) {
+        self.delete_data(size);
+        self.lost_total_size += size;
+    }
 
-  pub fn get_lost_total_size(&self) -> u64 {
-      self.lost_total_size.clone()
-  }
+    pub fn handle_falure(&mut self, size : u64) {
+        self.handle_lost_data(size);
+    }
 
+    pub fn set_available_size(&mut self, available_size : u64) {
+        self.offered_space = available_size;
+    }
 
-  pub fn get_stored_total_size(&self) -> u64 {
-      self.stored_total_size.clone()
-  }
+    pub fn update_account(&mut self, diff_size : u64) {
+        if self.stored_total_size < diff_size {
+            self.stored_total_size = 0;
+        } else {
+            self.stored_total_size -= diff_size;
+        }
+        self.lost_total_size += diff_size;
+    }
+
+    pub fn get_offered_space(&self) -> u64 {
+        self.offered_space.clone()
+    }
+
+    pub fn get_lost_total_size(&self) -> u64 {
+        self.lost_total_size.clone()
+    }
+
+    pub fn get_stored_total_size(&self) -> u64 {
+        self.stored_total_size.clone()
+    }
 }
 
 pub struct PmidManagerDatabase {

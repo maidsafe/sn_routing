@@ -95,41 +95,41 @@ impl Sendable for VersionHandlerSendable {
 }
 
 pub struct VersionHandler {
-  // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
-  // If such assumption becomes in-valid, LruCache or Sqlite based persona specific database shall be used
-  chunk_store_ : ChunkStore
+    // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
+    // If such assumption becomes in-valid, LruCache or Sqlite based persona specific database shall be used
+    chunk_store_ : ChunkStore
 }
 
 impl VersionHandler {
-  pub fn new() -> VersionHandler {
-    // TODO adjustable max_disk_space
-    VersionHandler { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
-  }
-
-  pub fn handle_get(&self, name: NameType) ->Result<MessageAction, InterfaceError> {
-    let data = self.chunk_store_.get(name);
-    if data.len() == 0 {
-      return Err(From::from(ResponseError::NoData));
+    pub fn new() -> VersionHandler {
+        // TODO adjustable max_disk_space
+        VersionHandler { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
     }
-    Ok(MessageAction::Reply(data))
-  }
 
-  pub fn handle_put(&mut self, serialised_data: Vec<u8>,
-                    structured_data: StructuredData) ->Result<MessageAction, InterfaceError> {
-    // the type_tag needs to be stored as well, ChunkStore::put is overwritable
-    self.chunk_store_.put(structured_data.name(), serialised_data.clone());
-    return Ok(MessageAction::Reply(serialised_data));
-  }
+    pub fn handle_get(&self, name: NameType) ->Result<MessageAction, InterfaceError> {
+        let data = self.chunk_store_.get(name);
+        if data.len() == 0 {
+            return Err(From::from(ResponseError::NoData));
+        }
+        Ok(MessageAction::Reply(data))
+    }
 
-  pub fn handle_account_transfer(&mut self, merged_account: VersionHandlerSendable) {
-      self.chunk_store_.delete(merged_account.name());
-      self.chunk_store_.put(merged_account.name(), merged_account.get_data().clone());
-  }
+    pub fn handle_put(&mut self, serialised_data: Vec<u8>,
+                      structured_data: StructuredData) ->Result<MessageAction, InterfaceError> {
+        // the type_tag needs to be stored as well, ChunkStore::put is overwritable
+        self.chunk_store_.put(structured_data.name(), serialised_data.clone());
+        return Ok(MessageAction::Reply(serialised_data));
+    }
 
-  pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
-       let names = self.chunk_store_.names();
-       let mut actions = Vec::with_capacity(names.len());
-       for name in names {
+    pub fn handle_account_transfer(&mut self, merged_account: VersionHandlerSendable) {
+        self.chunk_store_.delete(merged_account.name());
+        self.chunk_store_.put(merged_account.name(), merged_account.get_data().clone());
+    }
+
+    pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
+        let names = self.chunk_store_.names();
+        let mut actions = Vec::with_capacity(names.len());
+        for name in names {
             let data = self.chunk_store_.get(name.clone());
             let version_handler_sendable = VersionHandlerSendable::new(name, data);
             let mut encoder = cbor::Encoder::from_memory();
@@ -140,10 +140,10 @@ impl VersionHandler {
                     payload: encoder.as_bytes().to_vec()
                 });
             }
-       }
-       self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
-       actions
-  }
+        }
+        self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
+        actions
+    }
 
 }
 

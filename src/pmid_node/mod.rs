@@ -26,69 +26,69 @@ use cbor::Decoder;
 use data_parser::Data;
 
 pub struct PmidNode {
-  chunk_store_ : ChunkStore
+    chunk_store_ : ChunkStore
 }
 
 impl PmidNode {
-  pub fn new() -> PmidNode {
-    PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
-  }
-
-  pub fn handle_get(&self, name: NameType) ->Result<MessageAction, InterfaceError> {
-    let data = self.chunk_store_.get(name);
-    if data.len() == 0 {
-      return Err(From::from(ResponseError::NoData));
-    }
-    Ok(MessageAction::Reply(data))
-  }
-
-  pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
-    let mut decoder = Decoder::from_bytes(&data[..]);
-    let data_name_and_remove_sacrificial: (NameType, bool);
-    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-      data_name_and_remove_sacrificial = match parsed_data {
-        Data::Immutable(parsed) => (parsed.name(), true),
-        Data::ImmutableBackup(parsed) => (parsed.name(), false),
-        Data::ImmutableSacrificial(parsed) => (parsed.name(), false),
-        Data::PublicMaid(parsed) => (parsed.name(), true),
-        _ => return Err(From::from(ResponseError::InvalidRequest)),
-      };
-    } else {
-      return Err(From::from(ResponseError::InvalidRequest));
+    pub fn new() -> PmidNode {
+        PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
     }
 
-    if self.chunk_store_.has_disk_space(data.len()) {
-      // the type_tag needs to be stored as well
-      self.chunk_store_.put(data_name_and_remove_sacrificial.0, data.clone());
-      return Ok(MessageAction::Reply(data));
+    pub fn handle_get(&self, name: NameType) ->Result<MessageAction, InterfaceError> {
+        let data = self.chunk_store_.get(name);
+        if data.len() == 0 {
+            return Err(From::from(ResponseError::NoData));
+        }
+        Ok(MessageAction::Reply(data))
     }
+
+    pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
+        let mut decoder = Decoder::from_bytes(&data[..]);
+        let data_name_and_remove_sacrificial: (NameType, bool);
+        if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+            data_name_and_remove_sacrificial = match parsed_data {
+                Data::Immutable(parsed) => (parsed.name(), true),
+                Data::ImmutableBackup(parsed) => (parsed.name(), false),
+                Data::ImmutableSacrificial(parsed) => (parsed.name(), false),
+                Data::PublicMaid(parsed) => (parsed.name(), true),
+                _ => return Err(From::from(ResponseError::InvalidRequest)),
+            };
+        } else {
+        return Err(From::from(ResponseError::InvalidRequest));
+        }
+
+        if self.chunk_store_.has_disk_space(data.len()) {
+            // the type_tag needs to be stored as well
+            self.chunk_store_.put(data_name_and_remove_sacrificial.0, data.clone());
+            return Ok(MessageAction::Reply(data));
+        }
     // TODO: due to the limitation of current return type, only one notification can be sent out
     //       so we will try to remove the first Sacrificial copy larger enough to free up space
     //       if such Sacrifical copy does not exist, then return with error
-    if !data_name_and_remove_sacrificial.1 {
-      return Err(From::from(ResponseError::InvalidRequest))
-    }
-    let required_space = data.len() - (self.chunk_store_.max_disk_usage() - self.chunk_store_.current_disk_usage());
-    let names = self.chunk_store_.names();
-    for name in names.iter() {
-      let fetched_data = self.chunk_store_.get(name.clone());
-      let mut decoder = Decoder::from_bytes(&fetched_data[..]);
-      if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-        match parsed_data {
-          Data::ImmutableSacrificial(_) => {
-            if fetched_data.len() > required_space {
-              self.chunk_store_.delete(name.clone());
-              self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
-              // TODO: ideally, the InterfaceError shall have an option holding a list of copies
-              return Err(From::from(ResponseError::FailedToStoreData(fetched_data)));
-            }
-          },
-          _ => {}
+        if !data_name_and_remove_sacrificial.1 {
+            return Err(From::from(ResponseError::InvalidRequest))
         }
-      }
+        let required_space = data.len() - (self.chunk_store_.max_disk_usage() - self.chunk_store_.current_disk_usage());
+        let names = self.chunk_store_.names();
+        for name in names.iter() {
+            let fetched_data = self.chunk_store_.get(name.clone());
+            let mut decoder = Decoder::from_bytes(&fetched_data[..]);
+            if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
+                match parsed_data {
+                    Data::ImmutableSacrificial(_) => {
+                        if fetched_data.len() > required_space {
+                            self.chunk_store_.delete(name.clone());
+                            self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
+              // TODO: ideally, the InterfaceError shall have an option holding a list of copies
+                        return Err(From::from(ResponseError::FailedToStoreData(fetched_data)));
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        }
+        Err(From::from(ResponseError::InvalidRequest))
     }
-    Err(From::from(ResponseError::InvalidRequest))
-  }
 
 }
 
