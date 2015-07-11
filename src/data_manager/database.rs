@@ -123,9 +123,9 @@ impl Sendable for DataManagerSendable {
 
 
 pub struct DataManagerDatabase {
-  storage : HashMap<Identity, PmidNodes>,
-  pub close_grp_from_churn: Vec<NameType>,
-  pub temp_storage_after_churn: HashMap<NameType, PmidNodes>,
+    storage : HashMap<Identity, PmidNodes>,
+    pub close_grp_from_churn: Vec<NameType>,
+    pub temp_storage_after_churn: HashMap<NameType, PmidNodes>,
 }
 
 impl DataManagerDatabase {

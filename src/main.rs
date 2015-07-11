@@ -78,15 +78,15 @@ pub fn always_true() -> bool { true }
 
 /// The Vault structure to hold the logical interface to provide behavioural logic to routing.
 pub struct Vault {
-  routing_node: routing::routing_node::RoutingNode<VaultFacade, VaultGenerator>,
+    routing_node: routing::routing_node::RoutingNode<VaultFacade, VaultGenerator>,
 }
 
 impl Vault {
-  fn new() -> Vault {
-    Vault {
-      routing_node: routing::routing_node::RoutingNode::<VaultFacade, VaultGenerator>::new(VaultGenerator),
+    fn new() -> Vault {
+        Vault {
+            routing_node: routing::routing_node::RoutingNode::<VaultFacade, VaultGenerator>::new(VaultGenerator),
+        }
     }
-  }
 }
 
 // ==========================   Program Options   =================================
