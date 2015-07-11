@@ -151,28 +151,28 @@ impl MaidManagerAccount {
 
 
 pub struct MaidManagerDatabase {
-  storage: collections::HashMap<Identity, MaidManagerAccount>,
+    storage: collections::HashMap<Identity, MaidManagerAccount>,
 }
 
 impl MaidManagerDatabase {
-  pub fn new () -> MaidManagerDatabase {
-      MaidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
-  }
+    pub fn new () -> MaidManagerDatabase {
+        MaidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
+    }
 
-  pub fn exist(&mut self, name : &Identity) -> bool {
-      self.storage.contains_key(name)
-  }
+    pub fn exist(&mut self, name : &Identity) -> bool {
+        self.storage.contains_key(name)
+    }
 
-  pub fn put_data(&mut self, name: &Identity, size: u64) -> bool {
-      let entry = self.storage.entry(name.clone()).or_insert(MaidManagerAccount::new());
-      entry.put_data(size)
-  }
+    pub fn put_data(&mut self, name: &Identity, size: u64) -> bool {
+        let entry = self.storage.entry(name.clone()).or_insert(MaidManagerAccount::new());
+        entry.put_data(size)
+    }
 
-  pub fn handle_account_transfer(&mut self, account_wrapper : &MaidManagerAccountWrapper) {
-      // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
-      let _ = self.storage.remove(&account_wrapper.name());
-      self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
-  }
+    pub fn handle_account_transfer(&mut self, account_wrapper : &MaidManagerAccountWrapper) {
+        // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
+        let _ = self.storage.remove(&account_wrapper.name());
+        self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
+    }
 
     pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
         let mut actions = Vec::with_capacity(self.storage.len());
@@ -191,12 +191,12 @@ impl MaidManagerDatabase {
         actions
     }
 
-  pub fn delete_data(&mut self, name : &Identity, size: u64) {
-      match self.storage.get_mut(name) {
-          Some(value) => value.delete_data(size),
-          None => (),
-      }
-  }
+    pub fn delete_data(&mut self, name : &Identity, size: u64) {
+        match self.storage.get_mut(name) {
+            Some(value) => value.delete_data(size),
+            None => (),
+        }
+    }
 }
 
 
