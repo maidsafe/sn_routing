@@ -28,7 +28,7 @@
 use cbor::{Decoder, Encoder, CborError};
 use rand;
 use rustc_serialize::{Decodable, Encodable};
-use sodiumoxide::crypto::sign::{Signature, verify_detached};
+use sodiumoxide::crypto::sign::{Signature, verify_detached, sign_detached};
 use std::collections::{BTreeMap};
 use std::boxed::Box;
 use std::ops::DerefMut;
@@ -50,12 +50,13 @@ use types;
 use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress, SourceAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
-use messages::{Message, RoutingMessage, SignedRoutingMessage, MessageType};
+use messages::{Message, RoutingMessage, SignedRoutingMessage, MessageType, ConnectRequest, ConnectResponse};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::{MethodCall, MessageAction};
 use refresh_accumulator::RefreshAccumulator;
-use id;
-use public_id;
+use id::Id;
+use public_id::PublicId;
+use utils;
 
 
 type RoutingResult = Result<(), RoutingError>;
@@ -76,13 +77,13 @@ pub struct RoutingMembrane<F : Interface> {
     accepting_on: Vec<crust::Endpoint>,
     bootstrap_endpoint: Option<crust::Endpoint>,
     // for Routing
-    id: id::Id,
+    id: Id,
     own_name: NameType,
     routing_table: RoutingTable,
     relay_map: RelayMap,
     next_message_id: MessageId,
     filter: MessageFilter<types::FilterType>,
-    public_id_cache: LruCache<NameType, public_id::PublicId>,
+    public_id_cache: LruCache<NameType, PublicId>,
     connection_cache: BTreeMap<NameType, SteadyTime>,
     refresh_accumulator: RefreshAccumulator,
     // for Persona logic
@@ -95,7 +96,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                event_input: Receiver<crust::Event>,
                bootstrap_endpoint: Option<crust::Endpoint>,
                accepting_on: Vec<crust::Endpoint>,
-               relocated_id: id::Id,
+               relocated_id: Id,
                personas: F) -> RoutingMembrane<F> {
         debug_assert!(relocated_id.is_relocated());
         let own_name = relocated_id.get_name();
@@ -289,7 +290,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     receiver_external_endpoints: vec![],
                     requester_id: connect_request.requester_id.clone(),
                     receiver_id: self.own_name.clone(),
-                    receiver_fob: public_id::PublicId::new(&self.id),
+                    receiver_fob: PublicId::new(&self.id),
                     serialised_connect_request: serialised_connect_request,
                     connect_request_signature: signature.clone()
                 };
@@ -775,7 +776,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn send_i_am_msg(&mut self, endpoint: Endpoint, _nonce : u8) -> RoutingResult {
         // FIXME: sign proper nonce
-        let message = try!(encode(&IAm {public_id : types::PublicId::new(&self.id)}));
+        let message = try!(encode(&IAm {public_id : PublicId::new(&self.id)}));
         ignore(self.connection_manager.send(endpoint, message));
         Ok(())
     }
@@ -854,7 +855,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // Routing handle put_data
     fn handle_put_data(&mut self, message: RoutingMessage) -> RoutingResult {
         let data = match message.message_type {
-            PutData(put_data) => put_data,
+            MessageType::PutData(put_data) => put_data,
             _ => Err(InterfaceError::Abort), // To be changed to Parse error
         };
         let our_authority = our_authority(data.name, &message, &self.routing_table);
@@ -895,15 +896,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn send_reply(&mut self, routing_message:  &RoutingMessage,
-                         our_authority: Authority,
-                         reply_data:    Result<Data, ResponseError>) -> RoutingResult {
+    fn send_reply(&mut self, routing_message: &RoutingMessage, our_authority: Authority,
+                  reply_data: Result<Data, ResponseError>) -> RoutingResult {
         let message = routing_message.create_reply(self.own_name(), our_authority);
         message.message_type = reply_data;
-        message.authority = authority;
+        message.authority = our_authority;
 
         let encoded_routing_message = encode(&message);
-        let signature = crypto::sign::sign_detached(&message, &self.id.secret_keys.0);
+        let signature = sign_detached(&message, &self.id.secret_keys.0);
 
         let signed_message = Message::SignedRoutingMessage(SignedRoutingMessage {
             encoded_routing_message : encoded_routing_message,
@@ -911,7 +911,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         });
 
         let serialised_msg = try!(encode(&signed_message));
-
         self.send_swarm_or_parallel_or_relay(&message.destination, &serialised_msg);
         Ok(())
     }
@@ -919,7 +918,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_put_data_response(&mut self, message: RoutingMessage) -> RoutingResult {
         println!("Handle PUT data response.");
         let put_response = match message.message_type {
-            PutDataResponse(response) => response,
+            MessageType::PutDataResponse(response) => response,
             _ => Err(InterfaceError::Abort), // To be changed to Parse error
         };
         let our_authority = our_authority(put_response.name(), &message, &self.routing_table);
@@ -1073,7 +1072,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // TODO (Ben): check whether to accept id into group;
     // restrict on minimal similar number of leading bits.
     fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
-        let put_public_id = try!(decode::<PutPublicId>(&body));
+        let put_public_id = try!(decode::<MessageType::PutPublicId>(&body));
         let our_authority = our_authority(put_public_id.public_id.name(), &header, &self.routing_table);
         match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
             (Authority::ManagedNode, Authority::NaeManager(_), false) => {
@@ -1085,7 +1084,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .map(|node_info| node_info.id())
                     .collect::<Vec<NameType>>();
                 close_group.insert(0, self.own_name.clone());
-                let relocated_name = try!(types::calculate_relocated_name(
+                let relocated_name = try!(utils::calculate_relocated_name(
                     close_group, &put_public_id.public_id.name()));
                 // assign_relocated_name
                 put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
@@ -1141,11 +1140,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
-        let find_group = try!(decode::<FindGroup>(&body));
+        let find_group = try!(decode::<MessageType::FindGroup>(&body));
         let group = self.routing_table.our_close_group().into_iter()
                     .map(|x|x.fob)
                     // add ourselves
-                    .chain(Some(types::PublicId::new(&self.id)).into_iter())
+                    .chain(Some(PublicId::new(&self.id)).into_iter())
                     .collect::<Vec<_>>();
 
         let routing_response = self.construct_find_group_response_msg(&original_header, &find_group, group);
@@ -1159,7 +1158,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn handle_find_group_response(&mut self,  body: Bytes,
         refresh_our_own_group: &bool) -> RoutingResult {
-        let find_group_response = try!(decode::<FindGroupResponse>(&body));
+        let find_group_response = try!(decode::<MessageType::FindGroupResponse>(&body));
         for peer in find_group_response.group {
             self.refresh_routing_table(&peer.name());
         }
@@ -1222,7 +1221,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn handle_get_data_response(&mut self, message: RoutingMessage) -> RoutingResult {
         let get_response = match message.message_type {
-            GetData(response) => response,
+            MessageType::GetData(response) => response,
             _ => Err(InterfaceError::Abort), // To be changed to Parse error
         };
         let our_authority = our_authority(&message, &self.routing_table);
@@ -1248,12 +1247,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_put_public_id_zero_node(&mut self, header: MessageHeader, body: Bytes,
         send_to: &Endpoint) -> RoutingResult {
         println!("FIRST NODE BOOSTRAPS OFF OF ZERO NODE");
-        let put_public_id = try!(decode::<PutPublicId>(&body));
+        let put_public_id = try!(decode::<MessageType::PutPublicId>(&body));
         if put_public_id.public_id.is_relocated() {
             return Err(RoutingError::RejectedPublicId); }
         let mut relocated_public_id = put_public_id.public_id.clone();
 
-        let relocated_name =  try!(types::calculate_relocated_name(
+        let relocated_name =  try!(utils::calculate_relocated_name(
                                     vec![self.own_name.clone()],
                                     &put_public_id.public_id.name()));
         // assign_relocated_name
