@@ -4,4 +4,4 @@
 #
 # Requires FPM installed > https://github.com/jordansissel/fpm
 #
-fpm -s dir -t osxpkg -C ../../../target/release/ --name safe_network_vault --version 0.0.3 --license GPLv3 --vendor MaidSafe --maintainer qa@maidsafe.net --prefix $HOME/MaidSafe --description "The Ants are coming!!" --url "http://maidsafe.net" maidsafe_vault
+fpm -s dir -t osxpkg -C ../../../target/release/ --name maidsafe-vault --version 0.1.1 --prefix /opt/maidsafe --description "The Ants are coming!" --url "http://maidsafe.net" --license "GPLv3" --vendor MaidSafe --maintainer "MaidSafe_QA <qa@maidsafe.net>" maidsafe_vault ../../installer/maidsafe_vault.bootstrap.cache=maidsafe_vault.bootstrap.cache
