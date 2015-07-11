@@ -106,7 +106,7 @@ where the last flow deviates from the existing implementation, but would notify 
            e.g. MaidManagers{MaidNode}
 
 
-###Terms and conventions for individual documentation
+### Terms and conventions for individual documentation
 
 * ->> : represents a single to group message (no callback)
 * -> : represents a single to single message (no callback)
@@ -118,7 +118,7 @@ where the last flow deviates from the existing implementation, but would notify 
 * *=> : represents a group to single message (callback)
 * So - Send On, this function which sends the message on to the next persona is implicitly mentioned in all above notations. They can be explicitly mentioned, when it matters
 * Action.Sy : denotes synchronising the Action
-* Ac - Accumulate, This function accumulates messages from previous 
+* Ac - Accumulate, This function accumulates messages from previous
 * Fw - Firewall, this function ensures duplicate messages are prevented from progressing and answers such messages with the calculated response (such as success:error:synchronising etc. and may include a message containing data)
 * | : represents [Ac, FW]
 * [*Operation1*, *Operation2*, .. *OperationN*] : denotes sequential operations
