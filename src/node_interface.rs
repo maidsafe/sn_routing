@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use data::Data;
+use data::{Data, DataRequest};
 use name_type::NameType;
 use types::DestinationAddress;
 use authority::Authority;
