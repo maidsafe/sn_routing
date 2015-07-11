@@ -65,7 +65,7 @@ pub enum MessageType {
     ConnectRequest(ConnectRequest),
     ConnectResponse(ConnectResponse),
     FindGroup(NameType),
-    FindGroupResponse(Vec<crypto::sign::PublicKey>),
+    FindGroupResponse(Vec<PublicId>),
     GetData(DataRequest),
     GetDataResponse(Result<Data, ResponseError>),
     DeleteData(DataRequest),
@@ -211,8 +211,7 @@ impl RoutingMessage {
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)
-                        -> RoutingMessage {
+    pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)-> RoutingMessage {
         // implicitly preserve all non-mutated fields.
         // TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
         let mut reply_message = self.clone();
@@ -255,10 +254,12 @@ impl SignedRoutingMessage {
     }
 }
 
+/// All messages sent / received are constructed from this type
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-enum Message {
+pub enum Message {
     Signed(SignedRoutingMessage),
-    Unsigned(RoutingMessage)
+    Unsigned(RoutingMessage), // Only Get request is unsigned
+    Error(SignedRoutingMessage), // Get does not reply with error 
 }
 
 impl Message {

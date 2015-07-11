@@ -20,12 +20,14 @@ accumulator = "0.0.*"
 crust = "0.1.*"
 docopt = "*"
 itertools = "*"
+log = "*"
 
 [dependencies.maidsafe_sodiumoxide]
 git = "https://github.com/dirvine/sodiumoxide.git"
 
 [dev-dependencies]
 bit-vec = "*"
+env_logger = "*"
 
 [[example]]
 name = "simple_key_value_store"

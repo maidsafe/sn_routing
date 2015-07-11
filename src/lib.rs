@@ -35,6 +35,9 @@
 #![deny(dead_code, unused_variables, unused_features, unused_attributes)]
 #![forbid(bad_style, warnings)]
 
+#[macro_use]
+extern crate log;
+
 extern crate cbor;
 extern crate rand;
 extern crate rustc_serialize;

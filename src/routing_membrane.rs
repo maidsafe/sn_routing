@@ -187,7 +187,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             }
         }
 
-        println!("Started Membrane loop");
+        info!("Started Membrane loop");
         loop {
             match self.event_input.recv() {
                 Err(_) => (),
@@ -312,17 +312,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
-      println!("CRUST::NewConnection on {:?}", endpoint);
+      info!("CRUST::NewConnection on {:?}", endpoint);
         self.drop_bootstrap();
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::Routing(name)) => {
                 // should not occur; if the endpoint is in the lookup map of routing table,
                 // it was already marked online.
-                println!("DEBUG: NewConnection {:?} on already connected endpoint {:?} in RT.",
+                info!("DEBUG: NewConnection {:?} on already connected endpoint {:?} in RT.",
                     endpoint, name);
                 match self.routing_table.mark_as_connected(&endpoint) {
                     Some(peer_name) => {
-                        println!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
+                        info!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
                                  self.routing_table.size(), peer_name, endpoint);
                         // FIXME: the presence of this debug assert indicates
                         // that the logic for unconnected RT nodes is not quite right.
@@ -362,7 +362,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 trigger_handle_churn = self.routing_table
                     .address_in_our_close_group_range(&name);
                 self.routing_table.drop_node(&name);
-                println!("RT (size : {:?}) connection {:?} disconnected for {:?}.",
+                info!("RT (size : {:?}) connection {:?} disconnected for {:?}.",
                     self.routing_table.size(), endpoint, name);
             },
             None => {}
@@ -371,7 +371,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match self.bootstrap_endpoint {
             Some(ref bootstrap_endpoint) => {
                 if &endpoint == bootstrap_endpoint {
-                    println!("Bootstrap connection disconnected by relay node.");
+                    info!("Bootstrap connection disconnected by relay node.");
                     self.connection_manager.drop_node(endpoint);
                     drop_bootstrap = true;
                 }
@@ -381,7 +381,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         if drop_bootstrap { self.bootstrap_endpoint = None; }
 
         if trigger_handle_churn {
-            println!("Handle CHURN lost node");
+            info!("Handle CHURN lost node");
             let mut close_group : Vec<NameType> = self.routing_table
                 .our_close_group().iter()
                 .map(|node_info| node_info.fob.name())
@@ -396,41 +396,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                     MethodCall::None => (),
                     MethodCall::SendOn { destination } =>
-                        println!("IGNORED: on handle_churn MethodCall:SendOn {} is not a Valid action", destination)
+                        info!("IGNORED: on handle_churn MethodCall:SendOn {} is not a Valid action", destination)
                 };
             }
         };
     }
 
-    /// Parse and update the header with us as a relay node;
-    /// Intercept PutPublicId messages if we are the only zero node.
-    fn relay_message_received(&mut self, received_from: &ConnectionName,
-                                         message: Message,
-                                         endpoint: Endpoint) -> RoutingResult {
-        match received_from {
-            &ConnectionName::Relay(ref name) => {
-                // Parse as mutable to change header
-                let mut routing_message = try!(message.routing_message());
-
-                // intercept PutPublicId for zero node without connections
-                if routing_message.message_type == MessageType::PutPublicId
-                    && self.relay_map.zero_node()
-                    && self.routing_table.size() == 0 {
-                    let header = message.message_header;
-                    let body = message.serialised_body;
-                    // FIXME: check signature
-                    ignore(self.handle_put_public_id_zero_node(header, body, &endpoint));
-                    return Ok(());
-                }
-
-                ignore(self.message_received(&ConnectionName::Routing(name.clone()),
-                                             message,
-                                             false));
-            },
-            _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
-        };
-        Ok(())
-    }
 
     /// This the fundamental functional function in routing.
     /// It only handles messages received from connections in our routing table;
@@ -524,9 +495,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 // switch message type
                 match message.message_type {
-                    MessageType::ConnectResponse => self.handle_connect_response(body),
+                    MessageType::ConnectResponse() => self.handle_connect_response(body),
                     MessageType::FindGroup => self.handle_find_group(header, body),
-                    // MessageType::FindGroupResponse => self.handle_find_group_response(header, body),
+                    MessageType::FindGroupResponse(body) => self.handle_find_group_response(body),
                     MessageType::GetData => self.handle_get_data(header, body),
                     MessageType::GetDataResponse => self.handle_get_data_response(header, body),
         //             MessageType::Post => self.handle_post(header, body),
@@ -582,7 +553,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     match self.connection_manager.send(endpoint.clone(), msg.clone()) {
                         Ok(_) => break,
                         Err(_) => {
-                            println!("Dropped relay connection {:?} on failed attempt
+                            info!("Dropped relay connection {:?} on failed attempt
                                 to relay for node {:?}", endpoint, name);
                             failed_endpoints.push(endpoint.clone());
                         }
@@ -681,18 +652,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             let (added, _) = self.routing_table.add_node(peer_node_info.clone());
                             // TODO: drop dropped node in connection_manager
                             if !added {
-                                println!("RT (size : {:?}) refused connection on {:?} as {:?}
+                                info!("RT (size : {:?}) refused connection on {:?} as {:?}
                                     from routing table.", self.routing_table.size(),
                                     endpoint, i_am.public_id.name());
                                 self.relay_map.remove_unknown_connection(&endpoint);
                                 self.connection_manager.drop_node(endpoint);
                                 return Err(RoutingError::RefusedFromRoutingTable); }
-                            println!("RT (size : {:?}) added connected node {:?} on {:?}",
+                            info!("RT (size : {:?}) added connected node {:?} on {:?}",
                                 self.routing_table.size(), peer_node_info.fob.name(), endpoint);
                             trigger_handle_churn = self.routing_table
                                 .address_in_our_close_group_range(&peer_node_info.fob.name());
                         } else {
-                            println!("I Am, relocated name {:?} conflicted with cached fob.",
+                            info!("I Am, relocated name {:?} conflicted with cached fob.",
                                 i_am.public_id.name());
                             self.relay_map.remove_unknown_connection(&endpoint);
                             self.connection_manager.drop_node(endpoint);
@@ -716,19 +687,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                     peer_node_info.clone());
                                 // TODO: drop dropped node in connection_manager
                                 if !added {
-                                    println!("RT (size : {:?}) refused connection on {:?} as {:?}
+                                    info!("RT (size : {:?}) refused connection on {:?} as {:?}
                                         from routing table.", self.routing_table.size(),
                                         endpoint, i_am.public_id.name());
                                     self.relay_map.remove_unknown_connection(&endpoint);
                                     self.connection_manager.drop_node(endpoint);
                                     return Err(RoutingError::RefusedFromRoutingTable); }
-                                println!("RT (size : {:?}) added connected node {:?} on {:?}",
+                                info!("RT (size : {:?}) added connected node {:?} on {:?}",
                                     self.routing_table.size(), peer_node_info.fob.name(), endpoint);
                                 trigger_handle_churn = self.routing_table
                                     .address_in_our_close_group_range(&peer_node_info.fob.name());
                             },
                             false => {
-                                println!("Dropping connection on {:?} as {:?} is relocated,
+                                info!("Dropping connection on {:?} as {:?} is relocated,
                                     but not cached, or marked in our RT.",
                                     endpoint, i_am.public_id.name());
                                 self.relay_map.remove_unknown_connection(&endpoint);
@@ -741,12 +712,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // if it is not relocated, we consider the connection for our relay_map
             // but with unknown connect request we already successfully relay for an relocated node
             false => {
-                println!("I Am unrelocated {:?} on {:?}. Not Acting on this result.",
+                info!("I Am unrelocated {:?} on {:?}. Not Acting on this result.",
                     i_am.public_id.name(), endpoint);
             }
         };
         if trigger_handle_churn {
-            println!("Handle CHURN new node {:?}", i_am.public_id.name());
+            info!("Handle CHURN new node {:?}", i_am.public_id.name());
             let mut close_group : Vec<NameType> = self.routing_table
                     .our_close_group().iter()
                     .map(|node_info| node_info.fob.name())
@@ -761,7 +732,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Post => unimplemented!(),
                     MethodCall::None => (),
                     MethodCall::SendOn { destination } =>
-                        println!("IGNORED: on handle_churn MethodCall:SendOn {} is not a Valid action", destination)
+                        info!("IGNORED: on handle_churn MethodCall:SendOn {} is not a Valid action", destination)
                 };
             }
         }
@@ -784,18 +755,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // -----Address and various functions----------------------------------------
 
     fn drop_bootstrap(&mut self) {
-        let mut clear_bootstrap = false;
         match self.bootstrap_endpoint {
             Some(ref connected_bootstrap_endpoint) => {
                 if self.routing_table.size() > 0 {
-                    println!("Dropped bootstrap on {:?}", connected_bootstrap_endpoint);
+                    info!("Dropped bootstrap on {:?}", connected_bootstrap_endpoint);
                     self.connection_manager.drop_node(connected_bootstrap_endpoint.clone());
-                    clear_bootstrap = true;
+                    self.bootstrap_endpoint = None; 
                 }
             },
             None => {}
         };
-        if clear_bootstrap { self.bootstrap_endpoint = None; }
     }
 
     fn address_in_close_group_range(&self, address: &NameType) -> bool {
@@ -916,7 +885,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn handle_put_data_response(&mut self, message: RoutingMessage) -> RoutingResult {
-        println!("Handle PUT data response.");
+        info!("Handle PUT data response.");
         let put_response = match message.message_type {
             MessageType::PutDataResponse(response) => response,
             _ => Err(InterfaceError::Abort), // To be changed to Parse error
@@ -968,7 +937,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     let (added, _) = self.routing_table.add_node(peer_node_info.clone());
                     if !added {
                         return Err(RoutingError::RefusedFromRoutingTable); }
-                    println!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name());
+                    info!("RT (size : {:?}) added {:?} ", self.routing_table.size(), peer_node_info.fob.name());
 */
                     // Try to connect to the peer.
                     self.connection_manager.connect(connect_request.local_endpoints.clone());
@@ -988,7 +957,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // if we should directly respond to this message, do so
                             if dest == self.own_name
                                 && self.relay_map.contains_relay_for(&relay) {
-                                println!("Sending ConnectResponse directly to relay {:?}", relay);
+                                info!("Sending ConnectResponse directly to relay {:?}", relay);
                                 self.send_out_as_relay(&relay, serialised_message);
                                 return Ok(());
                             }
@@ -1047,9 +1016,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // Collect the local and external endpoints into a single vector to construct a NodeInfo
         let mut peer_endpoints = connect_response.receiver_local_endpoints.clone();
         peer_endpoints.extend(connect_response.receiver_external_endpoints.clone().into_iter());
-  // println!("ConnectResponse from {:?}",  )
+  // info!("ConnectResponse from {:?}",  )
   // for peer in peer_endpoint {
-  //     println!("")
+  //     info!("")
   // }
         let peer_node_info =
             NodeInfo::new(connect_response.receiver_fob.clone(), peer_endpoints, None);
@@ -1058,7 +1027,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let (added, _) = self.routing_table.add_node(peer_node_info.clone());
         if !added {
            return Err(RoutingError::RefusedFromRoutingTable); }
-        println!("RT (size : {:?}) added {:?} on connect response", self.routing_table.size(),
+        info!("RT (size : {:?}) added {:?} on connect response", self.routing_table.size(),
             peer_node_info.fob.name());
         // Try to connect to the peer.
         self.connection_manager.connect(connect_response.receiver_local_endpoints.clone());
@@ -1089,7 +1058,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // assign_relocated_name
                 put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
 
-                println!("RELOCATED {:?} to {:?}",
+                info!("RELOCATED {:?} to {:?}",
                     put_public_id.public_id.name(), relocated_name);
                 // SendOn to relocated_name group, which will actually store the relocated public id
                 try!(self.send_on(&put_public_id.public_id.name(),
@@ -1103,7 +1072,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
                 if !self.public_id_cache.contains_key(&put_public_id.public_id.name()) {
                   self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
-                  println!("CACHED RELOCATED {:?}",
+                  info!("CACHED RELOCATED {:?}",
                       put_public_id.public_id.name());
                   // Reply with PutPublicIdResponse to the reply_to address
                   let reply_header = header.create_reply(&self.own_name, &our_authority);
@@ -1156,9 +1125,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_find_group_response(&mut self,  body: Bytes,
+    fn handle_find_group_response(&mut self,  find_group_response: Vec<PublicID>,
         refresh_our_own_group: &bool) -> RoutingResult {
-        let find_group_response = try!(decode::<MessageType::FindGroupResponse>(&body));
         for peer in find_group_response.group {
             self.refresh_routing_table(&peer.name());
         }
@@ -1167,7 +1135,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             if !self.connection_cache.contains_key(&our_name) {
                 let find_group_msg = self.construct_find_group_msg(&our_name);
                 let serialised_msg = try!(encode(&find_group_msg));
-                println!("REFLECT OUR GROUP");
+                info!("REFLECT OUR GROUP");
                 self.send_swarm_or_parallel(&our_name, &serialised_msg);
                 self.connection_cache.entry(our_name)
                     .or_insert(SteadyTime::now());
@@ -1246,7 +1214,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // also add our own name.
     fn handle_put_public_id_zero_node(&mut self, header: MessageHeader, body: Bytes,
         send_to: &Endpoint) -> RoutingResult {
-        println!("FIRST NODE BOOSTRAPS OFF OF ZERO NODE");
+        info!("FIRST NODE BOOSTRAPS OFF OF ZERO NODE");
         let put_public_id = try!(decode::<MessageType::PutPublicId>(&body));
         if put_public_id.public_id.is_relocated() {
             return Err(RoutingError::RejectedPublicId); }
@@ -1510,7 +1478,7 @@ fn create_mmebrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     let beacon_port = Some(5483u16);
     let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
         Err(reason) => {
-            println!("Failed to start listening: {:?}", reason);
+            info!("Failed to start listening: {:?}", reason);
             (vec![], None)
         }
         Ok(listeners_and_beacon) => listeners_and_beacon
@@ -1711,7 +1679,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
             }
             if count_total >= limit_attempts {
                 if count_inside > 0 {
-                    println!("Could only verify {} successful public_ids inside
+                    info!("Could only verify {} successful public_ids inside
                             our group before limit reached.", count_inside);
                     break;
                 } else { panic!("No PublicIds were found inside our close group!"); }
@@ -1774,7 +1742,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
             }
             if count_total >= limit_attempts {
                 if count_inside > 0 {
-                    println!("Could only verify {} successful public_ids inside
+                    info!("Could only verify {} successful public_ids inside
                             our group before limit reached.", count_inside);
                     break;
                 } else { panic!("No PublicIds were found inside our close group!"); }
