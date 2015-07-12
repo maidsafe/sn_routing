@@ -215,19 +215,28 @@ impl RoutingMessage {
         // implicitly preserve all non-mutated fields.
         // TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
         let mut reply_message = self.clone();
-        reply_message.source  = match self.destination {
-            DestinationAddress::RelayToClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
-            DestinationAddress::RelayToNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone()),
-            DestinationAddress::Direct(_)           => SourceAddress::Direct(our_name.clone()),
-        };
-        reply_message.destination = match self.source {
-            SourceAddress::RelayedForClient(a, b) => DestinationAddress::RelayToClient(a, b),
-            SourceAddress::RelayedForNode(a, b)   => DestinationAddress::RelayToNode(a, b),
-            SourceAddress::Direct(a)              => DestinationAddress::Direct(a),
-        };
+        reply_message.source  = self.reply_source(our_name);
+        reply_message.destination = self.reply_message(our_name);        
         reply_message.authority = our_authority.clone();
         reply_message
     }
+
+    pub fn reply_source(&self, our_name : &NameType)->SourceAddress {
+        match self.destination {
+            DestinationAddress::RelayToClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
+            DestinationAddress::RelayToNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone()),
+            DestinationAddress::Direct(_)           => SourceAddress::Direct(our_name.clone()),
+        }
+    }
+
+    pub fn reply_destination(&self, our_name : &NameType)->DestinationAddress {
+        match self.source {
+            SourceAddress::RelayedForClient(a, b) => DestinationAddress::RelayToClient(a, b),
+            SourceAddress::RelayedForNode(a, b)   => DestinationAddress::RelayToNode(a, b),
+            SourceAddress::Direct(a)              => DestinationAddress::Direct(a),
+        }
+    }
+         
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]

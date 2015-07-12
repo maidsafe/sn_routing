@@ -128,7 +128,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             message_id  : message_id.clone(),
             authority   : Authority::Unknown
         });
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(data.unwrap().name(), &msg)));
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(location, &msg)));
     }
 
     /// Add something to the network, will always go via ClientManager group
@@ -143,7 +143,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
 
         let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(data.unwrap().name(), &msg)));
+        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(destination, &msg)));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -257,6 +257,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     self.handle_lost_connection(endpoint);
                 }
             };
+        }
+    }
+
+    fn my_source_address(&self)->SourceAddress {
+        if Some(self.bootstrap_endpoint) {
+            // FIXME(dirvine) we must get the name of the bootstrap node :12/07/2015
+            SourceAddress::RelayedForNode(self.own_name().clone())
+            // SourceAddress::RelayedForNode(self.own_name().clone(). self.ConnectionName::our_bootstrap())
+        } else { 
+            SourceAddress::RelayedForNode(self.own_name().clone())
         }
     }
 
@@ -433,8 +443,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MessageType::GetDataResponse(result) => {
                 result.map(|data| {
                     if data.is_empty() { return; }
+
+                    let from = message.from_group()
+                                      .unwrap_or(message.non_relayed_source());
+
                     ignore(self.mut_interface().handle_cache_put(
-                           message.authority, message.non_relayed_source(), data));
+                           message.authority, from, data));
                 })
             },
             _ => {}
@@ -443,7 +457,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // cache check / response
         match message.message_type {
             MessageType::GetData(data_request) => {
-                match self.mut_interface().handle_cache_get(data_request, message.authority(), message.non_relayed_source()) {
+                let from = message.from_group()
+                                  .unwrap_or(message.non_relayed_source());
+
+                match self.mut_interface().handle_cache_get(data_request,
+                                                            message.authority(),
+                                                            from) {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
                             let reply = message.create_reply(self.own_name(), Authority::NodeManager(self.own_name()));
@@ -464,10 +483,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
             self.address_in_close_group_range(&message.non_relayed_destination());
 
         // Handle FindGroupResponse
-        if message.message_type == MessageType::FindGroupResponse {
-            ignore(self.handle_find_group_response(body, &address_in_close_group_range));
-            return Ok(());
-        }
+        match  message.message_type {
+            MessageType::FindGroupResponse(vec_of_public_ids) =>  ignore(self.handle_find_group_response(vec_of_public_ids), &address_in_close_group_range),
+             _ => (),
+        };
 
         if !address_in_close_group_range {
             return Ok(());
@@ -475,18 +494,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
         // and this node is in the group but the message destination is another group member node.
-        if message.message_type == MessageType::ConnectRequest
-            || message.message_type == MessageType::ConnectResponse {
-            if header.destination.dest != self.own_name  {
-                // "not for me"
-                return Ok(());
-            }
+        match  message.message_type {
+            MessageType::ConnectRequest(_) |
+            MessageType::ConnectResponse(_) =>  
+                            if message.non_relayed_destination() != self.own_name  {
+                                // "not for me"
+                                return Ok(()); },
+            _ => (),
         }
         //
         // pre-sentinel message handling
         match message.message_type {
-            // FIXME: Unauthorised Put needs review
-            MessageType::UnauthorisedPut => self.handle_put_data(header, body),
             // MessageType::GetKey => self.handle_get_key(header, body),
             // MessageType::GetGroupKey => self.handle_get_group_key(header, body),
             MessageType::ConnectRequest => self.handle_connect_request(body, message.signature),
@@ -495,8 +513,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 // switch message type
                 match message.message_type {
-                    MessageType::ConnectResponse() => self.handle_connect_response(body),
-                    MessageType::FindGroup => self.handle_find_group(header, body),
+                    MessageType::ConnectResponse(response) => self.handle_connect_response(response),
+                    MessageType::FindGroup(find_group) => self.handle_find_group(message, find_group),
                     MessageType::FindGroupResponse(body) => self.handle_find_group_response(body),
                     MessageType::GetData => self.handle_get_data(header, body),
                     MessageType::GetDataResponse => self.handle_get_data_response(header, body),
@@ -569,13 +587,25 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn send_swarm_or_parallel(&self, name : &NameType, msg: &Message) {
-        for peer in self.routing_table.target_nodes(name) {
-            match peer.connected_endpoint {
-                Some(peer_endpoint) => {
-                    ignore(encode(&msg).map(|msg|self.connection_manager.send(peer_endpoint, msg)));
-                },
-                None => {}
-            };
+        if self.routing_table.size() > 0 {
+            for peer in self.routing_table.target_nodes(name) {
+                match peer.connected_endpoint {
+                    Some(peer_endpoint) => {
+                        ignore(encode(&msg).map(|msg|self.connection_manager.send(peer_endpoint, msg)));
+                    },
+                        None => {}
+                };
+            }
+        } else { match self.bootstrap_endpoint.clone() {
+                    Some(ref bootstrap_endpoint) => {
+                        match self.connection_manager.send(bootstrap_endpoint.clone(),
+                        serialised_message) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(RoutingError::Io(e))
+                    }},
+                    None => Err(RoutingError::FailedToBootstrap)
+                }
+
         }
     }
 
@@ -597,22 +627,26 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
-        let routing_msg = self.construct_connect_request_msg(&peer_id);
-        let serialised_message = try!(encode(&routing_msg));
-        match self.routing_table.size() > 0 {
-            true => {
-                self.send_swarm_or_parallel(peer_id, &serialised_message);
-                Ok(()) },
-            false => match self.bootstrap_endpoint.clone() {
-                Some(ref bootstrap_endpoint) => {
-                    match self.connection_manager.send(bootstrap_endpoint.clone(),
-                    serialised_message) {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(RoutingError::Io(e))
-                    }},
-                None => Err(RoutingError::FailedToBootstrap)
-            }
-        }
+        // FIXME: We're sending all accepting connections as local since we don't differentiate
+        // between local and external yet.
+        let connect_request = ConnectRequest {
+            local_endpoints: self.accepting_on.clone(),
+            external_endpoints: vec![],
+            requester_id: self.own_name.clone(),
+            receiver_id: peer_id.clone(),
+            requester_fob: types::PublicId::new(&self.id),
+        };
+        let message_id = self.get_next_message_id();
+        
+        let message =  RoutingMessage {
+            destination : DestinationAddress::Direct(location),
+            source      : self.my_source_address(),
+            message_type: MessageType::ConnectRequest(connect_request),
+            message_id  : self.get_next_message_id(),
+            authority   : Authority::ManagedNode
+        };
+        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+        encode(&message).map(|msg| self.send_swarm_or_parallel(peer_id, &msg));
     }
 
     // ---- Who Are You ---------------------------------------------------------
@@ -768,7 +802,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn address_in_close_group_range(&self, address: &NameType) -> bool {
-        if self.routing_table.size() < RoutingTable::get_group_size() {
+        if self.routing_table.size() < types::QUORUM_SIZE  || 
+           address == self.our_name()
+        {
             return true;
         }
 
@@ -854,10 +890,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
             },
             Err(InterfaceError::Abort) => {},
-            Err(InterfaceError::Response(ResponseError::FailedToStoreData(_))) => {
-                try!(self.send_reply(&message, our_authority.clone(),
-                        Err(ResponseError::FailedToStoreData(data))));
-            },
             Err(InterfaceError::Response(error)) => {
                 try!(self.send_reply(&message, our_authority.clone(), Err(error)));
             }
@@ -1043,85 +1075,87 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_put_public_id(&mut self, header: MessageHeader, body: Bytes) -> RoutingResult {
         let put_public_id = try!(decode::<MessageType::PutPublicId>(&body));
         let our_authority = our_authority(put_public_id.public_id.name(), &header, &self.routing_table);
-        match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
-            (Authority::ManagedNode, Authority::NaeManager(_), false) => {
-                let mut put_public_id_relocated = put_public_id.clone();
+    match (header.from_authority(), our_authority.clone(), put_public_id.public_id.is_relocated()) {
+        (Authority::ManagedNode, Authority::NaeManager(_), false) => {
+            let mut put_public_id_relocated = put_public_id.clone();
 
-                // FIXME: we should add ourselves
-                let mut close_group : Vec<NameType> =
-                    self.routing_table.our_close_group().into_iter()
-                    .map(|node_info| node_info.id())
-                    .collect::<Vec<NameType>>();
-                close_group.insert(0, self.own_name.clone());
-                let relocated_name = try!(utils::calculate_relocated_name(
-                    close_group, &put_public_id.public_id.name()));
-                // assign_relocated_name
-                put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
+            // FIXME: we should add ourselves
+            let mut close_group : Vec<NameType> =
+                self.routing_table.our_close_group().into_iter()
+                .map(|node_info| node_info.id())
+                .collect::<Vec<NameType>>();
+            close_group.insert(0, self.own_name.clone());
+            let relocated_name = try!(utils::calculate_relocated_name(
+                close_group, &put_public_id.public_id.name()));
+            // assign_relocated_name
+            put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
 
-                info!("RELOCATED {:?} to {:?}",
-                    put_public_id.public_id.name(), relocated_name);
-                // SendOn to relocated_name group, which will actually store the relocated public id
-                try!(self.send_on(&put_public_id.public_id.name(),
-                                  &header,
-                                  relocated_name,
-                                  MessageType::PutPublicId,
-                                  put_public_id_relocated));
-                Ok(())
-            },
-            (Authority::NaeManager(_), Authority::NaeManager(_), true) => {
-                // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
-                if !self.public_id_cache.contains_key(&put_public_id.public_id.name()) {
-                  self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
-                  info!("CACHED RELOCATED {:?}",
-                      put_public_id.public_id.name());
-                  // Reply with PutPublicIdResponse to the reply_to address
-                  let reply_header = header.create_reply(&self.own_name, &our_authority);
-                  let destination = reply_header.destination.dest.clone();
-                  let routing_msg = RoutingMessage::new(MessageType::PutPublicIdResponse,
-                                                        reply_header,
-                                                        PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
-                                                        &self.id.get_crypto_secret_sign_key());
-                  let encoded_msg = try!(encode(&routing_msg));
+            info!("RELOCATED {:?} to {:?}",
+                put_public_id.public_id.name(), relocated_name);
+            // SendOn to relocated_name group, which will actually store the relocated public id
+            try!(self.send_on(&put_public_id.public_id.name(),
+                              &header,
+                              relocated_name,
+                              MessageType::PutPublicId,
+                              put_public_id_relocated));
+            Ok(())
+        },
+        (Authority::NaeManager(_), Authority::NaeManager(_), true) => {
+            // Note: The "if" check is workaround for absense of sentinel. This avoids redundant PutPublicIdResponse responses.
+            if !self.public_id_cache.contains_key(&put_public_id.public_id.name()) {
+              self.public_id_cache.add(put_public_id.public_id.name(), put_public_id.public_id.clone());
+              info!("CACHED RELOCATED {:?}",
+                  put_public_id.public_id.name());
+              // Reply with PutPublicIdResponse to the reply_to address
+              let reply_header = header.create_reply(&self.own_name, &our_authority);
+              let destination = reply_header.destination.dest.clone();
+              let routing_msg = RoutingMessage::new(MessageType::PutPublicIdResponse,
+                                                    reply_header,
+                                                    PutPublicIdResponse{ public_id :put_public_id.public_id.clone() },
+                                                    &self.id.get_crypto_secret_sign_key());
+              let encoded_msg = try!(encode(&routing_msg));
 
-                  // intercept if we can relay it directly
-                  match (routing_msg.message_header.destination.dest.clone(),
-                      routing_msg.message_header.destination.relay_to.clone()) {
-                      (dest, Some(relay)) => {
-                          // if we should directly respond to this message, do so
-                          if dest == self.own_name
-                              && self.relay_map.contains_relay_for(&relay) {
-                              self.send_out_as_relay(&relay, encoded_msg);
-                              return Ok(());
-                          }
-                      },
-                      _ => {}
-                  };
+              // intercept if we can relay it directly
+              match (routing_msg.message_header.destination.dest.clone(),
+                  routing_msg.message_header.destination.relay_to.clone()) {
+                  (dest, Some(relay)) => {
+                      // if we should directly respond to this message, do so
+                      if dest == self.own_name
+                          && self.relay_map.contains_relay_for(&relay) {
+                          self.send_out_as_relay(&relay, encoded_msg);
+                          return Ok(());
+                      }
+                  },
+                  _ => {}
+              };
 
-                  // Send this to the relay node as specified in the reply_header
-                  self.send_swarm_or_parallel(&destination, &encoded_msg);
-                }
-                Ok(())
-            },
-            _ => {
-                Err(RoutingError::BadAuthority)
+              // Send this to the relay node as specified in the reply_header
+              self.send_swarm_or_parallel(&destination, &encoded_msg);
             }
+            Ok(())
+        },
+        _ => {
+            Err(RoutingError::BadAuthority)
         }
     }
+    }
 
-    fn handle_find_group(&mut self, original_header: MessageHeader, body: Bytes) -> RoutingResult {
-        let find_group = try!(decode::<MessageType::FindGroup>(&body));
+    fn handle_find_group(&mut self, original_message: RoutingMessage, find_group: NameType) -> RoutingResult {
         let group = self.routing_table.our_close_group().into_iter()
                     .map(|x|x.fob)
                     // add ourselves
                     .chain(Some(PublicId::new(&self.id)).into_iter())
                     .collect::<Vec<_>>();
 
-        let routing_response = self.construct_find_group_response_msg(&original_header, &find_group, group);
-
-        let serialised_response = try!(encode(&routing_response));
-
-        self.send_swarm_or_parallel_or_relay(&routing_response.destination, &serialised_response);
-
+        let message = RoutingMessage {
+            destination : original_message.reply_destination(self.own_name()), 
+            source      : original_message.reply_source(self.own_name()),
+            message_type: MessageType::FindGroupResponse(group),
+            message_id  : original_message.message_id,
+            authority   : Authority::Unknown,
+        };
+        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+        ignore(encode(&signed_message).map(|msg| self.send_swarm_or_parallel(message.non_relayed_destination(), &msg)));
         Ok(())
     }
 
@@ -1261,24 +1295,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             &self.id.get_crypto_secret_sign_key())
     }
 
-    fn construct_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingMessage {
-        let header = MessageHeader::new(self.get_next_message_id(),
-            types::DestinationAddress {dest: peer_id.clone(), relay_to: None },
-            self.our_source_address(None), Authority::ManagedNode);
-
-        // FIXME: We're sending all accepting connections as local since we don't differentiate
-        // between local and external yet.
-        let connect_request = ConnectRequest {
-            local_endpoints: self.accepting_on.clone(),
-            external_endpoints: vec![],
-            requester_id: self.own_name.clone(),
-            receiver_id: peer_id.clone(),
-            requester_fob: types::PublicId::new(&self.id),
-        };
-
-        RoutingMessage::new(MessageType::ConnectRequest, header, connect_request,
-            &self.id.get_crypto_secret_sign_key())
-    }
 
     fn construct_get_data_response_msg(&self,
                                        our_authority: Authority,
