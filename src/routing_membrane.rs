@@ -57,7 +57,7 @@ use refresh_accumulator::RefreshAccumulator;
 use id::Id;
 use public_id::PublicId;
 use utils;
-
+use utils::{encode, decode};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -1324,19 +1324,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 }
 
-fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
-    let mut enc = Encoder::from_memory();
-    try!(enc.encode(&[value]));
-    Ok(enc.into_bytes())
-}
-
-fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
-    let mut dec = Decoder::from_bytes(&bytes[..]);
-    match dec.decode().next() {
-        Some(result) => result,
-        None => Err(CborError::UnexpectedEOF)
-    }
-}
 
 fn ignore<R,E>(_restul: Result<R,E>) {}
 
