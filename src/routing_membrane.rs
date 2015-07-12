@@ -263,10 +263,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn my_source_address(&self)->SourceAddress {
         if Some(self.bootstrap_endpoint) {
             // FIXME(dirvine) we must get the name of the bootstrap node :12/07/2015
-            SourceAddress::RelayedForNode(self.own_name().clone())
+            SourceAddress::Direct(self.own_name().clone())
             // SourceAddress::RelayedForNode(self.own_name().clone(). self.ConnectionName::our_bootstrap())
         } else { 
-            SourceAddress::RelayedForNode(self.own_name().clone())
+            SourceAddress::Direct(self.own_name().clone())
         }
     }
 
