@@ -37,11 +37,7 @@ use types::{MessageId, Bytes, SourceAddress, DestinationAddress};
 use utils;
 use utils::{encode, decode};
 use authority::{Authority};
-<<<<<<< HEAD
-use messages::{RoutingMessage, MessageType, ConnectResponse, ConnectRequest};
-=======
 use messages::{RoutingMessage, SignedMessage, MessageType, ConnectResponse, ConnectRequest};
->>>>>>> 48f94bf818919c62caa6692a61fedc0e5d61826f
 use error::{RoutingError};
 use std::thread::spawn;
 
