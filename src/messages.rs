@@ -262,7 +262,7 @@ pub struct SignedMessage {
 }
 
 impl SignedMessage {
-    pub fn new(message: &RoutingMessage, private_sign_key: &crypto::sign::PrivateKey)
+    pub fn new(message: &RoutingMessage, private_sign_key: &crypto::sign::SecretKey)
         -> Result<SignedMessage, CborError> {
 
         let encoded_body = try!(utils::encode(&message));
@@ -274,14 +274,19 @@ impl SignedMessage {
         }
     }
 
-    pub fn validate_signature(&self,
-                              private_sign_key: &crypto::sign::PrivateKey) -> bool {
-        crypto::sign::verify_detached(&m.signature,
-                                      &m.encoded_body,
-                                      &private_sign_key)
+    pub fn verify_signature(&self, public_sign_key: &crypto::sign::PublicKey) -> bool {
+        crypto::sign::verify_detached(&self.signature,
+                                      &self.encoded_body,
+                                      &public_sign_key)
     }
 
-    pub fn get_body(&self) -> Result<Message, CborError> {
+    pub fn encoded_body(&self) -> &Vec<u8> {
+        &self.encoded_body
+    }
+
+    pub fn signature(&self) -> &Signature { self.signature }
+
+    pub fn get_body(&self) -> Result<RoutingMessage, CborError> {
         // TODO: Discuss: Should we check the signature here? If so, we would need to
         // return different error which would also express the fact that signature
         // validation failed. We would additionaly require the private sign key

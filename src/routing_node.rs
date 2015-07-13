@@ -37,7 +37,7 @@ use types::{MessageId, Bytes, SourceAddress, DestinationAddress};
 use utils;
 use utils::{encode, decode};
 use authority::{Authority};
-use messages::{RoutingMessage, SignedRoutingMessage, Message, MessageType, ConnectResponse, ConnectRequest};
+use messages::{RoutingMessage, SignedMessage, MessageType, ConnectResponse, ConnectRequest};
 use error::{RoutingError};
 use std::thread::spawn;
 
@@ -225,7 +225,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     }
 
     fn construct_connect_request_msg(&mut self, destination: &NameType,
-            accepting_on: Vec<Endpoint>) -> Message {
+            accepting_on: Vec<Endpoint>) -> SignedMessage {
         let message_id = self.get_next_message_id();
         let connect_request = ConnectRequest {
             local_endpoints    : accepting_on,
@@ -234,40 +234,31 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             receiver_id        : destination.clone(),
             requester_fob      : PublicId::new(&self.id),
         };
-        let unsigned_message =  Message::Unsigned(RoutingMessage {
+        let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(destination.clone()),
             source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
             message_type : MessageType::ConnectRequest(connect_request),
             message_id   : message_id.clone(),
             authority    : Authority::ManagedNode,
-        });
+        };
 
-        let encoded_routing_message = encode(&unsigned_message);
-        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
-
-        Message::Signed(SignedRoutingMessage {
-            encoded_routing_message : encoded_routing_message,
-            signature               : signature,
-        })
+        SignedMessage::new(message, &self.id.secret_key.0)
     }
 
-    fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId) -> Message {
+    fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId)
+            -> Result<SignedMessage, CborError> {
+
         let message_id = self.get_next_message_id();
-        let unsigned_message =  Message::Unsigned(RoutingMessage { 
+
+        let message =  RoutingMessage { 
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
             source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
             authority    : Authority::ManagedNode,  
-        });
+        };
 
-        let encoded_routing_message = encode(&unsigned_message);
-        let signature = crypto::sign::sign_detached(&encoded_routing_message, &self.id.secret_keys.0);
-
-        Message::Signed(SignedRoutingMessage {
-            encoded_routing_message : encoded_routing_message,
-            signature               : signature,
-        })
+        Ok(SignedMessage::new(&message, &self.id.secret_keys.0))
     }
 
     fn our_source_address(&self) -> types::SourceAddress {

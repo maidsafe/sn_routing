@@ -30,13 +30,15 @@ use name_type::NameType;
 use sendable::Sendable;
 use types;
 use error::{RoutingError, ResponseError};
-use messages::{Message, SignedRoutingMessage, RoutingMessage, MessageType, ConnectResponse, ConnectRequest};
+use messages::{SignedMessage, RoutingMessage, MessageType,
+               ConnectResponse, ConnectRequest};
 use types::{MessageId, DestinationAddress, SourceAddress};
 use id::Id;
 use public_id::PublicId;
 use authority::Authority;
 use utils::*;
 use data::{Data, DataRequest};
+use cbor::{CborError};
 
 pub use crust::Endpoint;
 
@@ -84,13 +86,14 @@ impl<F> RoutingClient<F> where F: Interface {
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, IoError> {
         let message_id = self.get_next_message_id();
-        let message =  Message::Unsigned(RoutingMessage {
+
+        let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.public_key()),
             message_type: MessageType::GetData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
-            } );
+            };
 
         self.send_to_bootstrap_node(&message);
         Ok(message_id)
@@ -108,8 +111,6 @@ impl<F> RoutingClient<F> where F: Interface {
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
-        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
-
         self.send_to_bootstrap_node(&message);
         Ok(message_id)
     }
@@ -126,8 +127,6 @@ impl<F> RoutingClient<F> where F: Interface {
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
-        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_key.0);
-
         self.send_to_bootstrap_node(&message);
         Ok(message_id)
     }
@@ -142,8 +141,6 @@ impl<F> RoutingClient<F> where F: Interface {
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
-
-        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_key.0);
 
         self.send_to_bootstrap_node(&message);
         Ok(message_id)
@@ -240,9 +237,7 @@ impl<F> RoutingClient<F> where F: Interface {
                     authority   : Authority::Client(self.id.signing_public_key()),
                 };
 
-                let signed_message = SignedRoutingMessage::new(message, &self.id.secret_key.0);
-
-                let _ = encode(&signed_message).map(|msg| self.send_to_bootstrap_node(&msg));
+                let _ = self.send_to_bootstrap_node(&message);
             },
             _ => {}
         }
@@ -259,11 +254,15 @@ impl<F> RoutingClient<F> where F: Interface {
         };
     }
 
-    fn send_to_bootstrap_node(&mut self, message: &Message) {
+    fn send_to_bootstrap_node(&mut self, message: &RoutingMessage)
+            -> Result<(), CborError> {
+
         match self.bootstrap_address.1 {
             Some(ref bootstrap_endpoint) => {
-                let _ = self.connection_manager.send(
-                    bootstrap_endpoint.clone(), encode(&message));
+                let encoded_message = try!(encode(&message));
+
+                let _ = self.connection_manager.send(bootstrap_endpoint.clone(),
+                                                     encoded_message);
             },
             None => {}
         };
