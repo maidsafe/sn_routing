@@ -181,7 +181,10 @@ impl RoutingMessage {
                 Authority::NaeManager(n)    => Some(n),
                 Authority::OurCloseGroup(n) => Some(n),
                 Authority::NodeManager(n)   => Some(n),
-                _                           => None,
+                Authority::ManagedNode      => None,
+                Authority::ManagedClient(_) => None,
+                Authority::Client(_)        => None,
+                Authority::Unknown          => None,
             },
         }
     }
