@@ -110,6 +110,10 @@ impl RoutingMessage {
         self.message_id
     }
 
+    pub fn source_address(&self) -> SourceAddress {
+        self.source
+    }
+
     pub fn destination_address(&self) -> DestinationAddress {
         self.destination
     }
@@ -122,13 +126,13 @@ impl RoutingMessage {
         }
     }
 
-    pub fn actual_source(&self) -> NameType {
-        match self.source {
-            SourceAddress::RelayedForClient(_, addr) => addr,
-            SourceAddress::RelayedForNode(_, addr)   => addr,
-            SourceAddress::Direct(addr)              => addr,
-        }
-    }
+    //pub fn actual_source(&self) -> NameType {
+    //    match self.source {
+    //        SourceAddress::RelayedForClient(_, addr) => addr,
+    //        SourceAddress::RelayedForNode(_, addr)   => addr,
+    //        SourceAddress::Direct(addr)              => addr,
+    //    }
+    //}
 
     pub fn non_relayed_destination(&self) -> NameType {
         match self.destination {

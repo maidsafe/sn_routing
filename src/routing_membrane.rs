@@ -885,7 +885,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_put_data(&mut self, message: RoutingMessage, data: Data) -> RoutingResult {
         let our_authority = our_authority(data.name, &message, &self.routing_table);
         let from_authority = message.authority();
-        let from = message.actual_source();
+        let from = message.source_address();
         //let to = message.send_to();
         let to = message.destination_address();
 
@@ -1137,8 +1137,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             message_id  : original_message.message_id,
             authority   : Authority::Unknown,
         };
-        let signed_message = try!(SignedRoutingMessage::new(message, &self.id.signing_private_key()));
-        ignore(encode(&signed_message).map(|msg| self.send_swarm_or_parallel(message.non_relayed_destination(), &msg)));
+        //let signed_message = try!(SignedRoutingMessage::new(message, &self.id.signing_private_key()));
+        //ignore(encode(&signed_message).map(|msg| self.send_swarm_or_parallel(message.non_relayed_destination(), &msg)));
+        self.send_swarm_or_parallel(message.non_relayed_destination(), &message);
         Ok(())
     }
 
@@ -1187,13 +1188,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn send_on(&self,
                name: &NameType,
-               orig_message: &Message,
+               orig_message: &RoutingMessage,
                destination: DestinationAddress,
                message_type: MessageType ) -> RoutingResult
     {
         let our_authority = our_authority(name.clone(), &orig_message, &self.routing_table);
         let message = orig_message.create_send_on(&self.own_name, &our_authority, &destination);
-        let signed_message = try!(SignedRoutingMessage::new(message, &self.id.signing_private_key()));
+        let signed_message = try!(SignedMessage::new(&message, &self.id.signing_private_key()));
         self.send_swarm_or_parallel(&destination, &try!(encode(&signed_message)));
         Ok(())
     }
@@ -1201,7 +1202,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_get_data_response(&mut self, response: Data, message: RoutingMessage) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.authority;
-        let from = message.actual_source();
+        let from = message.source_address();
 
         match self.mut_interface().handle_get_response(from, response) {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
