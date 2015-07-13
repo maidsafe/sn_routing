@@ -55,6 +55,13 @@ pub struct ConnectResponse {
     pub connect_request_signature: Signature
 }
 
+/// Respond wiht Data or Error 
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+pub enum DataOrError {
+Data(Data),
+Err(ResponseError),    
+} 
+
 /// These are the messageTypes routing provides
 /// many are internal to routing and woudl not be useful
 /// to users.
@@ -67,17 +74,17 @@ pub enum MessageType {
     FindGroup(NameType),
     FindGroupResponse(Vec<PublicId>),
     GetData(DataRequest),
-    GetDataResponse(Result<Data, ResponseError>),
+    GetDataResponse(DataOrError),
     DeleteData(DataRequest),
-    DeleteDataResponse(Result<DataRequest, ResponseError>),
+    DeleteDataResponse(DataOrError),
     GetKey,
     GetKeyResponse(NameType, crypto::sign::PublicKey),
     GetGroupKey,
     GetGroupKeyResponse(Vec<(NameType, crypto::sign::PublicKey)>),
     Post(Data),
-    PostResponse(Result<Data, ResponseError>),
+    PostResponse(DataOrError),
     PutData(Data),
-    PutDataResponse(Result<Data, ResponseError>),
+    PutDataResponse(DataOrError),
     PutKey,
     AccountTransfer(NameType),
     PutPublicId(PublicId),
@@ -119,6 +126,14 @@ impl RoutingMessage {
         match self.source {
             SourceAddress::RelayedForClient(addr, _) => addr,
             SourceAddress::RelayedForNode(addr, _)   => addr,
+            SourceAddress::Direct(addr)              => addr,
+        }
+    }
+    
+    pub fn actual_source(&self) -> NameType {
+        match self.source {
+            SourceAddress::RelayedForClient(_, addr) => addr,
+            SourceAddress::RelayedForNode(_, addr)   => addr,
             SourceAddress::Direct(addr)              => addr,
         }
     }
@@ -166,10 +181,7 @@ impl RoutingMessage {
                 Authority::NaeManager(n)    => Some(n),
                 Authority::OurCloseGroup(n) => Some(n),
                 Authority::NodeManager(n)   => Some(n),
-                Authority::ManagedNode      => None,
-                Authority::ManagedClient(_) => None,
-                Authority::Client(_)        => None,
-                Authority::Unknown          => None,
+                _                           => None,
             },
         }
     }
@@ -182,26 +194,10 @@ impl RoutingMessage {
     pub fn create_send_on(&self, our_name : &NameType, our_authority : &Authority,
                           destination : &NameType) -> RoutingMessage {
         // implicitly preserve all non-mutated fields.
-        // TODO(dirvine) Investigate why copy and not change in place  :08/07/2015
         let mut send_on_message = self.clone();
 
-        send_on_message.source = types::SourceAddress {
-            from_node : our_name.clone(),
-            from_group : Some(self.destination.dest.clone()),
-            reply_to : self.source.reply_to.clone(),
-            relayed_for : self.source.relayed_for.clone()
-        };
-        send_on_message.source = match self.source {
-              SourceAddress::RelayedForClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
-              SourceAddress::RelayedForNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone, b),
-              SourceAddress::Direct(a)              => SourceAddress::Direct(our_name.clone()),
-        };
-
-        send_on_message.destination = match self.destination {
-            DestinationAddress::RelayToClient(_, b) => DestinationAddress::RelayToClient(destination, b),
-            DestinationAddress::RelayToNode(_, b)   => DestinationAddress::RelayToNode(destination, b),
-            DestinationAddress::Direct(_)           => DestinationAddress::Direct(destination),
-        };
+        send_on_message.source =  SourceAddress::Direct(our_name);
+        send_on_message.destination = DestinationAddress::Direct(destination);
         send_on_message.authority = our_authority.clone();
         send_on_message
     }
@@ -216,7 +212,7 @@ impl RoutingMessage {
         // TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
         let mut reply_message = self.clone();
         reply_message.source  = self.reply_source(our_name);
-        reply_message.destination = self.reply_message(our_name);        
+        reply_message.destination = self.reply_destination(our_name);        
         reply_message.authority = our_authority.clone();
         reply_message
     }
@@ -268,14 +264,27 @@ impl SignedRoutingMessage {
 pub enum Message {
     Signed(SignedRoutingMessage),
     Unsigned(RoutingMessage), // Only Get request is unsigned
-    Error(SignedRoutingMessage), // Get does not reply with error 
 }
 
 impl Message {
     pub fn routing_message(&self) -> Result<RoutingMessage, CborError> {
         match self {
-            Message::Signed(m)   => utils::decode::<RoutingMessage>(m.encoded_routing_message),
+            Message::Signed(m)   => try!(utils::decode::<RoutingMessage>(m.encoded_routing_message)),
             Message::Unsigned(m) => Ok(m)
         }
     }
+    pub fn check_signed_by(&self, signing_key: crypto::sign::PublicKey)->Result<(), RoutingError> {
+        match self {
+            Message::Signed(m) | Message::Error(m)  => if crypto::sign::verify_detached(&m.signature, 
+                                                                          &m.encoded_routing_message,
+                                                                          &signing_key) {
+                                                            return ();
+                                                       } else { 
+                                                           return RoutingError::FailedSignature;
+                                                       },
+            _ => RoutingError::FailedSignature,
+        }
+        
+    }
+    
 }

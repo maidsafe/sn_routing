@@ -57,6 +57,10 @@ impl Id {
     &self.sign_keys.1    
   }
   
+  pub fn encrypting_public_key(&self) -> &crypto::box_::PublicKey {
+    &self.encrypt_keys.0    
+  }
+  
   pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
                    encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey)) -> Id {
     Id {
@@ -64,5 +68,9 @@ impl Id {
     encrypt_keys: sodiumoxide::crypto::box_::gen_keypair(),
     relocated_name: None,
     }
+  }
+
+  pub fn name(&self)-> Option<NameType> {
+    self.relocated_name    
   }
 }

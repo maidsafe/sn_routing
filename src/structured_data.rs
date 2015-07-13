@@ -25,7 +25,7 @@ use std::str;
 /// StructuredData
 /// These types may be stored unsigned with previous and current owner keys
 /// set to the same keys. Updates though require a signature to validate
-#[derive(Clone, RustcDecodable, RustcEncodable)]
+#[derive(Debug, Eq, PartialEq, Clone, RustcDecodable, RustcEncodable)]
 pub struct StructuredData {
     type_tag: u64,
     identifier: crypto::hash::sha512::Digest,
@@ -85,10 +85,10 @@ impl StructuredData {
     /// Returns name and validates invariants
     pub fn name(&self) -> NameType {
         let chain = self.identifier.0.iter()
-                    .chain(self.tag_type.to_string().as_bytes().iter())
+                    .chain(self.type_tag.to_string().as_bytes().iter())
                     .map(|a|*a);
 
-        NameType(crypto::hash::sha512::hash(chain.collect::<Vec<_>>()[..]))
+        NameType(crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
     }
 
     /// Confirms *unique and valid* previous_owner_signatures are at least 50% of total owners
