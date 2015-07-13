@@ -196,8 +196,30 @@ impl RoutingMessage {
     /// Note: this is not for XOR-forwarding; then the header is preserved!
     pub fn create_send_on(&self, our_name : &NameType, our_authority : &Authority,
                           destination : &NameType) -> RoutingMessage {
+
         // implicitly preserve all non-mutated fields.
         let mut send_on_message = self.clone();
+
+        // Old code for reference as this part needs further discussions.
+        //send_on_message.source = types::SourceAddress {
+        //    from_node : our_name.clone(),
+        //    from_group : Some(self.destination.dest.clone()),
+        //    reply_to : self.source.reply_to.clone(),
+        //    relayed_for : self.source.relayed_for.clone()
+        //};
+        //send_on_message.source = match self.source {
+        //      SourceAddress::RelayedForClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
+        //      SourceAddress::RelayedForNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone, b),
+        //      SourceAddress::Direct(a)              => SourceAddress::Direct(our_name.clone()),
+        //};
+
+        //send_on_message.destination = match self.destination {
+        //    DestinationAddress::RelayToClient(_, b) => DestinationAddress::RelayToClient(destination, b),
+        //    DestinationAddress::RelayToNode(_, b)   => DestinationAddress::RelayToNode(destination, b),
+        //    DestinationAddress::Direct(_)           => DestinationAddress::Direct(destination),
+        //};
+        //send_on_message.authority = our_authority.clone();              send_on_message.authority = our_authority.clone();
+        //send_on_message
 
         send_on_message.source =  SourceAddress::Direct(our_name);
         send_on_message.destination = DestinationAddress::Direct(destination);
