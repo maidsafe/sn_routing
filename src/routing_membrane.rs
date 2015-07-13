@@ -265,7 +265,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // FIXME(dirvine) we must get the name of the bootstrap node :12/07/2015
             SourceAddress::Direct(self.own_name().clone())
             // SourceAddress::RelayedForNode(self.own_name().clone(). self.ConnectionName::our_bootstrap())
-        } else { 
+        } else {
             SourceAddress::Direct(self.own_name().clone())
         }
     }
@@ -496,7 +496,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // and this node is in the group but the message destination is another group member node.
         match  message.message_type {
             MessageType::ConnectRequest(_) |
-            MessageType::ConnectResponse(_) =>  
+            MessageType::ConnectResponse(_) =>
                             if message.non_relayed_destination() != self.own_name  {
                                 // "not for me"
                                 return Ok(()); },
@@ -639,7 +639,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             requester_fob: PublicId::new(&self.id),
         };
         let message_id = self.get_next_message_id();
-        
+
         let message =  RoutingMessage {
             destination : DestinationAddress::Direct(peer_id),
             source      : self.my_source_address(),
@@ -796,7 +796,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 if self.routing_table.size() > 0 {
                     info!("Dropped bootstrap on {:?}", connected_bootstrap_endpoint);
                     self.connection_manager.drop_node(connected_bootstrap_endpoint.clone());
-                    self.bootstrap_endpoint = None; 
+                    self.bootstrap_endpoint = None;
                 }
             },
             None => {}
@@ -804,7 +804,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn address_in_close_group_range(&self, address: &NameType) -> bool {
-        if self.routing_table.size() < types::QUORUM_SIZE  || 
+        if self.routing_table.size() < types::QUORUM_SIZE  ||
            address == self.our_name()
         {
             return true;
@@ -1091,8 +1091,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                                  message_type : MessageType::PutPublicIdResponse(public_id.public_id.clone()),
                                                  message_id   : message.message_id,
                                                  authority    : self.our_authority(),
-                                               }; 
-              
+                                               };
+
               let signed_message = try!(SignedRoutingMessage::new(message, &self.id.signing_private_key()));
               self.send_swarm_or_parallel(destination, &signed_message);
             }
