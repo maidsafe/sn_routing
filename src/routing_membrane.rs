@@ -950,11 +950,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_connect_request(&mut self, connect_request: ConnectRequest, message: Message) -> RoutingResult {
+    fn handle_connect_request(&mut self,
+                              connect_request: ConnectRequest,
+                              message:         SignedMessage
+                             ) -> RoutingResult {
         if !connect_request.requester_fob.is_relocated() {
-            return Err(RoutingError::RejectedPublicId); }
+            return Err(RoutingError::RejectedPublicId);
+        }
         // first verify that the message is correctly self-signed
-        try!(message.check_signed_by(self.id.public_sign_key()));
+        if message.verify_signature(self.id.public_sign_key()) {
+            return Err(RoutingError::FailedSignature);
+        }
         // if the PublicId claims to be relocated,
         // check whether we have a temporary record of this relocated Id,
         // which we would have stored after the sentinel group consensus
@@ -1108,7 +1114,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                                  authority    : self.our_authority(),
                                                };
 
-              let signed_message = try!(SignedRoutingMessage::new(message, &self.id.signing_private_key()));
+              let signed_message = try!(SignedMessage::new(&message, &self.id.signing_private_key()));
               self.send_swarm_or_parallel(destination, &signed_message);
             }
             Ok(())
