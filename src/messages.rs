@@ -98,7 +98,7 @@ pub enum MessageType {
 pub struct RoutingMessage {
     pub destination     : DestinationAddress,
     pub source          : SourceAddress,
-    pub orig_msg        : Option<Vec<u8>>, // represents orig message when this is forwarded
+    pub orig_message    : Option<Vec<u8>>, // represents orig message when this is forwarded
     pub message_type    : MessageType,
     pub message_id      : types::MessageId,
     pub authority       : Authority
@@ -197,7 +197,7 @@ impl RoutingMessage {
         // then store it and preserve along the route 
         // it will contain the address to reply to as well as proof the request was made
         // FIXME(dirvine) We need the original encoded signed message here  :13/07/2015
-         if self.orig_message.is_none() {
+        if self.orig_message.is_none() {
             send_on_message.orig_message = Some(orig_signed_message);         
         }
 
@@ -250,10 +250,10 @@ impl SignedMessage {
         let encoded_body = try!(utils::encode(&message));
         let signature    = crypto::sign::sign_detached(&encoded_body, private_sign_key);
 
-        SignedMessage {
+        Ok(SignedMessage {
             encoded_body: encoded_body,
             signature:    signature
-        }
+        })
     }
 
     pub fn verify_signature(&self, public_sign_key: &crypto::sign::PublicKey) -> bool {
@@ -263,13 +263,13 @@ impl SignedMessage {
     }
 
     pub fn get_routing_message(&self) -> Result<RoutingMessage, CborError> {
-        try!(utils::decode::<RoutingMessage>(self.encoded_body))
+        utils::decode::<RoutingMessage>(&self.encoded_body)
     }
 
     pub fn encoded_body(&self) -> &Vec<u8> {
         &self.encoded_body
     }
 
-    pub fn signature(&self) -> &Signature { self.signature }
+    pub fn signature(&self) -> &Signature { &self.signature }
 }
 
