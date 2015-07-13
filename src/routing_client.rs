@@ -30,7 +30,7 @@ use name_type::NameType;
 use sendable::Sendable;
 use types;
 use error::{RoutingError, ResponseError};
-use messages::{Message, SignedRoutingMessage, RoutingMessage, MessageType, ConnectResponse, ConnectRequest};
+use messages::{RoutingMessage, MessageType, ConnectResponse, ConnectRequest};
 use types::{MessageId, DestinationAddress, SourceAddress};
 use id::Id;
 use public_id::PublicId;

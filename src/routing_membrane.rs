@@ -50,7 +50,7 @@ use types;
 use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress, SourceAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
-use messages::{Message, RoutingMessage, SignedRoutingMessage, MessageType, ConnectRequest, ConnectResponse};
+use messages::{RoutingMessage, MessageType, ConnectRequest, ConnectResponse};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::{MethodCall, MessageAction};
 use refresh_accumulator::RefreshAccumulator;

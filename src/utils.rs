@@ -26,7 +26,7 @@ use NameType;
 use name_type::closer_to_target;
 use std::fmt;
 use error::{RoutingError};
-use messages::{Message, RoutingMessage};
+use messages::{RoutingMessage};
 
 use rustc_serialize::{Decodable, Encodable};
 
