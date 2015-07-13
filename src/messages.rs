@@ -109,17 +109,22 @@ impl RoutingMessage {
         self.message_id
     }
 
-    pub fn send_to(&self) -> types::DestinationAddress {
-        types::DestinationAddress {
-            dest: match self.source.reply_to.clone() {
-                       Some(reply_to) => reply_to,
-                       None => match self.source.from_group.clone() {
-                           Some(group_name) => group_name,
-                           None => self.source.from_node.clone()
-                       }
-            },
-            relay_to: self.source.relayed_for.clone()
-        }
+    // Old code for reference.
+    //pub fn send_to(&self) -> DestinationAddress {
+    //    DestinationAddress {
+    //        dest: match self.source.reply_to.clone() {
+    //                   Some(reply_to) => reply_to,
+    //                   None => match self.source.from_group.clone() {
+    //                       Some(group_name) => group_name,
+    //                       None => self.source.from_node.clone()
+    //                   }
+    //        },
+    //        relay_to: self.source.relayed_for.clone()
+    //    }
+    //}
+
+    pub fn destination_address(&self) -> DestinationAddress {
+        self.destination
     }
 
     pub fn non_relayed_source(&self) -> NameType {

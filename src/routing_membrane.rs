@@ -864,7 +864,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let our_authority = our_authority(data.name, &message, &self.routing_table);
         let from_authority = message.authority();
         let from = message.actual_source();
-        let to = message.send_to();
+        //let to = message.send_to();
+        let to = message.destination_address();
 
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, message.data) {
             Ok(action) => match action {
@@ -919,7 +920,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let our_authority = our_authority(response.name(), &message, &self.routing_table);
         let from_authority = message.authority();
         let from = message.source;
-        let to = message.send_to();
 
         let method_call = self.mut_interface().handle_put_response(from_authority, from, response);
 
