@@ -155,11 +155,6 @@ impl RoutingMessage {
         self.authority.clone()
     }
 
-    pub fn set_relay_name(&mut self, reply_to: &NameType, relay_for: &NameType) {
-        self.source.reply_to = Some(reply_to.clone());
-        self.source.relayed_for = Some(relay_for.clone());
-    }
-
     pub fn client_key(&self) -> Option<crypto::sign::PublicKey> {
         match self.source {
             SourceAddress::RelayedForClient(_, client_key) => Some(client_key),
