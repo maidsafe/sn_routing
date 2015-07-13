@@ -98,6 +98,7 @@ pub enum MessageType {
 pub struct RoutingMessage {
     pub destination     : DestinationAddress,
     pub source          : SourceAddress,
+    pub orig_msg        : Option<Vec<u8>>, // represents orig message when this is forwarded
     pub message_type    : MessageType,
     pub message_id      : types::MessageId,
     pub authority       : Authority
@@ -197,31 +198,18 @@ impl RoutingMessage {
     pub fn create_send_on(&self,
                           our_name      : NameType,
                           our_authority : Authority,
-                          destination   : NameType) -> RoutingMessage {
+                          destination   : NameType,
+                          orig_signed_message  : Vec<u8>) -> RoutingMessage {
 
         // implicitly preserve all non-mutated fields.
         let mut send_on_message = self.clone();
-
-        // Old code for reference as this part needs further discussions.
-        //send_on_message.source = types::SourceAddress {
-        //    from_node : our_name.clone(),
-        //    from_group : Some(self.destination.dest.clone()),
-        //    reply_to : self.source.reply_to.clone(),
-        //    relayed_for : self.source.relayed_for.clone()
-        //};
-        //send_on_message.source = match self.source {
-        //      SourceAddress::RelayedForClient(_, b) => SourceAddress::RelayedForClient(our_name.clone(), b),
-        //      SourceAddress::RelayedForNode(_, b)   => SourceAddress::RelayedForNode(our_name.clone, b),
-        //      SourceAddress::Direct(a)              => SourceAddress::Direct(our_name.clone()),
-        //};
-
-        //send_on_message.destination = match self.destination {
-        //    DestinationAddress::RelayToClient(_, b) => DestinationAddress::RelayToClient(destination, b),
-        //    DestinationAddress::RelayToNode(_, b)   => DestinationAddress::RelayToNode(destination, b),
-        //    DestinationAddress::Direct(_)           => DestinationAddress::Direct(destination),
-        //};
-        //send_on_message.authority = our_authority.clone();              send_on_message.authority = our_authority.clone();
-        //send_on_message
+        // if we are sending on and the original message is not stored 
+        // then store it and preserve along the route 
+        // it will contain the address to reply to as well as proof the request was made
+        // FIXME(dirvine) We need the original encoded signed message here  :13/07/2015
+         if self.orig_message.is_none() {
+            send_on_message.orig_message = Some(orig_signed_message);         
+        }
 
         send_on_message.source      = SourceAddress::Direct(our_name);
         send_on_message.destination = DestinationAddress::Direct(destination);
@@ -238,8 +226,12 @@ impl RoutingMessage {
         // implicitly preserve all non-mutated fields.
         // TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
         let mut reply_message     = self.clone();
+        if self.orig_message.is_some() {
+           reply_message.destination = try!(self.orig_message.get_routing_message()).reply_destination();    
+        } else {
+           reply_message.destination = self.reply_destination(); 
+        }
         reply_message.source      = SourceAddress::Direct(our_name.clone());
-        reply_message.destination = self.reply_destination();
         reply_message.authority   = our_authority.clone();
         reply_message
     }
@@ -254,56 +246,40 @@ impl RoutingMessage {
 
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct SignedRoutingMessage {
-    // FIXME: The field `encoded_routing_message` should be private to
-    // avoid setting it with data that represent something other than
-    // serialised RoutingMessage. (`signature` should probably be
-    // private as well for similar reason).
-    pub encoded_routing_message : Vec<u8>,
-    pub signature               : Signature
-}
-
-impl SignedRoutingMessage {
-    pub fn new(message: &RoutingMessage, secret_key: &crypto::sign::SecretKey)
-        -> Result<SignedRoutingMessage, CborError>
-    {
-        let encoded_message = try!(utils::encode(&message));
-        let signature = crypto::sign::sign_detached(&encoded_message,
-                                                    secret_key);
-        let message = SignedRoutingMessage {
-            encoded_routing_message : encoded_message,
-            signature               : signature,
-        };
-    }
-}
-
 /// All messages sent / received are constructed from this type
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum Message {
-    Signed(SignedRoutingMessage),
-    Unsigned(RoutingMessage), // Only Get request is unsigned
+pub struct SignedMessage {
+    encoded_body: Vec<u8>,
+    signature:    Signature,
 }
 
-impl Message {
-    pub fn routing_message(&self) -> Result<RoutingMessage, CborError> {
-        match self {
-            Message::Signed(m)   => try!(utils::decode::<RoutingMessage>(m.encoded_routing_message)),
-            Message::Unsigned(m) => Ok(m)
+impl SignedMessage {
+    pub fn new(message: &RoutingMessage, private_sign_key: &crypto::sign::SecretKey)
+        -> Result<SignedMessage, CborError> {
+
+        let encoded_body = try!(utils::encode(&message));
+        let signature    = crypto::sign::sign_detached(&encoded_body, private_sign_key);
+
+        SignedMessage {
+            encoded_body: encoded_body,
+            signature:    signature
         }
     }
-    pub fn check_signed_by(&self, signing_key: crypto::sign::PublicKey)->Result<(), RoutingError> {
-        match self {
-            Message::Signed(m) | Message::Error(m)  => if crypto::sign::verify_detached(&m.signature,
-                                                                          &m.encoded_routing_message,
-                                                                          &signing_key) {
-                                                            return ();
-                                                       } else {
-                                                           return RoutingError::FailedSignature;
-                                                       },
-            _ => RoutingError::FailedSignature,
-        }
 
+    pub fn verify_signature(&self, public_sign_key: &crypto::sign::PublicKey) -> bool {
+        crypto::sign::verify_detached(&self.signature,
+                                      &self.encoded_body,
+                                      &public_sign_key)
     }
 
+    pub fn get_routing_message(&self) -> Result<RoutingMessage, CborError> {
+        try!(utils::decode::<RoutingMessage>(self.encoded_body))
+    pub fn encoded_body(&self) -> &Vec<u8> {
+        &self.encoded_body
+    }
+
+    pub fn signature(&self) -> &Signature { self.signature }
+
+    }
 }
+
