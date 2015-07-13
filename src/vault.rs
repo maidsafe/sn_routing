@@ -59,7 +59,7 @@ impl Clone for VaultFacade {
     }
 }
 
-fn merge_refreshable<T>(merged_entry: T, payloads: Vec<Vec<u8>>) ->
+fn merge_refreshable<T>(empty_entry: T, payloads: Vec<Vec<u8>>) ->
         T where T: for<'a> Sendable + Encodable + Decodable + 'static {
     let mut transfer_entries = Vec::<Box<Sendable>>::new();
     for it in payloads.iter() {
@@ -69,8 +69,18 @@ fn merge_refreshable<T>(merged_entry: T, payloads: Vec<Vec<u8>>) ->
             transfer_entries.push(Box::new(parsed));
         }
     }
-    merged_entry.merge(transfer_entries);
-    merged_entry
+    match empty_entry.merge(transfer_entries) {
+        Some(result) => {
+            let mut decoder = Decoder::from_bytes(&result.serialised_contents()[..]);
+            if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
+                let parsed: T = parsed_entry;
+                parsed
+            } else {
+                empty_entry
+            }
+        }
+        None => empty_entry
+    }
 }
 
 impl Interface for VaultFacade {

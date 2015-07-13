@@ -112,8 +112,7 @@ impl Sendable for DataManagerSendable {
         stats.sort_by(|a, b| b.1.cmp(&a.1));
         let (pmids, count) = stats[0].clone();
         if count < (GROUP_SIZE as u64 + 1) / 2 {
-            // TODO: need to testify whether NameType([0u8;64]) is valid to be used here
-            return Some(Box::new(DataManagerSendable::new(NameType([0u8;64]), pmids)));
+            return Some(Box::new(DataManagerSendable::new(self.name.clone(), pmids)));
         }
         None
     }
