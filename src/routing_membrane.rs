@@ -1087,7 +1087,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
               let reply_message = message.create_reply(&self.own_name, &our_authority);
               let destination = reply_message.destination.dest.clone();
               let routing_msg = RoutingMessage { destination  : message.reply_destination(),
-                                                 source       : message.reply_source(),
+                                                 source       : SourceAddress::Direct(self.our_name()),
                                                  message_type : MessageType::PutPublicIdResponse(public_id.public_id.clone()),
                                                  message_id   : message.message_id,
                                                  authority    : self.our_authority(),
@@ -1110,8 +1110,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .collect::<Vec<_>>();
 
         let message = RoutingMessage {
-            destination : original_message.reply_destination(self.own_name()), 
-            source      : original_message.reply_source(self.own_name()),
+            destination : original_message.reply_destination(),
+            source      : SourceAddress::Direct(self.own_name()),
             message_type: MessageType::FindGroupResponse(group),
             message_id  : original_message.message_id,
             authority   : Authority::Unknown,
