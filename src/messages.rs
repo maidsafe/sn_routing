@@ -260,12 +260,12 @@ impl SignedMessage {
 
     pub fn get_routing_message(&self) -> Result<RoutingMessage, CborError> {
         try!(utils::decode::<RoutingMessage>(self.encoded_body))
+    }
+
     pub fn encoded_body(&self) -> &Vec<u8> {
         &self.encoded_body
     }
 
     pub fn signature(&self) -> &Signature { self.signature }
-
-    }
 }
 
