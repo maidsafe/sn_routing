@@ -121,14 +121,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, location: NameType, data : DataRequest) {
         let message_id = self.get_next_message_id();
-        let message =  Message::Unsigned(RoutingMessage {
+        let message =  RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : SourceAddress::Direct(self.own_name()),
             message_type: MessageType::GetData(data),
-            message_id  : message_id.clone(),
+            message_id  : message_id,
             authority   : Authority::Unknown
-        });
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(location, &msg)));
+        };
+
+        self.send_swarm_or_parallel(location, message);
+
+        //ignore(encode(&signed_msg).map(|msg| self.send_swarm_or_parallel(location, &msg)));
     }
 
     /// Add something to the network, will always go via ClientManager group
@@ -138,12 +141,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
             destination : DestinationAddress::Direct(destination),
             source      : SourceAddress::Direct(self.own_name()),
             message_type: MessageType::PutData(data),
-            message_id  : message_id.clone(),
+            message_id  : message_id,
             authority   : Authority::Unknown,
         };
 
-        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(destination, &msg)));
+        self.send_swarm_or_parallel(destination, &message);
+        //let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+        //ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(destination, &msg)));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -156,12 +160,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
             destination : DestinationAddress::Direct(from_group.clone()),
             source      : SourceAddress::Direct(self.own_name()),
             message_type: MessageType::Refresh(type_tag, content),
-            message_id  : message_id.clone(),
+            message_id  : message_id,
             authority   : Authority::Unknown,
         };
 
-        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
-        ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(from_group, &msg)));
+        self.send_swarm_or_parallel(from_group, message);
+        //let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+        //ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(from_group, &msg)));
     }
 
     /// RoutingMembrane::Run starts the membrane
@@ -611,7 +616,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn send_swarm_or_parallel_or_relay(&self, dst : &DestinationAddress, msg: &Message) {
+    fn send_swarm_or_parallel_or_relay(&self, msg: &RoutingMessage)
+        -> Result<(), CborError> {
+
+        let dst = msg.destination_address();
+        let msg = try!(SignedMessage::new(msg, &self.id.secret_keys.0));
+        let msg = try!(encode(&msg));
+
         if dst.non_relayed_destination() == self.own_name {
             match dst {
                 DestinationAddress::RelayToClient(_, public_key) => {
@@ -638,7 +649,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
             receiver_id: peer_id.clone(),
             requester_fob: PublicId::new(&self.id),
         };
-        let message_id = self.get_next_message_id();
 
         let message =  RoutingMessage {
             destination : DestinationAddress::Direct(peer_id),
@@ -647,8 +657,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
             message_id  : self.get_next_message_id(),
             authority   : Authority::ManagedNode
         };
-        let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
-        encode(&message).map(|msg| self.send_swarm_or_parallel(peer_id, &msg));
+
+        self.send_swarm_or_parallel(peer_id, message);
+        //let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
+        //encode(&message).map(|msg| self.send_swarm_or_parallel(peer_id, &msg));
     }
 
     // ---- Who Are You ---------------------------------------------------------

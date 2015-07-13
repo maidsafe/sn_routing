@@ -254,56 +254,39 @@ impl RoutingMessage {
 
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct SignedRoutingMessage {
-    // FIXME: The field `encoded_routing_message` should be private to
-    // avoid setting it with data that represent something other than
-    // serialised RoutingMessage. (`signature` should probably be
-    // private as well for similar reason).
-    pub encoded_routing_message : Vec<u8>,
-    pub signature               : Signature
-}
-
-impl SignedRoutingMessage {
-    pub fn new(message: &RoutingMessage, secret_key: &crypto::sign::SecretKey)
-        -> Result<SignedRoutingMessage, CborError>
-    {
-        let encoded_message = try!(utils::encode(&message));
-        let signature = crypto::sign::sign_detached(&encoded_message,
-                                                    secret_key);
-        let message = SignedRoutingMessage {
-            encoded_routing_message : encoded_message,
-            signature               : signature,
-        };
-    }
-}
-
 /// All messages sent / received are constructed from this type
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum Message {
-    Signed(SignedRoutingMessage),
-    Unsigned(RoutingMessage), // Only Get request is unsigned
+pub struct SignedMessage {
+    encoded_body: Vec<u8>,
+    signature:    Signature,
 }
 
-impl Message {
-    pub fn routing_message(&self) -> Result<RoutingMessage, CborError> {
-        match self {
-            Message::Signed(m)   => try!(utils::decode::<RoutingMessage>(m.encoded_routing_message)),
-            Message::Unsigned(m) => Ok(m)
+impl SignedMessage {
+    pub fn new(message: &RoutingMessage, private_sign_key: &crypto::sign::PrivateKey)
+        -> Result<SignedMessage, CborError> {
+
+        let encoded_body = try!(utils::encode(&message));
+        let signature    = crypto::sign::sign_detached(&encoded_body, private_sign_key);
+
+        SignedMessage {
+            encoded_body: encoded_body,
+            signature:    signature
         }
     }
-    pub fn check_signed_by(&self, signing_key: crypto::sign::PublicKey)->Result<(), RoutingError> {
-        match self {
-            Message::Signed(m) | Message::Error(m)  => if crypto::sign::verify_detached(&m.signature,
-                                                                          &m.encoded_routing_message,
-                                                                          &signing_key) {
-                                                            return ();
-                                                       } else {
-                                                           return RoutingError::FailedSignature;
-                                                       },
-            _ => RoutingError::FailedSignature,
-        }
 
+    pub fn validate_signature(&self,
+                              private_sign_key: &crypto::sign::PrivateKey) -> bool {
+        crypto::sign::verify_detached(&m.signature,
+                                      &m.encoded_body,
+                                      &private_sign_key)
     }
 
+    pub fn get_body(&self) -> Result<Message, CborError> {
+        // TODO: Discuss: Should we check the signature here? If so, we would need to
+        // return different error which would also express the fact that signature
+        // validation failed. We would additionaly require the private sign key
+        // as another argument.
+        let body = try!(utils::decode::<RoutingMessage>(self.encoded_body));
+    }
 }
+
