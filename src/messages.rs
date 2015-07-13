@@ -55,12 +55,12 @@ pub struct ConnectResponse {
     pub connect_request_signature: Signature
 }
 
-/// Respond wiht Data or Error 
+/// Respond wiht Data or Error
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum DataOrError {
 Data(Data),
-Err(ResponseError),    
-} 
+Err(ResponseError),
+}
 
 /// These are the messageTypes routing provides
 /// many are internal to routing and woudl not be useful
@@ -134,7 +134,7 @@ impl RoutingMessage {
             SourceAddress::Direct(addr)              => addr,
         }
     }
-    
+
     pub fn actual_source(&self) -> NameType {
         match self.source {
             SourceAddress::RelayedForClient(_, addr) => addr,
@@ -251,7 +251,7 @@ impl RoutingMessage {
             SourceAddress::Direct(a)              => DestinationAddress::Direct(a),
         }
     }
-         
+
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -294,16 +294,16 @@ impl Message {
     }
     pub fn check_signed_by(&self, signing_key: crypto::sign::PublicKey)->Result<(), RoutingError> {
         match self {
-            Message::Signed(m) | Message::Error(m)  => if crypto::sign::verify_detached(&m.signature, 
+            Message::Signed(m) | Message::Error(m)  => if crypto::sign::verify_detached(&m.signature,
                                                                           &m.encoded_routing_message,
                                                                           &signing_key) {
                                                             return ();
-                                                       } else { 
+                                                       } else {
                                                            return RoutingError::FailedSignature;
                                                        },
             _ => RoutingError::FailedSignature,
         }
-        
+
     }
-    
+
 }
