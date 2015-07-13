@@ -169,7 +169,7 @@ impl RoutingMessage {
     }
 
     pub fn client_key_as_name(&self) -> Option<NameType> {
-        self.client_key().map(utils::public_key_to_client_name)
+        self.client_key().map(|n|utils::public_key_to_client_name(&n))
     }
 
     pub fn from_group(&self) -> Option<NameType /* Group name */> {
@@ -194,8 +194,10 @@ impl RoutingMessage {
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_send_on(&self, our_name : &NameType, our_authority : &Authority,
-                          destination : &NameType) -> RoutingMessage {
+    pub fn create_send_on(&self,
+                          our_name      : NameType,
+                          our_authority : Authority,
+                          destination   : NameType) -> RoutingMessage {
 
         // implicitly preserve all non-mutated fields.
         let mut send_on_message = self.clone();
@@ -221,9 +223,9 @@ impl RoutingMessage {
         //send_on_message.authority = our_authority.clone();              send_on_message.authority = our_authority.clone();
         //send_on_message
 
-        send_on_message.source =  SourceAddress::Direct(our_name);
+        send_on_message.source      = SourceAddress::Direct(our_name);
         send_on_message.destination = DestinationAddress::Direct(destination);
-        send_on_message.authority = our_authority.clone();
+        send_on_message.authority   = our_authority;
         send_on_message
     }
 
@@ -235,10 +237,10 @@ impl RoutingMessage {
     pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)-> RoutingMessage {
         // implicitly preserve all non-mutated fields.
         // TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
-        let mut reply_message = self.clone();
-        reply_message.source  = self.reply_source(our_name);
+        let mut reply_message     = self.clone();
+        reply_message.source      = self.reply_source(our_name);
         reply_message.destination = self.reply_destination(our_name);        
-        reply_message.authority = our_authority.clone();
+        reply_message.authority   = our_authority.clone();
         reply_message
     }
 
