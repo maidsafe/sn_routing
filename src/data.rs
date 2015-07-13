@@ -22,7 +22,7 @@ pub use plain_data::PlainData;
 use NameType;
 
 /// This is the data types routing handles in the public interface
-#[derive(Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
 pub enum Data {
     StructuredData(StructuredData),
     ImmutableData(ImmutableData),
@@ -31,15 +31,15 @@ pub enum Data {
 
 impl Data {
     fn name(&self) -> NameType {
-        match self {
-            Data::StructuredData(d) => d.name(),
-            Data::ImmutableData(d)  => d.name(),
-            Data::PlainData(d)      => d.name(),
+        match *self {
+            Data::StructuredData(ref d) => d.name(),
+            Data::ImmutableData(ref d)  => d.name(),
+            Data::PlainData(ref d)      => d.name(),
         }
     }
 }
 
-#[derive(Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
 pub enum DataRequest {
     StructuredData(u64),
     ImmutableData(ImmutableDataType),

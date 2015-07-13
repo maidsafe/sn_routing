@@ -34,7 +34,7 @@ use utils;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct PublicId {
-  public_key: box_::PublicKey,
+  public_encrypt_key: box_::PublicKey,
   public_sign_key: sign::PublicKey,
   name: Option<NameType>,
 }
@@ -42,41 +42,30 @@ pub struct PublicId {
 impl PublicId {
     pub fn new(id : &Id) -> PublicId {
       PublicId {
-        public_key : id.get_public_key(),
-        public_sign_key : id.get_public_sign_key(),
-        name : id.name,
+        public_encrypt_key : id.encrypting_public_key().clone(),
+        public_sign_key : id.signing_public_key().clone(),
+        name : id.name(),
       }
     }
 
-    pub fn name(&self) -> NameType {
-      self.name.clone()
+    pub fn name(&self) -> Option<NameType> {
+      self.name
     }
 
     pub fn client_name(&self) -> NameType {
         utils::public_key_to_client_name(&self.public_sign_key)
     }
 
-    pub fn serialised_contents(&self)->Result<RoutingError, Vec<u8>> {
+    pub fn serialised_contents(&self)->Result<Vec<u8>, RoutingError> {
         let mut e = cbor::Encoder::from_memory();
         try!(e.encode(&[&self]));
-        e.into_bytes()
-    }
-
-    // checks if the name is equal to the self_relocated name
-    pub fn is_self_relocated(&self) -> bool {
-        self.name ==  utils::calculate_self_relocated_name(
-            &self.public_sign_key.get_crypto_public_sign_key(),
-            &self.public_key.get_crypto_public_key(), &self.validation_token)
+        Ok(e.into_bytes())
     }
 
     // name field is initially same as original_name, this should be replaced by relocated name
     // calculated by the nodes close to original_name by using this method
-    pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
-        if None(self.name) || self.name == relocated_name {
-            return false;
-        }
-        self.name = relocated_name;
-        return true;
+    pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
+        self.name = Some(relocated_name);
     }
 }
 

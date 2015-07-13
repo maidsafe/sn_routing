@@ -104,14 +104,14 @@ pub struct AccountTransferInfo {
 }
 
 /// Address of the source of the message
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum SourceAddress {
-    RelayedForClient(FromAddress, crypto::sign::PublicKey),
-    RelayedForNode(FromAddress, NodeAddress),
+    RelayedForClient(FromAddress /* the relay node */, crypto::sign::PublicKey),
+    RelayedForNode(FromAddress   /* the relay node */, NodeAddress),
     Direct(FromAddress),
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum DestinationAddress {
     RelayToClient(ToAddress, crypto::sign::PublicKey),
     RelayToNode(ToAddress, FromAddress),

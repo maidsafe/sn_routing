@@ -62,33 +62,36 @@ pub enum Authority {
 /// f) otherwise return Unknown Authority
 pub fn our_authority(message       : &RoutingMessage,
                      routing_table : &RoutingTable) -> Authority {
-    type M = MessageType;
 
+    // Purposely listing all the cases and not using wild cards so
+    // that if a new message is added to the MessageType enum, compiler
+    // will warn us that we need to add it here.
     let element = match message.message_type {
-        M::BootstrapIdRequest     => None,
-        M::BootstrapIdResponse    => None,
-        M::ConnectRequest(_)      => None,
-        M::ConnectResponse(_)     => None,
-        M::FindGroup(_)           => None,
-        M::FindGroupResponse(_)   => None,
-        M::GetData(data_request)  => Some(message.non_relayed_destination()),
-        M::GetDataResponse(_)     => None,
-        M::DeleteData(_)          => None,
-        M::DeleteDataResponse(_)  => None,
-        M::GetKey                 => None,
-        M::GetKeyResponse(_,_)    => None,
-        M::GetGroupKey            => None,
-        M::GetGroupKeyResponse(_) => None,
-        M::Post(_)                => None,
-        M::PostResponse(_)        => None,
-        M::PutData(data)          => Some(data.name()),
-        M::PutDataResponse(_)     => None,
-        M::PutKey                 => None,
-        M::AccountTransfer(_)     => None,
-        M::PutPublicId(public_id) => Some(public_id.name()),
-        M::PutPublicIdResponse(_) => None,
-        M::Refresh(_, _)          => Some(message.from_group()),
-        M::Unknown                => None,
+        MessageType::BootstrapIdRequest     => None,
+        MessageType::BootstrapIdResponse    => None,
+        MessageType::ConnectRequest(_)      => None,
+        MessageType::ConnectResponse(_)     => None,
+        MessageType::FindGroup(_)           => None,
+        MessageType::FindGroupResponse(_)   => None,
+        MessageType::GetData(data_request)  => Some(message.non_relayed_destination()),
+        MessageType::GetDataResponse(_)     => None,
+        MessageType::DeleteData(_)          => None,
+        MessageType::DeleteDataResponse(_)  => None,
+        MessageType::GetKey                 => None,
+        MessageType::GetKeyResponse(_,_)    => None,
+        MessageType::GetGroupKey            => None,
+        MessageType::GetGroupKeyResponse(_) => None,
+        MessageType::Post(_)                => None,
+        MessageType::PostResponse(_)        => None,
+        MessageType::PutData(data)          => Some(data.name()),
+        MessageType::PutDataResponse(_)     => None,
+        MessageType::PutKey                 => None,
+        MessageType::AccountTransfer(_)     => None,
+        MessageType::PutPublicId(public_id) => Some(public_id.name()),
+        MessageType::PutPublicIdResponse(_) => None,
+        //MessageType::Refresh(_, _)          => Some(message.from_group()),
+        MessageType::Refresh(_,_)           => None,
+        MessageType::Unknown                => None,
     };
 
     let element = match element {

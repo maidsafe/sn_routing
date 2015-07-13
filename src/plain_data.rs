@@ -42,8 +42,8 @@ impl PlainData {
 
 
     /// Returns name ensuring invariant
-    pub fn name(&self) -> &NameType {
-        &self.name
+    pub fn name(&self) -> NameType {
+        self.name.clone()
     }
 }
 

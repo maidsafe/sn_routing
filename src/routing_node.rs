@@ -35,6 +35,7 @@ use public_id::PublicId;
 use types;
 use types::{MessageId, Bytes, SourceAddress, DestinationAddress};
 use utils;
+use utils::{encode, decode};
 use authority::{Authority};
 use messages::{RoutingMessage, SignedRoutingMessage, Message, MessageType, ConnectResponse, ConnectRequest};
 use error::{RoutingError};
@@ -281,20 +282,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let temp = self.next_message_id;
         self.next_message_id = self.next_message_id.wrapping_add(1);
         return temp;
-    }
-}
-
-fn encode<T>(value: &T) -> Result<Bytes, CborError> where T: Encodable {
-    let mut enc = Encoder::from_memory();
-    try!(enc.encode(&[value]));
-    Ok(enc.into_bytes())
-}
-
-fn decode<T>(bytes: &Bytes) -> Result<T, CborError> where T: Decodable {
-    let mut dec = Decoder::from_bytes(&bytes[..]);
-    match dec.decode().next() {
-        Some(result) => result,
-        None => Err(CborError::UnexpectedEOF)
     }
 }
 
