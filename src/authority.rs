@@ -63,6 +63,8 @@ pub enum Authority {
 pub fn our_authority(message       : &RoutingMessage,
                      routing_table : &RoutingTable) -> Authority {
 
+    type M = MessageType;
+
     // Purposely listing all the cases and not using wild cards so
     // that if a new message is added to the MessageType enum, compiler
     // will warn us that we need to add it here.
