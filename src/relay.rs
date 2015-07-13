@@ -30,6 +30,7 @@ use NameType;
 
 const MAX_RELAY : usize = 100;
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IdType {
     Node(NameType),
     Client(PublicId)
