@@ -266,7 +266,7 @@ impl SignedMessage {
         }
     }
 
-    pub fn validate_signature(&self, public_sign_key: &crypto::sign::PublicKey) -> bool {
+    pub fn verify_signature(&self, public_sign_key: &crypto::sign::PublicKey) -> bool {
         crypto::sign::verify_detached(&self.signature,
                                       &self.encoded_body,
                                       &public_sign_key)
@@ -274,6 +274,12 @@ impl SignedMessage {
 
     pub fn get_routing_message(&self) -> Result<RoutingMessage, CborError> {
         try!(utils::decode::<RoutingMessage>(self.encoded_body))
+    pub fn encoded_body(&self) -> &Vec<u8> {
+        &self.encoded_body
+    }
+
+    pub fn signature(&self) -> &Signature { self.signature }
+
     }
 }
 

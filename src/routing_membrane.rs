@@ -50,7 +50,7 @@ use types;
 use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress, SourceAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
-use messages::{RoutingMessage, MessageType, ConnectRequest, ConnectResponse};
+use messages::{RoutingMessage, SignedMessage, MessageType, ConnectRequest, ConnectResponse};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::{MethodCall, MessageAction};
 use refresh_accumulator::RefreshAccumulator;
@@ -197,7 +197,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             match self.event_input.recv() {
                 Err(_) => (),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                    let message = match decode::<Message>(&bytes) {
+                    let message = match decode::<SignedMessage>(&bytes) {
                         Ok(message) => message,
                         Err(_)      => continue,
                     };
@@ -232,8 +232,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         Some(ConnectionName::UnidentifiedConnection) => {
                             // only expect WhoAreYou or IAm message
                             match self.handle_unknown_connect_request(&endpoint, message) {
-                                Ok(_) => {
-                                    },
+                                Ok(_) => {},
                                 Err(_) => {
                                     // on any error, handle as WhoAreYou/IAm
                                     let _ = self.handle_who_are_you(&endpoint, bytes);
@@ -276,11 +275,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     ///
-    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: Message) -> RoutingResult {
-        let (serialised_connect_request, signature) = match message.clone() {
-            Message::Signed(serialised_cr, signature) => (serialised_cr, signature),
-            Message::Unsigned(_) => return Err(RoutingError::NotEnoughSignatures)
-        };
+    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: SignedMessage)
+            -> RoutingResult {
+
+        //let (serialised_connect_request, signature) = match message.clone() {
+        //    Message::Signed(serialised_cr, signature) => (serialised_cr, signature),
+        //    Message::Unsigned(_) => return Err(RoutingError::NotEnoughSignatures)
+        //};
 
         let routing_message = try!(message.routing_message());
         let connect_request = match routing_message.message_type {
@@ -306,11 +307,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     requester_id: connect_request.requester_id.clone(),
                     receiver_id: self.own_name.clone(),
                     receiver_fob: PublicId::new(&self.id),
-                    serialised_connect_request: serialised_connect_request,
-                    connect_request_signature: signature.clone()
+                    serialised_connect_request: message.encoded_body().clone(),
+                    connect_request_signature: message.signature().clone()
                 };
 
-        let signed_message = SignedRoutingMessage::new(routing_msg, &self.id.secret_keys.0);
+        let signed_message = SignedMessage::new(routing_msg, &self.id.secret_keys.0);
         let serialised_msg = try!(encode(&signed_message));
 
         self.relay_map.add_ip_node(connect_request.requester_fob, endpoint.clone());
@@ -424,13 +425,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// If we are the relay node for a message from the SAFE network to a node we relay for,
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
-    fn message_received(&mut self, received_from : &ConnectionName,
-        message_wrap: Message, received_from_relay: bool) -> RoutingResult {
+    fn message_received(&mut self,
+                        received_from       : &ConnectionName,
+                        message_wrap        : SignedMessage,
+                        received_from_relay : bool
+                       ) -> RoutingResult {
         match received_from {
             &ConnectionName::Routing(_) => { },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
-        let message = try!(message_wrap.routing_message());
+
+        let message = try!(message_wrap.get_body());
+
         if received_from_relay {
             // then this message was explicitly for us
             message.destination = DestinationAddress::Direct(self.own_name.clone());
@@ -594,14 +600,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn send_swarm_or_parallel(&self, name : &NameType, msg: &Message) {
+    fn send_swarm_or_parallel(&self,
+                              name : &NameType,
+                              msg  : &RoutingMessage) -> Result<(), CborError> {
+        let signed_message = try!(encode(msg));
+
         if self.routing_table.size() > 0 {
             for peer in self.routing_table.target_nodes(name) {
                 match peer.connected_endpoint {
                     Some(peer_endpoint) => {
-                        ignore(encode(&msg).map(|msg|self.connection_manager.send(peer_endpoint, msg)));
+                        self.connection_manager.send(peer_endpoint, signed_message);
                     },
-                        None => {}
+                    None => {}
                 };
             }
         } else { match self.bootstrap_endpoint.clone() {
@@ -914,14 +924,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         message.message_type = reply_data;
         message.authority = our_authority;
 
-        let encoded_routing_message = encode(&message);
-        let signature = sign_detached(&message, &self.id.secret_keys.0);
-
-        let signed_message = Message::SignedRoutingMessage(SignedRoutingMessage {
-            encoded_routing_message : encoded_routing_message,
-            signature               : signature,
-        });
-
+        let signed_message = SignedMessage::new(&message, &self.id.secret_keys.0);
         let serialised_msg = try!(encode(&signed_message));
         self.send_swarm_or_parallel_or_relay(&message.destination, &serialised_msg);
         Ok(())
