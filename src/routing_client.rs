@@ -29,7 +29,7 @@ use messages;
 use name_type::NameType;
 use sendable::Sendable;
 use types;
-use error::{RoutingError, ResponseError};
+use error::{RoutingError, ResponseError, ClientError};
 use messages::{SignedMessage, RoutingMessage, MessageType,
                ConnectResponse, ConnectRequest};
 use types::{MessageId, DestinationAddress, SourceAddress};
