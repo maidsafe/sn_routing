@@ -83,13 +83,26 @@ impl<F> RoutingClient<F> where F: Interface {
         }
     }
 
+    fn bootstrap_name(&self) -> Result<NameType, ClientError> {
+        match self.bootstrap_address.0 {
+            Some(name) => Ok(name),
+            None       => Err(ClientError::NotBootstrapped),
+        }
+    }
+
+    fn source_address(&self) -> Result<SourceAddress, ClientError> {
+        Ok(SourceAddress::RelayedForClient(try!(self.bootstrap_name()),
+                                           self.public_id.signing_public_key()))
+    }
+
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, IoError> {
+    pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, ClientError> {
         let message_id = self.get_next_message_id();
 
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
-            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.public_key()),
+            source      : try!(self.source_address()),
+            orig_message: None,
             message_type: MessageType::GetData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
@@ -100,12 +113,13 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, location: NameType, data : Data) -> Result<MessageId, IoError> {
+    pub fn put(&mut self, location: NameType, data : Data) -> Result<MessageId, ClientError> {
         let message_id = self.get_next_message_id();
 
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(self.public_id.client_name()),
-            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.public_key()),
+            source      : try!(self.source_address()),
+            orig_message: None,
             message_type: MessageType::PutData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
@@ -116,13 +130,14 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
-    pub fn post(&mut self, location: NameType, data : Data) -> Result<MessageId, IoError> {
+    pub fn post(&mut self, location: NameType, data : Data) -> Result<MessageId, ClientError> {
         let message_id = self.get_next_message_id();
 
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
-            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.public_key()),
-            message_type: MessageType::PostData(data),
+            source      : try!(self.source_address()),
+            orig_message: None,
+            message_type: MessageType::Post(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
@@ -132,11 +147,12 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
-    pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, IoError> {
+    pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, ClientError> {
         let message_id = self.get_next_message_id();
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
-            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.public_key()),
+            source      : try!(self.source_address()),
+            orig_message: None,
             message_type: MessageType::DeleteData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
@@ -167,16 +183,16 @@ impl<F> RoutingClient<F> where F: Interface {
                         // only accept messages from our bootstrap endpoint
                         if bootstrap_endpoint == &endpoint {
                             match routing_msg.message_type {
-                                MessageType::ConnectResponse => {
+                                MessageType::ConnectResponse(connect_response) => {
                                     self.handle_connect_response(endpoint,
-                                        routing_msg.serialised_body);
+                                                                 connect_response);
                                 },
                                 MessageType::GetDataResponse(result) => {
                                     self.handle_get_data_response(routing_msg.message_id, result);
                                 },
-                                MessageType::PutDataResponse => {
+                                MessageType::PutDataResponse(put_response) => {
                                     self.handle_put_data_response(routing_msg.message_id,
-                                        routing_msg.serialised_body);
+                                                                  put_response);
                                 },
                                 _ => {}
                             }
