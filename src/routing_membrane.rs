@@ -50,7 +50,8 @@ use types;
 use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress, SourceAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
-use messages::{RoutingMessage, SignedMessage, MessageType, ConnectRequest, ConnectResponse};
+use messages::{RoutingMessage, SignedMessage, MessageType,
+               ConnectRequest, ConnectResponse, DataAndError};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::{MethodCall, MessageAction};
 use refresh_accumulator::RefreshAccumulator;
@@ -421,12 +422,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn construct_find_group_msg(&mut self) -> RoutingMessage {
-        let own_name   = self.own_name();
+        let own_name   = self.own_name.clone();
         let message_id = self.get_next_message_id();
 
         RoutingMessage {
             destination  : DestinationAddress::Direct(own_name.clone()),
             source       : SourceAddress::Direct(own_name.clone()),
+            orig_message : None,
             message_type : MessageType::FindGroup(own_name),
             message_id   : message_id,
             authority    : Authority::ManagedNode,
@@ -449,7 +451,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
 
-        let message = try!(message_wrap.get_body());
+        let message = try!(message_wrap.get_routing_message());
 
         if received_from_relay {
             // then this message was explicitly for us
@@ -502,7 +504,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
 
         // Forward
-        self.send_swarm_or_parallel_or_relay(&message.destination, message_wrap);
+        self.send_swarm_or_parallel_or_relay(&message);
 
         let address_in_close_group_range =
             self.address_in_close_group_range(&message.non_relayed_destination());
@@ -543,7 +545,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 match message.message_type {
                     MessageType::ConnectResponse(response) => self.handle_connect_response(response),
                     MessageType::FindGroup(find_group) => self.handle_find_group(message, find_group),
-                    MessageType::FindGroupResponse(find_group_response) => self.handle_find_group_response(find_group_response),
+                    // Handled above for some reason.
+                    //MessageType::FindGroupResponse(find_group_response) => self.handle_find_group_response(find_group_response),
                     MessageType::GetData(request) => self.handle_get_data(message, request),
                     MessageType::GetDataResponse(response) =>
                     self.handle_get_data_response(message, response),
@@ -678,11 +681,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
 
         let message =  RoutingMessage {
-            destination : DestinationAddress::Direct(peer_id),
-            source      : self.my_source_address(),
-            message_type: MessageType::ConnectRequest(connect_request),
-            message_id  : self.get_next_message_id(),
-            authority   : Authority::ManagedNode
+            destination  : DestinationAddress::Direct(peer_id),
+            source       : self.my_source_address(),
+            orig_message : None,
+            message_type : MessageType::ConnectRequest(connect_request),
+            message_id   : self.get_next_message_id(),
+            authority    : Authority::ManagedNode
         };
 
         self.send_swarm_or_parallel(peer_id, message);
@@ -947,7 +951,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_put_data_response(&mut self, message: RoutingMessage, response: Data) -> RoutingResult {
+    fn handle_put_data_response(&mut self, message: RoutingMessage, response: DataAndError) -> RoutingResult {
         info!("Handle PUT data response.");
         let our_authority = our_authority(response.name(), &message, &self.routing_table);
         let from_authority = message.authority();
@@ -1047,8 +1051,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_connect_response(&mut self, body: Bytes) -> RoutingResult {
-        let connect_response = try!(decode::<ConnectResponse>(&body));
+    fn handle_connect_response(&mut self, connect_response: ConnectResponse) -> RoutingResult {
 
         // Verify a connect request was initiated by us.
         let connect_request = try!(decode::<ConnectRequest>(&connect_response.serialised_connect_request));
@@ -1148,11 +1151,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .collect::<Vec<_>>();
 
         let message = RoutingMessage {
-            destination : original_message.reply_destination(),
-            source      : SourceAddress::Direct(self.own_name()),
-            message_type: MessageType::FindGroupResponse(group),
-            message_id  : original_message.message_id,
-            authority   : Authority::Unknown,
+            destination  : original_message.reply_destination(),
+            source       : SourceAddress::Direct(self.own_name()),
+            orig_message : None,
+            message_type : MessageType::FindGroupResponse(group),
+            message_id   : original_message.message_id,
+            authority    : Authority::Unknown,
         };
         //let signed_message = try!(SignedRoutingMessage::new(message, &self.id.signing_private_key()));
         //ignore(encode(&signed_message).map(|msg| self.send_swarm_or_parallel(message.non_relayed_destination(), &msg)));
@@ -1217,7 +1221,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data_response(&mut self, response: Data, message: RoutingMessage) -> RoutingResult {
+    fn handle_get_data_response(&mut self, message: RoutingMessage, response: DataAndError) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.authority;
         let from = message.source_address();

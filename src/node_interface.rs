@@ -20,6 +20,7 @@ use name_type::NameType;
 use types::DestinationAddress;
 use authority::Authority;
 use error::{InterfaceError, ResponseError};
+use messages::DataAndError;
 
 /// Reply or send the existing message on to next persona / Authority type
 pub enum MessageAction {
@@ -32,11 +33,11 @@ pub enum MethodCall {
     /// request for no action
     None,
     /// request to have `destination` to handle put for the `content`
-    Put { destination: NameType, content: Box<Data> },
+    Put { destination: NameType, content: Data },
     /// request to retreive data with specified type and name from network
-    Get { name: NameType, data: Data },
+    Get { name: NameType, data: DataRequest },
     /// request to post
-    Post { destination: NameType, content: Box<Data> },
+    Post { destination: NameType, content: Data },
     /// Request delete
     Delete { name: NameType, data : Data },
     /// request to refresh
@@ -87,7 +88,7 @@ pub trait Interface : Sync + Send {
     /// type MethodCall is requested.
     fn handle_get_response(&mut self,
                            from_address: NameType,
-                           response: Result<Data, ResponseError>) -> MethodCall;
+                           response: DataAndError) -> MethodCall;
 
     /// handles the response to a put request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
