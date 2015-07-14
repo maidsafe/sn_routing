@@ -216,11 +216,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
                         Some(ConnectionName::Relay(name)) => {
-                            // For a relay connection, parse and forward
-                            // FIXME: later limit which messages are sent forward,
-                            // limiting our exposure.
-                            let _ = self.relay_message_received(
-                                &ConnectionName::Relay(name), message, endpoint);
+                            let message = match message.get_routing_message() {
+                                Ok(message) => message,
+                                Err(_)      => continue,
+                            };
+                            // Forward
+                            self.send_swarm_or_parallel_or_relay(&message);
                         },
                         Some(ConnectionName::OurBootstrap) => {
                             // FIXME: This is a short-cut and should be improved upon.
