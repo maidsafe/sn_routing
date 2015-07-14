@@ -36,8 +36,7 @@ use utils;
 pub struct PublicId {
     public_encrypt_key: box_::PublicKey,
     public_sign_key: sign::PublicKey,
-    validation_token: Signature,
-    name: Option<NameType>,
+    name: NameType,
 }
 
 impl PublicId {
@@ -45,7 +44,6 @@ impl PublicId {
       PublicId {
         public_encrypt_key : id.encrypting_public_key().clone(),
         public_sign_key    : id.signing_public_key().clone(),
-        validation_token   : id.get_validation_token(),
         name               : id.name(),
       }
     }
@@ -71,7 +69,7 @@ impl PublicId {
     // name field is initially same as original_name, this should be replaced by relocated name
     // calculated by the nodes close to original_name by using this method
     pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
-        self.name = Some(relocated_name);
+        self.name = relocated_name;
     }
 
     pub fn signing_public_key(&self) -> sign::PublicKey {
@@ -81,9 +79,8 @@ impl PublicId {
     // checks if the name is updated to a relocated name
     pub fn is_relocated(&self) -> bool {
         self.name != utils::calculate_original_name
-                         (&self.public_sign_key.get_crypto_public_sign_key(),
-                          &self.public_encrypt_key.get_crypto_public_key(),
-                          &self.validation_token)
+                         (&self.public_sign_key,
+                          &self.public_encrypt_key)
     }
 }
 

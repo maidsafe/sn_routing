@@ -116,27 +116,15 @@ impl RoutingMessage {
     }
 
     pub fn non_relayed_source(&self) -> NameType {
-        match self.source {
-            SourceAddress::RelayedForClient(addr, _) => addr,
-            SourceAddress::RelayedForNode(addr, _)   => addr,
-            SourceAddress::Direct(addr)              => addr,
-        }
+        self.source.non_relayed_source()
     }
 
-    //pub fn actual_source(&self) -> NameType {
-    //    match self.source {
-    //        SourceAddress::RelayedForClient(_, addr) => addr,
-    //        SourceAddress::RelayedForNode(_, addr)   => addr,
-    //        SourceAddress::Direct(addr)              => addr,
-    //    }
-    //}
+    pub fn actual_source(&self) -> types::Address {
+       self.source.actual_source()     
+    }
 
     pub fn non_relayed_destination(&self) -> NameType {
-        match self.destination {
-            DestinationAddress::RelayToClient(to_address, _) => to_address,
-            DestinationAddress::RelayToNode(to_address, _)   => to_address,
-            DestinationAddress::Direct(to_address)           => to_address,
-        }
+        self.destination.non_relayed_destination()     
     }
 
     // FIXME: add from_authority to filter value

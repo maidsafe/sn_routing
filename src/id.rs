@@ -38,121 +38,54 @@ use utils;
 pub struct Id {
   sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
   encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey),
-  validation_token: Signature,
   name: NameType
 }
 
 impl Id {
     pub fn new() -> Id {
-        let (pub_sign_key, sec_sign_key) = sodiumoxide::crypto::sign::gen_keypair();
-        let (pub_asym_key, sec_asym_key) = sodiumoxide::crypto::box_::gen_keypair();
-
-        let sign_key = &pub_sign_key.0;
-        let asym_key = &pub_asym_key.0;
-
-        const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + box_::PUBLICKEYBYTES;
-
-        let mut keys = [0u8; KEYS_SIZE];
-
-        for i in 0..sign_key.len() {
-            keys[i] = sign_key[i];
-        }
-        for i in 0..asym_key.len() {
-            keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
-        }
-
-        let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &sec_sign_key));
-
-        let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
-
-        for i in 0..KEYS_SIZE {
-            combined[i] = keys[i];
-        }
-
-        for i in 0..sign::SIGNATUREBYTES {
-            combined[KEYS_SIZE + i] = validation_token.signature[i];
-        }
-
-        let digest = crypto::hash::sha512::hash(&combined);
-
         Id {
-          public_keys : (pub_sign_key, pub_asym_key),
-          secret_keys : (sec_sign_key, sec_asym_key),
-          validation_token : validation_token,
-          name : NameType::new(digest.0),
+          sign_keys : sodiumoxide::crypto::sign::gen_keypair(),
+          encrypt_keys : sodiumoxide::crypto::box_::gen_keypair(),
+          name : NameType::new([0u8; 64]),
         }
     }
 
     // FIXME: We should not copy private nor public keys.
-    // Apparently there are attacks that can exploit this.
     pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
         self.sign_keys.0
     }
 
     pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
-        self.sign_keys.1
+        &self.sign_keys.1
     }
 
     pub fn encrypting_public_key(&self) -> crypto::box_::PublicKey {
         self.encrypt_keys.0
     }
 
-    pub fn with_keys(public_keys: (crypto::sign::PublicKey, crypto::box_::PublicKey),
-                     secret_keys: (crypto::sign::SecretKey, crypto::box_::SecretKey)) -> Id {
-        let sign_key = &(public_keys.0).0;
-        let asym_key = &(public_keys.1).0;
-
-        const KEYS_SIZE: usize = sign::PUBLICKEYBYTES + box_::PUBLICKEYBYTES;
-
-        let mut keys = [0u8; KEYS_SIZE];
-
-        for i in 0..sign_key.len() {
-            keys[i] = sign_key[i];
-        }
-        for i in 0..asym_key.len() {
-            keys[sign::PUBLICKEYBYTES + i] = asym_key[i];
-        }
-
-        let validation_token = Signature::new(crypto::sign::sign_detached(&keys, &secret_keys.0));
-
-        let mut combined = [0u8; KEYS_SIZE + sign::SIGNATUREBYTES];
-
-        for i in 0..KEYS_SIZE {
-            combined[i] = keys[i];
-        }
-
-        for i in 0..sign::SIGNATUREBYTES {
-            combined[KEYS_SIZE + i] = validation_token.signature[i];
-        }
-
-        let digest = crypto::hash::sha512::hash(&combined);
-
+    pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
+                     encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey))-> Id {
         Id {
-          public_keys : public_keys,
-          secret_keys : secret_keys,
-          validation_token : validation_token,
-          name : NameType::new(digest.0),
+          sign_keys : sign_keys,
+          encrypt_keys : encrypt_keys,
+          name : NameType::new([0u8; 64]),     
         }
     }
 
-    pub fn name(&self) -> Option<NameType> {
+    pub fn name(&self) -> NameType {
       self.name
     }
 
     pub fn get_name(&self) -> NameType {
         // This function should not exist, it is here only temporarily
         // to fix compilation.
-        unimplemented!()
+        self.name
     }
 
     pub fn is_self_relocated(&self) -> bool {
         // This function should not exist, it is here only temporarily
         // to fix compilation.
-        unimplemented!()
-    }
-
-    pub fn get_validation_token(&self) -> Signature {
-        self.validation_token.clone()
+        self.name != NameType::new([1u8; 64])     
     }
 
     // name field is initially same as original_name, this should be later overwritten by
@@ -167,8 +100,7 @@ impl Id {
 
     // checks if the name is updated to a relocated name
     pub fn is_relocated(&self) -> bool {
-        self.name != utils::calculate_original_name(&self.public_keys.0,
-            &self.public_keys.1, &self.validation_token)
+        self.name != NameType::new([0u8; 64])     
     }
 }
 
