@@ -31,7 +31,7 @@ use sendable::Sendable;
 use types;
 use error::{RoutingError, ResponseError, ClientError};
 use messages::{SignedMessage, RoutingMessage, MessageType,
-               ConnectResponse, ConnectRequest};
+               ConnectResponse, ConnectRequest, DataAndError, };
 use types::{MessageId, DestinationAddress, SourceAddress};
 use id::Id;
 use public_id::PublicId;
@@ -188,7 +188,8 @@ impl<F> RoutingClient<F> where F: Interface {
                                                                  connect_response);
                                 },
                                 MessageType::GetDataResponse(result) => {
-                                    self.handle_get_data_response(routing_msg.message_id, result);
+                                    self.handle_get_data_response(routing_msg.message_id,
+                                                                  result);
                                 },
                                 MessageType::PutDataResponse(put_response) => {
                                     self.handle_put_data_response(routing_msg.message_id,
@@ -240,7 +241,8 @@ impl<F> RoutingClient<F> where F: Interface {
 
                 let message = RoutingMessage {
                     destination : DestinationAddress::Direct(self.public_id.name()),
-                    source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
+                    source      : SourceAddress::Direct(self.public_id.name()),
+                    orig_message: None,
                     message_type: MessageType::ConnectRequest(messages::ConnectRequest {
                         local_endpoints: accepting_on,
                         external_endpoints: vec![],
@@ -286,12 +288,12 @@ impl<F> RoutingClient<F> where F: Interface {
         self.next_message_id
     }
 
-    fn handle_get_data_response(&self, message_id: MessageId, result: Result<Data, ResponseError>) {
+    fn handle_get_data_response(&self, message_id: MessageId, result: DataAndError) {
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(message_id, result);
     }
 
-    fn handle_put_data_response(&self, message_id: MessageId, result: Result<Data, ResponseError>) {
+    fn handle_put_data_response(&self, message_id: MessageId, result: DataAndError) {
         let mut interface = self.interface.lock().unwrap();
         interface.handle_put_response(message_id, result);
     }

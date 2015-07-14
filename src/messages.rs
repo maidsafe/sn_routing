@@ -57,7 +57,7 @@ pub struct ConnectResponse {
 
 /// Respond wiht Data or Error
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum DataOrError { Data(Data), Err(ResponseError), }
+pub struct DataAndError { data: Data, error: ResponseError }
 
 /// These are the messageTypes routing provides
 /// many are internal to routing and woudl not be useful
@@ -71,17 +71,17 @@ pub enum MessageType {
     FindGroup(NameType),
     FindGroupResponse(Vec<PublicId>),
     GetData(DataRequest),
-    GetDataResponse(DataOrError),
+    GetDataResponse(DataAndError),
     DeleteData(DataRequest),
-    DeleteDataResponse(DataOrError),
+    DeleteDataResponse(DataAndError),
     GetKey,
     GetKeyResponse(NameType, crypto::sign::PublicKey),
     GetGroupKey,
     GetGroupKeyResponse(Vec<(NameType, crypto::sign::PublicKey)>),
     Post(Data),
-    PostResponse(DataOrError),
+    PostResponse(DataAndError),
     PutData(Data),
-    PutDataResponse(DataOrError),
+    PutDataResponse(DataAndError),
     PutKey,
     AccountTransfer(NameType),
     PutPublicId(PublicId),
