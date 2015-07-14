@@ -83,34 +83,37 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     /// A zero_membrane will not be able to connect to an existing network,
     /// and as a special node, it will be rejected by the network later on.
     pub fn run_zero_membrane(&mut self) {
-        let (event_output, event_input) = mpsc::channel();
-        let mut cm = crust::ConnectionManager::new(event_output);
-        // TODO: Default Protocol and Port need to be passed down
-        let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-        // TODO: Beacon port should be passed down
-        let beacon_port = Some(5483u16);
-        let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
-            Err(reason) => {
-                println!("Failed to start listening: {:?}", reason);
-                (vec![], None)
-            }
-            Ok(listeners_and_beacon) => listeners_and_beacon
-        };
-        let self_relocated_name = utils::calculate_self_relocated_name(
-            &self.id.get_crypto_public_sign_key(),
-            &self.id.get_crypto_public_key(),
-            &self.id.get_validation_token());
-        println!("ZERO listening on {:?}, named {:?}", listeners.0.first(),
-            self_relocated_name);
-        self.id.assign_relocated_name(self_relocated_name);
+        // This code is currently refactored by Ben, but I'm getting
+        // compilation errors so I'm commenting it temporarily.
+        unimplemented!()
+        //let (event_output, event_input) = mpsc::channel();
+        //let mut cm = crust::ConnectionManager::new(event_output);
+        //// TODO: Default Protocol and Port need to be passed down
+        //let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
+        //// TODO: Beacon port should be passed down
+        //let beacon_port = Some(5483u16);
+        //let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
+        //    Err(reason) => {
+        //        println!("Failed to start listening: {:?}", reason);
+        //        (vec![], None)
+        //    }
+        //    Ok(listeners_and_beacon) => listeners_and_beacon
+        //};
+        //let self_relocated_name = utils::calculate_self_relocated_name(
+        //    &self.id.get_crypto_public_sign_key(),
+        //    &self.id.get_crypto_public_key(),
+        //    &self.id.get_validation_token());
+        //println!("ZERO listening on {:?}, named {:?}", listeners.0.first(),
+        //    self_relocated_name);
+        //self.id.assign_relocated_name(self_relocated_name);
 
-        let mut membrane = RoutingMembrane::<F>::new(
-            cm, event_input, None,
-            listeners.0, self.id.clone(),
-            self.genesis.create_personas());
-        // TODO: currently terminated by main, should be signalable to terminate
-        // and join the routing_node thread.
-        spawn(move || membrane.run());
+        //let mut membrane = RoutingMembrane::<F>::new(
+        //    cm, event_input, None,
+        //    listeners.0, self.id.clone(),
+        //    self.genesis.create_personas());
+        //// TODO: currently terminated by main, should be signalable to terminate
+        //// and join the routing_node thread.
+        //spawn(move || membrane.run());
     }
 
     /// Bootstrap the node to an existing (or zero) node on the network.
@@ -119,8 +122,9 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     /// Routing node uses the genesis object to create a new instance of the personas to embed
     /// inside the membrane.
     //  TODO: a (two-way) channel should be passed in to control the membrane.
-    pub fn bootstrap(&mut self,
-            bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError>  {
+    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>)
+            -> Result<(), RoutingError>  {
+
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output);
         // TODO: Default Protocol and Port need to be passed down
@@ -149,8 +153,12 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let relocated_name : Option<NameType>;
 
         // FIXME: connect request should not require the knowledge of the name you're connecting to
-        let connect_msg = self.construct_connect_request_msg(&unrelocated_id.get_name(),
-            listeners.0.clone());
+        let connect_msg = match self.construct_connect_request_msg(&unrelocated_id.get_name(),
+                                   listeners.0.clone()) {
+            Ok(msg)  => msg,
+            Err(err) => return Err(RoutingError::Cbor(err)),
+        };
+
         let serialised_message = try!(encode(&connect_msg));
 
         ignore(cm.send(bootstrapped_to.clone(), serialised_message));
@@ -168,21 +176,22 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                     match decode::<RoutingMessage>(&bytes) {
                         Ok(message) => {
                             match message.message_type {
-                                MessageType::ConnectResponse => {
+                                MessageType::ConnectResponse(_) => {
                                     // for now, ignore the actual response message
                                     // bootstrap node responded, try to put our id to the network
                                     println!("Received connect response");
+
                                     let put_public_id_msg = self.construct_put_public_id_msg(
-                                        &PublicId::new(&unrelocated_id));
+                                                                &PublicId::new(&unrelocated_id));
+                                    let put_public_id_msg = try!(put_public_id_msg);
+
                                     let serialised_message = try!(encode(&put_public_id_msg));
                                     ignore(cm.send(bootstrapped_to.clone(), serialised_message));
                                 },
-                                MessageType::PutPublicIdResponse => {
-                                    let put_public_id_response =
-                                        try!(decode::<MessageType>(&message.serialised_body));
-                                    relocated_name = Some(put_public_id_response.public_id.name());
-                                    debug_assert!(put_public_id_response.public_id.is_relocated());
-                                    if put_public_id_response.public_id.validation_token
+                                MessageType::PutPublicIdResponse(public_id) => {
+                                    relocated_name = Some(public_id.name());
+                                    debug_assert!(public_id.is_relocated());
+                                    if public_id.validation_token
                                         != self.id.get_validation_token() {
                                         return Err(RoutingError::FailedToBootstrap); }
                                     println!("Received PutPublicId relocated name {:?} from {:?}",
@@ -225,8 +234,9 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     }
 
     fn construct_connect_request_msg(&mut self, destination: &NameType,
-            accepting_on: Vec<Endpoint>) -> SignedMessage {
+            accepting_on: Vec<Endpoint>) -> Result<SignedMessage, CborError> {
         let message_id = self.get_next_message_id();
+
         let connect_request = ConnectRequest {
             local_endpoints    : accepting_on,
             external_endpoints : vec![],
@@ -234,15 +244,17 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             receiver_id        : destination.clone(),
             requester_fob      : PublicId::new(&self.id),
         };
+
         let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(destination.clone()),
             source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
+            orig_message : None,
             message_type : MessageType::ConnectRequest(connect_request),
             message_id   : message_id.clone(),
             authority    : Authority::ManagedNode,
         };
 
-        SignedMessage::new(message, &self.id.secret_key.0)
+        SignedMessage::new(&message, self.id.signing_private_key())
     }
 
     fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId)
@@ -253,20 +265,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let message =  RoutingMessage { 
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
             source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
+            orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
             authority    : Authority::ManagedNode,  
         };
 
-        Ok(SignedMessage::new(&message, &self.id.secret_keys.0))
-    }
-
-    fn our_source_address(&self) -> types::SourceAddress {
-        types::SourceAddress{ from_node: self.id.get_name(),
-                              from_group: None,
-                              reply_to: None,
-                              // FIXME: relay node should fill this field
-                              relayed_for: Some(self.id.get_name()) }
+        SignedMessage::new(&message, self.id.signing_private_key())
     }
 
     fn get_next_message_id(&mut self) -> MessageId {

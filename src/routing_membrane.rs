@@ -123,13 +123,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let message_id = self.get_next_message_id();
         let message =  RoutingMessage {
             destination : DestinationAddress::Direct(location),
-            source      : SourceAddress::Direct(self.own_name()),
+            source      : SourceAddress::Direct(self.own_name),
+            orig_message: None,
             message_type: MessageType::GetData(data),
             message_id  : message_id,
             authority   : Authority::Unknown
         };
 
-        self.send_swarm_or_parallel(location, message);
+        self.send_swarm_or_parallel(&location, &message);
 
         //ignore(encode(&signed_msg).map(|msg| self.send_swarm_or_parallel(location, &msg)));
     }
@@ -139,13 +140,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let message_id = self.get_next_message_id();
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(destination),
-            source      : SourceAddress::Direct(self.own_name()),
+            source      : SourceAddress::Direct(self.own_name),
+            orig_message: None,
             message_type: MessageType::PutData(data),
             message_id  : message_id,
             authority   : Authority::Unknown,
         };
 
-        self.send_swarm_or_parallel(destination, &message);
+        self.send_swarm_or_parallel(&destination, &message);
         //let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
         //ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(destination, &msg)));
     }
@@ -158,13 +160,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let message_id = self.get_next_message_id();
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(from_group.clone()),
-            source      : SourceAddress::Direct(self.own_name()),
+            source      : SourceAddress::Direct(self.own_name),
+            orig_message: None,
             message_type: MessageType::Refresh(type_tag, content),
             message_id  : message_id,
             authority   : Authority::Unknown,
         };
 
-        self.send_swarm_or_parallel(from_group, message);
+        self.send_swarm_or_parallel(&from_group, &message);
         //let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
         //ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(from_group, &msg)));
     }
@@ -175,7 +178,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let our_name = self.own_name.clone();
         match self.bootstrap_endpoint.clone() {
             Some(ref bootstrap_endpoint) => {
-                let find_group_msg = self.construct_find_group_msg(&our_name);
+                let find_group_msg = self.construct_find_group_msg();
                 // FIXME: act on error to send; don't over clone bootstrap_endpoint
                 ignore(encode(&find_group_msg).map(|msg|self.connection_manager
                     .send(bootstrap_endpoint.clone(), msg)));
@@ -418,6 +421,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
     }
 
+    fn construct_find_group_msg(&mut self) -> RoutingMessage {
+        let own_name   = self.own_name();
+        let message_id = self.get_next_message_id();
+
+        RoutingMessage {
+            destination  : DestinationAddress::Direct(own_name.clone()),
+            source       : SourceAddress::Direct(own_name.clone()),
+            message_type : MessageType::FindGroup(own_name),
+            message_id   : message_id,
+            authority    : Authority::ManagedNode,
+        };
+    }
 
     /// This the fundamental functional function in routing.
     /// It only handles messages received from connections in our routing table;
@@ -495,7 +510,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Handle FindGroupResponse
         match  message.message_type {
-            MessageType::FindGroupResponse(vec_of_public_ids) =>  ignore(self.handle_find_group_response(vec_of_public_ids), &address_in_close_group_range),
+            MessageType::FindGroupResponse(vec_of_public_ids) =>
+                ignore(self.handle_find_group_response(
+                            vec_of_public_ids,
+                            address_in_close_group_range.clone())),
              _ => (),
         };
 
@@ -1143,15 +1161,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_find_group_response(&mut self,  find_group_response: Vec<PublicId>,
-        refresh_our_own_group: &bool) -> RoutingResult {
+    fn handle_find_group_response(&mut self,
+                                  find_group_response: Vec<PublicId>,
+                                  refresh_our_own_group: bool) -> RoutingResult {
         for peer in find_group_response.group {
             self.refresh_routing_table(&peer.name());
         }
-        if *refresh_our_own_group {
+        if refresh_our_own_group {
             let our_name = self.own_name.clone();
             if !self.connection_cache.contains_key(&our_name) {
-                let find_group_msg = self.construct_find_group_msg(&our_name);
+                let find_group_msg = self.construct_find_group_msg();
                 let serialised_msg = try!(encode(&find_group_msg));
                 info!("REFLECT OUR GROUP");
                 self.send_swarm_or_parallel(&our_name, &serialised_msg);

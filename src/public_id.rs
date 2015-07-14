@@ -34,17 +34,19 @@ use utils;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct PublicId {
-  public_encrypt_key: box_::PublicKey,
-  public_sign_key: sign::PublicKey,
-  name: Option<NameType>,
+    public_encrypt_key: box_::PublicKey,
+    public_sign_key: sign::PublicKey,
+    validation_token: Signature,
+    name: Option<NameType>,
 }
 
 impl PublicId {
     pub fn new(id : &Id) -> PublicId {
       PublicId {
         public_encrypt_key : id.encrypting_public_key().clone(),
-        public_sign_key : id.signing_public_key().clone(),
-        name : id.name(),
+        public_sign_key    : id.signing_public_key().clone(),
+        validation_token   : id.get_validation_token(),
+        name               : id.name(),
       }
     }
 
@@ -74,6 +76,14 @@ impl PublicId {
 
     pub fn signing_public_key(&self) -> sign::PublicKey {
         self.public_sign_key
+    }
+
+    // checks if the name is updated to a relocated name
+    pub fn is_relocated(&self) -> bool {
+        self.name != utils::calculate_original_name
+                         (&self.public_sign_key.get_crypto_public_sign_key(),
+                          &self.public_encrypt_key.get_crypto_public_key(),
+                          &self.validation_token)
     }
 }
 
