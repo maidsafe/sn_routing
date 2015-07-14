@@ -213,17 +213,19 @@ impl RoutingMessage {
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
     pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)-> RoutingMessage {
-        // implicitly preserve all non-mutated fields.
-        // TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
-        let mut reply_message     = self.clone();
-        if self.orig_message.is_some() {
-           reply_message.destination = try!(self.orig_message.get_routing_message()).reply_destination();    
-        } else {
-           reply_message.destination = self.reply_destination(); 
-        }
-        reply_message.source      = SourceAddress::Direct(our_name.clone());
-        reply_message.authority   = our_authority.clone();
-        reply_message
+        // Commented the below code as it doesn't compile.
+        unimplemented!()
+        //// implicitly preserve all non-mutated fields.
+        //// TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
+        //let mut reply_message     = self.clone();
+        //if self.orig_message.is_some() {
+        //   reply_message.destination = try!(self.orig_message.get_routing_message()).reply_destination();    
+        //} else {
+        //   reply_message.destination = self.reply_destination(); 
+        //}
+        //reply_message.source      = SourceAddress::Direct(our_name.clone());
+        //reply_message.authority   = our_authority.clone();
+        //reply_message
     }
 
     pub fn reply_destination(&self) -> DestinationAddress {
