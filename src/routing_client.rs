@@ -259,15 +259,12 @@ impl<F> RoutingClient<F> where F: Interface {
         }
     }
 
-    fn handle_connect_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes) {
-        match decode::<ConnectResponse>(&bytes) {
-            Err(_) => return,
-            Ok(connect_response_msg) => {
-                assert!(self.bootstrap_address.0.is_none());
-                assert_eq!(self.bootstrap_address.1, Some(peer_endpoint.clone()));
-                self.bootstrap_address.0 = Some(connect_response_msg.receiver_fob.name());
-            }
-        };
+    fn handle_connect_response(&mut self,
+                               peer_endpoint: Endpoint,
+                               connect_response: ConnectResponse) {
+        assert!(self.bootstrap_address.0.is_none());
+        assert_eq!(self.bootstrap_address.1, Some(peer_endpoint.clone()));
+        self.bootstrap_address.0 = Some(connect_response.receiver_fob.name());
     }
 
     fn send_to_bootstrap_node(&mut self, message: &RoutingMessage)

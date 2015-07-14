@@ -57,10 +57,7 @@ pub struct ConnectResponse {
 
 /// Respond wiht Data or Error
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum DataOrError {
-Data(Data),
-Err(ResponseError),
-}
+pub enum DataOrError { Data(Data), Err(ResponseError), }
 
 /// These are the messageTypes routing provides
 /// many are internal to routing and woudl not be useful
