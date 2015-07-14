@@ -287,8 +287,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let routing_message = try!(message.get_routing_message());
         let connect_request = match routing_message.message_type {
             MessageType::ConnectRequest(request) => request,
-            _ => Err(InterfaceError::Abort), // To be changed to Parse error
+            _ => return Ok(()), // To be changed to Parse error
         };
+
         let our_authority = our_authority(&routing_message, &self.routing_table);
 
         // only accept unrelocated Ids from unknown connections
@@ -299,8 +300,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // if the PublicId is not relocated,
         // only accept the connection into the RelayMap.
         // This will enable this connection to bootstrap or act as a client.
-        let routing_msg = routing_message.create_reply(self.own_name(), our_authority);
-        routing_msg.message_type = MessageType::ConnectResponse {
+        let routing_msg = routing_message.create_reply(&self.own_name, &our_authority);
+        routing_msg.message_type = MessageType::ConnectResponse(ConnectResponse {
                     requester_local_endpoints: connect_request.local_endpoints.clone(),
                     requester_external_endpoints: connect_request.external_endpoints.clone(),
                     receiver_local_endpoints: self.accepting_on.clone(),
@@ -310,9 +311,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     receiver_fob: PublicId::new(&self.id),
                     serialised_connect_request: message.encoded_body().clone(),
                     connect_request_signature: message.signature().clone()
-                };
+                });
 
-        let signed_message = SignedMessage::new(routing_msg, &self.id.secret_keys.0);
+        let signed_message = try!(SignedMessage::new(&routing_msg, self.id.signing_private_key()));
         let serialised_msg = try!(encode(&signed_message));
 
         self.relay_map.add_ip_node(connect_request.requester_fob, endpoint.clone());
@@ -385,8 +386,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             None => {}
         };
         let mut drop_bootstrap = false;
-        match self.bootstrap_endpoint {
-            Some(ref bootstrap_endpoint) => {
+        match self.bootstrap {
+            Some((ref bootstrap_endpoint, _)) => {
                 if &endpoint == bootstrap_endpoint {
                     info!("Bootstrap connection disconnected by relay node.");
                     self.connection_manager.drop_node(endpoint);
@@ -395,7 +396,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             None => {}
         };
-        if drop_bootstrap { self.bootstrap_endpoint = None; }
+        if drop_bootstrap { self.bootstrap = None; }
 
         if trigger_handle_churn {
             info!("Handle CHURN lost node");
