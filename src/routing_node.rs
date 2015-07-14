@@ -39,6 +39,9 @@ use messages::{RoutingMessage, MessageTypeTag};
 use message_header::MessageHeader;
 use error::{RoutingError};
 use std::thread::spawn;
+use std::path::PathBuf;
+
+static MAX_BOOTSTRAP_CONNECTIONS : u8 = 3;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
@@ -74,6 +77,44 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                       bootstrap_node_id: None,
                     }
     }
+
+    /// Run the Routing Node.
+    /// This is a blocking call which will start a CRUST connection
+    /// manager and the CRUST bootstrapping procedures.
+    /// If CRUST finds a bootstrap connection, the routing node will
+    /// attempt to request a name from the network and connect to its close group.
+    /// If CRUST reports a new connection on the listening port, before bootstrapping,
+    /// routing node will consider itself the first node.
+    //  This might be moved into the constructor new
+    //  For an initial draft, kept it as a separate function call.
+    pub fn run(&mut self, config_path : Option<PathBuf>) -> Result<()> {
+        let (event_output, event_input) = mpsc::channel();
+        let mut cm = crust::ConnectionManager::new(event_output);
+        cm.start_accepting();
+        // FIXME: this is still a blocking call; update after MAID-1136
+        let bootstrapped_to = try!(cm.bootstrap(None, None)
+            .map_err(|_|RoutingError::FailedToBootstrap));
+        // cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+        loop {
+            match event_input.recv() {
+                Err(_) => return Err(RoutingError::FailedToBootstrap),
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+
+                },
+                Ok(crust::Event::NewConnection(endpoint)) => {
+
+                },
+                Ok(crust::Event::LostConnection(endpoint)) => {
+
+                },
+                // FIXME: commented out until after MAID-1136
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+
+                }
+            }
+        }
+    }
+
 
     /// Starts a node without requiring responses from the network.
     /// Starts the routing membrane without looking to bootstrap.
