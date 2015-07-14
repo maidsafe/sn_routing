@@ -59,6 +59,15 @@ pub struct ConnectResponse {
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct DataAndError { data: Data, error: ResponseError }
 
+impl DataAndError {
+  pub fn new(data: Data, error: ResponseError) -> DataAndError {
+      DataAndError {
+          data : data,
+          error : error,
+          }
+      }    
+}
+
 /// These are the messageTypes routing provides
 /// many are internal to routing and woudl not be useful
 /// to users.

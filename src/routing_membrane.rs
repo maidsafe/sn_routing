@@ -1184,7 +1184,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data(&mut self, message: RoutingMessage, data_request: DataRequest ) -> RoutingResult {
+    fn handle_get_data(&mut self, orig_message: Vec<u8>, 
+                                  message: RoutingMessage, 
+                                  data_request: DataRequest) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.authority();
         let from = message.actual_source();
@@ -1196,32 +1198,31 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 MessageAction::Forward(dest_nodes) => {
                     for destination in dest_nodes {
-                        self.forward(message, our_authority, destination);
+                        self.forward(orig_message, message, our_authority, destination);
                     }
                 }
             },
-            Err(InterfaceError::Abort) => {;},
-            Err(InterfaceError::Response(error)) => {
-                self.send_reply(message, our_authority, MessageType::GetDataResponse(Err(error)));
-            }
+            Err(..) => {;},
         }
         Ok(())
     }
 
     fn forward(&self,
-               name: &NameType,
-               orig_message: &RoutingMessage,
+               orig_message: Vec<u8>,
+               routing_message: &RoutingMessage,
                destination: DestinationAddress,
                message_type: MessageType ) -> RoutingResult
     {
-        let our_authority = our_authority(name.clone(), &orig_message, &self.routing_table);
-        let message = orig_message.create_forward(&self.own_name, &our_authority, &destination);
+        let our_authority = our_authority(&routing_message, &self.routing_table);
+        let message = routing_message.create_forward(self.own_name.clone(), our_authority, destination.non_relayed_destination(), orig_message);
         let signed_message = try!(SignedMessage::new(&message, &self.id.signing_private_key()));
-        self.send_swarm_or_parallel(&destination.non_relayed_destination(), &try!(encode(&signed_message)));
+        self.send_swarm_or_parallel(&destination.non_relayed_destination(), &message);
         Ok(())
     }
 
-    fn handle_get_data_response(&mut self, message: RoutingMessage, response: DataAndError) -> RoutingResult {
+    fn handle_get_data_response(&mut self, orig_message : Vec<u8>, 
+                                           message: RoutingMessage, 
+                                           response: DataAndError) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.authority;
         let from = message.source.non_relayed_source();
@@ -1233,7 +1234,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
             MethodCall::Forward { destination } =>
-                ignore(self.forward(&self.own_name, &message, DestinationAddress::Direct(destination), message.message_type)),
+                ignore(self.forward(orig_message, &message, DestinationAddress::Direct(destination), message.message_type)),
         }
         Ok(())
     }
