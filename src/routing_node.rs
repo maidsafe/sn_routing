@@ -107,9 +107,16 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 Ok(crust::Event::LostConnection(endpoint)) => {
 
                 },
-                // FIXME: commented out until after MAID-1136
+                // FIXME: comment out until after MAID-1136
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    // register the bootstrap endpoint
 
+                    // and try to request a name from this endpoint
+                    let put_public_id_msg
+                        = self.construct_put_public_id_msg(
+                        &types::PublicId::new(&unrelocated_id));
+                    let serialised_message = try!(encode(&put_public_id_msg));
+                    ignore(cm.send(bootstrapped_to.clone(), serialised_message));
                 }
             }
         }
