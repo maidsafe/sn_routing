@@ -411,8 +411,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                     MethodCall::None => (),
-                    MethodCall::SendOn { destination } =>
-                        info!("IGNORED: on handle_churn MethodCall:SendOn {} is not a Valid action", destination)
+                    MethodCall::Forward { destination } =>
+                        info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination)
                 };
             }
         };
@@ -789,8 +789,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post => unimplemented!(),
                     MethodCall::None => (),
-                    MethodCall::SendOn { destination } =>
-                        info!("IGNORED: on handle_churn MethodCall:SendOn {} is not a Valid action", destination)
+                    MethodCall::Forward { destination } =>
+                        info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination)
                 };
             }
         }
@@ -904,9 +904,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     // };
                     try!(self.send_reply(&message, our_authority.clone(), Ok(reply_data)));
                 },
-                MessageAction::SendOn(destinations) => {
+                MessageAction::Forward(destinations) => {
                     for destination in destinations {
-                        ignore(self.send_on(&data.name, &message, destination, data.clone()));
+                        ignore(self.forward(&data.name, &message, destination, data.clone()));
                     }
                 },
             },
@@ -944,8 +944,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
-            MethodCall::SendOn { destination } =>
-                ignore(self.send_on(&message, our_authority, destination)),
+            MethodCall::Forward { destination } =>
+                ignore(self.forward(&message, our_authority, destination)),
         }
         Ok(())
     }
@@ -1090,8 +1090,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
             info!("RELOCATED {:?} to {:?}",
                 public_id.public_id.name(), relocated_name);
-            // SendOn to relocated_name group, which will actually store the relocated public id
-            try!(self.send_on(&public_id.public_id.name(),
+            // Forward to relocated_name group, which will actually store the relocated public id
+            try!(self.forward(&public_id.public_id.name(),
                               &message,
                               relocated_name,
                               MessageType::PutPublicId,
@@ -1172,9 +1172,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MessageAction::Reply(data) => {
                     self.send_reply(message, our_authority, MessageType::GetDataResponse(Ok(data)));
                 },
-                MessageAction::SendOn(dest_nodes) => {
+                MessageAction::Forward(dest_nodes) => {
                     for destination in dest_nodes {
-                        self.send_on(message, our_authority, destination);
+                        self.forward(message, our_authority, destination);
                     }
                 }
             },
@@ -1186,14 +1186,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn send_on(&self,
+    fn forward(&self,
                name: &NameType,
                orig_message: &RoutingMessage,
                destination: DestinationAddress,
                message_type: MessageType ) -> RoutingResult
     {
         let our_authority = our_authority(name.clone(), &orig_message, &self.routing_table);
-        let message = orig_message.create_send_on(&self.own_name, &our_authority, &destination);
+        let message = orig_message.create_forward(&self.own_name, &our_authority, &destination);
         let signed_message = try!(SignedMessage::new(&message, &self.id.signing_private_key()));
         self.send_swarm_or_parallel(&destination, &try!(encode(&signed_message)));
         Ok(())
@@ -1210,8 +1210,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post => unimplemented!(),
             MethodCall::None => (),
-            MethodCall::SendOn { destination } =>
-                ignore(self.send_on(message, our_authority, destination)),
+            MethodCall::Forward { destination } =>
+                ignore(self.forward(message, our_authority, destination)),
         }
         Ok(())
     }

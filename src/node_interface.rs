@@ -24,7 +24,7 @@ use error::{InterfaceError, ResponseError};
 /// Reply or send the existing message on to next persona / Authority type
 pub enum MessageAction {
   Reply(Data),
-  SendOn(Vec<NameType>),
+  Forward(Vec<NameType>),
 }
 
 /// MethodCall denotes a specific request to be carried out by routing.
@@ -41,8 +41,8 @@ pub enum MethodCall {
     Delete { name: NameType, data : Data },
     /// request to refresh
     Refresh { type_tag: u64, from_group: NameType, payload: Vec<u8> },
-    /// request to send on the request to destination for further handling
-    SendOn { destination: NameType },
+    /// request to forward on the request to destination for further handling
+    Forward { destination: NameType },
 }
 
 #[deny(missing_docs)]

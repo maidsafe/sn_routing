@@ -180,31 +180,31 @@ impl RoutingMessage {
         }
     }
 
-    /// This creates a new message for Action::SendOn. It clones all the fields,
+    /// This creates a new message for Action::Forward. It clones all the fields,
     /// and then mutates the destination and source accordingly.
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_send_on(&self,
+    pub fn create_forward(&self,
                           our_name      : NameType,
                           our_authority : Authority,
                           destination   : NameType,
                           orig_signed_message  : Vec<u8>) -> RoutingMessage {
 
         // implicitly preserve all non-mutated fields.
-        let mut send_on_message = self.clone();
-        // if we are sending on and the original message is not stored 
-        // then store it and preserve along the route 
+        let mut forward_message = self.clone();
+        // if we are sending on and the original message is not stored
+        // then store it and preserve along the route
         // it will contain the address to reply to as well as proof the request was made
         // FIXME(dirvine) We need the original encoded signed message here  :13/07/2015
         if self.orig_message.is_none() {
-            send_on_message.orig_message = Some(orig_signed_message);         
+            forward_message.orig_message = Some(orig_signed_message);
         }
 
-        send_on_message.source      = SourceAddress::Direct(our_name);
-        send_on_message.destination = DestinationAddress::Direct(destination);
-        send_on_message.authority   = our_authority;
-        send_on_message
+        forward_message.source      = SourceAddress::Direct(our_name);
+        forward_message.destination = DestinationAddress::Direct(destination);
+        forward_message.authority   = our_authority;
+        forward_message
     }
 
     /// This creates a new message for Action::Reply. It clones all the fields,

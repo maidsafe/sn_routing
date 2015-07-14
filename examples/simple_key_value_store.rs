@@ -293,7 +293,7 @@ impl Interface for TestNode {
                 let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
                 println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
                          node_name, in_coming_data.name());
-                return Ok(MessageAction::SendOn(in_coming_data));
+                return Ok(MessageAction::Forward(in_coming_data));
             },
             Authority::NaeManager(group_name) => {
                 let stats = self.stats.clone();
