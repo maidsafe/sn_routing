@@ -48,8 +48,12 @@ impl PublicId {
       }
     }
 
-    pub fn name(&self) -> Option<NameType> {
-      self.name
+    //pub fn name(&self) -> Option<NameType> {
+    //  self.name
+    //}
+
+    pub fn name(&self) -> NameType {
+        unimplemented!()
     }
 
     pub fn client_name(&self) -> NameType {
@@ -66,6 +70,10 @@ impl PublicId {
     // calculated by the nodes close to original_name by using this method
     pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
         self.name = Some(relocated_name);
+    }
+
+    pub fn signing_public_key(&self) -> sign::PublicKey {
+        self.public_sign_key
     }
 }
 

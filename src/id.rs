@@ -48,19 +48,21 @@ impl Id {
     relocated_name: None,
     }
   }
-  
-  pub fn signing_public_key(&self) -> &crypto::sign::PublicKey {
-    &self.sign_keys.0    
+
+  // FIXME: We should not copy private nor public keys.
+  // Apparently there are attacks that can exploit this.
+  pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
+    self.sign_keys.0
   }
-  
-  pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
-    &self.sign_keys.1    
+
+  pub fn signing_private_key(&self) -> crypto::sign::SecretKey {
+    self.sign_keys.1
   }
-  
-  pub fn encrypting_public_key(&self) -> &crypto::box_::PublicKey {
-    &self.encrypt_keys.0    
+
+  pub fn encrypting_public_key(&self) -> crypto::box_::PublicKey {
+    self.encrypt_keys.0
   }
-  
+
   pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
                    encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey)) -> Id {
     Id {
@@ -70,7 +72,19 @@ impl Id {
     }
   }
 
-  pub fn name(&self)-> Option<NameType> {
-    self.relocated_name    
+  pub fn name(&self) -> Option<NameType> {
+    self.relocated_name
+  }
+
+  pub fn get_name(&self) -> NameType {
+      // This function should not exist, it is here only temporarily
+      // to fix compilation.
+      unimplemented!()
+  }
+
+  pub fn is_self_relocated(&self) -> bool {
+      // This function should not exist, it is here only temporarily
+      // to fix compilation.
+      unimplemented!()
   }
 }
