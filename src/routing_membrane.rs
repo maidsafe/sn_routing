@@ -75,7 +75,7 @@ pub struct RoutingMembrane<F : Interface> {
     event_input: Receiver<crust::Event>,
     connection_manager: crust::ConnectionManager,
     accepting_on: Vec<crust::Endpoint>,
-    bootstrap_endpoint: Option<crust::Endpoint>,
+    bootstrap: Option<(crust::Endpoint, NameType)>,
     // for Routing
     id: Id,
     own_name: NameType,
@@ -94,7 +94,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // TODO: clean ownership transfer up with proper structure
     pub fn new(cm: crust::ConnectionManager,
                event_input: Receiver<crust::Event>,
-               bootstrap_endpoint: Option<crust::Endpoint>,
+               bootstrap: Option<(crust::Endpoint, NameType)>,
                accepting_on: Vec<crust::Endpoint>,
                relocated_id: Id,
                personas: F) -> RoutingMembrane<F> {
@@ -104,7 +104,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                       event_input: event_input,
                       connection_manager: cm,
                       accepting_on: accepting_on,
-                      bootstrap_endpoint: bootstrap_endpoint,
+                      bootstrap: bootstrap,
                       routing_table : RoutingTable::new(&own_name),
                       relay_map: RelayMap::new(&relocated_id),
                       own_name: own_name,
@@ -176,8 +176,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     pub fn run(&mut self) {
         // First send FindGroup request
         let our_name = self.own_name.clone();
-        match self.bootstrap_endpoint.clone() {
-            Some(ref bootstrap_endpoint) => {
+        match self.bootstrap.clone() {
+            Some((ref bootstrap_endpoint, _)) => {
                 let find_group_msg = self.construct_find_group_msg();
                 // FIXME: act on error to send; don't over clone bootstrap_endpoint
                 ignore(encode(&find_group_msg).map(|msg|self.connection_manager
@@ -268,14 +268,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn my_source_address(&self)->SourceAddress {
-        if Some(self.bootstrap_endpoint) {
-            // FIXME(dirvine) we must get the name of the bootstrap node :12/07/2015
-            SourceAddress::Direct(self.own_name().clone())
-            // SourceAddress::RelayedForNode(self.own_name().clone(). self.ConnectionName::our_bootstrap())
-        } else {
-            SourceAddress::Direct(self.own_name().clone())
-        }
+    fn my_source_address(&self) -> SourceAddress {
+        self.bootstrap.map(|(_, name)| {
+            SourceAddress::RelayedForNode(name, self.own_name.clone())
+        })
+        .unwrap_or(SourceAddress::Direct(self.own_name.clone()))
     }
 
     ///
@@ -287,7 +284,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //    Message::Unsigned(_) => return Err(RoutingError::NotEnoughSignatures)
         //};
 
-        let routing_message = try!(message.routing_message());
+        let routing_message = try!(message.get_routing_message());
         let connect_request = match routing_message.message_type {
             MessageType::ConnectRequest(request) => request,
             _ => Err(InterfaceError::Abort), // To be changed to Parse error

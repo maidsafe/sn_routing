@@ -56,7 +56,7 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     id: Id,
     own_name: NameType,
     next_message_id: MessageId,
-    bootstrap_endpoint: Option<Endpoint>,
+    bootstrap: Option<(Endpoint, Option<NameType>)>,
 }
 
 impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
@@ -70,7 +70,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                       id : id,
                       own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),
-                      bootstrap_endpoint: None,
+                      bootstrap: None,
                     }
     }
 
@@ -144,7 +144,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             .map_err(|_|RoutingError::FailedToBootstrap));
         println!("BOOTSTRAP to {:?}", bootstrapped_to);
         println!("NODE listening on {:?}", listeners.0.first());
-        self.bootstrap_endpoint = Some(bootstrapped_to.clone());
+        self.bootstrap = Some((bootstrapped_to.clone(), None));
         cm.connect(vec![bootstrapped_to.clone()]);
         // allow CRUST to connect
         thread::sleep_ms(100);
@@ -172,20 +172,29 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         loop {
             match event_input.recv() {
                 Err(_) => {},
-                Ok(crust::Event::NewMessage(_, bytes)) => {
+                Ok(crust::Event::NewMessage(source_endpoint, bytes)) => {
                     match decode::<RoutingMessage>(&bytes) {
                         Ok(message) => {
                             match message.message_type {
-                                MessageType::ConnectResponse(_) => {
-                                    // for now, ignore the actual response message
-                                    // bootstrap node responded, try to put our id to the network
+                                MessageType::ConnectResponse(connect_response) => {
                                     println!("Received connect response");
 
-                                    let put_public_id_msg = self.construct_put_public_id_msg(
-                                                                &PublicId::new(&unrelocated_id));
-                                    let put_public_id_msg = try!(put_public_id_msg);
+                                    let put_public_id_msg
+                                        = try!(self.construct_put_public_id_msg(
+                                                        &PublicId::new(&unrelocated_id)));
 
                                     let serialised_message = try!(encode(&put_public_id_msg));
+
+                                    // Store the NameType of the bootstrap node.
+                                    self.bootstrap = self.bootstrap.map(|(ep, name)| {
+                                            if ep == source_endpoint {
+                                                (ep, Some(connect_response.receiver_id))
+                                            }
+                                            else {
+                                                (ep, name)
+                                            }
+                                        });
+
                                     ignore(cm.send(bootstrapped_to.clone(), serialised_message));
                                 },
                                 MessageType::PutPublicIdResponse(public_id) => {
@@ -218,17 +227,24 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
         };
 
-        match relocated_name {
-            Some(relocated_name) => {
+        match (relocated_name, self.bootstrap.clone()) {
+            // This means that we have been relocated, we know our bootstrap
+            // endpoint and we also know the name of the bootstrap node.
+            (Some(relocated_name), Some((bootstrap_ep, Some(bootstrap_name)))) => {
                 self.id.assign_relocated_name(relocated_name);
                 debug_assert!(self.id.is_relocated());
+
                 let mut membrane = RoutingMembrane::<F>::new(
-                    cm, event_input, Some(bootstrapped_to.clone()),
-                    listeners.0, self.id.clone(),
+                    cm,
+                    event_input,
+                    Some((bootstrap_ep, bootstrap_name)),
+                    listeners.0,
+                    self.id.clone(),
                     self.genesis.create_personas());
+
                 spawn(move || membrane.run());
             },
-            _ => panic!("DEBUG: did not relocate the publicId.") // failed to bootstrap
+            _ => panic!("DEBUG: failed to bootstrap or did not relocate the publicId.")
         };
         Ok(())
     }
