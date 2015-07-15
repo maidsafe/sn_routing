@@ -43,7 +43,7 @@ use NameType;
 use name_type::{closer_to_target_or_equal};
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
-use relay::RelayMap;
+use relay::{RelayMap, IdType};
 use sendable::Sendable;
 use data::{Data, DataRequest};
 use types;
@@ -611,7 +611,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     // -----Name-based Send Functions----------------------------------------
 
-    fn send_out_as_relay(&mut self, name: &NameType, msg: Bytes) {
+    fn send_out_as_relay(&mut self, name: &IdType, msg: Bytes) {
         let mut failed_endpoints : Vec<Endpoint> = Vec::new();
         match self.relay_map.get_endpoints(name) {
             Some(&(_, ref endpoints)) => {
@@ -648,8 +648,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     None => {}
                 };
             }
-        } else { match self.bootstrap_endpoint.clone() {
-                    Some(ref bootstrap_endpoint) => {
+        } else { match self.bootstrap.clone() {
+                    Some((ref bootstrap_endpoint, _)) => {
                         match self.connection_manager.send(bootstrap_endpoint.clone(), msg) {
                     Ok(_) => Ok(()),
                     Err(e) => Err(RoutingError::Io(e))
@@ -670,10 +670,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         if dst.non_relayed_destination() == self.own_name {
             match dst {
                 DestinationAddress::RelayToClient(_, public_key) => {
-                    self.send_out_as_relay(&public_key, msg.clone());
+                    self.send_out_as_relay(&IdType::Client(public_key), msg.clone());
                 },
                 DestinationAddress::RelayToNode(_, node_address) => {
-                    self.send_out_as_relay(&node_address, msg.clone());
+                    self.send_out_as_relay(&IdType::Node(node_address), msg.clone());
                 },
                 DestinationAddress::Direct(_) => {},
             }
