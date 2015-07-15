@@ -470,18 +470,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // add to filter
         self.filter.add(message.get_filter());
 
-        // add to cache
+        // add to cache, only for ImmutableData;
+        // for StructuredData caching can result in old versions
+        // being returned.
         match message.message_type {
-            MessageType::GetDataResponse(result) => {
-                result.map(|data| {
-                    if data.is_empty() { return; }
+            MessageType::GetDataResponse(response) => {
+                match response.result {
+                    Ok(Data::ImmutableData(immutable_data)) => {
+                        let from = message.from_group()
+                                          .unwrap_or(message.non_relayed_source());
 
-                    let from = message.from_group()
-                                      .unwrap_or(message.non_relayed_source());
-
-                    ignore(self.mut_interface().handle_cache_put(
-                           message.authority, from, data));
-                })
+                        ignore(self.mut_interface().handle_cache_put(
+                            message.authority, from,
+                            Data::ImmutableData(immutable_data.clone())));
+                    },
+                    _ => {}
+                }
             },
             _ => {}
         }
