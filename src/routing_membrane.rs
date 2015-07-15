@@ -965,10 +965,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         message.message_type = msg;
         message.authority    = our_authority;
 
-        let signed_message = SignedMessage::new(&message, &self.id.secret_keys.0);
-        let serialised_msg = try!(encode(&signed_message));
-
-        self.send_swarm_or_parallel_or_relay(&message.destination, &serialised_msg);
+        self.send_swarm_or_parallel_or_relay(&message);
         Ok(())
     }
 
