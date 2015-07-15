@@ -23,7 +23,7 @@ use sodiumoxide::crypto;
 pub enum ImmutableDataType {
     Normal,
     Backup,
-    Sacrificaial,
+    Sacrificial,
 }
 
 /// ImmutableData
@@ -56,7 +56,8 @@ impl ImmutableData {
         match self.type_tag {
         ImmutableDataType::Normal => return NameType(digest.0),
         ImmutableDataType::Backup => return NameType(crypto::hash::sha512::hash(&digest.0).0),
-        ImmutableDataType::Sacrificaial => return NameType(crypto::hash::sha512::hash(&crypto::hash::sha512::hash(&digest.0).0).0)
+        ImmutableDataType::Sacrificial => return NameType(crypto::hash::sha512::hash(
+            &crypto::hash::sha512::hash(&digest.0).0).0)
         }
     }
 
@@ -100,7 +101,7 @@ mod test {
                                                    a5df9434abaee19ce2c710507533d306302b165b4387458b752579fc15e520daaf984a2e38";
         assert_eq!(&expected_immutable_data_backup_name, &immutable_data_backup_name);
         // Sacrificial
-        let immutable_data_sacrificial = ImmutableData::new(ImmutableDataType::Sacrificaial, immutable_data.value().clone());
+        let immutable_data_sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial, immutable_data.value().clone());
         let immutable_data_sacrificial_name = immutable_data_sacrificial.name().0.as_ref().to_hex();
         let expected_immutable_data_sacrificial_name ="ecb6c761c35d4da33b25057fbf6161e68711f9e0c11122732e62661\
                                                      340e630d3c59f7c165f4862d51db5254a38ab9b15a9b8af431e8500a4eb558b9136bd4135";
@@ -112,7 +113,7 @@ mod test {
         let value = generate_random();
         let normal = ImmutableData::new(ImmutableDataType::Normal, value.clone());
         let backup = ImmutableData::new(ImmutableDataType::Backup, value.clone());
-        let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificaial, value.clone());
+        let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial, value.clone());
         assert_eq!(normal.name().0.as_ref().to_hex(), crypto::hash::sha512::hash(&value).0.to_hex());
         assert_eq!(backup.name().0.as_ref().to_hex(), crypto::hash::sha512::hash(&normal.name().0).0.to_hex());
         assert_eq!(sacrificial.name().0.as_ref().to_hex(), crypto::hash::sha512::hash(&backup.name().0).0.to_hex());
