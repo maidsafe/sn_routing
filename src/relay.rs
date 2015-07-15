@@ -174,7 +174,8 @@ impl RelayMap {
 mod test {
     use super::*;
     use crust::Endpoint;
-    use types::{Id, PublicId};
+    use id::Id;
+    use public_id::PublicId;
     use std::net::SocketAddr;
     use std::str::FromStr;
     use rand::random;

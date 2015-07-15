@@ -234,7 +234,7 @@ mod test {
     #[test]
     fn format_id_nametype() {
         // test for Ids
-        use types::Id;
+        use id;
         for _ in 0..5 {
             let my_id = Id::new();
             let my_name = my_id.get_name();
