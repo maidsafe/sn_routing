@@ -470,10 +470,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // add to filter
         self.filter.add(message.get_filter());
 
-        // add to cache, only for ImmutableData;
-        // for StructuredData caching can result in old versions
-        // being returned.
+        // Caching on GetData and GetDataRequest
         match message.message_type {
+            // add to cache, only for ImmutableData;
+            // for StructuredData caching can result in old versions
+            // being returned.
             MessageType::GetDataResponse(response) => {
                 match response.result {
                     Ok(Data::ImmutableData(immutable_data)) => {
@@ -487,11 +488,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     _ => {}
                 }
             },
-            _ => {}
-        }
-
-        // cache check / response
-        match message.message_type {
+            // check cache
             MessageType::GetData(data_request) => {
                 let from = message.from_group()
                                   .unwrap_or(message.non_relayed_source());
@@ -509,7 +506,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     },
                     Err(_) => (),
                 }
-            }
+            },
+            _ => {}
         }
 
         // Forward
