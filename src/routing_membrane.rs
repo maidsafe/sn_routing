@@ -636,7 +636,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn send_swarm_or_parallel(&self,
                               name : &NameType,
-                              msg  : &RoutingMessage) -> Result<(), CborError> {
+                              msg  : &RoutingMessage) -> Result<(), RoutingError> {
         let signed_message = try!(encode(msg));
 
         if self.routing_table.size() > 0 {
@@ -648,26 +648,33 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     None => {}
                 };
             }
-        } else { match self.bootstrap.clone() {
-                    Some((ref bootstrap_endpoint, _)) => {
-                        match self.connection_manager.send(bootstrap_endpoint.clone(), msg) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(RoutingError::Io(e))
-                    }},
-                    None => Err(RoutingError::FailedToBootstrap)
-                }
+            Ok(())
+        } else {
+            match self.bootstrap {
+                Some((ref bootstrap_endpoint, _)) => {
 
+                    let dst = msg.destination_address();
+                    let msg = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
+                    let msg = try!(encode(&msg));
+
+                    match self.connection_manager.send(bootstrap_endpoint.clone(), msg) {
+                        Ok(_)  => Ok(()),
+                        Err(e) => Err(RoutingError::Io(e))
+                    }},
+                None => Err(RoutingError::FailedToBootstrap)
+            }
         }
     }
 
     fn send_swarm_or_parallel_or_relay(&self, msg: &RoutingMessage)
-        -> Result<(), CborError> {
+        -> Result<(), RoutingError> {
 
         let dst = msg.destination_address();
-        let msg = try!(SignedMessage::new(msg, &self.id.secret_keys.0));
-        let msg = try!(encode(&msg));
 
         if dst.non_relayed_destination() == self.own_name {
+            let msg = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
+            let msg = try!(encode(&msg));
+
             match dst {
                 DestinationAddress::RelayToClient(_, public_key) => {
                     self.send_out_as_relay(&IdType::Client(public_key), msg.clone());
@@ -677,9 +684,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 DestinationAddress::Direct(_) => {},
             }
+            Ok(())
         }
         else {
-            self.send_swarm_or_parallel(dst.non_relayed_destination(), msg);
+            self.send_swarm_or_parallel(&dst.non_relayed_destination(), msg)
         }
     }
 
@@ -695,7 +703,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
 
         let message =  RoutingMessage {
-            destination  : DestinationAddress::Direct(peer_id),
+            destination  : DestinationAddress::Direct(peer_id.clone()),
             source       : self.my_source_address(),
             orig_message : None,
             message_type : MessageType::ConnectRequest(connect_request),
@@ -703,7 +711,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             authority    : Authority::ManagedNode
         };
 
-        self.send_swarm_or_parallel(peer_id, message);
+        self.send_swarm_or_parallel(&peer_id, &message);
         //let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
         //encode(&message).map(|msg| self.send_swarm_or_parallel(peer_id, &msg));
     }
@@ -820,9 +828,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             for action in churn_actions {
                 match action {
                     MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                    MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+                    MethodCall::Get { name: x, data: y, } => self.get(x, y),
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-                    MethodCall::Post => unimplemented!(),
+                    MethodCall::Post { destination: x, content: y } => unimplemented!(),
                     MethodCall::None => (),
                     MethodCall::Forward { destination } =>
                         info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination)
@@ -848,21 +856,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // -----Address and various functions----------------------------------------
 
     fn drop_bootstrap(&mut self) {
-        match self.bootstrap_endpoint {
-            Some(ref connected_bootstrap_endpoint) => {
+        match self.bootstrap {
+            Some((endpoint, name)) => {
                 if self.routing_table.size() > 0 {
-                    info!("Dropped bootstrap on {:?}", connected_bootstrap_endpoint);
-                    self.connection_manager.drop_node(connected_bootstrap_endpoint.clone());
-                    self.bootstrap_endpoint = None;
+                    info!("Dropped bootstrap on {:?} {:?}", endpoint, name);
+                    self.connection_manager.drop_node(endpoint);
                 }
             },
             None => {}
         };
+        self.bootstrap = None;
     }
 
     fn address_in_close_group_range(&self, address: &NameType) -> bool {
         if self.routing_table.size() < types::QUORUM_SIZE  ||
-           address == self.our_name()
+           *address == self.own_name.clone()
         {
             return true;
         }
