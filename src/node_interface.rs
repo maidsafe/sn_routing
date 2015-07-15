@@ -109,8 +109,7 @@ pub trait Interface : Sync + Send {
 
     /// attempts to potentially retrieve data from cache.
     fn handle_cache_get(&mut self,
-                        type_id: u64,
-                        name: NameType,
+                        data_request: DataRequest,
                         from_authority: Authority,
                         from_address: NameType) -> Result<MessageAction, InterfaceError>;
 
