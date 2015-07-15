@@ -1240,7 +1240,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let from_authority = message.authority;
         let from = message.source.non_relayed_source();
 
-        match self.mut_interface().handle_get_response(from, response) {
+        match self.mut_interface().handle_get_response(from, response.error) {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { name: x, data: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
