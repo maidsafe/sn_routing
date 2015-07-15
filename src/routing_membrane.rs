@@ -567,7 +567,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //             MessageType::Post => self.handle_post(header, body),
         //             MessageType::PostResponse => self.handle_post_response(header, body),
                     MessageType::PutData(data) => self.handle_put_data(message_wrap, message, data),
-                    MessageType::PutDataResponse(response) => self.handle_put_data_response(message,
+                    MessageType::PutDataResponse(response) => self.handle_put_data_response(message_wrap, message,
                     response),
                     MessageType::PutPublicId(id) => self.handle_put_public_id(message, id),
                     MessageType::Refresh(tag, data) => { self.handle_refresh(message, tag,
@@ -937,8 +937,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     for destination in destinations {
                         ignore(self.forward(&signed_message,
                                             &message,
-                                            DestinationAddress::Direct(destination),
-                                            MessageType::PutData(data)));
+                                            DestinationAddress::Direct(destination)));
                     }
                 },
             },
@@ -969,22 +968,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_put_data_response(&mut self, message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
+    fn handle_put_data_response(&mut self, signed_message: SignedMessage,
+                                           message: RoutingMessage,
+                                           response: ErrorReturn) -> RoutingResult {
         info!("Handle PUT data response.");
-        let our_authority = our_authority(response.name(), &message, &self.routing_table);
-        let from_authority = message.authority();
+        let from_authority = message.from_authority();
         let from = message.source;
 
-        let method_call = self.mut_interface().handle_put_response(from_authority, from, response);
+        let method_call = self.mut_interface().handle_put_response(from_authority, from, response.error);
 
         match method_call {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-            MethodCall::Get { type_id: x, name: y, } => self.get(x, y),
+            MethodCall::Get { name: x, data: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-            MethodCall::Post => unimplemented!(),
+            MethodCall::Post { destination: x, content: y, } => self.post(x, y),
             MethodCall::None => (),
             MethodCall::Forward { destination } =>
-                ignore(self.forward(&message, our_authority, destination)),
+                ignore(self.forward(&signed_message, &message, DestinationAddress::Direct(destination))),
         }
         Ok(())
     }
@@ -997,7 +997,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             return Err(RoutingError::RejectedPublicId);
         }
         // first verify that the message is correctly self-signed
-        if message.verify_signature(self.id.public_sign_key()) {
+        if message.verify_signature(&self.id.signing_public_key()) {
             return Err(RoutingError::FailedSignature);
         }
         // if the PublicId claims to be relocated,
@@ -1057,14 +1057,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn handle_refresh(&mut self, message: RoutingMessage, tag: u64, payload: Vec<u8>) -> RoutingResult {
+        let group = match message.from_group() {
+            Some(g) => g,
+            None    => return Err(RoutingError::RefreshNotFromGroup),
+        };
+
         let threshold = (self.routing_table.size() as f32) * 0.8; // 80% chosen arbitrary
         let opt_payloads = self.refresh_accumulator.add_message(threshold as usize,
                                                                 tag,
-                                                                message.source,
-                                                                message.from_authority,
+                                                                message.non_relayed_source(),
+                                                                group.clone(),
                                                                 payload);
         opt_payloads.map(|payload| {
-            self.mut_interface().handle_refresh(tag, message.from_authority, payload);
+            self.mut_interface().handle_refresh(tag, group, payload);
         });
         Ok(())
     }
@@ -1076,7 +1081,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         if connect_request.requester_id != self.id.get_name() ||
            !verify_detached(&connect_response.connect_request_signature,
                             &connect_response.serialised_connect_request[..],
-                            &self.id.get_crypto_public_sign_key()) {
+                            &self.id.signing_public_key()) {
             return Err(RoutingError::Response(ResponseError::InvalidRequest));
         }
         // double check if fob is relocated;
@@ -1111,8 +1116,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // TODO (Ben): check whether to accept id into group;
     // restrict on minimal similar number of leading bits.
     fn handle_put_public_id(&mut self, message: RoutingMessage, public_id: PublicId) -> RoutingResult {
-        let our_authority = our_authority(public_id.public_id.name(), &message, &self.routing_table);
-    match (message.from_authority(), our_authority.clone(), public_id.public_id.is_relocated()) {
+        let our_authority = our_authority(&message, &self.routing_table);
+    match (message.from_authority(), our_authority.clone(), public_id.is_relocated()) {
         (Authority::ManagedNode, Authority::NaeManager(_), false) => {
             let mut put_public_id_relocated = public_id.clone();
 
@@ -1122,12 +1127,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 .collect::<Vec<NameType>>();
             close_group.extend(self.own_name.clone());
             let relocated_name = try!(utils::calculate_relocated_name(
-                close_group, &public_id.public_id.name()));
+                close_group, &public_id.name()));
             // assign_relocated_name
             put_public_id_relocated.public_id.assign_relocated_name(relocated_name.clone());
 
             info!("RELOCATED {:?} to {:?}",
-                public_id.public_id.name(), relocated_name);
+                public_id.name(), relocated_name);
             // Forward to relocated_name group, which will actually store the relocated public id
             try!(self.forward(&public_id.public_id.name(),
                               &message,
@@ -1152,8 +1157,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                                  authority    : self.our_authority(),
                                                };
 
-              let signed_message = try!(SignedMessage::new(&message, &self.id.signing_private_key()));
-              self.send_swarm_or_parallel(destination, &signed_message);
+              self.send_swarm_or_parallel(destination, &routing_msg);
             }
             Ok(())
         },
@@ -1178,7 +1182,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
         //let signed_message = try!(SignedRoutingMessage::new(message, &self.id.signing_private_key()));
         //ignore(encode(&signed_message).map(|msg| self.send_swarm_or_parallel(message.non_relayed_destination(), &msg)));
-        self.send_swarm_or_parallel(message.non_relayed_destination(), &message);
+        self.send_swarm_or_parallel(&message.non_relayed_destination(), &message);
         Ok(())
     }
 
@@ -1205,7 +1209,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_get_data(&mut self, orig_message: SignedMessage,
                                   message: RoutingMessage,
                                   data_request: DataRequest) -> RoutingResult {
-        let our_authority  = our_authority(&message, &self.routing_table);
         let from_authority = message.authority();
         let from           = message.actual_source();
 
@@ -1217,7 +1220,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 MessageAction::Forward(dest_nodes) => {
                     for destination in dest_nodes {
-                        self.forward(orig_message, &message, our_authority, destination);
+                        self.forward(&orig_message, &message, destination);
                     }
                 }
             },
@@ -1229,12 +1232,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn forward(&self,
                orig_message: &SignedMessage,
                routing_message: &RoutingMessage,
-               destination: DestinationAddress,
-               message_type: MessageType ) -> RoutingResult
+               destination: DestinationAddress) -> RoutingResult
     {
         let our_authority = our_authority(&routing_message, &self.routing_table);
         let message = routing_message.create_forward(self.own_name.clone(),
-            our_authority, destination.non_relayed_destination(), orig_message);
+            our_authority, destination.non_relayed_destination(), orig_message.clone());
         let signed_message = try!(SignedMessage::new(&message, &self.id.signing_private_key()));
         self.send_swarm_or_parallel(&destination.non_relayed_destination(), &message);
         Ok(())
@@ -1254,10 +1256,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { name: x, data: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-            // MethodCall::Post => unimplemented!(),
+            MethodCall::Post { destination: x, content: y, } => self.post(x, y),
             MethodCall::None => (),
             MethodCall::Forward { destination } =>
-                ignore(self.forward(orig_message, &message, DestinationAddress::Direct(destination), message.message_type)),
+                ignore(self.forward(&orig_message, &message, DestinationAddress::Direct(destination))),
         }
         Ok(())
     }
