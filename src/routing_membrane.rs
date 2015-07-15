@@ -1183,9 +1183,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             let our_name = self.own_name.clone();
             if !self.connection_cache.contains_key(&our_name) {
                 let find_group_msg = self.construct_find_group_msg();
-                let serialised_msg = try!(encode(&find_group_msg));
-                info!("REFLECT OUR GROUP");
-                self.send_swarm_or_parallel(&our_name, &serialised_msg);
+                //let serialised_msg = try!(encode(&find_group_msg));
+                //info!("REFLECT OUR GROUP");
+                self.send_swarm_or_parallel(&our_name, &find_group_msg);
                 self.connection_cache.entry(our_name)
                     .or_insert(SteadyTime::now());
             }
@@ -1203,11 +1203,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match self.mut_interface().handle_get(data_request, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
-                    self.send_reply(message, our_authority, MessageType::GetDataResponse(Ok(data)));
+                    self.send_reply(&message, our_authority, MessageType::GetDataResponse(Ok(data)));
                 },
                 MessageAction::Forward(dest_nodes) => {
                     for destination in dest_nodes {
-                        self.forward(orig_message, message, our_authority, destination);
+                        self.forward(orig_message, &message, our_authority, destination);
                     }
                 }
             },
@@ -1232,6 +1232,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_get_data_response(&mut self, orig_message : Vec<u8>, 
                                            message: RoutingMessage, 
                                            response: ErrorReturn) -> RoutingResult {
+        if !response.verify_request_came_from(&self.id.signing_public_key()) {
+            return Err(RoutingError::FailedSignature);
+        }
+
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.authority;
         let from = message.source.non_relayed_source();
