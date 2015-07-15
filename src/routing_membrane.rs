@@ -51,7 +51,7 @@ use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress, SourceAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
 use messages::{RoutingMessage, SignedMessage, MessageType,
-               ConnectRequest, ConnectResponse, ErrorReturn};
+               ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::{MethodCall, MessageAction};
 use refresh_accumulator::RefreshAccumulator;
@@ -498,9 +498,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                                             from) {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
-                            let reply = message.create_reply(self.own_name(), Authority::NodeManager(self.own_name()));
-                            self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(data));
-                            return Ok();
+                            let response = GetDataResponse {
+                                result       : Ok(data),
+                                orig_request : message_wrap,
+                            };
+
+                            self.send_reply(&message,
+                                            our_authority(&message, &self.routing_table),
+                                            MessageType::GetDataResponse(response));
+                            return Ok(());
                         },
                         _ => (),
                     },
@@ -946,14 +952,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn send_reply(&mut self, routing_message: &RoutingMessage, our_authority: Authority,
-                  reply_data: Result<Data, ResponseError>) -> RoutingResult {
-        let message = routing_message.create_reply(self.own_name(), our_authority);
-        message.message_type = reply_data;
-        message.authority = our_authority;
+    fn send_reply(&mut self,
+                  routing_message : &RoutingMessage,
+                  our_authority   : Authority,
+                  msg            : MessageType) -> RoutingResult {
+        let message = routing_message.create_reply(self.own_name.clone(), our_authority);
+
+        message.message_type = msg;
+        message.authority    = our_authority;
 
         let signed_message = SignedMessage::new(&message, &self.id.secret_keys.0);
         let serialised_msg = try!(encode(&signed_message));
+
         self.send_swarm_or_parallel_or_relay(&message.destination, &serialised_msg);
         Ok(())
     }
