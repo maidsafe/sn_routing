@@ -63,7 +63,7 @@ use utils::{encode, decode};
 type RoutingResult = Result<(), RoutingError>;
 
 enum ConnectionName {
-    Relay(NameType),
+    Relay(IdType),
     Routing(NameType),
     OurBootstrap,
     UnidentifiedConnection,
@@ -221,7 +221,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
-                        Some(ConnectionName::Relay(name)) => {
+                        Some(ConnectionName::Relay(_)) => {
                             let message = match message.get_routing_message() {
                                 Ok(message) => message,
                                 Err(_)      => continue,
@@ -566,7 +566,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         self.handle_get_data_response(message_wrap, message, response),
         //             MessageType::Post => self.handle_post(header, body),
         //             MessageType::PostResponse => self.handle_post_response(header, body),
-                    MessageType::PutData(data) => self.handle_put_data(message, data),
+                    MessageType::PutData(data) => self.handle_put_data(message_wrap, message, data),
                     MessageType::PutDataResponse(response) => self.handle_put_data_response(message,
                     response),
                     MessageType::PutPublicId(id) => self.handle_put_public_id(message, id),
@@ -883,14 +883,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn our_source_address(&mut self, from_group: Option<NameType>) -> types::SourceAddress {
-        types::SourceAddress{ from_node: self.own_name.clone(),
-                              from_group: from_group,
-                              reply_to: None,
-                              relayed_for: None
-        }
-    }
-
     fn get_next_message_id(&mut self) -> MessageId {
         let temp = self.next_message_id;
         self.next_message_id = self.next_message_id.wrapping_add(1);
@@ -905,8 +897,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             None => match self.relay_map.lookup_endpoint(&endpoint) {
                 Some(name) => Some(ConnectionName::Relay(name)),
                 // check to see if it is our bootstrap_endpoint
-                None => match self.bootstrap_endpoint {
-                    Some(ref our_bootstrap) => {
+                None => match self.bootstrap {
+                    Some((ref our_bootstrap, _)) => {
                         if our_bootstrap == endpoint {
                             Some(ConnectionName::OurBootstrap)
                         } else {
@@ -925,14 +917,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // -----Message Handlers from Routing Table connections----------------------------------------
 
     // Routing handle put_data
-    fn handle_put_data(&mut self, message: RoutingMessage, data: Data) -> RoutingResult {
-        let our_authority = our_authority(data.name, &message, &self.routing_table);
-        let from_authority = message.authority();
+    fn handle_put_data(&mut self, signed_message: SignedMessage,
+                                  message: RoutingMessage,
+                                  data: Data) -> RoutingResult {
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from_authority = message.from_authority();
         let from = message.source_address();
         //let to = message.send_to();
         let to = message.destination_address();
 
-        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, message.data) {
+        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data) {
             Ok(action) => match action {
                 MessageAction::Reply(reply_data) => {
                     // It has been decided that PUT messages will only generate
@@ -941,13 +935,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 MessageAction::Forward(destinations) => {
                     for destination in destinations {
-                        ignore(self.forward(&data.name, &message, destination, data.clone()));
+                        ignore(self.forward(&signed_message,
+                                            &message,
+                                            DestinationAddress::Direct(destination),
+                                            MessageType::PutData(data)));
                     }
                 },
             },
             Err(InterfaceError::Abort) => {},
             Err(InterfaceError::Response(error)) => {
-                try!(self.send_reply(&message, our_authority.clone(), Err(error)));
+                let signed_error = ErrorReturn {
+                    error: error,
+                    orig_request: signed_message
+                };
+                try!(self.send_reply(&message,
+                                     our_authority.clone(),
+                                     MessageType::PutDataResponse(signed_error)));
             }
         }
         Ok(())
@@ -957,7 +960,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                   routing_message : &RoutingMessage,
                   our_authority   : Authority,
                   msg             : MessageType) -> RoutingResult {
-        let message = routing_message.create_reply(self.own_name.clone(), our_authority);
+        let message = routing_message.create_reply(&self.own_name, &our_authority);
 
         message.message_type = msg;
         message.authority    = our_authority;

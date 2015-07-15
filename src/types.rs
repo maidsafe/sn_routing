@@ -104,7 +104,7 @@ pub struct AccountTransferInfo {
   pub name : NameType
 }
 
-enum Address {
+pub enum Address {
 Client(crypto::sign::PublicKey),
 Node(NameType),    
 }

@@ -17,7 +17,7 @@
 
 use data::{Data, DataRequest};
 use name_type::NameType;
-use types::DestinationAddress;
+use types::{SourceAddress, DestinationAddress};
 use authority::Authority;
 use error::{InterfaceError, ResponseError};
 
@@ -64,7 +64,7 @@ pub trait Interface : Sync + Send {
     fn handle_put(&mut self,
                   our_authority: Authority,
                   from_authority: Authority,
-                  from_address: NameType,
+                  from_address: SourceAddress,
                   dest_address: DestinationAddress,
                   data: Data) -> Result<MessageAction, InterfaceError>;
 
