@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use sodiumoxide::crypto;
 use sodiumoxide::crypto::sign::Signature;
+use sodiumoxide::crypto::sign;
 use crust::Endpoint;
 use authority::Authority;
 use data::{Data, DataRequest};
@@ -27,7 +27,6 @@ use public_id::PublicId;
 use types::{DestinationAddress, SourceAddress, FromAddress, ToAddress, NodeAddress};
 use error::{RoutingError, ResponseError};
 use NameType;
-use cbor;
 use utils;
 use cbor::{CborError};
 
@@ -59,7 +58,14 @@ pub struct ConnectResponse {
 // so we need to create this wrapper.
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetDataResponse {
-    result: Result<Data, ResponseError>
+    result       : Result<Data, ResponseError>,
+    orig_request : SignedMessage,
+}
+
+impl GetDataResponse {
+    pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
+        self.orig_request.verify_signature(requester_pub_key);
+    }
 }
 
 impl Encodable for GetDataResponse {
@@ -80,8 +86,10 @@ impl Decodable for GetDataResponse {
         d.read_enum("GetDataResponse", move |d| {
             d.read_enum_variant(&["Ok", "Err"], move |d, idx| {
                 match idx {
-                    0 => Ok(GetDataResponse { result: Ok(try!(Decodable::decode(d))) }),
-                    1 => Ok(GetDataResponse { result: Err(try!(Decodable::decode(d))) }),
+                    0 => Ok(GetDataResponse { result: Ok(try!(Decodable::decode(d))),
+                                              orig_request: try!(Decodable::decode(d)) }),
+                    1 => Ok(GetDataResponse { result: Err(try!(Decodable::decode(d))),
+                                              orig_request: try!(Decodable::decode(d)) }),
                     _ => {
                         Err(d.error("Expected Ok or Err"))
                     }
@@ -102,6 +110,10 @@ impl ErrorReturn {
             orig_request : orig_request,
         }
     }
+
+    pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
+        self.orig_request.verify_signature(requester_pub_key);
+    }
 }
 
 /// These are the messageTypes routing provides
@@ -120,9 +132,9 @@ pub enum MessageType {
     DeleteData(DataRequest),
     DeleteDataResponse(ErrorReturn),
     GetKey,
-    GetKeyResponse(NameType, crypto::sign::PublicKey),
+    GetKeyResponse(NameType, sign::PublicKey),
     GetGroupKey,
-    GetGroupKeyResponse(Vec<(NameType, crypto::sign::PublicKey)>),
+    GetGroupKeyResponse(Vec<(NameType, sign::PublicKey)>),
     Post(Data),
     PostResponse(ErrorReturn),
     PutData(Data),
@@ -181,7 +193,7 @@ impl RoutingMessage {
         self.authority.clone()
     }
 
-    pub fn client_key(&self) -> Option<crypto::sign::PublicKey> {
+    pub fn client_key(&self) -> Option<sign::PublicKey> {
         match self.source {
             SourceAddress::RelayedForClient(_, client_key) => Some(client_key),
             SourceAddress::RelayedForNode(_, _)            => None,
@@ -276,11 +288,11 @@ pub struct SignedMessage {
 }
 
 impl SignedMessage {
-    pub fn new(message: &RoutingMessage, private_sign_key: &crypto::sign::SecretKey)
+    pub fn new(message: &RoutingMessage, private_sign_key: &sign::SecretKey)
         -> Result<SignedMessage, CborError> {
 
         let encoded_body = try!(utils::encode(&message));
-        let signature    = crypto::sign::sign_detached(&encoded_body, private_sign_key);
+        let signature    = sign::sign_detached(&encoded_body, private_sign_key);
 
         Ok(SignedMessage {
             encoded_body: encoded_body,
@@ -288,10 +300,10 @@ impl SignedMessage {
         })
     }
 
-    pub fn verify_signature(&self, public_sign_key: &crypto::sign::PublicKey) -> bool {
-        crypto::sign::verify_detached(&self.signature,
-                                      &self.encoded_body,
-                                      &public_sign_key)
+    pub fn verify_signature(&self, public_sign_key: &sign::PublicKey) -> bool {
+        sign::verify_detached(&self.signature,
+                              &self.encoded_body,
+                              &public_sign_key)
     }
 
     pub fn get_routing_message(&self) -> Result<RoutingMessage, CborError> {

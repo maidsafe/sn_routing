@@ -18,7 +18,7 @@
 
 use rand;
 use sodiumoxide;
-use sodiumoxide::crypto;
+use sodiumoxide::crypto::sign;
 use std::io::Error as IoError;
 use std::sync::{Mutex, Arc, mpsc};
 use std::sync::mpsc::Receiver;
@@ -94,6 +94,8 @@ impl<F> RoutingClient<F> where F: Interface {
         Ok(SourceAddress::RelayedForClient(try!(self.bootstrap_name()),
                                            self.public_id.signing_public_key()))
     }
+
+    fn public_sign_key(&self) -> sign::PublicKey { self.id.signing_public_key() }
 
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, ClientError> {
@@ -288,14 +290,22 @@ impl<F> RoutingClient<F> where F: Interface {
         self.next_message_id
     }
 
-    fn handle_get_data_response(&self, message_id: MessageId, result: ErrorReturn) {
+    fn handle_get_data_response(&self, message_id: MessageId,
+                                       response: messages::GetDataResponse) {
+        if !response.verify_request_came_from(&self.public_sign_key()) {
+            return;
+        }
+
         let mut interface = self.interface.lock().unwrap();
-        interface.handle_get_response(message_id, result);
+        interface.handle_get_response(message_id, response.result);
     }
 
-    fn handle_put_data_response(&self, message_id: MessageId, result: ErrorReturn) {
+    fn handle_put_data_response(&self, message_id: MessageId, signed_error: ErrorReturn) {
+        if !signed_error.verify_request_came_from(&self.public_sign_key()) {
+            return;
+        }
         let mut interface = self.interface.lock().unwrap();
-        interface.handle_put_response(message_id, result);
+        interface.handle_put_response(message_id, signed_error.error);
     }
 }
 
