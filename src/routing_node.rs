@@ -200,9 +200,10 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                 MessageType::PutPublicIdResponse(public_id) => {
                                     relocated_name = Some(public_id.name());
                                     debug_assert!(public_id.is_relocated());
-                                    if public_id.validation_token
-                                        != self.id.get_validation_token() {
-                                        return Err(RoutingError::FailedToBootstrap); }
+                                    //if public_id.validation_token
+                                    //        != self.id.get_validation_token() {
+                                    //    return Err(RoutingError::FailedToBootstrap);
+                                    //}
                                     println!("Received PutPublicId relocated name {:?} from {:?}",
                                         relocated_name, self.id.get_name());
                                     break;

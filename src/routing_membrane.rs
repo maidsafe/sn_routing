@@ -51,7 +51,7 @@ use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress, SourceAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
 use messages::{RoutingMessage, SignedMessage, MessageType,
-               ConnectRequest, ConnectResponse, DataAndError};
+               ConnectRequest, ConnectResponse, ErrorReturn};
 use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::{MethodCall, MessageAction};
 use refresh_accumulator::RefreshAccumulator;
@@ -151,6 +151,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.send_swarm_or_parallel(&destination, &message);
         //let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
         //ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(destination, &msg)));
+    }
+
+    /// Add something to the network, will always go via ClientManager group
+    pub fn post(&mut self, destination: NameType, data : Data) {
+        unimplemented!()
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -951,7 +956,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_put_data_response(&mut self, message: RoutingMessage, response: DataAndError) -> RoutingResult {
+    fn handle_put_data_response(&mut self, message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
         info!("Handle PUT data response.");
         let our_authority = our_authority(response.name(), &message, &self.routing_table);
         let from_authority = message.authority();
@@ -1222,7 +1227,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn handle_get_data_response(&mut self, orig_message : Vec<u8>, 
                                            message: RoutingMessage, 
-                                           response: DataAndError) -> RoutingResult {
+                                           response: ErrorReturn) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.authority;
         let from = message.source.non_relayed_source();

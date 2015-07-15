@@ -55,17 +55,53 @@ pub struct ConnectResponse {
     pub connect_request_signature: Signature
 }
 
-/// Respond wiht Data or Error
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct DataAndError { data: Data, error: ResponseError }
+// Unfortunately the Result type is not (yet?) encodable/decodable
+// so we need to create this wrapper.
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct GetDataResponse {
+    result: Result<Data, ResponseError>
+}
 
-impl DataAndError {
-  pub fn new(data: Data, error: ResponseError) -> DataAndError {
-      DataAndError {
-          data : data,
-          error : error,
-          }
-      }    
+impl Encodable for GetDataResponse {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_enum("GetDataResponse", |s| {
+            match self.result {
+                // Not sure what the third argument to the `emit_enum_variant`
+                // function is meant to be, currently it is ignored.
+                Ok(ref data) => s.emit_enum_variant("Ok",  0, 1, |s| data.encode(s)),
+                Err(ref err) => s.emit_enum_variant("Err", 1, 1, |s| err.encode(s))
+            }
+        })
+    }
+}
+
+impl Decodable for GetDataResponse {
+    fn decode<D: Decoder>(d: &mut D) -> Result<GetDataResponse, D::Error> {
+        d.read_enum("GetDataResponse", move |d| {
+            d.read_enum_variant(&["Ok", "Err"], move |d, idx| {
+                match idx {
+                    0 => Ok(GetDataResponse { result: Ok(try!(Decodable::decode(d))) }),
+                    1 => Ok(GetDataResponse { result: Err(try!(Decodable::decode(d))) }),
+                    _ => {
+                        Err(d.error("Expected Ok or Err"))
+                    }
+                }
+            })
+        })
+    }
+}
+
+/// Response error which can be verified that originated from our request.
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+pub struct ErrorReturn { error: ResponseError, orig_request: SignedMessage }
+
+impl ErrorReturn {
+    pub fn new(error: ResponseError, orig_request: SignedMessage) -> ErrorReturn {
+        ErrorReturn {
+            error        : error,
+            orig_request : orig_request,
+        }
+    }
 }
 
 /// These are the messageTypes routing provides
@@ -80,17 +116,17 @@ pub enum MessageType {
     FindGroup(NameType),
     FindGroupResponse(Vec<PublicId>),
     GetData(DataRequest),
-    GetDataResponse(DataAndError),
+    GetDataResponse(GetDataResponse),
     DeleteData(DataRequest),
-    DeleteDataResponse(DataAndError),
+    DeleteDataResponse(ErrorReturn),
     GetKey,
     GetKeyResponse(NameType, crypto::sign::PublicKey),
     GetGroupKey,
     GetGroupKeyResponse(Vec<(NameType, crypto::sign::PublicKey)>),
     Post(Data),
-    PostResponse(DataAndError),
+    PostResponse(ErrorReturn),
     PutData(Data),
-    PutDataResponse(DataAndError),
+    PutDataResponse(ErrorReturn),
     PutKey,
     AccountTransfer(NameType),
     PutPublicId(PublicId),
@@ -129,11 +165,11 @@ impl RoutingMessage {
     }
 
     pub fn actual_source(&self) -> types::Address {
-       self.source.actual_source()     
+       self.source.actual_source()
     }
 
     pub fn non_relayed_destination(&self) -> NameType {
-        self.destination.non_relayed_destination()     
+        self.destination.non_relayed_destination()
     }
 
     // FIXME: add from_authority to filter value

@@ -31,7 +31,7 @@ use sendable::Sendable;
 use types;
 use error::{RoutingError, ResponseError, ClientError};
 use messages::{SignedMessage, RoutingMessage, MessageType,
-               ConnectResponse, ConnectRequest, DataAndError, };
+               ConnectResponse, ConnectRequest, ErrorReturn, };
 use types::{MessageId, DestinationAddress, SourceAddress};
 use id::Id;
 use public_id::PublicId;
@@ -288,12 +288,12 @@ impl<F> RoutingClient<F> where F: Interface {
         self.next_message_id
     }
 
-    fn handle_get_data_response(&self, message_id: MessageId, result: DataAndError) {
+    fn handle_get_data_response(&self, message_id: MessageId, result: ErrorReturn) {
         let mut interface = self.interface.lock().unwrap();
         interface.handle_get_response(message_id, result);
     }
 
-    fn handle_put_data_response(&self, message_id: MessageId, result: DataAndError) {
+    fn handle_put_data_response(&self, message_id: MessageId, result: ErrorReturn) {
         let mut interface = self.interface.lock().unwrap();
         interface.handle_put_response(message_id, result);
     }
