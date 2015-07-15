@@ -497,7 +497,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                   .unwrap_or(message.non_relayed_source());
 
                 match self.mut_interface().handle_cache_get(data_request,
-                                                            message.authority(),
+                                                            message.from_authority(),
                                                             from) {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
