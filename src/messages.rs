@@ -152,7 +152,9 @@ pub enum MessageType {
 pub struct RoutingMessage {
     pub destination     : DestinationAddress,
     pub source          : SourceAddress,
-    pub orig_message    : Option<Vec<u8>>, // represents orig message when this is forwarded
+    // orig_message represents original message when this is forwarded
+    // from a client or single node
+    pub orig_message    : Option<SignedMessage>,
     pub message_type    : MessageType,
     pub message_id      : types::MessageId,
     pub authority       : Authority
@@ -231,7 +233,7 @@ impl RoutingMessage {
                           our_name      : NameType,
                           our_authority : Authority,
                           destination   : NameType,
-                          orig_signed_message  : Vec<u8>) -> RoutingMessage {
+                          orig_signed_message  : SignedMessage) -> RoutingMessage {
 
         // implicitly preserve all non-mutated fields.
         let mut forward_message = self.clone();
@@ -239,6 +241,7 @@ impl RoutingMessage {
         // then store it and preserve along the route
         // it will contain the address to reply to as well as proof the request was made
         // FIXME(dirvine) We need the original encoded signed message here  :13/07/2015
+        // FIXME(ben) only attach when from client or node 15/07/2015
         if self.orig_message.is_none() {
             forward_message.orig_message = Some(orig_signed_message);
         }
@@ -261,9 +264,9 @@ impl RoutingMessage {
         //// TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
         //let mut reply_message     = self.clone();
         //if self.orig_message.is_some() {
-        //   reply_message.destination = try!(self.orig_message.get_routing_message()).reply_destination();    
+        //   reply_message.destination = try!(self.orig_message.get_routing_message()).reply_destination();
         //} else {
-        //   reply_message.destination = self.reply_destination(); 
+        //   reply_message.destination = self.reply_destination();
         //}
         //reply_message.source      = SourceAddress::Direct(our_name.clone());
         //reply_message.authority   = our_authority.clone();
@@ -316,4 +319,3 @@ impl SignedMessage {
 
     pub fn signature(&self) -> &Signature { &self.signature }
 }
-

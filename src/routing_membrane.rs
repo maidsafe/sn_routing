@@ -560,9 +560,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageType::FindGroup(find_group) => self.handle_find_group(message, find_group),
                     // Handled above for some reason.
                     //MessageType::FindGroupResponse(find_group_response) => self.handle_find_group_response(find_group_response),
-                    MessageType::GetData(request) => self.handle_get_data(message, request),
+                    MessageType::GetData(request) => self.handle_get_data(message_wrap,
+                        message, request),
                     MessageType::GetDataResponse(response) =>
-                    self.handle_get_data_response(message, response),
+                        self.handle_get_data_response(message_wrap, message, response),
         //             MessageType::Post => self.handle_post(header, body),
         //             MessageType::PostResponse => self.handle_post_response(header, body),
                     MessageType::PutData(data) => self.handle_put_data(message, data),
@@ -1201,14 +1202,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data(&mut self, orig_message: Vec<u8>, 
-                                  message: RoutingMessage, 
+    fn handle_get_data(&mut self, orig_message: SignedMessage,
+                                  message: RoutingMessage,
                                   data_request: DataRequest) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.authority();
         let from = message.actual_source();
 
-        match self.mut_interface().handle_get(data_request, our_authority.clone(), from_authority, from) {
+        match self.mut_interface().handle_get(data_request,
+            our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
                     self.send_reply(message, our_authority, MessageType::GetDataResponse(Ok(data)));
@@ -1225,21 +1227,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn forward(&self,
-               orig_message: Vec<u8>,
+               orig_message: &SignedMessage,
                routing_message: &RoutingMessage,
                destination: DestinationAddress,
                message_type: MessageType ) -> RoutingResult
     {
         let our_authority = our_authority(&routing_message, &self.routing_table);
-        let message = routing_message.create_forward(self.own_name.clone(), our_authority, destination.non_relayed_destination(), orig_message);
+        let message = routing_message.create_forward(self.own_name.clone(),
+            our_authority, destination.non_relayed_destination(), orig_message);
         let signed_message = try!(SignedMessage::new(&message, &self.id.signing_private_key()));
         self.send_swarm_or_parallel(&destination.non_relayed_destination(), &message);
         Ok(())
     }
 
-    fn handle_get_data_response(&mut self, orig_message : Vec<u8>, 
-                                           message: RoutingMessage, 
-                                           response: ErrorReturn) -> RoutingResult {
+    fn handle_get_data_response(&mut self, orig_message : SignedMessage,
+                                           message: RoutingMessage,
+                                           response: GetDataResponse) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.authority;
         let from = message.source.non_relayed_source();
