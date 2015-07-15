@@ -926,17 +926,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, message.data) {
             Ok(action) => match action {
                 MessageAction::Reply(reply_data) => {
-                    // different pattern to accommodate for "PUT reply only from CM goes to client"
-                    // FIXME: such a different pattern needs to be activated for disabling PutResponse
-                    //        can be revised an handled better at different places in code
-                    // let reply_to = match our_authority {
-                    //     Authority::ClientManager => match header.reply_to() {
-                    //         Some(client) => client,
-                    //         None => header.from()
-                    //     },
-                    //     _ => header.from()
-                    // };
-                    try!(self.send_reply(&message, our_authority.clone(), Ok(reply_data)));
+                    // It has been decided that PUT messages will only generate
+                    // replies in error cases.
+                    unimplemented!()
                 },
                 MessageAction::Forward(destinations) => {
                     for destination in destinations {
@@ -955,7 +947,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn send_reply(&mut self,
                   routing_message : &RoutingMessage,
                   our_authority   : Authority,
-                  msg            : MessageType) -> RoutingResult {
+                  msg             : MessageType) -> RoutingResult {
         let message = routing_message.create_reply(self.own_name.clone(), our_authority);
 
         message.message_type = msg;
@@ -1204,9 +1196,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_get_data(&mut self, orig_message: Vec<u8>, 
                                   message: RoutingMessage, 
                                   data_request: DataRequest) -> RoutingResult {
-        let our_authority = our_authority(&message, &self.routing_table);
+        let our_authority  = our_authority(&message, &self.routing_table);
         let from_authority = message.authority();
-        let from = message.actual_source();
+        let from           = message.actual_source();
 
         match self.mut_interface().handle_get(data_request, our_authority.clone(), from_authority, from) {
             Ok(action) => match action {
