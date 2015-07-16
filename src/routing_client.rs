@@ -119,7 +119,7 @@ impl<F> RoutingClient<F> where F: Interface {
         let message_id = self.get_next_message_id();
 
         let message = RoutingMessage {
-            destination : DestinationAddress::Direct(self.public_id.client_name()),
+            destination : DestinationAddress::Direct(location),
             source      : try!(self.source_address()),
             orig_message: None,
             message_type: MessageType::PutData(data),

@@ -124,8 +124,6 @@ impl ErrorReturn {
 /// to users.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum MessageType {
-    BootstrapIdRequest,
-    BootstrapIdResponse,
     ConnectRequest(ConnectRequest),
     ConnectResponse(ConnectResponse),
     FindGroup(NameType),
@@ -143,7 +141,6 @@ pub enum MessageType {
     PutData(Data),
     PutDataResponse(ErrorReturn),
     PutKey,
-    AccountTransfer(NameType),
     PutPublicId(PublicId),
     PutPublicIdResponse(PublicId),
     Refresh(u64, Vec<u8>),

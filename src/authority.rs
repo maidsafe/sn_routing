@@ -47,10 +47,10 @@ pub enum Authority {
 ///       and the destination is the element
 ///       and the source group is not the destination
 ///    -> Network-Addressable-Element Manager
-/// c) if the element is within our close group range
+/// -) if the element is within our close group range
 ///       and the source is the destination, and equals the element
 ///       and it is from a group
-///    -> OurCloseGroup for AccountTransfer
+///    -> DISABLED : OurCloseGroup for Refresh
 /// d) if the message is from a group,
 ///       the destination is within our close group,
 ///       and our id is not the destination
@@ -67,8 +67,6 @@ pub fn our_authority(message       : &RoutingMessage,
     // that if a new message is added to the MessageType enum, compiler
     // will warn us that we need to add it here.
     let element = match message.message_type {
-        MessageType::BootstrapIdRequest     => None,
-        MessageType::BootstrapIdResponse    => None,
         MessageType::ConnectRequest(_)      => None,
         MessageType::ConnectResponse(_)     => None,
         MessageType::FindGroup(_)           => None,
@@ -86,7 +84,6 @@ pub fn our_authority(message       : &RoutingMessage,
         MessageType::PutData(data)          => Some(data.name()),
         MessageType::PutDataResponse(_)     => None,
         MessageType::PutKey                 => None,
-        MessageType::AccountTransfer(_)     => None,
         MessageType::PutPublicId(public_id) => Some(public_id.name()),
         MessageType::PutPublicIdResponse(_) => None,
         //MessageType::Refresh(_, _)          => Some(message.from_group()),
@@ -109,10 +106,11 @@ pub fn our_authority(message       : &RoutingMessage,
              group_source != message.non_relayed_destination()},
           None => true } {
         return Authority::NaeManager(element); }
-    else if routing_table.address_in_our_close_group_range(&element)
-       && message.non_relayed_destination() == element
-       && message.from_group().map(|grp| grp == element).unwrap_or(false) {
-         return Authority::OurCloseGroup(element); }
+    // FIXME(ben): MessageType::Refresh currently is not considered for Authority 16/07/2015
+    // else if routing_table.address_in_our_close_group_range(&element)
+    //    && message.non_relayed_destination() == element
+    //    && message.from_group().map(|grp| grp == element).unwrap_or(false) {
+    //      return Authority::OurCloseGroup(element); }
     else if message.from_group().is_some()
        && routing_table.address_in_our_close_group_range(&message.non_relayed_destination())
        && message.non_relayed_destination() != routing_table.our_name() {
