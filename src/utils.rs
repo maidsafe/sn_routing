@@ -16,17 +16,12 @@
 // relating to use of the SAFE Network Software.
 
 use cbor::{Decoder, Encoder, CborError};
-use sodiumoxide;
 use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::sign::Signature;
-use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto;
 use std::cmp;
 use NameType;
 use name_type::closer_to_target;
-use std::fmt;
 use error::{RoutingError};
-use messages::{RoutingMessage};
 
 use rustc_serialize::{Decodable, Encodable};
 
@@ -75,11 +70,11 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
 
 // A self_relocated id, is purely used for a zero-node to bootstrap a network.
 // Such a node will be rejected by the network once routing tables fill up.
-pub fn calculate_self_relocated_name(public_key: &crypto::sign::PublicKey,
-                           public_sign_key: &crypto::box_::PublicKey) -> NameType {
-    let original_name = calculate_original_name(public_key, public_sign_key);
-    NameType(crypto::hash::sha512::hash(&original_name.0.to_vec()).0)
-}
+// pub fn calculate_self_relocated_name(public_key: &crypto::sign::PublicKey,
+//                            public_sign_key: &crypto::box_::PublicKey) -> NameType {
+//     let original_name = calculate_original_name(public_key, public_sign_key);
+//     NameType(crypto::hash::sha512::hash(&original_name.0.to_vec()).0)
+// }
 
 // TODO(Team): Below method should be modified and reused in constructor of Id.
 pub fn calculate_original_name(public_key: &crypto::sign::PublicKey,
@@ -91,4 +86,3 @@ pub fn calculate_original_name(public_key: &crypto::sign::PublicKey,
     }
     NameType(crypto::hash::sha512::hash(&combined).0)
 }
-

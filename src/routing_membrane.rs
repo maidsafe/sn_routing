@@ -1471,7 +1471,7 @@ impl Interface for TestInterface {
     }
 }
 
-fn create_mmebrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
+fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     let mut id = Id::new();
     let (event_output, event_input) = mpsc::channel();
     let mut cm = crust::ConnectionManager::new(event_output);
@@ -1485,18 +1485,13 @@ fn create_mmebrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
         Ok(listeners_and_beacon) => listeners_and_beacon
     };
 
-    let self_relocated_name = types::calculate_self_relocated_name(
-        &id.get_crypto_public_sign_key(),
-        &id.get_crypto_public_key(),
-        &id.get_validation_token());
-    id.assign_relocated_name(self_relocated_name);
     RoutingMembrane::<TestInterface>::new(cm, event_input, None, listeners.0, id.clone(), TestInterface {stats : stats})
 }
 
 fn call_operation<T>(operation: T, message_type: MessageType, stats: Arc<Mutex<Stats>>,
                      authority: Authority, from_group: Option<NameType>,
                      destination: Option<NameType>) -> Stats where T: Encodable, T: Decodable {
-    let mut membrane = create_mmebrane(stats.clone());
+    let mut membrane = create_membrane(stats.clone());
     let header = MessageHeader {
         message_id:  membrane.get_next_message_id(),
         destination: types::DestinationAddress { dest: match destination { Some(dest) => dest, None => membrane.own_name.clone() }, relay_to: None },
@@ -1515,7 +1510,7 @@ fn call_operation<T>(operation: T, message_type: MessageType, stats: Arc<Mutex<S
 
 fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     let stats = Arc::new(Mutex::new(Stats::new()));
-    let mut membrane = create_mmebrane(stats);
+    let mut membrane = create_membrane(stats);
 
     let mut count : usize = 0;
     loop {
@@ -1533,7 +1528,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
 
 #[test]
     fn check_next_id() {
-        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         assert_eq!(membrane.get_next_message_id() + 1, membrane.get_next_message_id());
     }
 
@@ -1554,14 +1549,14 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
         let chunk = Box::new(TestData::new(array.into_iter().map(|&value| value).collect::<Vec<_>>()));
-        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
         membrane.put(name, chunk);
     }
 
 #[test]
     fn call_get() {
-        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
         membrane.get(100u64, name);
     }
@@ -1571,7 +1566,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
         let chunk = Box::new(TestData::new(array.into_iter().map(|&value| value).collect::<Vec<_>>()));
-        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
         membrane.unauthorised_put(name, chunk);
     }
@@ -1581,7 +1576,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
         let content = array.into_iter().map(|&value| value).collect::<Vec<_>>();
-        let mut membrane = create_mmebrane(Arc::new(Mutex::new(Stats::new())));
+        let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
         membrane.refresh(100u64, name, content);
     }
