@@ -27,12 +27,14 @@ use crust::Endpoint;
 use id::Id;
 use public_id::PublicId;
 use NameType;
+use sodiumoxide::crypto::sign;
 
 const MAX_RELAY : usize = 100;
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum IdType {
     Node(NameType),
-    Client(PublicId)
+    Client(sign::PublicKey)
 }
 
 /// The relay map is used to maintain a list of contacts for whom
@@ -45,7 +47,6 @@ pub struct RelayMap {
     // to drop the connection on clearing; for now CM will just keep all these connections
     unknown_connections: HashMap<Endpoint, SteadyTime>,
     our_name: NameType,
-    self_relocated: bool
 }
 
 impl RelayMap {
@@ -56,7 +57,6 @@ impl RelayMap {
             lookup_map: HashMap::new(),
             unknown_connections: HashMap::new(),
             our_name: our_id.get_name(),
-            self_relocated: our_id.is_self_relocated()
         }
     }
 
@@ -71,23 +71,23 @@ impl RelayMap {
             return false;
         }
         // impose limit on number of relay nodes active
-        if !self.relay_map.contains_key(&relay_info.name())
+        if !self.relay_map.contains_key(&IdType::Node(relay_info.name()))
             && self.relay_map.len() >= MAX_RELAY {
             return false;
         }
         if self.lookup_map.contains_key(&relay_endpoint) {
           return false; }
         self.lookup_map.entry(relay_endpoint.clone())
-                       .or_insert(relay_info.name());
+                       .or_insert(IdType::Node(relay_info.name()));
         let new_set = || { (relay_info.clone(), BTreeSet::<Endpoint>::new()) };
-        self.relay_map.entry(relay_info.name()).or_insert_with(new_set).1
+        self.relay_map.entry(IdType::Node(relay_info.name())).or_insert_with(new_set).1
                       .insert(relay_endpoint);
         true
     }
 
     /// This removes the provided endpoint and returns a NameType if this endpoint
     /// was the last endpoint assocoiated with this Name; otherwise returns None.
-    pub fn drop_endpoint(&mut self, endpoint_to_drop: &Endpoint) -> Option<NameType> {
+    pub fn drop_endpoint(&mut self, endpoint_to_drop: &Endpoint) -> Option<IdType> {
         let mut old_entry = match self.lookup_map.remove(endpoint_to_drop) {
             Some(name) => {
                 match self.relay_map.remove(&name) {
@@ -119,6 +119,8 @@ impl RelayMap {
     }
 
     /// Returns true if we keep relay endpoints for given name.
+    // FIXME(ben) this needs to be used 16/07/2015
+    #[allow(dead_code)]
     pub fn contains_relay_for(&self, relay_name: &IdType) -> bool {
         self.relay_map.contains_key(relay_name)
     }
@@ -129,7 +131,7 @@ impl RelayMap {
     }
 
     /// Returns Option<NameType> if an endpoint is found
-    pub fn lookup_endpoint(&self, relay_endpoint: &Endpoint) -> Option<NameType> {
+    pub fn lookup_endpoint(&self, relay_endpoint: &Endpoint) -> Option<IdType> {
         match self.lookup_map.get(relay_endpoint) {
             Some(name) => Some(name.clone()),
             None => None
@@ -137,7 +139,7 @@ impl RelayMap {
     }
 
     /// This returns a pair of the stored PublicId and a BTreeSet of the stored Endpoints.
-    pub fn get_endpoints(&self, relay_name: &NameType) -> Option<&(PublicId, BTreeSet<Endpoint>)> {
+    pub fn get_endpoints(&self, relay_name: &IdType) -> Option<&(PublicId, BTreeSet<Endpoint>)> {
         self.relay_map.get(relay_name)
     }
 
@@ -160,19 +162,14 @@ impl RelayMap {
     pub fn lookup_unknown_connection(&self, endpoint: &Endpoint) -> bool {
         self.unknown_connections.contains_key(endpoint)
     }
-
-    /// Returns true if the relay map was instantiated with a self_relocated id.
-    /// A self_relocated id should only be used by the first node to start a network.
-    pub fn zero_node(&self) -> bool {
-        self.self_relocated
-    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crust::Endpoint;
-    use types::{Id, PublicId};
+    use id::Id;
+    use public_id::PublicId;
     use std::net::SocketAddr;
     use std::str::FromStr;
     use rand::random;

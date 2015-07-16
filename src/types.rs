@@ -16,19 +16,10 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide::crypto;
-use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encodable, Encoder};
 use rand::random;
-use sodiumoxide;
 use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::sign::Signature;
-use sodiumoxide::crypto::box_;
-use std::cmp;
 use NameType;
-use name_type::closer_to_target;
-use std::fmt;
-use error::{RoutingError};
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -81,7 +72,7 @@ pub type Bytes = Vec<u8>;
 
 #[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
-  sign_public_key: crypto::sign::PublicKey,
+  sign_public_key: sign::PublicKey,
   encrypt_public_key: crypto::box_::PublicKey,
 }
 
@@ -98,9 +89,9 @@ pub struct NameAndTypeId {
 //                        |           |         |
 pub type FilterType = (SourceAddress, MessageId, DestinationAddress);
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct AccountTransferInfo {
-  pub name : NameType
+pub enum Address {
+Client(crypto::sign::PublicKey),
+Node(NameType),
 }
 
 /// Address of the source of the message
@@ -118,6 +109,33 @@ pub enum DestinationAddress {
     Direct(ToAddress),
 }
 
+impl SourceAddress  {
+    pub fn non_relayed_source(&self) -> NameType {
+        match *self {
+            SourceAddress::RelayedForClient(addr, _) => addr,
+            SourceAddress::RelayedForNode(addr, _)   => addr,
+            SourceAddress::Direct(addr)              => addr,
+        }
+    }
+
+    pub fn actual_source(&self) -> Address {
+       match *self {
+           SourceAddress::RelayedForClient(_, addr) => Address::Client(addr),
+           SourceAddress::RelayedForNode(_, addr)   => Address::Node(addr),
+           SourceAddress::Direct(addr)              => Address::Node(addr),
+       }
+    }
+}
+
+impl DestinationAddress {
+    pub fn non_relayed_destination(&self) -> NameType {
+        match *self {
+            DestinationAddress::RelayToClient(to_address, _) => to_address,
+            DestinationAddress::RelayToNode(to_address, _)   => to_address,
+            DestinationAddress::Direct(to_address)           => to_address,
+        }
+    }
+}
 
 #[cfg(test)]
 #[allow(deprecated)]

@@ -17,6 +17,7 @@
 
 use types::MessageId;
 use error::ResponseError;
+use data::Data;
 
 #[deny(missing_docs)]
 /// The Interface trait introduces the methods expected to be implemented by the user
@@ -24,11 +25,9 @@ use error::ResponseError;
 pub trait Interface : Sync + Send {
     /// consumes data in response or handles the error
     fn handle_get_response(&mut self,
-                           message_id: MessageId,
-                           response: Result<Vec<u8>, ResponseError>);
+                           message_id : MessageId,
+                           response   : Result<Data, ResponseError>);
 
     /// handles the result of a put request
-    fn handle_put_response(&mut self,
-                           message_id: MessageId,
-                           response: Result<Vec<u8>, ResponseError>);
+    fn handle_put_response(&mut self, message_id: MessageId, response: ResponseError);
 }

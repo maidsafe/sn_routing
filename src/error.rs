@@ -138,6 +138,21 @@ impl fmt::Display for InterfaceError {
 }
 
 //------------------------------------------------------------------------------
+pub enum ClientError {
+    NotBootstrapped,
+    Io(io::Error),
+    Cbor(CborError),
+}
+
+impl From<CborError> for ClientError {
+    fn from(e: CborError) -> ClientError { ClientError::Cbor(e) }
+}
+
+impl From<io::Error> for ClientError {
+    fn from(e: io::Error) -> ClientError { ClientError::Io(e) }
+}
+
+//------------------------------------------------------------------------------
 #[deny(missing_docs)]
 #[derive(Debug)]
 /// Represents routing error types

@@ -16,18 +16,16 @@
 // relating to use of the SAFE Network Software.
 
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use sodiumoxide::crypto;
 use sodiumoxide::crypto::sign::Signature;
+use sodiumoxide::crypto::sign;
 use crust::Endpoint;
 use authority::Authority;
 use data::{Data, DataRequest};
 use types;
-use id::Id;
 use public_id::PublicId;
-use types::{DestinationAddress, SourceAddress, FromAddress, ToAddress, NodeAddress};
-use error::{RoutingError, ResponseError};
+use types::{DestinationAddress, SourceAddress};
+use error::{ResponseError};
 use NameType;
-use cbor;
 use utils;
 use cbor::{CborError};
 
@@ -55,11 +53,70 @@ pub struct ConnectResponse {
     pub connect_request_signature: Signature
 }
 
-/// Respond wiht Data or Error
+// Unfortunately the Result type is not (yet?) encodable/decodable
+// so we need to create this wrapper.
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct GetDataResponse {
+    pub result       : Result<Data, ResponseError>,
+    pub orig_request : SignedMessage,
+}
+
+impl GetDataResponse {
+    pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
+        self.orig_request.verify_signature(requester_pub_key)
+    }
+}
+
+impl Encodable for GetDataResponse {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_enum("GetDataResponse", |s| {
+            match self.result {
+                // Not sure what the third argument to the `emit_enum_variant`
+                // function is meant to be, currently it is ignored.
+                Ok(ref data) => s.emit_enum_variant("Ok",  0, 1, |s| data.encode(s)),
+                Err(ref err) => s.emit_enum_variant("Err", 1, 1, |s| err.encode(s))
+            }
+        })
+    }
+}
+
+impl Decodable for GetDataResponse {
+    fn decode<D: Decoder>(d: &mut D) -> Result<GetDataResponse, D::Error> {
+        d.read_enum("GetDataResponse", move |d| {
+            d.read_enum_variant(&["Ok", "Err"], move |d, idx| {
+                match idx {
+                    0 => Ok(GetDataResponse { result: Ok(try!(Decodable::decode(d))),
+                                              orig_request: try!(Decodable::decode(d)) }),
+                    1 => Ok(GetDataResponse { result: Err(try!(Decodable::decode(d))),
+                                              orig_request: try!(Decodable::decode(d)) }),
+                    _ => {
+                        Err(d.error("Expected Ok or Err"))
+                    }
+                }
+            })
+        })
+    }
+}
+
+/// Response error which can be verified that originated from our request.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum DataOrError {
-Data(Data),
-Err(ResponseError),
+pub struct ErrorReturn {
+    pub error: ResponseError,
+    pub orig_request: SignedMessage
+}
+
+impl ErrorReturn {
+    #[allow(dead_code)]
+    pub fn new(error: ResponseError, orig_request: SignedMessage) -> ErrorReturn {
+        ErrorReturn {
+            error        : error,
+            orig_request : orig_request,
+        }
+    }
+
+    pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
+        self.orig_request.verify_signature(requester_pub_key)
+    }
 }
 
 /// These are the messageTypes routing provides
@@ -67,26 +124,23 @@ Err(ResponseError),
 /// to users.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum MessageType {
-    BootstrapIdRequest,
-    BootstrapIdResponse,
     ConnectRequest(ConnectRequest),
     ConnectResponse(ConnectResponse),
-    FindGroup(NameType),
+    FindGroup(NameType /* Redundant, it's already in the destination */),
     FindGroupResponse(Vec<PublicId>),
     GetData(DataRequest),
-    GetDataResponse(DataOrError),
+    GetDataResponse(GetDataResponse),
     DeleteData(DataRequest),
-    DeleteDataResponse(DataOrError),
+    DeleteDataResponse(ErrorReturn),
     GetKey,
-    GetKeyResponse(NameType, crypto::sign::PublicKey),
+    GetKeyResponse(NameType, sign::PublicKey),
     GetGroupKey,
-    GetGroupKeyResponse(Vec<(NameType, crypto::sign::PublicKey)>),
+    GetGroupKeyResponse(Vec<(NameType, sign::PublicKey)>),
     Post(Data),
-    PostResponse(DataOrError),
+    PostResponse(ErrorReturn),
     PutData(Data),
-    PutDataResponse(DataOrError),
+    PutDataResponse(ErrorReturn),
     PutKey,
-    AccountTransfer(NameType),
     PutPublicId(PublicId),
     PutPublicIdResponse(PublicId),
     Refresh(u64, Vec<u8>),
@@ -98,7 +152,9 @@ pub enum MessageType {
 pub struct RoutingMessage {
     pub destination     : DestinationAddress,
     pub source          : SourceAddress,
-    pub orig_msg        : Option<Vec<u8>>, // represents orig message when this is forwarded
+    // orig_message represents original message when this is forwarded
+    // from a client or single node
+    pub orig_message    : Option<SignedMessage>,
     pub message_type    : MessageType,
     pub message_id      : types::MessageId,
     pub authority       : Authority
@@ -106,50 +162,30 @@ pub struct RoutingMessage {
 
 impl RoutingMessage {
 
+    #[allow(dead_code)]
     pub fn message_id(&self) -> types::MessageId {
-        self.message_id
+        self.message_id.clone()
     }
 
-    // Old code for reference.
-    //pub fn send_to(&self) -> DestinationAddress {
-    //    DestinationAddress {
-    //        dest: match self.source.reply_to.clone() {
-    //                   Some(reply_to) => reply_to,
-    //                   None => match self.source.from_group.clone() {
-    //                       Some(group_name) => group_name,
-    //                       None => self.source.from_node.clone()
-    //                   }
-    //        },
-    //        relay_to: self.source.relayed_for.clone()
-    //    }
-    //}
+    pub fn source_address(&self) -> SourceAddress {
+        self.source.clone()
+    }
 
     pub fn destination_address(&self) -> DestinationAddress {
-        self.destination
+        self.destination.clone()
     }
 
     pub fn non_relayed_source(&self) -> NameType {
-        match self.source {
-            SourceAddress::RelayedForClient(addr, _) => addr,
-            SourceAddress::RelayedForNode(addr, _)   => addr,
-            SourceAddress::Direct(addr)              => addr,
-        }
+        self.source.non_relayed_source()
     }
 
-    pub fn actual_source(&self) -> NameType {
-        match self.source {
-            SourceAddress::RelayedForClient(_, addr) => addr,
-            SourceAddress::RelayedForNode(_, addr)   => addr,
-            SourceAddress::Direct(addr)              => addr,
-        }
+    #[allow(dead_code)]
+    pub fn actual_source(&self) -> types::Address {
+       self.source.actual_source()
     }
 
     pub fn non_relayed_destination(&self) -> NameType {
-        match self.destination {
-            DestinationAddress::RelayToClient(to_address, _) => to_address,
-            DestinationAddress::RelayToNode(to_address, _)   => to_address,
-            DestinationAddress::Direct(to_address)           => to_address,
-        }
+        self.destination.non_relayed_destination()
     }
 
     // FIXME: add from_authority to filter value
@@ -161,7 +197,7 @@ impl RoutingMessage {
         self.authority.clone()
     }
 
-    pub fn client_key(&self) -> Option<crypto::sign::PublicKey> {
+    pub fn client_key(&self) -> Option<sign::PublicKey> {
         match self.source {
             SourceAddress::RelayedForClient(_, client_key) => Some(client_key),
             SourceAddress::RelayedForNode(_, _)            => None,
@@ -190,31 +226,32 @@ impl RoutingMessage {
         }
     }
 
-    /// This creates a new message for Action::SendOn. It clones all the fields,
+    /// This creates a new message for Action::Forward. It clones all the fields,
     /// and then mutates the destination and source accordingly.
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_send_on(&self,
+    pub fn create_forward(&self,
                           our_name      : NameType,
                           our_authority : Authority,
                           destination   : NameType,
-                          orig_signed_message  : Vec<u8>) -> RoutingMessage {
+                          orig_signed_message  : SignedMessage) -> RoutingMessage {
 
         // implicitly preserve all non-mutated fields.
-        let mut send_on_message = self.clone();
-        // if we are sending on and the original message is not stored 
-        // then store it and preserve along the route 
+        let mut forward_message = self.clone();
+        // if we are sending on and the original message is not stored
+        // then store it and preserve along the route
         // it will contain the address to reply to as well as proof the request was made
         // FIXME(dirvine) We need the original encoded signed message here  :13/07/2015
-         if self.orig_message.is_none() {
-            send_on_message.orig_message = Some(orig_signed_message);         
+        // FIXME(ben) only attach when from client or node 15/07/2015
+        if self.orig_message.is_none() {
+            forward_message.orig_message = Some(orig_signed_message);
         }
 
-        send_on_message.source      = SourceAddress::Direct(our_name);
-        send_on_message.destination = DestinationAddress::Direct(destination);
-        send_on_message.authority   = our_authority;
-        send_on_message
+        forward_message.source      = SourceAddress::Direct(our_name);
+        forward_message.destination = DestinationAddress::Direct(destination);
+        forward_message.authority   = our_authority;
+        forward_message
     }
 
     /// This creates a new message for Action::Reply. It clones all the fields,
@@ -222,18 +259,21 @@ impl RoutingMessage {
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)-> RoutingMessage {
-        // implicitly preserve all non-mutated fields.
-        // TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
-        let mut reply_message     = self.clone();
-        if self.orig_message.is_some() {
-           reply_message.destination = try!(self.orig_message.get_routing_message()).reply_destination();    
-        } else {
-           reply_message.destination = self.reply_destination(); 
-        }
-        reply_message.source      = SourceAddress::Direct(our_name.clone());
-        reply_message.authority   = our_authority.clone();
-        reply_message
+    pub fn create_reply(&self, _our_name : &NameType, _our_authority : &Authority)
+        -> RoutingMessage {
+        // Commented the below code as it doesn't compile.
+        unimplemented!()
+        //// implicitly preserve all non-mutated fields.
+        //// TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
+        //let mut reply_message     = self.clone();
+        //if self.orig_message.is_some() {
+        //   reply_message.destination = try!(self.orig_message.get_routing_message()).reply_destination();
+        //} else {
+        //   reply_message.destination = self.reply_destination();
+        //}
+        //reply_message.source      = SourceAddress::Direct(our_name.clone());
+        //reply_message.authority   = our_authority.clone();
+        //reply_message
     }
 
     pub fn reply_destination(&self) -> DestinationAddress {
@@ -254,32 +294,31 @@ pub struct SignedMessage {
 }
 
 impl SignedMessage {
-    pub fn new(message: &RoutingMessage, private_sign_key: &crypto::sign::SecretKey)
+    pub fn new(message: &RoutingMessage, private_sign_key: &sign::SecretKey)
         -> Result<SignedMessage, CborError> {
 
         let encoded_body = try!(utils::encode(&message));
-        let signature    = crypto::sign::sign_detached(&encoded_body, private_sign_key);
+        let signature    = sign::sign_detached(&encoded_body, private_sign_key);
 
-        SignedMessage {
+        Ok(SignedMessage {
             encoded_body: encoded_body,
             signature:    signature
-        }
+        })
     }
 
-    pub fn verify_signature(&self, public_sign_key: &crypto::sign::PublicKey) -> bool {
-        crypto::sign::verify_detached(&self.signature,
-                                      &self.encoded_body,
-                                      &public_sign_key)
+    pub fn verify_signature(&self, public_sign_key: &sign::PublicKey) -> bool {
+        sign::verify_detached(&self.signature,
+                              &self.encoded_body,
+                              &public_sign_key)
     }
 
     pub fn get_routing_message(&self) -> Result<RoutingMessage, CborError> {
-        try!(utils::decode::<RoutingMessage>(self.encoded_body))
+        utils::decode::<RoutingMessage>(&self.encoded_body)
+    }
+
     pub fn encoded_body(&self) -> &Vec<u8> {
         &self.encoded_body
     }
 
-    pub fn signature(&self) -> &Signature { self.signature }
-
-    }
+    pub fn signature(&self) -> &Signature { &self.signature }
 }
-

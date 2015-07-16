@@ -16,19 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide::crypto;
-use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rand::random;
 use sodiumoxide;
-use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::sign::Signature;
-use sodiumoxide::crypto::box_;
-use std::cmp;
 use NameType;
-use name_type::closer_to_target;
-use std::fmt;
-use error::{RoutingError};
 
 // Note: name field is initially same as original_name, this should be later overwritten by
 // relocated name provided by the network using assign_relocated_name method
@@ -37,40 +26,69 @@ use error::{RoutingError};
 pub struct Id {
   sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
   encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey),
-  relocated_name: Option<NameType>
+  name: NameType
 }
 
 impl Id {
-  pub fn new() -> Id {
-    Id {
-    sign_keys: sodiumoxide::crypto::sign::gen_keypair(),
-    encrypt_keys: sodiumoxide::crypto::box_::gen_keypair(),
-    relocated_name: None,
+    pub fn new() -> Id {
+        Id {
+          sign_keys : sodiumoxide::crypto::sign::gen_keypair(),
+          encrypt_keys : sodiumoxide::crypto::box_::gen_keypair(),
+          name : NameType::new([0u8; 64]),
+        }
     }
-  }
-  
-  pub fn signing_public_key(&self) -> &crypto::sign::PublicKey {
-    &self.sign_keys.0    
-  }
-  
-  pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
-    &self.sign_keys.1    
-  }
-  
-  pub fn encrypting_public_key(&self) -> &crypto::box_::PublicKey {
-    &self.encrypt_keys.0    
-  }
-  
-  pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
-                   encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey)) -> Id {
-    Id {
-    sign_keys: sodiumoxide::crypto::sign::gen_keypair(),
-    encrypt_keys: sodiumoxide::crypto::box_::gen_keypair(),
-    relocated_name: None,
-    }
-  }
 
-  pub fn name(&self)-> Option<NameType> {
-    self.relocated_name    
-  }
+    // FIXME: We should not copy private nor public keys.
+    pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
+        self.sign_keys.0
+    }
+
+    pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
+        &self.sign_keys.1
+    }
+
+    pub fn encrypting_public_key(&self) -> crypto::box_::PublicKey {
+        self.encrypt_keys.0
+    }
+
+    pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
+                     encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey))-> Id {
+        Id {
+          sign_keys : sign_keys,
+          encrypt_keys : encrypt_keys,
+          name : NameType::new([0u8; 64]),     
+        }
+    }
+
+    pub fn name(&self) -> NameType {
+      self.name
+    }
+
+    pub fn get_name(&self) -> NameType {
+        // This function should not exist, it is here only temporarily
+        // to fix compilation.
+        self.name
+    }
+
+    pub fn is_self_relocated(&self) -> bool {
+        // This function should not exist, it is here only temporarily
+        // to fix compilation.
+        self.name != NameType::new([1u8; 64])     
+    }
+
+    // name field is initially same as original_name, this should be later overwritten by
+    // relocated name provided by the network using this method
+    pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
+        if self.is_relocated() || self.name == relocated_name {
+            return false;
+        }
+        self.name = relocated_name;
+        return true;
+    }
+
+    // checks if the name is updated to a relocated name
+    pub fn is_relocated(&self) -> bool {
+        self.name != NameType::new([0u8; 64])     
+    }
 }
+

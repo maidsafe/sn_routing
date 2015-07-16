@@ -15,18 +15,17 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rand::{random, thread_rng};
-use rand::distributions::{IndependentSample, Range};
-use sodiumoxide::crypto;
-use crust::Endpoint;
-use error::ResponseError;
-use messages;
-use NameType;
-use super::random_trait::Random;
-use types::*;
 
 #[cfg(test)] 
 mod test {
+    use super::random_trait::Random;
+    use messages;
+    use crust::Endpoint;
+    use sodiumoxide::crypto;
+    use rand::distributions::Range;
+    use rand::{random, thread_rng};
+    //use types::*;
+
 // TODO: Use IPv6 and non-TCP
 pub fn random_endpoint() -> Endpoint {
     use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};

@@ -18,8 +18,7 @@
 
 use rand;
 use sodiumoxide;
-use sodiumoxide::crypto;
-use std::io::Error as IoError;
+use sodiumoxide::crypto::sign;
 use std::sync::{Mutex, Arc, mpsc};
 use std::sync::mpsc::Receiver;
 
@@ -28,10 +27,9 @@ use crust;
 use messages;
 use name_type::NameType;
 use sendable::Sendable;
-use types;
-use error::{RoutingError, ResponseError};
-use messages::{SignedMessage, RoutingMessage, MessageType,
-               ConnectResponse, ConnectRequest};
+use error::{RoutingError, ClientError};
+use messages::{RoutingMessage, MessageType,
+               ConnectResponse, ConnectRequest, ErrorReturn, };
 use types::{MessageId, DestinationAddress, SourceAddress};
 use id::Id;
 use public_id::PublicId;
@@ -83,67 +81,97 @@ impl<F> RoutingClient<F> where F: Interface {
         }
     }
 
+    fn bootstrap_name(&self) -> Result<NameType, ClientError> {
+        match self.bootstrap_address.0 {
+            Some(name) => Ok(name),
+            None       => Err(ClientError::NotBootstrapped),
+        }
+    }
+
+    fn source_address(&self) -> Result<SourceAddress, ClientError> {
+        Ok(SourceAddress::RelayedForClient(try!(self.bootstrap_name()),
+                                           self.public_id.signing_public_key()))
+    }
+
+    fn public_sign_key(&self) -> sign::PublicKey { self.id.signing_public_key() }
+
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, IoError> {
+    pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, ClientError> {
         let message_id = self.get_next_message_id();
 
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
-            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.public_key()),
+            source      : try!(self.source_address()),
+            orig_message: None,
             message_type: MessageType::GetData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
             };
 
-        self.send_to_bootstrap_node(&message);
-        Ok(message_id)
+        match self.send_to_bootstrap_node(&message){
+            Ok(_) => Ok(message_id),
+            //FIXME(ben) should not expose these errors to user 16/07/2015
+            Err(e) => Err(ClientError::Cbor(e))
+        }
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, location: NameType, data : Data) -> Result<MessageId, IoError> {
+    pub fn put(&mut self, location: NameType, data : Data) -> Result<MessageId, ClientError> {
         let message_id = self.get_next_message_id();
 
         let message = RoutingMessage {
-            destination : DestinationAddress::Direct(self.public_id.client_name()),
-            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.public_key()),
+            destination : DestinationAddress::Direct(location),
+            source      : try!(self.source_address()),
+            orig_message: None,
             message_type: MessageType::PutData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
-        self.send_to_bootstrap_node(&message);
-        Ok(message_id)
+        match self.send_to_bootstrap_node(&message){
+            Ok(_) => Ok(message_id),
+            //FIXME(ben) should not expose these errors to user 16/07/2015
+            Err(e) => Err(ClientError::Cbor(e))
+        }
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
-    pub fn post(&mut self, location: NameType, data : Data) -> Result<MessageId, IoError> {
+    pub fn post(&mut self, location: NameType, data : Data) -> Result<MessageId, ClientError> {
         let message_id = self.get_next_message_id();
 
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
-            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.public_key()),
-            message_type: MessageType::PostData(data),
+            source      : try!(self.source_address()),
+            orig_message: None,
+            message_type: MessageType::Post(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
-        self.send_to_bootstrap_node(&message);
-        Ok(message_id)
+        match self.send_to_bootstrap_node(&message){
+            Ok(_) => Ok(message_id),
+            //FIXME(ben) should not expose these errors to user 16/07/2015
+            Err(e) => Err(ClientError::Cbor(e))
+        }
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
-    pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, IoError> {
+    pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, ClientError> {
         let message_id = self.get_next_message_id();
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
-            source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.public_key()),
+            source      : try!(self.source_address()),
+            orig_message: None,
             message_type: MessageType::DeleteData(data),
             message_id  : message_id.clone(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
-        self.send_to_bootstrap_node(&message);
-        Ok(message_id)
+        match self.send_to_bootstrap_node(&message){
+            Ok(_) => Ok(message_id),
+            //FIXME(ben) should not expose these errors to user 16/07/2015
+            Err(e) => Err(ClientError::Cbor(e))
+        }
     }
 
 //######################################## API ABOVE this point ##################
@@ -167,16 +195,17 @@ impl<F> RoutingClient<F> where F: Interface {
                         // only accept messages from our bootstrap endpoint
                         if bootstrap_endpoint == &endpoint {
                             match routing_msg.message_type {
-                                MessageType::ConnectResponse => {
+                                MessageType::ConnectResponse(connect_response) => {
                                     self.handle_connect_response(endpoint,
-                                        routing_msg.serialised_body);
+                                                                 connect_response);
                                 },
                                 MessageType::GetDataResponse(result) => {
-                                    self.handle_get_data_response(routing_msg.message_id, result);
+                                    self.handle_get_data_response(routing_msg.message_id,
+                                                                  result);
                                 },
-                                MessageType::PutDataResponse => {
+                                MessageType::PutDataResponse(put_response) => {
                                     self.handle_put_data_response(routing_msg.message_id,
-                                        routing_msg.serialised_body);
+                                                                  put_response);
                                 },
                                 _ => {}
                             }
@@ -224,7 +253,8 @@ impl<F> RoutingClient<F> where F: Interface {
 
                 let message = RoutingMessage {
                     destination : DestinationAddress::Direct(self.public_id.name()),
-                    source      : SourceAddress::RelayedForClient(self.bootstrap_address.0, self.public_id.name()),
+                    source      : SourceAddress::Direct(self.public_id.name()),
+                    orig_message: None,
                     message_type: MessageType::ConnectRequest(messages::ConnectRequest {
                         local_endpoints: accepting_on,
                         external_endpoints: vec![],
@@ -243,15 +273,12 @@ impl<F> RoutingClient<F> where F: Interface {
         }
     }
 
-    fn handle_connect_response(&mut self, peer_endpoint: Endpoint, bytes: Bytes) {
-        match decode::<ConnectResponse>(&bytes) {
-            Err(_) => return,
-            Ok(connect_response_msg) => {
-                assert!(self.bootstrap_address.0.is_none());
-                assert_eq!(self.bootstrap_address.1, Some(peer_endpoint.clone()));
-                self.bootstrap_address.0 = Some(connect_response_msg.receiver_fob.name());
-            }
-        };
+    fn handle_connect_response(&mut self,
+                               peer_endpoint: Endpoint,
+                               connect_response: ConnectResponse) {
+        assert!(self.bootstrap_address.0.is_none());
+        assert_eq!(self.bootstrap_address.1, Some(peer_endpoint.clone()));
+        self.bootstrap_address.0 = Some(connect_response.receiver_fob.name());
     }
 
     fn send_to_bootstrap_node(&mut self, message: &RoutingMessage)
@@ -266,6 +293,7 @@ impl<F> RoutingClient<F> where F: Interface {
             },
             None => {}
         };
+        Ok(())
     }
 
     fn get_next_message_id(&mut self) -> MessageId {
@@ -273,14 +301,22 @@ impl<F> RoutingClient<F> where F: Interface {
         self.next_message_id
     }
 
-    fn handle_get_data_response(&self, message_id: MessageId, result: Result<Data, ResponseError>) {
+    fn handle_get_data_response(&self, message_id: MessageId,
+                                       response: messages::GetDataResponse) {
+        if !response.verify_request_came_from(&self.public_sign_key()) {
+            return;
+        }
+
         let mut interface = self.interface.lock().unwrap();
-        interface.handle_get_response(message_id, result);
+        interface.handle_get_response(message_id, response.result);
     }
 
-    fn handle_put_data_response(&self, message_id: MessageId, result: Result<Data, ResponseError>) {
+    fn handle_put_data_response(&self, message_id: MessageId, signed_error: ErrorReturn) {
+        if !signed_error.verify_request_came_from(&self.public_sign_key()) {
+            return;
+        }
         let mut interface = self.interface.lock().unwrap();
-        interface.handle_put_response(message_id, result);
+        interface.handle_put_response(message_id, signed_error.error);
     }
 }
 

@@ -15,41 +15,37 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use sodiumoxide::crypto;
 use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rand::random;
-use sodiumoxide;
+use rustc_serialize::{Decoder, Encodable, Encoder};
 use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::sign::{Signature};
 use sodiumoxide::crypto::box_;
-use std::cmp;
 use NameType;
-use name_type::closer_to_target;
-use std::fmt;
 use error::{RoutingError};
 use id::Id;
 use utils;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct PublicId {
-  public_encrypt_key: box_::PublicKey,
-  public_sign_key: sign::PublicKey,
-  name: Option<NameType>,
+    public_encrypt_key: box_::PublicKey,
+    public_sign_key: sign::PublicKey,
+    name: NameType,
 }
 
 impl PublicId {
     pub fn new(id : &Id) -> PublicId {
       PublicId {
         public_encrypt_key : id.encrypting_public_key().clone(),
-        public_sign_key : id.signing_public_key().clone(),
-        name : id.name(),
+        public_sign_key    : id.signing_public_key().clone(),
+        name               : id.name(),
       }
     }
 
-    pub fn name(&self) -> Option<NameType> {
-      self.name
+    //pub fn name(&self) -> Option<NameType> {
+    //  self.name
+    //}
+
+    pub fn name(&self) -> NameType {
+        unimplemented!()
     }
 
     pub fn client_name(&self) -> NameType {
@@ -65,7 +61,18 @@ impl PublicId {
     // name field is initially same as original_name, this should be replaced by relocated name
     // calculated by the nodes close to original_name by using this method
     pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
-        self.name = Some(relocated_name);
+        self.name = relocated_name;
+    }
+
+    pub fn signing_public_key(&self) -> sign::PublicKey {
+        self.public_sign_key
+    }
+
+    // checks if the name is updated to a relocated name
+    pub fn is_relocated(&self) -> bool {
+        self.name != utils::calculate_original_name
+                         (&self.public_sign_key,
+                          &self.public_encrypt_key)
     }
 }
 

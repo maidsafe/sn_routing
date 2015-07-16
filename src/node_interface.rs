@@ -17,14 +17,14 @@
 
 use data::{Data, DataRequest};
 use name_type::NameType;
-use types::DestinationAddress;
+use types::{SourceAddress, DestinationAddress};
 use authority::Authority;
 use error::{InterfaceError, ResponseError};
 
 /// Reply or send the existing message on to next persona / Authority type
 pub enum MessageAction {
   Reply(Data),
-  SendOn(Vec<NameType>),
+  Forward(Vec<NameType>),
 }
 
 /// MethodCall denotes a specific request to be carried out by routing.
@@ -32,17 +32,17 @@ pub enum MethodCall {
     /// request for no action
     None,
     /// request to have `destination` to handle put for the `content`
-    Put { destination: NameType, content: Box<Data> },
+    Put { destination: NameType, content: Data },
     /// request to retreive data with specified type and name from network
-    Get { name: NameType, data: Data },
+    Get { name: NameType, data_request: DataRequest },
     /// request to post
-    Post { destination: NameType, content: Box<Data> },
+    Post { destination: NameType, content: Data },
     /// Request delete
     Delete { name: NameType, data : Data },
     /// request to refresh
     Refresh { type_tag: u64, from_group: NameType, payload: Vec<u8> },
-    /// request to send on the request to destination for further handling
-    SendOn { destination: NameType },
+    /// request to forward on the request to destination for further handling
+    Forward { destination: NameType },
 }
 
 #[deny(missing_docs)]
@@ -53,10 +53,11 @@ pub trait Interface : Sync + Send {
     /// potentially storing data with specified name and type_id is returned, on success.
     /// failure to provide data or an address is indicated as an InterfaceError.
     fn handle_get(&mut self,
+                  location: NameType,
                   data_request: DataRequest,
                   our_authority: Authority,
                   from_authority: Authority,
-                  from_address: NameType) -> Result<MessageAction, InterfaceError>;
+                  from_address: SourceAddress) -> Result<MessageAction, InterfaceError>;
 
     /// depending on our_authority and from_authority, data is stored on current node or an address
     /// (with different authority) for further handling of the request is provided.
@@ -64,7 +65,7 @@ pub trait Interface : Sync + Send {
     fn handle_put(&mut self,
                   our_authority: Authority,
                   from_authority: Authority,
-                  from_address: NameType,
+                  from_address: SourceAddress,
                   dest_address: DestinationAddress,
                   data: Data) -> Result<MessageAction, InterfaceError>;
 
@@ -76,7 +77,7 @@ pub trait Interface : Sync + Send {
                    from_authority: Authority,
                    from_address: NameType,
                    name : NameType,
-                   data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                   data: Data) -> Result<MessageAction, InterfaceError>;
 
     /// Handle messages internal to the group (triggered by churn events). Payloads
     /// from these messages are grouped by (type_tag, from_group) key, and once
@@ -86,15 +87,15 @@ pub trait Interface : Sync + Send {
     /// handles the response to a put request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
     fn handle_get_response(&mut self,
-                           from_address: NameType,
-                           response: Result<Data, ResponseError>) -> MethodCall;
+                           from_address : NameType,
+                           response     : Result<Data, ResponseError>) -> MethodCall;
 
     /// handles the response to a put request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
     fn handle_put_response(&mut self,
-                           from_authority: Authority,
-                           from_address: NameType,
-                           response: Result<Data, ResponseError>) -> MethodCall;
+                           from_authority : Authority,
+                           from_address   : SourceAddress,
+                           response       : ResponseError) -> MethodCall;
 
     /// handles the response to a post request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
@@ -109,8 +110,7 @@ pub trait Interface : Sync + Send {
 
     /// attempts to potentially retrieve data from cache.
     fn handle_cache_get(&mut self,
-                        type_id: u64,
-                        name: NameType,
+                        data_request: DataRequest,
                         from_authority: Authority,
                         from_address: NameType) -> Result<MessageAction, InterfaceError>;
 

@@ -70,6 +70,7 @@ use routing::authority::Authority;
 use routing::NameType;
 use routing::node_interface::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
+use routing::data::{Data, DataRequest};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -235,7 +236,7 @@ struct TestClient {
 
 impl routing::client_interface::Interface for TestClient {
     fn handle_get_response(&mut self, message_id: types::MessageId,
-                           response: Result<Vec<u8>, ResponseError>) {
+                           response: Result<Data, ResponseError>) {
         match response {
             Ok(result) => {
                 let mut d = cbor::Decoder::from_bytes(result);
@@ -248,7 +249,7 @@ impl routing::client_interface::Interface for TestClient {
     }
 
     fn handle_put_response(&mut self, message_id: types::MessageId,
-                           response: Result<Vec<u8>, ResponseError>) {
+                           response: ResponseError) {
         match response {
             Ok(result) => {
                 let mut d = cbor::Decoder::from_bytes(result);
@@ -272,10 +273,11 @@ impl TestNode {
 }
 
 impl Interface for TestNode {
-    fn handle_get(&mut self, _type_id: u64, name: NameType, _our_authority: Authority,
+    fn handle_get(&mut self, location: NameType,
+                  _data_request: DataRequest, _our_authority: Authority,
                   _from_authority: Authority, from_address: NameType)
                    -> Result<MessageAction, InterfaceError> {
-        println!("testing node handle get request from {} of chunk {}", from_address, name);
+        println!("testing node handle get request from {} of chunk {}", from_address, location);
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
         for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
@@ -293,7 +295,7 @@ impl Interface for TestNode {
                 let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
                 println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
                          node_name, in_coming_data.name());
-                return Ok(MessageAction::SendOn(in_coming_data));
+                return Ok(MessageAction::Forward(in_coming_data));
             },
             Authority::NaeManager(group_name) => {
                 let stats = self.stats.clone();
