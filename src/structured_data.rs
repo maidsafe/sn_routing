@@ -43,7 +43,7 @@ impl StructuredData {
                identifier: crypto::hash::sha512::Digest,
                data: Vec<u8>,
                previous_owner_keys: Vec<crypto::sign::PublicKey>,
-               version: u64, 
+               version: u64,
                current_owner_keys: Vec<crypto::sign::PublicKey>,
                previous_owner_signatures: Vec<crypto::sign::Signature>) -> StructuredData {
 
@@ -63,9 +63,9 @@ impl StructuredData {
     /// must have the previous owners of version - 1 as the current owners of that last version.
     pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), RoutingError> {
         // TODO(dirvine) Increase error types to be more descriptive  :07/07/2015
-        if      other.type_tag != self.type_tag     || 
+        if      other.type_tag != self.type_tag     ||
                 other.identifier != self.identifier ||
-                other.version != self.version + 1   || 
+                other.version != self.version + 1   ||
                 other.previous_owner_keys != self.current_owner_keys  {
             return Err(RoutingError::UnknownMessageType)
         }
@@ -102,8 +102,8 @@ impl StructuredData {
 
             return Err(RoutingError::DuplicateSignatures);
          }
-         
-         
+
+
          // Refuse when not enough previous_owner_signatures found
          if self.previous_owner_signatures.len() < (self.previous_owner_keys.len()  + 1 ) / 2 {
              return Err(RoutingError::NotEnoughSignatures);
@@ -139,8 +139,43 @@ impl StructuredData {
         let data = try!(self.data_to_sign());
         let sig = crypto::sign::sign_detached(&data, secret_key);
         self.previous_owner_signatures.push(sig);
-        Ok(((self.previous_owner_keys.len() + 1) as isize / 2) - 
+        Ok(((self.previous_owner_keys.len() + 1) as isize / 2) -
              self.previous_owner_signatures.len() as isize)
+    }
+
+    /// Get the type_tag
+    pub fn type_tag(&self) -> &u64 {
+        &self.type_tag
+    }
+
+    /// Get the identifier
+    pub fn identifier(&self) -> &crypto::hash::sha512::Digest {
+        &self.identifier
+    }
+
+    /// Get the serialised data
+    pub fn data(&self) -> &Vec<u8> {
+        &self.data
+    }
+
+    /// Get the previous owner keys
+    pub fn previous_owner_keys(&self) -> Vec<crypto::sign::PublicKey> {
+        &self.previous_owner_keys
+    }
+
+    /// Get the version
+    pub fn version(&self) -> &u64 {
+        &self.version
+    }
+
+    /// Get the current owner keys
+    pub fn current_owner_keys(&self) -> &Vec<crypto::sign::PublicKey> {
+        &self.current_owner_keys
+    }
+
+    /// Get previous owner signatures
+    pub fn previous_owner_signatures(&self) -> Vec<crypto::sign::Signature> {
+        &self.previous_owner_signatures
     }
 }
 
@@ -185,7 +220,7 @@ mod test {
         assert_eq!(structured_data.add_signature(&keys2.1).ok(), Some(0));
         assert_eq!(structured_data.verify_previous_owner_signatures().ok(), Some(()));
     }
-    
+
     #[test]
     fn transfer_owners() {
         let keys1       = crypto::sign::gen_keypair();
@@ -216,7 +251,7 @@ mod test {
         assert_eq!(new_structured_data.verify_previous_owner_signatures().ok(), Some(()));
         match orig_structured_data.replace_with_other(new_structured_data) {
             Ok(()) => println!("All good"),
-            Err(e) => panic!("Error {}", e), 
+            Err(e) => panic!("Error {}", e),
         }
         // transfer ownership back to keys1 only
         let mut another_new_structured_data =   StructuredData::new(0,
@@ -230,9 +265,9 @@ mod test {
         assert_eq!(another_new_structured_data.verify_previous_owner_signatures().ok(), Some(()));
         match orig_structured_data.replace_with_other(another_new_structured_data) {
             Ok(()) => println!("All good"),
-            Err(e) => panic!("Error {}", e), 
+            Err(e) => panic!("Error {}", e),
         }
-        
+
 
     }
 
