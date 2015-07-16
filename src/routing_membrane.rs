@@ -643,14 +643,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn send_swarm_or_parallel(&self, msg : &RoutingMessage) -> Result<(), RoutingError> {
-        let signed_message = try!(encode(msg));
         let name = msg.non_relayed_destination();
 
         if self.routing_table.size() > 0 {
+            let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
+            let bytes = try!(encode(&signed_message));
+
             for peer in self.routing_table.target_nodes(&name) {
                 match peer.connected_endpoint {
                     Some(peer_endpoint) => {
-                        self.connection_manager.send(peer_endpoint, signed_message);
+                        self.connection_manager.send(peer_endpoint, bytes.clone());
                     },
                     None => {}
                 };
