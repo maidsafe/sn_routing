@@ -99,14 +99,9 @@ pub struct NameAndTypeId {
 //                        |           |         |
 pub type FilterType = (SourceAddress, MessageId, DestinationAddress);
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct AccountTransferInfo {
-  pub name : NameType
-}
-
 pub enum Address {
 Client(crypto::sign::PublicKey),
-Node(NameType),    
+Node(NameType),
 }
 
 /// Address of the source of the message
