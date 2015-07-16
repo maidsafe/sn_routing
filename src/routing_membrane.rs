@@ -565,7 +565,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // switch message type
                 match message.message_type {
                     MessageType::ConnectResponse(response) => self.handle_connect_response(response),
-                    MessageType::FindGroup(find_group) => self.handle_find_group(message, find_group),
+                    MessageType::FindGroup(_find_group) => self.handle_find_group(message),
                     // Handled above for some reason.
                     //MessageType::FindGroupResponse(find_group_response) => self.handle_find_group_response(find_group_response),
                     MessageType::GetData(ref request) => self.handle_get_data(message_wrap,
@@ -973,8 +973,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         message.message_type = msg;
         message.authority    = our_authority;
 
-        self.send_swarm_or_parallel_or_relay(&message);
-        Ok(())
+        self.send_swarm_or_parallel_or_relay(&message)
     }
 
     fn handle_put_data_response(&mut self, signed_message: SignedMessage,
@@ -1132,7 +1131,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             (Authority::ManagedNode, Authority::NaeManager(_), false) => {
                 let mut put_public_id_relocated = public_id.clone();
 
-                let mut close_group : Vec<NameType> =
+                let close_group =
                     self.routing_table.our_close_group().into_iter()
                     .map(|node_info| node_info.id())
                     .chain(Some(self.own_name.clone()).into_iter())
@@ -1164,7 +1163,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                                      authority    : our_authority.clone(),
                                                    };
 
-                  self.send_swarm_or_parallel(&routing_msg);
+                  ignore(self.send_swarm_or_parallel(&routing_msg));
                 }
                 Ok(())
             },
@@ -1172,7 +1171,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn handle_find_group(&mut self, original_message: RoutingMessage, find_group: NameType) -> RoutingResult {
+    fn handle_find_group(&mut self, original_message: RoutingMessage) -> RoutingResult {
         let group = self.routing_table.our_close_group().into_iter()
                     .map(|x|x.fob)
                     // add ourselves
@@ -1187,10 +1186,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             message_id   : original_message.message_id,
             authority    : Authority::Unknown,
         };
-        //let signed_message = try!(SignedRoutingMessage::new(message, &self.id.signing_private_key()));
-        //ignore(encode(&signed_message).map(|msg| self.send_swarm_or_parallel(message.non_relayed_destination(), &msg)));
-        self.send_swarm_or_parallel(&message);
-        Ok(())
+
+        self.send_swarm_or_parallel(&message)
     }
 
     fn handle_find_group_response(&mut self,
@@ -1203,9 +1200,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             let our_name = self.own_name.clone();
             if !self.connection_cache.contains_key(&our_name) {
                 let find_group_msg = self.construct_find_group_msg();
-                //let serialised_msg = try!(encode(&find_group_msg));
-                //info!("REFLECT OUR GROUP");
-                self.send_swarm_or_parallel(&find_group_msg);
+                ignore(self.send_swarm_or_parallel(&find_group_msg));
                 self.connection_cache.entry(our_name)
                     .or_insert(SteadyTime::now());
             }
@@ -1230,15 +1225,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         result:       Ok(data),
                         orig_request: orig_message,
                     };
-                    self.send_reply(&message,
-                                    our_authority,
-                                    MessageType::GetDataResponse(response));
+                    ignore(self.send_reply(&message,
+                                           our_authority,
+                                           MessageType::GetDataResponse(response)));
                 },
                 MessageAction::Forward(dest_nodes) => {
                     for destination in dest_nodes {
-                        self.forward(&orig_message,
-                                     &message,
-                                     DestinationAddress::Direct(destination));
+                        ignore(self.forward(&orig_message,
+                                            &message,
+                                            DestinationAddress::Direct(destination)));
                     }
                 }
             },
@@ -1255,8 +1250,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let our_authority = our_authority(&routing_message, &self.routing_table);
         let message = routing_message.create_forward(self.own_name.clone(),
             our_authority, destination.non_relayed_destination(), orig_message.clone());
-        let signed_message = try!(SignedMessage::new(&message, &self.id.signing_private_key()));
-        self.send_swarm_or_parallel(&message);
+        ignore(self.send_swarm_or_parallel(&message));
         Ok(())
     }
 
@@ -1266,8 +1260,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         if !response.verify_request_came_from(&self.id.signing_public_key()) {
             return Err(RoutingError::FailedSignature);
         }
-        let our_authority = our_authority(&message, &self.routing_table);
-        let from_authority = message.authority.clone();
         let from = message.source.non_relayed_source();
 
         match self.mut_interface().handle_get_response(from, response.result) {
