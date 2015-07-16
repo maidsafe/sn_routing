@@ -34,7 +34,7 @@ pub enum MethodCall {
     /// request to have `destination` to handle put for the `content`
     Put { destination: NameType, content: Data },
     /// request to retreive data with specified type and name from network
-    Get { name: NameType, data_request: DataRequest },
+    Get { name: NameType, data: DataRequest },
     /// request to post
     Post { destination: NameType, content: Data },
     /// Request delete
@@ -53,7 +53,6 @@ pub trait Interface : Sync + Send {
     /// potentially storing data with specified name and type_id is returned, on success.
     /// failure to provide data or an address is indicated as an InterfaceError.
     fn handle_get(&mut self,
-                  location: NameType,
                   data_request: DataRequest,
                   our_authority: Authority,
                   from_authority: Authority,
@@ -77,7 +76,7 @@ pub trait Interface : Sync + Send {
                    from_authority: Authority,
                    from_address: NameType,
                    name : NameType,
-                   data: Data) -> Result<MessageAction, InterfaceError>;
+                   data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
 
     /// Handle messages internal to the group (triggered by churn events). Payloads
     /// from these messages are grouped by (type_tag, from_group) key, and once
