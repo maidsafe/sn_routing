@@ -1202,7 +1202,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                   data_request: DataRequest) -> RoutingResult {
         let our_authority  = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
-        let from           = message.actual_source();
+        let from           = message.source_address();
 
         match self.mut_interface().handle_get(data_request,
                                               our_authority.clone(),
@@ -1210,11 +1210,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                               from) {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
-                    self.send_reply(&message, our_authority, MessageType::GetDataResponse(Ok(data)));
+                    let response = GetDataResponse {
+                        result:       Ok(data),
+                        orig_request: orig_message,
+                    };
+                    self.send_reply(&message,
+                                    our_authority,
+                                    MessageType::GetDataResponse(response));
                 },
                 MessageAction::Forward(dest_nodes) => {
                     for destination in dest_nodes {
-                        self.forward(&orig_message, &message, destination);
+                        self.forward(&orig_message,
+                                     &message,
+                                     DestinationAddress::Direct(destination));
                     }
                 }
             },
@@ -1246,7 +1254,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let from_authority = message.authority;
         let from = message.source.non_relayed_source();
 
-        match self.mut_interface().handle_get_response(from, response.error) {
+        match self.mut_interface().handle_get_response(from, response.result) {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { name: x, data: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),

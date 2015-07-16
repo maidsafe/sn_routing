@@ -58,8 +58,8 @@ pub struct ConnectResponse {
 // so we need to create this wrapper.
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GetDataResponse {
-    result       : Result<Data, ResponseError>,
-    orig_request : SignedMessage,
+    pub result       : Result<Data, ResponseError>,
+    pub orig_request : SignedMessage,
 }
 
 impl GetDataResponse {
@@ -101,7 +101,10 @@ impl Decodable for GetDataResponse {
 
 /// Response error which can be verified that originated from our request.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct ErrorReturn { error: ResponseError, orig_request: SignedMessage }
+pub struct ErrorReturn {
+    pub error: ResponseError,
+    pub orig_request: SignedMessage
+}
 
 impl ErrorReturn {
     pub fn new(error: ResponseError, orig_request: SignedMessage) -> ErrorReturn {

@@ -87,7 +87,7 @@ pub trait Interface : Sync + Send {
     /// type MethodCall is requested.
     fn handle_get_response(&mut self,
                            from_address : NameType,
-                           response     : ResponseError) -> MethodCall;
+                           response     : Result<Data, ResponseError>) -> MethodCall;
 
     /// handles the response to a put request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
