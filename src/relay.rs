@@ -47,7 +47,6 @@ pub struct RelayMap {
     // to drop the connection on clearing; for now CM will just keep all these connections
     unknown_connections: HashMap<Endpoint, SteadyTime>,
     our_name: NameType,
-    self_relocated: bool
 }
 
 impl RelayMap {
@@ -58,7 +57,6 @@ impl RelayMap {
             lookup_map: HashMap::new(),
             unknown_connections: HashMap::new(),
             our_name: our_id.get_name(),
-            self_relocated: our_id.is_self_relocated()
         }
     }
 
@@ -121,6 +119,8 @@ impl RelayMap {
     }
 
     /// Returns true if we keep relay endpoints for given name.
+    // FIXME(ben) this needs to be used 16/07/2015
+    #[allow(dead_code)]
     pub fn contains_relay_for(&self, relay_name: &IdType) -> bool {
         self.relay_map.contains_key(relay_name)
     }
@@ -161,12 +161,6 @@ impl RelayMap {
     /// Returns true if the endpoint has been registered as an unknown NewConnection
     pub fn lookup_unknown_connection(&self, endpoint: &Endpoint) -> bool {
         self.unknown_connections.contains_key(endpoint)
-    }
-
-    /// Returns true if the relay map was instantiated with a self_relocated id.
-    /// A self_relocated id should only be used by the first node to start a network.
-    pub fn zero_node(&self) -> bool {
-        self.self_relocated
     }
 }
 
