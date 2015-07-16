@@ -128,11 +128,12 @@ pub fn our_authority(message       : &RoutingMessage,
 mod test {
     use routing_table::{RoutingTable, NodeInfo};
     use types;
-    use types::{Id, PublicId, MessageId};
-    use test_utils::{random_endpoint, random_endpoints, Random, xor};
+    use types::MessageId;
+    use public_id::PublicId;
+    use id::Id;
+    use test_utils::{Random, xor};
     use rand::random;
     use name_type::{closer_to_target, NameType};
-    use message_header::MessageHeader;
     use authority::{Authority, our_authority};
     use sodiumoxide::crypto;
 

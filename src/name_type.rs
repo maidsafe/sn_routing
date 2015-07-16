@@ -198,6 +198,7 @@ impl Decodable for NameType {
 mod test {
     use cbor;
     use super::*;
+    use id::Id;
     use test_utils::Random;
 
     #[test]

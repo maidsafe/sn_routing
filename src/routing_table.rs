@@ -446,13 +446,14 @@ mod test {
     use std::cmp;
     use self::bit_vec::BitVec;
     use std::collections::{HashMap};
-    use public_id::PublicId;
     use id::Id;
+    use test_utils::messages_util;
+    use public_id::PublicId;
     use name_type::closer_to_target;
     use types;
     use NameType;
     use rand;
-    use test_utils::{Random, random_endpoints};
+    use test_utils::{Random};
 
     enum ContactType {
         Far,
@@ -597,7 +598,7 @@ mod test {
         NodeInfo {
             id: public_id.name(),
             fob: public_id,
-            endpoints: random_endpoints(),
+            endpoints: messages_util::test::random_endpoints(),
             connected_endpoint: None,
         }
     }
@@ -1124,7 +1125,7 @@ mod test {
         let mut count: usize = 0;
         loop {
             routing_table.add_node(
-                NodeInfo::new(PublicId::new(&Id::new()), random_endpoints(),
+                NodeInfo::new(PublicId::new(&Id::new()), messages_util::test::random_endpoints(),
                               None));
             count += 1;
             if routing_table.size() >=

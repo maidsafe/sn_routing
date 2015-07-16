@@ -16,15 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 
-#[cfg(test)] 
+#[cfg(test)]
 mod test {
-    use super::random_trait::Random;
     use messages;
     use crust::Endpoint;
     use sodiumoxide::crypto;
     use rand::distributions::Range;
     use rand::{random, thread_rng};
-    //use types::*;
+    use data::*;
 
 // TODO: Use IPv6 and non-TCP
 pub fn random_endpoint() -> Endpoint {
@@ -73,4 +72,5 @@ impl Random for messages::ConnectResponse {
         }
     }
 }
+
 }

@@ -1311,33 +1311,25 @@ fn ignore<R,E>(_restul: Result<R,E>) {}
 mod test {
 
 use super::*;
-use super::encode;
 use super::ConnectionName;
 use authority::Authority;
 use cbor::{Encoder};
 use crust;
 use error::{ResponseError, InterfaceError};
-use messages::{RoutingMessage, MessageType};
-use message_header::MessageHeader;
-use messages::get_data::GetData;
-use messages::get_data_response::GetDataResponse;
-use messages::get_client_key::GetKey;
-use messages::post::Post;
-use messages::put_data::PutData;
-use messages::put_data_response::PutDataResponse;
-use messages::put_public_id::PutPublicId;
-use messages::refresh::Refresh;
+use id::Id;
+use messages::{RoutingMessage, MessageType, SignedMessage};
 use name_type::{NameType, closer_to_target};
-use node_interface::{Interface, MethodCall};
+use node_interface::{Interface, MethodCall, MessageAction};
+use public_id::PublicId;
 use rand::{random, Rng, thread_rng};
 use routing_table;
 use rustc_serialize::{Encodable, Decodable};
 use sendable::Sendable;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use test_utils::{Random, random_endpoint, random_endpoints};
-use types;
-use types::{DestinationAddress, Id, MessageAction, PublicId};
+use test_utils::{Random, messages_util};
+use types::{MessageId, Bytes, DestinationAddress, SourceAddress};
+use utils::{decode, encode};
 
 #[derive(Clone)]
 struct Stats {
@@ -1470,21 +1462,21 @@ fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     RoutingMembrane::<TestInterface>::new(cm, event_input, None, listeners.0, id.clone(), TestInterface {stats : stats})
 }
 
-fn call_operation<T>(operation: T, message_type: MessageType, stats: Arc<Mutex<Stats>>,
-                     authority: Authority, from_group: Option<NameType>,
-                     destination: Option<NameType>) -> Stats where T: Encodable, T: Decodable {
+fn call_operation(message_type: MessageType, stats: Arc<Mutex<Stats>>, source: SourceAddress,
+                  destination: DestinationAddress, authority: Authority) -> Stats {
     let mut membrane = create_membrane(stats.clone());
-    let header = MessageHeader {
-        message_id:  membrane.get_next_message_id(),
-        destination: types::DestinationAddress { dest: match destination { Some(dest) => dest, None => membrane.own_name.clone() }, relay_to: None },
-        source: types::SourceAddress { from_node: Random::generate_random(),
-             from_group: from_group, reply_to: None, relayed_for: None },
-        authority: authority };
+    let message = RoutingMessage {
+        destination : destination,
+        source      : source,
+        orig_message: None,
+        message_type: message_type,
+        message_id  : membrane.get_next_message_id(),
+        authority   : authority,
+    };
 
-    let message = RoutingMessage::new( message_type, header.clone(), operation, &membrane.id.get_crypto_secret_sign_key());
-    let serialised_msssage = encode(&message).unwrap();
-    let connection_name = ConnectionName::Routing(header.source.from_node);
-    let _ = membrane.message_received(&connection_name, serialised_msssage, false);
+    let signed_message = SignedMessage::new(message, membrane.id.signing_private_key());
+    let connection_name = ConnectionName::Routing(source.name);
+    let _ = membrane.message_received(&connection_name, encode(signed_message).unwrap(), false);
     let stats = stats.clone();
     let stats_value = stats.lock().unwrap();
     stats_value.clone()
@@ -1497,8 +1489,9 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     let mut count : usize = 0;
     loop {
         membrane.routing_table.add_node(routing_table::NodeInfo::new(
-                                        PublicId::new(&Id::new()), random_endpoints(),
-                                        Some(random_endpoint())));
+                                        PublicId::new(&Id::new()),
+                                        messages_util::test::random_endpoints(),
+                                        Some(messages_util::test::random_endpoint())));
         count += 1;
         if membrane.routing_table.size() >=
             routing_table::RoutingTable::get_optimal_size() { break; }
@@ -1512,18 +1505,6 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn check_next_id() {
         let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         assert_eq!(membrane.get_next_message_id() + 1, membrane.get_next_message_id());
-    }
-
-#[test]
-#[ignore]
-    fn call_handle_get_key() {
-        let stats = Arc::new(Mutex::new(Stats::new()));
-        let get_key: GetKey = Random::generate_random();
-        let public_key: types::PublicSignKey = Random::generate_random();
-        let mut enc = Encoder::from_memory();
-        let _ = enc.encode(&[public_key]);
-        stats.lock().unwrap().data = enc.into_bytes();
-        assert_eq!(call_operation(get_key, MessageType::GetKey, stats, Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
     }
 
 #[test]
@@ -1565,7 +1546,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
 
 #[test]
     fn call_handle_put() {
-        let put_data: PutData = Random::generate_random();
+        let put_data: MessageType::PutData(data)
         assert_eq!(call_operation(put_data,
             MessageType::PutData, Arc::new(Mutex::new(Stats::new())),
             Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
