@@ -19,7 +19,6 @@
 use rand;
 use sodiumoxide;
 use sodiumoxide::crypto::sign;
-use std::io::Error as IoError;
 use std::sync::{Mutex, Arc, mpsc};
 use std::sync::mpsc::Receiver;
 
@@ -28,9 +27,8 @@ use crust;
 use messages;
 use name_type::NameType;
 use sendable::Sendable;
-use types;
-use error::{RoutingError, ResponseError, ClientError};
-use messages::{SignedMessage, RoutingMessage, MessageType,
+use error::{RoutingError, ClientError};
+use messages::{RoutingMessage, MessageType,
                ConnectResponse, ConnectRequest, ErrorReturn, };
 use types::{MessageId, DestinationAddress, SourceAddress};
 use id::Id;
@@ -110,8 +108,11 @@ impl<F> RoutingClient<F> where F: Interface {
             authority   : Authority::Client(self.id.signing_public_key()),
             };
 
-        self.send_to_bootstrap_node(&message);
-        Ok(message_id)
+        match self.send_to_bootstrap_node(&message){
+            Ok(_) => Ok(message_id),
+            //FIXME(ben) should not expose these errors to user 16/07/2015
+            Err(e) => Err(ClientError::Cbor(e))
+        }
     }
 
     /// Add something to the network, will always go via ClientManager group
@@ -127,8 +128,11 @@ impl<F> RoutingClient<F> where F: Interface {
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
-        self.send_to_bootstrap_node(&message);
-        Ok(message_id)
+        match self.send_to_bootstrap_node(&message){
+            Ok(_) => Ok(message_id),
+            //FIXME(ben) should not expose these errors to user 16/07/2015
+            Err(e) => Err(ClientError::Cbor(e))
+        }
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
@@ -144,8 +148,11 @@ impl<F> RoutingClient<F> where F: Interface {
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
-        self.send_to_bootstrap_node(&message);
-        Ok(message_id)
+        match self.send_to_bootstrap_node(&message){
+            Ok(_) => Ok(message_id),
+            //FIXME(ben) should not expose these errors to user 16/07/2015
+            Err(e) => Err(ClientError::Cbor(e))
+        }
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
@@ -160,8 +167,11 @@ impl<F> RoutingClient<F> where F: Interface {
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
-        self.send_to_bootstrap_node(&message);
-        Ok(message_id)
+        match self.send_to_bootstrap_node(&message){
+            Ok(_) => Ok(message_id),
+            //FIXME(ben) should not expose these errors to user 16/07/2015
+            Err(e) => Err(ClientError::Cbor(e))
+        }
     }
 
 //######################################## API ABOVE this point ##################
