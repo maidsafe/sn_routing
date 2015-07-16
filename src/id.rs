@@ -16,20 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide::crypto;
-use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rand::random;
 use sodiumoxide;
-use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::sign::Signature;
-use sodiumoxide::crypto::box_;
-use std::cmp;
 use NameType;
-use name_type::closer_to_target;
-use std::fmt;
-use error::{RoutingError};
-use utils;
 
 // Note: name field is initially same as original_name, this should be later overwritten by
 // relocated name provided by the network using assign_relocated_name method

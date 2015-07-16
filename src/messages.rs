@@ -126,7 +126,7 @@ impl ErrorReturn {
 pub enum MessageType {
     ConnectRequest(ConnectRequest),
     ConnectResponse(ConnectResponse),
-    FindGroup(NameType),
+    FindGroup(NameType /* Redundant, it's already in the destination */),
     FindGroupResponse(Vec<PublicId>),
     GetData(DataRequest),
     GetDataResponse(GetDataResponse),

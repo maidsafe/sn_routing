@@ -20,7 +20,6 @@ use cbor;
 use error::RoutingError;
 use NameType;
 use sodiumoxide::crypto;
-use std::str;
 
 /// StructuredData
 /// These types may be stored unsigned with previous and current owner keys

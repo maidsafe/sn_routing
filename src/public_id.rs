@@ -15,19 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use sodiumoxide::crypto;
 use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rand::random;
-use sodiumoxide;
+use rustc_serialize::{Decoder, Encodable, Encoder};
 use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::sign::{Signature};
 use sodiumoxide::crypto::box_;
-use std::cmp;
 use NameType;
-use name_type::closer_to_target;
-use std::fmt;
 use error::{RoutingError};
 use id::Id;
 use utils;
