@@ -16,11 +16,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor::{Decoder, Encoder, CborError};
+use cbor::{CborError};
 use rand;
-use rustc_serialize::{Decodable, Encodable};
 use sodiumoxide;
-use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::boxed::Box;
 use std::thread;
@@ -32,12 +30,10 @@ use node_interface::{Interface, CreatePersonas};
 use routing_membrane::RoutingMembrane;
 use id::Id;
 use public_id::PublicId;
-use types;
-use types::{MessageId, Bytes, SourceAddress, DestinationAddress};
-use utils;
+use types::{MessageId, SourceAddress, DestinationAddress};
 use utils::{encode, decode};
 use authority::{Authority};
-use messages::{RoutingMessage, SignedMessage, MessageType, ConnectResponse, ConnectRequest};
+use messages::{RoutingMessage, SignedMessage, MessageType, ConnectRequest};
 use error::{RoutingError};
 use std::thread::spawn;
 
@@ -279,13 +275,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
         let message_id = self.get_next_message_id();
 
-        let message =  RoutingMessage { 
+        let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
             source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
-            authority    : Authority::ManagedNode,  
+            authority    : Authority::ManagedNode,
         };
 
         SignedMessage::new(&message, self.id.signing_private_key())
