@@ -56,7 +56,7 @@ pub trait Interface : Sync + Send {
                   data_request: DataRequest,
                   our_authority: Authority,
                   from_authority: Authority,
-                  from_address: NameType) -> Result<MessageAction, InterfaceError>;
+                  from_address: SourceAddress) -> Result<MessageAction, InterfaceError>;
 
     /// depending on our_authority and from_authority, data is stored on current node or an address
     /// (with different authority) for further handling of the request is provided.
