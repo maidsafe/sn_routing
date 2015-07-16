@@ -25,10 +25,8 @@
 //! Some network management messages are directly handled without Sentinel resolution.
 //! Other network management messages are handled by Routing after Sentinel resolution.
 
-use cbor::{Decoder, Encoder, CborError};
 use rand;
-use rustc_serialize::{Decodable, Encodable};
-use sodiumoxide::crypto::sign::{Signature, verify_detached, sign_detached};
+use sodiumoxide::crypto::sign::{verify_detached};
 use std::collections::{BTreeMap};
 use std::boxed::Box;
 use std::ops::DerefMut;
@@ -47,7 +45,7 @@ use relay::{RelayMap, IdType};
 use sendable::Sendable;
 use data::{Data, DataRequest};
 use types;
-use types::{MessageId, NameAndTypeId, Bytes, DestinationAddress, SourceAddress};
+use types::{MessageId, Bytes, DestinationAddress, SourceAddress};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
 use messages::{RoutingMessage, SignedMessage, MessageType,
@@ -501,15 +499,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MessageAction::Reply(data) => {
                             let response = GetDataResponse {
                                 result       : Ok(data),
-                                orig_request : message_wrap,
+                                orig_request : message_wrap.clone(),
                             };
 
                             let our_authority = our_authority(&message, &self.routing_table);
 
-                            self.send_reply(&message,
-                                            our_authority,
-                                            MessageType::GetDataResponse(response));
-                            return Ok(());
+                            ignore(self.send_reply(&message,
+                                                   our_authority,
+                                                   MessageType::GetDataResponse(response)));
                         },
                         _ => (),
                     },
@@ -657,7 +654,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
             match self.bootstrap {
                 Some((ref bootstrap_endpoint, _)) => {
 
-                    let dst = msg.destination_address();
                     let msg = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
                     let msg = try!(encode(&msg));
 
