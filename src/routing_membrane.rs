@@ -131,9 +131,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             authority   : Authority::Unknown
         };
 
-        self.send_swarm_or_parallel(&message);
-
-        //ignore(encode(&signed_msg).map(|msg| self.send_swarm_or_parallel(location, &msg)));
+        ignore(self.send_swarm_or_parallel(&message));
     }
 
     /// Add something to the network, will always go via ClientManager group
@@ -148,17 +146,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
             authority   : Authority::Unknown,
         };
 
-        self.send_swarm_or_parallel(&message);
-        //let signed_message = SignedRoutingMessage::new(message, &self.id.secret_keys.0);
-        //ignore(encode(&message).map(|msg| self.send_swarm_or_parallel(destination, &msg)));
+        ignore(self.send_swarm_or_parallel(&message));
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn post(&mut self, destination: NameType, data : Data) {
+    pub fn post(&mut self, _destination: NameType, _data : Data) {
         unimplemented!()
     }
 
-    pub fn delete(&mut self, destination: NameType, data : Data) {
+    pub fn delete(&mut self, _destination: NameType, _data : Data) {
         unimplemented!()
     }
 
@@ -177,13 +173,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
             authority   : Authority::Unknown,
         };
 
-        self.send_swarm_or_parallel(&message);
+        ignore(self.send_swarm_or_parallel(&message));
     }
 
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
         // First send FindGroup request
-        let our_name = self.own_name.clone();
         match self.bootstrap.clone() {
             Some((ref bootstrap_endpoint, _)) => {
                 let find_group_msg = self.construct_find_group_msg();
@@ -229,7 +224,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 Err(_)      => continue,
                             };
                             // Forward
-                            self.send_swarm_or_parallel_or_relay(&message);
+                            ignore(self.send_swarm_or_parallel_or_relay(&message));
                         },
                         Some(ConnectionName::OurBootstrap) => {
                             // FIXME: This is a short-cut and should be improved upon.
@@ -525,7 +520,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
 
         // Forward
-        self.send_swarm_or_parallel_or_relay(&message);
+        ignore(self.send_swarm_or_parallel_or_relay(&message));
 
         let address_in_close_group_range =
             self.address_in_close_group_range(&message.non_relayed_destination());
@@ -652,7 +647,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             for peer in self.routing_table.target_nodes(&name) {
                 match peer.connected_endpoint {
                     Some(peer_endpoint) => {
-                        self.connection_manager.send(peer_endpoint, bytes.clone());
+                        ignore(self.connection_manager.send(peer_endpoint, bytes.clone()));
                     },
                     None => {}
                 };
@@ -720,8 +715,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             authority    : Authority::ManagedNode
         };
 
-        self.send_swarm_or_parallel(&message);
-        Ok(())
+        self.send_swarm_or_parallel(&message)
     }
 
     // ---- Who Are You ---------------------------------------------------------
@@ -838,7 +832,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Put { destination: x, content: y, } => self.put(x, y),
                     MethodCall::Get { name: x, data: y, } => self.get(x, y),
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-                    MethodCall::Post { destination: x, content: y } => unimplemented!(),
+                    MethodCall::Post { destination: x, content: y } => self.post(x, y),
                     MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                     MethodCall::None => (),
                     MethodCall::Forward { destination } =>
@@ -937,7 +931,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data) {
             Ok(action) => match action {
-                MessageAction::Reply(reply_data) => {
+                MessageAction::Reply(_reply_data) => {
                     // It has been decided that PUT messages will only generate
                     // replies in error cases.
                     unimplemented!()
