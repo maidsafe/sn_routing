@@ -283,6 +283,7 @@ impl<F> RoutingClient<F> where F: Interface {
             },
             None => {}
         };
+        Ok(())
     }
 
     fn get_next_message_id(&mut self) -> MessageId {

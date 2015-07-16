@@ -82,8 +82,8 @@ pub fn calculate_self_relocated_name(public_key: &crypto::sign::PublicKey,
 }
 
 // TODO(Team): Below method should be modified and reused in constructor of Id.
-fn calculate_original_name(public_key: &crypto::sign::PublicKey,
-                           public_sign_key: &crypto::box_::PublicKey) -> NameType {
+pub fn calculate_original_name(public_key: &crypto::sign::PublicKey,
+                               public_sign_key: &crypto::box_::PublicKey) -> NameType {
     let combined_iter = public_key.0.into_iter().chain(public_sign_key.0.into_iter());
     let mut combined: Vec<u8> = Vec::new();
     for iter in combined_iter {

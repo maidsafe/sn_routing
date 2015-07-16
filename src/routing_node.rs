@@ -186,7 +186,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                     let serialised_message = try!(encode(&put_public_id_msg));
 
                                     // Store the NameType of the bootstrap node.
-                                    self.bootstrap = self.bootstrap.map(|(ep, name)| {
+                                    self.bootstrap = self.bootstrap.clone().map(|(ep, name)| {
                                             if ep == source_endpoint {
                                                 (ep, Some(connect_response.receiver_id))
                                             }

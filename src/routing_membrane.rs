@@ -158,6 +158,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         unimplemented!()
     }
 
+    pub fn delete(&mut self, destination: NameType, data : Data) {
+        unimplemented!()
+    }
+
     /// Refresh the content in the close group nodes of group address content::name.
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
@@ -273,7 +277,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn my_source_address(&self) -> SourceAddress {
-        self.bootstrap.map(|(_, name)| {
+        self.bootstrap.clone().map(|(_, name)| {
             SourceAddress::RelayedForNode(name, self.own_name.clone())
         })
         .unwrap_or(SourceAddress::Direct(self.own_name.clone()))
@@ -290,7 +294,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         let routing_message = try!(message.get_routing_message());
         let connect_request = match routing_message.message_type {
-            MessageType::ConnectRequest(request) => request,
+            MessageType::ConnectRequest(ref request) => request.clone(),
             _ => return Ok(()), // To be changed to Parse error
         };
 
@@ -304,7 +308,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // if the PublicId is not relocated,
         // only accept the connection into the RelayMap.
         // This will enable this connection to bootstrap or act as a client.
-        let routing_msg = routing_message.create_reply(&self.own_name, &our_authority);
+        let mut routing_msg = routing_message.create_reply(&self.own_name, &our_authority);
         routing_msg.message_type = MessageType::ConnectResponse(ConnectResponse {
                     requester_local_endpoints: connect_request.local_endpoints.clone(),
                     requester_external_endpoints: connect_request.external_endpoints.clone(),
@@ -416,6 +420,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Get { name: x, data: y } => self.get(x, y),
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                    MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                     MethodCall::None => (),
                     MethodCall::Forward { destination } =>
                         info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination)
@@ -435,7 +440,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             message_type : MessageType::FindGroup(own_name),
             message_id   : message_id,
             authority    : Authority::ManagedNode,
-        };
+        }
     }
 
     /// This the fundamental functional function in routing.
@@ -454,7 +459,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
 
-        let message = try!(message_wrap.get_routing_message());
+        let mut message = try!(message_wrap.get_routing_message());
 
         if received_from_relay {
             // then this message was explicitly for us
@@ -473,27 +478,30 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // add to cache, only for ImmutableData;
             // for StructuredData caching can result in old versions
             // being returned.
-            MessageType::GetDataResponse(response) => {
+            MessageType::GetDataResponse(ref response) => {
                 match response.result {
-                    Ok(Data::ImmutableData(immutable_data)) => {
+                    Ok(Data::ImmutableData(ref immutable_data)) => {
                         let from = message.from_group()
                                           .unwrap_or(message.non_relayed_source());
 
                         ignore(self.mut_interface().handle_cache_put(
-                            message.authority, from,
+                            message.from_authority(), from,
                             Data::ImmutableData(immutable_data.clone())));
                     },
                     _ => {}
                 }
             },
             // check cache
-            MessageType::GetData(data_request) => {
+            MessageType::GetData(ref data_request) => {
                 let from = message.from_group()
                                   .unwrap_or(message.non_relayed_source());
 
-                match self.mut_interface().handle_cache_get(data_request,
-                                                            message.from_authority(),
-                                                            from) {
+                let action = self.mut_interface().handle_cache_get(
+                                data_request.clone(),
+                                message.from_authority(),
+                                from);
+
+                match action {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
                             let response = GetDataResponse {
@@ -501,8 +509,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 orig_request : message_wrap,
                             };
 
+                            let our_authority = our_authority(&message, &self.routing_table);
+
                             self.send_reply(&message,
-                                            our_authority(&message, &self.routing_table),
+                                            our_authority,
                                             MessageType::GetDataResponse(response));
                             return Ok(());
                         },
@@ -522,9 +532,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Handle FindGroupResponse
         match  message.message_type {
-            MessageType::FindGroupResponse(vec_of_public_ids) =>
+            MessageType::FindGroupResponse(ref vec_of_public_ids) =>
                 ignore(self.handle_find_group_response(
-                            vec_of_public_ids,
+                            vec_of_public_ids.clone(),
                             address_in_close_group_range.clone())),
              _ => (),
         };
@@ -558,18 +568,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageType::FindGroup(find_group) => self.handle_find_group(message, find_group),
                     // Handled above for some reason.
                     //MessageType::FindGroupResponse(find_group_response) => self.handle_find_group_response(find_group_response),
-                    MessageType::GetData(request) => self.handle_get_data(message_wrap,
-                        message, request),
-                    MessageType::GetDataResponse(response) =>
-                        self.handle_get_data_response(message_wrap, message, response),
+                    MessageType::GetData(ref request) => self.handle_get_data(message_wrap,
+                        message.clone(), request.clone()),
+                    MessageType::GetDataResponse(ref response) =>
+                        self.handle_get_data_response(message_wrap, message.clone(), response.clone()),
         //             MessageType::Post => self.handle_post(header, body),
         //             MessageType::PostResponse => self.handle_post_response(header, body),
-                    MessageType::PutData(data) => self.handle_put_data(message_wrap, message, data),
-                    MessageType::PutDataResponse(response) => self.handle_put_data_response(message_wrap, message,
-                    response),
-                    MessageType::PutPublicId(id) => self.handle_put_public_id(message_wrap, message, id),
-                    MessageType::Refresh(tag, data) => { self.handle_refresh(message, tag,
-                    data) },
+                    MessageType::PutData(ref data) => self.handle_put_data(message_wrap, message.clone(), data.clone()),
+                    MessageType::PutDataResponse(ref response) => self.handle_put_data_response(message_wrap, message.clone(),
+                    response.clone()),
+                    MessageType::PutPublicId(ref id) => self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
+                    MessageType::Refresh(ref tag, ref data) => { self.handle_refresh(message.clone(), tag.clone(),
+                    data.clone()) },
                     _ => {
                         Err(RoutingError::UnknownMessageType)
                     }
@@ -709,6 +719,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         };
 
         self.send_swarm_or_parallel(&message);
+        Ok(())
     }
 
     // ---- Who Are You ---------------------------------------------------------
@@ -826,6 +837,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Get { name: x, data: y, } => self.get(x, y),
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post { destination: x, content: y } => unimplemented!(),
+                    MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                     MethodCall::None => (),
                     MethodCall::Forward { destination } =>
                         info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination)
@@ -977,6 +989,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Get { name: x, data: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+            MethodCall::Delete { name: x, data : y } => self.delete(x, y),
             MethodCall::None => (),
             MethodCall::Forward { destination } =>
                 ignore(self.forward(&signed_message, &message, DestinationAddress::Direct(destination))),
@@ -1259,6 +1272,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Get { name: x, data: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+            MethodCall::Delete { name: x, data : y } => self.delete(x, y),
             MethodCall::None => (),
             MethodCall::Forward { destination } =>
                 ignore(self.forward(&orig_message, &message, DestinationAddress::Direct(destination))),

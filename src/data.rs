@@ -30,7 +30,7 @@ pub enum Data {
 }
 
 impl Data {
-    fn name(&self) -> NameType {
+    pub fn name(&self) -> NameType {
         match *self {
             Data::StructuredData(ref d) => d.name(),
             Data::ImmutableData(ref d)  => d.name(),

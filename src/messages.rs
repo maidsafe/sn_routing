@@ -64,7 +64,7 @@ pub struct GetDataResponse {
 
 impl GetDataResponse {
     pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
-        self.orig_request.verify_signature(requester_pub_key);
+        self.orig_request.verify_signature(requester_pub_key)
     }
 }
 
@@ -115,7 +115,7 @@ impl ErrorReturn {
     }
 
     pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
-        self.orig_request.verify_signature(requester_pub_key);
+        self.orig_request.verify_signature(requester_pub_key)
     }
 }
 
@@ -170,11 +170,11 @@ impl RoutingMessage {
     }
 
     pub fn source_address(&self) -> SourceAddress {
-        self.source
+        self.source.clone()
     }
 
     pub fn destination_address(&self) -> DestinationAddress {
-        self.destination
+        self.destination.clone()
     }
 
     pub fn non_relayed_source(&self) -> NameType {
