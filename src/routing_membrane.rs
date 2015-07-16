@@ -410,7 +410,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             for action in churn_actions {
                 match action {
                     MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                    MethodCall::Get { name: x, data: y } => self.get(x, y),
+                    MethodCall::Get { name: x, data_request: y } => self.get(x, y),
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                     MethodCall::Delete { name: x, data : y } => self.delete(x, y),
@@ -826,7 +826,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             for action in churn_actions {
                 match action {
                     MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                    MethodCall::Get { name: x, data: y, } => self.get(x, y),
+                    MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post { destination: x, content: y } => self.post(x, y),
                     MethodCall::Delete { name: x, data : y } => self.delete(x, y),
@@ -978,7 +978,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         match method_call {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-            MethodCall::Get { name: x, data: y, } => self.get(x, y),
+            MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post { destination: x, content: y, } => self.post(x, y),
             MethodCall::Delete { name: x, data : y } => self.delete(x, y),
@@ -1254,7 +1254,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         match self.mut_interface().handle_get_response(from, response.result) {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-            MethodCall::Get { name: x, data: y, } => self.get(x, y),
+            MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
             MethodCall::Post { destination: x, content: y, } => self.post(x, y),
             MethodCall::Delete { name: x, data : y } => self.delete(x, y),

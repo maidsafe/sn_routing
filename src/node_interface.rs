@@ -34,7 +34,7 @@ pub enum MethodCall {
     /// request to have `destination` to handle put for the `content`
     Put { destination: NameType, content: Data },
     /// request to retreive data with specified type and name from network
-    Get { name: NameType, data: DataRequest },
+    Get { name: NameType, data_request: DataRequest },
     /// request to post
     Post { destination: NameType, content: Data },
     /// Request delete
