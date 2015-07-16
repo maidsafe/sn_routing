@@ -16,20 +16,10 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide::crypto;
-use cbor;
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encodable, Encoder};
 use rand::random;
-use sodiumoxide;
 use sodiumoxide::crypto::sign;
-use sodiumoxide::crypto::sign::Signature;
-use sodiumoxide::crypto::box_;
-use std::cmp;
 use NameType;
-use name_type::closer_to_target;
-use std::fmt;
-use error::{RoutingError};
-use utils;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -82,7 +72,7 @@ pub type Bytes = Vec<u8>;
 
 #[derive(RustcEncodable, RustcDecodable)]
 struct SignedKey {
-  sign_public_key: crypto::sign::PublicKey,
+  sign_public_key: sign::PublicKey,
   encrypt_public_key: crypto::box_::PublicKey,
 }
 
