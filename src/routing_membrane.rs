@@ -1204,8 +1204,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let our_authority  = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from           = message.source_address();
+        let to             = message.non_relayed_destination();
 
-        match self.mut_interface().handle_get(data_request,
+        match self.mut_interface().handle_get(to,
+                                              data_request,
                                               our_authority.clone(),
                                               from_authority,
                                               from) {
