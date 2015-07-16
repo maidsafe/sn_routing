@@ -675,7 +675,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn send_swarm_or_parallel_or_relay(&self, msg: &RoutingMessage)
+    fn send_swarm_or_parallel_or_relay(&mut self, msg: &RoutingMessage)
         -> Result<(), RoutingError> {
 
         let dst = msg.destination_address();
@@ -866,10 +866,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn drop_bootstrap(&mut self) {
         match self.bootstrap {
-            Some((endpoint, name)) => {
+            Some((ref endpoint, name)) => {
                 if self.routing_table.size() > 0 {
                     info!("Dropped bootstrap on {:?} {:?}", endpoint, name);
-                    self.connection_manager.drop_node(endpoint);
+                    self.connection_manager.drop_node(endpoint.clone());
                 }
             },
             None => {}
@@ -968,7 +968,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                   routing_message : &RoutingMessage,
                   our_authority   : Authority,
                   msg             : MessageType) -> RoutingResult {
-        let message = routing_message.create_reply(&self.own_name, &our_authority);
+        let mut message = routing_message.create_reply(&self.own_name, &our_authority);
 
         message.message_type = msg;
         message.authority    = our_authority;
@@ -982,9 +982,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                            response: ErrorReturn) -> RoutingResult {
         info!("Handle PUT data response.");
         let from_authority = message.from_authority();
-        let from = message.source;
+        let from = message.source.clone();
 
-        let method_call = self.mut_interface().handle_put_response(from_authority, from, response.error);
+        let method_call = self.mut_interface()
+            .handle_put_response(from_authority, from, response.error);
 
         match method_call {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
@@ -1266,7 +1267,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             return Err(RoutingError::FailedSignature);
         }
         let our_authority = our_authority(&message, &self.routing_table);
-        let from_authority = message.authority;
+        let from_authority = message.authority.clone();
         let from = message.source.non_relayed_source();
 
         match self.mut_interface().handle_get_response(from, response.result) {
