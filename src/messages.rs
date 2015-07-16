@@ -22,10 +22,9 @@ use crust::Endpoint;
 use authority::Authority;
 use data::{Data, DataRequest};
 use types;
-use id::Id;
 use public_id::PublicId;
-use types::{DestinationAddress, SourceAddress, FromAddress, ToAddress, NodeAddress};
-use error::{RoutingError, ResponseError};
+use types::{DestinationAddress, SourceAddress};
+use error::{ResponseError};
 use NameType;
 use utils;
 use cbor::{CborError};
@@ -107,6 +106,7 @@ pub struct ErrorReturn {
 }
 
 impl ErrorReturn {
+    #[allow(dead_code)]
     pub fn new(error: ResponseError, orig_request: SignedMessage) -> ErrorReturn {
         ErrorReturn {
             error        : error,
@@ -162,8 +162,9 @@ pub struct RoutingMessage {
 
 impl RoutingMessage {
 
+    #[allow(dead_code)]
     pub fn message_id(&self) -> types::MessageId {
-        self.message_id
+        self.message_id.clone()
     }
 
     pub fn source_address(&self) -> SourceAddress {
@@ -178,6 +179,7 @@ impl RoutingMessage {
         self.source.non_relayed_source()
     }
 
+    #[allow(dead_code)]
     pub fn actual_source(&self) -> types::Address {
        self.source.actual_source()
     }
@@ -257,7 +259,8 @@ impl RoutingMessage {
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)-> RoutingMessage {
+    pub fn create_reply(&self, _our_name : &NameType, _our_authority : &Authority)
+        -> RoutingMessage {
         // Commented the below code as it doesn't compile.
         unimplemented!()
         //// implicitly preserve all non-mutated fields.
