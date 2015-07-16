@@ -675,7 +675,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn send_swarm_or_parallel_or_relay(&self, msg: &RoutingMessage)
+    fn send_swarm_or_parallel_or_relay(&mut self, msg: &RoutingMessage)
         -> Result<(), RoutingError> {
 
         let dst = msg.destination_address();
@@ -866,10 +866,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn drop_bootstrap(&mut self) {
         match self.bootstrap {
-            Some((endpoint, name)) => {
+            Some((ref endpoint, name)) => {
                 if self.routing_table.size() > 0 {
                     info!("Dropped bootstrap on {:?} {:?}", endpoint, name);
-                    self.connection_manager.drop_node(endpoint);
+                    self.connection_manager.drop_node(endpoint.clone());
                 }
             },
             None => {}
