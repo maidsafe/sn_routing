@@ -34,7 +34,7 @@ pub enum MethodCall {
     /// request to have `destination` to handle put for the `content`
     Put { destination: NameType, content: Data },
     /// request to retreive data with specified type and name from network
-    Get { name: NameType, data: DataRequest },
+    Get { name: NameType, data_request: DataRequest },
     /// request to post
     Post { destination: NameType, content: Data },
     /// Request delete
@@ -53,20 +53,21 @@ pub trait Interface : Sync + Send {
     /// potentially storing data with specified name and type_id is returned, on success.
     /// failure to provide data or an address is indicated as an InterfaceError.
     fn handle_get(&mut self,
-                  data_request: DataRequest,
-                  our_authority: Authority,
-                  from_authority: Authority,
-                  from_address: SourceAddress) -> Result<MessageAction, InterfaceError>;
+                  location       : NameType,
+                  data_request   : DataRequest,
+                  our_authority  : Authority,
+                  from_authority : Authority,
+                  from_address   : SourceAddress) -> Result<MessageAction, InterfaceError>;
 
     /// depending on our_authority and from_authority, data is stored on current node or an address
     /// (with different authority) for further handling of the request is provided.
     /// failure is indicated as an InterfaceError.
     fn handle_put(&mut self,
-                  our_authority: Authority,
-                  from_authority: Authority,
-                  from_address: SourceAddress,
-                  dest_address: DestinationAddress,
-                  data: Data) -> Result<MessageAction, InterfaceError>;
+                  our_authority  : Authority,
+                  from_authority : Authority,
+                  from_address   : SourceAddress,
+                  dest_address   : DestinationAddress,
+                  data           : Data) -> Result<MessageAction, InterfaceError>;
 
     /// depending on our_authority and from_authority, post request is handled by current node or
     /// an address for further handling of the request is provided. Failure is indicated as an
