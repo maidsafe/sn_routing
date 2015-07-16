@@ -84,8 +84,10 @@ impl StructuredData {
 
     /// Returns name and validates invariants
     pub fn name(&self) -> NameType {
+        let type_tag_as_string = self.type_tag.to_string();
+
         let chain = self.identifier.0.iter()
-                    .chain(self.type_tag.to_string().as_bytes().iter())
+                    .chain(type_tag_as_string.as_bytes().iter())
                     .map(|a|*a);
 
         NameType(crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
