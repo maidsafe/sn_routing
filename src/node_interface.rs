@@ -52,8 +52,8 @@ pub trait Interface : Sync + Send {
     /// depending on our_authority and from_authority, data or address of the node
     /// potentially storing data with specified name and type_id is returned, on success.
     /// failure to provide data or an address is indicated as an InterfaceError.
+    /// OurAuthority contains the NameType when relevant.
     fn handle_get(&mut self,
-                  location       : NameType,
                   data_request   : DataRequest,
                   our_authority  : Authority,
                   from_authority : Authority,
