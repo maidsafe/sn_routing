@@ -1315,8 +1315,10 @@ use super::ConnectionName;
 use authority::Authority;
 use cbor::{Encoder};
 use crust;
+use data::Data;
 use error::{ResponseError, InterfaceError};
 use id::Id;
+use immutable_data::{ImmutableData, ImmutableDataType};
 use messages::{RoutingMessage, MessageType, SignedMessage};
 use name_type::{NameType, closer_to_target};
 use node_interface::{Interface, MethodCall, MessageAction};
@@ -1546,10 +1548,15 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
 
 #[test]
     fn call_handle_put() {
-        let put_data: MessageType::PutData(data)
-        assert_eq!(call_operation(put_data,
-            MessageType::PutData, Arc::new(Mutex::new(Stats::new())),
-            Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
+        let mut array = [0u8; 64];
+        thread_rng().fill_bytes(&mut array);
+        let put_data = MessageType::PutData(
+            Data::ImmutableData(
+                ImmutableData::new(ImmutableDataType::Normal, array.iter().collect::<Vec<_>>())));
+        assert_eq!(call_operation(put_data, Arc::new(Mutex::new(Stats::new())),
+                   SourceAddress::Direct(Random::generate_random()),
+                   DestinationAddress::Direct(Random::generate_random()),
+                   Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
 #[test]
