@@ -25,7 +25,7 @@ use messages::{RoutingMessage, MessageType};
 pub enum Authority {
   ClientManager(NameType),  // from a node in our range but not routing table
   NaeManager(NameType),     // target (name()) is in the group we are in
-  OurCloseGroup(NameType),  // for account transfer where the source = the destination (= the element)
+  // OurCloseGroup(NameType),  // for account transfer where the source = the destination (= the element)
                   // this reflects a NAE back onto itself, but on a refreshed group
                   // TODO: find a better name, this name is a bit of a misnomer
   NodeManager(NameType),    // received from a node in our routing table (handle refresh here)
@@ -60,6 +60,9 @@ pub enum Authority {
 ///       and the destination is our id
 ///    -> Managed Node
 /// f) otherwise return Unknown Authority
+
+// extract the element from RoutingMessage,
+// then pass on to determine_authority
 pub fn our_authority(message       : &RoutingMessage,
                      routing_table : &RoutingTable) -> Authority {
 
@@ -95,6 +98,17 @@ pub fn our_authority(message       : &RoutingMessage,
         Some(e) => e,
         None    => { return Authority::Unknown; }
     };
+
+    return determine_authority(message, element);
+}
+
+// determine_authority is split off to allow unit tests to test it
+// separate from the content of the RoutingMessage;
+// in particular element needs to be controllably inside
+// or outside the close group of routing table.
+fn determine_authority(message       : &RoutingMessage,
+                       routing_table : &RoutingTable,
+                       element       : NameType) -> Authority {
 
     if message.client_key_as_name().map(|name|routing_table.address_in_our_close_group_range(&name)).unwrap_or(false)
        && message.non_relayed_destination() != element {
@@ -135,10 +149,12 @@ mod test {
     use message_header::MessageHeader;
     use authority::{Authority, our_authority};
     use sodiumoxide::crypto;
+    use data::{Data};
+    use immutable_data::{ImmutableDataType};
 
 #[test]
 fn our_authority_full_routing_table() {
-    let id = types::Id::new();
+    let id = Id::new();
     let mut routing_table = RoutingTable::new(&id.get_name());
     let mut count : usize = 0;
     loop {
@@ -154,6 +170,7 @@ fn our_authority_full_routing_table() {
     }
     let a_message_id : MessageId = random::<u32>();
     let our_name = id.get_name();
+    let (client_public_key, _) = crypto::sign::gen_keypair();
     let our_close_group : Vec<NodeInfo> = routing_table.our_close_group();
     let furthest_node_close_group : NodeInfo
         = our_close_group.last().unwrap().clone();
@@ -185,18 +202,30 @@ fn our_authority_full_routing_table() {
                              &our_name));
 
     // assert to get a client_manager Authority
-    let client_manager_header : MessageHeader = MessageHeader {
-        message_id : a_message_id.clone(),
-        destination : types::DestinationAddress {dest : Random::generate_random(), relay_to : None },
-        source : types::SourceAddress {
-            from_node : nae_or_client_in_our_close_group.clone(),
-            from_group : None, reply_to : None, relayed_for : None },
-        authority : Authority::Client(crypto::sign::PublicKey([0u8; crypto::sign::PUBLICKEYBYTES]))
+    // let client_manager_message : RoutingMessage = RoutingMessage {
+    //     message_id : a_message_id.clone(),
+    //     destination : types::DestinationAddress {dest : , relay_to : None },
+    //     source : types::SourceAddress {
+    //         from_node : nae_or_client_in_our_close_group.clone(),
+    //         from_group : None, reply_to : None, relayed_for : None },
+    //     authority : Authority::Client(crypto::sign::PublicKey([0u8; crypto::sign::PUBLICKEYBYTES]))
+    // };
+    let client_manager_message = RoutingMessage {
+        destination : DestinationAddress::Direct(name_outside_close_group.clone()),
+        // note: the CM NameType needs to equal SHA512 of the crypto::sign::PublicKey
+        // but then it is cryptohard to find a matching set; so ignored for this unit test
+        source      : SourceAddress::RelayedForClient(nae_or_client_in_our_close_group.clone(),
+                          client_public_key.clone()),
+        orig_message: None,
+        message_type: MessageType::PutData(Data::ImmutableData::new(
+                          ImmutableDataType::Normal, vec![213u8; 20u8])),
+        message_id  : a_message_id.clone(),
+        authority   : Authority::Client(client_public_key.clone()),
     };
-    assert_eq!(our_authority(name_outside_close_group,
-                             &client_manager_header,
-                             &routing_table),
-               Authority::ClientManager(name_outside_close_group));
+    assert_eq!(determine_authority(&client_manager_message,
+                             &routing_table,
+                             name_outside_close_group.clone()),
+               Authority::ClientManager(name_outside_close_group.clone()));
 
     // assert to get a nae_manager Authority
     let nae_manager_header : MessageHeader = MessageHeader {
