@@ -173,13 +173,12 @@ mod test {
     use std::net::SocketAddr;
     use std::str::FromStr;
     use rand::random;
-    use NameType;
 
     fn generate_random_endpoint() -> Endpoint {
         Endpoint::Tcp(SocketAddr::from_str(&format!("127.0.0.1:{}", random::<u16>())).unwrap())
     }
 
-    fn drop_ip_node(relay_map: &mut RelayMap, ip_node_to_drop: &NameType) {
+    fn drop_ip_node(relay_map: &mut RelayMap, ip_node_to_drop: &IdType) {
         match relay_map.relay_map.get(&ip_node_to_drop) {
             Some(relay_entry) => {
                 for endpoint in relay_entry.1.iter() {
@@ -214,15 +213,16 @@ mod test {
         let our_id : Id = Id::new();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
+        let test_id = IdType::Node(test_public_id.name());
         let test_endpoint = generate_random_endpoint();
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
+        assert_eq!(true, relay_map.contains_relay_for(&test_id));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint));
-        drop_ip_node(&mut relay_map, &test_public_id.name());
-        assert_eq!(false, relay_map.contains_relay_for(&test_public_id.name()));
+        drop_ip_node(&mut relay_map, &test_id);
+        assert_eq!(false, relay_map.contains_relay_for(&test_id));
         assert_eq!(false, relay_map.contains_endpoint(&test_endpoint));
-        assert_eq!(None, relay_map.get_endpoints(&test_public_id.name()));
+        assert_eq!(None, relay_map.get_endpoints(&test_id));
     }
 
     #[test]
@@ -230,15 +230,17 @@ mod test {
         let our_id : Id = Id::new();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
+        let test_id = IdType::Node(test_public_id.name());
         let test_endpoint = generate_random_endpoint();
         let test_conflicting_public_id = PublicId::new(&Id::new());
+        let test_conflicting_id = IdType::Node(test_conflicting_public_id.name());
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
+        assert_eq!(true, relay_map.contains_relay_for(&test_id));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint));
         assert_eq!(false, relay_map.add_ip_node(test_conflicting_public_id.clone(),
                                                 test_endpoint.clone()));
-        assert_eq!(false, relay_map.contains_relay_for(&test_conflicting_public_id.name()))
+        assert_eq!(false, relay_map.contains_relay_for(&test_conflicting_id))
     }
 
     #[test]
@@ -255,6 +257,7 @@ mod test {
                     new_endpoint)); };
         }
         let test_public_id = PublicId::new(&Id::new());
+        let test_id = IdType::Node(test_public_id.name());
 
         let mut test_endpoint_1 = generate_random_endpoint();
         let mut test_endpoint_2 = generate_random_endpoint();
@@ -266,15 +269,15 @@ mod test {
             test_endpoint_2 = generate_random_endpoint(); };
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint_1.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
+        assert_eq!(true, relay_map.contains_relay_for(&test_id));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint_1));
         assert_eq!(false, relay_map.add_ip_node(test_public_id.clone(),
                                                 test_endpoint_1.clone()));
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint_2.clone()));
-        assert!(relay_map.get_endpoints(&test_public_id.name()).unwrap().1
+        assert!(relay_map.get_endpoints(&test_id).unwrap().1
                          .contains(&test_endpoint_1));
-        assert!(relay_map.get_endpoints(&test_public_id.name()).unwrap().1
+        assert!(relay_map.get_endpoints(&test_id).unwrap().1
                          .contains(&test_endpoint_2));
     }
 
