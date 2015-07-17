@@ -146,10 +146,13 @@ mod test {
   use std::cmp;
   use rustc_serialize::{Decodable, Encodable};
   use test_utils::Random;
+  use id::Id;
+  use public_id::PublicId;
   use authority::Authority;
   use NameType;
   use name_type::closer_to_target;
   use sodiumoxide::crypto::sign;
+  use utils;
 
   fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
     let mut e = cbor::Encoder::from_memory();
@@ -238,12 +241,12 @@ mod test {
         let original_name : NameType = Random::generate_random();
 
         // empty close nodes
-        assert!(calculate_relocated_name(Vec::new(), &original_name).is_err());
+        assert!(utils::calculate_relocated_name(Vec::new(), &original_name).is_err());
 
         // one entry
         let mut close_nodes_one_entry : Vec<NameType> = Vec::new();
         close_nodes_one_entry.push(Random::generate_random());
-        let actual_relocated_name_one_entry = calculate_relocated_name(close_nodes_one_entry.clone(),
+        let actual_relocated_name_one_entry = utils::calculate_relocated_name(close_nodes_one_entry.clone(),
                                                                        &original_name).unwrap();
         assert!(original_name != actual_relocated_name_one_entry);
 
@@ -268,8 +271,8 @@ mod test {
         for _ in 0..GROUP_SIZE {
             close_nodes.push(Random::generate_random());
         }
-        let actual_relocated_name = calculate_relocated_name(close_nodes.clone(),
-                                                             &original_name).unwrap();
+        let actual_relocated_name = utils::calculate_relocated_name(close_nodes.clone(),
+                                                                    &original_name).unwrap();
         assert!(original_name != actual_relocated_name);
 
         close_nodes.sort_by(|a, b| if closer_to_target(&a, &b, &original_name) {

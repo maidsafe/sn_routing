@@ -1370,8 +1370,9 @@ impl Sendable for TestData {
 }
 
 impl Interface for TestInterface {
-    fn handle_get(&mut self, _type_id: u64, _name : NameType, _our_authority: Authority,
-                  _from_authority: Authority, _from_address: NameType) -> Result<MessageAction, InterfaceError> {
+    fn handle_get(&mut self, _data_request: DataRequest, _our_authority: Authority,
+                  _from_authority: Authority, _from_address   : SourceAddress)
+        -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1379,8 +1380,8 @@ impl Interface for TestInterface {
     }
 
     fn handle_put(&mut self, _our_authority: Authority, from_authority: Authority,
-                _from_address: NameType, _dest_address: DestinationAddress,
-                data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+                  _from_address: SourceAddress, _dest_address: DestinationAddress,
+                  data: Data) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1391,7 +1392,7 @@ impl Interface for TestInterface {
         Ok(MessageAction::Reply(data))
     }
 
-    fn handle_refresh(&mut self, type_tag: u64, payloads: Vec<Vec<u8>>) {
+    fn handle_refresh(&mut self, type_tag: u64, from_group: NameType, payloads: Vec<Vec<u8>>) {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += type_tag as usize;
@@ -1407,8 +1408,8 @@ impl Interface for TestInterface {
         Ok(MessageAction::Reply(data))
     }
 
-    fn handle_get_response(&mut self, _from_address: NameType, _response: Result<Vec<u8>,
-                           ResponseError>) -> MethodCall {
+    fn handle_get_response(&mut self, _from_address: NameType,
+                           response: Result<Data, ResponseError>) -> MethodCall {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1416,8 +1417,8 @@ impl Interface for TestInterface {
         MethodCall::None
     }
 
-    fn handle_put_response(&mut self, _from_authority: Authority, _from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
+    fn handle_put_response(&mut self, from_authority: Authority, from_address: SourceAddress,
+                           response: ResponseError) -> MethodCall {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1438,13 +1439,13 @@ impl Interface for TestInterface {
         unimplemented!();
     }
 
-    fn handle_cache_get(&mut self, _type_id: u64, _name : NameType, _from_authority: Authority,
-                        _from_address: NameType) -> Result<MessageAction, InterfaceError> {
+    fn handle_cache_get(&mut self, data_request: DataRequest, from_authority: Authority,
+                        from_address: NameType) -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 
-    fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
-                        _data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+    fn handle_cache_put(&mut self, from_authority: Authority, from_address: NameType,
+                        data: Data) -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 }

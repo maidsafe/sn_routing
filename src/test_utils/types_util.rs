@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
-
 #[cfg(test)]
 mod test {
     use types::*;
@@ -24,6 +22,7 @@ mod test {
     use id::Id;
     use name_type::NameType;
     use rand::random;
+    use super::super::random_trait::Random;
 
     impl Random for NameAndTypeId {
         fn generate_random() -> NameAndTypeId {
