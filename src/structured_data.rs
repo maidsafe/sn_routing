@@ -121,7 +121,7 @@ impl StructuredData {
          Ok(())
     }
 
-    fn data_to_sign(&self)->Result<Vec<u8>, RoutingError> {
+    fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
         // seems overkill to use serialisation here, but done
         // to ensure cross platform signature handling is OK
         let mut enc = cbor::Encoder::from_memory();
@@ -143,38 +143,43 @@ impl StructuredData {
              self.previous_owner_signatures.len() as isize)
     }
 
+    /// Overwrite any existing signatures with the new signatures provided
+    pub fn replace_signatures(&mut self, new_signatures : Vec<crypto::sign::Signature>) {
+        self.previous_owner_signatures = new_signatures;
+    }
+
     /// Get the type_tag
-    pub fn type_tag(&self) -> &u64 {
+    pub fn get_type_tag(&self) -> &u64 {
         &self.type_tag
     }
 
     /// Get the identifier
-    pub fn identifier(&self) -> &crypto::hash::sha512::Digest {
+    pub fn get_identifier(&self) -> &crypto::hash::sha512::Digest {
         &self.identifier
     }
 
     /// Get the serialised data
-    pub fn data(&self) -> &Vec<u8> {
+    pub fn get_data(&self) -> &Vec<u8> {
         &self.data
     }
 
     /// Get the previous owner keys
-    pub fn previous_owner_keys(&self) -> &Vec<crypto::sign::PublicKey> {
+    pub fn get_previous_owner_keys(&self) -> &Vec<crypto::sign::PublicKey> {
         &self.previous_owner_keys
     }
 
     /// Get the version
-    pub fn version(&self) -> &u64 {
+    pub fn get_version(&self) -> &u64 {
         &self.version
     }
 
     /// Get the current owner keys
-    pub fn current_owner_keys(&self) -> &Vec<crypto::sign::PublicKey> {
+    pub fn get_owner_keys(&self) -> &Vec<crypto::sign::PublicKey> {
         &self.current_owner_keys
     }
 
     /// Get previous owner signatures
-    pub fn previous_owner_signatures(&self) -> &Vec<crypto::sign::Signature> {
+    pub fn get_previous_owner_signatures(&self) -> &Vec<crypto::sign::Signature> {
         &self.previous_owner_signatures
     }
 }
