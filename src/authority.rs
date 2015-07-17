@@ -143,7 +143,6 @@ mod test {
     use test_utils::{Random, xor, messages_util};
     use rand::random;
     use name_type::{closer_to_target, NameType};
-    use message_header::MessageHeader;
     use authority::{Authority, our_authority};
     use sodiumoxide::crypto;
     use data::{Data};
