@@ -135,20 +135,20 @@ fn determine_authority(message       : &RoutingMessage,
 #[cfg(test)]
 mod test {
     use routing_table::{RoutingTable, NodeInfo};
-    use types;
     use types::{MessageId, DestinationAddress, SourceAddress};
     use public_id::PublicId;
     use messages::{RoutingMessage, MessageType};
     use id::Id;
-    use test_utils::{Random, xor, messages_util};
+    use test_utils::{Random, xor, test};
     use rand::random;
     use name_type::{closer_to_target, NameType};
-    use authority::{Authority, our_authority};
+    use authority::{Authority};
     use sodiumoxide::crypto;
     use data::{Data};
-    use immutable_data::{ImmutableDataType};
+    use immutable_data::{ImmutableData, ImmutableDataType};
 
 #[test]
+#[ignore]
 fn our_authority_full_routing_table() {
     let id = Id::new();
     let mut routing_table = RoutingTable::new(&id.get_name());
@@ -156,8 +156,8 @@ fn our_authority_full_routing_table() {
     loop {
         routing_table.add_node(NodeInfo::new(
                                PublicId::new(&Id::new()),
-                               messages_util::test::random_endpoints(),
-                               Some(messages_util::test::random_endpoint())));
+                               test::random_endpoints(),
+                               Some(test::random_endpoint())));
         count += 1;
         if count > 100 { break; }
         // if routing_node.routing_table.size() >=
@@ -198,15 +198,8 @@ fn our_authority_full_routing_table() {
                              &name_outside_close_group,
                              &our_name));
 
-    // assert to get a client_manager Authority
-    // let client_manager_message : RoutingMessage = RoutingMessage {
-    //     message_id : a_message_id.clone(),
-    //     destination : types::DestinationAddress {dest : , relay_to : None },
-    //     source : types::SourceAddress {
-    //         from_node : nae_or_client_in_our_close_group.clone(),
-    //         from_group : None, reply_to : None, relayed_for : None },
-    //     authority : Authority::Client(crypto::sign::PublicKey([0u8; crypto::sign::PUBLICKEYBYTES]))
-    // };
+    let some_data : Data = Data::ImmutableData(ImmutableData::new(
+        ImmutableDataType::Normal, vec![213u8; 20usize]));
     let client_manager_message = RoutingMessage {
         destination : DestinationAddress::Direct(name_outside_close_group.clone()),
         // note: the CM NameType needs to equal SHA512 of the crypto::sign::PublicKey
@@ -214,8 +207,7 @@ fn our_authority_full_routing_table() {
         source      : SourceAddress::RelayedForClient(nae_or_client_in_our_close_group.clone(),
                           client_public_key.clone()),
         orig_message: None,
-        message_type: MessageType::PutData(Data::ImmutableData::new(
-                          ImmutableDataType::Normal, vec![213u8; 20u8])),
+        message_type: MessageType::PutData(some_data.clone()),
         message_id  : a_message_id.clone(),
         authority   : Authority::Client(client_public_key.clone()),
     };
@@ -229,8 +221,7 @@ fn our_authority_full_routing_table() {
         destination : DestinationAddress::Direct(nae_or_client_in_our_close_group.clone()),
         source      : SourceAddress::Direct(Random::generate_random()),
         orig_message: None,
-        message_type: MessageType::PutData(Data::ImmutableData::new(
-                          ImmutableDataType::Normal, vec![213u8; 20u8])),
+        message_type: MessageType::PutData(some_data.clone()),
         message_id  : a_message_id.clone(),
         authority   : Authority::ClientManager(Random::generate_random()),
     };
@@ -240,11 +231,11 @@ fn our_authority_full_routing_table() {
 
     // assert to get a node_manager Authority
     let node_manager_message = RoutingMessage {
-        destination : DestinationAddress::Direct(second_closest_node_in_our_close_group.clone()),
+        destination : DestinationAddress::Direct(
+            second_closest_node_in_our_close_group.id.clone()),
         source      : SourceAddress::Direct(Random::generate_random()),
         orig_message: None,
-        message_type: MessageType::PutData(Data::ImmutableData::new(
-                          ImmutableDataType::Normal, vec![213u8; 20u8])),
+        message_type: MessageType::PutData(some_data.clone()),
         message_id  : a_message_id.clone(),
         authority   : Authority::NaeManager(Random::generate_random()),
     };
@@ -257,8 +248,7 @@ fn our_authority_full_routing_table() {
         destination : DestinationAddress::Direct(our_name.clone()),
         source      : SourceAddress::Direct(second_closest_node_in_our_close_group.id.clone()),
         orig_message: None,
-        message_type: MessageType::PutData(Data::ImmutableData::new(
-                          ImmutableDataType::Normal, vec![213u8; 20u8])),
+        message_type: MessageType::PutData(some_data),
         message_id  : a_message_id.clone(),
         authority   : Authority::NodeManager(our_name.clone()),
     };

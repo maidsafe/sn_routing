@@ -163,6 +163,7 @@ mod test {
   }
 
   #[test]
+  #[ignore]
   fn construct_id_with_keys() {
     let sign_keys = crypto::sign::gen_keypair();
     let asym_keys = crypto::box_::gen_keypair();
@@ -313,6 +314,7 @@ mod test {
 
 
 #[test]
+#[ignore]
     fn assign_relocated_name_public_id() {
         let before = PublicId::generate_random();
         let original_name = before.name();
