@@ -49,6 +49,11 @@ impl ImmutableData {
         &self.value
     }
 
+    /// Returns the type
+    pub fn type_tag(&self) -> &ImmutableDataType {
+        &self.type_tag
+    }
+
 
     /// Returns name ensuring invariant
     pub fn name(&self) -> NameType {
