@@ -24,9 +24,11 @@ use messages::{RoutingMessage, MessageType};
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone)]
 pub enum Authority {
   ClientManager(NameType),  // signed by a client and corresponding ClientName is in our range
-  NaeManager(NameType),     // target (name()) is in the group we are in
-  NodeManager(NameType),    // received from a node in our routing table (handle refresh here)
-  ManagedNode,    // in our group and routing table
+  NaeManager(NameType),     // we are responsible for this element
+                            // and the destination is the element
+  NodeManager(NameType),    // the destination is not the element, and we are responsible for it
+  ManagedNode,              // our name is the destination
+                            // and the message came from within our range
   ManagedClient(crypto::sign::PublicKey),  // in our group
   Client(crypto::sign::PublicKey),         // detached
   Unknown,
@@ -42,21 +44,17 @@ pub enum Authority {
 ///    -> Client Manager
 /// b) if the element is within our close group range
 ///       and the destination is the element
-///       and the source group is not the destination
+///       and the element is not our name (to exclude false)
 ///    -> Network-Addressable-Element Manager
-/// -) if the element is within our close group range
-///       and the source is the destination, and equals the element
-///       and it is from a group
-///    -> DISABLED : OurCloseGroup for Refresh
-/// d) if the message is from a group,
+/// c) if the message is from a group,
 ///       the destination is within our close group,
 ///       and our id is not the destination
 ///    -> Node Manager
-/// e) if the message is from a group,
+/// d) if the message is from a group,
 ///       the group is within our close group range,
 ///       and the destination is our id
 ///    -> Managed Node
-/// f) otherwise return Unknown Authority
+/// e) otherwise return Unknown Authority
 
 // extract the element from RoutingMessage,
 // then pass on to determine_authority
@@ -118,12 +116,13 @@ fn determine_authority(message       : &RoutingMessage,
         None => { }
     };
     if routing_table.address_in_our_close_group_range(&element)
-        && message.non_relayed_destination() == element {
+        && message.non_relayed_destination() == element
+        && element != routing_table.our_name() {
         return Authority::NaeManager(element); }
     else if message.from_group().is_some()
         && routing_table.address_in_our_close_group_range(&message.non_relayed_destination())
         && message.non_relayed_destination() != routing_table.our_name() {
-        return Authority::NodeManager(element); }
+        return Authority::NodeManager(message.non_relayed_destination()); }
     else if message.from_group()
                    .map(|group| routing_table.address_in_our_close_group_range(&group))
                    .unwrap_or(false)
@@ -222,70 +221,51 @@ fn our_authority_full_routing_table() {
         authority   : Authority::Client(client_public_key.clone()),
     };
     assert_eq!(super::determine_authority(&client_manager_message,
-                             &routing_table,
-                             name_outside_close_group.clone()),
-               Authority::ClientManager(name_outside_close_group.clone()));
+        &routing_table,
+        name_outside_close_group.clone()),
+        Authority::ClientManager(name_outside_close_group.clone()));
 
     // assert to get a nae_manager Authority
-    let nae_manager_header : MessageHeader = MessageHeader {
-        message_id : a_message_id.clone(),
-        destination : types::DestinationAddress {
-            dest : nae_or_client_in_our_close_group.clone(), relay_to : None },
-        source : types::SourceAddress {
-            from_node : Random::generate_random(),
-            from_group : Some(name_outside_close_group.clone()), reply_to : None, relayed_for : None },
-        authority : Authority::ClientManager(name_outside_close_group)
+    let nae_manager_message = RoutingMessage {
+        destination : DestinationAddress::Direct(nae_or_client_in_our_close_group.clone()),
+        source      : SourceAddress::Direct(Random::generate_random()),
+        orig_message: None,
+        message_type: MessageType::PutData(Data::ImmutableData::new(
+                          ImmutableDataType::Normal, vec![213u8; 20u8])),
+        message_id  : a_message_id.clone(),
+        authority   : Authority::ClientManager(Random::generate_random()),
     };
-    assert_eq!(our_authority(nae_or_client_in_our_close_group,
-                             &nae_manager_header, &routing_table),
-               Authority::NaeManager(nae_or_client_in_our_close_group));
-
-    // assert to get a our_close_group Authority
-    let our_close_group_header : MessageHeader = MessageHeader {
-        message_id : a_message_id.clone(),
-        destination : types::DestinationAddress {
-            dest : nae_or_client_in_our_close_group.clone(), relay_to : None },
-        source : types::SourceAddress {
-            from_node : Random::generate_random(),
-            from_group : Some(nae_or_client_in_our_close_group.clone()),
-            reply_to : None, relayed_for : None },
-        authority : Authority::NaeManager(nae_or_client_in_our_close_group)
-    };
-    assert_eq!(our_authority(nae_or_client_in_our_close_group,
-                            &our_close_group_header, &routing_table),
-              Authority::OurCloseGroup(nae_or_client_in_our_close_group));
+    assert_eq!(super::determine_authority(&nae_manager_message, &routing_table,
+        nae_or_client_in_our_close_group),
+        Authority::NaeManager(nae_or_client_in_our_close_group));
 
     // assert to get a node_manager Authority
-    let node_manager_header : MessageHeader = MessageHeader {
-        message_id : a_message_id.clone(),
-        destination : types::DestinationAddress {
-            dest : second_closest_node_in_our_close_group.id.clone(), relay_to : None },
-        source : types::SourceAddress {
-            from_node : Random::generate_random(),
-            from_group : Some(name_outside_close_group.clone()),
-            reply_to : None, relayed_for : None },
-        authority : Authority::NaeManager(nae_or_client_in_our_close_group)
+    let node_manager_message = RoutingMessage {
+        destination : DestinationAddress::Direct(second_closest_node_in_our_close_group.clone()),
+        source      : SourceAddress::Direct(Random::generate_random()),
+        orig_message: None,
+        message_type: MessageType::PutData(Data::ImmutableData::new(
+                          ImmutableDataType::Normal, vec![213u8; 20u8])),
+        message_id  : a_message_id.clone(),
+        authority   : Authority::NaeManager(Random::generate_random()),
     };
-    assert_eq!(our_authority(name_outside_close_group,
-                             &node_manager_header,
-                             &routing_table),
-               Authority::NodeManager(name_outside_close_group));
+    assert_eq!(super::determine_authority(&node_manager_message,
+        &routing_table, name_outside_close_group),
+        Authority::NodeManager(name_outside_close_group));
 
     // assert to get a managed_node Authority
-    let managed_node_header : MessageHeader = MessageHeader {
-        message_id : a_message_id.clone(),
-        destination : types::DestinationAddress {
-            dest : our_name.clone(), relay_to : None },
-        source : types::SourceAddress {
-            from_node : Random::generate_random(),
-            from_group : Some(second_closest_node_in_our_close_group.id.clone()),
-            reply_to : None, relayed_for : None },
-        authority : Authority::NodeManager(name_outside_close_group)
+    let managed_node_message = RoutingMessage {
+        destination : DestinationAddress::Direct(our_name.clone()),
+        source      : SourceAddress::Direct(second_closest_node_in_our_close_group.id.clone()),
+        orig_message: None,
+        message_type: MessageType::PutData(Data::ImmutableData::new(
+                          ImmutableDataType::Normal, vec![213u8; 20u8])),
+        message_id  : a_message_id.clone(),
+        authority   : Authority::NodeManager(our_name.clone()),
     };
-    assert_eq!(our_authority(name_outside_close_group,
-                             &managed_node_header,
-                             &routing_table),
-               Authority::ManagedNode);
+    assert_eq!(super::determine_authority(&managed_node_message, &routing_table,
+        name_outside_close_group),
+        Authority::ManagedNode);
 }
 
 }

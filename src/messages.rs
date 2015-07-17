@@ -181,7 +181,7 @@ impl RoutingMessage {
 
     #[allow(dead_code)]
     pub fn actual_source(&self) -> types::Address {
-       self.source.actual_source()
+        self.source.actual_source()
     }
 
     pub fn non_relayed_destination(&self) -> NameType {
