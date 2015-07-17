@@ -148,6 +148,7 @@ mod test {
     use immutable_data::{ImmutableData, ImmutableDataType};
 
 #[test]
+#[ignore]
 fn our_authority_full_routing_table() {
     let id = Id::new();
     let mut routing_table = RoutingTable::new(&id.get_name());
