@@ -147,7 +147,7 @@ impl RoutingMessage {
 
     #[allow(dead_code)]
     pub fn actual_source(&self) -> types::Address {
-       self.source.actual_source()
+        self.source.actual_source()
     }
 
     pub fn non_relayed_destination(&self) -> NameType {
@@ -182,7 +182,6 @@ impl RoutingMessage {
             SourceAddress::Direct(_) => match self.authority {
                 Authority::ClientManager(n) => Some(n),
                 Authority::NaeManager(n)    => Some(n),
-                Authority::OurCloseGroup(n) => Some(n),
                 Authority::NodeManager(n)   => Some(n),
                 Authority::ManagedNode      => None,
                 Authority::ManagedClient(_) => None,
