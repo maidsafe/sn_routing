@@ -159,7 +159,7 @@ impl StructuredData {
     }
 
     /// Get the previous owner keys
-    pub fn previous_owner_keys(&self) -> Vec<crypto::sign::PublicKey> {
+    pub fn previous_owner_keys(&self) -> &Vec<crypto::sign::PublicKey> {
         &self.previous_owner_keys
     }
 
@@ -174,7 +174,7 @@ impl StructuredData {
     }
 
     /// Get previous owner signatures
-    pub fn previous_owner_signatures(&self) -> Vec<crypto::sign::Signature> {
+    pub fn previous_owner_signatures(&self) -> &Vec<crypto::sign::Signature> {
         &self.previous_owner_signatures
     }
 }

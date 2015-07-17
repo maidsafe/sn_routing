@@ -1115,7 +1115,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// before the membrane instantiates.
     // TODO (Ben): check whether to accept id into group;
     // restrict on minimal similar number of leading bits.
-    fn handle_put_public_id(&mut self, signed_message: SignedMessage, message: RoutingMessage, public_id: PublicId) -> RoutingResult {
+    fn handle_put_public_id(&mut self, signed_message: SignedMessage, message: RoutingMessage,
+        public_id: PublicId) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         match (message.from_authority(), our_authority.clone(), public_id.is_relocated()) {
             (Authority::ManagedNode, Authority::NaeManager(_), false) => {
@@ -1127,13 +1128,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .chain(Some(self.own_name.clone()).into_iter())
                     .collect::<Vec<NameType>>();
 
-                let relocated_name = try!(utils::calculate_relocated_name(
-                    close_group, &public_id.name()));
+                let relocated_name = try!(utils::calculate_relocated_name(close_group,
+                                                                          &public_id.name()));
                 // assign_relocated_name
                 put_public_id_relocated.assign_relocated_name(relocated_name.clone());
 
-                info!("RELOCATED {:?} to {:?}",
-                    public_id.name(), relocated_name);
+                info!("RELOCATED {:?} to {:?}", public_id.name(), relocated_name);
                 // Forward to relocated_name group, which will actually store the relocated public id
                 try!(self.forward(&signed_message, &message, DestinationAddress::Direct(relocated_name)));
                 Ok(())
@@ -1331,7 +1331,8 @@ use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use test_utils::{Random, messages_util};
-use types::{MessageId, Bytes, DestinationAddress, SourceAddress};
+use types::{MessageId, Bytes, DestinationAddress, SourceAddress, GROUP_SIZE};
+use utils;
 use utils::{decode, encode};
 
 #[derive(Clone)]
@@ -1623,17 +1624,26 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
 #[test]
 #[ignore]
     fn call_handle_post() {
-        let post: Post = Random::generate_random();
-        assert_eq!(call_operation(post, MessageType::Post, Arc::new(Mutex::new(Stats::new())),
-                   Authority::NaeManager(Random::generate_random()), None, None).call_count, 1usize);
+        let mut array = [0u8; 64];
+        thread_rng().fill_bytes(&mut array);
+        let post_data = MessageType::PostData(
+            Data::ImmutableData(
+                ImmutableData::new(ImmutableDataType::Normal, array.iter().collect::<Vec<_>>())));
+        assert_eq!(call_operation(post_data, Arc::new(Mutex::new(Stats::new())),
+                   SourceAddress::Direct(Random::generate_random()),
+                   DestinationAddress::Direct(Random::generate_random()),
+                   Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
 #[test]
     fn call_handle_refresh() {
-        let refresh: Refresh = Random::generate_random();
-        assert_eq!(call_operation(refresh.clone(), MessageType::Refresh,
-            Arc::new(Mutex::new(Stats::new())), Authority::OurCloseGroup(Random::generate_random()),
-            Some(refresh.from_group.clone()), Some(refresh.from_group)).call_count, refresh.type_tag as usize);
+        let mut array = [0u8; 64];
+        thread_rng().fill_bytes(&mut array);
+        let refresh = MessageType::Refresh(random::<u64>(), array.iter().collect::<Vec<_>>());
+        assert_eq!(call_operation(refresh, Arc::new(Mutex::new(Stats::new())),
+                   SourceAddress::Direct(Random::generate_random()),
+                   DestinationAddress::Direct(Random::generate_random()),
+                   Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
 #[test]
@@ -1647,19 +1657,18 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut count_inside : u32 = 0;
         let mut count_total : u32 = 0;
         loop {
-            let put_public_id = PutPublicId{ public_id :  PublicId::new(&Id::new()) };
-            let put_public_id_header : MessageHeader = MessageHeader {
-                message_id : random::<u32>(),
-                destination : types::DestinationAddress {
-                    dest : put_public_id.public_id.name(), relay_to : None },
-                source : types::SourceAddress {
-                    from_node : Random::generate_random(),  // Bootstrap node or ourself
-                    from_group : None, reply_to : None, relayed_for : None },
-                authority : Authority::ManagedNode
+            let public_id = PublicId::new(&Id::new());
+            let put_public_id = MessageType::PutPublicId(public_id);
+            let message = RoutingMessage {
+                destination : DestinationAddress::Direct(Random::generate_random()),
+                source      : SourceAddress::Direct(Random::generate_random()),
+                orig_message: None,
+                message_type: put_public_id,
+                message_id  : random::<u32>(),
+                authority   : Authority::ManagedNode,
             };
-            let serialised_msg = encode(&put_public_id).unwrap();
-            let result = routing_node.handle_put_public_id(put_public_id_header,
-                serialised_msg);
+            let signed_message = SignedMessage::new(message, routing_node.id.signing_private_key());
+            let result = routing_node.handle_put_public_id(signed_message, message, public_id);
             if closer_to_target(&put_public_id.public_id.name(),
                                 &furthest_closest_node,
                                 &our_name) {
@@ -1702,27 +1711,24 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         loop {
             let original_public_id = PublicId::generate_random();
             let mut close_nodes_to_original_name : Vec<NameType> = Vec::new();
-            for _ in 0..types::GROUP_SIZE {
+            for _ in 0..GROUP_SIZE {
                 close_nodes_to_original_name.push(Random::generate_random());
             }
-            let relocated_name = types::calculate_relocated_name(close_nodes_to_original_name.clone(),
+            let relocated_name = utils::calculate_relocated_name(close_nodes_to_original_name.clone(),
                                     &original_public_id.name()).unwrap();
             let mut relocated_public_id = original_public_id.clone();
             assert!(relocated_public_id.assign_relocated_name(relocated_name.clone()));
-
-            let put_public_id = PutPublicId{ public_id :  relocated_public_id };
-
-            let put_public_id_header : MessageHeader = MessageHeader {
-                message_id : random::<u32>(),
-                destination : types::DestinationAddress {
-                    dest : put_public_id.public_id.name(), relay_to : None },
-                source : types::SourceAddress {
-                    from_node : close_nodes_to_original_name[0].clone(),  // from original name group member
-                    from_group : Some(original_public_id.name()), reply_to : None, relayed_for : None },
-                authority : Authority::NaeManager(Random::generate_random())
+            let put_public_id = MessageType::PutPublicId(relocated_public_id);
+            let message = RoutingMessage {
+                destination : DestinationAddress::Direct(Random::generate_random()),
+                source      : SourceAddress::Direct(Random::generate_random()),
+                orig_message: None,
+                message_type: put_public_id,
+                message_id  : random::<u32>(),
+                authority   : Authority::ManagedNode,
             };
-            let serialised_msg = encode(&put_public_id).unwrap();
-            let result = routing_node.handle_put_public_id(put_public_id_header, serialised_msg);
+            let signed_message = SignedMessage::new(message, routing_node.id.signing_private_key());
+            let result = routing_node.handle_put_public_id(signed_message, message, relocated_public_id);
             if closer_to_target(&put_public_id.public_id.name(),
                                 &furthest_closest_node,
                                 &our_name) {
