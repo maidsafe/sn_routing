@@ -123,7 +123,7 @@ pub fn our_authority(message       : &RoutingMessage,
     return Authority::Unknown;
 }
 
-
+/*
 #[cfg(test)]
 mod test {
     use routing_table::{RoutingTable, NodeInfo};
@@ -262,3 +262,4 @@ fn our_authority_full_routing_table() {
 }
 
 }
+*/

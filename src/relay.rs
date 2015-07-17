@@ -173,7 +173,6 @@ mod test {
     use std::net::SocketAddr;
     use std::str::FromStr;
     use rand::random;
-    use NameType;
 
     fn generate_random_endpoint() -> Endpoint {
         Endpoint::Tcp(SocketAddr::from_str(&format!("127.0.0.1:{}", random::<u16>())).unwrap())

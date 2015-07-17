@@ -447,18 +447,39 @@ mod test {
     use self::bit_vec::BitVec;
     use std::collections::{HashMap};
     use id::Id;
-    use test_utils::messages_util;
     use public_id::PublicId;
     use name_type::closer_to_target;
     use types;
     use NameType;
     use rand;
     use test_utils::{Random};
+    use rand::{random, thread_rng};
+    use crust::Endpoint;
+    use rand::distributions::{IndependentSample, Range};
 
     enum ContactType {
         Far,
         Mid,
         Close,
+    }
+
+    // TODO: This duplicate must use the available code
+    pub fn random_endpoint() -> Endpoint {
+        use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
+        Endpoint::Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
+            random::<u8>(), random::<u8>(),random::<u8>()), random::<u16>())))
+    }
+
+    // TODO: This duplicate must use the available code
+    pub fn random_endpoints() -> Vec<Endpoint> {
+        let range = Range::new(1, 10);
+        let mut rng = thread_rng();
+        let count = range.ind_sample(&mut rng);
+        let mut endpoints = vec![];
+        for _ in 0..count {
+            endpoints.push(random_endpoint());
+        }
+        endpoints
     }
 
     fn get_contact(farthest_from_tables_own_id: &NameType, index: usize,
@@ -598,7 +619,7 @@ mod test {
         NodeInfo {
             id: public_id.name(),
             fob: public_id,
-            endpoints: messages_util::test::random_endpoints(),
+            endpoints: random_endpoints(),
             connected_endpoint: None,
         }
     }
@@ -1125,8 +1146,7 @@ mod test {
         let mut count: usize = 0;
         loop {
             routing_table.add_node(
-                NodeInfo::new(PublicId::new(&Id::new()), messages_util::test::random_endpoints(),
-                              None));
+                NodeInfo::new(PublicId::new(&Id::new()), random_endpoints(), None));
             count += 1;
             if routing_table.size() >=
                 RoutingTable::get_optimal_size() { break; }

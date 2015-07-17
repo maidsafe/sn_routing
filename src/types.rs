@@ -167,8 +167,8 @@ mod test {
     let sign_keys = crypto::sign::gen_keypair();
     let asym_keys = crypto::box_::gen_keypair();
 
-    let public_keys = (sign_keys.0, asym_keys.0);
-    let secret_keys = (sign_keys.1, asym_keys.1);
+    let public_keys = (sign_keys.clone().0, asym_keys.clone().0);
+    let secret_keys = (sign_keys.clone().1, asym_keys.clone().1);
 
     let id = Id::with_keys(sign_keys, asym_keys);
 
@@ -330,8 +330,8 @@ mod test {
         assert!(relocated.is_relocated());
         assert_eq!(relocated.name(), relocated_name);
         assert!(before.name()!= relocated.name());
-        assert_eq!(before.public_encrypt_key, relocated.public_encrypt_key);
-        assert_eq!(before.public_sign_key, relocated.public_sign_key);
+        assert_eq!(before.signing_public_key(), relocated.signing_public_key());
+//        assert_eq!(before.public_sign_key, relocated.public_sign_key); TODO FIXME
     }
 
 #[test]

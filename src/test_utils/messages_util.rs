@@ -23,7 +23,6 @@ mod test {
     use sodiumoxide::crypto;
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
-    use data::*;
     use types;
     use super::super::random_trait::Random;
 
