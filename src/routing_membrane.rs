@@ -463,17 +463,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Caching on GetData and GetDataRequest
         match message.message_type {
-            // add to cache, only for ImmutableData;
-            // for StructuredData caching can result in old versions
-            // being returned.
+            // Add to cache, only for ImmutableData; For StructuredData caching
+            // can result in old versions being returned.
             MessageType::GetDataResponse(ref response) => {
-                match response.result {
-                    Ok(Data::ImmutableData(ref immutable_data)) => {
+                match response.data {
+                    Data::ImmutableData(ref immutable_data) => {
                         let from = message.from_group()
                                           .unwrap_or(message.non_relayed_source());
 
                         ignore(self.mut_interface().handle_cache_put(
-                            message.from_authority(), from,
+                            message.from_authority(),
+                            from,
                             Data::ImmutableData(immutable_data.clone())));
                     },
                     _ => {}
@@ -493,7 +493,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
                             let response = GetDataResponse {
-                                result       : Ok(data),
+                                data         : data,
                                 orig_request : message_wrap.clone(),
                             };
 
@@ -1205,8 +1205,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
                     let response = GetDataResponse {
-                        result:       Ok(data),
-                        orig_request: orig_message,
+                        data         : data,
+                        orig_request : orig_message,
                     };
                     ignore(self.send_reply(&message,
                                            our_authority,
@@ -1245,7 +1245,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
         let from = message.source.non_relayed_source();
 
-        match self.mut_interface().handle_get_response(from, response.result) {
+        match self.mut_interface().handle_get_response(from, response.data) {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),

@@ -24,9 +24,7 @@ use data::Data;
 /// of RoutingClient
 pub trait Interface : Sync + Send {
     /// consumes data in response or handles the error
-    fn handle_get_response(&mut self,
-                           message_id : MessageId,
-                           response   : Result<Data, ResponseError>);
+    fn handle_get_response(&mut self, message_id : MessageId, response   : Data);
 
     /// handles the result of a put request
     fn handle_put_response(&mut self, message_id: MessageId, response: ResponseError);

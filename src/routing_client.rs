@@ -308,7 +308,7 @@ impl<F> RoutingClient<F> where F: Interface {
         }
 
         let mut interface = self.interface.lock().unwrap();
-        interface.handle_get_response(message_id, response.result);
+        interface.handle_get_response(message_id, response.data);
     }
 
     fn handle_put_data_response(&self, message_id: MessageId, signed_error: ErrorReturn) {
