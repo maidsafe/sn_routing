@@ -1331,7 +1331,7 @@ use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use test_utils::{Random, messages_util};
-use types::{MessageId, Bytes, DestinationAddress, SourceAddress, GROUP_SIZE};
+use types::{MessageId, Bytes, DestinationAddress, SourceAddress, GROUP_SIZE, Address};
 use utils;
 use utils::{decode, encode};
 
@@ -1376,7 +1376,10 @@ impl Interface for TestInterface {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
-        Ok(MessageAction::Reply("handle_get called".to_string().into_bytes()))
+        let data = Data::ImmutableData(
+                ImmutableData::new(ImmutableDataType::Normal,
+                "handle_get called".to_string().into_bytes().iter().map(|&x| x).collect::<Vec<_>>()));
+        Ok(MessageAction::Reply(data))
     }
 
     fn handle_put(&mut self, _our_authority: Authority, from_authority: Authority,
@@ -1400,11 +1403,11 @@ impl Interface for TestInterface {
     }
 
     fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
-                   _from_address: NameType, _name: NameType, data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+                   _from_address: NameType, _name: NameType, data: Data) -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
-        stats_value.data = data.clone();
+        stats_value.data = "handle_post called".to_string().into_bytes();
         Ok(MessageAction::Reply(data))
     }
 
@@ -1422,10 +1425,7 @@ impl Interface for TestInterface {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
-        stats_value.data = match response {
-           Ok(data) => data,
-            Err(_) => vec![]
-        };
+        stats_value.data = "handle_put_response".to_string().into_bytes();
         MethodCall::None
     }
 
@@ -1479,9 +1479,10 @@ fn call_operation(message_type: MessageType, stats: Arc<Mutex<Stats>>, source: S
         authority   : authority,
     };
 
-    let signed_message = SignedMessage::new(message, membrane.id.signing_private_key());
-    let connection_name = ConnectionName::Routing(source.name);
-    let _ = membrane.message_received(&connection_name, encode(signed_message).unwrap(), false);
+    let signed_message = SignedMessage::new(&message, membrane.id.signing_private_key());
+    let connection_name = ConnectionName::Routing(match source.actual_source()
+        { Address::Node(name) => name, _ => Random::generate_random() });
+    let _ = membrane.message_received(&connection_name, signed_message.unwrap(), false);
     let stats = stats.clone();
     let stats_value = stats.lock().unwrap();
     stats_value.clone()
@@ -1516,7 +1517,8 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_put() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
-        let chunk = Box::new(TestData::new(array.into_iter().map(|&value| value).collect::<Vec<_>>()));
+        let chunk = Data::ImmutableData(
+            ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x| x).collect::<Vec<_>>()));
         let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
         membrane.put(name, chunk);
@@ -1526,17 +1528,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_get() {
         let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
-        membrane.get(100u64, name);
-    }
-
-#[test]
-    fn call_unauthorised_put() {
-        let mut array = [0u8; 64];
-        thread_rng().fill_bytes(&mut array);
-        let chunk = Box::new(TestData::new(array.into_iter().map(|&value| value).collect::<Vec<_>>()));
-        let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
-        let name: NameType = Random::generate_random();
-        membrane.unauthorised_put(name, chunk);
+        membrane.get(name, DataRequest::ImmutableData(ImmutableDataType::Normal));
     }
 
 #[test]
@@ -1555,7 +1547,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         thread_rng().fill_bytes(&mut array);
         let put_data = MessageType::PutData(
             Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().collect::<Vec<_>>())));
+                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
         assert_eq!(call_operation(put_data, Arc::new(Mutex::new(Stats::new())),
                    SourceAddress::Direct(Random::generate_random()),
                    DestinationAddress::Direct(Random::generate_random()),
@@ -1569,7 +1561,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         thread_rng().fill_bytes(&mut array);
         let put_data = MessageType::PutData(
             Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().collect::<Vec<_>>())));
+                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
         let result_stats = call_operation(put_data, Arc::new(Mutex::new(Stats::new())),
                    SourceAddress::Direct(Random::generate_random()),
                    DestinationAddress::Direct(Random::generate_random()),
@@ -1582,10 +1574,10 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_put_response() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
-        let encoded_data = array.iter().collect::<Vec<_>>();
+        let encoded_data = array.iter().map(|&x|x).collect::<Vec<_>>();
         let keys = crypto::sign::gen_keypair();
         let signed_message = SignedMessage{
-            encoded_body: encoded_data, signature: crypto::sign::sign_detached(encoded_data, keys.1) };
+            encoded_body: encoded_data, signature: crypto::sign::sign_detached(&encoded_data, &keys.1) };
         let put_data_response = MessageType::PutDataResponse(
             ErrorReturn::new(ResponseError::NoData), signed_message);
         assert_eq!(call_operation(put_data_response,  Arc::new(Mutex::new(Stats::new())),

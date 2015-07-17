@@ -77,7 +77,7 @@ pub trait Interface : Sync + Send {
                    from_authority: Authority,
                    from_address: NameType,
                    name : NameType,
-                   data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                   data: Data) -> Result<MessageAction, InterfaceError>;
 
     /// Handle messages internal to the group (triggered by churn events). Payloads
     /// from these messages are grouped by (type_tag, from_group) key, and once
