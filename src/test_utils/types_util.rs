@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
-
 #[cfg(test)]
 mod test {
     use types::*;
@@ -24,7 +22,7 @@ mod test {
     use id::Id;
     use name_type::NameType;
     use rand::random;
-    use super::random_trait::Random;
+    use super::super::random_trait::Random;
 
     impl Random for NameAndTypeId {
         fn generate_random() -> NameAndTypeId {
@@ -43,8 +41,7 @@ mod test {
 
     impl Random for SourceAddress {
         fn generate_random() -> SourceAddress {
-            SourceAddress {
-                from_node: Random::generate_random(), from_group: None, reply_to: None, relayed_for: None }
+            SourceAddress::Direct(Random::generate_random())
         }
     }
 
