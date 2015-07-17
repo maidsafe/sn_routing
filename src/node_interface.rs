@@ -57,7 +57,7 @@ pub trait Interface : Sync + Send {
                   data_request   : DataRequest,
                   our_authority  : Authority,
                   from_authority : Authority,
-                  from_address   : SourceAddress) -> Result<MessageAction, InterfaceError>;
+                  from_address   : SourceAddress) -> Result<Vec<MethodCall>, InterfaceError>;
 
     /// depending on our_authority and from_authority, data is stored on current node or an address
     /// (with different authority) for further handling of the request is provided.
@@ -67,7 +67,7 @@ pub trait Interface : Sync + Send {
                   from_authority : Authority,
                   from_address   : SourceAddress,
                   dest_address   : DestinationAddress,
-                  data           : Data) -> Result<MessageAction, InterfaceError>;
+                  data           : Data) -> Result<Vec<MethodCall>, InterfaceError>;
 
     /// depending on our_authority and from_authority, post request is handled by current node or
     /// an address for further handling of the request is provided. Failure is indicated as an
@@ -77,7 +77,7 @@ pub trait Interface : Sync + Send {
                    from_authority: Authority,
                    from_address: NameType,
                    name : NameType,
-                   data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                   data: Vec<u8>) -> Result<Vec<MethodCall>, InterfaceError>;
 
     /// Handle messages internal to the group (triggered by churn events). Payloads
     /// from these messages are grouped by (type_tag, from_group) key, and once
@@ -88,14 +88,14 @@ pub trait Interface : Sync + Send {
     /// type MethodCall is requested.
     fn handle_get_response(&mut self,
                            from_address : NameType,
-                           response     : Result<Data, ResponseError>) -> MethodCall;
+                           response     : Result<Data, ResponseError>) -> Vec<MethodCall>;
 
     /// handles the response to a put request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
     fn handle_put_response(&mut self,
                            from_authority : Authority,
                            from_address   : SourceAddress,
-                           response       : ResponseError) -> MethodCall;
+                           response       : ResponseError) -> Vec<MethodCall>;
 
     /// handles the response to a post request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
