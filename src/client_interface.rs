@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use types::MessageId;
 use error::ResponseError;
 use data::Data;
 use NameType;
@@ -25,8 +24,17 @@ use NameType;
 /// of RoutingClient
 pub trait Interface : Sync + Send {
     /// consumes data in response or handles the error
-    fn handle_get_response(&mut self, data_location : NameType, response : Data);
+    fn handle_get_response(&mut self, data_location : NameType, data : Data);
 
     /// handles the result of a put request
-    fn handle_put_response(&mut self, message_id: MessageId, response: ResponseError);
+    fn handle_put_response(&mut self, response_error : ResponseError,
+                                      request_data   : Data);
+
+    /// handles the result of a post request
+    fn handle_post_response(&mut self, response_error : ResponseError,
+                                       request_data   : Data);
+
+    /// handles the result of a delete request
+    fn handle_delete_response(&mut self, response_error : ResponseError,
+                                         request_data   : Data);
 }

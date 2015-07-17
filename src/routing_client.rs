@@ -203,8 +203,7 @@ impl<F> RoutingClient<F> where F: Interface {
                                     self.handle_get_data_response(result);
                                 },
                                 MessageType::PutDataResponse(put_response) => {
-                                    self.handle_put_data_response(routing_msg.message_id,
-                                                                  put_response);
+                                    self.handle_put_data_response(put_response);
                                 },
                                 _ => {}
                             }
@@ -316,12 +315,24 @@ impl<F> RoutingClient<F> where F: Interface {
         interface.handle_get_response(location, response.data);
     }
 
-    fn handle_put_data_response(&self, message_id: MessageId, signed_error: ErrorReturn) {
+    fn handle_put_data_response(&self, signed_error: ErrorReturn) {
         if !signed_error.verify_request_came_from(&self.public_sign_key()) {
             return;
         }
+
+        let orig_request = match signed_error.orig_request.get_routing_message() {
+            Ok(l)  => l,
+            Err(_) => return
+        };
+
+        // The request must have been a PUT message.
+        let orig_put_data = match orig_request.message_type {
+            MessageType::PutData(data) => data,
+            _                          => return
+        };
+
         let mut interface = self.interface.lock().unwrap();
-        interface.handle_put_response(message_id, signed_error.error);
+        interface.handle_put_response(signed_error.error, orig_put_data);
     }
 }
 
