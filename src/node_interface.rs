@@ -110,9 +110,9 @@ pub trait Interface : Sync + Send {
 
     /// attempts to potentially retrieve data from cache.
     fn handle_cache_get(&mut self,
-                        data_request: DataRequest,
-                        from_authority: Authority,
-                        from_address: NameType) -> Result<MessageAction, InterfaceError>;
+                        data_request  : DataRequest,
+                        data_location : NameType,
+                        from_address  : NameType) -> Result<MessageAction, InterfaceError>;
 
     /// attempts to store data in cache. The type of data and/or from_authority indicates
     /// if store in cache is required.

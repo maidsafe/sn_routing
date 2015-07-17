@@ -486,7 +486,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 let action = self.mut_interface().handle_cache_get(
                                 data_request.clone(),
-                                message.from_authority(),
+                                message.non_relayed_destination(),
                                 from);
 
                 match action {
