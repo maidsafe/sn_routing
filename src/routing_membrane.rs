@@ -211,8 +211,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
                             ignore(self.message_received(&ConnectionName::Routing(name),
-                                                         message,
-                                                         false));
+                                                         message));
                         },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
@@ -227,7 +226,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
                             ignore(self.message_received(
                                        &ConnectionName::Routing(bootstrap_node_name),
-                                       message, true));
+                                       message));
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
                             // only expect WhoAreYou or IAm message
@@ -440,19 +439,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn message_received(&mut self,
                         received_from       : &ConnectionName,
                         message_wrap        : SignedMessage,
-                        received_from_relay : bool
                        ) -> RoutingResult {
         match received_from {
             &ConnectionName::Routing(_) => { },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
 
-        let mut message = try!(message_wrap.get_routing_message());
+        let message = try!(message_wrap.get_routing_message());
 
-        if received_from_relay {
-            // then this message was explicitly for us
-            message.destination = DestinationAddress::Direct(self.own_name.clone());
-        }
         // filter check
         if self.filter.check(&message.get_filter()) {
             // should just return quietly
@@ -1477,7 +1471,7 @@ fn call_operation<T>(operation: T, message_type: MessageType, stats: Arc<Mutex<S
     let message = RoutingMessage::new( message_type, header.clone(), operation, &membrane.id.get_crypto_secret_sign_key());
     let serialised_msssage = encode(&message).unwrap();
     let connection_name = ConnectionName::Routing(header.source.from_node);
-    let _ = membrane.message_received(&connection_name, serialised_msssage, false);
+    let _ = membrane.message_received(&connection_name, serialised_msssage);
     let stats = stats.clone();
     let stats_value = stats.lock().unwrap();
     stats_value.clone()
