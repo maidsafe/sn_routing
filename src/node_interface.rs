@@ -73,11 +73,11 @@ pub trait Interface : Sync + Send {
     /// an address for further handling of the request is provided. Failure is indicated as an
     /// InterfaceError.
     fn handle_post(&mut self,
-                   our_authority: Authority,
-                   from_authority: Authority,
-                   from_address: NameType,
-                   name : NameType,
-                   data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                   our_authority  : Authority,
+                   from_authority : Authority,
+                   from_address   : NameType,
+                   name           : NameType,
+                   data           : Data) -> Result<MessageAction, InterfaceError>;
 
     /// Handle messages internal to the group (triggered by churn events). Payloads
     /// from these messages are grouped by (type_tag, from_group) key, and once
