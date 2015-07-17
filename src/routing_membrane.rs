@@ -934,9 +934,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 MessageAction::Forward(destinations) => {
                     for destination in destinations {
-                        ignore(self.forward(&signed_message,
-                                            &message,
-                                            DestinationAddress::Direct(destination)));
+                        ignore(self.forward(&signed_message, &message, destination));
                     }
                 },
             },
@@ -984,7 +982,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Delete { name: x, data : y } => self.delete(x, y),
             MethodCall::None => (),
             MethodCall::Forward { destination } =>
-                ignore(self.forward(&signed_message, &message, DestinationAddress::Direct(destination))),
+                ignore(self.forward(&signed_message, &message, destination)),
         }
         Ok(())
     }
@@ -1135,7 +1133,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 info!("RELOCATED {:?} to {:?}",
                     public_id.name(), relocated_name);
                 // Forward to relocated_name group, which will actually store the relocated public id
-                try!(self.forward(&signed_message, &message, DestinationAddress::Direct(relocated_name)));
+                try!(self.forward(&signed_message, &message, relocated_name));
                 Ok(())
             },
             (Authority::NaeManager(_), Authority::NaeManager(_), true) => {
@@ -1221,9 +1219,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 MessageAction::Forward(dest_nodes) => {
                     for destination in dest_nodes {
-                        ignore(self.forward(&orig_message,
-                                            &message,
-                                            DestinationAddress::Direct(destination)));
+                        ignore(self.forward(&orig_message, &message, destination));
                     }
                 }
             },
@@ -1233,13 +1229,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn forward(&self,
-               orig_message: &SignedMessage,
-               routing_message: &RoutingMessage,
-               destination: DestinationAddress) -> RoutingResult
+               orig_message    : &SignedMessage,
+               routing_message : &RoutingMessage,
+               destination     : NameType) -> RoutingResult
     {
         let our_authority = our_authority(&routing_message, &self.routing_table);
         let message = routing_message.create_forward(self.own_name.clone(),
-            our_authority, destination.non_relayed_destination(), orig_message.clone());
+                                                     our_authority,
+                                                     destination,
+                                                     orig_message.clone());
         ignore(self.send_swarm_or_parallel(&message));
         Ok(())
     }
@@ -1260,7 +1258,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Delete { name: x, data : y } => self.delete(x, y),
             MethodCall::None => (),
             MethodCall::Forward { destination } =>
-                ignore(self.forward(&orig_message, &message, DestinationAddress::Direct(destination))),
+                ignore(self.forward(&orig_message, &message, destination)),
         }
         Ok(())
     }
