@@ -44,7 +44,7 @@ pub enum Authority {
 ///    -> Client Manager
 /// b) if the element is within our close group range
 ///       and the destination is the element
-///       and the element is not our name (to exclude false)
+///       and the element is not our name (to exclude false positive for ManagedNode)
 ///    -> Network-Addressable-Element Manager
 /// c) if the message is from a group,
 ///       the destination is within our close group,
