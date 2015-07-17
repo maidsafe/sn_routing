@@ -16,15 +16,15 @@
 // relating to use of the SAFE Network Software.
 
 
-#[cfg(test)] 
+#[cfg(test)]
 mod test {
-    use super::random_trait::Random;
     use messages;
     use crust::Endpoint;
     use sodiumoxide::crypto;
-    use rand::distributions::Range;
+    use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
-    //use types::*;
+    use types;
+    use super::super::random_trait::Random;
 
 // TODO: Use IPv6 and non-TCP
 pub fn random_endpoint() -> Endpoint {
@@ -45,8 +45,8 @@ pub fn random_endpoints() -> Vec<Endpoint> {
 }
 
 impl Random for messages::ConnectRequest {
-    fn generate_random() -> messages::connect_request::ConnectRequest {
-        messages::connect_request::ConnectRequest {
+    fn generate_random() -> messages::ConnectRequest {
+        messages::ConnectRequest {
             local_endpoints: random_endpoints(),
             external_endpoints: random_endpoints(),
             requester_id: Random::generate_random(),
@@ -56,11 +56,10 @@ impl Random for messages::ConnectRequest {
     }
 }
 
-
 impl Random for messages::ConnectResponse {
-    fn generate_random() -> messages::connect_response::ConnectResponse {
+    fn generate_random() -> messages::ConnectResponse {
 
-        messages::connect_response::ConnectResponse {
+        messages::ConnectResponse {
             requester_local_endpoints: random_endpoints(),
             requester_external_endpoints: random_endpoints(),
             receiver_local_endpoints: random_endpoints(),
@@ -68,9 +67,10 @@ impl Random for messages::ConnectResponse {
             requester_id: Random::generate_random(),
             receiver_id: Random::generate_random(),
             receiver_fob: Random::generate_random(),
-            serialised_connect_request: generate_random_vec_u8(64),
+            serialised_connect_request: types::generate_random_vec_u8(64),
             connect_request_signature: crypto::sign::Signature([0; 64]),
         }
     }
 }
+
 }
