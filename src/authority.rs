@@ -118,16 +118,16 @@ fn determine_authority(message       : &RoutingMessage,
         None => { }
     };
     if routing_table.address_in_our_close_group_range(&element)
-       && message.non_relayed_destination() == element {
+        && message.non_relayed_destination() == element {
         return Authority::NaeManager(element); }
     else if message.from_group().is_some()
-       && routing_table.address_in_our_close_group_range(&message.non_relayed_destination())
-       && message.non_relayed_destination() != routing_table.our_name() {
+        && routing_table.address_in_our_close_group_range(&message.non_relayed_destination())
+        && message.non_relayed_destination() != routing_table.our_name() {
         return Authority::NodeManager(element); }
     else if message.from_group()
                    .map(|group| routing_table.address_in_our_close_group_range(&group))
                    .unwrap_or(false)
-       && message.non_relayed_destination() == routing_table.our_name() {
+        && message.non_relayed_destination() == routing_table.our_name() {
         return Authority::ManagedNode; }
     return Authority::Unknown;
 }
@@ -137,8 +137,11 @@ fn determine_authority(message       : &RoutingMessage,
 mod test {
     use routing_table::{RoutingTable, NodeInfo};
     use types;
-    use types::{Id, PublicId, MessageId};
-    use test_utils::{random_endpoint, random_endpoints, Random, xor};
+    use types::{MessageId, DestinationAddress, SourceAddress};
+    use public_id::PublicId;
+    use messages::{RoutingMessage, MessageType};
+    use id::Id;
+    use test_utils::{Random, xor, messages_util};
     use rand::random;
     use name_type::{closer_to_target, NameType};
     use message_header::MessageHeader;
@@ -154,8 +157,9 @@ fn our_authority_full_routing_table() {
     let mut count : usize = 0;
     loop {
         routing_table.add_node(NodeInfo::new(
-                               PublicId::new(&Id::new()), random_endpoints(),
-                               Some(random_endpoint())));
+                               PublicId::new(&Id::new()),
+                               messages_util::test::random_endpoints(),
+                               Some(messages_util::test::random_endpoint())));
         count += 1;
         if count > 100 { break; }
         // if routing_node.routing_table.size() >=
@@ -217,7 +221,7 @@ fn our_authority_full_routing_table() {
         message_id  : a_message_id.clone(),
         authority   : Authority::Client(client_public_key.clone()),
     };
-    assert_eq!(determine_authority(&client_manager_message,
+    assert_eq!(super::determine_authority(&client_manager_message,
                              &routing_table,
                              name_outside_close_group.clone()),
                Authority::ClientManager(name_outside_close_group.clone()));
