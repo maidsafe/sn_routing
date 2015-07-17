@@ -639,6 +639,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn add_check_nodes_test() {
         let num_of_tables = 50usize;
         let mut tables = create_random_routing_tables(num_of_tables);
@@ -657,6 +658,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn routing_table_test() {
 
         let mut table = RoutingTable {
@@ -681,6 +683,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn add_check_close_group_test() {
         let num_of_tables = 50usize;
         let mut tables = create_random_routing_tables(num_of_tables);
@@ -728,6 +731,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn add_node_test() {
         let mut test = RoutingTableUnitTest::new();
 
@@ -923,6 +927,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn drop_node_test() {
         // Check on empty table
         let mut test = RoutingTableUnitTest::new();
@@ -957,6 +962,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn check_node_test() {
       let mut routing_table_utest = RoutingTableUnitTest::new();
 
@@ -1051,6 +1057,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn churn_test() {
         let network_size = 200usize;
         let nodes_to_remove = 20usize;
@@ -1102,6 +1109,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn target_nodes_group_test() {
         let network_size = 100usize;
 
@@ -1137,6 +1145,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn our_close_group_and_in_range() {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
@@ -1172,6 +1181,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn our_close_group_test() {
         let mut table_unit_test = RoutingTableUnitTest::new();
         assert!(table_unit_test.table.our_close_group().is_empty());
@@ -1194,6 +1204,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn target_nodes_test() {
         let mut routing_table_utest = RoutingTableUnitTest::new();
 
@@ -1305,6 +1316,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn trivial_functions_test() {
         let mut table_unit_test = RoutingTableUnitTest::new();
         match table_unit_test.public_id(&table_unit_test.buckets[0].mid_contact) {
