@@ -1400,7 +1400,7 @@ impl Interface for TestInterface {
     }
 
     fn handle_get_response(&mut self, _from_address: NameType,
-                           _response: Result<Data, ResponseError>) -> MethodCall {
+                           _response: Data) -> MethodCall {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1427,8 +1427,10 @@ impl Interface for TestInterface {
         unimplemented!();
     }
 
-    fn handle_cache_get(&mut self, _data_request: DataRequest, _from_authority: Authority,
-                        _from_address: NameType) -> Result<MessageAction, InterfaceError> {
+    fn handle_cache_get(&mut self, _data_request   : DataRequest,
+                                   _from_authority : NameType,
+                                   _from_address   : NameType)
+        -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 
@@ -1470,7 +1472,7 @@ fn call_operation(message_type: MessageType, stats: Arc<Mutex<Stats>>, source: S
     let signed_message = SignedMessage::new(&message, membrane.id.signing_private_key());
     let connection_name = ConnectionName::Routing(match source.actual_source()
         { Address::Node(name) => name, _ => Random::generate_random() });
-    let _ = membrane.message_received(&connection_name, signed_message.unwrap(), false);
+    let _ = membrane.message_received(&connection_name, signed_message.unwrap());
     let stats = stats.clone();
     let stats_value = stats.lock().unwrap();
     stats_value.clone()
@@ -1617,8 +1619,8 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         };
         let signed_message = SignedMessage::new(&message, &keys.1);
         let get_data_response = MessageType::GetDataResponse(
-            GetDataResponse { result: Ok(Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>()))),
+            GetDataResponse { data: Data::ImmutableData(
+                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())),
                 orig_request: signed_message.unwrap() }
             );
         assert_eq!(call_operation(get_data_response,  Arc::new(Mutex::new(Stats::new())),
