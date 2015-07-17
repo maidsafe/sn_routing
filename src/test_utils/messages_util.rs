@@ -17,7 +17,7 @@
 
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use messages;
     use crust::Endpoint;
     use sodiumoxide::crypto;
