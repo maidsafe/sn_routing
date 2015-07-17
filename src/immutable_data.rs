@@ -50,11 +50,10 @@ impl ImmutableData {
     }
 
     /// Returns the type
-    pub fn type_tag(&self) -> &ImmutableDataType {
+    pub fn get_type_tag(&self) -> &ImmutableDataType {
         &self.type_tag
     }
-
-
+    
     /// Returns name ensuring invariant
     pub fn name(&self) -> NameType {
         let digest = crypto::hash::sha512::hash(&self.value);
