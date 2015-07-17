@@ -63,7 +63,7 @@ type RoutingResult = Result<(), RoutingError>;
 enum ConnectionName {
     Relay(IdType),
     Routing(NameType),
-    OurBootstrap,
+    OurBootstrap(NameType),
     UnidentifiedConnection,
     // ClaimedConnection(PublicId),
 }
@@ -224,14 +224,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // Forward
                             ignore(self.send_swarm_or_parallel_or_relay(&message));
                         },
-                        Some(ConnectionName::OurBootstrap) => {
-                            // FIXME: This is a short-cut and should be improved upon.
-                            // note: the name is not actively used by message_received.
-                            // note: the destination address of header needs
-                            // to be pointed to our relocated name; bypassed with flag
-                            let placeholder_name = self.own_name.clone();
+                        Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
                             ignore(self.message_received(
-                                       &ConnectionName::Routing(placeholder_name),
+                                       &ConnectionName::Routing(bootstrap_node_name),
                                        message, true));
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
@@ -354,7 +349,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // this endpoint is already present in the relay lookup_map
                 // nothing to do
             },
-            Some(ConnectionName::OurBootstrap) => {
+            Some(ConnectionName::OurBootstrap(_)) => {
                 // FIXME: for now do nothing
             },
             Some(ConnectionName::UnidentifiedConnection) => {
@@ -897,9 +892,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 Some(name) => Some(ConnectionName::Relay(name)),
                 // check to see if it is our bootstrap_endpoint
                 None => match self.bootstrap {
-                    Some((ref our_bootstrap, _)) => {
-                        if our_bootstrap == endpoint {
-                            Some(ConnectionName::OurBootstrap)
+                    Some((ref bootstrap_ep, ref bootstrap_name)) => {
+                        if bootstrap_ep == endpoint {
+                            Some(ConnectionName::OurBootstrap(bootstrap_name.clone()))
                         } else {
                             None
                         }
@@ -934,9 +929,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 MessageAction::Forward(destinations) => {
                     for destination in destinations {
-                        ignore(self.forward(&signed_message,
-                                            &message,
-                                            DestinationAddress::Direct(destination)));
+                        ignore(self.forward(&signed_message, &message, destination));
                     }
                 },
             },
@@ -984,7 +977,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Delete { name: x, data : y } => self.delete(x, y),
             MethodCall::None => (),
             MethodCall::Forward { destination } =>
-                ignore(self.forward(&signed_message, &message, DestinationAddress::Direct(destination))),
+                ignore(self.forward(&signed_message, &message, destination)),
         }
         Ok(())
     }
@@ -1135,7 +1128,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 info!("RELOCATED {:?} to {:?}", public_id.name(), relocated_name);
                 // Forward to relocated_name group, which will actually store the relocated public id
-                try!(self.forward(&signed_message, &message, DestinationAddress::Direct(relocated_name)));
+                try!(self.forward(&signed_message, &message, relocated_name));
                 Ok(())
             },
             (Authority::NaeManager(_), Authority::NaeManager(_), true) => {
@@ -1221,9 +1214,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 MessageAction::Forward(dest_nodes) => {
                     for destination in dest_nodes {
-                        ignore(self.forward(&orig_message,
-                                            &message,
-                                            DestinationAddress::Direct(destination)));
+                        ignore(self.forward(&orig_message, &message, destination));
                     }
                 }
             },
@@ -1233,13 +1224,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn forward(&self,
-               orig_message: &SignedMessage,
-               routing_message: &RoutingMessage,
-               destination: DestinationAddress) -> RoutingResult
+               orig_message    : &SignedMessage,
+               routing_message : &RoutingMessage,
+               destination     : NameType) -> RoutingResult
     {
         let our_authority = our_authority(&routing_message, &self.routing_table);
         let message = routing_message.create_forward(self.own_name.clone(),
-            our_authority, destination.non_relayed_destination(), orig_message.clone());
+                                                     our_authority,
+                                                     destination,
+                                                     orig_message.clone());
         ignore(self.send_swarm_or_parallel(&message));
         Ok(())
     }
@@ -1260,7 +1253,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             MethodCall::Delete { name: x, data : y } => self.delete(x, y),
             MethodCall::None => (),
             MethodCall::Forward { destination } =>
-                ignore(self.forward(&orig_message, &message, DestinationAddress::Direct(destination))),
+                ignore(self.forward(&orig_message, &message, destination)),
         }
         Ok(())
     }
