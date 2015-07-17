@@ -23,11 +23,8 @@ use messages::{RoutingMessage, MessageType};
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone)]
 pub enum Authority {
-  ClientManager(NameType),  // from a node in our range but not routing table
+  ClientManager(NameType),  // signed by a client and corresponding ClientName is in our range
   NaeManager(NameType),     // target (name()) is in the group we are in
-  // OurCloseGroup(NameType),  // for account transfer where the source = the destination (= the element)
-                  // this reflects a NAE back onto itself, but on a refreshed group
-                  // TODO: find a better name, this name is a bit of a misnomer
   NodeManager(NameType),    // received from a node in our routing table (handle refresh here)
   ManagedNode,    // in our group and routing table
   ManagedClient(crypto::sign::PublicKey),  // in our group
@@ -39,7 +36,7 @@ pub enum Authority {
 /// This returns our calculated authority with regards
 /// to the element passed in from the message and the message header.
 /// Note that the message has first to pass Sentinel as to be verified.
-/// a) if the message is not from a group,
+/// a) if the message is from and signed by a client,
 ///       the originating node is within our close group range
 ///       and the element is not the destination
 ///    -> Client Manager
@@ -99,7 +96,7 @@ pub fn our_authority(message       : &RoutingMessage,
         None    => { return Authority::Unknown; }
     };
 
-    return determine_authority(message, element);
+    return determine_authority(message, routing_table, element);
 }
 
 // determine_authority is split off to allow unit tests to test it
@@ -110,21 +107,19 @@ fn determine_authority(message       : &RoutingMessage,
                        routing_table : &RoutingTable,
                        element       : NameType) -> Authority {
 
-    if message.client_key_as_name().map(|name|routing_table.address_in_our_close_group_range(&name)).unwrap_or(false)
-       && message.non_relayed_destination() != element {
-        return Authority::ClientManager(element); }
-    else if routing_table.address_in_our_close_group_range(&element)
-       && message.non_relayed_destination() == element
-       && match message.from_group() {
-          Some(group_source) => {
-             group_source != message.non_relayed_destination()},
-          None => true } {
+    // if signed by a client in our range and destination is not the element
+    // this explicitly excludes GetData from ever being passed to ClientManager
+    match message.client_key_as_name() {
+        Some(client_name) => {
+            if routing_table.address_in_our_close_group_range(&client_name)
+                && message.non_relayed_destination() != element {
+                return Authority::ClientManager(client_name); }
+        },
+        None => { }
+    };
+    if routing_table.address_in_our_close_group_range(&element)
+       && message.non_relayed_destination() == element {
         return Authority::NaeManager(element); }
-    // FIXME(ben): MessageType::Refresh currently is not considered for Authority 16/07/2015
-    // else if routing_table.address_in_our_close_group_range(&element)
-    //    && message.non_relayed_destination() == element
-    //    && message.from_group().map(|grp| grp == element).unwrap_or(false) {
-    //      return Authority::OurCloseGroup(element); }
     else if message.from_group().is_some()
        && routing_table.address_in_our_close_group_range(&message.non_relayed_destination())
        && message.non_relayed_destination() != routing_table.our_name() {

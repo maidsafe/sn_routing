@@ -216,7 +216,6 @@ impl RoutingMessage {
             SourceAddress::Direct(_) => match self.authority {
                 Authority::ClientManager(n) => Some(n),
                 Authority::NaeManager(n)    => Some(n),
-                Authority::OurCloseGroup(n) => Some(n),
                 Authority::NodeManager(n)   => Some(n),
                 Authority::ManagedNode      => None,
                 Authority::ManagedClient(_) => None,
