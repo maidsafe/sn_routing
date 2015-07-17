@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto::sign::Signature;
 use sodiumoxide::crypto::sign;
 use crust::Endpoint;
@@ -53,48 +52,15 @@ pub struct ConnectResponse {
     pub connect_request_signature: Signature
 }
 
-// Unfortunately the Result type is not (yet?) encodable/decodable
-// so we need to create this wrapper.
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct GetDataResponse {
-    pub result       : Result<Data, ResponseError>,
+    pub data         : Data,
     pub orig_request : SignedMessage,
 }
 
 impl GetDataResponse {
     pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
         self.orig_request.verify_signature(requester_pub_key)
-    }
-}
-
-impl Encodable for GetDataResponse {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_enum("GetDataResponse", |s| {
-            match self.result {
-                // Not sure what the third argument to the `emit_enum_variant`
-                // function is meant to be, currently it is ignored.
-                Ok(ref data) => s.emit_enum_variant("Ok",  0, 1, |s| data.encode(s)),
-                Err(ref err) => s.emit_enum_variant("Err", 1, 1, |s| err.encode(s))
-            }
-        })
-    }
-}
-
-impl Decodable for GetDataResponse {
-    fn decode<D: Decoder>(d: &mut D) -> Result<GetDataResponse, D::Error> {
-        d.read_enum("GetDataResponse", move |d| {
-            d.read_enum_variant(&["Ok", "Err"], move |d, idx| {
-                match idx {
-                    0 => Ok(GetDataResponse { result: Ok(try!(Decodable::decode(d))),
-                                              orig_request: try!(Decodable::decode(d)) }),
-                    1 => Ok(GetDataResponse { result: Err(try!(Decodable::decode(d))),
-                                              orig_request: try!(Decodable::decode(d)) }),
-                    _ => {
-                        Err(d.error("Expected Ok or Err"))
-                    }
-                }
-            })
-        })
     }
 }
 

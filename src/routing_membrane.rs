@@ -211,8 +211,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
                             ignore(self.message_received(&ConnectionName::Routing(name),
-                                                         message,
-                                                         false));
+                                                         message));
                         },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
@@ -227,7 +226,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
                             ignore(self.message_received(
                                        &ConnectionName::Routing(bootstrap_node_name),
-                                       message, true));
+                                       message));
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
                             // only expect WhoAreYou or IAm message
@@ -440,19 +439,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn message_received(&mut self,
                         received_from       : &ConnectionName,
                         message_wrap        : SignedMessage,
-                        received_from_relay : bool
                        ) -> RoutingResult {
         match received_from {
             &ConnectionName::Routing(_) => { },
             _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
         };
 
-        let mut message = try!(message_wrap.get_routing_message());
+        let message = try!(message_wrap.get_routing_message());
 
-        if received_from_relay {
-            // then this message was explicitly for us
-            message.destination = DestinationAddress::Direct(self.own_name.clone());
-        }
         // filter check
         if self.filter.check(&message.get_filter()) {
             // should just return quietly
@@ -463,17 +457,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Caching on GetData and GetDataRequest
         match message.message_type {
-            // add to cache, only for ImmutableData;
-            // for StructuredData caching can result in old versions
-            // being returned.
+            // Add to cache, only for ImmutableData; For StructuredData caching
+            // can result in old versions being returned.
             MessageType::GetDataResponse(ref response) => {
-                match response.result {
-                    Ok(Data::ImmutableData(ref immutable_data)) => {
+                match response.data {
+                    Data::ImmutableData(ref immutable_data) => {
                         let from = message.from_group()
                                           .unwrap_or(message.non_relayed_source());
 
                         ignore(self.mut_interface().handle_cache_put(
-                            message.from_authority(), from,
+                            message.from_authority(),
+                            from,
                             Data::ImmutableData(immutable_data.clone())));
                     },
                     _ => {}
@@ -486,14 +480,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 let action = self.mut_interface().handle_cache_get(
                                 data_request.clone(),
-                                message.from_authority(),
+                                message.non_relayed_destination(),
                                 from);
 
                 match action {
                     Ok(action) => match action {
                         MessageAction::Reply(data) => {
                             let response = GetDataResponse {
-                                result       : Ok(data),
+                                data         : data,
                                 orig_request : message_wrap.clone(),
                             };
 
@@ -1205,8 +1199,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Ok(action) => match action {
                 MessageAction::Reply(data) => {
                     let response = GetDataResponse {
-                        result:       Ok(data),
-                        orig_request: orig_message,
+                        data         : data,
+                        orig_request : orig_message,
                     };
                     ignore(self.send_reply(&message,
                                            our_authority,
@@ -1245,7 +1239,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
         let from = message.source.non_relayed_source();
 
-        match self.mut_interface().handle_get_response(from, response.result) {
+        match self.mut_interface().handle_get_response(from, response.data) {
             MethodCall::Put { destination: x, content: y, } => self.put(x, y),
             MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
             MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
@@ -1406,7 +1400,7 @@ impl Interface for TestInterface {
     }
 
     fn handle_get_response(&mut self, _from_address: NameType,
-                           _response: Result<Data, ResponseError>) -> MethodCall {
+                           _response: Data) -> MethodCall {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1433,8 +1427,10 @@ impl Interface for TestInterface {
         unimplemented!();
     }
 
-    fn handle_cache_get(&mut self, _data_request: DataRequest, _from_authority: Authority,
-                        _from_address: NameType) -> Result<MessageAction, InterfaceError> {
+    fn handle_cache_get(&mut self, _data_request   : DataRequest,
+                                   _from_authority : NameType,
+                                   _from_address   : NameType)
+        -> Result<MessageAction, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 
@@ -1476,7 +1472,7 @@ fn call_operation(message_type: MessageType, stats: Arc<Mutex<Stats>>, source: S
     let signed_message = SignedMessage::new(&message, membrane.id.signing_private_key());
     let connection_name = ConnectionName::Routing(match source.actual_source()
         { Address::Node(name) => name, _ => Random::generate_random() });
-    let _ = membrane.message_received(&connection_name, signed_message.unwrap(), false);
+    let _ = membrane.message_received(&connection_name, signed_message.unwrap());
     let stats = stats.clone();
     let stats_value = stats.lock().unwrap();
     stats_value.clone()
@@ -1623,8 +1619,8 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         };
         let signed_message = SignedMessage::new(&message, &keys.1);
         let get_data_response = MessageType::GetDataResponse(
-            GetDataResponse { result: Ok(Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>()))),
+            GetDataResponse { data: Data::ImmutableData(
+                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())),
                 orig_request: signed_message.unwrap() }
             );
         assert_eq!(call_operation(get_data_response,  Arc::new(Mutex::new(Stats::new())),
