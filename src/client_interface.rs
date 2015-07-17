@@ -18,13 +18,14 @@
 use types::MessageId;
 use error::ResponseError;
 use data::Data;
+use NameType;
 
 #[deny(missing_docs)]
 /// The Interface trait introduces the methods expected to be implemented by the user
 /// of RoutingClient
 pub trait Interface : Sync + Send {
     /// consumes data in response or handles the error
-    fn handle_get_response(&mut self, message_id : MessageId, response   : Data);
+    fn handle_get_response(&mut self, data_location : NameType, response : Data);
 
     /// handles the result of a put request
     fn handle_put_response(&mut self, message_id: MessageId, response: ResponseError);

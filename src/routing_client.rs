@@ -200,8 +200,7 @@ impl<F> RoutingClient<F> where F: Interface {
                                                                  connect_response);
                                 },
                                 MessageType::GetDataResponse(result) => {
-                                    self.handle_get_data_response(routing_msg.message_id,
-                                                                  result);
+                                    self.handle_get_data_response(result);
                                 },
                                 MessageType::PutDataResponse(put_response) => {
                                     self.handle_put_data_response(routing_msg.message_id,
@@ -301,14 +300,20 @@ impl<F> RoutingClient<F> where F: Interface {
         self.next_message_id
     }
 
-    fn handle_get_data_response(&self, message_id: MessageId,
-                                       response: messages::GetDataResponse) {
+    fn handle_get_data_response(&self, response: messages::GetDataResponse) {
         if !response.verify_request_came_from(&self.public_sign_key()) {
             return;
         }
 
+        let orig_request = match response.orig_request.get_routing_message() {
+            Ok(l) => l,
+            Err(_) => return
+        };
+
+        let location = orig_request.non_relayed_destination();
+
         let mut interface = self.interface.lock().unwrap();
-        interface.handle_get_response(message_id, response.data);
+        interface.handle_get_response(location, response.data);
     }
 
     fn handle_put_data_response(&self, message_id: MessageId, signed_error: ErrorReturn) {
