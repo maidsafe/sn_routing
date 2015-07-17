@@ -170,7 +170,7 @@ mod test {
     let public_keys = (sign_keys.0, asym_keys.0);
     let secret_keys = (sign_keys.1, asym_keys.1);
 
-    let id = Id::with_keys(public_keys, secret_keys.clone());
+    let id = Id::with_keys(sign_keys, asym_keys);
 
     let sign_key = &(public_keys.0).0;
     let asym_key = &(public_keys.1).0;
@@ -216,12 +216,12 @@ mod test {
 
   #[test]
   fn test_destination_address() {
-    test_object(DestinationAddress { dest: Random::generate_random(), relay_to: None });
+    test_object(DestinationAddress::Direct(Random::generate_random()));
   }
 
   #[test]
   fn test_source_address() {
-      test_object(SourceAddress { from_node : Random::generate_random(), from_group : None, reply_to: None, relayed_for : None });
+      test_object(SourceAddress::Direct(Random::generate_random()));
   }
 
 #[test]
@@ -319,20 +319,19 @@ mod test {
         assert!(!before.is_relocated());
         let relocated_name: NameType = Random::generate_random();
         let mut relocated = before.clone();
-        assert!(!relocated.assign_relocated_name(original_name.clone()));
+        relocated.assign_relocated_name(original_name.clone());
 
-        assert!(relocated.assign_relocated_name(relocated_name.clone()));
+        relocated.assign_relocated_name(relocated_name.clone());
 
-        assert!(!relocated.assign_relocated_name(relocated_name.clone()));
-        assert!(!relocated.assign_relocated_name(Random::generate_random()));
-        assert!(!relocated.assign_relocated_name(original_name.clone()));
+        relocated.assign_relocated_name(relocated_name.clone());
+        relocated.assign_relocated_name(Random::generate_random());
+        relocated.assign_relocated_name(original_name.clone());
 
         assert!(relocated.is_relocated());
         assert_eq!(relocated.name(), relocated_name);
         assert!(before.name()!= relocated.name());
-        assert_eq!(before.public_key, relocated.public_key);
+        assert_eq!(before.public_encrypt_key, relocated.public_encrypt_key);
         assert_eq!(before.public_sign_key, relocated.public_sign_key);
-        assert_eq!(before.validation_token, relocated.validation_token);
     }
 
 #[test]
@@ -342,7 +341,7 @@ mod test {
         assert!(!before.is_relocated());
         let relocated_name: NameType = Random::generate_random();
         let mut relocated = before.clone();
-        assert!(!relocated.assign_relocated_name(original_name.clone()));
+        relocated.assign_relocated_name(original_name.clone());
 
         assert!(relocated.assign_relocated_name(relocated_name.clone()));
 
@@ -354,12 +353,10 @@ mod test {
         assert!(relocated.is_relocated());
         assert_eq!(relocated.get_name(), relocated_name);
         assert!(before.get_name()!= relocated.get_name());
-        assert_eq!(before.get_public_key(), relocated.get_public_key());
-        assert_eq!(before.get_public_sign_key(), relocated.get_public_sign_key());
-        assert_eq!(before.get_crypto_public_key().0.to_vec(), relocated.get_crypto_public_key().0.to_vec());
-        assert_eq!(before.get_crypto_secret_key().0.to_vec(), relocated.get_crypto_secret_key().0.to_vec());
-        assert_eq!(before.get_crypto_public_sign_key().0.to_vec(), relocated.get_crypto_public_sign_key().0.to_vec());
-        assert_eq!(before.get_crypto_secret_sign_key().0.to_vec(), relocated.get_crypto_secret_sign_key().0.to_vec());
-        assert_eq!(before.get_validation_token(), relocated.get_validation_token());
+        assert_eq!(before.signing_public_key(), relocated.signing_public_key());
+        assert_eq!(before.encrypting_public_key().0.to_vec(), relocated.encrypting_public_key().0.to_vec());
+        assert_eq!(before.signing_private_key().0.to_vec(), relocated.signing_private_key().0.to_vec());
+        assert_eq!(before.encrypting_public_key().0.to_vec(), relocated.encrypting_public_key().0.to_vec());
+        assert_eq!(before.signing_private_key().0.to_vec(), relocated.signing_private_key().0.to_vec());
     }
 }

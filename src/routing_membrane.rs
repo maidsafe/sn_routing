@@ -1579,7 +1579,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let signed_message = SignedMessage{
             encoded_body: encoded_data, signature: crypto::sign::sign_detached(&encoded_data, &keys.1) };
         let put_data_response = MessageType::PutDataResponse(
-            ErrorReturn::new(ResponseError::NoData), signed_message);
+            ErrorReturn::new(ResponseError::NoData, signed_message));
         assert_eq!(call_operation(put_data_response,  Arc::new(Mutex::new(Stats::new())),
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
@@ -1588,7 +1588,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
 
 #[test]
     fn call_handle_get_data() {
-        let get_data = MessageType::GetDataRequest(DataRequest::ImmutableData(ImmutableDataType::Normal));
+        let get_data = MessageType::GetData(DataRequest::ImmutableData(ImmutableDataType::Normal));
         assert_eq!(call_operation(get_data,  Arc::new(Mutex::new(Stats::new())),
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
@@ -1599,13 +1599,13 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_get_data_response() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
-        let encoded_data = array.iter().collect::<Vec<_>>();
+        let encoded_data = array.iter().map(|&x|x).collect::<Vec<_>>();
         let keys = crypto::sign::gen_keypair();
         let signed_message = SignedMessage{
-            encoded_body: encoded_data, signature: crypto::sign::sign_detached(encoded_data, keys.1) };
+            encoded_body: encoded_data, signature: crypto::sign::sign_detached(&encoded_data, &keys.1) };
         let get_data_response = MessageType::GetDataResponse(
             GetDataResponse { result: Ok(Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().collect::<Vec<_>>()))),
+                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>()))),
                 orig_request: signed_message }
             );
         assert_eq!(call_operation(get_data_response,  Arc::new(Mutex::new(Stats::new())),
@@ -1619,9 +1619,9 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_post() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
-        let post_data = MessageType::PostData(
+        let post_data = MessageType::Post(
             Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().collect::<Vec<_>>())));
+                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
         assert_eq!(call_operation(post_data, Arc::new(Mutex::new(Stats::new())),
                    SourceAddress::Direct(Random::generate_random()),
                    DestinationAddress::Direct(Random::generate_random()),
@@ -1632,7 +1632,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_refresh() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
-        let refresh = MessageType::Refresh(random::<u64>(), array.iter().collect::<Vec<_>>());
+        let refresh = MessageType::Refresh(random::<u64>(), array.iter().map(|&x|x).collect::<Vec<_>>());
         assert_eq!(call_operation(refresh, Arc::new(Mutex::new(Stats::new())),
                    SourceAddress::Direct(Random::generate_random()),
                    DestinationAddress::Direct(Random::generate_random()),
@@ -1660,13 +1660,13 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
                 message_id  : random::<u32>(),
                 authority   : Authority::ManagedNode,
             };
-            let signed_message = SignedMessage::new(message, routing_node.id.signing_private_key());
-            let result = routing_node.handle_put_public_id(signed_message, message, public_id);
-            if closer_to_target(&put_public_id.public_id.name(),
+            let signed_message = SignedMessage::new(&message, routing_node.id.signing_private_key());
+            let result = routing_node.handle_put_public_id(signed_message.unwrap(), message, public_id);
+            if closer_to_target(&public_id.name(),
                                 &furthest_closest_node,
                                 &our_name) {
                 assert!(result.is_ok());
-                stored_public_ids.push(put_public_id.public_id);
+                stored_public_ids.push(public_id);
                 count_inside += 1;
             } else {
                 assert!(result.is_err());
@@ -1710,7 +1710,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
             let relocated_name = utils::calculate_relocated_name(close_nodes_to_original_name.clone(),
                                     &original_public_id.name()).unwrap();
             let mut relocated_public_id = original_public_id.clone();
-            assert!(relocated_public_id.assign_relocated_name(relocated_name.clone()));
+            relocated_public_id.assign_relocated_name(relocated_name.clone());
             let put_public_id = MessageType::PutPublicId(relocated_public_id);
             let message = RoutingMessage {
                 destination : DestinationAddress::Direct(Random::generate_random()),
@@ -1720,13 +1720,13 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
                 message_id  : random::<u32>(),
                 authority   : Authority::ManagedNode,
             };
-            let signed_message = SignedMessage::new(message, routing_node.id.signing_private_key());
-            let result = routing_node.handle_put_public_id(signed_message, message, relocated_public_id);
-            if closer_to_target(&put_public_id.public_id.name(),
+            let signed_message = SignedMessage::new(&message, routing_node.id.signing_private_key());
+            let result = routing_node.handle_put_public_id(signed_message.unwrap(), message, relocated_public_id);
+            if closer_to_target(&relocated_public_id.name(),
                                 &furthest_closest_node,
                                 &our_name) {
                 assert!(result.is_ok());
-                stored_public_ids.push(put_public_id.public_id);
+                stored_public_ids.push(relocated_public_id);
                 count_inside += 1;
             } else {
                 assert!(result.is_err());

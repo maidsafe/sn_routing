@@ -21,7 +21,7 @@ mod test {
     use messages;
     use crust::Endpoint;
     use sodiumoxide::crypto;
-    use rand::distributions::Range;
+    use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
     use data::*;
     use types;

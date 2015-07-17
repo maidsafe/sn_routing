@@ -41,8 +41,7 @@ mod test {
 
     impl Random for SourceAddress {
         fn generate_random() -> SourceAddress {
-            SourceAddress {
-                from_node: Random::generate_random(), from_group: None, reply_to: None, relayed_for: None }
+            SourceAddress::Direct(Random::generate_random())
         }
     }
 
