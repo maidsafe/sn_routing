@@ -931,7 +931,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                         MethodCall::None => (),
                         MethodCall::Forward { destination } =>
-                            ignore(self.forward(&signed_message, &message, DestinationAddress::Direct(destination))),
+                            ignore(self.forward(&signed_message, &message, destination)),
                     }
                 }
             },
@@ -977,7 +977,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                 MethodCall::None => (),
                 MethodCall::Forward { destination } =>
-                    ignore(self.forward(&signed_message, &message, DestinationAddress::Direct(destination))),
+                    ignore(self.forward(&signed_message, &message, destination)),
             }
         }
         Ok(())
@@ -1204,16 +1204,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Ok(method_calls) => {
                 for method_call in method_calls {
                     match method_call {
-                        MethodCall::Forward { destination } => {
-                            ignore(self.forward(
-                                &orig_message, &message, DestinationAddress::Direct(destination)));
-                        },
                         MethodCall::Put { destination: x, content: y, } => self.put(x, y),
                         MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
                         MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                         MethodCall::None => (),
+                        MethodCall::Forward { destination } =>
+                            ignore(self.forward(&orig_message, &message, destination)),
                     }
                 }
             },
@@ -1253,7 +1251,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                 MethodCall::None => (),
                 MethodCall::Forward { destination } =>
-                    ignore(self.forward(&orig_message, &message, DestinationAddress::Direct(destination))),
+                    ignore(self.forward(&orig_message, &message, destination)),
             }
         }
         Ok(())
