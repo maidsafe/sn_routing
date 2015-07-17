@@ -64,7 +64,7 @@ use routing::node_interface::{CreatePersonas, Interface, MethodCall};
 use routing::routing_client::RoutingClient;
 use routing::routing_node::RoutingNode;
 use routing::sendable::Sendable;
-use routing::types{SourceAddress, DestinationAddress};
+use routing::types;
 use routing::id::Id;
 use routing::authority::Authority;
 use routing::NameType;
@@ -275,7 +275,7 @@ impl TestNode {
 impl Interface for TestNode {
     fn handle_get(&mut self,
                   _data_request: DataRequest, our_authority: Authority,
-                  _from_authority: Authority, from_address: SourceAddress)
+                  _from_authority: Authority, from_address: types::SourceAddress)
                    -> Result<MessageAction, InterfaceError> {
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
@@ -293,8 +293,8 @@ impl Interface for TestNode {
     }
 
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
-                from_address: NameType, _dest_address: types::DestinationAddress,
-                data_in: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+                from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
+                data_in: Data) -> Result<MessageAction, InterfaceError> {
         match our_authority {
             Authority::ClientManager(node_name) => {
                 let mut d = cbor::Decoder::from_bytes(data_in);
@@ -335,7 +335,7 @@ impl Interface for TestNode {
     }
 
     fn handle_get_response(&mut self, from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
+                           response: Result<Data, ResponseError>) -> MethodCall {
         if response.is_ok() {
             let mut d = cbor::Decoder::from_bytes(response.unwrap());
             let response_data: TestData = d.decode().next().unwrap().unwrap();
@@ -344,16 +344,13 @@ impl Interface for TestNode {
         } else {
             println!("testing node received error get_response from {}", from_address);
         }
-        routing::node_interface::MethodCall::None
+        MethodCall::None
     }
 
-    fn handle_put_response(&mut self, _from_authority: Authority, from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
-        if response.is_ok() {
-            println!("received successful put_response - not acting on it in interface");
-        } else {
-            println!("testing node received error put_response from {}", from_address);
-        }
+    fn handle_put_response(&mut self, _from_authority: Authority,
+                           from_address: types::SourceAddress,
+                           response: ResponseError) -> MethodCall {
+        println!("testing node received error put_response from {}", from_address);
         MethodCall::None
     }
 
@@ -369,29 +366,17 @@ impl Interface for TestNode {
         vec![MethodCall::None]
     }
 
-    fn handle_cache_get(&mut self, _type_id: u64, name : NameType, _from_authority: Authority,
+    fn handle_cache_get(&mut self, _data_request : DataRequest, _from_authority: Authority,
                         _from_address: NameType) -> Result<MessageAction, InterfaceError> {
-        let stats = self.stats.clone();
-        let stats_value = stats.lock().unwrap();
-        for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
-            println!("testing node find data {} in cache", name);
-            return Ok(MessageAction::Reply(data));
-        }
+        // FIXME(ben): 17/7/2015 implement a proper caching mechanism;
+        // separate from the key-value store
         Err(InterfaceError::Abort)
     }
 
     fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
-                        data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
-        let stats = self.stats.clone();
-        let mut stats_value = stats.lock().unwrap();
-        let mut d = cbor::Decoder::from_bytes(data);
-        let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
-        for _ in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
-            println!("testing node already have data {:?} in cache", in_coming_data);
-            return Err(InterfaceError::Abort);
-        }
-        println!("testing node inserted data {:?} into cache", in_coming_data);
-        stats_value.stats.push((0, in_coming_data));
+                        _data: Data) -> Result<MessageAction, InterfaceError> {
+        // FIXME(ben): 17/7/2015 implement a proper caching mechanism;
+        // separate from the key-value store
         Err(InterfaceError::Abort)
     }
 }
