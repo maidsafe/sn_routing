@@ -64,7 +64,7 @@ use routing::node_interface::{CreatePersonas, Interface, MethodCall};
 use routing::routing_client::RoutingClient;
 use routing::routing_node::RoutingNode;
 use routing::sendable::Sendable;
-use routing::types;
+use routing::types{SourceAddress, DestinationAddress};
 use routing::id::Id;
 use routing::authority::Authority;
 use routing::NameType;
@@ -273,16 +273,22 @@ impl TestNode {
 }
 
 impl Interface for TestNode {
-    fn handle_get(&mut self, location: NameType,
-                  _data_request: DataRequest, _our_authority: Authority,
-                  _from_authority: Authority, from_address: NameType)
+    fn handle_get(&mut self,
+                  _data_request: DataRequest, our_authority: Authority,
+                  _from_authority: Authority, from_address: SourceAddress)
                    -> Result<MessageAction, InterfaceError> {
-        println!("testing node handle get request from {} of chunk {}", from_address, location);
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
-        for data in stats_value.stats.iter().filter(|data| data.1.name() == name) {
-            return Ok(MessageAction::Reply(data));
-        }
+        match our_authority {
+            Authority::NaeManager(data_name) => {
+              println!("testing node handle get request from {} of chunk {}",
+                  from_address, data_name);
+              for data in stats_value.stats.iter().filter(|data| data.1.name() == data_name) {
+                  return Ok(MessageAction::Reply(data));
+              }
+            },
+            _ => {}
+        };
         Err(InterfaceError::Response(ResponseError::NoData))
     }
 
