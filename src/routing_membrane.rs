@@ -63,7 +63,7 @@ type RoutingResult = Result<(), RoutingError>;
 enum ConnectionName {
     Relay(IdType),
     Routing(NameType),
-    OurBootstrap,
+    OurBootstrap(NameType),
     UnidentifiedConnection,
     // ClaimedConnection(PublicId),
 }
@@ -224,14 +224,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             // Forward
                             ignore(self.send_swarm_or_parallel_or_relay(&message));
                         },
-                        Some(ConnectionName::OurBootstrap) => {
-                            // FIXME: This is a short-cut and should be improved upon.
-                            // note: the name is not actively used by message_received.
-                            // note: the destination address of header needs
-                            // to be pointed to our relocated name; bypassed with flag
-                            let placeholder_name = self.own_name.clone();
+                        Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
                             ignore(self.message_received(
-                                       &ConnectionName::Routing(placeholder_name),
+                                       &ConnectionName::Routing(bootstrap_node_name),
                                        message, true));
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
@@ -354,7 +349,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // this endpoint is already present in the relay lookup_map
                 // nothing to do
             },
-            Some(ConnectionName::OurBootstrap) => {
+            Some(ConnectionName::OurBootstrap(_)) => {
                 // FIXME: for now do nothing
             },
             Some(ConnectionName::UnidentifiedConnection) => {
@@ -897,9 +892,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 Some(name) => Some(ConnectionName::Relay(name)),
                 // check to see if it is our bootstrap_endpoint
                 None => match self.bootstrap {
-                    Some((ref our_bootstrap, _)) => {
-                        if our_bootstrap == endpoint {
-                            Some(ConnectionName::OurBootstrap)
+                    Some((ref bootstrap_ep, ref bootstrap_name)) => {
+                        if bootstrap_ep == endpoint {
+                            Some(ConnectionName::OurBootstrap(bootstrap_name.clone()))
                         } else {
                             None
                         }
