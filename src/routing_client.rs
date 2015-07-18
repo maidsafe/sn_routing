@@ -45,9 +45,6 @@ type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 type PortAndProtocol = crust::Port;
 
-pub enum CryptoError {
-    Unknown
-}
 
 pub struct RoutingClient<F: Interface> {
     interface: Arc<Mutex<F>>,
