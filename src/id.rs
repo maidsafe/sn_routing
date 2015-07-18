@@ -68,10 +68,10 @@ impl Id {
       self.name
     }
 
-    pub fn get_name(&self) -> NameType {
+    pub fn set_name(&mut self, name: NameType) {
         // This function should not exist, it is here only temporarily
         // to fix compilation.
-        self.name
+        self.name = name;
     }
 
     pub fn is_self_relocated(&self) -> bool {

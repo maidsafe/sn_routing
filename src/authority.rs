@@ -151,7 +151,7 @@ mod test {
 #[ignore]
 fn our_authority_full_routing_table() {
     let id = Id::new();
-    let mut routing_table = RoutingTable::new(&id.get_name());
+    let mut routing_table = RoutingTable::new(&id.name());
     let mut count : usize = 0;
     loop {
         routing_table.add_node(NodeInfo::new(
@@ -166,7 +166,7 @@ fn our_authority_full_routing_table() {
         //     panic!("Routing table does not fill up."); }
     }
     let a_message_id : MessageId = random::<u32>();
-    let our_name = id.get_name();
+    let our_name = id.name();
     let (client_public_key, _) = crypto::sign::gen_keypair();
     let our_close_group : Vec<NodeInfo> = routing_table.our_close_group();
     let furthest_node_close_group : NodeInfo

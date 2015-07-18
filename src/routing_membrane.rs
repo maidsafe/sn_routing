@@ -1062,7 +1062,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Verify a connect request was initiated by us.
         let connect_request = try!(decode::<ConnectRequest>(&connect_response.serialised_connect_request));
-        if connect_request.requester_id != self.id.get_name() ||
+        if connect_request.requester_id != self.id.name() ||
            !verify_detached(&connect_response.connect_request_signature,
                             &connect_response.serialised_connect_request[..],
                             &self.id.signing_public_key()) {

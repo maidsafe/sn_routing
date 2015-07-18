@@ -1140,7 +1140,7 @@ mod test {
     fn our_close_group_and_in_range() {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
-        let our_id_name = Id::new().get_name();
+        let our_id_name = Id::new().name();
         let mut routing_table: RoutingTable = RoutingTable::new(&our_id_name);
 
         let mut count: usize = 0;
