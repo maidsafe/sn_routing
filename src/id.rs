@@ -31,10 +31,13 @@ pub struct Id {
 
 impl Id {
     pub fn new() -> Id {
+
+        let sign_keys =  sodiumoxide::crypto::sign::gen_keypair();
+        let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0); 
         Id {
-          sign_keys : sodiumoxide::crypto::sign::gen_keypair(),
+          sign_keys : sign_keys,
           encrypt_keys : sodiumoxide::crypto::box_::gen_keypair(),
-          name : NameType::new([0u8; 64]),
+          name : name,
         }
     }
 
@@ -53,10 +56,11 @@ impl Id {
 
     pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
                      encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey))-> Id {
+        let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0); 
         Id {
           sign_keys : sign_keys,
           encrypt_keys : encrypt_keys,
-          name : NameType::new([0u8; 64]),     
+          name : name,     
         }
     }
 
@@ -64,16 +68,16 @@ impl Id {
       self.name
     }
 
-    pub fn get_name(&self) -> NameType {
+    pub fn set_name(&mut self, name: NameType) {
         // This function should not exist, it is here only temporarily
         // to fix compilation.
-        self.name
+        self.name = name;
     }
 
     pub fn is_self_relocated(&self) -> bool {
         // This function should not exist, it is here only temporarily
         // to fix compilation.
-        self.name != NameType::new([1u8; 64])     
+        self.name == NameType::new(crypto::hash::sha512::hash(&self.sign_keys.0[..]).0)     
     }
 
     // name field is initially same as original_name, this should be later overwritten by
@@ -88,7 +92,7 @@ impl Id {
 
     // checks if the name is updated to a relocated name
     pub fn is_relocated(&self) -> bool {
-        self.name != NameType::new([0u8; 64])     
+        self.name != NameType::new(crypto::hash::sha512::hash(&self.sign_keys.0[..]).0)
     }
 }
 

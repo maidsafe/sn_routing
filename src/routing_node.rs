@@ -60,7 +60,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     pub fn new(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let id = Id::new();
-        let own_name = id.get_name();
+        let own_name = id.name();
         RoutingNode { genesis: Box::new(genesis),
                       phantom_data: PhantomData,
                       id : id,
@@ -149,7 +149,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let relocated_name : Option<NameType>;
 
         // FIXME: connect request should not require the knowledge of the name you're connecting to
-        let connect_msg = match self.construct_connect_request_msg(&unrelocated_id.get_name(),
+        let connect_msg = match self.construct_connect_request_msg(&unrelocated_id.name(),
                                    listeners.0.clone()) {
             Ok(msg)  => msg,
             Err(err) => return Err(RoutingError::Cbor(err)),
@@ -201,7 +201,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                     //    return Err(RoutingError::FailedToBootstrap);
                                     //}
                                     println!("Received PutPublicId relocated name {:?} from {:?}",
-                                        relocated_name, self.id.get_name());
+                                        relocated_name, self.id.name());
                                     break;
                                 },
                                 _ => {
@@ -260,7 +260,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
         let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(destination.clone()),
-            source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
+            source       : SourceAddress::RelayedForNode(self.id.name(), self.id.name()),
             orig_message : None,
             message_type : MessageType::ConnectRequest(connect_request),
             message_id   : message_id.clone(),
@@ -277,7 +277,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
         let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
-            source       : SourceAddress::RelayedForNode(self.id.get_name(), self.id.get_name()),
+            source       : SourceAddress::RelayedForNode(self.id.name(), self.id.name()),
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),

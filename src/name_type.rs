@@ -237,7 +237,7 @@ mod test {
         // test for Ids
         for _ in 0..5 {
             let my_id = Id::new();
-            let my_name = my_id.get_name();
+            let my_name = my_id.name();
             let debug_id = my_name.get_debug_id();
             let full_id = my_name.get_full_id();
             assert_eq!(debug_id.len(), 14);

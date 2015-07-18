@@ -56,7 +56,7 @@ impl RelayMap {
             relay_map: BTreeMap::new(),
             lookup_map: HashMap::new(),
             unknown_connections: HashMap::new(),
-            our_name: our_id.get_name(),
+            our_name: our_id.name(),
         }
     }
 
