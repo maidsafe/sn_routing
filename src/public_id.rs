@@ -40,12 +40,8 @@ impl PublicId {
       }
     }
 
-    //pub fn name(&self) -> Option<NameType> {
-    //  self.name
-    //}
-
     pub fn name(&self) -> NameType {
-        unimplemented!()
+        self.name
     }
 
     pub fn client_name(&self) -> NameType {
