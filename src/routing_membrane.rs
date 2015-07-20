@@ -955,7 +955,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                            message: RoutingMessage,
                                            response: ErrorReturn) -> RoutingResult {
         info!("Handle PUT data response.");
-        let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source.clone();
 
@@ -970,8 +969,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&signed_message, &message, destination)),
                 MethodCall::Reply { data: _data } =>
-                    ignore(self.send_reply(&message, our_authority.clone(),
-                        MessageType::PutDataResponse(ErrorReturn { error: response.error.clone(), orig_request: signed_message.clone() }))),
+                    info!("IGNORED: on handle_put_data_response MethodCall:Reply is not a Valid action")
             }
         }
         Ok(())
@@ -1238,7 +1236,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         if !response.verify_request_came_from(&self.id.signing_public_key()) {
             return Err(RoutingError::FailedSignature);
         }
-        let our_authority  = our_authority(&message, &self.routing_table);
         let from = message.source.non_relayed_source();
 
         for method_call in self.mut_interface().handle_get_response(from, response.data.clone()) {
@@ -1252,7 +1249,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&orig_message, &message, destination)),
                 MethodCall::Reply { data: _data } =>
-                    ignore(self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(response.clone()))),
+                    info!("IGNORED: on handle_get_data_response MethodCall:Reply is not a Valid action")
             }
         }
         Ok(())
