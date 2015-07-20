@@ -21,12 +21,6 @@ use types::{SourceAddress, DestinationAddress};
 use authority::Authority;
 use error::{InterfaceError, ResponseError};
 
-/// Reply or send the existing message on to next persona / Authority type
-pub enum MessageAction {
-  Reply(Data),
-  Forward(Vec<NameType>),
-}
-
 /// MethodCall denotes a specific request to be carried out by routing.
 pub enum MethodCall {
     /// request for no action
@@ -43,6 +37,8 @@ pub enum MethodCall {
     Refresh { type_tag: u64, from_group: NameType, payload: Vec<u8> },
     /// request to forward on the request to destination for further handling
     Forward { destination: NameType },
+    /// reply
+    Reply { data: Data }
 }
 
 #[deny(missing_docs)]
@@ -112,14 +108,14 @@ pub trait Interface : Sync + Send {
     fn handle_cache_get(&mut self,
                         data_request: DataRequest,
                         from_authority: Authority,
-                        from_address: NameType) -> Result<MessageAction, InterfaceError>;
+                        from_address: NameType) -> Result<MethodCall, InterfaceError>;
 
     /// attempts to store data in cache. The type of data and/or from_authority indicates
     /// if store in cache is required.
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
                         from_address: NameType,
-                        data: Data) -> Result<MessageAction, InterfaceError>;
+                        data: Data) -> Result<MethodCall, InterfaceError>;
 }
 
 pub trait CreatePersonas<F : Interface> : Sync + Send  {
