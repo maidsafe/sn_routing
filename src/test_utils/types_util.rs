@@ -22,7 +22,7 @@ mod test {
     use id::Id;
     use name_type::NameType;
     use rand::random;
-    use super::super::random_trait::Random;
+    use test_utils::random_trait::Random;
 
     impl Random for NameAndTypeId {
         fn generate_random() -> NameAndTypeId {

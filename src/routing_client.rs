@@ -27,7 +27,7 @@ use crust;
 use messages;
 use name_type::NameType;
 use sendable::Sendable;
-use error::{RoutingError, ClientError};
+use error::RoutingError;
 use messages::{RoutingMessage, MessageType,
                ConnectResponse, ConnectRequest, ErrorReturn, };
 use types::{MessageId, DestinationAddress, SourceAddress};
@@ -78,14 +78,14 @@ impl<F> RoutingClient<F> where F: Interface {
         }
     }
 
-    fn bootstrap_name(&self) -> Result<NameType, ClientError> {
+    fn bootstrap_name(&self) -> Result<NameType, RoutingError> {
         match self.bootstrap_address.0 {
             Some(name) => Ok(name),
-            None       => Err(ClientError::NotBootstrapped),
+            None       => Err(RoutingError::NotBootstrapped),
         }
     }
 
-    fn source_address(&self) -> Result<SourceAddress, ClientError> {
+    fn source_address(&self) -> Result<SourceAddress, RoutingError> {
         Ok(SourceAddress::RelayedForClient(try!(self.bootstrap_name()),
                                            self.public_id.signing_public_key()))
     }
@@ -93,81 +93,74 @@ impl<F> RoutingClient<F> where F: Interface {
     fn public_sign_key(&self) -> sign::PublicKey { self.id.signing_public_key() }
 
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, ClientError> {
-        let message_id = self.get_next_message_id();
-
+    pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<(), RoutingError> {
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : try!(self.source_address()),
             orig_message: None,
             message_type: MessageType::GetData(data),
-            message_id  : message_id.clone(),
+            message_id  : self.get_next_message_id(),
             authority   : Authority::Client(self.id.signing_public_key()),
             };
 
         match self.send_to_bootstrap_node(&message){
-            Ok(_) => Ok(message_id),
+            Ok(_) => Ok(()),
             //FIXME(ben) should not expose these errors to user 16/07/2015
-            Err(e) => Err(ClientError::Cbor(e))
+            Err(e) => Err(RoutingError::Cbor(e))
         }
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, location: NameType, data : Data) -> Result<MessageId, ClientError> {
-        let message_id = self.get_next_message_id();
-
+    pub fn put(&mut self, location: NameType, data : Data) -> Result<(), RoutingError> {
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : try!(self.source_address()),
             orig_message: None,
             message_type: MessageType::PutData(data),
-            message_id  : message_id.clone(),
+            message_id  : self.get_next_message_id(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
         match self.send_to_bootstrap_node(&message){
-            Ok(_) => Ok(message_id),
+            Ok(_) => Ok(()),
             //FIXME(ben) should not expose these errors to user 16/07/2015
-            Err(e) => Err(ClientError::Cbor(e))
+            Err(e) => Err(RoutingError::Cbor(e))
         }
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
-    pub fn post(&mut self, location: NameType, data : Data) -> Result<MessageId, ClientError> {
-        let message_id = self.get_next_message_id();
-
+    pub fn post(&mut self, location: NameType, data : Data) -> Result<(), RoutingError> {
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : try!(self.source_address()),
             orig_message: None,
             message_type: MessageType::Post(data),
-            message_id  : message_id.clone(),
+            message_id  : self.get_next_message_id(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
         match self.send_to_bootstrap_node(&message){
-            Ok(_) => Ok(message_id),
+            Ok(_) => Ok(()),
             //FIXME(ben) should not expose these errors to user 16/07/2015
-            Err(e) => Err(ClientError::Cbor(e))
+            Err(e) => Err(RoutingError::Cbor(e))
         }
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
-    pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, ClientError> {
-        let message_id = self.get_next_message_id();
+    pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<(), RoutingError> {
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : try!(self.source_address()),
             orig_message: None,
             message_type: MessageType::DeleteData(data),
-            message_id  : message_id.clone(),
+            message_id  : self.get_next_message_id(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
         match self.send_to_bootstrap_node(&message){
-            Ok(_) => Ok(message_id),
+            Ok(_) => Ok(()),
             //FIXME(ben) should not expose these errors to user 16/07/2015
-            Err(e) => Err(ClientError::Cbor(e))
+            Err(e) => Err(RoutingError::Cbor(e))
         }
     }
 
