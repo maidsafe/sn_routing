@@ -1710,7 +1710,6 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     }
 
 #[test]
-#[ignore]
     fn cache_relocated_public_id() {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
@@ -1730,15 +1729,18 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
                                     &original_public_id.name()).unwrap();
             let mut relocated_public_id = original_public_id.clone();
             relocated_public_id.assign_relocated_name(relocated_name.clone());
+
             let put_public_id = MessageType::PutPublicId(relocated_public_id.clone());
+
             let message = RoutingMessage {
-                destination : DestinationAddress::Direct(Random::generate_random()),
+                destination : DestinationAddress::Direct(relocated_public_id.name()),
                 source      : SourceAddress::Direct(Random::generate_random()),
                 orig_message: None,
                 message_type: put_public_id,
                 message_id  : random::<u32>(),
-                authority   : Authority::ManagedNode,
+                authority   : Authority::NaeManager(original_public_id.name()),
             };
+
             let signed_message = SignedMessage::new(&message, routing_node.id.signing_private_key());
             let result = routing_node.handle_put_public_id(signed_message.unwrap(), message, relocated_public_id.clone());
             if closer_to_target(&relocated_public_id.name(),
