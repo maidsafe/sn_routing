@@ -292,7 +292,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // if the PublicId is not relocated,
         // only accept the connection into the RelayMap.
         // This will enable this connection to bootstrap or act as a client.
-        let mut routing_msg = routing_message.create_reply(&self.id.name(), &our_authority);
+        let mut routing_msg = try!(routing_message.create_reply(&self.id.name(), &our_authority));
         routing_msg.message_type = MessageType::ConnectResponse(ConnectResponse {
                     requester_local_endpoints: connect_request.local_endpoints.clone(),
                     requester_external_endpoints: connect_request.external_endpoints.clone(),
@@ -943,7 +943,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                   routing_message : &RoutingMessage,
                   our_authority   : Authority,
                   msg             : MessageType) -> RoutingResult {
-        let mut message = routing_message.create_reply(&self.id.name(), &our_authority);
+        let mut message = try!(routing_message.create_reply(&self.id.name(), &our_authority));
 
         message.message_type = msg;
         message.authority    = our_authority;
@@ -1274,7 +1274,7 @@ use error::{ResponseError, InterfaceError};
 use id::Id;
 use immutable_data::{ImmutableData, ImmutableDataType};
 use messages::{ErrorReturn, RoutingMessage, MessageType, SignedMessage, GetDataResponse};
-use name_type::{NameType, closer_to_target};
+use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 use node_interface::{Interface, MethodCall};
 use public_id::PublicId;
 use rand::{random, Rng, thread_rng};
@@ -1419,7 +1419,7 @@ impl Interface for TestInterface {
 }
 
 fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
-    let id = Id::new();
+    let mut id = Id::new();
     let (event_output, event_input) = mpsc::channel();
     let mut cm = crust::ConnectionManager::new(event_output);
     let ports_and_protocols : Vec<crust::Port> = Vec::new();
@@ -1431,6 +1431,10 @@ fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
         }
         Ok(listeners_and_beacon) => listeners_and_beacon
     };
+
+    // Hack: assign a name which is not a hash of the public sign
+    // key, so that the membrane thinks it is a relocated id.
+    id.assign_relocated_name(NameType([0;NAME_TYPE_LEN]));
 
     RoutingMembrane::<TestInterface>::new(cm, event_input, None, listeners.0, id.clone(), TestInterface {stats : stats})
 }
@@ -1476,14 +1480,12 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
 }
 
 #[test]
-#[ignore]
     fn check_next_id() {
         let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         assert_eq!(membrane.get_next_message_id() + 1, membrane.get_next_message_id());
     }
 
 #[test]
-#[ignore]
     fn call_put() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
@@ -1495,7 +1497,6 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     }
 
 #[test]
-#[ignore]
     fn call_get() {
         let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
@@ -1503,7 +1504,6 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     }
 
 #[test]
-#[ignore]
     fn call_refresh() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
