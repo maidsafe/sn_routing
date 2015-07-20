@@ -17,13 +17,15 @@
 
 #![allow(dead_code)]
 
-use chunk_store::ChunkStore;
+use routing::data::Data;
+use routing::immutable_data::{ImmutableData, ImmutableDataType};
 use routing::NameType;
-use routing::types::MessageAction;
+use routing::node_interface::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
 use routing::sendable::Sendable;
-use cbor::Decoder;
-use data_parser::Data;
+
+use chunk_store::ChunkStore;
+use utils::{encode, decode};
 
 pub struct PmidNode {
     chunk_store_ : ChunkStore
@@ -39,32 +41,28 @@ impl PmidNode {
         if data.len() == 0 {
             return Err(From::from(ResponseError::NoData));
         }
-        Ok(MessageAction::Reply(data))
+        let sd : ImmutableData = try!(decode(&data));
+        Ok(MessageAction::Reply(Data::ImmutableData(sd)))
     }
 
-    pub fn handle_put(&mut self, data : Vec<u8>) ->Result<MessageAction, InterfaceError> {
-        let mut decoder = Decoder::from_bytes(&data[..]);
-        let data_name_and_remove_sacrificial: (NameType, bool);
-        if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-            data_name_and_remove_sacrificial = match parsed_data {
-                Data::Immutable(parsed) => (parsed.name(), true),
-                Data::ImmutableBackup(parsed) => (parsed.name(), false),
-                Data::ImmutableSacrificial(parsed) => (parsed.name(), false),
-                Data::PublicMaid(parsed) => (parsed.name(), true),
-                _ => return Err(From::from(ResponseError::InvalidRequest)),
-            };
-        } else {
-        return Err(From::from(ResponseError::InvalidRequest));
-        }
-
+    pub fn handle_put(&mut self, incoming_data : Data) ->Result<MessageAction, InterfaceError> {
+        let immutable_data = match incoming_data {
+            Data::ImmutableData(data) => { data }
+            _ => { return Err(From::from(ResponseError::InvalidRequest)); }
+        };
+        let data = try!(encode(&immutable_data));
+        let data_name_and_remove_sacrificial = match *immutable_data.get_type_tag() {
+            ImmutableDataType::Normal => (immutable_data.name(), true),
+            _ => (immutable_data.name(), false),
+        };
         if self.chunk_store_.has_disk_space(data.len()) {
             // the type_tag needs to be stored as well
-            self.chunk_store_.put(data_name_and_remove_sacrificial.0, data.clone());
-            return Ok(MessageAction::Reply(data));
+            self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
+            return Ok(MessageAction::Reply(Data::ImmutableData(immutable_data)));
         }
-    // TODO: due to the limitation of current return type, only one notification can be sent out
-    //       so we will try to remove the first Sacrificial copy larger enough to free up space
-    //       if such Sacrifical copy does not exist, then return with error
+        // TODO: due to the limitation of current return type, only one notification can be sent out
+        //       so we will try to remove the first Sacrificial copy larger enough to free up space
+        //       if such Sacrifical copy does not exist, then return with error
         if !data_name_and_remove_sacrificial.1 {
             return Err(From::from(ResponseError::InvalidRequest))
         }
@@ -72,19 +70,17 @@ impl PmidNode {
         let names = self.chunk_store_.names();
         for name in names.iter() {
             let fetched_data = self.chunk_store_.get(name.clone());
-            let mut decoder = Decoder::from_bytes(&fetched_data[..]);
-            if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-                match parsed_data {
-                    Data::ImmutableSacrificial(_) => {
-                        if fetched_data.len() > required_space {
-                            self.chunk_store_.delete(name.clone());
-                            self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
-              // TODO: ideally, the InterfaceError shall have an option holding a list of copies
-                        return Err(From::from(ResponseError::FailedToStoreData(fetched_data)));
-                        }
-                    },
-                    _ => {}
-                }
+            let parsed_data : ImmutableData = try!(decode(&fetched_data));
+            match *parsed_data.get_type_tag() {
+                ImmutableDataType::Sacrificial => {
+                    if fetched_data.len() > required_space {
+                        self.chunk_store_.delete(name.clone());
+                        self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
+                        // TODO: ideally, the InterfaceError shall have an option holding a list of copies
+                        return Err(From::from(ResponseError::FailedToStoreData(Data::ImmutableData(immutable_data))));
+                    }
+                },
+                _ => {}
             }
         }
         Err(From::from(ResponseError::InvalidRequest))

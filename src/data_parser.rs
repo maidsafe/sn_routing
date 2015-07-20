@@ -17,32 +17,37 @@
 
 use rustc_serialize::{Decodable, Decoder};
 
-use maidsafe_types::{data_tags, ImmutableData, ImmutableDataBackup, ImmutableDataSacrificial,
-                     PublicIdType, StructuredData};
+use routing::immutable_data::ImmutableData;
+use routing::structured_data::StructuredData;
 
 pub enum Data {
     Immutable(ImmutableData),
-    ImmutableBackup(ImmutableDataBackup),
-    ImmutableSacrificial(ImmutableDataSacrificial),
     Structured(StructuredData),
-    PublicMaid(PublicIdType),
-    PublicMpid(PublicIdType),
     Unknown(u64),
 }
+
+// /// All Maidsafe tagging should offset from this
+// pub const MAIDSAFE_TAG: u64 = 5483_000;
+
+/// All Maidsafe Data tags
+#[allow(missing_docs)]
+pub mod data_tags {
+    pub const MAIDSAFE_DATA_TAG: u64 = 5483_000 + 100;
+
+    pub const IMMUTABLE_DATA_TAG: u64             = MAIDSAFE_DATA_TAG + 1;
+    // pub const IMMUTABLE_DATA_BACKUP_TAG: u64      = MAIDSAFE_DATA_TAG + 2;
+    // pub const IMMUTABLE_DATA_SACRIFICIAL_TAG: u64 = MAIDSAFE_DATA_TAG + 3;
+    pub const STRUCTURED_DATA_TAG: u64            = MAIDSAFE_DATA_TAG + 4;
+}
+
 
 impl Decodable for Data {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Data, D::Error> {
         let tag = try!(decoder.read_u64());
         match tag {
             data_tags::IMMUTABLE_DATA_TAG => Ok(Data::Immutable(try!(Decodable::decode(decoder)))),
-            data_tags::IMMUTABLE_DATA_BACKUP_TAG =>
-                Ok(Data::ImmutableBackup(try!(Decodable::decode(decoder)))),
-            data_tags::IMMUTABLE_DATA_SACRIFICIAL_TAG =>
-                Ok(Data::ImmutableSacrificial(try!(Decodable::decode(decoder)))),
             data_tags::STRUCTURED_DATA_TAG =>
                 Ok(Data::Structured(try!(Decodable::decode(decoder)))),
-            data_tags::PUBLIC_MAID_TAG => Ok(Data::PublicMaid(try!(Decodable::decode(decoder)))),
-            data_tags::PUBLIC_MPID_TAG => Ok(Data::PublicMpid(try!(Decodable::decode(decoder)))),
             _ => Ok(Data::Unknown(tag)),
         }
     }

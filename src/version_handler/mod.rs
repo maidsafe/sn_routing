@@ -16,83 +16,17 @@
 // relating to use of the SAFE Network Software.
 
 #![allow(dead_code)]
-use maidsafe_types::StructuredData;
+
 use routing::NameType;
-use routing::node_interface::MethodCall;
+use routing::data::Data;
 use routing::error::{ResponseError, InterfaceError};
-use routing::types::{MessageAction, GROUP_SIZE};
-use chunk_store::ChunkStore;
+use routing::node_interface::{MessageAction, MethodCall};
 use routing::sendable::Sendable;
-use rustc_serialize::{Decoder, Encodable, Encoder};
-use cbor;
+use routing::structured_data::StructuredData;
+
+use chunk_store::ChunkStore;
 use transfer_parser::transfer_tags::VERSION_HANDLER_ACCOUNT_TAG;
 use utils::{encode, decode};
-
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Clone, Debug)]
-pub struct VersionHandlerSendable {
-    name: NameType,
-    data: Vec<u8>
-}
-
-impl VersionHandlerSendable {
-    pub fn new(name: NameType, data: Vec<u8>) -> VersionHandlerSendable {
-        VersionHandlerSendable {
-            name: name,
-            data: data,
-        }
-    }
-
-    pub fn get_data(&self) -> &Vec<u8> {
-        &self.data
-    }
-}
-impl Sendable for VersionHandlerSendable {
-    fn name(&self) -> NameType {
-        self.name.clone()
-    }
-
-    fn type_tag(&self) -> u64 {
-        VERSION_HANDLER_ACCOUNT_TAG
-    }
-
-    fn serialised_contents(&self) -> Vec<u8> {
-        match encode(&self) {
-            Ok(result) => result,
-            Err(_) => Vec::new()
-        }
-    }
-
-    fn refresh(&self) -> bool {
-        true
-    }
-
-    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
-        let mut sdvs: Vec<Box<Sendable>> = Vec::new();
-        for value in responses {
-            let wrapper = match decode::<VersionHandlerSendable>(&value.serialised_contents()) {
-                    Ok(result) => result,
-                    Err(_) => { continue }
-                };
-            let sdv = match decode::<StructuredData>(&wrapper.get_data()) {
-                    Ok(result) => result,
-                    Err(_) => { continue }
-                };
-            sdvs.push(Box::new(sdv));
-        }
-        assert!(sdvs.len() < (GROUP_SIZE + 1) / 2);
-        let seed_sdv = match decode::<StructuredData>(&self.data) {
-                Ok(result) => result,
-                Err(_) => { return None; }
-            };
-        match seed_sdv.merge(sdvs) {
-            Some(merged_sdv) => {
-                Some(Box::new(VersionHandlerSendable::new(self.name.clone(), merged_sdv.serialised_contents())))
-            }
-            None => None
-        }
-    }
-
-}
 
 pub struct VersionHandler {
     // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
@@ -111,19 +45,32 @@ impl VersionHandler {
         if data.len() == 0 {
             return Err(From::from(ResponseError::NoData));
         }
-        Ok(MessageAction::Reply(data))
+        let sd : StructuredData = try!(decode(&data));
+        Ok(MessageAction::Reply(Data::StructuredData(sd)))
     }
 
-    pub fn handle_put(&mut self, serialised_data: Vec<u8>,
-                      structured_data: StructuredData) ->Result<MessageAction, InterfaceError> {
-        // the type_tag needs to be stored as well, ChunkStore::put is overwritable
-        self.chunk_store_.put(structured_data.name(), serialised_data.clone());
-        return Ok(MessageAction::Reply(serialised_data));
+    pub fn handle_put(&mut self, structured_data: StructuredData) ->Result<MessageAction, InterfaceError> {
+        // TODO: SD using PUT for the first copy, then POST to update and transfer in case of churn
+        //       so if the data exists, then the put shall be rejected
+        //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
+        //              then the post shall be rejected
+        //       in addition to above, POST shall check the ownership
+        if self.chunk_store_.has_chunk(structured_data.name()) {
+            Err(InterfaceError::Response(ResponseError::FailedToStoreData(Data::StructuredData(structured_data))))
+        } else {
+            let serialised_data = try!(encode(&structured_data));
+            self.chunk_store_.put(structured_data.name(), serialised_data);
+            Ok(MessageAction::Reply(Data::StructuredData(structured_data)))
+        }
     }
 
-    pub fn handle_account_transfer(&mut self, merged_account: VersionHandlerSendable) {
-        self.chunk_store_.delete(merged_account.name());
-        self.chunk_store_.put(merged_account.name(), merged_account.get_data().clone());
+    pub fn handle_account_transfer(&mut self, in_coming_sd: Vec<u8>) {
+        let sd : StructuredData = match decode(&in_coming_sd) {
+            Ok(result) => { result }
+            Err(_) => return
+        };
+        self.chunk_store_.delete(sd.name());
+        self.chunk_store_.put(sd.name(), in_coming_sd);
     }
 
     pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
@@ -131,15 +78,11 @@ impl VersionHandler {
         let mut actions = Vec::with_capacity(names.len());
         for name in names {
             let data = self.chunk_store_.get(name.clone());
-            let version_handler_sendable = VersionHandlerSendable::new(name, data);
-            let mut encoder = cbor::Encoder::from_memory();
-            if encoder.encode(&[version_handler_sendable.clone()]).is_ok() {
-                actions.push(MethodCall::Refresh {
-                    type_tag: VERSION_HANDLER_ACCOUNT_TAG,
-                    from_group: version_handler_sendable.name(),
-                    payload: encoder.as_bytes().to_vec()
-                });
-            }
+            actions.push(MethodCall::Refresh {
+                type_tag: VERSION_HANDLER_ACCOUNT_TAG,
+                from_group: name,
+                payload: data
+            });
         }
         self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
         actions

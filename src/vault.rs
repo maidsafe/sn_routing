@@ -28,19 +28,18 @@ use lru_time_cache::LruCache;
 use routing::NameType;
 use routing::error::{ResponseError, InterfaceError};
 use routing::authority::Authority;
-use routing::node_interface::{ Interface, MethodCall, CreatePersonas };
+use routing::data::{Data, DataRequest};
+use routing::node_interface::{Interface, MessageAction, MethodCall, CreatePersonas};
 use routing::sendable::Sendable;
-use routing::types::{MessageAction, DestinationAddress};
+use routing::types::{DestinationAddress, SourceAddress};
 
 use data_manager::{DataManager, DataManagerSendable, DataManagerStatsSendable};
 use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
 use pmid_manager::{PmidManager, PmidManagerAccountWrapper, PmidManagerAccount};
 use pmid_node::PmidNode;
-use version_handler::{VersionHandler, VersionHandlerSendable};
-use data_parser::Data;
+use version_handler::VersionHandler;
 use transfer_parser::transfer_tags::{MAID_MANAGER_ACCOUNT_TAG, DATA_MANAGER_ACCOUNT_TAG,
     PMID_MANAGER_ACCOUNT_TAG, VERSION_HANDLER_ACCOUNT_TAG, DATA_MANAGER_STATS_TAG};
-use utils::decode;
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -50,7 +49,7 @@ pub struct VaultFacade {
     pmid_node : PmidNode,
     version_handler : VersionHandler,
     nodes_in_table : Vec<NameType>,
-    data_cache: LruCache<NameType, Vec<u8>>
+    data_cache: LruCache<NameType, Data>
 }
 
 impl Clone for VaultFacade {
@@ -85,70 +84,51 @@ fn merge_refreshable<T>(empty_entry: T, payloads: Vec<Vec<u8>>) ->
 
 impl Interface for VaultFacade {
     fn handle_get(&mut self,
-                  _: u64, // type_id
-                  name: NameType,
+                  data_request: DataRequest,
                   our_authority: Authority,
-                  _: Authority, // from_authority
-                  _: NameType)->Result<MessageAction, InterfaceError> { // from_address
+                  from_authority: Authority,
+                  _: SourceAddress)->Result<MessageAction, InterfaceError> { // from_address
         match our_authority {
-            Authority::NaeManager => {
+            Authority::NaeManager(name) => {
                 // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
-                // data input here is assumed as name only(no type info attached)
-                let data_manager_result = self.data_manager.handle_get(&name);
-                if data_manager_result.is_ok() {
-                    return data_manager_result;
+                match data_request {
+                    DataRequest::ImmutableData(_) => self.data_manager.handle_get(&name),
+                    DataRequest::StructuredData(_) => self.version_handler.handle_get(name),
+                    _ => Err(From::from(ResponseError::InvalidRequest)),
                 }
-                return self.version_handler.handle_get(name);
             }
-            Authority::ManagedNode => { return self.pmid_node.handle_get(name); }
+            Authority::ManagedNode => {
+                match from_authority {
+                    Authority::NaeManager(name) => self.pmid_node.handle_get(name),
+                    _ => Err(From::from(ResponseError::InvalidRequest)),
+                }
+            }
             _ => { return Err(From::from(ResponseError::InvalidRequest)); }
         }
     }
 
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
-                from_address: NameType, dest_address: DestinationAddress,
-                serialised_data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+                  _: SourceAddress, _: DestinationAddress,
+                  data: Data ) -> Result<MessageAction, InterfaceError> {
         match our_authority {
-            Authority::ClientManager => {
-                return self.maid_manager.handle_put(&from_address, &serialised_data);
+            Authority::ClientManager(from_address) => {
+                return self.maid_manager.handle_put(&from_address, data);
             }
-            Authority::NaeManager => {
+            Authority::NaeManager(_) => {
                 // both DataManager and VersionHandler are NaeManagers
-                // client put PublicMaid will directly goes to DM (i.e. from_authority is ManagedNode)
-                // client put other data types (Immutable, StructuredData) will all goes to MaidManager first,
+                // client put other data (Immutable, StructuredData) will all goes to MaidManager first,
                 // then goes to DataManager (i.e. from_authority is always ClientManager)
-                let mut decoder = Decoder::from_bytes(&serialised_data[..]);
-                if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-                    match parsed_data {
-                        Data::Immutable(data) => {
-                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
-                        }
-                        Data::ImmutableBackup(data) => {
-                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
-                        }
-                        Data::ImmutableSacrificial(data) => {
-                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
-                        }
-                        Data::PublicMaid(data) => {
-                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
-                        }
-                        Data::PublicMpid(data) => {
-                            self.data_manager.handle_put(data, &mut (self.nodes_in_table))
-                        }
-                        Data::Structured(data) => {
-                            self.version_handler.handle_put(serialised_data, data)
-                        }
-                        _ => return Err(From::from(ResponseError::InvalidRequest)),
-                    }
-                } else {
-                    return Err(From::from(ResponseError::InvalidRequest));
+                match data {
+                    Data::ImmutableData(data) => self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
+                    Data::StructuredData(data) => self.version_handler.handle_put(data),
+                    _ => return Err(From::from(ResponseError::InvalidRequest)),
                 }
             }
-            Authority::NodeManager => {
-                return self.pmid_manager.handle_put(&dest_address, &serialised_data);
+            Authority::NodeManager(dest_address) => {
+                return self.pmid_manager.handle_put(dest_address, data);
             }
             Authority::ManagedNode => {
-                return self.pmid_node.handle_put(serialised_data);
+                return self.pmid_node.handle_put(data);
             }
             _ => {
                 return Err(From::from(ResponseError::InvalidRequest));
@@ -162,27 +142,40 @@ impl Interface for VaultFacade {
                    _: Authority, // from_authority
                    _: NameType, // from_address
                    _: NameType, // name
-                   _: Vec<u8>)->Result<MessageAction, InterfaceError> { // data
+                   _: Data)->Result<MessageAction, InterfaceError> { // data
         Err(From::from(ResponseError::InvalidRequest))
     }
 
     fn handle_get_response(&mut self,
                            _: NameType, // from_address
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
-        match response {
-            Ok(result) => self.data_manager.handle_get_response(result),
-            Err(_) => MethodCall::None
+                           response: Data) -> MethodCall {
+        // GetResponse only used by DataManager to replicate data to new PN
+        match response.clone() {
+            Data::ImmutableData(_) => self.data_manager.handle_get_response(response),
+            _ => MethodCall::None
         }
     }
 
-    fn handle_put_response(&mut self, from_authority: Authority, from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall {
+    // Put response will holding the copy of failed to store data, which will be :
+    //     1, the original immutable data if it failed to squeeze in
+    //     2, the sacrificial copy if it has been removed to empty the space
+    // DataManager doesn't need to carry out replication in case of sacrificial copy
+    fn handle_put_response(&mut self, from_authority: Authority, from_address: SourceAddress,
+                           response: ResponseError) -> MethodCall {
         match from_authority {
-            Authority::ManagedNode => { return self.pmid_manager.handle_put_response(&from_address, &response); }
-            Authority::NodeManager => {
+            Authority::ManagedNode => {
+                match from_address {
+                    SourceAddress::Direct(pmid_node) => self.pmid_manager.handle_put_response(&pmid_node, response),
+                    _ => MethodCall::None
+                }
+            }
+            Authority::NodeManager(_) => {
                 // TODO: this from_address shall be the original pmid_node that failing or removing the copy
                 //       which requires work in routing to replace the address properly
-                return self.data_manager.handle_put_response(&response, &from_address);
+                match from_address {
+                    SourceAddress::Direct(pmid_node) => self.data_manager.handle_put_response(response, &pmid_node),
+                    _ => MethodCall::None
+                }
             }
             _ => { return MethodCall::None; }
         }
@@ -231,12 +224,9 @@ impl Interface for VaultFacade {
                 self.pmid_manager.handle_account_transfer(merged_account);
             },
             VERSION_HANDLER_ACCOUNT_TAG => {
-                let transfer_entry = match decode::<VersionHandlerSendable>(&payloads[0].clone()) {
-                        Ok(result) => result,
-                        Err(_) => return
-                    };
-                let merged_account = merge_refreshable(transfer_entry, payloads);
-                self.version_handler.handle_account_transfer(merged_account);
+                for payload in payloads {
+                    self.version_handler.handle_account_transfer(payload);
+                }
             },
             DATA_MANAGER_STATS_TAG => {
                 let merged_stats = merge_refreshable(DataManagerStatsSendable::new(from_group, 0),
@@ -249,11 +239,10 @@ impl Interface for VaultFacade {
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
     fn handle_cache_get(&mut self,
-                        _: u64, // type_id
-                        name: NameType,
-                        _: Authority, //from_authority
+                        _: DataRequest, // data_request 
+                        data_location: NameType,
                         _: NameType) -> Result<MessageAction, InterfaceError> { // from_address
-        match self.data_cache.get(&name) {
+        match self.data_cache.get(&data_location) {
             Some(data) => Ok(MessageAction::Reply(data.clone())),
             None => Err(From::from(ResponseError::NoData))
         }
@@ -262,20 +251,9 @@ impl Interface for VaultFacade {
     fn handle_cache_put(&mut self,
                         _: Authority, // from_authority
                         _: NameType, // from_address
-                        serialised_data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
-        let mut decoder = Decoder::from_bytes(&serialised_data[..]);
-        if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-            let data_name = match parsed_data {
-                Data::Immutable(parsed) => parsed.name(),
-                Data::PublicMaid(parsed) => parsed.name(),
-                Data::PublicMpid(parsed) => parsed.name(),
-                _ => return Err(From::from(ResponseError::InvalidRequest)),
-            };
-            // the type_tag needs to be stored as well
-            self.data_cache.add(data_name, serialised_data);
-            return Err(InterfaceError::Abort);
-        }
-        Err(From::from(ResponseError::InvalidRequest))
+                        data: Data) -> Result<MessageAction, InterfaceError> {
+        self.data_cache.add(data.name(), data);
+        Err(InterfaceError::Abort)
     }
 }
 

@@ -19,15 +19,11 @@
 
 mod database;
 
-use cbor::Decoder;
-
+use routing::data::Data;
 use routing::error::{ResponseError, InterfaceError};
 use routing::NameType;
-use routing::node_interface::MethodCall;
+use routing::node_interface::{ MessageAction, MethodCall };
 use routing::sendable::Sendable;
-use routing::types::MessageAction;
-
-use data_parser::Data;
 
 pub use self::database::{MaidManagerAccountWrapper, MaidManagerAccount};
 
@@ -45,47 +41,12 @@ impl MaidManager {
     }
 
     pub fn handle_put(&mut self, from: &NameType,
-                      serialised_data: &Vec<u8>) -> Result<MessageAction, InterfaceError> {
-        let mut decoder = Decoder::from_bytes(&serialised_data[..]);
-        let mut destinations: Vec<NameType> = Vec::new();
-        if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-            let data_name = match parsed_data {
-                Data::Immutable(parsed) => {
-                    if !self.db_.put_data(from, parsed.value().len() as u64) {
-                        return Err(From::from(ResponseError::InvalidRequest));
-                    }
-                    parsed.name()
-                },
-                // The assumption here is Backup and Sacrificial copies incur storage charge.
-                // However, in the case of not enough allowance, no put_failure is to be sent back;
-                // just abort the flow.
-                Data::ImmutableBackup(parsed) => {
-                    if !self.db_.put_data(from, parsed.value().len() as u64) {
-                        return Err(InterfaceError::Abort);
-                    }
-                    parsed.name()
-                },
-                Data::ImmutableSacrificial(parsed) => {
-                    if !self.db_.put_data(from, parsed.value().len() as u64) {
-                        return Err(InterfaceError::Abort);
-                    }
-                    parsed.name()
-                },
-                Data::Structured(parsed) => {
-                    if !self.db_.put_data(from, parsed.value().len() as u64) {
-                        return Err(From::from(ResponseError::InvalidRequest));
-                    }
-                    parsed.name()
-                },
-                // PublicMaid doesn't use any allowance
-                Data::PublicMaid(parsed) => parsed.name(),
-                _ => return Err(From::from(ResponseError::InvalidRequest)),
-            };
-            destinations.push(data_name);
+                      data: Data) -> Result<MessageAction, InterfaceError> {
+        if self.db_.put_data(from, data.size() as u64) {
+            Ok(MessageAction::Forward(vec![data.name()]))
         } else {
-            return Err(From::from(ResponseError::InvalidRequest));
+            Err(From::from(ResponseError::InvalidRequest))
         }
-        Ok(MessageAction::SendOn(destinations))
     }
 
     pub fn handle_account_transfer(&mut self, merged_account: MaidManagerAccountWrapper) {

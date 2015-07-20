@@ -25,6 +25,8 @@ use routing::NameType;
 use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
 use routing::types::GROUP_SIZE;
+use routing::immutable_data::ImmutableDataType;
+use routing::data::DataRequest;
 
 use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
 
@@ -202,8 +204,9 @@ impl DataManagerDatabase {
             match self.temp_storage_after_churn.get(key) {
                 Some(result) => { if result.len() < 3 {
                     actions.push(MethodCall::Get {
-                        type_id: DATA_MANAGER_ACCOUNT_TAG,
                         name: (*key).clone(),
+                        // DataManager only handles ImmutableData
+                        data_request: DataRequest::ImmutableData(ImmutableDataType::Normal)
                     });
                 }}
                 None => continue

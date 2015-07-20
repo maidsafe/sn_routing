@@ -21,17 +21,16 @@ mod database;
 
 use std::cmp;
 use cbor;
-use cbor::Decoder;
 use rustc_serialize::Encodable;
 
-use maidsafe_types::data_tags;
 use routing::{closer_to_target, NameType};
+use routing::data::Data;
 use routing::error::{InterfaceError, ResponseError};
-use routing::node_interface::MethodCall;
+use routing::immutable_data::{ImmutableData, ImmutableDataType};
+use routing::node_interface::{MessageAction, MethodCall};
 use routing::sendable::Sendable;
-use routing::types::{GROUP_SIZE, MessageAction};
+use routing::types::GROUP_SIZE;
 
-use data_parser::Data;
 use transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG;
 use utils::{median, encode, decode};
 
@@ -117,10 +116,10 @@ impl DataManager {
 	  for pmid in result.iter() {
         dest_pmids.push(pmid.clone());
 	  }
-	  Ok(MessageAction::SendOn(dest_pmids))
+	  Ok(MessageAction::Forward(dest_pmids))
   }
 
-  pub fn handle_put<Data: Sendable>(&mut self, data: Data, nodes_in_table: &mut Vec<NameType>)
+  pub fn handle_put(&mut self, data: ImmutableData, nodes_in_table: &mut Vec<NameType>)
           -> Result<MessageAction, InterfaceError> {
     let data_name = data.name();
     if self.db_.exist(&data_name) {
@@ -136,96 +135,65 @@ impl DataManager {
     let pmid_nodes_num = cmp::min(nodes_in_table.len(), PARALLELISM);
     let mut dest_pmids: Vec<NameType> = Vec::new();
     for index in 0..pmid_nodes_num {
-      dest_pmids.push(nodes_in_table[index].clone());
+        dest_pmids.push(nodes_in_table[index].clone());
     }
     self.db_.put_pmid_nodes(&data_name, dest_pmids.clone());
-    if data.type_tag() == data_tags::IMMUTABLE_DATA_SACRIFICIAL_TAG {
-      self.resource_index = cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
+    match *data.get_type_tag() {
+        ImmutableDataType::Sacrificial => {
+            self.resource_index = cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
+        }
+        _ => {}
     }
-    Ok(MessageAction::SendOn(dest_pmids))
+    Ok(MessageAction::Forward(dest_pmids))
   }
 
-  pub fn handle_get_response(&mut self, response: Vec<u8>) -> MethodCall {
-      let name: NameType;
-      let mut decoder = Decoder::from_bytes(&response[..]);
-      if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-          match parsed_data {
-              Data::Immutable(parsed) => name = parsed.name(),
-              Data::PublicMaid(parsed) => name = parsed.name(),
-              _ => return MethodCall::None,
-          }
-      } else {
-          return MethodCall::None;
-      }
-
-      let replicate_to = self.replicate_to(&name);
+  pub fn handle_get_response(&mut self, response: Data) -> MethodCall {
+      let replicate_to = self.replicate_to(&response.name());
       match replicate_to {
           Some(pmid_node) => {
-              self.db_.add_pmid_node(&name, pmid_node.clone());
+              self.db_.add_pmid_node(&response.name(), pmid_node.clone());
               return MethodCall::Put {
                   destination: pmid_node,
-                  content: Box::new(DataManagerSendable::with_content(name, response)),
+                  content: response,
               };
           },
-          None => {}
-      }
-      MethodCall::None
+          None => MethodCall::None
+      }      
   }
 
-  pub fn handle_put_response(&mut self, response: &Result<Vec<u8>, ResponseError>,
+  pub fn handle_put_response(&mut self, response: ResponseError,
                              from_address: &NameType) -> MethodCall {
-    // TODO: assumption is the content in Result is the full payload of failed to store data
-    //       or the removed Sacrificial copy, which indicates as a failure response.
-    if response.is_err() {
-      return MethodCall::None;
-    }
-    let data = match response.clone() {
-        Ok(response) => response,
-        Err(_) => return MethodCall::None,
-    };
-    let mut decoder = Decoder::from_bytes(&data[..]);
-    let name: NameType;
-    let mut replicate = false;
-    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-      match parsed_data {
-        Data::Immutable(parsed) => {
-          name = parsed.name();
-          replicate = true;
-        },
-        Data::ImmutableBackup(parsed) => name = parsed.name(),
-        Data::ImmutableSacrificial(parsed) => {
-          name = parsed.name();
-          self.resource_index = cmp::max(1, self.resource_index - 1);
-        },
-        Data::PublicMaid(parsed) => {
-          name = parsed.name();
-          replicate = true;
-        },
-        _ => return MethodCall::None,
+      match response {
+          ResponseError::FailedToStoreData(data) => {
+              match data.clone() {
+                  // DataManager shall only handle Immutable data
+                  // Structured Data shall be handled in StructuredDataManager
+                  Data::ImmutableData(immutable_data) => {
+                      let name = data.name();
+                      self.db_.remove_pmid_node(&name, from_address.clone());
+                      match *immutable_data.get_type_tag() {
+                          ImmutableDataType::Normal => {
+                              let replicate_to = self.replicate_to(&name);
+                              match replicate_to {
+                                  Some(pmid_node) => {
+                                      self.db_.add_pmid_node(&name, pmid_node.clone());
+                                      return MethodCall::Put { destination: pmid_node, content: data };
+                                  },
+                                  None => {}
+                              }
+                          }
+                          ImmutableDataType::Sacrificial => {
+                              self.resource_index = cmp::max(1, self.resource_index - 1);
+                          }
+                          _ => {}
+                      }
+                  }
+                  _ => {}
+              }
+          }
+          _ => {}
       }
-    } else {
-      return MethodCall::None;
-    }
-
-    self.db_.remove_pmid_node(&name, from_address.clone());
-
-    // No replication for Backup and Sacrificial copies.
-    if !replicate {
-      return MethodCall::None;
-    }
-
-    let replicate_to = self.replicate_to(&name);
-    match replicate_to {
-        Some(pmid_node) => {
-            self.db_.add_pmid_node(&name, pmid_node.clone());
-            return MethodCall::Put {
-                destination: pmid_node,
-                content: Box::new(DataManagerSendable::with_content(name, data)),
-            };
-        },
-        None => {}
-    }
-    MethodCall::None
+      MethodCall::None
   }
 
   pub fn handle_account_transfer(&mut self, merged_account: DataManagerSendable) {

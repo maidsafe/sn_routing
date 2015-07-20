@@ -44,7 +44,6 @@ extern crate cbor;
 extern crate time;
 extern crate lru_time_cache;
 extern crate routing;
-extern crate maidsafe_types;
 
 #[cfg(test)]
 extern crate rand;
@@ -153,7 +152,7 @@ pub fn main () {
     if args.flag_first {
         vault.routing_node.run_zero_membrane();
     } else {
-        let _ = vault.routing_node.bootstrap(bootstrap_peers, None);
+        let _ = vault.routing_node.bootstrap(bootstrap_peers);
     }
     let thread_guard = spawn(move || {
         loop {
