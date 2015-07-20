@@ -1355,10 +1355,10 @@ impl Interface for TestInterface {
         Ok(method_calls)
     }
 
-    fn handle_refresh(&mut self, type_tag: u64, _from_group: NameType, payloads: Vec<Vec<u8>>) {
+    fn handle_refresh(&mut self, _type_tag: u64, _from_group: NameType, payloads: Vec<Vec<u8>>) {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
-        stats_value.call_count += type_tag as usize;
+        stats_value.call_count += 1;
         stats_value.data = payloads[0].clone();
     }
 
@@ -1647,7 +1647,6 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     }
 
 #[test]
-#[ignore]
     fn call_handle_refresh() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
