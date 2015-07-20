@@ -140,92 +140,49 @@ impl DestinationAddress {
 #[cfg(test)]
 #[allow(deprecated)]
 mod test {
-  extern crate cbor;
-  use super::*;
-  use sodiumoxide::crypto;
-  use std::cmp;
-  use rustc_serialize::{Decodable, Encodable};
-  use test_utils::Random;
-  use id::Id;
-  use public_id::PublicId;
-  use authority::Authority;
-  use NameType;
-  use name_type::closer_to_target;
-  use sodiumoxide::crypto::sign;
-  use utils;
+    extern crate cbor;
+    use super::*;
+    use sodiumoxide::crypto;
+    use std::cmp;
+    use rustc_serialize::{Decodable, Encodable};
+    use test_utils::Random;
+    use id::Id;
+    use public_id::PublicId;
+    use authority::Authority;
+    use NameType;
+    use name_type::closer_to_target;
+    use sodiumoxide::crypto::sign;
+    use utils;
 
-  fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
-    let mut e = cbor::Encoder::from_memory();
-    e.encode(&[&obj_before]).unwrap();
-    let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-    let obj_after: T = d.decode().next().unwrap().unwrap();
-    assert_eq!(obj_after == obj_before, true)
-  }
-
-  #[test]
-  #[ignore]
-  fn construct_id_with_keys() {
-    let sign_keys = crypto::sign::gen_keypair();
-    let asym_keys = crypto::box_::gen_keypair();
-
-    let public_keys = (sign_keys.clone().0, asym_keys.clone().0);
-    let secret_keys = (sign_keys.clone().1, asym_keys.clone().1);
-
-    let id = Id::with_keys(sign_keys, asym_keys);
-
-    let sign_key = &(public_keys.0).0;
-    let asym_key = &(public_keys.1).0;
-
-    const KEYS_SIZE: usize = crypto::sign::PUBLICKEYBYTES + crypto::box_::PUBLICKEYBYTES;
-
-    let mut keys = [0u8; KEYS_SIZE];
-
-    for i in 0..sign_key.len() {
-        keys[i] = sign_key[i];
-    }
-    for i in 0..asym_key.len() {
-        keys[crypto::sign::PUBLICKEYBYTES + i] = asym_key[i];
+    fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
+      let mut e = cbor::Encoder::from_memory();
+      e.encode(&[&obj_before]).unwrap();
+      let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+      let obj_after: T = d.decode().next().unwrap().unwrap();
+      assert_eq!(obj_after == obj_before, true)
     }
 
-    let validation_token = crypto::sign::sign_detached(&keys, &secret_keys.0);
-
-    let mut combined = [0u8; KEYS_SIZE + crypto::sign::SIGNATUREBYTES];
-
-    for i in 0..KEYS_SIZE {
-        combined[i] = keys[i];
+    #[test]
+    fn test_authority() {
+      test_object(Authority::ClientManager(Random::generate_random()));
+      test_object(Authority::NaeManager(Random::generate_random()));
+      test_object(Authority::NodeManager(Random::generate_random()));
+      test_object(Authority::ManagedNode);
+      test_object(Authority::Client(sign::gen_keypair().0));
+      test_object(Authority::Unknown);
     }
 
-    for i in 0..crypto::sign::SIGNATUREBYTES {
-        combined[KEYS_SIZE + i] = validation_token.0[i];
+    #[test]
+    fn test_destination_address() {
+      test_object(DestinationAddress::Direct(Random::generate_random()));
     }
 
-    let digest = crypto::hash::sha512::hash(&combined);
+    #[test]
+    fn test_source_address() {
+        test_object(SourceAddress::Direct(Random::generate_random()));
+    }
 
-    assert_eq!(NameType::new(digest.0), id.name());
-
-  }
-
-  #[test]
-  fn test_authority() {
-    test_object(Authority::ClientManager(Random::generate_random()));
-    test_object(Authority::NaeManager(Random::generate_random()));
-    test_object(Authority::NodeManager(Random::generate_random()));
-    test_object(Authority::ManagedNode);
-    test_object(Authority::Client(sign::gen_keypair().0));
-    test_object(Authority::Unknown);
-  }
-
-  #[test]
-  fn test_destination_address() {
-    test_object(DestinationAddress::Direct(Random::generate_random()));
-  }
-
-  #[test]
-  fn test_source_address() {
-      test_object(SourceAddress::Direct(Random::generate_random()));
-  }
-
-#[test]
+    #[test]
     fn serialisation_public_id() {
         let obj_before = PublicId::generate_random();
 
@@ -237,7 +194,7 @@ mod test {
         assert_eq!(obj_before, obj_after);
     }
 
-#[test]
+    #[test]
     fn test_calculate_relocated_name() {
         let original_name : NameType = Random::generate_random();
 
@@ -312,31 +269,7 @@ mod test {
         assert!(invalid_relocated_name != actual_relocated_name);
     }
 
-
-#[test]
-#[ignore]
-    fn assign_relocated_name_public_id() {
-        let before = PublicId::generate_random();
-        let original_name = before.name();
-        assert!(!before.is_relocated());
-        let relocated_name: NameType = Random::generate_random();
-        let mut relocated = before.clone();
-        relocated.assign_relocated_name(original_name.clone());
-
-        relocated.assign_relocated_name(relocated_name.clone());
-
-        relocated.assign_relocated_name(relocated_name.clone());
-        relocated.assign_relocated_name(Random::generate_random());
-        relocated.assign_relocated_name(original_name.clone());
-
-        assert!(relocated.is_relocated());
-        assert_eq!(relocated.name(), relocated_name);
-        assert!(before.name()!= relocated.name());
-        assert_eq!(before.signing_public_key(), relocated.signing_public_key());
-//        assert_eq!(before.public_sign_key, relocated.public_sign_key); TODO FIXME
-    }
-
-#[test]
+    #[test]
     fn assign_relocated_name_id() {
         let before = Id::new();
         let original_name = before.name();

@@ -47,7 +47,7 @@ impl PublicId {
     pub fn set_name(&mut self, name: NameType) {
         self.name = name;
     }
-    
+
     pub fn client_name(&self) -> NameType {
         utils::public_key_to_client_name(&self.public_sign_key)
     }
@@ -78,4 +78,29 @@ impl PublicId {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use NameType;
+    use test_utils::Random;
+
+    #[test]
+    fn assign_relocated_name_public_id() {
+        let before = PublicId::generate_random();
+        let original_name = before.name();
+        assert!(!before.is_relocated());
+        let relocated_name: NameType = Random::generate_random();
+        let mut relocated = before.clone();
+        relocated.assign_relocated_name(original_name.clone());
+
+        relocated.assign_relocated_name(relocated_name.clone());
+
+        relocated.assign_relocated_name(relocated_name.clone());
+        relocated.assign_relocated_name(Random::generate_random());
+        relocated.assign_relocated_name(original_name.clone());
+
+        assert!(relocated.is_relocated());
+        assert_eq!(relocated.name(), relocated_name);
+        assert!(before.name()!= relocated.name());
+        assert_eq!(before.signing_public_key(), relocated.signing_public_key());
+  //        assert_eq!(before.public_sign_key, relocated.public_sign_key); TODO FIXME
+    }
 }
