@@ -140,7 +140,6 @@ impl fmt::Display for InterfaceError {
 
 //------------------------------------------------------------------------------
 pub enum ClientError {
-    NotBootstrapped,
     Io(io::Error),
     Cbor(CborError),
 }
@@ -158,6 +157,8 @@ impl From<io::Error> for ClientError {
 #[derive(Debug)]
 /// Represents routing error types
 pub enum RoutingError {
+    /// The node/client has not bootstrapped yet
+    NotBootstrapped,
     /// invalid requester or handler authorities
     BadAuthority,
     /// failure to connect to an already connected node
@@ -219,6 +220,7 @@ impl From<InterfaceError> for RoutingError {
 impl error::Error for RoutingError {
     fn description(&self) -> &str {
         match *self {
+            RoutingError::NotBootstrapped => "Not bootstrapped",
             RoutingError::BadAuthority => "Invalid authority",
             RoutingError::AlreadyConnected => "Already connected",
             RoutingError::UnknownMessageType => "Invalid message type",
@@ -253,6 +255,7 @@ impl error::Error for RoutingError {
 impl fmt::Display for RoutingError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            RoutingError::NotBootstrapped => fmt::Display::fmt("Not bootstrapped", f),
             RoutingError::BadAuthority => fmt::Display::fmt("Bad authority", f),
             RoutingError::AlreadyConnected => fmt::Display::fmt("already connected", f),
             RoutingError::UnknownMessageType => fmt::Display::fmt("Unknown message", f),

@@ -27,7 +27,7 @@ use sodiumoxide::crypto;
 #[derive(Debug, Eq, PartialEq, Clone, RustcDecodable, RustcEncodable)]
 pub struct StructuredData {
     type_tag: u64,
-    identifier: crypto::hash::sha512::Digest,
+    identifier: NameType,
     data: Vec<u8>,
     previous_owner_keys: Vec<crypto::sign::PublicKey>,
     version: u64,
@@ -40,7 +40,7 @@ impl StructuredData {
 
     /// Constructor
     pub fn new(type_tag: u64,
-               identifier: crypto::hash::sha512::Digest,
+               identifier: NameType,
                data: Vec<u8>,
                previous_owner_keys: Vec<crypto::sign::PublicKey>,
                version: u64,
@@ -126,7 +126,7 @@ impl StructuredData {
         // to ensure cross platform signature handling is OK
         let mut enc = cbor::Encoder::from_memory();
         try!(enc.encode(self.type_tag.to_string().as_bytes()));
-        try!(enc.encode(&self.identifier[..]));
+        try!(enc.encode(&[self.identifier]));
         try!(enc.encode(&self.data));
         try!(enc.encode(&self.previous_owner_keys));
         try!(enc.encode(&self.current_owner_keys));
@@ -149,12 +149,12 @@ impl StructuredData {
     }
 
     /// Get the type_tag
-    pub fn get_type_tag(&self) -> &u64 {
-        &self.type_tag
+    pub fn get_type_tag(&self) -> u64 {
+        self.type_tag.clone()
     }
 
     /// Get the identifier
-    pub fn get_identifier(&self) -> &crypto::hash::sha512::Digest {
+    pub fn get_identifier(&self) -> &NameType {
         &self.identifier
     }
 
@@ -189,14 +189,16 @@ impl StructuredData {
 mod test {
     use sodiumoxide::crypto;
     use super::StructuredData;
-    // use error::RoutingError;
+    use test_utils::Random;
+    use NameType;
 
     #[test]
     fn single_owner() {
         let keys = crypto::sign::gen_keypair();
 
         let mut structured_data =   StructuredData::new(0,
-                                crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
+                                Random::generate_random(),
+                                //crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
                                 vec![],
                                 vec![keys.0],
                                 0,
@@ -214,7 +216,8 @@ mod test {
         let keys3 = crypto::sign::gen_keypair();
 
         let mut structured_data =   StructuredData::new(0,
-                                crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
+                                Random::generate_random(),
+                                //crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
                                 vec![],
                                 vec![keys1.0, keys2.0, keys3.0],
                                 0,
@@ -232,9 +235,12 @@ mod test {
         let keys2       = crypto::sign::gen_keypair();
         let keys3       = crypto::sign::gen_keypair();
         let new_owner   = crypto::sign::gen_keypair();
+
+        let identifier : NameType = Random::generate_random();
+
         // Owned by keys1 keys2 and keys3
         let mut orig_structured_data =   StructuredData::new(0,
-                                crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
+                                identifier.clone(),
                                 vec![],
                                 vec![keys1.0, keys2.0, keys3.0],
                                 0,
@@ -245,7 +251,7 @@ mod test {
         assert_eq!(orig_structured_data.verify_previous_owner_signatures().ok(), Some(()));
         // Transfer ownership and update to new owner
         let mut new_structured_data =   StructuredData::new(0,
-                                crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
+                                identifier.clone(),
                                 vec![],
                                 vec![keys1.0, keys2.0, keys3.0],
                                 1,
@@ -260,7 +266,7 @@ mod test {
         }
         // transfer ownership back to keys1 only
         let mut another_new_structured_data =   StructuredData::new(0,
-                                crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
+                                identifier,
                                 vec![],
                                 vec![new_owner.0],
                                 2,
