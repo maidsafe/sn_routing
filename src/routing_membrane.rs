@@ -1282,7 +1282,7 @@ use id::Id;
 use immutable_data::{ImmutableData, ImmutableDataType};
 use messages::{ErrorReturn, RoutingMessage, MessageType, SignedMessage, GetDataResponse};
 use name_type::{NameType, closer_to_target};
-use node_interface::{Interface, MethodCall, MessageAction};
+use node_interface::{Interface, MethodCall};
 use public_id::PublicId;
 use rand::{random, Rng, thread_rng};
 use routing_table;
@@ -1335,19 +1335,21 @@ struct TestInterface {
 impl Interface for TestInterface {
     fn handle_get(&mut self, _data_request: DataRequest, _our_authority: Authority,
                   _from_authority: Authority, _from_address   : SourceAddress)
-        -> Result<MessageAction, InterfaceError> {
+        -> Result<Vec<MethodCall>, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         let data = Data::ImmutableData(
                 ImmutableData::new(ImmutableDataType::Normal,
                 "handle_get called".to_string().into_bytes().iter().map(|&x| x).collect::<Vec<_>>()));
-        Ok(MessageAction::Reply(data))
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::Reply { data: data });
+        Ok(method_calls)
     }
 
     fn handle_put(&mut self, _our_authority: Authority, from_authority: Authority,
                   _from_address: SourceAddress, _dest_address: DestinationAddress,
-                  data: Data) -> Result<MessageAction, InterfaceError> {
+                  data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1355,7 +1357,9 @@ impl Interface for TestInterface {
             Authority::Unknown => "UnauthorisedPut".to_string().into_bytes(),
             _   => "AuthorisedPut".to_string().into_bytes(),
         };
-        Ok(MessageAction::Reply(data))
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::Reply { data: data });
+        Ok(method_calls)
     }
 
     fn handle_refresh(&mut self, type_tag: u64, _from_group: NameType, payloads: Vec<Vec<u8>>) {
@@ -1366,30 +1370,36 @@ impl Interface for TestInterface {
     }
 
     fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
-                   _from_address: NameType, _name: NameType, data: Data) -> Result<MessageAction, InterfaceError> {
+                   _from_address: NameType, _name: NameType, data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_post called".to_string().into_bytes();
-        Ok(MessageAction::Reply(data))
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::Reply { data: data });
+        Ok(method_calls)
     }
 
     fn handle_get_response(&mut self, _from_address: NameType,
-                           _response: Data) -> MethodCall {
+                           _response: Data) -> Vec<MethodCall> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_get_response called".to_string().into_bytes();
-        MethodCall::None
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::None);
+        method_calls
     }
 
     fn handle_put_response(&mut self, _from_authority: Authority, _from_address: SourceAddress,
-                           _response: ResponseError) -> MethodCall {
+                           _response: ResponseError) -> Vec<MethodCall> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_put_response".to_string().into_bytes();
-        MethodCall::None
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::None);
+        method_calls
     }
 
     fn handle_post_response(&mut self, _from_authority: Authority, _from_address: NameType,
@@ -1405,12 +1415,12 @@ impl Interface for TestInterface {
     fn handle_cache_get(&mut self, _data_request   : DataRequest,
                                    _from_authority : NameType,
                                    _from_address   : NameType)
-        -> Result<MessageAction, InterfaceError> {
+        -> Result<MethodCall, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 
     fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
-                        _data: Data) -> Result<MessageAction, InterfaceError> {
+                        _data: Data) -> Result<MethodCall, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 }
