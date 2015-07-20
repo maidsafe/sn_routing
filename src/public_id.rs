@@ -40,14 +40,14 @@ impl PublicId {
       }
     }
 
-    //pub fn name(&self) -> Option<NameType> {
-    //  self.name
-    //}
-
     pub fn name(&self) -> NameType {
-        unimplemented!()
+        self.name
     }
 
+    pub fn set_name(&mut self, name: NameType) {
+        self.name = name;
+    }
+    
     pub fn client_name(&self) -> NameType {
         utils::public_key_to_client_name(&self.public_sign_key)
     }
