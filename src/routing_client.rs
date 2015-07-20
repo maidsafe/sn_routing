@@ -93,79 +93,72 @@ impl<F> RoutingClient<F> where F: Interface {
     fn public_sign_key(&self) -> sign::PublicKey { self.id.signing_public_key() }
 
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, ClientError> {
-        let message_id = self.get_next_message_id();
-
+    pub fn get(&mut self, location: NameType, data : DataRequest) -> Result<(), ClientError> {
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : try!(self.source_address()),
             orig_message: None,
             message_type: MessageType::GetData(data),
-            message_id  : message_id.clone(),
+            message_id  : self.get_next_message_id(),
             authority   : Authority::Client(self.id.signing_public_key()),
             };
 
         match self.send_to_bootstrap_node(&message){
-            Ok(_) => Ok(message_id),
+            Ok(_) => Ok(()),
             //FIXME(ben) should not expose these errors to user 16/07/2015
             Err(e) => Err(ClientError::Cbor(e))
         }
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, location: NameType, data : Data) -> Result<MessageId, ClientError> {
-        let message_id = self.get_next_message_id();
-
+    pub fn put(&mut self, location: NameType, data : Data) -> Result<(), ClientError> {
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : try!(self.source_address()),
             orig_message: None,
             message_type: MessageType::PutData(data),
-            message_id  : message_id.clone(),
+            message_id  : self.get_next_message_id(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
         match self.send_to_bootstrap_node(&message){
-            Ok(_) => Ok(message_id),
+            Ok(_) => Ok(()),
             //FIXME(ben) should not expose these errors to user 16/07/2015
             Err(e) => Err(ClientError::Cbor(e))
         }
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
-    pub fn post(&mut self, location: NameType, data : Data) -> Result<MessageId, ClientError> {
-        let message_id = self.get_next_message_id();
-
+    pub fn post(&mut self, location: NameType, data : Data) -> Result<(), ClientError> {
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : try!(self.source_address()),
             orig_message: None,
             message_type: MessageType::Post(data),
-            message_id  : message_id.clone(),
+            message_id  : self.get_next_message_id(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
         match self.send_to_bootstrap_node(&message){
-            Ok(_) => Ok(message_id),
+            Ok(_) => Ok(()),
             //FIXME(ben) should not expose these errors to user 16/07/2015
             Err(e) => Err(ClientError::Cbor(e))
         }
     }
 
     /// Mutate something one the network (you must own it and provide a proper update)
-    pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<MessageId, ClientError> {
-        let message_id = self.get_next_message_id();
+    pub fn delete(&mut self, location: NameType, data : DataRequest) -> Result<(), ClientError> {
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(location),
             source      : try!(self.source_address()),
             orig_message: None,
             message_type: MessageType::DeleteData(data),
-            message_id  : message_id.clone(),
+            message_id  : self.get_next_message_id(),
             authority   : Authority::Client(self.id.signing_public_key()),
         };
 
         match self.send_to_bootstrap_node(&message){
-            Ok(_) => Ok(message_id),
+            Ok(_) => Ok(()),
             //FIXME(ben) should not expose these errors to user 16/07/2015
             Err(e) => Err(ClientError::Cbor(e))
         }
