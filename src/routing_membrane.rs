@@ -1439,25 +1439,46 @@ fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     RoutingMembrane::<TestInterface>::new(cm, event_input, None, listeners.0, id.clone(), TestInterface {stats : stats})
 }
 
-fn call_operation(message_type: MessageType, stats: Arc<Mutex<Stats>>, source: SourceAddress,
-                  destination: DestinationAddress, authority: Authority) -> Stats {
-    let mut membrane = create_membrane(stats.clone());
-    let message = RoutingMessage {
-        destination : destination,
-        source      : source.clone(),
-        orig_message: None,
-        message_type: message_type,
-        message_id  : membrane.get_next_message_id(),
-        authority   : authority,
-    };
+struct Tester {
+    pub stats    : Arc<Mutex<Stats>>,
+    pub membrane : RoutingMembrane<TestInterface>
+}
 
-    let signed_message = SignedMessage::new(&message, membrane.id.signing_private_key());
-    let connection_name = ConnectionName::Routing(match source.actual_source()
-        { Address::Node(name) => name, _ => Random::generate_random() });
-    let _ = membrane.message_received(&connection_name, signed_message.unwrap());
-    let stats = stats.clone();
-    let stats_value = stats.lock().unwrap();
-    stats_value.clone()
+impl Tester {
+    pub fn new() -> Tester {
+        let stats = Arc::new(Mutex::new(Stats::new()));
+        Tester {
+            stats    : stats.clone(),
+            membrane : create_membrane(stats),
+        }
+    }
+
+    pub fn call_operation(&mut self,
+                          message_type : MessageType,
+                          source       : SourceAddress,
+                          destination  : DestinationAddress,
+                          authority    : Authority) -> Stats {
+        let message = RoutingMessage {
+            destination : destination,
+            source      : source.clone(),
+            orig_message: None,
+            message_type: message_type,
+            message_id  : self.membrane.get_next_message_id(),
+            authority   : authority,
+        };
+
+        let signed_message = SignedMessage::new(&message, self.membrane.id.signing_private_key());
+
+        let connection_name = ConnectionName::Routing(match source.actual_source() {
+            Address::Node(name) => name,
+            _                   => Random::generate_random()
+        });
+
+        let _ = self.membrane.message_received(&connection_name, signed_message.unwrap());
+        let stats = self.stats.clone();
+        let stats_value = stats.lock().unwrap();
+        stats_value.clone()
+    }
 }
 
 fn populate_routing_node() -> RoutingMembrane<TestInterface> {
@@ -1514,28 +1535,26 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     }
 
 #[test]
-#[ignore]
     fn call_handle_put() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
         let put_data = MessageType::PutData(
             Data::ImmutableData(
                 ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
-        assert_eq!(call_operation(put_data, Arc::new(Mutex::new(Stats::new())),
+        assert_eq!(Tester::new().call_operation(put_data,
                    SourceAddress::Direct(Random::generate_random()),
                    DestinationAddress::Direct(Random::generate_random()),
                    Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
 #[test]
-#[ignore]
     fn call_handle_authorised_put() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
         let put_data = MessageType::PutData(
             Data::ImmutableData(
                 ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
-        let result_stats = call_operation(put_data, Arc::new(Mutex::new(Stats::new())),
+        let result_stats = Tester::new().call_operation(put_data,
                    SourceAddress::Direct(Random::generate_random()),
                    DestinationAddress::Direct(Random::generate_random()),
                    Authority::Unknown);
@@ -1544,7 +1563,6 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     }
 
 #[test]
-#[ignore]
     fn call_handle_put_response() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
@@ -1564,29 +1582,31 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let signed_message = SignedMessage::new(&message, &keys.1);
         let put_data_response = MessageType::PutDataResponse(
             ErrorReturn::new(ResponseError::NoData, signed_message.unwrap()));
-        assert_eq!(call_operation(put_data_response,  Arc::new(Mutex::new(Stats::new())),
+        assert_eq!(Tester::new().call_operation(put_data_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
             Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
 #[test]
-#[ignore]
     fn call_handle_get_data() {
         let get_data = MessageType::GetData(DataRequest::ImmutableData(ImmutableDataType::Normal));
-        assert_eq!(call_operation(get_data,  Arc::new(Mutex::new(Stats::new())),
+        assert_eq!(Tester::new().call_operation(get_data,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
             Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
 #[test]
-#[ignore]
     fn call_handle_get_data_response() {
+        let mut tester = Tester::new();
+
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
-        let keys = crypto::sign::gen_keypair();
-        let get_data = MessageType::GetData(DataRequest::ImmutableData(ImmutableDataType::Normal));
+
+        let get_data = MessageType::GetData(
+                           DataRequest::ImmutableData(ImmutableDataType::Normal));
+
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(Random::generate_random()),
             source      : SourceAddress::Direct(Random::generate_random()),
@@ -1595,27 +1615,31 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
             message_id  : random::<u32>(),
             authority   : Authority::NaeManager(Random::generate_random())
         };
-        let signed_message = SignedMessage::new(&message, &keys.1);
+
+        let signed_message = SignedMessage::new(&message, &tester.membrane.id.signing_private_key()).unwrap();
+
         let get_data_response = MessageType::GetDataResponse(
-            GetDataResponse { data: Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())),
-                orig_request: signed_message.unwrap() }
-            );
-        assert_eq!(call_operation(get_data_response,  Arc::new(Mutex::new(Stats::new())),
+            GetDataResponse {
+                data: Data::ImmutableData(
+                        ImmutableData::new(ImmutableDataType::Normal,
+                                           array.iter().map(|&x|x).collect::<Vec<_>>())),
+                orig_request: signed_message
+            });
+
+        assert_eq!(tester.call_operation(get_data_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
             Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
 #[test]
-#[ignore]
     fn call_handle_post() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
         let post_data = MessageType::Post(
             Data::ImmutableData(
                 ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
-        assert_eq!(call_operation(post_data, Arc::new(Mutex::new(Stats::new())),
+        assert_eq!(Tester::new().call_operation(post_data,
                    SourceAddress::Direct(Random::generate_random()),
                    DestinationAddress::Direct(Random::generate_random()),
                    Authority::NaeManager(Random::generate_random())).call_count, 1usize);
@@ -1627,7 +1651,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
         let refresh = MessageType::Refresh(random::<u64>(), array.iter().map(|&x|x).collect::<Vec<_>>());
-        assert_eq!(call_operation(refresh, Arc::new(Mutex::new(Stats::new())),
+        assert_eq!(Tester::new().call_operation(refresh,
                    SourceAddress::Direct(Random::generate_random()),
                    DestinationAddress::Direct(Random::generate_random()),
                    Authority::NaeManager(Random::generate_random())).call_count, 1usize);
