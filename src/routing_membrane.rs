@@ -916,7 +916,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MessageAction::Reply(_reply_data) => {
                     // It has been decided that PUT messages will only generate
                     // replies in error cases.
-                    unimplemented!()
+                    debug_assert!(false, "PUT should not reply on success");
                 },
                 MessageAction::Forward(destinations) => {
                     for destination in destinations {
