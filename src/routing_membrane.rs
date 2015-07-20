@@ -51,7 +51,7 @@ use who_are_you::{WhoAreYou, IAm};
 use messages::{RoutingMessage, SignedMessage, MessageType,
                ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
 use error::{RoutingError, ResponseError, InterfaceError};
-use node_interface::{MethodCall, MessageAction};
+use node_interface::MethodCall;
 use refresh_accumulator::RefreshAccumulator;
 use id::Id;
 use public_id::PublicId;
@@ -361,6 +361,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     /// TODO: A churn event might be triggered
+    #[allow(unused_variables)]
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
         // Make sure the endpoint is dropped anywhere
         // The relay map will automatically drop the Name if the last endpoint to it is dropped
@@ -407,7 +408,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                     MethodCall::None => (),
                     MethodCall::Forward { destination } =>
-                        info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination)
+                        info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination),
+                    MethodCall::Reply { data } =>
+                        info!("IGNORED: on handle_churn MethodCall:Reply is not a Valid action")
                 };
             }
         };
@@ -475,28 +478,20 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 let from = message.from_group()
                                   .unwrap_or(message.non_relayed_source());
 
-                let action = self.mut_interface().handle_cache_get(
+                let method_call = self.mut_interface().handle_cache_get(
                                 data_request.clone(),
                                 message.non_relayed_destination(),
                                 from);
 
-                match action {
-                    Ok(action) => match action {
-                        MessageAction::Reply(data) => {
-                            let response = GetDataResponse {
-                                data         : data,
-                                orig_request : message_wrap.clone(),
-                            };
-
-                            let our_authority = our_authority(&message, &self.routing_table);
-
-                            ignore(self.send_reply(&message,
-                                                   our_authority,
-                                                   MessageType::GetDataResponse(response)));
-                        },
-                        _ => (),
+                match method_call {
+                    Ok(MethodCall::Reply { data }) => {
+                        let response = GetDataResponse { data: data, orig_request : message_wrap.clone() };
+                        let our_authority = our_authority(&message, &self.routing_table);
+                        ignore(self.send_reply(
+                            &message, our_authority, MessageType::GetDataResponse(response)));
                     },
-                    Err(_) => (),
+                    _ => (),
+
                 }
             },
             _ => {}
@@ -818,7 +813,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                     MethodCall::None => (),
                     MethodCall::Forward { destination } =>
-                        info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination)
+                        info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination),
+                    MethodCall::Reply { data: _data } =>
+                        info!("IGNORED: on handle_churn MethodCall:Reply is not a Valid action")
                 };
             }
         }
@@ -912,17 +909,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let to = message.destination_address();
 
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data) {
-            Ok(action) => match action {
-                MessageAction::Reply(_reply_data) => {
-                    // It has been decided that PUT messages will only generate
-                    // replies in error cases.
-                    debug_assert!(false, "PUT should not reply on success");
-                },
-                MessageAction::Forward(destinations) => {
-                    for destination in destinations {
-                        ignore(self.forward(&signed_message, &message, destination));
+            Ok(method_calls) => {
+                for method_call in method_calls {
+                    match method_call {
+                        MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                        MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                        MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                        MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                        MethodCall::Delete { name: x, data : y } => self.delete(x, y),
+                        MethodCall::None => (),
+                        MethodCall::Forward { destination } =>
+                            ignore(self.forward(&signed_message, &message, destination)),
+                        MethodCall::Reply { data } =>
+                            ignore(self.send_reply(&message, our_authority.clone(), MessageType::PutData(data))),
                     }
-                },
+                }
             },
             Err(InterfaceError::Abort) => {},
             Err(InterfaceError::Response(error)) => {
@@ -954,21 +955,24 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                            message: RoutingMessage,
                                            response: ErrorReturn) -> RoutingResult {
         info!("Handle PUT data response.");
+        let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source.clone();
 
-        let method_call = self.mut_interface()
-            .handle_put_response(from_authority, from, response.error);
-
-        match method_call {
-            MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-            MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
-            MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-            MethodCall::Post { destination: x, content: y, } => self.post(x, y),
-            MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-            MethodCall::None => (),
-            MethodCall::Forward { destination } =>
-                ignore(self.forward(&signed_message, &message, destination)),
+        for method_call in self.mut_interface().handle_put_response(from_authority, from, response.error.clone()) {
+            match method_call {
+                MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                MethodCall::Delete { name: x, data : y } => self.delete(x, y),
+                MethodCall::None => (),
+                MethodCall::Forward { destination } =>
+                    ignore(self.forward(&signed_message, &message, destination)),
+                MethodCall::Reply { data: _data } =>
+                    ignore(self.send_reply(&message, our_authority.clone(),
+                        MessageType::PutDataResponse(ErrorReturn { error: response.error.clone(), orig_request: signed_message.clone() }))),
+            }
         }
         Ok(())
     }
@@ -1189,23 +1193,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let from_authority = message.from_authority();
         let from           = message.source_address();
 
-        match self.mut_interface().handle_get(data_request,
-                                              our_authority.clone(),
-                                              from_authority,
-                                              from) {
-            Ok(action) => match action {
-                MessageAction::Reply(data) => {
-                    let response = GetDataResponse {
-                        data         : data,
-                        orig_request : orig_message,
-                    };
-                    ignore(self.send_reply(&message,
-                                           our_authority,
-                                           MessageType::GetDataResponse(response)));
-                },
-                MessageAction::Forward(dest_nodes) => {
-                    for destination in dest_nodes {
-                        ignore(self.forward(&orig_message, &message, destination));
+        match self.mut_interface().handle_get(
+                data_request.clone(), our_authority.clone(), from_authority, from) {
+            Ok(method_calls) => {
+                for method_call in method_calls {
+                    match method_call {
+                        MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                        MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                        MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                        MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                        MethodCall::Delete { name: x, data : y } => self.delete(x, y),
+                        MethodCall::None => (),
+                        MethodCall::Forward { destination } =>
+                            ignore(self.forward(&orig_message, &message, destination)),
+                        MethodCall::Reply { data } => {
+                            let response = GetDataResponse { data: data, orig_request: orig_message.clone() };
+                            ignore(self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(response)))
+                        },
                     }
                 }
             },
@@ -1234,17 +1238,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
         if !response.verify_request_came_from(&self.id.signing_public_key()) {
             return Err(RoutingError::FailedSignature);
         }
+        let our_authority  = our_authority(&message, &self.routing_table);
         let from = message.source.non_relayed_source();
 
-        match self.mut_interface().handle_get_response(from, response.data) {
-            MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-            MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
-            MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-            MethodCall::Post { destination: x, content: y, } => self.post(x, y),
-            MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-            MethodCall::None => (),
-            MethodCall::Forward { destination } =>
-                ignore(self.forward(&orig_message, &message, destination)),
+        for method_call in self.mut_interface().handle_get_response(from, response.data.clone()) {
+            match method_call {
+                MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                MethodCall::Delete { name: x, data : y } => self.delete(x, y),
+                MethodCall::None => (),
+                MethodCall::Forward { destination } =>
+                    ignore(self.forward(&orig_message, &message, destination)),
+                MethodCall::Reply { data: _data } =>
+                    ignore(self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(response.clone()))),
+            }
         }
         Ok(())
     }
@@ -1269,7 +1278,7 @@ use id::Id;
 use immutable_data::{ImmutableData, ImmutableDataType};
 use messages::{ErrorReturn, RoutingMessage, MessageType, SignedMessage, GetDataResponse};
 use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
-use node_interface::{Interface, MethodCall, MessageAction};
+use node_interface::{Interface, MethodCall};
 use public_id::PublicId;
 use rand::{random, Rng, thread_rng};
 use routing_table;
@@ -1322,19 +1331,21 @@ struct TestInterface {
 impl Interface for TestInterface {
     fn handle_get(&mut self, _data_request: DataRequest, _our_authority: Authority,
                   _from_authority: Authority, _from_address   : SourceAddress)
-        -> Result<MessageAction, InterfaceError> {
+        -> Result<Vec<MethodCall>, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         let data = Data::ImmutableData(
                 ImmutableData::new(ImmutableDataType::Normal,
                 "handle_get called".to_string().into_bytes().iter().map(|&x| x).collect::<Vec<_>>()));
-        Ok(MessageAction::Reply(data))
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::Reply { data: data });
+        Ok(method_calls)
     }
 
     fn handle_put(&mut self, _our_authority: Authority, from_authority: Authority,
                   _from_address: SourceAddress, _dest_address: DestinationAddress,
-                  data: Data) -> Result<MessageAction, InterfaceError> {
+                  data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1342,7 +1353,9 @@ impl Interface for TestInterface {
             Authority::Unknown => "UnauthorisedPut".to_string().into_bytes(),
             _   => "AuthorisedPut".to_string().into_bytes(),
         };
-        Ok(MessageAction::Reply(data))
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::Reply { data: data });
+        Ok(method_calls)
     }
 
     fn handle_refresh(&mut self, type_tag: u64, _from_group: NameType, payloads: Vec<Vec<u8>>) {
@@ -1353,30 +1366,36 @@ impl Interface for TestInterface {
     }
 
     fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
-                   _from_address: NameType, _name: NameType, data: Data) -> Result<MessageAction, InterfaceError> {
+                   _from_address: NameType, _name: NameType, data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_post called".to_string().into_bytes();
-        Ok(MessageAction::Reply(data))
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::Reply { data: data });
+        Ok(method_calls)
     }
 
     fn handle_get_response(&mut self, _from_address: NameType,
-                           _response: Data) -> MethodCall {
+                           _response: Data) -> Vec<MethodCall> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_get_response called".to_string().into_bytes();
-        MethodCall::None
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::None);
+        method_calls
     }
 
     fn handle_put_response(&mut self, _from_authority: Authority, _from_address: SourceAddress,
-                           _response: ResponseError) -> MethodCall {
+                           _response: ResponseError) -> Vec<MethodCall> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_put_response".to_string().into_bytes();
-        MethodCall::None
+        let mut method_calls = Vec::<MethodCall>::new();
+        method_calls.push(MethodCall::None);
+        method_calls
     }
 
     fn handle_post_response(&mut self, _from_authority: Authority, _from_address: NameType,
@@ -1392,12 +1411,12 @@ impl Interface for TestInterface {
     fn handle_cache_get(&mut self, _data_request   : DataRequest,
                                    _from_authority : NameType,
                                    _from_address   : NameType)
-        -> Result<MessageAction, InterfaceError> {
+        -> Result<MethodCall, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 
     fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
-                        _data: Data) -> Result<MessageAction, InterfaceError> {
+                        _data: Data) -> Result<MethodCall, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 }
