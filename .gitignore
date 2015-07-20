@@ -12,4 +12,4 @@ target/
 /bin/
 .cargo/
 packages/
-
+.DS_Store

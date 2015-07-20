@@ -24,16 +24,16 @@ function create_package {
     --after-install $RootDir/installer/common/scripts/after_install.sh \
     --after-remove $RootDir/installer/common/scripts/after_remove.sh \
     target/release/maidsafe_vault=maidsafe_vault \
-    installer/maidsafe_vault.bootstrap.cache=maidsafe_vault.bootstrap.cache
+    installer/common/maidsafe_vault.bootstrap.cache=maidsafe_vault.bootstrap.cache
 }
 
 mkdir -p $RootDir/packages/$1
 cd $RootDir/packages/$1
-if [[ "$1" -eq "linux" ]]
+if [[ "$1" == "linux" ]]
 then
   create_package deb
   create_package rpm
-elif [[ "$1" -eq "osx" ]]
+elif [[ "$1" == "osx" ]]
 then
   create_package osxpkg
 fi
