@@ -1658,7 +1658,6 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     }
 
 #[test]
-#[ignore]
     fn relocate_original_public_id() {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
@@ -1672,7 +1671,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
             let public_id = PublicId::new(&Id::new());
             let put_public_id = MessageType::PutPublicId(public_id.clone());
             let message = RoutingMessage {
-                destination : DestinationAddress::Direct(Random::generate_random()),
+                destination : DestinationAddress::Direct(public_id.name()),
                 source      : SourceAddress::Direct(Random::generate_random()),
                 orig_message: None,
                 message_type: put_public_id,
