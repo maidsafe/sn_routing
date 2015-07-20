@@ -23,6 +23,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::error;
 use std::fmt;
 use std::str;
+use data::Data;
 
 //------------------------------------------------------------------------------
 #[deny(missing_docs)]
@@ -34,7 +35,7 @@ pub enum ResponseError {
     /// invalid request
     InvalidRequest,
     /// failure to store data
-    FailedToStoreData(Vec<u8>)
+    FailedToStoreData(Data)
 }
 
 impl error::Error for ResponseError {
@@ -65,7 +66,7 @@ impl fmt::Display for ResponseError {
 impl Encodable for ResponseError {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
         let type_tag;
-        let mut data : Option<Vec<u8>> = None;
+        let mut data : Option<Data> = None;
         match *self {
             ResponseError::NoData => type_tag = "NoData",
             ResponseError::InvalidRequest => type_tag = "InvalidRequest",
@@ -83,7 +84,7 @@ impl Decodable for ResponseError {
         try!(d.read_u64());
         // let mut type_tag : String;
         // // let mut data : Option<Vec<u8>>;
-        let (type_tag, data) : (String, Option<Vec<u8>>)
+        let (type_tag, data) : (String, Option<Data>)
             = try!(Decodable::decode(d));
         match &type_tag[..] {
             "NoData" => Ok(ResponseError::NoData),
@@ -139,7 +140,6 @@ impl fmt::Display for InterfaceError {
 
 //------------------------------------------------------------------------------
 pub enum ClientError {
-    NotBootstrapped,
     Io(io::Error),
     Cbor(CborError),
 }
@@ -157,6 +157,8 @@ impl From<io::Error> for ClientError {
 #[derive(Debug)]
 /// Represents routing error types
 pub enum RoutingError {
+    /// The node/client has not bootstrapped yet
+    NotBootstrapped,
     /// invalid requester or handler authorities
     BadAuthority,
     /// failure to connect to an already connected node
@@ -218,6 +220,7 @@ impl From<InterfaceError> for RoutingError {
 impl error::Error for RoutingError {
     fn description(&self) -> &str {
         match *self {
+            RoutingError::NotBootstrapped => "Not bootstrapped",
             RoutingError::BadAuthority => "Invalid authority",
             RoutingError::AlreadyConnected => "Already connected",
             RoutingError::UnknownMessageType => "Invalid message type",
@@ -252,6 +255,7 @@ impl error::Error for RoutingError {
 impl fmt::Display for RoutingError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            RoutingError::NotBootstrapped => fmt::Display::fmt("Not bootstrapped", f),
             RoutingError::BadAuthority => fmt::Display::fmt("Bad authority", f),
             RoutingError::AlreadyConnected => fmt::Display::fmt("already connected", f),
             RoutingError::UnknownMessageType => fmt::Display::fmt("Unknown message", f),
