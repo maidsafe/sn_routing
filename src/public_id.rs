@@ -70,9 +70,7 @@ impl PublicId {
 
     // checks if the name is updated to a relocated name
     pub fn is_relocated(&self) -> bool {
-        self.name != utils::calculate_original_name
-                         (&self.public_sign_key,
-                          &self.public_encrypt_key)
+        self.name != utils::public_key_to_client_name(&self.public_sign_key)
     }
 }
 
@@ -81,26 +79,21 @@ mod test {
     use super::*;
     use NameType;
     use test_utils::Random;
+    use sodiumoxide::crypto;
 
     #[test]
     fn assign_relocated_name_public_id() {
         let before = PublicId::generate_random();
         let original_name = before.name();
+        assert_eq!(original_name,
+            NameType::new(crypto::hash::sha512::hash(&before.signing_public_key()[..]).0));
         assert!(!before.is_relocated());
         let relocated_name: NameType = Random::generate_random();
         let mut relocated = before.clone();
-        relocated.assign_relocated_name(original_name.clone());
-
         relocated.assign_relocated_name(relocated_name.clone());
-
-        relocated.assign_relocated_name(relocated_name.clone());
-        relocated.assign_relocated_name(Random::generate_random());
-        relocated.assign_relocated_name(original_name.clone());
-
         assert!(relocated.is_relocated());
-        assert_eq!(relocated.name(), relocated_name);
-        assert!(before.name()!= relocated.name());
         assert_eq!(before.signing_public_key(), relocated.signing_public_key());
-  //        assert_eq!(before.public_sign_key, relocated.public_sign_key); TODO FIXME
+        assert_eq!(relocated.client_name(), original_name);
+        assert_eq!(relocated.name(), relocated_name);
     }
 }

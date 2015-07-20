@@ -146,7 +146,6 @@ mod test {
     use std::cmp;
     use rustc_serialize::{Decodable, Encodable};
     use test_utils::Random;
-    use id::Id;
     use public_id::PublicId;
     use authority::Authority;
     use NameType;
@@ -267,31 +266,5 @@ mod test {
         }
         let invalid_relocated_name = NameType(crypto::hash::sha512::hash(&invalid_combined).0);
         assert!(invalid_relocated_name != actual_relocated_name);
-    }
-
-    #[test]
-    fn assign_relocated_name_id() {
-        let before = Id::new();
-        let original_name = before.name();
-        assert!(!before.is_relocated());
-        let relocated_name: NameType = Random::generate_random();
-        let mut relocated = before.clone();
-        relocated.assign_relocated_name(original_name.clone());
-
-        assert!(relocated.assign_relocated_name(relocated_name.clone()));
-
-        assert!(!relocated.assign_relocated_name(relocated_name.clone()));
-        assert!(!relocated.assign_relocated_name(Random::generate_random()));
-        assert!(!relocated.assign_relocated_name(original_name.clone()));
-
-
-        assert!(relocated.is_relocated());
-        assert_eq!(relocated.name(), relocated_name);
-        assert!(before.name()!= relocated.name());
-        assert_eq!(before.signing_public_key(), relocated.signing_public_key());
-        assert_eq!(before.encrypting_public_key().0.to_vec(), relocated.encrypting_public_key().0.to_vec());
-        assert_eq!(before.signing_private_key().0.to_vec(), relocated.signing_private_key().0.to_vec());
-        assert_eq!(before.encrypting_public_key().0.to_vec(), relocated.encrypting_public_key().0.to_vec());
-        assert_eq!(before.signing_private_key().0.to_vec(), relocated.signing_private_key().0.to_vec());
     }
 }
