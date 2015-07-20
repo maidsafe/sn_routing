@@ -715,7 +715,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    #[allow(unused_variables)]
     fn handle_i_am(&mut self, endpoint: Endpoint, i_am: IAm) -> RoutingResult {
         let mut trigger_handle_churn = false;
         match i_am.public_id.is_relocated() {
@@ -815,7 +814,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::None => (),
                     MethodCall::Forward { destination } =>
                         info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination),
-                    MethodCall::Reply { data } =>
+                    MethodCall::Reply { data: _data } =>
                         info!("IGNORED: on handle_churn MethodCall:Reply is not a Valid action")
                 };
             }
@@ -952,7 +951,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.send_swarm_or_parallel_or_relay(&message)
     }
 
-    #[allow(unused_variables)]
     fn handle_put_data_response(&mut self, signed_message: SignedMessage,
                                            message: RoutingMessage,
                                            response: ErrorReturn) -> RoutingResult {
@@ -971,7 +969,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::None => (),
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&signed_message, &message, destination)),
-                MethodCall::Reply { data } =>
+                MethodCall::Reply { data: _data } =>
                     ignore(self.send_reply(&message, our_authority.clone(),
                         MessageType::PutDataResponse(ErrorReturn { error: response.error.clone(), orig_request: signed_message.clone() }))),
             }
@@ -1188,7 +1186,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    #[allow(unused_variables)]
     fn handle_get_data(&mut self, orig_message: SignedMessage,
                                   message: RoutingMessage,
                                   data_request: DataRequest) -> RoutingResult {
@@ -1235,7 +1232,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    #[allow(unused_variables)]
     fn handle_get_data_response(&mut self, orig_message : SignedMessage,
                                            message: RoutingMessage,
                                            response: GetDataResponse) -> RoutingResult {
@@ -1255,7 +1251,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::None => (),
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&orig_message, &message, destination)),
-                MethodCall::Reply { data } =>
+                MethodCall::Reply { data: _data } =>
                     ignore(self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(response.clone()))),
             }
         }
