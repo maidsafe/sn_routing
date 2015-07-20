@@ -29,29 +29,6 @@ OR
   exit 2;
 }
 
-# Get current version from Cargo.toml
-RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' $RootDir/Cargo.toml)
+Platform=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-function create_package {
-  fpm \
-    -t $1 \
-    -s dir \
-    -C $RootDir/target/release/ \
-    --prefix /opt/maidsafe \
-    --force \
-    --name maidsafe-vault \
-    --version $Version \
-    --license GPLv3 \
-    --vendor MaidSafe \
-    --maintainer "MaidSafeQA <qa@maidsafe.net>" \
-    --description "SAFE Network vault" \
-    --url "http://maidsafe.net" \
-    maidsafe_vault \
-    ../../installer/maidsafe_vault.bootstrap.cache=maidsafe_vault.bootstrap.cache
-}
-
-mkdir -p $RootDir/packages/linux
-cd $RootDir/packages/linux
-create_package deb
-create_package rpm
+${0%/*}/../../common/scripts/invoke_fpm.sh ${Platform##*/}
