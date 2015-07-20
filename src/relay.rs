@@ -191,7 +191,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn add() {
         let our_id : Id = Id::new();
         let our_public_id = PublicId::new(&our_id);
@@ -210,7 +209,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn drop() {
         let our_id : Id = Id::new();
         let mut relay_map = RelayMap::new(&our_id);
@@ -228,7 +226,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn add_conflicting_endpoints() {
         let our_id : Id = Id::new();
         let mut relay_map = RelayMap::new(&our_id);
@@ -247,7 +244,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn add_multiple_endpoints() {
         let our_id : Id = Id::new();
         let mut relay_map = RelayMap::new(&our_id);
