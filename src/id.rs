@@ -33,7 +33,7 @@ impl Id {
     pub fn new() -> Id {
 
         let sign_keys =  sodiumoxide::crypto::sign::gen_keypair();
-        let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0); 
+        let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0);
         Id {
           sign_keys : sign_keys,
           encrypt_keys : sodiumoxide::crypto::box_::gen_keypair(),
@@ -56,11 +56,11 @@ impl Id {
 
     pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
                      encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey))-> Id {
-        let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0); 
+        let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0);
         Id {
           sign_keys : sign_keys,
           encrypt_keys : encrypt_keys,
-          name : name,     
+          name : name,
         }
     }
 
@@ -77,7 +77,7 @@ impl Id {
     pub fn is_self_relocated(&self) -> bool {
         // This function should not exist, it is here only temporarily
         // to fix compilation.
-        self.name == NameType::new(crypto::hash::sha512::hash(&self.sign_keys.0[..]).0)     
+        self.name == NameType::new(crypto::hash::sha512::hash(&self.sign_keys.0[..]).0)
     }
 
     // name field is initially same as original_name, this should be later overwritten by
@@ -96,3 +96,55 @@ impl Id {
     }
 }
 
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use sodiumoxide::crypto;
+    use NameType;
+    use test_utils::Random;
+
+    #[test]
+    fn construct_id_with_keys() {
+      let sign_keys = crypto::sign::gen_keypair();
+      let asym_keys = crypto::box_::gen_keypair();
+
+      // let public_keys = (sign_keys.clone().0, asym_keys.clone().0);
+      // let secret_keys = (sign_keys.clone().1, asym_keys.clone().1);
+
+      let id = Id::with_keys(sign_keys.clone(), asym_keys.clone());
+
+      assert_eq!(NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0),
+          id.name());
+      assert_eq!(&sign_keys.0, &id.signing_public_key());
+      // FIXME(ben) 20/07/2015 once PartialEq is implemented for the private key, avoid slice
+      assert_eq!(&sign_keys.1[..], &id.signing_private_key()[..]);
+      assert_eq!(&asym_keys.0, &id.encrypting_public_key());
+    }
+
+    #[test]
+    fn assign_relocated_name_id() {
+        let before = Id::new();
+        let original_name = before.name();
+        assert!(!before.is_relocated());
+        let relocated_name: NameType = Random::generate_random();
+        let mut relocated = before.clone();
+        relocated.assign_relocated_name(original_name.clone());
+
+        assert!(relocated.assign_relocated_name(relocated_name.clone()));
+
+        assert!(!relocated.assign_relocated_name(relocated_name.clone()));
+        assert!(!relocated.assign_relocated_name(Random::generate_random()));
+        assert!(!relocated.assign_relocated_name(original_name.clone()));
+
+
+        assert!(relocated.is_relocated());
+        assert_eq!(relocated.name(), relocated_name);
+        assert!(before.name()!= relocated.name());
+        assert_eq!(before.signing_public_key(), relocated.signing_public_key());
+        assert_eq!(before.encrypting_public_key().0.to_vec(), relocated.encrypting_public_key().0.to_vec());
+        assert_eq!(before.signing_private_key().0.to_vec(), relocated.signing_private_key().0.to_vec());
+        assert_eq!(before.encrypting_public_key().0.to_vec(), relocated.encrypting_public_key().0.to_vec());
+        assert_eq!(before.signing_private_key().0.to_vec(), relocated.signing_private_key().0.to_vec());
+    }
+}

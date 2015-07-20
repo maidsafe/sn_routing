@@ -39,6 +39,7 @@ pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, CborError> where T: Decodable {
     }
 }
 
+/// The name client name is the SHA512 of the public signing key
 pub fn public_key_to_client_name(key: &sign::PublicKey) -> NameType {
     NameType(crypto::hash::sha512::hash(&key[..]).0)
 }
@@ -66,23 +67,4 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
       }
     }
     Ok(NameType(crypto::hash::sha512::hash(&combined).0))
-}
-
-// A self_relocated id, is purely used for a zero-node to bootstrap a network.
-// Such a node will be rejected by the network once routing tables fill up.
-// pub fn calculate_self_relocated_name(public_key: &crypto::sign::PublicKey,
-//                            public_sign_key: &crypto::box_::PublicKey) -> NameType {
-//     let original_name = calculate_original_name(public_key, public_sign_key);
-//     NameType(crypto::hash::sha512::hash(&original_name.0.to_vec()).0)
-// }
-
-// TODO(Team): Below method should be modified and reused in constructor of Id.
-pub fn calculate_original_name(public_key: &crypto::sign::PublicKey,
-                               public_sign_key: &crypto::box_::PublicKey) -> NameType {
-    let combined_iter = public_key.0.into_iter().chain(public_sign_key.0.into_iter());
-    let mut combined: Vec<u8> = Vec::new();
-    for iter in combined_iter {
-        combined.push(*iter);
-    }
-    NameType(crypto::hash::sha512::hash(&combined).0)
 }
