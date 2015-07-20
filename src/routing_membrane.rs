@@ -1633,6 +1633,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     }
 
 #[test]
+#[ignore]
     fn call_handle_post() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
