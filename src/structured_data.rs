@@ -149,8 +149,8 @@ impl StructuredData {
     }
 
     /// Get the type_tag
-    pub fn get_type_tag(&self) -> &u64 {
-        &self.type_tag
+    pub fn get_type_tag(&self) -> u64 {
+        self.type_tag.clone()
     }
 
     /// Get the identifier
