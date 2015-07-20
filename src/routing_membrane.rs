@@ -292,7 +292,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // if the PublicId is not relocated,
         // only accept the connection into the RelayMap.
         // This will enable this connection to bootstrap or act as a client.
-        let mut routing_msg = routing_message.create_reply(&self.id.name(), &our_authority);
+        let mut routing_msg = try!(routing_message.create_reply(&self.id.name(), &our_authority));
         routing_msg.message_type = MessageType::ConnectResponse(ConnectResponse {
                     requester_local_endpoints: connect_request.local_endpoints.clone(),
                     requester_external_endpoints: connect_request.external_endpoints.clone(),
@@ -943,7 +943,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                   routing_message : &RoutingMessage,
                   our_authority   : Authority,
                   msg             : MessageType) -> RoutingResult {
-        let mut message = routing_message.create_reply(&self.id.name(), &our_authority);
+        let mut message = try!(routing_message.create_reply(&self.id.name(), &our_authority));
 
         message.message_type = msg;
         message.authority    = our_authority;

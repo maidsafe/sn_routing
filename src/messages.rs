@@ -224,21 +224,27 @@ impl RoutingMessage {
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_reply(&self, _our_name : &NameType, _our_authority : &Authority)
-        -> RoutingMessage {
+    pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)
+        -> Result<RoutingMessage, CborError> {
         // Commented the below code as it doesn't compile.
-        unimplemented!()
-        //// implicitly preserve all non-mutated fields.
-        //// TODO(dirvine) Again why copy here instead of change in place?  :08/07/2015
-        //let mut reply_message     = self.clone();
-        //if self.orig_message.is_some() {
-        //   reply_message.destination = try!(self.orig_message.get_routing_message()).reply_destination();
-        //} else {
-        //   reply_message.destination = self.reply_destination();
-        //}
-        //reply_message.source      = SourceAddress::Direct(our_name.clone());
-        //reply_message.authority   = our_authority.clone();
-        //reply_message
+        let mut reply_message = self.clone();
+
+        // Check if the message was forwarded, if so, reply directly to the
+        // original poster (not the one who forwarded the message).
+        reply_message.destination = match self.orig_message {
+            Some(ref orig_message) => {
+                try!(orig_message.get_routing_message()).reply_destination()
+            },
+            None => {
+                self.reply_destination()
+            }
+        };
+
+        reply_message.orig_message = None;
+        reply_message.source       = SourceAddress::Direct(our_name.clone());
+        reply_message.authority    = our_authority.clone();
+
+        Ok(reply_message)
     }
 
     pub fn reply_destination(&self) -> DestinationAddress {
