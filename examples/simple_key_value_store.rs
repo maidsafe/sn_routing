@@ -36,28 +36,30 @@
         unused_qualifications, unused_results, variant_size_differences)]
 #![feature(convert, core)]
 
-extern crate cbor;
+// extern crate cbor;
 extern crate core;
 extern crate docopt;
 extern crate rustc_serialize;
-extern crate maidsafe_sodiumoxide as sodiumoxide;
+// extern crate maidsafe_sodiumoxide as sodiumoxide;
 
 extern crate crust;
 extern crate routing;
 
 use core::iter::FromIterator;
-use std::fmt;
+// use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::spawn;
+use std::collections::BTreeMap;
 
-use cbor::CborTagEncode;
+// use cbor::CborTagEncode;
 use docopt::Docopt;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use sodiumoxide::crypto;
+// use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Decodable, Decoder};
+// use sodiumoxide::crypto;
 
 use crust::Endpoint;
 use routing::node_interface::{CreatePersonas, Interface, MethodCall};
@@ -145,93 +147,18 @@ struct CliArgs {
     arg_value: Vec<String>,
 }
 
-// ==========================   Test Data Structure   =================================
-#[derive(Clone)]
-struct TestData {
-    key: String,
-    value: String
-}
-
-impl TestData {
-    fn new(key: String, values: Vec<String>) -> TestData {
-        assert!(!values.is_empty());
-        let mut value: String = values[0].clone();
-        for i in 1..values.len() {
-            value.push_str(" ");
-            value.push_str(values[i].as_str());
-        };
-        TestData { key: key, value: value }
-    }
-
-    pub fn get_name_from_key(key: &String) -> NameType {
-        let digest = crypto::hash::sha512::hash(key.as_ref());
-        NameType(digest.0)
-    }
-
-    pub fn key(&self) -> &String {
-        &self.key
-    }
-
-    pub fn value(&self) -> &String {
-        &self.value
-    }
-}
-
-impl Sendable for TestData {
-    fn name(&self) -> NameType {
-        TestData::get_name_from_key(&self.key)
-    }
-
-    fn type_tag(&self) -> u64 { 201 }
-
-    fn serialised_contents(&self) -> Vec<u8> {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
-        e.into_bytes()
-
-    }
-
-    fn refresh(&self) -> bool {
-        false
-    }
-
-    fn merge(&self, _responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
-}
-
-impl Encodable for TestData {
-    fn encode<E: Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
-        CborTagEncode::new(5483_002, &(&self.key, &self.value)).encode(e)
-    }
-}
-
-impl Decodable for TestData {
-    fn decode<D: Decoder>(d: &mut D) -> Result<TestData, D::Error> {
-        let _ = try!(d.read_u64());
-        let (key, value) = try!(Decodable::decode(d));
-        let test_data = TestData { key: key, value: value };
-        Ok(test_data)
-    }
-}
-
-impl PartialEq for TestData {
-    fn eq(&self, other: &TestData) -> bool {
-        self.key == other.key && self.value == other.value
-    }
-}
-
-impl fmt::Debug for TestData {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "TestData(key: {}, value: {})", self.key, self.value)
-    }
-}
-
 // ==========================   Implement traits   =================================
-struct Stats {
-    pub stats: Vec<(u32, TestData)>
-}
 
 struct TestClient {
-    pub stats: Arc<Mutex<Stats>>
+    pub key_reverse_lookup : BTreeMap<NameType, String>
+}
+
+impl TestClient {
+    pub fn new() -> TestClient {
+        TestClient {
+            key_reverse_lookup: BTreeMap::new()
+        }
+    }
 }
 
 impl routing::client_interface::Interface for TestClient {
@@ -261,12 +188,14 @@ impl routing::client_interface::Interface for TestClient {
 }
 
 struct TestNode {
-    stats: Arc<Mutex<Stats>>
+    _db: BTreeMap<NameType, PlainData>
 }
 
 impl TestNode {
     pub fn new() -> TestNode {
-        TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }
+        TestNode {
+            _db : BTreeMap::new()
+        }
     }
 }
 
@@ -275,15 +204,10 @@ impl Interface for TestNode {
                   _data_request: DataRequest, our_authority: Authority,
                   _from_authority: Authority, _from_address: types::SourceAddress)
                    -> Result<Vec<MethodCall>, InterfaceError> {
-        let stats = self.stats.clone();
-        let stats_value = stats.lock().unwrap();
         match our_authority {
             Authority::NaeManager(data_name) => {
                 println!("testing node handle get request of chunk {}", data_name);
-                for data in stats_value.stats.iter().filter(|data| data.1.name() == data_name) {
-                    let plain_data = Data::PlainData(PlainData::new(data_name, data.1.value().clone().into_bytes()));
-                    return Ok(vec![MethodCall::Reply{ data: plain_data }]);
-                }
+                    return Ok(vec![]);
             },
             _ => {}
         };
@@ -300,23 +224,11 @@ impl Interface for TestNode {
                 return Ok(vec![MethodCall::Put { destination: data.name(), content: data }]);
             },
             Authority::NaeManager(group_name) => {
-                let data_in = data.clone();
-                let stats = self.stats.clone();
-                let mut stats_value = stats.lock().unwrap();
                 println!("testing node handle put request to group {:?}", group_name);
-                for data in stats_value.stats.iter_mut().filter(|d| d.1.name() == data.name()) {
-                    data.0 += 1;
-                    // return with abort to terminate the flow
-                    return Err(InterfaceError::Abort);
-                }
                 match data {
-                    Data::PlainData(plain_data) => {
-                        stats_value.stats.push((1, TestData{
-                            key: plain_data.name().to_string(),
-                            value: String::from_utf8(plain_data.value().clone()).unwrap()
-                        }));
+                    Data::PlainData(_plain_data) => {
                         println!("MessageAction::Reply on PutResponse.");
-                        return Ok(vec![MethodCall::Reply{ data: data_in }]);
+                        return Ok(vec![]);
                     },
                     _ => return Err(InterfaceError::Response(ResponseError::InvalidRequest))
                 }
@@ -401,9 +313,7 @@ fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
 }
 
 fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
-    let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient {
-        stats: Arc::new(Mutex::new(Stats {
-            stats: Vec::<(u32, TestData)>::new()})) })), Id::new());
+    let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), Id::new());
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
     let _ = spawn(move || {
@@ -439,12 +349,12 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
             // docopt should ensure arg_key and arg_value are valid
             assert!(args.arg_key.is_some() && !args.arg_value.is_empty());
             match args.arg_key {
-                Some(key) => {
-                    let data = TestData::new(key, args.arg_value);
-                    println!("Putting value of \"{}\" to network under key \"{}\".", data.value(),
-                             data.key());
-                    let plain_data = Data::PlainData(PlainData::new(data.name(), data.value().as_bytes().to_vec()));
-                    let _ = mutate_client.lock().unwrap().put(data.name(), plain_data);
+                Some(_key) => {
+                    // let data = TestData::new(key, args.arg_value);
+                    // println!("Putting value of \"{}\" to network under key \"{}\".", data.value(),
+                    //          data.key());
+                    // let plain_data = Data::PlainData(PlainData::new(data.name(), data.value().as_bytes().to_vec()));
+                    // let _ = mutate_client.lock().unwrap().put(data.name(), plain_data);
                 },
                 None => ()
             }
@@ -452,10 +362,10 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
             // docopt should ensure arg_key is valid
             assert!(args.arg_key.is_some());
             match args.arg_key {
-                Some(key) => {
-                    let name = TestData::get_name_from_key(&key);
-                    println!("Getting value for key \"{}\" from network.", key);
-                    let _ = mutate_client.lock().unwrap().get(name, DataRequest::PlainData);
+                Some(_key) => {
+                    // let name = TestData::get_name_from_key(&key);
+                    // println!("Getting value for key \"{}\" from network.", key);
+                    // let _ = mutate_client.lock().unwrap().get(name, DataRequest::PlainData);
                 },
                 None => ()
             }
