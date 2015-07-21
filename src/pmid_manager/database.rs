@@ -230,9 +230,8 @@ impl PmidManagerDatabase {
 
 #[cfg(test)]
 mod test {
-  extern crate cbor;
-  extern crate maidsafe_types;
-  extern crate routing;
+  use cbor;
+  use routing;
   use super::{PmidManagerDatabase, PmidManagerAccount, PmidManagerAccountWrapper};
 
     #[test]

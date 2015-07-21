@@ -282,146 +282,51 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
 #[cfg(test)]
  mod test {
     use std::convert::From;
-    use super::*;
-    use data_parser::Data;
-    use data_manager;
-    use routing;
+
     use cbor;
-    use maidsafe_types;
+    use sodiumoxide::crypto;
+
+    use super::*;
+    use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
+    use utils::decode;
 
     use routing::authority::Authority;
-    use routing::types:: { MethodCall, DestinationAddress };
-    use routing::NameType;
+    use routing::data::{Data, DataRequest};
     use routing::error::{ResponseError, InterfaceError};
-    use routing::test_utils::Random;
+    use routing::immutable_data::{ImmutableData, ImmutableDataType};
+    use routing::NameType;
     use routing::node_interface::{ Interface, MethodCall };
     use routing::sendable::Sendable;
+    use routing::structured_data::StructuredData;
+    use routing::test_utils::Random;
+    use routing::types::*;
 
-    #[test]
-    fn put_get_flow() {
-        let mut vault = VaultFacade::new();
-        let value = routing::types::generate_random_vec_u8(1024);
-        let data = maidsafe_types::ImmutableData::new(value);
-        { // MaidManager, shall allowing the put and SendOn to DataManagers around name
-            let from = NameType::new([1u8; 64]);
-            // TODO : in this stage, dest can be populated as anything ?
-            let dest = DestinationAddress{ dest : NameType::generate_random(), relay_to: None };
-            let put_result = vault.handle_put(Authority::ClientManager, Authority::Client,
-                                              from, dest, data.serialised_contents());
-            assert_eq!(put_result.is_err(), false);
-            match put_result.ok().unwrap() {
-                MethodCall::SendOn(ref x) => {
-                    assert_eq!(x.len(), 1);
-                    assert_eq!(x[0], data.name());
-                }
-             MethodCall::Reply(_) => panic!("Unexpected"),
+    fn maid_manager_put(vault: &mut VaultFacade, from: SourceAddress,
+                        dest: DestinationAddress, im_data: ImmutableData) {
+        let keys = crypto::sign::gen_keypair();
+        let put_result = vault.handle_put(Authority::ClientManager(NameType::new([1u8; 64])),
+                                          Authority::Client(keys.0),
+                                          from, dest, Data::ImmutableData(im_data.clone()));
+        assert_eq!(put_result.is_err(), false);
+        let calls = put_result.ok().unwrap();
+        assert_eq!(calls.len(), 1);
+        match calls[0] {
+            MethodCall::Forward { destination } => {
+                assert_eq!(destination, im_data.name());
             }
-        }
-        vault.nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
-                               NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
-        { // DataManager, shall SendOn to pmid_nodes
-            let from = NameType::new([1u8; 64]);
-            // TODO : in this stage, dest can be populated as anything ?
-            let dest = DestinationAddress{ dest : NameType::generate_random(), relay_to: None };
-            let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager,
-                                              from, dest, data.serialised_contents());
-            assert_eq!(put_result.is_err(), false);
-            match put_result.ok().unwrap() {
-                MethodCall::SendOn(ref x) => {
-                    assert_eq!(x.len(), data_manager::PARALLELISM);
-                    //assert_eq!(x[0], NameType([3u8; 64]));
-                    //assert_eq!(x[1], NameType([2u8; 64]));
-                    //assert_eq!(x[2], NameType([1u8; 64]));
-                    //assert_eq!(x[3], NameType([7u8; 64]));
-                }
-                MethodCall::Reply(_) => panic!("Unexpected"),
-            }
-            let from = NameType::new([1u8; 64]);
-            let get_result = vault.handle_get(data.type_tag(), data.name().clone(),
-                                              Authority::NaeManager, Authority::Client, from);
-            assert_eq!(get_result.is_err(), false);
-            match get_result.ok().unwrap() {
-                MethodCall::SendOn(ref x) => {
-                    assert_eq!(x.len(), data_manager::PARALLELISM);
-                    //assert_eq!(x[0], NameType([3u8; 64]));
-                    //assert_eq!(x[1], NameType([2u8; 64]));
-                    //assert_eq!(x[2], NameType([1u8; 64]));
-                    //assert_eq!(x[3], NameType([7u8; 64]));
-                }
-                MethodCall::Reply(_) => panic!("Unexpected"),
-            }
-        }
-        { // PmidManager, shall put to pmid_nodes
-            let from = NameType::new([3u8; 64]);
-            let dest = DestinationAddress{ dest : NameType::new([7u8; 64]), relay_to: None };
-            let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager,
-                                              from, dest, data.serialised_contents());
-            assert_eq!(put_result.is_err(), false);
-            match put_result.ok().unwrap() {
-                MethodCall::SendOn(ref x) => {
-                    assert_eq!(x.len(), 1);
-                    assert_eq!(x[0], NameType([7u8; 64]));
-                }
-                MethodCall::Reply(_) => panic!("Unexpected"),
-            }
-        }
-        { // PmidNode stores/retrieves data
-            let from = NameType::new([7u8; 64]);
-            let dest = DestinationAddress{ dest : NameType::new([6u8; 64]), relay_to: None };
-            let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager,
-                                              from.clone(), dest, data.serialised_contents());
-            assert_eq!(put_result.is_ok(), true);
-            match put_result {
-             Err(InterfaceError::Abort) => panic!("Unexpected"),
-             Ok(MethodCall::Reply(_)) => {},
-             _ => panic!("Unexpected"),
-            }
-            let from = NameType::new([7u8; 64]);
-
-            let get_result = vault.handle_get(data.type_tag(), data.name().clone(),
-                                              Authority::ManagedNode, Authority::NodeManager, from);
-            assert_eq!(get_result.is_err(), false);
-            match get_result.ok().unwrap() {
-                MethodCall::Reply(ref x) => {
-                    let mut d = cbor::Decoder::from_bytes(&x[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Data::Immutable(data_retrieved) => {
-                                assert_eq!(data.name().0.to_vec(), data_retrieved.name().0.to_vec());
-                                assert_eq!(data.serialised_contents(), data_retrieved.serialised_contents());
-                            },
-                            _ => panic!("Unexpected"),
-                        }
-                    }
-                },
-                _ => panic!("Unexpected"),
-            }
+            _ => panic!("Unexpected"),
         }
     }
 
-    fn maid_manager_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress,
-                        data_name: NameType, data: Vec<u8>) {
-        let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest, data);
+    fn data_manager_put(vault: &mut VaultFacade, from: SourceAddress,
+                        dest: DestinationAddress, im_data: ImmutableData) {
+        let put_result = vault.handle_put(Authority::NaeManager(im_data.name()),
+                                          Authority::ClientManager(NameType::new([1u8; 64])),
+                                          from, dest, Data::ImmutableData(im_data));
         assert_eq!(put_result.is_err(), false);
-        match put_result.ok().unwrap() {
-            MethodCall::SendOn(ref x) => {
-                assert_eq!(x.len(), 1);
-                assert_eq!(x[0], data_name);
-            }
-            MethodCall::Reply(_) => panic!("Unexpected"),
-        }
-    }
-
-    fn data_manager_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress, data: Vec<u8>) {
-        let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest, data);
-        assert_eq!(put_result.is_err(), false);
-        match put_result.ok().unwrap() {
-            MethodCall::SendOn(ref x) => {
-                assert_eq!(x.len(), data_manager::PARALLELISM);
-            }
-            MethodCall::Reply(_) => panic!("Unexpected"),
-        }
+        let calls = put_result.ok().unwrap();
+        assert_eq!(calls.len(), data_manager::PARALLELISM);
     }
 
     fn add_nodes_to_table(vault: &mut VaultFacade, nodes: &Vec<NameType>) {
@@ -430,27 +335,116 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         }
     }
 
-    fn pmid_manager_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress, data: Vec<u8>) {
-        let put_result = vault.handle_put(Authority::NodeManager, Authority::NaeManager,
-                                          from, dest.clone(), data);
+    fn pmid_manager_put(vault: &mut VaultFacade, from: SourceAddress,
+                        dest: DestinationAddress, im_data: ImmutableData) {
+        let put_result = vault.handle_put(Authority::NodeManager(NameType::new([4u8; 64])),
+                                          Authority::NaeManager(im_data.name()),
+                                          from, dest.clone(), Data::ImmutableData(im_data));
         assert_eq!(put_result.is_err(), false);
-        match put_result.ok().unwrap() {
-            MethodCall::SendOn(ref x) => {
-                assert_eq!(x.len(), 1);
-                assert_eq!(x[0], dest.dest);
+        let calls = put_result.ok().unwrap();
+        assert_eq!(calls.len(), 1);
+        match calls[0] {
+            MethodCall::Forward { destination } => {
+                match dest {
+                    DestinationAddress::Direct(expected) => {
+                        assert_eq!(destination, expected);
+                    }
+                    _ => panic!("Unexpected"),
+                }                
             }
-            MethodCall::Reply(_) => panic!("Unexpected"),
+            _ => panic!("Unexpected"),
         }
     }
 
-    fn sd_manager_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress, data: Vec<u8>) {
-        let put_result = vault.handle_put(Authority::NaeManager, Authority::ManagedNode,
-                                          from.clone(), dest, data);
+    fn sd_manager_put(vault: &mut VaultFacade, from: SourceAddress,
+                    dest: DestinationAddress, sdv: StructuredData) {
+        let put_result = vault.handle_put(Authority::NaeManager(sdv.name()),
+                                          Authority::ManagedNode,
+                                          from.clone(), dest, Data::StructuredData(sdv.clone()));
         assert_eq!(put_result.is_ok(), true);
-        match put_result {
-             Err(InterfaceError::Abort) => panic!("Unexpected"),
-             Ok(MethodCall::Reply(_)) => {},
-             _ => panic!("Unexpected"),
+        let mut calls = put_result.ok().unwrap();
+        assert_eq!(calls.len(), 1);
+        match calls.remove(0) {
+            MethodCall::Reply { data } => {
+                match data {
+                    Data::StructuredData(sd) => {
+                        assert_eq!(sd, sdv);
+                    }
+                    _ => panic!("Unexpected"),
+                }
+            }
+            _ => panic!("Unexpected"),
+        }
+    }
+
+    #[test]
+    fn put_get_flow() {
+        let mut vault = VaultFacade::new();
+        let value = generate_random_vec_u8(1024);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        { // MaidManager, shall allowing the put and SendOn to DataManagers around name
+            let from = SourceAddress::Direct(NameType::new([1u8; 64]));
+            // TODO : in this stage, dest can be populated as anything ?
+            let dest = DestinationAddress::Direct(NameType::new([9u8; 64]));
+            maid_manager_put(&mut vault, from, dest, im_data.clone());
+        }
+        vault.nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
+                               NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
+        { // DataManager, shall SendOn to pmid_nodes
+            let from = SourceAddress::Direct(NameType::new([1u8; 64]));
+            // TODO : in this stage, dest can be populated as anything ?
+            let dest = DestinationAddress::Direct(NameType::new([9u8; 64]));
+            data_manager_put(&mut vault, from.clone(), dest, im_data.clone());
+            let keys = crypto::sign::gen_keypair();
+            let get_result = vault.handle_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+                                              Authority::NaeManager(im_data.name().clone()),
+                                              Authority::Client(keys.0), from);
+            assert_eq!(get_result.is_err(), false);
+            let get_calls = get_result.ok().unwrap();
+            assert_eq!(get_calls.len(), data_manager::PARALLELISM);
+        }
+        { // PmidManager, shall put to pmid_nodes
+            let from = SourceAddress::Direct(NameType::new([3u8; 64]));
+            let dest = DestinationAddress::Direct(NameType::new([7u8; 64]));
+            pmid_manager_put(&mut vault, from, dest, im_data.clone());
+        }
+        { // PmidNode stores/retrieves data
+            let from = SourceAddress::Direct(NameType::new([7u8; 64]));
+            let dest = DestinationAddress::Direct(NameType::new([6u8; 64]));
+            let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager(NameType::new([6u8; 64])),
+                                              from.clone(), dest, Data::ImmutableData(im_data.clone()));
+            assert_eq!(put_result.is_ok(), true);
+            let mut put_calls = put_result.ok().unwrap();
+            assert_eq!(put_calls.len(), 1);
+            match put_calls.remove(0) {
+                MethodCall::Reply { data } => {
+                    match data {
+                        Data::ImmutableData(fetched_im_data) => {
+                            assert_eq!(fetched_im_data, im_data);
+                        }
+                        _ => panic!("Unexpected"),
+                    }
+                }
+                _ => panic!("Unexpected"),
+            }
+
+            let get_result = vault.handle_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+                                              Authority::ManagedNode,
+                                              Authority::NodeManager(im_data.name().clone()), from);
+            assert_eq!(get_result.is_err(), false);
+            let mut get_calls = get_result.ok().unwrap();
+            assert_eq!(get_calls.len(), 1);
+            match get_calls.remove(0) {
+                MethodCall::Reply { data } => {
+                    match data {
+                        Data::ImmutableData(fetched_im_data) => {
+                            assert_eq!(fetched_im_data, im_data);
+                        }
+                        _ => panic!("Unexpected"),
+                    }
+                }
+                _ => panic!("Unexpected"),
+            }
         }
     }
 
@@ -463,11 +457,10 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             available_nodes.push(NameType::generate_random());
         }
 
-        let value = routing::types::generate_random_vec_u8(1024);
-        let data = maidsafe_types::ImmutableData::new(value);
-        let from = available_nodes[0].clone();
-        let dest = DestinationAddress{ dest : available_nodes[1].clone(), relay_to: None };
-        let data_as_vec = data.serialised_contents();
+        let value = generate_random_vec_u8(1024);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let from = SourceAddress::Direct(available_nodes[0].clone());
+        let dest = DestinationAddress::Direct(available_nodes[1].clone());
 
         let mut small_close_group = Vec::with_capacity(5);
         for i in 0..5 {
@@ -475,7 +468,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         }
 
         {// MaidManager - churn handling
-            maid_manager_put(&mut vault, from.clone(), dest.clone(), data.name().clone(), data_as_vec.clone());
+            maid_manager_put(&mut vault, from.clone(), dest.clone(), im_data.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
             // DataManagerStatsTransfer will always be included in the return
             assert!(churn_data.len() == 2);
@@ -484,12 +477,12 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::MAID_MANAGER_ACCOUNT_TAG);
-                    assert_eq!(*from_group, from);
+                    assert_eq!(*from_group, available_nodes[0]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {
                             Transfer::MaidManagerAccount(mm_account_wrapper) => {
-                                assert_eq!(mm_account_wrapper.name(), from.clone());
+                                assert_eq!(mm_account_wrapper.name(), available_nodes[0]);
                                 assert_eq!(mm_account_wrapper.get_account().get_data_stored(), 1024);
                             },
                             _ => panic!("Unexpected"),
@@ -504,7 +497,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         add_nodes_to_table(&mut vault, &available_nodes);
 
         {// DataManager - churn handling
-            data_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            data_manager_put(&mut vault, from.clone(), dest.clone(), im_data.clone());
             let mut close_group = Vec::with_capacity(20);
             for i in 10..30 {
                 close_group.push(available_nodes[i].clone());
@@ -516,12 +509,12 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::DATA_MANAGER_ACCOUNT_TAG);
-                    assert_eq!(*from_group, data.name());
+                    assert_eq!(*from_group, im_data.name());
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {
                             Transfer::DataManagerAccount(data_manager_sendable) => {
-                                assert_eq!(data_manager_sendable.name(), data.name());
+                                assert_eq!(data_manager_sendable.name(), im_data.name());
                             },
                             _ => panic!("Unexpected"),
                         }
@@ -553,7 +546,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         }
 
         {// PmidManager - churn handling
-            pmid_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            pmid_manager_put(&mut vault, from.clone(), dest.clone(), im_data.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
             // DataManagerStatsTransfer will always be included in the return
             assert_eq!(churn_data.len(), 2);
@@ -562,12 +555,12 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::PMID_MANAGER_ACCOUNT_TAG);
-                    assert_eq!(*from_group, dest.dest);
+                    assert_eq!(*from_group, available_nodes[1]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {
                             Transfer::PmidManagerAccount(account_wrapper) => {
-                                assert_eq!(account_wrapper.name(), dest.dest);
+                                assert_eq!(account_wrapper.name(),available_nodes[1]);
                             },
                             _ => panic!("Unexpected"),
                         }
@@ -579,16 +572,11 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         }
 
         {// StructuredDataManager - churn handling
-            let name = NameType::generate_random();
-            let owner = NameType::generate_random();
-            let mut vec_name_types = Vec::<NameType>::with_capacity(10);
-            for _ in 0..10 {
-                vec_name_types.push(NameType::generate_random());
-            }
-            let data = maidsafe_types::StructuredData::new(name, owner, vec_name_types.clone());
-            let data_as_vec: Vec<u8> = data.serialised_contents();
+            let name = NameType([3u8; 64]);
+            let value = generate_random_vec_u8(1024);
+            let sdv = StructuredData::new(0, name, value, vec![], 0, vec![], vec![]);
 
-            sd_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            sd_manager_put(&mut vault, from.clone(), dest.clone(), sdv.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
             // DataManagerStatsTransfer will always be included in the return
             assert_eq!(churn_data.len(), 2);
@@ -596,21 +584,14 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::SD_MANAGER_ACCOUNT_TAG);
-                    assert_eq!(*from_group, data.name());
-                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Transfer::StructuredDataManagerAccount(sendable) => {
-                                assert_eq!(sendable.name(), data.name());
-                            },
-                            _ => panic!("Unexpected"),
-                        }
-                    }
+                    assert_eq!(*from_group, sdv.name());
+                    match decode::<StructuredData>(payload) {
+                        Ok(sd) => { assert_eq!(sd, sdv); }
+                        Err(_) => panic!("Unexpected"),
+                    };
                 },
                 _ => panic!("Refresh type expected")
             };
-            
-
             assert!(vault.sd_manager.retrieve_all_and_reset().is_empty());
         }
 
@@ -619,45 +600,41 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
     #[test]
     fn cache_test() {
         let mut vault = VaultFacade::new();
-        let value = routing::types::generate_random_vec_u8(1024);
-        let data = maidsafe_types::ImmutableData::new(value);
+        let value = generate_random_vec_u8(1024);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         {
-            let get_result = vault.handle_cache_get(data.type_tag(), data.name().clone(),
-                                                    Authority::ManagedNode, NameType::new([7u8; 64]));
+            let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+                                                    im_data.name().clone(), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), true);
             assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
         }
 
         let put_result = vault.handle_cache_put(Authority::ManagedNode, NameType::new([7u8; 64]),
-                                                data.serialised_contents());
+                                                Data::ImmutableData(im_data.clone()));
         assert_eq!(put_result.is_err(), true);
         match put_result.err().unwrap() {
             InterfaceError::Abort => { }
             _ => panic!("Unexpected"),
         }
         {
-            let get_result = vault.handle_cache_get(data.type_tag(), data.name().clone(),
-                                                    Authority::ManagedNode, NameType::new([7u8; 64]));
+            let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+                                                    im_data.name().clone(), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
-                MethodCall::Reply(x) => {
-                    let mut d = cbor::Decoder::from_bytes(&x[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Data::Immutable(data_retrieved) => {
-                                assert_eq!(data.name().0.to_vec(), data_retrieved.name().0.to_vec());
-                                assert_eq!(data.serialised_contents(), data_retrieved.serialised_contents());
-                            },
-                            _ => panic!("Unexpected"),
+                MethodCall::Reply { data } => {
+                    match data {
+                        Data::ImmutableData(fetched_im_data) => {
+                            assert_eq!(fetched_im_data, im_data);
                         }
+                        _ => panic!("Unexpected"),
                     }
                 },
                 _ => panic!("Unexpected"),
             }
         }
         {
-            let get_result = vault.handle_cache_get(data.type_tag(), NameType::new([7u8; 64]),
-                                                    Authority::ManagedNode, NameType::new([7u8; 64]));
+            let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+                                                    NameType::new([7u8; 64]), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), true);
             assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
         }

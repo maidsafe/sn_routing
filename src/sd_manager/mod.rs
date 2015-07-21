@@ -94,50 +94,57 @@ impl StructuredDataManager {
 
 #[cfg(test)]
 mod test {
- use cbor;
- use super::*;
- use data_parser::Data;
- use maidsafe_types::*;
- use routing::types::*;
- use routing::error::InterfaceError;
- use routing::NameType;
- use routing::sendable::Sendable;
+    use super::*;
+    use utils::encode;
 
- #[test]
- fn handle_put_get() {
-    let mut sd_manager = StructuredDataManager::new();
-    let name = NameType([3u8; 64]);
-    let owner = NameType([4u8; 64]);
-    let value = vec![NameType([5u8; 64]), NameType([6u8; 64])];
-    let sdv = StructuredData::new(name, owner, value);
-    let bytes = sdv.serialised_contents();
-    let put_result = sd_manager.handle_put(bytes.clone(), sdv.clone());
-    assert_eq!(put_result.is_ok(), true);
-    match put_result {
-        Err(InterfaceError::Abort) => panic!("Unexpected"),
-        Ok(MethodCall::Reply(replied_bytes)) => assert_eq!(replied_bytes, bytes),
-        _ => panic!("Unexpected"),
-    }
+    use routing::data::Data;
+    use routing::NameType;
+    use routing::node_interface::MethodCall;
+    use routing::sendable::Sendable;
+    use routing::structured_data::StructuredData;
+    use routing::types::*;
 
-    let data_name = NameType::new(sdv.name().0);
-    let get_result = sd_manager.handle_get(data_name);
-    assert_eq!(get_result.is_err(), false);
-    match get_result.ok().unwrap() {
-        MethodCall::SendOn(_) => panic!("Unexpected"),
-        MethodCall::Reply(x) => {
-                let mut d = cbor::Decoder::from_bytes(x);
-                if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                    match parsed_data {
-                        Data::Structured(sdv_after) => {
-                            assert_eq!(sdv_after.name(), NameType([3u8;64]));
-                            assert_eq!(sdv_after.owner().unwrap(), NameType([4u8;64]));
-                            assert_eq!(sdv_after.value().len(), 2);
-                            assert_eq!(sdv_after.value()[0], NameType([5u8;64]));
-                            assert_eq!(sdv_after.value()[1], NameType([6u8;64]));
-                        },
+    #[test]
+    fn handle_put_get() {
+        let mut sd_manager = StructuredDataManager::new();
+        let name = NameType([3u8; 64]);
+        let value = generate_random_vec_u8(1024);
+        let sdv = StructuredData::new(0, name, value.clone(), vec![], 0, vec![], vec![]);
+        {
+            let put_result = sd_manager.handle_put(sdv.clone());
+            assert_eq!(put_result.is_ok(), true);
+            let mut calls = put_result.ok().unwrap();
+            assert_eq!(calls.len(), 1);
+            match calls.remove(0) {
+                MethodCall::Reply { data } => {
+                    match data {
+                        Data::StructuredData(sd) => {
+                            assert_eq!(sd, sdv);
+                        }
                         _ => panic!("Unexpected"),
                     }
                 }
+                _ => panic!("Unexpected"),
+            }
+        }
+        {
+            let data_name = NameType::new(sdv.name().0);
+            let get_result = sd_manager.handle_get(data_name);
+            assert_eq!(get_result.is_err(), false);
+            let mut calls = get_result.ok().unwrap();
+            assert_eq!(calls.len(), 1);
+            match calls.remove(0) {
+                MethodCall::Reply { data } => {
+                    match data {
+                        Data::StructuredData(sd) => {
+                            assert_eq!(sd, sdv);
+                            assert_eq!(sd.name(), NameType([3u8;64]));
+                            assert_eq!(*sd.get_data(), value);
+                        }
+                        _ => panic!("Unexpected"),
+                    }
+                }
+                _ => panic!("Unexpected"),
             }
         }
     }
@@ -145,28 +152,16 @@ mod test {
     #[test]
     fn handle_account_transfer() {
         let name = NameType([3u8; 64]);
-        let owner = NameType([4u8; 64]);
-        let value = vec![NameType([5u8; 64]), NameType([6u8; 64])];
-        let sdv = StructuredData::new(name.clone(), owner, value);
+        let value = generate_random_vec_u8(1024);
+        let sdv = StructuredData::new(0, name, value, vec![], 0, vec![], vec![]);
 
         let mut sd_manager = StructuredDataManager::new();
-        sd_manager.handle_account_transfer(
-            StructuredDataManagerSendable::new(name.clone(), sdv.serialised_contents()));
+        let serialised_data = match encode(&sdv) {
+            Ok(result) => result,
+            Err(_) => panic!("Unexpected"),
+        };
+        sd_manager.handle_account_transfer(serialised_data);
         assert_eq!(sd_manager.chunk_store_.has_chunk(name), true);
     }
-
-    #[test]
-    fn sd_manager_sendable_serialisation() {
-        let obj_before = StructuredDataManagerSendable::new(NameType([1u8;64]), vec![2,3,45,5]);
-
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&obj_before]).unwrap();
-
-        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: StructuredDataManagerSendable = d.decode().next().unwrap().unwrap();
-
-        assert_eq!(obj_before, obj_after);
-    }
-
 
 }

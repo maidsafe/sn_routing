@@ -89,44 +89,52 @@ impl PmidNode {
 
 #[cfg(test)]
 mod test {
-  use cbor;
-  use routing;
-  use routing::error::InterfaceError;
-  use super::*;
-  use maidsafe_types::*;
-  use routing::types::MethodCall;
-  use routing::sendable::Sendable;
-  use data_parser::Data;
+    use super::*;
 
-  #[test]
-  fn handle_put_get() {
-    let mut pmid_node = PmidNode::new();
-    let value = routing::types::generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
-    let bytes = data.serialised_contents();
-    let put_result = pmid_node.handle_put(bytes.clone());
-    assert_eq!(put_result.is_ok(), true);
-    match put_result {
-      Err(InterfaceError::Abort) => panic!("Unexpected"),
-      Ok(MethodCall::Reply(reply_bytes)) => assert_eq!(reply_bytes, bytes),
-      _ => panic!("Unexpected"),
-    }
-    let get_result = pmid_node.handle_get(data.name());
-    assert_eq!(get_result.is_err(), false);
-    match get_result.ok().unwrap() {
-        MethodCall::Reply(x) => {
-            let mut d = cbor::Decoder::from_bytes(&x[..]);
-            if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                match parsed_data {
-                    Data::Immutable(data_after) => {
-                        assert_eq!(data.name().0.to_vec(), data_after.name().0.to_vec());
-                        assert_eq!(data.serialised_contents(), data_after.serialised_contents());
-                    },
-                    _ => panic!("Unexpected"),
+    use routing;
+    use routing::data::Data;
+    use routing::immutable_data::{ImmutableData, ImmutableDataType};
+    use routing::node_interface::MethodCall;
+    use routing::sendable::Sendable;
+
+    #[test]
+    fn handle_put_get() {
+        let mut pmid_node = PmidNode::new();
+        let value = routing::types::generate_random_vec_u8(1024);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        {
+            let put_result = pmid_node.handle_put(Data::ImmutableData(im_data.clone()));
+            assert_eq!(put_result.is_ok(), true);
+            let mut calls = put_result.ok().unwrap();
+            assert_eq!(calls.len(), 1);
+            match calls.remove(0) {
+                MethodCall::Reply { data } => {
+                    match data {
+                        Data::ImmutableData(fetched_im_data) => {
+                            assert_eq!(fetched_im_data, im_data);
+                        }
+                        _ => panic!("Unexpected"),
+                    }
                 }
+                _ => panic!("Unexpected"),
             }
-        },
-        _ => panic!("Unexpected"),
+        }
+        {
+            let get_result = pmid_node.handle_get(im_data.name());
+            assert_eq!(get_result.is_err(), false);
+            let mut calls = get_result.ok().unwrap();
+            assert_eq!(calls.len(), 1);
+            match calls.remove(0) {
+                MethodCall::Reply { data } => {
+                    match data {
+                        Data::ImmutableData(fetched_im_data) => {
+                            assert_eq!(fetched_im_data, im_data);
+                        }
+                        _ => panic!("Unexpected"),
+                    }
+                }
+                _ => panic!("Unexpected"),
+            }
+        }
     }
-  }
 }

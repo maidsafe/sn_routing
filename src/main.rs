@@ -47,6 +47,8 @@ extern crate routing;
 
 #[cfg(test)]
 extern crate rand;
+#[cfg(test)]
+extern crate maidsafe_sodiumoxide as sodiumoxide;
 
 use core::iter::FromIterator;
 use std::net::SocketAddr;
@@ -170,7 +172,7 @@ mod test {
     fn lib_test() {
         let run_vault = |mut vault: Vault| {
             spawn(move || {
-                let _ = vault.routing_node.bootstrap(None, None);
+                let _ = vault.routing_node.bootstrap(None);
                 let thread_guard = spawn(move || {
                     loop {
                         thread::sleep_ms(1);

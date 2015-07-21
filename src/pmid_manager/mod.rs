@@ -70,34 +70,38 @@ impl PmidManager {
 
 #[cfg(test)]
 mod test {
-  use routing;
-  use super::PmidManager;
-  use maidsafe_types::*;
-  use routing::types::*;
-  use routing::sendable::Sendable;
   use super::database::{PmidManagerAccount, PmidManagerAccountWrapper};
+  use super::PmidManager;
+
+  use routing::data::Data;
+  use routing::immutable_data::{ImmutableData, ImmutableDataType};
+  use routing::NameType;
+  use routing::node_interface::MethodCall;
+  use routing::test_utils::Random;
+  use routing::types::*;
 
   #[test]
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
-    let dest = DestinationAddress { dest: routing::test_utils::Random::generate_random(), relay_to: None };
+    let dest : NameType = Random::generate_random();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
-    let put_result = pmid_manager.handle_put(&dest, &data.serialised_contents());
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
+    let put_result = pmid_manager.handle_put(dest, Data::ImmutableData(data.clone()));
     assert_eq!(put_result.is_err(), false);
-    match put_result.ok().unwrap() {
-      MethodCall::SendOn(ref x) => {
-        assert_eq!(x.len(), 1);
-        assert_eq!(x[0], dest.dest);
-      }
-      MethodCall::Reply(_) => panic!("Unexpected"),
+    let calls = put_result.ok().unwrap();
+    assert_eq!(calls.len(), 1);
+    match calls[0] {
+        MethodCall::Forward { destination } => {
+            assert_eq!(destination, dest);
+        }
+        _ => panic!("Unexpected"),
     }
   }
 
     #[test]
     fn handle_account_transfer() {
         let mut pmid_manager = PmidManager::new();
-        let name : routing::NameType = routing::test_utils::Random::generate_random();
+        let name : NameType = Random::generate_random();
         let account_wrapper = PmidManagerAccountWrapper::new(name.clone(), PmidManagerAccount::new());
         pmid_manager.handle_account_transfer(account_wrapper);
         assert_eq!(pmid_manager.db_.exist(&name), true);

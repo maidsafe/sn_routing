@@ -61,34 +61,38 @@ impl MaidManager {
 
 #[cfg(test)]
 mod test {
-    use maidsafe_types::ImmutableData;
-    use routing;
     use super::*;
-    use routing::types::*;
+
+    use routing::data::Data;
     use routing::NameType;
+    use routing::node_interface::MethodCall;
+    use routing::immutable_data::{ImmutableData, ImmutableDataType};
     use routing::sendable::Sendable;
+    use routing::test_utils::Random;
+    use routing::types::*;
 
     #[test]
     fn handle_put() {
         let mut maid_manager = MaidManager::new();
-        let from: NameType = routing::test_utils::Random::generate_random();
+        let from: NameType = Random::generate_random();
         let value = generate_random_vec_u8(1024);
-        let data = ImmutableData::new(value);
-        let put_result = maid_manager.handle_put(&from, &data.serialised_contents());
+        let data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let put_result = maid_manager.handle_put(&from, Data::ImmutableData(data.clone()));
         assert_eq!(put_result.is_err(), false);
-        match put_result.ok().unwrap() {
-            MethodCall::SendOn(ref x) => {
-                assert_eq!(x.len(), 1);
-                assert_eq!(x[0], data.name());
+        let calls = put_result.ok().unwrap();
+        assert_eq!(calls.len(), 1);
+        match calls[0] {
+            MethodCall::Forward { destination } => {
+                assert_eq!(destination, data.name());
             }
-            MethodCall::Reply(_) => panic!("Unexpected"),
+            _ => panic!("Unexpected"),
         }
     }
 
     #[test]
     fn handle_account_transfer() {
         let mut maid_manager = MaidManager::new();
-        let name : NameType = routing::test_utils::Random::generate_random();
+        let name : NameType = Random::generate_random();
         let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), MaidManagerAccount::new());
         maid_manager.handle_account_transfer(account_wrapper);
         assert_eq!(maid_manager.db_.exist(&name), true);

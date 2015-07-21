@@ -252,55 +252,58 @@ impl DataManager {
 
 #[cfg(test)]
 mod test {
-  extern crate cbor;
-  extern crate maidsafe_types;
-  extern crate routing;
+    use super::{DataManager, DataManagerStatsSendable};
+    use super::database::DataManagerSendable;
 
-  use super::{DataManager, DataManagerStatsSendable};
-  use super::database::DataManagerSendable;
-  use maidsafe_types::ImmutableData;
-  use routing::types::MethodCall;
-  use routing::NameType;
-  use routing::sendable::Sendable;
+    use routing::immutable_data::{ImmutableData, ImmutableDataType};
+    use routing::node_interface::MethodCall;
+    use routing::NameType;
+    use routing::sendable::Sendable;
+    use routing::test_utils::Random;
+    use routing::types::*;
 
-  #[test]
-  fn handle_put_get() {
-    let mut data_manager = DataManager::new();
-    let value = routing::types::generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
-    let mut nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
-                                  NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
-    let put_result = data_manager.handle_put(data.clone(), &mut nodes_in_table);
-    assert_eq!(put_result.is_err(), false);
-    match put_result.ok().unwrap() {
-      MethodCall::SendOn(ref x) => {
-        assert_eq!(x.len(), super::PARALLELISM);
-        assert_eq!(x[0], nodes_in_table[0]);
-        assert_eq!(x[1], nodes_in_table[1]);
-        assert_eq!(x[2], nodes_in_table[2]);
-        assert_eq!(x[3], nodes_in_table[3]);
-      }
-      MethodCall::Reply(_) => panic!("Unexpected"),
+    #[test]
+    fn handle_put_get() {
+        let mut data_manager = DataManager::new();
+        let value = generate_random_vec_u8(1024);
+        let data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let mut nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
+                                      NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
+        {
+            let put_result = data_manager.handle_put(data.clone(), &mut nodes_in_table);
+            assert_eq!(put_result.is_err(), false);
+            let calls = put_result.ok().unwrap();
+            assert_eq!(calls.len(), super::PARALLELISM);
+            for i in 0..calls.len() {
+                match calls[i] {
+                    MethodCall::Forward { destination } => {
+                        assert_eq!(destination, nodes_in_table[i]);
+                    }
+                    _ => panic!("Unexpected"),
+                }
+            }
+        }
+        let data_name = NameType::new(data.name().get_id());
+        {
+            let get_result = data_manager.handle_get(&data_name);
+            assert_eq!(get_result.is_err(), false);
+            let calls = get_result.ok().unwrap();
+            assert_eq!(calls.len(), super::PARALLELISM);
+            for i in 0..calls.len() {
+                match calls[i] {
+                    MethodCall::Forward { destination } => {
+                        assert_eq!(destination, nodes_in_table[i]);
+                    }
+                    _ => panic!("Unexpected"),
+                }
+            }
+        }
     }
-    let data_name = NameType::new(data.name().get_id());
-    let get_result = data_manager.handle_get(&data_name);
-    assert_eq!(get_result.is_err(), false);
-    match get_result.ok().unwrap() {
-      MethodCall::SendOn(ref x) => {
-        assert_eq!(x.len(), super::PARALLELISM);
-        assert_eq!(x[0], nodes_in_table[0]);
-        assert_eq!(x[1], nodes_in_table[1]);
-        assert_eq!(x[2], nodes_in_table[2]);
-        assert_eq!(x[3], nodes_in_table[3]);
-      }
-      MethodCall::Reply(_) => panic!("Unexpected"),
-    }
-  }
 
     #[test]
     fn handle_account_transfer() {
         let mut data_manager = DataManager::new();
-        let name : NameType = routing::test_utils::Random::generate_random();
+        let name : NameType = Random::generate_random();
         let account_wrapper = DataManagerSendable::new(name.clone(), vec![]);
         data_manager.handle_account_transfer(account_wrapper);
         assert_eq!(data_manager.db_.exist(&name), true);
@@ -309,7 +312,7 @@ mod test {
     #[test]
     fn handle_stats_transfer() {
         let mut data_manager = DataManager::new();
-        let name : NameType = routing::test_utils::Random::generate_random();
+        let name : NameType = Random::generate_random();
         let stats_sendable = DataManagerStatsSendable::new(name.clone(), 1023);
         data_manager.handle_stats_transfer(stats_sendable);
         assert_eq!(data_manager.resource_index, 512);

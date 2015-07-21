@@ -229,7 +229,7 @@ impl DataManagerDatabase {
 #[cfg(test)]
 mod test {
   use super::*;
-  use maidsafe_types::ImmutableData;
+  use routing::immutable_data::{ImmutableData, ImmutableDataType};
   use routing::NameType;
   use routing::types::generate_random_vec_u8;
   use routing::test_utils::Random;
@@ -239,7 +239,7 @@ mod test {
   fn exist() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
@@ -256,7 +256,7 @@ mod test {
   fn put() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let data_name = data.name();
     let mut pmid_nodes : Vec<NameType> = vec![];
 
@@ -277,7 +277,7 @@ mod test {
   fn remove_pmid() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let data_name = data.name();
     let mut pmid_nodes : Vec<NameType> = vec![];
 
@@ -302,7 +302,7 @@ mod test {
   fn replace_pmids() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let data_name = data.name();
     let mut pmid_nodes : Vec<NameType> = vec![];
     let mut new_pmid_nodes : Vec<NameType> = vec![];
@@ -331,7 +331,7 @@ mod test {
   fn handle_account_transfer() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let data_name = data.name();
     let mut pmid_nodes : Vec<NameType> = vec![];
 
