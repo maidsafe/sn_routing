@@ -24,22 +24,29 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use time::{SteadyTime};
 use crust::Endpoint;
-use types::{Id, PublicId};
+use id::Id;
+use public_id::PublicId;
 use NameType;
+use sodiumoxide::crypto::sign;
 
 const MAX_RELAY : usize = 100;
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum IdType {
+    Node(NameType),
+    Client(sign::PublicKey)
+}
 
 /// The relay map is used to maintain a list of contacts for whom
 /// we are relaying messages, when we are ourselves connected to the network.
 pub struct RelayMap {
-    relay_map: BTreeMap<NameType, (PublicId, BTreeSet<Endpoint>)>,
-    lookup_map: HashMap<Endpoint, NameType>,
+    relay_map: BTreeMap<IdType, (PublicId, BTreeSet<Endpoint>)>,
+    lookup_map: HashMap<Endpoint, IdType>,
     // FIXME : we don't want to store a value; but LRUcache can clear itself out
     // however, we want the explicit timestamp stored and clear it at routing,
     // to drop the connection on clearing; for now CM will just keep all these connections
     unknown_connections: HashMap<Endpoint, SteadyTime>,
     our_name: NameType,
-    self_relocated: bool
 }
 
 impl RelayMap {
@@ -49,8 +56,7 @@ impl RelayMap {
             relay_map: BTreeMap::new(),
             lookup_map: HashMap::new(),
             unknown_connections: HashMap::new(),
-            our_name: our_id.get_name(),
-            self_relocated: our_id.is_self_relocated()
+            our_name: our_id.name(),
         }
     }
 
@@ -65,36 +71,23 @@ impl RelayMap {
             return false;
         }
         // impose limit on number of relay nodes active
-        if !self.relay_map.contains_key(&relay_info.name())
+        if !self.relay_map.contains_key(&IdType::Node(relay_info.name()))
             && self.relay_map.len() >= MAX_RELAY {
             return false;
         }
         if self.lookup_map.contains_key(&relay_endpoint) {
           return false; }
         self.lookup_map.entry(relay_endpoint.clone())
-                       .or_insert(relay_info.name());
+                       .or_insert(IdType::Node(relay_info.name()));
         let new_set = || { (relay_info.clone(), BTreeSet::<Endpoint>::new()) };
-        self.relay_map.entry(relay_info.name()).or_insert_with(new_set).1
+        self.relay_map.entry(IdType::Node(relay_info.name())).or_insert_with(new_set).1
                       .insert(relay_endpoint);
         true
     }
 
-    /// This removes the ip_node from the relay map.
-    pub fn drop_ip_node(&mut self, ip_node_to_drop: &NameType) {
-        match self.relay_map.get(&ip_node_to_drop) {
-            Some(relay_entry) => {
-                for endpoint in relay_entry.1.iter() {
-                    self.lookup_map.remove(endpoint);
-                }
-            },
-            None => return
-        };
-        self.relay_map.remove(ip_node_to_drop);
-    }
-
     /// This removes the provided endpoint and returns a NameType if this endpoint
     /// was the last endpoint assocoiated with this Name; otherwise returns None.
-    pub fn drop_endpoint(&mut self, endpoint_to_drop: &Endpoint) -> Option<NameType> {
+    pub fn drop_endpoint(&mut self, endpoint_to_drop: &Endpoint) -> Option<IdType> {
         let mut old_entry = match self.lookup_map.remove(endpoint_to_drop) {
             Some(name) => {
                 match self.relay_map.remove(&name) {
@@ -126,7 +119,9 @@ impl RelayMap {
     }
 
     /// Returns true if we keep relay endpoints for given name.
-    pub fn contains_relay_for(&self, relay_name: &NameType) -> bool {
+    // FIXME(ben) this needs to be used 16/07/2015
+    #[allow(dead_code)]
+    pub fn contains_relay_for(&self, relay_name: &IdType) -> bool {
         self.relay_map.contains_key(relay_name)
     }
 
@@ -136,7 +131,7 @@ impl RelayMap {
     }
 
     /// Returns Option<NameType> if an endpoint is found
-    pub fn lookup_endpoint(&self, relay_endpoint: &Endpoint) -> Option<NameType> {
+    pub fn lookup_endpoint(&self, relay_endpoint: &Endpoint) -> Option<IdType> {
         match self.lookup_map.get(relay_endpoint) {
             Some(name) => Some(name.clone()),
             None => None
@@ -144,20 +139,10 @@ impl RelayMap {
     }
 
     /// This returns a pair of the stored PublicId and a BTreeSet of the stored Endpoints.
-    pub fn get_endpoints(&self, relay_name: &NameType) -> Option<&(PublicId, BTreeSet<Endpoint>)> {
+    pub fn get_endpoints(&self, relay_name: &IdType) -> Option<&(PublicId, BTreeSet<Endpoint>)> {
         self.relay_map.get(relay_name)
     }
 
-    /// This changes our name and drops any endpoint that would be stored under that name.
-    /// The motivation for this behaviour is that our claim for a name will overrule any unverified
-    /// other node claiming this name.
-    pub fn change_our_name(&mut self, new_name: &NameType) {
-        if self.relay_map.contains_key(new_name) {
-            self.drop_ip_node(new_name);
-        }
-
-        self.our_name = new_name.clone();
-    }
 
     /// On unknown NewConnection, register the endpoint we are connected to.
     pub fn register_unknown_connection(&mut self, endpoint: Endpoint) {
@@ -168,7 +153,7 @@ impl RelayMap {
     /// When we receive an "I am" message on this connection, drop it
     pub fn remove_unknown_connection(&mut self, endpoint: &Endpoint) -> Option<Endpoint> {
         match self.unknown_connections.remove(endpoint) {
-            Some(addded_timestamp) => Some(endpoint.clone()), // return the endpoint
+            Some(_) => Some(endpoint.clone()), // return the endpoint
             None => None
         }
     }
@@ -177,26 +162,14 @@ impl RelayMap {
     pub fn lookup_unknown_connection(&self, endpoint: &Endpoint) -> bool {
         self.unknown_connections.contains_key(endpoint)
     }
-
-    /// Returns true if the relay map was instantiated with a self_relocated id.
-    /// A self_relocated id should only be used by the first node to start a network.
-    pub fn zero_node(&self) -> bool {
-        self.self_relocated
-    }
 }
-
-/// Bootstrap endpoints are used to connect to the network before
-/// routing table connections are established.
-pub struct BootstrapEndpoints {
-    bootstrap_endpoints: Vec<Endpoint>,
-}
-
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crust::Endpoint;
-    use types::{Id, PublicId};
+    use id::Id;
+    use public_id::PublicId;
     use std::net::SocketAddr;
     use std::str::FromStr;
     use rand::random;
@@ -205,11 +178,22 @@ mod test {
         Endpoint::Tcp(SocketAddr::from_str(&format!("127.0.0.1:{}", random::<u16>())).unwrap())
     }
 
+    fn drop_ip_node(relay_map: &mut RelayMap, ip_node_to_drop: &IdType) {
+        match relay_map.relay_map.get(&ip_node_to_drop) {
+            Some(relay_entry) => {
+                for endpoint in relay_entry.1.iter() {
+                    relay_map.lookup_map.remove(endpoint);
+                }
+            },
+            None => return
+        };
+        relay_map.relay_map.remove(ip_node_to_drop);
+    }
+
     #[test]
     fn add() {
         let our_id : Id = Id::new();
         let our_public_id = PublicId::new(&our_id);
-        let our_name = our_id.get_name();
         let mut relay_map = RelayMap::new(&our_id);
         assert_eq!(false, relay_map.add_ip_node(our_public_id.clone(), generate_random_endpoint()));
         assert_eq!(0, relay_map.relay_map.len());
@@ -227,41 +211,41 @@ mod test {
     #[test]
     fn drop() {
         let our_id : Id = Id::new();
-        let our_name = our_id.get_name();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
+        let test_id = IdType::Node(test_public_id.name());
         let test_endpoint = generate_random_endpoint();
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
+        assert_eq!(true, relay_map.contains_relay_for(&test_id));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint));
-        relay_map.drop_ip_node(&test_public_id.name());
-        assert_eq!(false, relay_map.contains_relay_for(&test_public_id.name()));
+        drop_ip_node(&mut relay_map, &test_id);
+        assert_eq!(false, relay_map.contains_relay_for(&test_id));
         assert_eq!(false, relay_map.contains_endpoint(&test_endpoint));
-        assert_eq!(None, relay_map.get_endpoints(&test_public_id.name()));
+        assert_eq!(None, relay_map.get_endpoints(&test_id));
     }
 
     #[test]
     fn add_conflicting_endpoints() {
         let our_id : Id = Id::new();
-        let our_name = our_id.get_name();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
+        let test_id = IdType::Node(test_public_id.name());
         let test_endpoint = generate_random_endpoint();
         let test_conflicting_public_id = PublicId::new(&Id::new());
+        let test_conflicting_id = IdType::Node(test_conflicting_public_id.name());
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
+        assert_eq!(true, relay_map.contains_relay_for(&test_id));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint));
         assert_eq!(false, relay_map.add_ip_node(test_conflicting_public_id.clone(),
                                                 test_endpoint.clone()));
-        assert_eq!(false, relay_map.contains_relay_for(&test_conflicting_public_id.name()))
+        assert_eq!(false, relay_map.contains_relay_for(&test_conflicting_id))
     }
 
     #[test]
     fn add_multiple_endpoints() {
         let our_id : Id = Id::new();
-        let our_name = our_id.get_name();
         let mut relay_map = RelayMap::new(&our_id);
         assert!(super::MAX_RELAY - 1 > 0);
         // ensure relay_map is all but full, so multiple endpoints are not counted as different
@@ -273,6 +257,7 @@ mod test {
                     new_endpoint)); };
         }
         let test_public_id = PublicId::new(&Id::new());
+        let test_id = IdType::Node(test_public_id.name());
 
         let mut test_endpoint_1 = generate_random_endpoint();
         let mut test_endpoint_2 = generate_random_endpoint();
@@ -284,15 +269,15 @@ mod test {
             test_endpoint_2 = generate_random_endpoint(); };
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint_1.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_public_id.name()));
+        assert_eq!(true, relay_map.contains_relay_for(&test_id));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint_1));
         assert_eq!(false, relay_map.add_ip_node(test_public_id.clone(),
                                                 test_endpoint_1.clone()));
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint_2.clone()));
-        assert!(relay_map.get_endpoints(&test_public_id.name()).unwrap().1
+        assert!(relay_map.get_endpoints(&test_id).unwrap().1
                          .contains(&test_endpoint_1));
-        assert!(relay_map.get_endpoints(&test_public_id.name()).unwrap().1
+        assert!(relay_map.get_endpoints(&test_id).unwrap().1
                          .contains(&test_endpoint_2));
     }
 

@@ -32,7 +32,7 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
 }
 
 /// NameType can be created using the new function by passing ID as it’s parameter.
-#[derive(Eq)]
+#[derive(Eq, Copy)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 impl NameType {
@@ -198,6 +198,7 @@ impl Decodable for NameType {
 mod test {
     use cbor;
     use super::*;
+    use id::Id;
     use test_utils::Random;
 
     #[test]
@@ -234,10 +235,9 @@ mod test {
     #[test]
     fn format_id_nametype() {
         // test for Ids
-        use types::Id;
         for _ in 0..5 {
             let my_id = Id::new();
-            let my_name = my_id.get_name();
+            let my_name = my_id.name();
             let debug_id = my_name.get_debug_id();
             let full_id = my_name.get_full_id();
             assert_eq!(debug_id.len(), 14);

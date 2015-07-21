@@ -22,6 +22,8 @@ use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::error;
 use std::fmt;
+use std::str;
+use data::Data;
 
 //------------------------------------------------------------------------------
 #[deny(missing_docs)]
@@ -33,7 +35,7 @@ pub enum ResponseError {
     /// invalid request
     InvalidRequest,
     /// failure to store data
-    FailedToStoreData(Vec<u8>)
+    FailedToStoreData(Data)
 }
 
 impl error::Error for ResponseError {
@@ -63,8 +65,8 @@ impl fmt::Display for ResponseError {
 
 impl Encodable for ResponseError {
     fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let mut type_tag;
-        let mut data : Option<Vec<u8>> = None;
+        let type_tag;
+        let mut data : Option<Data> = None;
         match *self {
             ResponseError::NoData => type_tag = "NoData",
             ResponseError::InvalidRequest => type_tag = "InvalidRequest",
@@ -82,7 +84,7 @@ impl Decodable for ResponseError {
         try!(d.read_u64());
         // let mut type_tag : String;
         // // let mut data : Option<Vec<u8>>;
-        let (type_tag, data) : (String, Option<Vec<u8>>)
+        let (type_tag, data) : (String, Option<Data>)
             = try!(Decodable::decode(d));
         match &type_tag[..] {
             "NoData" => Ok(ResponseError::NoData),
@@ -115,7 +117,7 @@ impl error::Error for InterfaceError {
     fn description(&self) -> &str {
         match *self {
             InterfaceError::Abort => "Aborted",
-            InterfaceError::Response(ref err) => "Invalid response",
+            InterfaceError::Response(_) => "Invalid response",
         }
     }
 
@@ -137,16 +139,38 @@ impl fmt::Display for InterfaceError {
 }
 
 //------------------------------------------------------------------------------
+pub enum ClientError {
+    Io(io::Error),
+    Cbor(CborError),
+}
+
+impl From<CborError> for ClientError {
+    fn from(e: CborError) -> ClientError { ClientError::Cbor(e) }
+}
+
+impl From<io::Error> for ClientError {
+    fn from(e: io::Error) -> ClientError { ClientError::Io(e) }
+}
+
+//------------------------------------------------------------------------------
 #[deny(missing_docs)]
 #[derive(Debug)]
 /// Represents routing error types
 pub enum RoutingError {
+    /// The node/client has not bootstrapped yet
+    NotBootstrapped,
     /// invalid requester or handler authorities
     BadAuthority,
     /// failure to connect to an already connected node
     AlreadyConnected,
     /// received message having unknown type
     UnknownMessageType,
+    /// Failed signature check
+    FailedSignature,
+    /// Not Enough signatures
+    NotEnoughSignatures,
+    /// Duplicate signatures
+    DuplicateSignatures,
     /// duplicate request received
     FilterCheckFailed,
     /// failure to bootstrap off the provided endpoints
@@ -160,6 +184,8 @@ pub enum RoutingError {
     RefusedFromRoutingTable,
     /// We received a refresh message but it did not contain group source address
     RefreshNotFromGroup,
+    /// String errors
+    Utf8(str::Utf8Error),
     /// interface error
     Interface(InterfaceError),
     /// i/o error
@@ -169,6 +195,11 @@ pub enum RoutingError {
     /// invalid response
     Response(ResponseError),
 }
+
+impl From<str::Utf8Error> for RoutingError {
+    fn from(e: str::Utf8Error) -> RoutingError { RoutingError::Utf8(e) }
+}
+
 
 impl From<ResponseError> for RoutingError {
     fn from(e: ResponseError) -> RoutingError { RoutingError::Response(e) }
@@ -189,19 +220,24 @@ impl From<InterfaceError> for RoutingError {
 impl error::Error for RoutingError {
     fn description(&self) -> &str {
         match *self {
+            RoutingError::NotBootstrapped => "Not bootstrapped",
             RoutingError::BadAuthority => "Invalid authority",
             RoutingError::AlreadyConnected => "Already connected",
             RoutingError::UnknownMessageType => "Invalid message type",
             RoutingError::FilterCheckFailed => "Filter check failure",
+            RoutingError::FailedSignature => "Signature check failure",
+            RoutingError::NotEnoughSignatures => "Not enough signatures",
+            RoutingError::DuplicateSignatures => "Not enough signatures",
             RoutingError::FailedToBootstrap => "Could not bootstrap",
             RoutingError::RoutingTableEmpty => "Routing table empty",
             RoutingError::RejectedPublicId => "Rejected Public Id",
             RoutingError::RefusedFromRoutingTable => "Refused from routing table",
             RoutingError::RefreshNotFromGroup => "Refresh message not from group",
-            RoutingError::Interface(ref e) => "Interface error",
-            RoutingError::Io(ref err) => "I/O error",
-            RoutingError::Cbor(ref err) => "Serialisation error",
-            RoutingError::Response(ref err) => "Response error",
+            RoutingError::Utf8(_) => "String/Utf8 error",
+            RoutingError::Interface(_) => "Interface error",
+            RoutingError::Io(_) => "I/O error",
+            RoutingError::Cbor(_) => "Serialisation error",
+            RoutingError::Response(_) => "Response error",
         }
     }
 
@@ -219,15 +255,20 @@ impl error::Error for RoutingError {
 impl fmt::Display for RoutingError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            RoutingError::NotBootstrapped => fmt::Display::fmt("Not bootstrapped", f),
             RoutingError::BadAuthority => fmt::Display::fmt("Bad authority", f),
             RoutingError::AlreadyConnected => fmt::Display::fmt("already connected", f),
             RoutingError::UnknownMessageType => fmt::Display::fmt("Unknown message", f),
             RoutingError::FilterCheckFailed => fmt::Display::fmt("filter check failed", f),
+            RoutingError::FailedSignature => fmt::Display::fmt("Signature check failed", f),
+            RoutingError::NotEnoughSignatures => fmt::Display::fmt("Not enough signatures (multi-sig)", f),
+            RoutingError::DuplicateSignatures => fmt::Display::fmt("Duplicated signatures (multi-sig)", f),
             RoutingError::FailedToBootstrap => fmt::Display::fmt("could not bootstrap", f),
             RoutingError::RoutingTableEmpty => fmt::Display::fmt("routing table empty", f),
             RoutingError::RejectedPublicId => fmt::Display::fmt("Rejected Public Id", f),
             RoutingError::RefusedFromRoutingTable => fmt::Display::fmt("Refused from routing table", f),
             RoutingError::RefreshNotFromGroup => fmt::Display::fmt("Refresh message not from group", f),
+            RoutingError::Utf8(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Interface(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Cbor(ref err) => fmt::Display::fmt(err, f),

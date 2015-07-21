@@ -16,6 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 use cbor::{Decoder, Encoder, CborError};
+use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto;
+use std::cmp;
+use NameType;
+use name_type::closer_to_target;
+use error::{RoutingError};
+
 use rustc_serialize::{Decodable, Encodable};
 
 pub fn encode<T>(value: &T) -> Result<Vec<u8>, CborError> where T: Encodable {
@@ -30,4 +37,34 @@ pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, CborError> where T: Decodable {
         Some(result) => result,
         None => Err(CborError::UnexpectedEOF)
     }
+}
+
+/// The name client name is the SHA512 of the public signing key
+pub fn public_key_to_client_name(key: &sign::PublicKey) -> NameType {
+    NameType(crypto::hash::sha512::hash(&key[..]).0)
+}
+
+// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
+// In case of only one close node provided (in initial network setup scenario),
+// relocated_name = Hash(original_name + 1st closest node id)
+pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
+                                original_name: &NameType) -> Result<NameType, RoutingError> {
+    if close_nodes.is_empty() {
+        return Err(RoutingError::RoutingTableEmpty);
+    }
+    close_nodes.sort_by(|a, b| if closer_to_target(&a, &b, original_name) {
+                                  cmp::Ordering::Less
+                                } else {
+                                    cmp::Ordering::Greater
+                                });
+    close_nodes.truncate(2usize);
+    close_nodes.insert(0, original_name.clone());
+
+    let mut combined: Vec<u8> = Vec::new();
+    for node_id in close_nodes {
+      for i in node_id.get_id().iter() {
+        combined.push(*i);
+      }
+    }
+    Ok(NameType(crypto::hash::sha512::hash(&combined).0))
 }

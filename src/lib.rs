@@ -24,32 +24,26 @@
 //!
 //! The data types are encoded with Concise Binary Object Representation (CBOR).
 //!
-//! This allows certain tags to be available to routing, facilitating fields such as
-//! data.name(), when calculating authority.
-//!
 //! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
 //!
-//! Please define your own for this library. These tags are non optional and your data MUST meet
-//! the requirements and implement the following tags:
-//!
-//! ```text
-//! tag: 5483_0 -> name [u8; 64] type
-//! tag: 5483_1 -> XXXXXXXXXXXXXX
-//! ```
 
-#![feature(bitvec, split_off, convert)]
+#![feature(convert)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
               html_root_url = "http://maidsafe.github.io/routing")]
 // #![warn(missing_docs)]
-#![allow(dead_code, unused_variables, unused_features, unused_attributes)]
+#![deny(dead_code, unused_variables, unused_features, unused_attributes)]
 #![forbid(bad_style, warnings)]
+
+#[macro_use]
+extern crate log;
 
 extern crate cbor;
 extern crate rand;
 extern crate rustc_serialize;
-extern crate sodiumoxide;
+extern crate maidsafe_sodiumoxide as sodiumoxide;
 extern crate time;
+extern crate itertools;
 
 extern crate crust;
 extern crate accumulator;
@@ -58,7 +52,6 @@ extern crate message_filter;
 
 mod common_bits;
 mod macros;
-mod message_header;
 mod messages;
 mod name_type;
 mod routing_table;
@@ -75,8 +68,13 @@ pub mod refresh_accumulator;
 pub mod sendable;
 pub mod test_utils;
 pub mod types;
+pub mod id;
+pub mod public_id;
 pub mod error;
 pub mod authority;
-
+pub mod structured_data;
+pub mod immutable_data;
+pub mod plain_data;
+pub mod data;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};

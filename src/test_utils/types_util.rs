@@ -15,53 +15,39 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use types::*;
-use name_type::NameType;
-use rand::random;
-use super::random_trait::Random;
+#[cfg(test)]
+mod test {
+    use types::*;
+    use public_id::PublicId;
+    use id::Id;
+    use name_type::NameType;
+    use rand::random;
+    use test_utils::random_trait::Random;
 
-impl Random for NameAndTypeId {
-    fn generate_random() -> NameAndTypeId {
-        NameAndTypeId {
-            name: Random::generate_random(),
-            type_id: random::<u64>(),
+    impl Random for NameAndTypeId {
+        fn generate_random() -> NameAndTypeId {
+            NameAndTypeId {
+                name: Random::generate_random(),
+                type_id: random::<u64>(),
+            }
         }
     }
-}
 
-impl Random for Signature {
-    fn generate_random() -> Signature {
-        Signature { signature: generate_random_vec_u8(32) }
+    impl Random for PublicId {
+        fn generate_random() -> PublicId {
+            PublicId::new(&Id::new())
+        }
     }
-}
 
-impl Random for PublicSignKey {
-    fn generate_random() -> PublicSignKey {
-        PublicSignKey { public_sign_key: generate_random_vec_u8(32) }
+    impl Random for SourceAddress {
+        fn generate_random() -> SourceAddress {
+            SourceAddress::Direct(Random::generate_random())
+        }
     }
-}
 
-impl Random for PublicKey {
-    fn generate_random() -> PublicKey {
-        PublicKey { public_key: generate_random_vec_u8(32) }
-    }
-}
-
-impl Random for PublicId {
-    fn generate_random() -> PublicId {
-        PublicId::new(&Id::new())
-    }
-}
-
-impl Random for SourceAddress {
-    fn generate_random() -> SourceAddress {
-        SourceAddress {
-            from_node: Random::generate_random(), from_group: None, reply_to: None, relayed_for: None }
-    }
-}
-
-impl Random for NameType {
-    fn generate_random() -> NameType {
-        NameType(vector_as_u8_64_array(generate_random_vec_u8(64)))
+    impl Random for NameType {
+        fn generate_random() -> NameType {
+            NameType(vector_as_u8_64_array(generate_random_vec_u8(64)))
+        }
     }
 }

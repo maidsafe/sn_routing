@@ -15,50 +15,44 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused_assignments)]
-
-use cbor::CborTagEncode;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-
+use rustc_serialize::{Decoder, Encodable, Encoder};
+pub use structured_data::StructuredData;
+pub use immutable_data::{ImmutableData, ImmutableDataType};
+pub use plain_data::PlainData;
 use NameType;
 
-
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub struct Post {
-  pub name : NameType,
-  pub data : Vec<u8>
+/// This is the data types routing handles in the public interface
+#[derive(Debug, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
+pub enum Data {
+    StructuredData(StructuredData),
+    ImmutableData(ImmutableData),
+    PlainData(PlainData)
 }
 
-impl Encodable for Post {
-  fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-    CborTagEncode::new(5483_001, &(&self.name, &self.data)).encode(e)
-  }
+impl Data {
+    pub fn name(&self) -> NameType {
+        match *self {
+            Data::StructuredData(ref d) => d.name(),
+            Data::ImmutableData(ref d)  => d.name(),
+            Data::PlainData(ref d)      => d.name(),
+        }
+    }
 }
 
-impl Decodable for Post {
-  fn decode<D: Decoder>(d: &mut D)->Result<Post, D::Error> {
-    try!(d.read_u64());
-    let (name, data) = try!(Decodable::decode(d));
-    Ok(Post { name: name, data: data })
-  }
+#[derive(Debug, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
+pub enum DataRequest {
+    StructuredData(u64),
+    ImmutableData(ImmutableDataType),
+    PlainData,
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use cbor;
-    use test_utils::Random;
+
+    // use super::*;
 
     #[test]
-    fn post_serialisation() {
-        let obj_before : Post = Random::generate_random();
-
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&obj_before]).unwrap();
-
-        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: Post = d.decode().next().unwrap().unwrap();
-
-        assert_eq!(obj_before, obj_after);
+    fn creation() {
     }
+
 }

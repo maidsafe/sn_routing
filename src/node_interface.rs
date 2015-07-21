@@ -15,11 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use sendable::Sendable;
+use data::{Data, DataRequest};
 use name_type::NameType;
-use types::DestinationAddress;
+use types::{SourceAddress, DestinationAddress};
 use authority::Authority;
-use types::MessageAction;
 use error::{InterfaceError, ResponseError};
 
 /// MethodCall denotes a specific request to be carried out by routing.
@@ -27,15 +26,19 @@ pub enum MethodCall {
     /// request for no action
     None,
     /// request to have `destination` to handle put for the `content`
-    Put { destination: NameType, content: Box<Sendable>, },
+    Put { destination: NameType, content: Data },
     /// request to retreive data with specified type and name from network
-    Get { type_id: u64, name: NameType, },
+    Get { name: NameType, data_request: DataRequest },
     /// request to post
-    Post,
+    Post { destination: NameType, content: Data },
+    /// Request delete
+    Delete { name: NameType, data : Data },
     /// request to refresh
-    Refresh { type_tag: u64, from_group: NameType, payload: Vec<u8>, },
-    /// request to send on the request to destination for further handling
-    SendOn { destination: NameType },
+    Refresh { type_tag: u64, from_group: NameType, payload: Vec<u8> },
+    /// request to forward on the request to destination for further handling
+    Forward { destination: NameType },
+    /// reply
+    Reply { data: Data }
 }
 
 #[deny(missing_docs)]
@@ -45,22 +48,22 @@ pub trait Interface : Sync + Send {
     /// depending on our_authority and from_authority, data or address of the node
     /// potentially storing data with specified name and type_id is returned, on success.
     /// failure to provide data or an address is indicated as an InterfaceError.
+    /// OurAuthority contains the NameType when relevant.
     fn handle_get(&mut self,
-                  type_id: u64,
-                  name: NameType,
-                  our_authority: Authority,
-                  from_authority: Authority,
-                  from_address: NameType) -> Result<MessageAction, InterfaceError>;
+                  data_request   : DataRequest,
+                  our_authority  : Authority,
+                  from_authority : Authority,
+                  from_address   : SourceAddress) -> Result<Vec<MethodCall>, InterfaceError>;
 
     /// depending on our_authority and from_authority, data is stored on current node or an address
     /// (with different authority) for further handling of the request is provided.
     /// failure is indicated as an InterfaceError.
     fn handle_put(&mut self,
-                  our_authority: Authority,
-                  from_authority: Authority,
-                  from_address: NameType,
-                  dest_address: DestinationAddress,
-                  data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                  our_authority  : Authority,
+                  from_authority : Authority,
+                  from_address   : SourceAddress,
+                  dest_address   : DestinationAddress,
+                  data           : Data) -> Result<Vec<MethodCall>, InterfaceError>;
 
     /// depending on our_authority and from_authority, post request is handled by current node or
     /// an address for further handling of the request is provided. Failure is indicated as an
@@ -70,7 +73,7 @@ pub trait Interface : Sync + Send {
                    from_authority: Authority,
                    from_address: NameType,
                    name : NameType,
-                   data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                   data: Data) -> Result<Vec<MethodCall>, InterfaceError>;
 
     /// Handle messages internal to the group (triggered by churn events). Payloads
     /// from these messages are grouped by (type_tag, from_group) key, and once
@@ -80,15 +83,15 @@ pub trait Interface : Sync + Send {
     /// handles the response to a put request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
     fn handle_get_response(&mut self,
-                           from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall;
+                           from_address : NameType,
+                           response     : Data) -> Vec<MethodCall>;
 
     /// handles the response to a put request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
     fn handle_put_response(&mut self,
-                           from_authority: Authority,
-                           from_address: NameType,
-                           response: Result<Vec<u8>, ResponseError>) -> MethodCall;
+                           from_authority : Authority,
+                           from_address   : SourceAddress,
+                           response       : ResponseError) -> Vec<MethodCall>;
 
     /// handles the response to a post request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
@@ -103,17 +106,16 @@ pub trait Interface : Sync + Send {
 
     /// attempts to potentially retrieve data from cache.
     fn handle_cache_get(&mut self,
-                        type_id: u64,
-                        name: NameType,
-                        from_authority: Authority,
-                        from_address: NameType) -> Result<MessageAction, InterfaceError>;
+                        data_request  : DataRequest,
+                        data_location : NameType,
+                        from_address  : NameType) -> Result<MethodCall, InterfaceError>;
 
     /// attempts to store data in cache. The type of data and/or from_authority indicates
     /// if store in cache is required.
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
                         from_address: NameType,
-                        data: Vec<u8>) -> Result<MessageAction, InterfaceError>;
+                        data: Data) -> Result<MethodCall, InterfaceError>;
 }
 
 pub trait CreatePersonas<F : Interface> : Sync + Send  {
