@@ -40,7 +40,7 @@
 extern crate core;
 extern crate docopt;
 extern crate rustc_serialize;
-// extern crate maidsafe_sodiumoxide as sodiumoxide;
+extern crate maidsafe_sodiumoxide as sodiumoxide;
 
 extern crate crust;
 extern crate routing;
@@ -59,7 +59,7 @@ use std::collections::BTreeMap;
 use docopt::Docopt;
 // use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_serialize::{Decodable, Decoder};
-// use sodiumoxide::crypto;
+use sodiumoxide::crypto;
 
 use crust::Endpoint;
 use routing::node_interface::{CreatePersonas, Interface, MethodCall};
@@ -133,7 +133,7 @@ impl Decodable for PeerEndpoint {
 // We'll use docopt to help parse the ongoing CLI commands entered by the user.
 static CLI_USAGE: &'static str = "
 Usage:
-  cli put <key> <value>...
+  cli put <key> <value>
   cli get <key>
   cli stop
 ";
@@ -144,7 +144,7 @@ struct CliArgs {
     cmd_get: bool,
     cmd_stop: bool,
     arg_key: Option<String>,
-    arg_value: Vec<String>,
+    arg_value: String,
 }
 
 // ==========================   Implement traits   =================================
@@ -292,6 +292,10 @@ impl CreatePersonas<TestNode> for TestNodeGenerator {
     }
 }
 
+fn calculate_key_name(key: String) -> NameType {
+    NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
+}
+
 fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
     let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
     if is_first {
@@ -350,7 +354,8 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
             assert!(args.arg_key.is_some() && !args.arg_value.is_empty());
             match args.arg_key {
                 Some(_key) => {
-                    // let data = TestData::new(key, args.arg_value);
+                    let key_name : NameType = calculate_key_name(_key.clone());
+                    let _data = PlainData::new(key_name, args.arg_value.into_bytes());
                     // println!("Putting value of \"{}\" to network under key \"{}\".", data.value(),
                     //          data.key());
                     // let plain_data = Data::PlainData(PlainData::new(data.name(), data.value().as_bytes().to_vec()));
