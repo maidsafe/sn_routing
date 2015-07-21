@@ -57,6 +57,19 @@ impl StructuredData {
                    previous_owner_signatures: previous_owner_signatures
                  }
     }
+
+    /// This is a static function required for computing a name give the tag-type and identifier to
+    /// be use by GETs
+    pub fn compute_name(type_tag: u64, identifier: &NameType) -> NameType {
+        let type_tag_as_string = type_tag.to_string();
+
+        let chain = identifier.0.iter()
+                    .chain(type_tag_as_string.as_bytes().iter())
+                    .map(|a|*a);
+
+        NameType(crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
+    }
+
     /// replace this data item with an updated version if such exists, otherwise fail.
     /// This is done this way to allow types to be created and previous_owner_signatures added one by one
     /// To transfer ownership the current owner signs over the data, the previous owners field
@@ -83,13 +96,7 @@ impl StructuredData {
 
     /// Returns name and validates invariants
     pub fn name(&self) -> NameType {
-        let type_tag_as_string = self.type_tag.to_string();
-
-        let chain = self.identifier.0.iter()
-                    .chain(type_tag_as_string.as_bytes().iter())
-                    .map(|a|*a);
-
-        NameType(crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
+        StructuredData::compute_name(self.type_tag, &self.identifier)
     }
 
     /// Confirms *unique and valid* previous_owner_signatures are at least 50% of total owners
@@ -169,8 +176,8 @@ impl StructuredData {
     }
 
     /// Get the version
-    pub fn get_version(&self) -> &u64 {
-        &self.version
+    pub fn get_version(&self) -> u64 {
+        self.version
     }
 
     /// Get the current owner keys
