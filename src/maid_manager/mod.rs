@@ -22,7 +22,7 @@ mod database;
 use routing::data::Data;
 use routing::error::{ResponseError, InterfaceError};
 use routing::NameType;
-use routing::node_interface::{ MessageAction, MethodCall };
+use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
 
 pub use self::database::{MaidManagerAccountWrapper, MaidManagerAccount};
@@ -41,9 +41,9 @@ impl MaidManager {
     }
 
     pub fn handle_put(&mut self, from: &NameType,
-                      data: Data) -> Result<MessageAction, InterfaceError> {
+                      data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         if self.db_.put_data(from, data.size() as u64) {
-            Ok(MessageAction::Forward(vec![data.name()]))
+            Ok(vec![MethodCall::Forward { destination: data.name() }])
         } else {
             Err(From::from(ResponseError::InvalidRequest))
         }
@@ -77,11 +77,11 @@ mod test {
         let put_result = maid_manager.handle_put(&from, &data.serialised_contents());
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
-            MessageAction::SendOn(ref x) => {
+            MethodCall::SendOn(ref x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], data.name());
             }
-            MessageAction::Reply(_) => panic!("Unexpected"),
+            MethodCall::Reply(_) => panic!("Unexpected"),
         }
     }
 

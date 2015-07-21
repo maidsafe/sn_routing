@@ -29,7 +29,7 @@ use routing::NameType;
 use routing::error::{ResponseError, InterfaceError};
 use routing::authority::Authority;
 use routing::data::{Data, DataRequest};
-use routing::node_interface::{Interface, MessageAction, MethodCall, CreatePersonas};
+use routing::node_interface::{Interface, MethodCall, CreatePersonas};
 use routing::sendable::Sendable;
 use routing::types::{DestinationAddress, SourceAddress};
 
@@ -87,7 +87,7 @@ impl Interface for VaultFacade {
                   data_request: DataRequest,
                   our_authority: Authority,
                   from_authority: Authority,
-                  _: SourceAddress)->Result<MessageAction, InterfaceError> { // from_address
+                  _: SourceAddress)->Result<Vec<MethodCall>, InterfaceError> { // from_address
         match our_authority {
             Authority::NaeManager(name) => {
                 // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
@@ -109,7 +109,7 @@ impl Interface for VaultFacade {
 
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
                   _: SourceAddress, _: DestinationAddress,
-                  data: Data ) -> Result<MessageAction, InterfaceError> {
+                  data: Data ) -> Result<Vec<MethodCall>, InterfaceError> {
         match our_authority {
             Authority::ClientManager(from_address) => {
                 return self.maid_manager.handle_put(&from_address, data);
@@ -142,17 +142,17 @@ impl Interface for VaultFacade {
                    _: Authority, // from_authority
                    _: NameType, // from_address
                    _: NameType, // name
-                   _: Data)->Result<MessageAction, InterfaceError> { // data
+                   _: Data)->Result<Vec<MethodCall>, InterfaceError> { // data
         Err(From::from(ResponseError::InvalidRequest))
     }
 
     fn handle_get_response(&mut self,
                            _: NameType, // from_address
-                           response: Data) -> MethodCall {
+                           response: Data) -> Vec<MethodCall> {
         // GetResponse only used by DataManager to replicate data to new PN
         match response.clone() {
             Data::ImmutableData(_) => self.data_manager.handle_get_response(response),
-            _ => MethodCall::None
+            _ => vec![MethodCall::None]
         }
     }
 
@@ -161,12 +161,12 @@ impl Interface for VaultFacade {
     //     2, the sacrificial copy if it has been removed to empty the space
     // DataManager doesn't need to carry out replication in case of sacrificial copy
     fn handle_put_response(&mut self, from_authority: Authority, from_address: SourceAddress,
-                           response: ResponseError) -> MethodCall {
+                           response: ResponseError) -> Vec<MethodCall> {
         match from_authority {
             Authority::ManagedNode => {
                 match from_address {
                     SourceAddress::Direct(pmid_node) => self.pmid_manager.handle_put_response(&pmid_node, response),
-                    _ => MethodCall::None
+                    _ => vec![MethodCall::None]
                 }
             }
             Authority::NodeManager(_) => {
@@ -174,10 +174,10 @@ impl Interface for VaultFacade {
                 //       which requires work in routing to replace the address properly
                 match from_address {
                     SourceAddress::Direct(pmid_node) => self.data_manager.handle_put_response(response, &pmid_node),
-                    _ => MethodCall::None
+                    _ => vec![MethodCall::None]
                 }
             }
-            _ => { return MethodCall::None; }
+            _ => vec![MethodCall::None]
         }
     }
 
@@ -241,9 +241,9 @@ impl Interface for VaultFacade {
     fn handle_cache_get(&mut self,
                         _: DataRequest, // data_request 
                         data_location: NameType,
-                        _: NameType) -> Result<MessageAction, InterfaceError> { // from_address
+                        _: NameType) -> Result<MethodCall, InterfaceError> { // from_address
         match self.data_cache.get(&data_location) {
-            Some(data) => Ok(MessageAction::Reply(data.clone())),
+            Some(data) => Ok(MethodCall::Reply { data: data.clone() }),
             None => Err(From::from(ResponseError::NoData))
         }
     }
@@ -251,7 +251,7 @@ impl Interface for VaultFacade {
     fn handle_cache_put(&mut self,
                         _: Authority, // from_authority
                         _: NameType, // from_address
-                        data: Data) -> Result<MessageAction, InterfaceError> {
+                        data: Data) -> Result<MethodCall, InterfaceError> {
         self.data_cache.add(data.name(), data);
         Err(InterfaceError::Abort)
     }
@@ -291,7 +291,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
     use transfer_parser::{Transfer, transfer_tags};
 
     use routing::authority::Authority;
-    use routing::types:: { MessageAction, DestinationAddress };
+    use routing::types:: { MethodCall, DestinationAddress };
     use routing::NameType;
     use routing::error::{ResponseError, InterfaceError};
     use routing::test_utils::Random;
@@ -311,11 +311,11 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                                               from, dest, data.serialised_contents());
             assert_eq!(put_result.is_err(), false);
             match put_result.ok().unwrap() {
-                MessageAction::SendOn(ref x) => {
+                MethodCall::SendOn(ref x) => {
                     assert_eq!(x.len(), 1);
                     assert_eq!(x[0], data.name());
                 }
-             MessageAction::Reply(_) => panic!("Unexpected"),
+             MethodCall::Reply(_) => panic!("Unexpected"),
             }
         }
         vault.nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
@@ -328,28 +328,28 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                                               from, dest, data.serialised_contents());
             assert_eq!(put_result.is_err(), false);
             match put_result.ok().unwrap() {
-                MessageAction::SendOn(ref x) => {
+                MethodCall::SendOn(ref x) => {
                     assert_eq!(x.len(), data_manager::PARALLELISM);
                     //assert_eq!(x[0], NameType([3u8; 64]));
                     //assert_eq!(x[1], NameType([2u8; 64]));
                     //assert_eq!(x[2], NameType([1u8; 64]));
                     //assert_eq!(x[3], NameType([7u8; 64]));
                 }
-                MessageAction::Reply(_) => panic!("Unexpected"),
+                MethodCall::Reply(_) => panic!("Unexpected"),
             }
             let from = NameType::new([1u8; 64]);
             let get_result = vault.handle_get(data.type_tag(), data.name().clone(),
                                               Authority::NaeManager, Authority::Client, from);
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
-                MessageAction::SendOn(ref x) => {
+                MethodCall::SendOn(ref x) => {
                     assert_eq!(x.len(), data_manager::PARALLELISM);
                     //assert_eq!(x[0], NameType([3u8; 64]));
                     //assert_eq!(x[1], NameType([2u8; 64]));
                     //assert_eq!(x[2], NameType([1u8; 64]));
                     //assert_eq!(x[3], NameType([7u8; 64]));
                 }
-                MessageAction::Reply(_) => panic!("Unexpected"),
+                MethodCall::Reply(_) => panic!("Unexpected"),
             }
         }
         { // PmidManager, shall put to pmid_nodes
@@ -359,11 +359,11 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                                               from, dest, data.serialised_contents());
             assert_eq!(put_result.is_err(), false);
             match put_result.ok().unwrap() {
-                MessageAction::SendOn(ref x) => {
+                MethodCall::SendOn(ref x) => {
                     assert_eq!(x.len(), 1);
                     assert_eq!(x[0], NameType([7u8; 64]));
                 }
-                MessageAction::Reply(_) => panic!("Unexpected"),
+                MethodCall::Reply(_) => panic!("Unexpected"),
             }
         }
         { // PmidNode stores/retrieves data
@@ -374,7 +374,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             assert_eq!(put_result.is_ok(), true);
             match put_result {
              Err(InterfaceError::Abort) => panic!("Unexpected"),
-             Ok(MessageAction::Reply(_)) => {},
+             Ok(MethodCall::Reply(_)) => {},
              _ => panic!("Unexpected"),
             }
             let from = NameType::new([7u8; 64]);
@@ -383,7 +383,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                                               Authority::ManagedNode, Authority::NodeManager, from);
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
-                MessageAction::Reply(ref x) => {
+                MethodCall::Reply(ref x) => {
                     let mut d = cbor::Decoder::from_bytes(&x[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {
@@ -405,11 +405,11 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         let put_result = vault.handle_put(Authority::ClientManager, Authority::Client, from, dest, data);
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
-            MessageAction::SendOn(ref x) => {
+            MethodCall::SendOn(ref x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], data_name);
             }
-            MessageAction::Reply(_) => panic!("Unexpected"),
+            MethodCall::Reply(_) => panic!("Unexpected"),
         }
     }
 
@@ -417,10 +417,10 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         let put_result = vault.handle_put(Authority::NaeManager, Authority::ClientManager, from, dest, data);
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
-            MessageAction::SendOn(ref x) => {
+            MethodCall::SendOn(ref x) => {
                 assert_eq!(x.len(), data_manager::PARALLELISM);
             }
-            MessageAction::Reply(_) => panic!("Unexpected"),
+            MethodCall::Reply(_) => panic!("Unexpected"),
         }
     }
 
@@ -435,11 +435,11 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                                           from, dest.clone(), data);
         assert_eq!(put_result.is_err(), false);
         match put_result.ok().unwrap() {
-            MessageAction::SendOn(ref x) => {
+            MethodCall::SendOn(ref x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], dest.dest);
             }
-            MessageAction::Reply(_) => panic!("Unexpected"),
+            MethodCall::Reply(_) => panic!("Unexpected"),
         }
     }
 
@@ -449,7 +449,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         assert_eq!(put_result.is_ok(), true);
         match put_result {
              Err(InterfaceError::Abort) => panic!("Unexpected"),
-             Ok(MessageAction::Reply(_)) => {},
+             Ok(MethodCall::Reply(_)) => {},
              _ => panic!("Unexpected"),
         }
     }
@@ -640,7 +640,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                                                     Authority::ManagedNode, NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
-                MessageAction::Reply(x) => {
+                MethodCall::Reply(x) => {
                     let mut d = cbor::Decoder::from_bytes(&x[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {

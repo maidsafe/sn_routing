@@ -20,7 +20,7 @@
 use routing::data::Data;
 use routing::immutable_data::{ImmutableData, ImmutableDataType};
 use routing::NameType;
-use routing::node_interface::MessageAction;
+use routing::node_interface::MethodCall;
 use routing::error::{ResponseError, InterfaceError};
 use routing::sendable::Sendable;
 
@@ -36,16 +36,16 @@ impl PmidNode {
         PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
     }
 
-    pub fn handle_get(&self, name: NameType) ->Result<MessageAction, InterfaceError> {
+    pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, InterfaceError> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
             return Err(From::from(ResponseError::NoData));
         }
         let sd : ImmutableData = try!(decode(&data));
-        Ok(MessageAction::Reply(Data::ImmutableData(sd)))
+        Ok(vec![MethodCall::Reply { data: Data::ImmutableData(sd) }])
     }
 
-    pub fn handle_put(&mut self, incoming_data : Data) ->Result<MessageAction, InterfaceError> {
+    pub fn handle_put(&mut self, incoming_data : Data) ->Result<Vec<MethodCall>, InterfaceError> {
         let immutable_data = match incoming_data {
             Data::ImmutableData(data) => { data }
             _ => { return Err(From::from(ResponseError::InvalidRequest)); }
@@ -58,11 +58,10 @@ impl PmidNode {
         if self.chunk_store_.has_disk_space(data.len()) {
             // the type_tag needs to be stored as well
             self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
-            return Ok(MessageAction::Reply(Data::ImmutableData(immutable_data)));
+            return Ok(vec![MethodCall::Reply { data: Data::ImmutableData(immutable_data) }]);
         }
-        // TODO: due to the limitation of current return type, only one notification can be sent out
-        //       so we will try to remove the first Sacrificial copy larger enough to free up space
-        //       if such Sacrifical copy does not exist, then return with error
+        // TODO: keeps removing sacrificial copies till enough space emptied
+        //       if all sacrificial copies removed but still can not satisfy, do not restore
         if !data_name_and_remove_sacrificial.1 {
             return Err(From::from(ResponseError::InvalidRequest))
         }
@@ -95,7 +94,7 @@ mod test {
   use routing::error::InterfaceError;
   use super::*;
   use maidsafe_types::*;
-  use routing::types::MessageAction;
+  use routing::types::MethodCall;
   use routing::sendable::Sendable;
   use data_parser::Data;
 
@@ -109,13 +108,13 @@ mod test {
     assert_eq!(put_result.is_ok(), true);
     match put_result {
       Err(InterfaceError::Abort) => panic!("Unexpected"),
-      Ok(MessageAction::Reply(reply_bytes)) => assert_eq!(reply_bytes, bytes),
+      Ok(MethodCall::Reply(reply_bytes)) => assert_eq!(reply_bytes, bytes),
       _ => panic!("Unexpected"),
     }
     let get_result = pmid_node.handle_get(data.name());
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
-        MessageAction::Reply(x) => {
+        MethodCall::Reply(x) => {
             let mut d = cbor::Decoder::from_bytes(&x[..]);
             if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                 match parsed_data {

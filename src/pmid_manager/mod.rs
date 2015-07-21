@@ -22,7 +22,7 @@ mod database;
 use routing::data::Data;
 use routing::error::{ResponseError, InterfaceError};
 use routing::NameType;
-use routing::node_interface::{ MessageAction, MethodCall };
+use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
 
 pub use self::database::{PmidManagerAccountWrapper, PmidManagerAccount};
@@ -39,24 +39,24 @@ impl PmidManager {
     }
 
     pub fn handle_put(&mut self, pmid_node: NameType,
-                      data: Data) ->Result<MessageAction, InterfaceError> {
+                      data: Data) ->Result<Vec<MethodCall>, InterfaceError> {
         if self.db_.put_data(&pmid_node, data.size() as u64) {
-            return Ok(MessageAction::Forward(vec![pmid_node]));
+            return Ok(vec![MethodCall::Forward { destination: pmid_node }]);
         }
         Err(From::from(ResponseError::InvalidRequest))
     }
 
     pub fn handle_put_response(&mut self, from_address: &NameType,
-                               response: ResponseError) -> MethodCall {
+                               response: ResponseError) -> Vec<MethodCall> {
         // The content in response is payload for the failing to store data or the removed Sacrificial copy.
         match response {
             ResponseError::FailedToStoreData(data) => {
                 self.db_.delete_data(from_address, data.size() as u64);
-                return MethodCall::Forward { destination: data.name() };
+                return vec![MethodCall::Forward { destination: data.name() }];
             }
             _ => {}
         }
-        MethodCall::None
+        vec![MethodCall::None]
     }
 
     pub fn handle_account_transfer(&mut self, merged_account: PmidManagerAccountWrapper) {
@@ -86,11 +86,11 @@ mod test {
     let put_result = pmid_manager.handle_put(&dest, &data.serialised_contents());
     assert_eq!(put_result.is_err(), false);
     match put_result.ok().unwrap() {
-      MessageAction::SendOn(ref x) => {
+      MethodCall::SendOn(ref x) => {
         assert_eq!(x.len(), 1);
         assert_eq!(x[0], dest.dest);
       }
-      MessageAction::Reply(_) => panic!("Unexpected"),
+      MethodCall::Reply(_) => panic!("Unexpected"),
     }
   }
 

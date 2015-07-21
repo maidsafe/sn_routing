@@ -20,7 +20,7 @@
 use routing::NameType;
 use routing::data::Data;
 use routing::error::{ResponseError, InterfaceError};
-use routing::node_interface::{MessageAction, MethodCall};
+use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
 use routing::structured_data::StructuredData;
 
@@ -40,16 +40,16 @@ impl VersionHandler {
         VersionHandler { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
     }
 
-    pub fn handle_get(&self, name: NameType) ->Result<MessageAction, InterfaceError> {
+    pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, InterfaceError> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
             return Err(From::from(ResponseError::NoData));
         }
         let sd : StructuredData = try!(decode(&data));
-        Ok(MessageAction::Reply(Data::StructuredData(sd)))
+        Ok(vec![MethodCall::Reply { data: Data::StructuredData(sd) }])
     }
 
-    pub fn handle_put(&mut self, structured_data: StructuredData) ->Result<MessageAction, InterfaceError> {
+    pub fn handle_put(&mut self, structured_data: StructuredData) ->Result<Vec<MethodCall>, InterfaceError> {
         // TODO: SD using PUT for the first copy, then POST to update and transfer in case of churn
         //       so if the data exists, then the put shall be rejected
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
@@ -60,7 +60,7 @@ impl VersionHandler {
         } else {
             let serialised_data = try!(encode(&structured_data));
             self.chunk_store_.put(structured_data.name(), serialised_data);
-            Ok(MessageAction::Reply(Data::StructuredData(structured_data)))
+            Ok(vec![MethodCall::Reply { data: Data::StructuredData(structured_data) }])
         }
     }
 
@@ -115,7 +115,7 @@ mod test {
     assert_eq!(put_result.is_ok(), true);
     match put_result {
         Err(InterfaceError::Abort) => panic!("Unexpected"),
-        Ok(MessageAction::Reply(replied_bytes)) => assert_eq!(replied_bytes, bytes),
+        Ok(MethodCall::Reply(replied_bytes)) => assert_eq!(replied_bytes, bytes),
         _ => panic!("Unexpected"),
     }
 
@@ -123,8 +123,8 @@ mod test {
     let get_result = version_handler.handle_get(data_name);
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
-        MessageAction::SendOn(_) => panic!("Unexpected"),
-        MessageAction::Reply(x) => {
+        MethodCall::SendOn(_) => panic!("Unexpected"),
+        MethodCall::Reply(x) => {
                 let mut d = cbor::Decoder::from_bytes(x);
                 if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                     match parsed_data {

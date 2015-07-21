@@ -27,7 +27,7 @@ use routing::{closer_to_target, NameType};
 use routing::data::Data;
 use routing::error::{InterfaceError, ResponseError};
 use routing::immutable_data::{ImmutableData, ImmutableDataType};
-use routing::node_interface::{MessageAction, MethodCall};
+use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
 use routing::types::GROUP_SIZE;
 
@@ -106,21 +106,21 @@ impl DataManager {
     DataManager { db_: database::DataManagerDatabase::new(), resource_index: 1 }
   }
 
-  pub fn handle_get(&mut self, name : &NameType) ->Result<MessageAction, InterfaceError> {
+  pub fn handle_get(&mut self, name : &NameType) ->Result<Vec<MethodCall>, InterfaceError> {
 	  let result = self.db_.get_pmid_nodes(name);
 	  if result.len() == 0 {
 	    return Err(From::from(ResponseError::NoData));
 	  }
 
-	  let mut dest_pmids : Vec<NameType> = Vec::new();
+	  let mut dest_pmids : Vec<MethodCall> = Vec::new();
 	  for pmid in result.iter() {
-        dest_pmids.push(pmid.clone());
+        dest_pmids.push(MethodCall::Forward { destination: pmid.clone() });
 	  }
-	  Ok(MessageAction::Forward(dest_pmids))
+	  Ok(dest_pmids)
   }
 
   pub fn handle_put(&mut self, data: ImmutableData, nodes_in_table: &mut Vec<NameType>)
-          -> Result<MessageAction, InterfaceError> {
+          -> Result<Vec<MethodCall>, InterfaceError> {
     let data_name = data.name();
     if self.db_.exist(&data_name) {
       return Err(InterfaceError::Abort);
@@ -144,25 +144,26 @@ impl DataManager {
         }
         _ => {}
     }
-    Ok(MessageAction::Forward(dest_pmids))
+    let mut forwarding_calls : Vec<MethodCall> = Vec::new();
+    for pmid in dest_pmids {
+        forwarding_calls.push(MethodCall::Forward { destination: pmid.clone() });
+    }
+    Ok(forwarding_calls)
   }
 
-  pub fn handle_get_response(&mut self, response: Data) -> MethodCall {
+  pub fn handle_get_response(&mut self, response: Data) -> Vec<MethodCall> {
       let replicate_to = self.replicate_to(&response.name());
       match replicate_to {
           Some(pmid_node) => {
               self.db_.add_pmid_node(&response.name(), pmid_node.clone());
-              return MethodCall::Put {
-                  destination: pmid_node,
-                  content: response,
-              };
+              vec![MethodCall::Put { destination: pmid_node, content: response, }]
           },
-          None => MethodCall::None
+          None => vec![MethodCall::None]
       }      
   }
 
   pub fn handle_put_response(&mut self, response: ResponseError,
-                             from_address: &NameType) -> MethodCall {
+                             from_address: &NameType) -> Vec<MethodCall> {
       match response {
           ResponseError::FailedToStoreData(data) => {
               match data.clone() {
@@ -177,7 +178,7 @@ impl DataManager {
                               match replicate_to {
                                   Some(pmid_node) => {
                                       self.db_.add_pmid_node(&name, pmid_node.clone());
-                                      return MethodCall::Put { destination: pmid_node, content: data };
+                                      return vec![MethodCall::Put { destination: pmid_node, content: data }];
                                   },
                                   None => {}
                               }
@@ -193,7 +194,7 @@ impl DataManager {
           }
           _ => {}
       }
-      MethodCall::None
+      vec![MethodCall::None]
   }
 
   pub fn handle_account_transfer(&mut self, merged_account: DataManagerSendable) {
@@ -258,7 +259,7 @@ mod test {
   use super::{DataManager, DataManagerStatsSendable};
   use super::database::DataManagerSendable;
   use maidsafe_types::ImmutableData;
-  use routing::types::MessageAction;
+  use routing::types::MethodCall;
   use routing::NameType;
   use routing::sendable::Sendable;
 
@@ -272,27 +273,27 @@ mod test {
     let put_result = data_manager.handle_put(data.clone(), &mut nodes_in_table);
     assert_eq!(put_result.is_err(), false);
     match put_result.ok().unwrap() {
-      MessageAction::SendOn(ref x) => {
+      MethodCall::SendOn(ref x) => {
         assert_eq!(x.len(), super::PARALLELISM);
         assert_eq!(x[0], nodes_in_table[0]);
         assert_eq!(x[1], nodes_in_table[1]);
         assert_eq!(x[2], nodes_in_table[2]);
         assert_eq!(x[3], nodes_in_table[3]);
       }
-      MessageAction::Reply(_) => panic!("Unexpected"),
+      MethodCall::Reply(_) => panic!("Unexpected"),
     }
     let data_name = NameType::new(data.name().get_id());
     let get_result = data_manager.handle_get(&data_name);
     assert_eq!(get_result.is_err(), false);
     match get_result.ok().unwrap() {
-      MessageAction::SendOn(ref x) => {
+      MethodCall::SendOn(ref x) => {
         assert_eq!(x.len(), super::PARALLELISM);
         assert_eq!(x[0], nodes_in_table[0]);
         assert_eq!(x[1], nodes_in_table[1]);
         assert_eq!(x[2], nodes_in_table[2]);
         assert_eq!(x[3], nodes_in_table[3]);
       }
-      MessageAction::Reply(_) => panic!("Unexpected"),
+      MethodCall::Reply(_) => panic!("Unexpected"),
     }
   }
 
