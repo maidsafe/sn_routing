@@ -22,6 +22,9 @@ docopt = "*"
 itertools = "*"
 log = "*"
 
+[dependencies.sentinel]
+git = "https://github.com/maidsafe/sentinel"
+
 [dependencies.maidsafe_sodiumoxide]
 git = "https://github.com/maidsafe/sodiumoxide.git"
 

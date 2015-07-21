@@ -55,6 +55,8 @@ use node_interface::MethodCall;
 use refresh_accumulator::RefreshAccumulator;
 use id::Id;
 use public_id::PublicId;
+use sentinel::pure_sentinel::PureSentinel;
+use sentinel_request::SentinelPutRequest;
 use utils;
 use utils::{encode, decode};
 
@@ -85,7 +87,8 @@ pub struct RoutingMembrane<F : Interface> {
     connection_cache: BTreeMap<NameType, SteadyTime>,
     refresh_accumulator: RefreshAccumulator,
     // for Persona logic
-    interface: Box<F>
+    interface: Box<F>,
+    put_sentinel: PureSentinel<SentinelPutRequest, NameType>
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
@@ -110,7 +113,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                       public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
                       connection_cache: BTreeMap::new(),
                       refresh_accumulator: RefreshAccumulator::new(),
-                      interface : Box::new(personas)
+                      interface : Box::new(personas),
+                      put_sentinel: PureSentinel::new()
                     }
     }
 
@@ -899,9 +903,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // -----Message Handlers from Routing Table connections----------------------------------------
 
     // Routing handle put_data
-    fn handle_put_data(&mut self, signed_message: SignedMessage,
-                                  message: RoutingMessage,
-                                  data: Data) -> RoutingResult {
+    fn handle_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
+                       data: Data) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source_address();
@@ -916,7 +919,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
                         MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
-                        MethodCall::Delete { name: x, data : y } => self.delete(x, y),
+                        MethodCall::Delete { name: x, data: y } => self.delete(x, y),
                         MethodCall::None => (),
                         MethodCall::Forward { destination } =>
                             ignore(self.forward(&signed_message, &message, destination)),
