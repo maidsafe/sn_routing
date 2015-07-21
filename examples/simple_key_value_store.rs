@@ -366,10 +366,11 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
             // docopt should ensure arg_key is valid
             assert!(args.arg_key.is_some());
             match args.arg_key {
-                Some(_key) => {
-                    // let name = TestData::get_name_from_key(&key);
-                    // println!("Getting value for key \"{}\" from network.", key);
-                    // let _ = mutate_client.lock().unwrap().get(name, DataRequest::PlainData);
+                Some(key) => {
+                    let key_name : NameType = calculate_key_name(&key);
+                    println!("Getting value for key \"{}\" from network at location {}.",
+                        key, key_name);
+                    let _ = mutate_client.lock().unwrap().get(key_name, DataRequest::PlainData);
                 },
                 None => ()
             }
