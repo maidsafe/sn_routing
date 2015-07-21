@@ -292,7 +292,7 @@ impl CreatePersonas<TestNode> for TestNodeGenerator {
     }
 }
 
-fn calculate_key_name(key: String) -> NameType {
+fn calculate_key_name(key: &String) -> NameType {
     NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
 }
 
@@ -353,13 +353,12 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
             // docopt should ensure arg_key and arg_value are valid
             assert!(args.arg_key.is_some() && !args.arg_value.is_empty());
             match args.arg_key {
-                Some(_key) => {
-                    let key_name : NameType = calculate_key_name(_key.clone());
-                    let _data = PlainData::new(key_name, args.arg_value.into_bytes());
-                    // println!("Putting value of \"{}\" to network under key \"{}\".", data.value(),
-                    //          data.key());
-                    // let plain_data = Data::PlainData(PlainData::new(data.name(), data.value().as_bytes().to_vec()));
-                    // let _ = mutate_client.lock().unwrap().put(data.name(), plain_data);
+                Some(key) => {
+                    let key_name : NameType = calculate_key_name(&key);
+                    println!("Putting value \"{}\" to network under key \"{}\" at location {}.",
+                        args.arg_value, key, key_name);
+                    let data = PlainData::new(key_name, args.arg_value.into_bytes());
+                    let _ = mutate_client.lock().unwrap().put(key_name, Data::PlainData(data));
                 },
                 None => ()
             }
