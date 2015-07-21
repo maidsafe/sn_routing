@@ -98,8 +98,6 @@ pub enum MessageType {
     GetDataResponse(GetDataResponse),
     DeleteData(DataRequest),
     DeleteDataResponse(ErrorReturn),
-    GetKey,
-    GetKeyResponse(NameType, sign::PublicKey),
     GetGroupKey,
     GetGroupKeyResponse(Vec<(NameType, sign::PublicKey)>),
     Post(Data),
