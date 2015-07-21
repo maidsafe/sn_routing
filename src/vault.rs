@@ -37,9 +37,9 @@ use data_manager::{DataManager, DataManagerSendable, DataManagerStatsSendable};
 use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
 use pmid_manager::{PmidManager, PmidManagerAccountWrapper, PmidManagerAccount};
 use pmid_node::PmidNode;
-use version_handler::VersionHandler;
+use sd_manager::StructuredDataManager;
 use transfer_parser::transfer_tags::{MAID_MANAGER_ACCOUNT_TAG, DATA_MANAGER_ACCOUNT_TAG,
-    PMID_MANAGER_ACCOUNT_TAG, VERSION_HANDLER_ACCOUNT_TAG, DATA_MANAGER_STATS_TAG};
+    PMID_MANAGER_ACCOUNT_TAG, SD_MANAGER_ACCOUNT_TAG, DATA_MANAGER_STATS_TAG};
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
@@ -47,7 +47,7 @@ pub struct VaultFacade {
     maid_manager : MaidManager,
     pmid_manager : PmidManager,
     pmid_node : PmidNode,
-    version_handler : VersionHandler,
+    sd_manager : StructuredDataManager,
     nodes_in_table : Vec<NameType>,
     data_cache: LruCache<NameType, Data>
 }
@@ -90,10 +90,10 @@ impl Interface for VaultFacade {
                   _: SourceAddress)->Result<Vec<MethodCall>, InterfaceError> { // from_address
         match our_authority {
             Authority::NaeManager(name) => {
-                // both DataManager and VersionHandler are NaeManagers and Get request to them are both from Node
+                // both DataManager and StructuredDataManager are NaeManagers and Get request to them are both from Node
                 match data_request {
                     DataRequest::ImmutableData(_) => self.data_manager.handle_get(&name),
-                    DataRequest::StructuredData(_) => self.version_handler.handle_get(name),
+                    DataRequest::StructuredData(_) => self.sd_manager.handle_get(name),
                     _ => Err(From::from(ResponseError::InvalidRequest)),
                 }
             }
@@ -115,12 +115,12 @@ impl Interface for VaultFacade {
                 return self.maid_manager.handle_put(&from_address, data);
             }
             Authority::NaeManager(_) => {
-                // both DataManager and VersionHandler are NaeManagers
+                // both DataManager and StructuredDataManager are NaeManagers
                 // client put other data (Immutable, StructuredData) will all goes to MaidManager first,
                 // then goes to DataManager (i.e. from_authority is always ClientManager)
                 match data {
                     Data::ImmutableData(data) => self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
-                    Data::StructuredData(data) => self.version_handler.handle_put(data),
+                    Data::StructuredData(data) => self.sd_manager.handle_put(data),
                     _ => return Err(From::from(ResponseError::InvalidRequest)),
                 }
             }
@@ -191,7 +191,7 @@ impl Interface for VaultFacade {
 
     fn handle_churn(&mut self, mut close_group: Vec<NameType>) -> Vec<MethodCall> {
         let mm = self.maid_manager.retrieve_all_and_reset();
-        let vh = self.version_handler.retrieve_all_and_reset();
+        let vh = self.sd_manager.retrieve_all_and_reset();
         let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
         self.nodes_in_table = close_group;
@@ -223,9 +223,9 @@ impl Interface for VaultFacade {
                     payloads);
                 self.pmid_manager.handle_account_transfer(merged_account);
             },
-            VERSION_HANDLER_ACCOUNT_TAG => {
+            SD_MANAGER_ACCOUNT_TAG => {
                 for payload in payloads {
-                    self.version_handler.handle_account_transfer(payload);
+                    self.sd_manager.handle_account_transfer(payload);
                 }
             },
             DATA_MANAGER_STATS_TAG => {
@@ -263,7 +263,7 @@ impl VaultFacade {
         VaultFacade {
             data_manager: DataManager::new(), maid_manager: MaidManager::new(),
             pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
-            version_handler: VersionHandler::new(), nodes_in_table: Vec::new(),
+            sd_manager: StructuredDataManager::new(), nodes_in_table: Vec::new(),
             data_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(10), 100),
         }
     }
@@ -443,7 +443,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         }
     }
 
-    fn version_handler_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress, data: Vec<u8>) {
+    fn sd_manager_put(vault: &mut VaultFacade, from: NameType, dest: DestinationAddress, data: Vec<u8>) {
         let put_result = vault.handle_put(Authority::NaeManager, Authority::ManagedNode,
                                           from.clone(), dest, data);
         assert_eq!(put_result.is_ok(), true);
@@ -578,7 +578,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             assert!(vault.pmid_manager.retrieve_all_and_reset(&Vec::new()).is_empty());
         }
 
-        {// VersionHandler - churn handling
+        {// StructuredDataManager - churn handling
             let name = NameType::generate_random();
             let owner = NameType::generate_random();
             let mut vec_name_types = Vec::<NameType>::with_capacity(10);
@@ -588,19 +588,19 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             let data = maidsafe_types::StructuredData::new(name, owner, vec_name_types.clone());
             let data_as_vec: Vec<u8> = data.serialised_contents();
 
-            version_handler_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
+            sd_manager_put(&mut vault, from.clone(), dest.clone(), data_as_vec.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
             // DataManagerStatsTransfer will always be included in the return
             assert_eq!(churn_data.len(), 2);
 
             match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
-                    assert_eq!(*type_tag, transfer_tags::VERSION_HANDLER_ACCOUNT_TAG);
+                    assert_eq!(*type_tag, transfer_tags::SD_MANAGER_ACCOUNT_TAG);
                     assert_eq!(*from_group, data.name());
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {
-                            Transfer::VersionHandlerAccount(sendable) => {
+                            Transfer::StructuredDataManagerAccount(sendable) => {
                                 assert_eq!(sendable.name(), data.name());
                             },
                             _ => panic!("Unexpected"),
@@ -611,7 +611,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
             };
             
 
-            assert!(vault.version_handler.retrieve_all_and_reset().is_empty());
+            assert!(vault.sd_manager.retrieve_all_and_reset().is_empty());
         }
 
     }

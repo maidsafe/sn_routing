@@ -61,7 +61,7 @@ use rustc_serialize::{Decodable, Decoder};
 mod data_manager;
 mod maid_manager;
 mod pmid_manager;
-mod version_handler;
+mod sd_manager;
 mod chunk_store;
 mod pmid_node;
 mod transfer_parser;
