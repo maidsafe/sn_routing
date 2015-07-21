@@ -34,6 +34,19 @@ pub enum Authority {
   Unknown,
 }
 
+impl Authority {
+    pub fn is_group(&self) -> bool {
+        match self {
+            &Authority::ClientManager(_) => true,
+            &Authority::NaeManager(_)    => true,
+            &Authority::NodeManager(_)   => true,
+            &Authority::ManagedNode      => false,
+            &Authority::ManagedClient(_) => false,
+            &Authority::Client(_)        => false,
+            &Authority::Unknown          => false,
+        }
+    }
+}
 
 /// This returns our calculated authority with regards
 /// to the element passed in from the message and the message header.

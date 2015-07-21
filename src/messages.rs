@@ -27,6 +27,7 @@ use error::{ResponseError};
 use NameType;
 use utils;
 use cbor::{CborError};
+use std::collections::BTreeMap;
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectRequest {
@@ -54,8 +55,13 @@ pub struct ConnectResponse {
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct GetDataResponse {
-    pub data         : Data,
-    pub orig_request : SignedMessage,
+    pub data           : Data,
+    pub orig_request   : SignedMessage,
+    // If this is a group response, we carry the
+    // (name, pub_key) pairs with it for sentinel.
+    // In a similar fassion as GetGroupKeyResponse
+    // message does.
+    pub group_pub_keys : BTreeMap<NameType, sign::PublicKey>,
 }
 
 impl GetDataResponse {

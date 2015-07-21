@@ -27,7 +27,7 @@
 
 use rand;
 use sodiumoxide::crypto::sign::{verify_detached};
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 use std::boxed::Box;
 use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
@@ -485,7 +485,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 match method_call {
                     Ok(MethodCall::Reply { data }) => {
-                        let response = GetDataResponse { data: data, orig_request : message_wrap.clone() };
+                        let response = GetDataResponse {
+                            data           : data,
+                            orig_request   : message_wrap.clone(),
+                            group_pub_keys : BTreeMap::new()
+                        };
                         let our_authority = our_authority(&message, &self.routing_table);
                         ignore(self.send_reply(
                             &message, our_authority, MessageType::GetDataResponse(response)));
@@ -548,8 +552,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //             MessageType::Post => self.handle_post(header, body),
         //             MessageType::PostResponse => self.handle_post_response(header, body),
                     MessageType::PutData(ref data) => self.handle_put_data(message_wrap, message.clone(), data.clone()),
-                    MessageType::PutDataResponse(ref response) => self.handle_put_data_response(message_wrap, message.clone(),
-                    response.clone()),
+                    MessageType::PutDataResponse(ref response)
+                        => self.handle_put_data_response(message_wrap, message.clone(), response.clone()),
                     MessageType::PutPublicId(ref id) => self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
                     MessageType::Refresh(ref tag, ref data) => { self.handle_refresh(message.clone(), tag.clone(),
                     data.clone()) },
@@ -1205,7 +1209,26 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Forward { destination } =>
                             ignore(self.forward(&orig_message, &message, destination)),
                         MethodCall::Reply { data } => {
-                            let response = GetDataResponse { data: data, orig_request: orig_message.clone() };
+
+                            let name_and_key_from_info = |node_info : NodeInfo| {
+                                (node_info.fob.name(),
+                                 node_info.fob.signing_public_key())
+                            };
+
+                            let group_pub_keys = if our_authority.is_group() {
+                                self.routing_table.target_nodes(&self.id.name()).into_iter()
+                                    .map(name_and_key_from_info)
+                                    .collect::<BTreeMap<_,_>>()
+                            }
+                            else {
+                                BTreeMap::new()
+                            };
+
+                            let response = GetDataResponse {
+                                data           : data,
+                                orig_request   : orig_message.clone(),
+                                group_pub_keys : group_pub_keys
+                            };
                             ignore(self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(response)))
                         },
                     }
@@ -1288,6 +1311,7 @@ use types::{DestinationAddress, SourceAddress, GROUP_SIZE, Address};
 use utils;
 use crust::Endpoint;
 use rand::distributions::{IndependentSample, Range};
+use std::collections::BTreeMap;
 
 
 // TODO: This duplicate must use the available code
@@ -1623,7 +1647,8 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
                 data: Data::ImmutableData(
                         ImmutableData::new(ImmutableDataType::Normal,
                                            array.iter().map(|&x|x).collect::<Vec<_>>())),
-                orig_request: signed_message
+                orig_request   : signed_message,
+                group_pub_keys : BTreeMap::new(),
             });
 
         assert_eq!(tester.call_operation(get_data_response,
