@@ -189,6 +189,10 @@ impl StructuredData {
     pub fn get_previous_owner_signatures(&self) -> &Vec<crypto::sign::Signature> {
         &self.previous_owner_signatures
     }
+
+    pub fn payload_size(&self) -> usize {
+        self.data.len()
+    }
 }
 
 
