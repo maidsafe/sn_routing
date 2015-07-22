@@ -152,7 +152,7 @@ impl Interface for VaultFacade {
         // GetResponse only used by DataManager to replicate data to new PN
         match response.clone() {
             Data::ImmutableData(_) => self.data_manager.handle_get_response(response),
-            _ => vec![MethodCall::None]
+            _ => vec![]
         }
     }
 
@@ -166,7 +166,7 @@ impl Interface for VaultFacade {
             Authority::ManagedNode => {
                 match from_address {
                     SourceAddress::Direct(pmid_node) => self.pmid_manager.handle_put_response(&pmid_node, response),
-                    _ => vec![MethodCall::None]
+                    _ => vec![]
                 }
             }
             Authority::NodeManager(_) => {
@@ -174,10 +174,10 @@ impl Interface for VaultFacade {
                 //       which requires work in routing to replace the address properly
                 match from_address {
                     SourceAddress::Direct(pmid_node) => self.data_manager.handle_put_response(response, &pmid_node),
-                    _ => vec![MethodCall::None]
+                    _ => vec![]
                 }
             }
-            _ => vec![MethodCall::None]
+            _ => vec![]
         }
     }
 
@@ -186,7 +186,7 @@ impl Interface for VaultFacade {
                             _: Authority, // from_authority
                             _: SourceAddress, // from_address
                             _: ResponseError) -> Vec<MethodCall> { // response
-        vec![MethodCall::None]
+        vec![]
     }
 
     fn handle_churn(&mut self, mut close_group: Vec<NameType>) -> Vec<MethodCall> {

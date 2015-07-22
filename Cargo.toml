@@ -22,4 +22,4 @@ routing = "0.2.*"
 rand = "*"
 
 [dev-dependencies.maidsafe_sodiumoxide]
-git = "https://github.com/maidsafe/sodiumoxide.git"
+maidsafe_sodiumoxide = "*"

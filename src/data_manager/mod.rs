@@ -158,7 +158,7 @@ impl DataManager {
               self.db_.add_pmid_node(&response.name(), pmid_node.clone());
               vec![MethodCall::Put { destination: pmid_node, content: response, }]
           },
-          None => vec![MethodCall::None]
+          None => vec![]
       }      
   }
 
@@ -194,7 +194,7 @@ impl DataManager {
           }
           _ => {}
       }
-      vec![MethodCall::None]
+      vec![]
   }
 
   pub fn handle_account_transfer(&mut self, merged_account: DataManagerSendable) {

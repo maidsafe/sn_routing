@@ -56,7 +56,7 @@ impl PmidManager {
             }
             _ => {}
         }
-        vec![MethodCall::None]
+        vec![]
     }
 
     pub fn handle_account_transfer(&mut self, merged_account: PmidManagerAccountWrapper) {
