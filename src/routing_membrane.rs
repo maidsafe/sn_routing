@@ -915,11 +915,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let from = message.source_address();
         //let to = message.send_to();
         let to = message.destination_address();
+        let quorum = types::QUORUM_SIZE;
+
+        if self.routing_table.size() < types::QUORUM_SIZE {
+            quorum = self.routing_table.size();
+        }
 
         let resolved = match self.put_sentinel.add_claim(
                         SentinelPutRequest::new(message, data, our_authority),
                         source, signed_message.signature.clone(),
-                        signed_message.encoded_body.clone(), QUORUM_SIZE) {
+                        signed_message.encoded_body.clone(), quorum) {
                             Some(result) =>  match  result {
                                 AddResult::RequestKeys(name) => {
                                     // Get Key Request
@@ -943,7 +948,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Forward { destination } => {
                             let message_id = self.get_next_message_id();
                             let msg = RoutingMessage {
-                                destination : DestinationAddress::Direct(destination),
+                                destination : DestinationAddress::Direct(resolved.0.destination_group),
                                 source      : SourceAddress::Direct(self.id.name()),
                                 orig_message: None,
                                 message_type: MessageType::PutData(resolved.0.data.clone()),
@@ -951,11 +956,20 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 authority   : our_authority,
                             };
                             let signed_msg = SignedMessage::new(&msg, self.id.signing_private_key());
-                            ignore(self.forward(&signed_msg, &msg, destination));
+                            ignore(self.forward(&signed_msg.unwrap(), &msg, destination));
                         },
-                        MethodCall::Reply { data } =>
-                            ignore(self.send_reply(&message, our_authority.clone(),
-                                                   MessageType::PutData(resolved.0.data))),
+                        MethodCall::Reply { data } => {
+                            let msg = RoutingMessage {
+                                destination : DestinationAddress::Direct(resolved.0.destination_group),
+                                source      : SourceAddress::Direct(self.id.name()),
+                                orig_message: None,
+                                message_type: MessageType::PutData(resolved.0.data.clone()),
+                                message_id  : resolved.0.message_id,
+                                authority   : our_authority,
+                            };
+                            try!(self.send_reply(&msg, our_authority.clone(),
+                                                 MessageType::PutData(resolved.0.data)));
+                        }
                     }
                 }
             },
