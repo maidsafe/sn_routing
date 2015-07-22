@@ -140,9 +140,9 @@ impl Interface for VaultFacade {
     fn handle_post(&mut self,
                    _: Authority, // our_authority
                    _: Authority, // from_authority
-                   _: NameType, // from_address
-                   _: NameType, // name
-                   _: Data)->Result<Vec<MethodCall>, InterfaceError> { // data
+                   _: SourceAddress, // from_address
+                   _: DestinationAddress, // dest_address
+                   _: Data) -> Result<Vec<MethodCall>, InterfaceError> { // data
         Err(From::from(ResponseError::InvalidRequest))
     }
 
@@ -184,9 +184,9 @@ impl Interface for VaultFacade {
     // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1111
     fn handle_post_response(&mut self, 
                             _: Authority, // from_authority
-                            _: NameType, // from_address
-                            _: Result<Vec<u8>, ResponseError>) { // response
-        ;
+                            _: SourceAddress, // from_address
+                            _: ResponseError) -> Vec<MethodCall> { // response
+        vec![MethodCall::None]
     }
 
     fn handle_churn(&mut self, mut close_group: Vec<NameType>) -> Vec<MethodCall> {

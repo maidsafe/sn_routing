@@ -40,7 +40,7 @@ impl PmidManager {
 
     pub fn handle_put(&mut self, pmid_node: NameType,
                       data: Data) ->Result<Vec<MethodCall>, InterfaceError> {
-        if self.db_.put_data(&pmid_node, data.size() as u64) {
+        if self.db_.put_data(&pmid_node, data.payload_size() as u64) {
             return Ok(vec![MethodCall::Forward { destination: pmid_node }]);
         }
         Err(From::from(ResponseError::InvalidRequest))
@@ -51,7 +51,7 @@ impl PmidManager {
         // The content in response is payload for the failing to store data or the removed Sacrificial copy.
         match response {
             ResponseError::FailedToStoreData(data) => {
-                self.db_.delete_data(from_address, data.size() as u64);
+                self.db_.delete_data(from_address, data.payload_size() as u64);
                 return vec![MethodCall::Forward { destination: data.name() }];
             }
             _ => {}
