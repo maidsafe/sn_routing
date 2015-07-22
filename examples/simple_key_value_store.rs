@@ -46,17 +46,20 @@ extern crate crust;
 extern crate routing;
 
 use core::iter::FromIterator;
-use std::fmt;
+// use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::spawn;
+use std::collections::BTreeMap;
 
-use cbor::CborTagEncode;
+// use cbor::CborTagEncode;
+use cbor::CborError;
 use docopt::Docopt;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+// use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
 use crust::Endpoint;
@@ -68,9 +71,10 @@ use routing::types;
 use routing::id::Id;
 use routing::authority::Authority;
 use routing::NameType;
-use routing::node_interface::MessageAction;
 use routing::error::{ResponseError, InterfaceError};
 use routing::data::{Data, DataRequest};
+use routing::plain_data::PlainData;
+use routing::utils::{encode, decode, public_key_to_client_name};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -131,7 +135,7 @@ impl Decodable for PeerEndpoint {
 // We'll use docopt to help parse the ongoing CLI commands entered by the user.
 static CLI_USAGE: &'static str = "
 Usage:
-  cli put <key> <value>...
+  cli put <key> <value>
   cli get <key>
   cli stop
 ";
@@ -142,191 +146,137 @@ struct CliArgs {
     cmd_get: bool,
     cmd_stop: bool,
     arg_key: Option<String>,
-    arg_value: Vec<String>,
-}
-
-// ==========================   Test Data Structure   =================================
-#[derive(Clone)]
-struct TestData {
-    key: String,
-    value: String
-}
-
-impl TestData {
-    fn new(key: String, values: Vec<String>) -> TestData {
-        assert!(!values.is_empty());
-        let mut value: String = values[0].clone();
-        for i in 1..values.len() {
-            value.push_str(" ");
-            value.push_str(values[i].as_str());
-        };
-        TestData { key: key, value: value }
-    }
-
-    pub fn get_name_from_key(key: &String) -> NameType {
-        let digest = crypto::hash::sha512::hash(key.as_ref());
-        NameType(digest.0)
-    }
-
-    pub fn key(&self) -> &String {
-        &self.key
-    }
-
-    pub fn value(&self) -> &String {
-        &self.value
-    }
-}
-
-impl Sendable for TestData {
-    fn name(&self) -> NameType {
-        TestData::get_name_from_key(&self.key)
-    }
-
-    fn type_tag(&self) -> u64 { 201 }
-
-    fn serialised_contents(&self) -> Vec<u8> {
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&self]).unwrap();
-        e.into_bytes()
-
-    }
-
-    fn refresh(&self) -> bool {
-        false
-    }
-
-    fn merge(&self, _responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> { None }
-}
-
-impl Encodable for TestData {
-    fn encode<E: Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
-        CborTagEncode::new(5483_002, &(&self.key, &self.value)).encode(e)
-    }
-}
-
-impl Decodable for TestData {
-    fn decode<D: Decoder>(d: &mut D) -> Result<TestData, D::Error> {
-        let _ = try!(d.read_u64());
-        let (key, value) = try!(Decodable::decode(d));
-        let test_data = TestData { key: key, value: value };
-        Ok(test_data)
-    }
-}
-
-impl PartialEq for TestData {
-    fn eq(&self, other: &TestData) -> bool {
-        self.key == other.key && self.value == other.value
-    }
-}
-
-impl fmt::Debug for TestData {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "TestData(key: {}, value: {})", self.key, self.value)
-    }
+    arg_value: String,
 }
 
 // ==========================   Implement traits   =================================
-struct Stats {
-    pub stats: Vec<(u32, TestData)>
-}
 
 struct TestClient {
-    pub stats: Arc<Mutex<Stats>>
+    pub key_reverse_lookup : BTreeMap<NameType, String>
+}
+
+impl TestClient {
+    pub fn new() -> TestClient {
+        TestClient {
+            key_reverse_lookup: BTreeMap::new()
+        }
+    }
 }
 
 impl routing::client_interface::Interface for TestClient {
-    fn handle_get_response(&mut self, message_id: types::MessageId,
-                           response: Result<Data, ResponseError>) {
-        match response {
-            Ok(result) => {
-                let mut d = cbor::Decoder::from_bytes(result);
-                let response_data: TestData = d.decode().next().unwrap().unwrap();
-                println!("Testing client received get_response {:?} with testdata {:?}",
-                    message_id, response_data);
+    fn handle_get_response(&mut self, data_location : NameType, data : Data) {
+        println!("Testing client received get_response from {:?} with testdata {:?}",
+                    data_location, data);
+        match data {
+            Data::PlainData(plain_data) => {
+                match decode_key_value(plain_data.value()) {
+                    Ok((key, value)) => {
+                        println!("Client received {} under key {} from {}",
+                            value, key, data_location);
+                    },
+                    Err(_) => {
+                        println!("Client received get response from {} but failed to decode",
+                            data_location);
+                    }
+                }
             },
-            Err(_) => println!("Testing client received error get_response"),
+            _ => {
+                println!("Client received get response from {} but it is not PlainData.",
+                    data_location);}
         }
     }
 
-    fn handle_put_response(&mut self, message_id: types::MessageId,
-                           response: ResponseError) {
-        match response {
-            Ok(result) => {
-                let mut d = cbor::Decoder::from_bytes(result);
-                let response_data: TestData = d.decode().next().unwrap().unwrap();
-                println!("Testing client received put_response {:?} with testdata {:?}",
-                    message_id, response_data);
-            },
-            Err(e) => println!("Error put_respons: {:?}", e),
+    fn handle_put_response(&mut self, response_error: ResponseError, _request_data: Data) {
+        match response_error {
+            ResponseError::NoData =>
+                println!("Testing client received put_response with error NoData"),
+            ResponseError::InvalidRequest =>
+                println!("Testing client received put_response with error InvalidRequest"),
+            ResponseError::FailedToStoreData(data) =>
+                println!("Testing client received put_response with error FailedToStoreData for {}", data.name()),
         }
+    }
+
+    fn handle_post_response(&mut self, _response_error: ResponseError, _request_data: Data) {
+         unimplemented!();
+    }
+
+    fn handle_delete_response(&mut self, _response_error: ResponseError, _request_data: Data) {
+        unimplemented!();
     }
 }
 
 struct TestNode {
-    stats: Arc<Mutex<Stats>>
+  db: BTreeMap<NameType, PlainData>
 }
 
 impl TestNode {
     pub fn new() -> TestNode {
-        TestNode { stats: Arc::new(Mutex::new(Stats {stats: Vec::<(u32, TestData)>::new()})) }
+        TestNode {
+            db : BTreeMap::new()
+        }
     }
 }
 
 impl Interface for TestNode {
     fn handle_get(&mut self,
-                  _data_request: DataRequest, our_authority: Authority,
-                  _from_authority: Authority, from_address: types::SourceAddress)
-                   -> Result<MessageAction, InterfaceError> {
-        let stats = self.stats.clone();
-        let stats_value = stats.lock().unwrap();
-        match our_authority {
-            Authority::NaeManager(data_name) => {
-              println!("testing node handle get request from {} of chunk {}",
-                  from_address, data_name);
-              for data in stats_value.stats.iter().filter(|data| data.1.name() == data_name) {
-                  return Ok(MessageAction::Reply(data));
-              }
-            },
-            _ => {}
+                  data_request: DataRequest, our_authority: Authority,
+                  _from_authority: Authority, _from_address: types::SourceAddress)
+                   -> Result<Vec<MethodCall>, InterfaceError> {
+        match data_request {
+              DataRequest::PlainData => {
+                  match our_authority {
+                      Authority::NaeManager(group_name) => {
+                          match self.db.get(&group_name) {
+                              Some(plain_data) => {
+                                  println!("node replied to get request for chunk {}",
+                                      group_name);
+                                  return Ok(vec![MethodCall::Reply {
+                                      data : Data::PlainData(plain_data.clone()) }]);
+                              },
+                              None => {
+                                  println!("node didn't have chunk {}",
+                                      group_name);
+                              }
+                          }
+                      },
+                      _ => {}
+                  };
+              },
+              _ => {}
         };
         Err(InterfaceError::Response(ResponseError::NoData))
     }
 
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
-                from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
-                data_in: Data) -> Result<MessageAction, InterfaceError> {
-        match our_authority {
-            Authority::ClientManager(node_name) => {
-                let mut d = cbor::Decoder::from_bytes(data_in);
-                let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
-                println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
-                         node_name, in_coming_data.name());
-                return Ok(MessageAction::Forward(in_coming_data));
-            },
-            Authority::NaeManager(group_name) => {
-                let stats = self.stats.clone();
-                let mut stats_value = stats.lock().unwrap();
-                let mut d = cbor::Decoder::from_bytes(data_in.clone());
-                let in_coming_data: TestData = d.decode().next().unwrap().unwrap();
-                println!("testing node handle put request from {} of data {:?}, group {:?}", from_address,
-                         in_coming_data, group_name);
-                for data in stats_value.stats.iter_mut().filter(|data| data.1 == in_coming_data) {
-                    data.0 += 1;
-                    // return with abort to terminate the flow
-                    return Err(InterfaceError::Abort);
+                _from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
+                data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
+        match data {
+            Data::PlainData(plain_data) => {
+                match our_authority {
+                    Authority::ClientManager(client_name) => {
+                        println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
+                            client_name, plain_data.name());
+                        return Ok(vec![MethodCall::Put {
+                            destination: plain_data.name(),
+                            content: Data::PlainData(plain_data) }]);
+                    },
+                    Authority::NaeManager(group_name) => {
+                        assert_eq!(group_name, plain_data.name());
+                        let _ = self.db.entry(plain_data.name())
+                            .or_insert(plain_data);
+                    },
+                    _ => {}
                 }
-                stats_value.stats.push((1, in_coming_data));
-                // return with abort to terminate the flow
-                println!("MessageAction::Reply on PutResponse.");
-                return Ok(MessageAction::Reply(data_in));
             },
-            _ => return Err(InterfaceError::Response(ResponseError::InvalidRequest))
+            _ => {}
         };
+        return Ok(vec![]);
     }
 
     fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
-                   _from_address: NameType, _name : NameType,
-                   _data: Vec<u8>) -> Result<MessageAction, InterfaceError> {
+        _from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
+        _data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 
@@ -334,28 +284,20 @@ impl Interface for TestNode {
         unimplemented!()
     }
 
-    fn handle_get_response(&mut self, from_address: NameType,
-                           response: Result<Data, ResponseError>) -> MethodCall {
-        if response.is_ok() {
-            let mut d = cbor::Decoder::from_bytes(response.unwrap());
-            let response_data: TestData = d.decode().next().unwrap().unwrap();
-            println!("testing node received get_response from {} with data as {:?}", from_address,
-                     response_data);
-        } else {
-            println!("testing node received error get_response from {}", from_address);
-        }
-        MethodCall::None
+    fn handle_get_response(&mut self, from_address: NameType, response: Data) -> Vec<MethodCall> {
+        println!("testing node received get_response from {} with data {:?}", from_address, response);
+        vec![]
     }
 
-    fn handle_put_response(&mut self, _from_authority: Authority,
-                           from_address: types::SourceAddress,
-                           response: ResponseError) -> MethodCall {
-        println!("testing node received error put_response from {}", from_address);
-        MethodCall::None
+    fn handle_put_response(&mut self, _from_authority : Authority, _from_address: types::SourceAddress,
+                                      response: ResponseError) -> Vec<MethodCall> {
+        println!("testing node received error put_response {}", response);
+        vec![]
     }
 
-    fn handle_post_response(&mut self, _from_authority: Authority, _from_address: NameType,
-                            _response: Result<Vec<u8>, ResponseError>) {
+    fn handle_post_response(&mut self, _from_authority: Authority,
+        _from_address: types::SourceAddress, _response: ResponseError)
+        -> Vec<MethodCall> {
         unimplemented!();
     }
 
@@ -363,18 +305,18 @@ impl Interface for TestNode {
         for name in close_group {
           println!("RT: {:?}", name);
         }
-        vec![MethodCall::None]
+        vec![]
     }
 
-    fn handle_cache_get(&mut self, _data_request : DataRequest, _from_authority: Authority,
-                        _from_address: NameType) -> Result<MessageAction, InterfaceError> {
+    fn handle_cache_get(&mut self, _data_request: DataRequest, _data_location: NameType,
+                                   _from_address: NameType) -> Result<MethodCall, InterfaceError> {
         // FIXME(ben): 17/7/2015 implement a proper caching mechanism;
         // separate from the key-value store
         Err(InterfaceError::Abort)
     }
 
     fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
-                        _data: Data) -> Result<MessageAction, InterfaceError> {
+                        _data: Data) -> Result<MethodCall, InterfaceError> {
         // FIXME(ben): 17/7/2015 implement a proper caching mechanism;
         // separate from the key-value store
         Err(InterfaceError::Abort)
@@ -387,6 +329,20 @@ impl CreatePersonas<TestNode> for TestNodeGenerator {
     fn create_personas(&mut self) -> TestNode {
         TestNode::new()
     }
+}
+
+fn calculate_key_name(key: &String) -> NameType {
+    NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
+}
+
+#[allow(dead_code)]
+fn encode_key_value(key : String, value : String) -> Result<Vec<u8>, CborError> {
+    encode(&(key, value))
+}
+
+#[allow(dead_code)]
+fn decode_key_value(data : &Vec<u8>) -> Result<(String, String), CborError> {
+    decode(data)
 }
 
 fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
@@ -410,9 +366,9 @@ fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
 }
 
 fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
-    let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient {
-        stats: Arc::new(Mutex::new(Stats {
-            stats: Vec::<(u32, TestData)>::new()})) })), Id::new());
+    let our_id = Id::new();
+    let our_client_name : NameType = public_key_to_client_name(&our_id.signing_public_key());
+    let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), our_id);
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
     let _ = spawn(move || {
@@ -449,10 +405,17 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
             assert!(args.arg_key.is_some() && !args.arg_value.is_empty());
             match args.arg_key {
                 Some(key) => {
-                    let data = TestData::new(key, args.arg_value);
-                    println!("Putting value of \"{}\" to network under key \"{}\".", data.value(),
-                             data.key());
-                    let _ = mutate_client.lock().unwrap().put(data);
+                    let key_name : NameType = calculate_key_name(&key);
+                    println!("Putting value \"{}\" to network under key \"{}\" at location {}.",
+                        args.arg_value, key, key_name);
+                    match encode_key_value(key, args.arg_value) {
+                        Ok(serialised_key_value) => {
+                            let data = PlainData::new(key_name, serialised_key_value);
+                            let _ = mutate_client.lock().unwrap()
+                                .put(our_client_name, Data::PlainData(data));
+                        },
+                        Err(_) => { println!("Failed to encode key and value."); }
+                    }
                 },
                 None => ()
             }
@@ -461,9 +424,10 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
             assert!(args.arg_key.is_some());
             match args.arg_key {
                 Some(key) => {
-                    let name = TestData::get_name_from_key(&key);
-                    println!("Getting value for key \"{}\" from network.", key);
-                    let _ = mutate_client.lock().unwrap().get(201, name);
+                    let key_name : NameType = calculate_key_name(&key);
+                    println!("Getting value for key \"{}\" from network at location {}.",
+                        key, key_name);
+                    let _ = mutate_client.lock().unwrap().get(key_name, DataRequest::PlainData);
                 },
                 None => ()
             }

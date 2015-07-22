@@ -57,7 +57,6 @@ mod messages;
 mod name_type;
 mod routing_table;
 mod relay;
-mod utils;
 mod who_are_you;
 
 pub mod client_interface;
@@ -70,6 +69,7 @@ pub mod sendable;
 pub mod test_utils;
 pub mod types;
 pub mod id;
+pub mod utils;
 pub mod public_id;
 pub mod error;
 pub mod authority;

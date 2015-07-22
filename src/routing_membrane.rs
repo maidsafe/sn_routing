@@ -149,8 +149,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn post(&mut self, _destination: NameType, _data : Data) {
-        unimplemented!()
+    pub fn post(&mut self, destination: NameType, data : Data) {
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(destination),
+            source      : SourceAddress::Direct(self.id.name()),
+            orig_message: None,
+            message_type: MessageType::Post(data),
+            message_id  : message_id,
+            authority   : Authority::Unknown,
+        };
+
+        ignore(self.send_swarm_or_parallel(&message));
     }
 
     pub fn delete(&mut self, _destination: NameType, _data : Data) {
@@ -365,7 +375,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     /// TODO: A churn event might be triggered
-    #[allow(unused_variables)]
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
         // Make sure the endpoint is dropped anywhere
         // The relay map will automatically drop the Name if the last endpoint to it is dropped
@@ -410,10 +419,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                     MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                    MethodCall::None => (),
                     MethodCall::Forward { destination } =>
                         info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination),
-                    MethodCall::Reply { data } =>
+                    MethodCall::Reply { data: _data } =>
                         info!("IGNORED: on handle_churn MethodCall:Reply is not a Valid action")
                 };
             }
@@ -428,7 +436,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             destination  : DestinationAddress::Direct(name.clone()),
             source       : SourceAddress::Direct(name.clone()),
             orig_message : None,
-            message_type : MessageType::FindGroup(name),
+            message_type : MessageType::FindGroup,
             message_id   : message_id,
             authority    : Authority::ManagedNode,
         }
@@ -489,7 +497,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 match method_call {
                     Ok(MethodCall::Reply { data }) => {
-                        let response = GetDataResponse { data: data, orig_request : message_wrap.clone() };
+                        let response = GetDataResponse {
+                            data           : data,
+                            orig_request   : message_wrap.clone(),
+                            group_pub_keys : BTreeMap::new()
+                        };
                         let our_authority = our_authority(&message, &self.routing_table);
                         ignore(self.send_reply(
                             &message, our_authority, MessageType::GetDataResponse(response)));
@@ -542,26 +554,28 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // switch message type
                 match message.message_type {
                     MessageType::ConnectResponse(response) => self.handle_connect_response(response),
-                    MessageType::FindGroup(_find_group) => self.handle_find_group(message),
+                    MessageType::FindGroup => self.handle_find_group(message),
                     // Handled above for some reason.
                     //MessageType::FindGroupResponse(find_group_response) => self.handle_find_group_response(find_group_response),
                     MessageType::GetData(ref request) => self.handle_get_data(message_wrap,
                         message.clone(), request.clone()),
                     MessageType::GetDataResponse(ref response) =>
                         self.handle_get_data_response(message_wrap, message.clone(), response.clone()),
-        //             MessageType::Post => self.handle_post(header, body),
-        //             MessageType::PostResponse => self.handle_post_response(header, body),
                     MessageType::PutData(ref data) => {
                         match message.source.actual_source() {
                             Address::Node(name) => self.handle_group_put_data(message_wrap, message.clone(), data.clone(), name),
                             Address::Client(name) => self.handle_client_put_data(message_wrap, message.clone(), data.clone(), name),
                         }
                     },
-                    MessageType::PutDataResponse(ref response) => self.handle_put_data_response(message_wrap, message.clone(),
-                    response.clone()),
+                    MessageType::PutDataResponse(ref response, _)
+                        => self.handle_put_data_response(message_wrap, message.clone(), response.clone()),
                     MessageType::PutPublicId(ref id) => self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
-                    MessageType::Refresh(ref tag, ref data) => { self.handle_refresh(message.clone(), tag.clone(),
-                    data.clone()) },
+                    MessageType::Refresh(ref tag, ref data) => self.handle_refresh(message.clone(), tag.clone(), data.clone()),
+                    MessageType::Post(ref data) => self.handle_post(message_wrap, message.clone(), data.clone()),
+                    MessageType::PostResponse(ref response, _)
+                        => self.handle_post_response(message_wrap,
+                                                     message.clone(),
+                                                     response.clone()),
                     _ => {
                         Err(RoutingError::UnknownMessageType)
                     }
@@ -820,7 +834,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post { destination: x, content: y } => self.post(x, y),
                     MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                    MethodCall::None => (),
                     MethodCall::Forward { destination } =>
                         info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination),
                     MethodCall::Reply { data: _data } =>
@@ -944,7 +957,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data: y } => self.delete(x, y),
-                        MethodCall::None => (),
                         MethodCall::Forward { destination } => {
                             let message_id = self.get_next_message_id();
                             let msg = RoutingMessage {
@@ -979,9 +991,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     error: error,
                     orig_request: signed_message
                 };
+                let group_pub_keys = if our_authority.is_group() {
+                    self.group_pub_keys()
+                }
+                else {
+                    BTreeMap::new()
+                };
                 try!(self.send_reply(&message,
                                      our_authority.clone(),
-                                     MessageType::PutDataResponse(signed_error)));
+                                     MessageType::PutDataResponse(signed_error, group_pub_keys)));
             }
         }
         Ok(())
@@ -1008,8 +1026,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
                         MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
-                        MethodCall::Delete { name: x, data: y } => self.delete(x, y),
-                        MethodCall::None => (),
+                        MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                         MethodCall::Forward { destination } =>
                             ignore(self.forward(&signed_message, &message, destination)),
                         MethodCall::Reply { data } =>
@@ -1023,9 +1040,64 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     error: error,
                     orig_request: signed_message
                 };
+
+                let group_pub_keys = if our_authority.is_group() {
+                    self.group_pub_keys()
+                }
+                else {
+                    BTreeMap::new()
+                };
+
                 try!(self.send_reply(&message,
                                      our_authority.clone(),
-                                     MessageType::PutDataResponse(signed_error)));
+                                     MessageType::PutDataResponse(signed_error,
+                                                                  group_pub_keys)));
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_post(&mut self, signed_message: SignedMessage, message: RoutingMessage, data: Data)
+            -> RoutingResult {
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from_authority = message.from_authority();
+        let from = message.source_address();
+        let to = message.destination_address();
+
+        match self.mut_interface().handle_post(our_authority.clone(), from_authority, from, to, data) {
+            Ok(method_calls) => {
+                for method_call in method_calls {
+                    match method_call {
+                        MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                        MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                        MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                        MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                        MethodCall::Delete { name: x, data : y } => self.delete(x, y),
+                        MethodCall::Forward { destination } =>
+                            ignore(self.forward(&signed_message, &message, destination)),
+                        MethodCall::Reply { data } =>
+                            ignore(self.send_reply(&message, our_authority.clone(), MessageType::Post(data))),
+                    }
+                }
+            },
+            Err(InterfaceError::Abort) => {},
+            Err(InterfaceError::Response(error)) => {
+                let signed_error = ErrorReturn {
+                    error        : error,
+                    orig_request : signed_message
+                };
+
+                let group_pub_keys = if our_authority.is_group() {
+                    self.group_pub_keys()
+                }
+                else {
+                    BTreeMap::new()
+                };
+
+                try!(self.send_reply(&message,
+                                     our_authority.clone(),
+                                     MessageType::PostResponse(signed_error,
+                                                               group_pub_keys)));
             }
         }
         Ok(())
@@ -1057,7 +1129,29 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::None => (),
+                MethodCall::Forward { destination } =>
+                    ignore(self.forward(&signed_message, &message, destination)),
+                MethodCall::Reply { data: _data } =>
+                    info!("IGNORED: on handle_put_data_response MethodCall:Reply is not a Valid action")
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_post_response(&mut self, signed_message: SignedMessage,
+                                       message: RoutingMessage,
+                                       response: ErrorReturn) -> RoutingResult {
+        info!("Handle POST response.");
+        let from_authority = message.from_authority();
+        let from = message.source.clone();
+
+        for method_call in self.mut_interface().handle_post_response(from_authority, from, response.error.clone()) {
+            match method_call {
+                MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&signed_message, &message, destination)),
                 MethodCall::Reply { data: _data } =>
@@ -1158,8 +1252,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let connect_request = try!(decode::<ConnectRequest>(&connect_response.serialised_connect_request));
         if connect_request.requester_id != self.id.name() ||
            !verify_detached(&connect_response.connect_request_signature,
-                            &connect_response.serialised_connect_request[..],
-                            &self.id.signing_public_key()) {
+                                  &connect_response.serialised_connect_request[..],
+                                  &self.id.signing_public_key()) {
             return Err(RoutingError::Response(ResponseError::InvalidRequest));
         }
         // double check if fob is relocated;
@@ -1293,11 +1387,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                        MethodCall::None => (),
                         MethodCall::Forward { destination } =>
                             ignore(self.forward(&orig_message, &message, destination)),
                         MethodCall::Reply { data } => {
-                            let response = GetDataResponse { data: data, orig_request: orig_message.clone() };
+
+                            let group_pub_keys = if our_authority.is_group() {
+                                self.group_pub_keys()
+                            }
+                            else {
+                                BTreeMap::new()
+                            };
+
+                            let response = GetDataResponse {
+                                data           : data,
+                                orig_request   : orig_message.clone(),
+                                group_pub_keys : group_pub_keys
+                            };
+
                             ignore(self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(response)))
                         },
                     }
@@ -1337,7 +1443,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::None => (),
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&orig_message, &message, destination)),
                 MethodCall::Reply { data: _data } =>
@@ -1347,12 +1452,25 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
+    fn group_pub_keys(&self) -> BTreeMap<NameType, PublicKey> {
+        let name_and_key_from_info = |node_info : NodeInfo| {
+            (node_info.fob.name(), node_info.fob.signing_public_key())
+        };
+
+        let ourselves = (self.id.name(), self.id.signing_public_key());
+
+        self.routing_table.our_close_group()
+                          .into_iter()
+                          .map(name_and_key_from_info)
+                          .chain(Some(ourselves).into_iter())
+                          .collect()
+    }
 
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 }
 
 
-fn ignore<R,E>(_restul: Result<R,E>) {}
+fn ignore<R,E>(_result: Result<R,E>) {}
 
 #[cfg(test)]
 mod test {
@@ -1365,6 +1483,7 @@ use data::{Data, DataRequest};
 use error::{ResponseError, InterfaceError};
 use id::Id;
 use immutable_data::{ImmutableData, ImmutableDataType};
+use structured_data::StructuredData;
 use messages::{ErrorReturn, RoutingMessage, MessageType, SignedMessage, GetDataResponse};
 use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 use node_interface::{Interface, MethodCall};
@@ -1380,6 +1499,7 @@ use types::{DestinationAddress, SourceAddress, GROUP_SIZE, Address};
 use utils;
 use crust::Endpoint;
 use rand::distributions::{IndependentSample, Range};
+use std::collections::BTreeMap;
 
 
 // TODO: This duplicate must use the available code
@@ -1455,7 +1575,8 @@ impl Interface for TestInterface {
     }
 
     fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
-                   _from_address: NameType, _name: NameType, data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
+                   _from_address: SourceAddress, _dest_address: DestinationAddress,
+                   data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         let stats = self.stats.clone();
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
@@ -1471,9 +1592,7 @@ impl Interface for TestInterface {
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_get_response called".to_string().into_bytes();
-        let mut method_calls = Vec::<MethodCall>::new();
-        method_calls.push(MethodCall::None);
-        method_calls
+        Vec::<MethodCall>::new()
     }
 
     fn handle_put_response(&mut self, _from_authority: Authority, _from_address: SourceAddress,
@@ -1482,14 +1601,16 @@ impl Interface for TestInterface {
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_put_response".to_string().into_bytes();
-        let mut method_calls = Vec::<MethodCall>::new();
-        method_calls.push(MethodCall::None);
-        method_calls
+        Vec::<MethodCall>::new()
     }
 
-    fn handle_post_response(&mut self, _from_authority: Authority, _from_address: NameType,
-                            _response: Result<Vec<u8>, ResponseError>) {
-        unimplemented!();
+    fn handle_post_response(&mut self, _from_authority: Authority, _from_address: SourceAddress,
+                           _response: ResponseError) -> Vec<MethodCall> {
+        let stats = self.stats.clone();
+        let mut stats_value = stats.lock().unwrap();
+        stats_value.call_count += 1;
+        stats_value.data = "handle_post_response".to_string().into_bytes();
+        Vec::<MethodCall>::new()
     }
 
     fn handle_churn(&mut self, _close_group: Vec<NameType>)
@@ -1592,13 +1713,13 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     membrane
 }
 
-#[test]
+    #[test]
     fn check_next_id() {
         let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         assert_eq!(membrane.get_next_message_id() + 1, membrane.get_next_message_id());
     }
 
-#[test]
+    #[test]
     fn call_put() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
@@ -1609,14 +1730,25 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         membrane.put(name, chunk);
     }
 
-#[test]
+    #[test]
+    fn call_post() {
+        let mut array = [0u8; 64];
+        thread_rng().fill_bytes(&mut array);
+        let chunk = Data::ImmutableData(
+            ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x| x).collect::<Vec<_>>()));
+        let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
+        let name: NameType = Random::generate_random();
+        membrane.post(name, chunk);
+    }
+
+    #[test]
     fn call_get() {
         let mut membrane = create_membrane(Arc::new(Mutex::new(Stats::new())));
         let name: NameType = Random::generate_random();
         membrane.get(name, DataRequest::ImmutableData(ImmutableDataType::Normal));
     }
 
-#[test]
+    #[test]
     fn call_refresh() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
@@ -1626,7 +1758,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         membrane.refresh(100u64, name, content);
     }
 
-#[test]
+    #[test]
     fn call_handle_put() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
@@ -1639,7 +1771,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
                    Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
-#[test]
+    #[test]
     fn call_handle_authorised_put() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
@@ -1654,7 +1786,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         assert_eq!(result_stats.data, "UnauthorisedPut".to_string().into_bytes());
     }
 
-#[test]
+    #[test]
     fn call_handle_put_response() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
@@ -1672,15 +1804,19 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         };
 
         let signed_message = SignedMessage::new(&message, &keys.1);
+
         let put_data_response = MessageType::PutDataResponse(
-            ErrorReturn::new(ResponseError::NoData, signed_message.unwrap()));
+                                    ErrorReturn::new(ResponseError::NoData,
+                                                     signed_message.unwrap()),
+                                    BTreeMap::new());
+
         assert_eq!(Tester::new().call_operation(put_data_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
             Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
-#[test]
+    #[test]
     fn call_handle_get_data() {
         let get_data = MessageType::GetData(DataRequest::ImmutableData(ImmutableDataType::Normal));
         assert_eq!(Tester::new().call_operation(get_data,
@@ -1689,7 +1825,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
             Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
-#[test]
+    #[test]
     fn call_handle_get_data_response() {
         let mut tester = Tester::new();
 
@@ -1715,7 +1851,8 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
                 data: Data::ImmutableData(
                         ImmutableData::new(ImmutableDataType::Normal,
                                            array.iter().map(|&x|x).collect::<Vec<_>>())),
-                orig_request: signed_message
+                orig_request   : signed_message,
+                group_pub_keys : BTreeMap::new(),
             });
 
         assert_eq!(tester.call_operation(get_data_response,
@@ -1724,21 +1861,63 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
             Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
-#[test]
-#[ignore]
+    #[test]
     fn call_handle_post() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
+        let keys = crypto::sign::gen_keypair();
         let post_data = MessageType::Post(
-            Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
+            Data::StructuredData(
+                StructuredData::new(0,
+                                    Random::generate_random(),
+                                    vec![],
+                                    vec![keys.0],
+                                    0,
+                                    vec![],
+                                    vec![])));
         assert_eq!(Tester::new().call_operation(post_data,
                    SourceAddress::Direct(Random::generate_random()),
                    DestinationAddress::Direct(Random::generate_random()),
                    Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
-#[test]
+    #[test]
+    fn call_handle_post_response() {
+        let mut array = [0u8; 64];
+        thread_rng().fill_bytes(&mut array);
+        let keys = crypto::sign::gen_keypair();
+        let post_data = MessageType::Post(
+            Data::StructuredData(
+                StructuredData::new(0,
+                                    Random::generate_random(),
+                                    vec![],
+                                    vec![keys.0],
+                                    0,
+                                    vec![],
+                                    vec![])));
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(Random::generate_random()),
+            source      : SourceAddress::Direct(Random::generate_random()),
+            orig_message: None,
+            message_type: post_data,
+            message_id  : random::<u32>(),
+            authority   : Authority::NaeManager(Random::generate_random())
+        };
+
+        let signed_message = SignedMessage::new(&message, &keys.1);
+
+        let post_response = MessageType::PostResponse(
+                                ErrorReturn::new(ResponseError::NoData,
+                                                 signed_message.unwrap()),
+                                BTreeMap::new());
+
+        assert_eq!(Tester::new().call_operation(post_response,
+            SourceAddress::Direct(Random::generate_random()),
+            DestinationAddress::Direct(Random::generate_random()),
+            Authority::NaeManager(Random::generate_random())).call_count, 1usize);
+    }
+
+    #[test]
     fn call_handle_refresh() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
@@ -1749,7 +1928,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
                    Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
-#[test]
+    #[test]
     fn relocate_original_public_id() {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();
@@ -1801,7 +1980,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         assert_eq!(routing_node.public_id_cache.len(), 0usize);
     }
 
-#[test]
+    #[test]
     fn cache_relocated_public_id() {
         let mut routing_node = populate_routing_node();
         let furthest_closest_node = routing_node.routing_table.our_close_group().last().unwrap().id();

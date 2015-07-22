@@ -45,6 +45,10 @@ impl PlainData {
     pub fn name(&self) -> NameType {
         self.name.clone()
     }
+
+    pub fn payload_size(&self) -> usize {
+        self.value.len()
+    }
 }
 
 
