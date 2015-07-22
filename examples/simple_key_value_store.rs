@@ -190,13 +190,13 @@ impl routing::client_interface::Interface for TestClient {
 }
 
 struct TestNode {
-    _db: BTreeMap<NameType, PlainData>
+  db: BTreeMap<NameType, PlainData>
 }
 
 impl TestNode {
     pub fn new() -> TestNode {
         TestNode {
-            _db : BTreeMap::new()
+            db : BTreeMap::new()
         }
     }
 }
@@ -219,25 +219,27 @@ impl Interface for TestNode {
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
                 _from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
                 data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
-        match our_authority {
-            Authority::ClientManager(client_name) => {
-                // println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
-                //          node_name, data.name());
-                // FIXME
-                return Ok(vec![MethodCall::Put { destination: client_name, content: data }]);
-            },
-            Authority::NaeManager(group_name) => {
-                println!("testing node handle put request to group {:?}", group_name);
-                match data {
-                    Data::PlainData(_plain_data) => {
-                        println!("MessageAction::Reply on PutResponse.");
-                        return Ok(vec![]);
+        match data {
+            Data::PlainData(plain_data) => {
+                match our_authority {
+                    Authority::ClientManager(client_name) => {
+                        println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
+                            client_name, plain_data.name());
+                        return Ok(vec![MethodCall::Put {
+                            destination: plain_data.name(),
+                            content: Data::PlainData(plain_data) }]);
                     },
-                    _ => return Err(InterfaceError::Response(ResponseError::InvalidRequest))
+                    Authority::NaeManager(group_name) => {
+                        assert_eq!(group_name, plain_data.name());
+                        let _ = self.db.entry(plain_data.name())
+                            .or_insert(plain_data);
+                    },
+                    _ => {}
                 }
             },
-            _ => return Err(InterfaceError::Response(ResponseError::InvalidRequest))
+            _ => {}
         };
+        return Ok(vec![]);
     }
 
     fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
@@ -307,8 +309,8 @@ fn encode_key_value(key : String, value : String) -> Result<Vec<u8>, CborError> 
 }
 
 #[allow(dead_code)]
-fn decode_key_value(data : Vec<u8>) -> Result<(String, String), CborError> {
-    decode(&data)
+fn decode_key_value(data : &Vec<u8>) -> Result<(String, String), CborError> {
+    decode(data)
 }
 
 fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
@@ -333,7 +335,7 @@ fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
 
 fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
     let our_id = Id::new();
-    let _our_client_name : NameType = public_key_to_client_name(&our_id.signing_public_key());
+    let our_client_name : NameType = public_key_to_client_name(&our_id.signing_public_key());
     let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), our_id);
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
@@ -374,8 +376,14 @@ fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
                     let key_name : NameType = calculate_key_name(&key);
                     println!("Putting value \"{}\" to network under key \"{}\" at location {}.",
                         args.arg_value, key, key_name);
-                    let data = PlainData::new(key_name, args.arg_value.into_bytes());
-                    let _ = mutate_client.lock().unwrap().put(key_name, Data::PlainData(data));
+                    match encode_key_value(key, args.arg_value) {
+                        Ok(serialised_key_value) => {
+                            let data = PlainData::new(key_name, serialised_key_value);
+                            let _ = mutate_client.lock().unwrap()
+                                .put(our_client_name, Data::PlainData(data));
+                        },
+                        Err(_) => { println!("Failed to encode key and value."); }
+                    }
                 },
                 None => ()
             }
