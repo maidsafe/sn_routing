@@ -74,7 +74,7 @@ use routing::NameType;
 use routing::error::{ResponseError, InterfaceError};
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
-use routing::utils::{encode, public_key_to_client_name};
+use routing::utils::{encode, decode, public_key_to_client_name};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -304,9 +304,10 @@ fn encode_key_value(key : String, value : String) -> Result<Vec<u8>, CborError> 
     encode(&(key, value))
 }
 
-// fn decode_key_value(data : Vec<u8>) -> Result<(String, String), CBorError> {
-//
-// }
+#[allow(dead_code)]
+fn decode_key_value(data : Vec<u8>) -> Result<(String, String), CborError> {
+    decode(&data)
+}
 
 fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
     let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
