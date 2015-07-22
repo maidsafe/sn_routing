@@ -30,7 +30,7 @@
 #![feature(convert)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
-              html_root_url = "http://maidsafe.github.io/routing")]
+       html_root_url = "http://maidsafe.github.io/routing")]
 // #![warn(missing_docs)]
 #![deny(dead_code, unused_variables, unused_features, unused_attributes)]
 #![forbid(bad_style, warnings)]

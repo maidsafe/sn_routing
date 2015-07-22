@@ -45,7 +45,7 @@ use relay::{RelayMap, IdType};
 use sendable::Sendable;
 use data::{Data, DataRequest};
 use types;
-use types::{MessageId, Bytes, DestinationAddress, SourceAddress};
+use types::{MessageId, Bytes, DestinationAddress, SourceAddress, Address};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
 use messages::{RoutingMessage, SignedMessage, MessageType,
@@ -552,11 +552,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     //MessageType::FindGroupResponse(find_group_response) => self.handle_find_group_response(find_group_response),
                     MessageType::GetData(ref request) => self.handle_get_data(message_wrap,
                         message.clone(), request.clone()),
-                    MessageType::GetDataResponse(ref response) =>
-                        self.handle_get_data_response(message_wrap, message.clone(), response.clone()),
+                    MessageType::GetDataResponse(ref response) => {
+                        match message.from_group() {
+                            None => self.handle_client_get_data_response(message_wrap, message.clone(), response.clone()),
+                            Some(_) => self.handle_group_get_data_response(message_wrap, message.clone(), response.clone()),
+                        }
+                    },
                     MessageType::PutData(ref data) => self.handle_put_data(message_wrap, message.clone(), data.clone()),
-                    MessageType::PutDataResponse(ref response) => self.handle_put_data_response(message_wrap, message.clone(),
-                        response.clone()),
+                    MessageType::PutDataResponse(ref response) => {
+                        match message.from_group() {
+                            None => self.handle_client_put_data_response(message_wrap, message.clone(), response.clone()),
+                            Some(_) => self.handle_group_put_data_response(message_wrap, message.clone(), response.clone()),
+                        }
+                    },
                     MessageType::PutPublicId(ref id) => self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
                     MessageType::Refresh(ref tag, ref data) => { self.handle_refresh(message.clone(), tag.clone(), data.clone()) },
                     MessageType::Post(ref data) => self.handle_post(message_wrap, message.clone(), data.clone()),
@@ -998,12 +1006,43 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.send_swarm_or_parallel_or_relay(&message)
     }
 
-    fn handle_put_data_response(&mut self, signed_message: SignedMessage,
-                                           message: RoutingMessage,
-                                           response: ErrorReturn) -> RoutingResult {
-        info!("Handle PUT data response.");
+    fn handle_group_put_data_response(&mut self, signed_message: SignedMessage,
+            message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
+        info!("Handle group PUT data response.");
         let from_authority = message.from_authority();
         let from = message.source.clone();
+
+        for method_call in self.mut_interface().handle_put_response(from_authority, from, response.error.clone()) {
+            match method_call {
+                MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                MethodCall::Delete { name: x, data : y } => self.delete(x, y),
+                MethodCall::None => (),
+                MethodCall::Forward { destination } =>
+                    ignore(self.forward(&signed_message, &message, destination)),
+                MethodCall::Reply { data: _data } =>
+                    info!("IGNORED: on handle_put_data_response MethodCall:Reply is not a Valid action")
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_client_put_data_response(&mut self, signed_message: SignedMessage,
+            message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
+        info!("Handle client PUT data response.");
+        let from_authority = message.from_authority();
+        let from = message.source.clone();
+
+        match from.actual_source() {
+            Address::Client(public_key) => {
+                if !signed_message.verify_signature(&public_key) {
+                    return Err(RoutingError::FailedSignature);
+                }
+            },
+            _ => { return Err(RoutingError::BadAuthority); }
+        }
 
         for method_call in self.mut_interface().handle_put_response(from_authority, from, response.error.clone()) {
             match method_call {
@@ -1287,11 +1326,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn forward(&self,
-               orig_message    : &SignedMessage,
-               routing_message : &RoutingMessage,
-               destination     : NameType) -> RoutingResult
-    {
+    fn forward(&self, orig_message: &SignedMessage, routing_message: &RoutingMessage,
+            destination: NameType) -> RoutingResult {
         let our_authority = our_authority(&routing_message, &self.routing_table);
         let message = routing_message.create_forward(self.id.name().clone(),
                                                      our_authority,
@@ -1301,9 +1337,29 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_get_data_response(&mut self, orig_message : SignedMessage,
-                                           message: RoutingMessage,
-                                           response: GetDataResponse) -> RoutingResult {
+    fn handle_group_get_data_response(&mut self, orig_message : SignedMessage,
+            message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
+        let from = message.source.non_relayed_source();
+
+        for method_call in self.mut_interface().handle_get_response(from, response.data.clone()) {
+            match method_call {
+                MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                MethodCall::Delete { name: x, data : y } => self.delete(x, y),
+                MethodCall::None => (),
+                MethodCall::Forward { destination } =>
+                    ignore(self.forward(&orig_message, &message, destination)),
+                MethodCall::Reply { data: _data } =>
+                    info!("IGNORED: on handle_get_data_response MethodCall:Reply is not a Valid action")
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_client_get_data_response(&mut self, orig_message : SignedMessage,
+            message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
         if !response.verify_request_came_from(&self.id.signing_public_key()) {
             return Err(RoutingError::FailedSignature);
         }
@@ -1325,7 +1381,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
         Ok(())
     }
-
 
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 }
