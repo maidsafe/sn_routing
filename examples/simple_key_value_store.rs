@@ -240,8 +240,9 @@ impl Interface for TestNode {
         };
     }
 
-    fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority, _from_address: NameType,
-                              _name: NameType, _data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
+    fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
+        _from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
+        _data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         Err(InterfaceError::Abort)
     }
 
@@ -260,8 +261,9 @@ impl Interface for TestNode {
         vec![MethodCall::None]
     }
 
-    fn handle_post_response(&mut self, _from_authority: Authority, _from_address: NameType,
-                            _response: Result<Vec<u8>, ResponseError>) {
+    fn handle_post_response(&mut self, _from_authority: Authority,
+        _from_address: types::SourceAddress, _response: ResponseError)
+        -> Vec<MethodCall> {
         unimplemented!();
     }
 
