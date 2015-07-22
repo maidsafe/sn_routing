@@ -259,7 +259,6 @@ mod test {
     use routing::node_interface::MethodCall;
     use routing::NameType;
     use routing::sendable::Sendable;
-    use routing::test_utils::Random;
     use routing::types::*;
 
     #[test]
@@ -303,7 +302,7 @@ mod test {
     #[test]
     fn handle_account_transfer() {
         let mut data_manager = DataManager::new();
-        let name : NameType = Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         let account_wrapper = DataManagerSendable::new(name.clone(), vec![]);
         data_manager.handle_account_transfer(account_wrapper);
         assert_eq!(data_manager.db_.exist(&name), true);
@@ -312,7 +311,7 @@ mod test {
     #[test]
     fn handle_stats_transfer() {
         let mut data_manager = DataManager::new();
-        let name : NameType = Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         let stats_sendable = DataManagerStatsSendable::new(name.clone(), 1023);
         data_manager.handle_stats_transfer(stats_sendable);
         assert_eq!(data_manager.resource_index, 512);

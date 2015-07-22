@@ -16,7 +16,9 @@ cbor = "*"
 time = "*"
 lru_time_cache = "0.2.*"
 crust = "0.1.*"
-routing = "0.2.*"
+
+[dependencies.routing]
+path = "../routing"
 
 [dev-dependencies]
 rand = "*"

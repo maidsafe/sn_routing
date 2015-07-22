@@ -230,14 +230,17 @@ impl PmidManagerDatabase {
 
 #[cfg(test)]
 mod test {
-  use cbor;
-  use routing;
-  use super::{PmidManagerDatabase, PmidManagerAccount, PmidManagerAccountWrapper};
+    use cbor;
+
+    use super::{PmidManagerDatabase, PmidManagerAccount, PmidManagerAccountWrapper};
+
+    use routing::NameType;
+    use routing::types::*;
 
     #[test]
     fn exist() {
         let mut db = PmidManagerDatabase::new();
-        let name = routing::test_utils::Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         assert_eq!(db.exist(&name), false);
         db.put_data(&name, 1024);
         assert_eq!(db.exist(&name), true);
@@ -246,7 +249,7 @@ mod test {
     // #[test]
     // fn put_data() {
     //     let mut db = PmidManagerDatabase::new();
-    //     let name = routing::test_utils::Random::generate_random();
+    //     let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
     //     assert_eq!(db.put_data(&name, 0), true);
     //     assert_eq!(db.exist(&name), true);
     //     assert_eq!(db.put_data(&name, 1), true);
@@ -261,7 +264,7 @@ mod test {
     #[test]
     fn handle_account_transfer() {
         let mut db = PmidManagerDatabase::new();
-        let name = routing::test_utils::Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         assert_eq!(db.put_data(&name, 1024), true);
         assert_eq!(db.exist(&name), true);
 

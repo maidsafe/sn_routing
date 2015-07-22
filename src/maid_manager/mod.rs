@@ -68,13 +68,12 @@ mod test {
     use routing::node_interface::MethodCall;
     use routing::immutable_data::{ImmutableData, ImmutableDataType};
     use routing::sendable::Sendable;
-    use routing::test_utils::Random;
     use routing::types::*;
 
     #[test]
     fn handle_put() {
         let mut maid_manager = MaidManager::new();
-        let from: NameType = Random::generate_random();
+        let from = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         let value = generate_random_vec_u8(1024);
         let data = ImmutableData::new(ImmutableDataType::Normal, value);
         let put_result = maid_manager.handle_put(&from, Data::ImmutableData(data.clone()));
@@ -92,7 +91,7 @@ mod test {
     #[test]
     fn handle_account_transfer() {
         let mut maid_manager = MaidManager::new();
-        let name : NameType = Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), MaidManagerAccount::new());
         maid_manager.handle_account_transfer(account_wrapper);
         assert_eq!(maid_manager.db_.exist(&name), true);

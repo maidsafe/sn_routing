@@ -299,7 +299,6 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
     use routing::node_interface::{ Interface, MethodCall };
     use routing::sendable::Sendable;
     use routing::structured_data::StructuredData;
-    use routing::test_utils::Random;
     use routing::types::*;
 
     fn maid_manager_put(vault: &mut VaultFacade, from: SourceAddress,
@@ -457,7 +456,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
 
         let mut available_nodes = Vec::with_capacity(30);
         for _ in 0..30 {
-            available_nodes.push(NameType::generate_random());
+            available_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
         }
 
         let value = generate_random_vec_u8(1024);

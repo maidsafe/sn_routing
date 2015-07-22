@@ -231,8 +231,7 @@ mod test {
   use super::*;
   use routing::immutable_data::{ImmutableData, ImmutableDataType};
   use routing::NameType;
-  use routing::types::generate_random_vec_u8;
-  use routing::test_utils::Random;
+  use routing::types::*;
   use routing::sendable::Sendable;
 
   #[test]
@@ -243,7 +242,7 @@ mod test {
     let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
 
     let data_name = data.name();
@@ -261,7 +260,7 @@ mod test {
     let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
 
     let result = db.get_pmid_nodes(&data_name);
@@ -282,7 +281,7 @@ mod test {
     let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
 
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());
@@ -308,8 +307,8 @@ mod test {
     let mut new_pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
-      new_pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
+      new_pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
 
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());
@@ -336,7 +335,7 @@ mod test {
     let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());
     assert_eq!(db.get_pmid_nodes(&data_name).len(), pmid_nodes.len());
