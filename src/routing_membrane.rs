@@ -26,7 +26,7 @@
 //! Other network management messages are handled by Routing after Sentinel resolution.
 
 use rand;
-use sodiumoxide::crypto::sign::{verify_detached};
+use sodiumoxide::crypto::sign;
 use std::collections::BTreeMap;
 use std::boxed::Box;
 use std::ops::DerefMut;
@@ -559,7 +559,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageType::GetDataResponse(ref response) =>
                         self.handle_get_data_response(message_wrap, message.clone(), response.clone()),
                     MessageType::PutData(ref data) => self.handle_put_data(message_wrap, message.clone(), data.clone()),
-                    MessageType::PutDataResponse(ref response)
+                    MessageType::PutDataResponse(ref response, _)
                         => self.handle_put_data_response(message_wrap, message.clone(), response.clone()),
                     MessageType::PutPublicId(ref id) => self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
                     MessageType::Refresh(ref tag, ref data) => { self.handle_refresh(message.clone(), tag.clone(), data.clone()) },
@@ -944,9 +944,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     error: error,
                     orig_request: signed_message
                 };
+
+                let group_pub_keys = if our_authority.is_group() {
+                    self.group_pub_keys()
+                }
+                else {
+                    BTreeMap::new()
+                };
+
                 try!(self.send_reply(&message,
                                      our_authority.clone(),
-                                     MessageType::PutDataResponse(signed_error)));
+                                     MessageType::PutDataResponse(signed_error,
+                                                                  group_pub_keys)));
             }
         }
         Ok(())
@@ -1140,9 +1149,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // Verify a connect request was initiated by us.
         let connect_request = try!(decode::<ConnectRequest>(&connect_response.serialised_connect_request));
         if connect_request.requester_id != self.id.name() ||
-           !verify_detached(&connect_response.connect_request_signature,
-                            &connect_response.serialised_connect_request[..],
-                            &self.id.signing_public_key()) {
+           !sign::verify_detached(&connect_response.connect_request_signature,
+                                  &connect_response.serialised_connect_request[..],
+                                  &self.id.signing_public_key()) {
             return Err(RoutingError::Response(ResponseError::InvalidRequest));
         }
         // double check if fob is relocated;
@@ -1281,15 +1290,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             ignore(self.forward(&orig_message, &message, destination)),
                         MethodCall::Reply { data } => {
 
-                            let name_and_key_from_info = |node_info : NodeInfo| {
-                                (node_info.fob.name(),
-                                 node_info.fob.signing_public_key())
-                            };
-
                             let group_pub_keys = if our_authority.is_group() {
-                                self.routing_table.target_nodes(&self.id.name()).into_iter()
-                                    .map(name_and_key_from_info)
-                                    .collect::<BTreeMap<_,_>>()
+                                self.group_pub_keys()
                             }
                             else {
                                 BTreeMap::new()
@@ -1300,6 +1302,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 orig_request   : orig_message.clone(),
                                 group_pub_keys : group_pub_keys
                             };
+
                             ignore(self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(response)))
                         },
                     }
@@ -1349,6 +1352,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
+    fn group_pub_keys(&self) -> BTreeMap<NameType, sign::PublicKey> {
+        let name_and_key_from_info = |node_info : NodeInfo| {
+            (node_info.fob.name(), node_info.fob.signing_public_key())
+        };
+
+        self.routing_table.target_nodes(&self.id.name())
+                          .into_iter()
+                          .map(name_and_key_from_info)
+                          .collect()
+    }
 
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 }
@@ -1694,8 +1707,12 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         };
 
         let signed_message = SignedMessage::new(&message, &keys.1);
+
         let put_data_response = MessageType::PutDataResponse(
-            ErrorReturn::new(ResponseError::NoData, signed_message.unwrap()));
+                                    ErrorReturn::new(ResponseError::NoData,
+                                                     signed_message.unwrap()),
+                                    BTreeMap::new());
+
         assert_eq!(Tester::new().call_operation(put_data_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),

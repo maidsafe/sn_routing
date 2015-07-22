@@ -109,7 +109,7 @@ pub enum MessageType {
     Post(Data),
     PostResponse(ErrorReturn),
     PutData(Data),
-    PutDataResponse(ErrorReturn),
+    PutDataResponse(ErrorReturn, BTreeMap<NameType, sign::PublicKey>),
     PutKey,
     PutPublicId(PublicId),
     PutPublicIdResponse(PublicId),
