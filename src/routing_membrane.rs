@@ -26,7 +26,7 @@
 //! Other network management messages are handled by Routing after Sentinel resolution.
 
 use rand;
-use sodiumoxide::crypto::sign::{verify_detached, PublicKey, Signature};
+use sodiumoxide::crypto::sign::{verify_detached, PublicKey};
 use std::collections::{BTreeMap};
 use std::boxed::Box;
 use std::ops::DerefMut;
@@ -915,18 +915,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let from = message.source_address();
         //let to = message.send_to();
         let to = message.destination_address();
-        let quorum = types::QUORUM_SIZE;
+        let mut quorum = types::QUORUM_SIZE;
 
         if self.routing_table.size() < types::QUORUM_SIZE {
             quorum = self.routing_table.size();
         }
 
         let resolved = match self.put_sentinel.add_claim(
-                        SentinelPutRequest::new(message, data, our_authority),
-                        source, signed_message.signature.clone(),
-                        signed_message.encoded_body.clone(), quorum) {
+                        SentinelPutRequest::new(message.clone(), data.clone(), our_authority.clone()),
+                        source, signed_message.signature().clone(),
+                        signed_message.encoded_body().clone(), quorum) {
                             Some(result) =>  match  result {
-                                AddResult::RequestKeys(name) => {
+                                AddResult::RequestKeys(_) => {
                                     // Get Key Request
                                     return Ok(())
                                 },
@@ -935,7 +935,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             None => return Ok(())
                         };
 
-        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data) {
+        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data.clone()) {
             Ok(method_calls) => {
                 for method_call in method_calls {
                     match method_call {
@@ -948,12 +948,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Forward { destination } => {
                             let message_id = self.get_next_message_id();
                             let msg = RoutingMessage {
-                                destination : DestinationAddress::Direct(resolved.0.destination_group),
+                                destination : DestinationAddress::Direct(resolved.0.destination_group.clone()),
                                 source      : SourceAddress::Direct(self.id.name()),
                                 orig_message: None,
                                 message_type: MessageType::PutData(resolved.0.data.clone()),
                                 message_id  : message_id,
-                                authority   : our_authority,
+                                authority   : our_authority.clone(),
                             };
                             let signed_msg = SignedMessage::new(&msg, self.id.signing_private_key());
                             ignore(self.forward(&signed_msg.unwrap(), &msg, destination));
@@ -963,12 +963,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 destination : DestinationAddress::Direct(resolved.0.destination_group),
                                 source      : SourceAddress::Direct(self.id.name()),
                                 orig_message: None,
-                                message_type: MessageType::PutData(resolved.0.data.clone()),
+                                message_type: MessageType::PutData(data),
                                 message_id  : resolved.0.message_id,
-                                authority   : our_authority,
+                                authority   : our_authority.clone(),
                             };
                             try!(self.send_reply(&msg, our_authority.clone(),
-                                                 MessageType::PutData(resolved.0.data)));
+                                                 MessageType::PutData(resolved.0.data.clone())));
                         }
                     }
                 }

@@ -24,12 +24,12 @@ use data::Data;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct SentinelPutRequest {
-    data: Data,
-    source_group: NameType,
-    destination_group: NameType,
-    source_authority: Authority,
-    our_authority: Authority,
-    message_id: MessageId,
+    pub data: Data,
+    pub source_group: NameType,
+    pub destination_group: NameType,
+    pub source_authority: Authority,
+    pub our_authority: Authority,
+    pub message_id: MessageId,
 }
 
 impl SentinelPutRequest {

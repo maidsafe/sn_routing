@@ -21,12 +21,11 @@ crust = "0.1.*"
 docopt = "*"
 itertools = "*"
 log = "*"
+maidsafe_sodiumoxide = "*"
+
 
 [dependencies.sentinel]
 git = "https://github.com/maidsafe/sentinel"
-
-[dependencies.maidsafe_sodiumoxide]
-git = "https://github.com/maidsafe/sodiumoxide.git"
 
 [dev-dependencies]
 bit-vec = "*"
