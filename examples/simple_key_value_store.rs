@@ -203,15 +203,30 @@ impl TestNode {
 
 impl Interface for TestNode {
     fn handle_get(&mut self,
-                  _data_request: DataRequest, our_authority: Authority,
+                  data_request: DataRequest, our_authority: Authority,
                   _from_authority: Authority, _from_address: types::SourceAddress)
                    -> Result<Vec<MethodCall>, InterfaceError> {
-        match our_authority {
-            Authority::NaeManager(data_name) => {
-                println!("testing node handle get request of chunk {}", data_name);
-                    return Ok(vec![]);
-            },
-            _ => {}
+        match data_request {
+              DataRequest::PlainData => {
+                  match our_authority {
+                      Authority::NaeManager(group_name) => {
+                          match self.db.get(&group_name) {
+                              Some(plain_data) => {
+                                  println!("node replied to get request for chunk {}",
+                                      group_name);
+                                  return Ok(vec![MethodCall::Reply {
+                                      data : Data::PlainData(plain_data.clone()) }]);
+                              },
+                              None => {
+                                  println!("node didn't have chunk {}",
+                                      group_name);
+                              }
+                          }
+                      },
+                      _ => {}
+                  };
+              },
+              _ => {}
         };
         Err(InterfaceError::Response(ResponseError::NoData))
     }
