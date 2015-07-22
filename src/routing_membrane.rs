@@ -562,10 +562,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageType::PutDataResponse(ref response, _)
                         => self.handle_put_data_response(message_wrap, message.clone(), response.clone()),
                     MessageType::PutPublicId(ref id) => self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
-                    MessageType::Refresh(ref tag, ref data) => { self.handle_refresh(message.clone(), tag.clone(), data.clone()) },
+                    MessageType::Refresh(ref tag, ref data) => self.handle_refresh(message.clone(), tag.clone(), data.clone()),
                     MessageType::Post(ref data) => self.handle_post(message_wrap, message.clone(), data.clone()),
-                    MessageType::PostResponse(ref response) => self.handle_post_response(message_wrap, message.clone(),
-                        response.clone()),
+                    MessageType::PostResponse(ref response, _)
+                        => self.handle_post_response(message_wrap,
+                                                     message.clone(),
+                                                     response.clone()),
                     _ => {
                         Err(RoutingError::UnknownMessageType)
                     }
@@ -988,12 +990,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Err(InterfaceError::Abort) => {},
             Err(InterfaceError::Response(error)) => {
                 let signed_error = ErrorReturn {
-                    error: error,
-                    orig_request: signed_message
+                    error        : error,
+                    orig_request : signed_message
                 };
+
+                let group_pub_keys = if our_authority.is_group() {
+                    self.group_pub_keys()
+                }
+                else {
+                    BTreeMap::new()
+                };
+
                 try!(self.send_reply(&message,
                                      our_authority.clone(),
-                                     MessageType::PostResponse(signed_error)));
+                                     MessageType::PostResponse(signed_error,
+                                                               group_pub_keys)));
             }
         }
         Ok(())
@@ -1808,8 +1819,12 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         };
 
         let signed_message = SignedMessage::new(&message, &keys.1);
+
         let post_response = MessageType::PostResponse(
-            ErrorReturn::new(ResponseError::NoData, signed_message.unwrap()));
+                                ErrorReturn::new(ResponseError::NoData,
+                                                 signed_message.unwrap()),
+                                BTreeMap::new());
+
         assert_eq!(Tester::new().call_operation(post_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
