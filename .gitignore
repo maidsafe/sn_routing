@@ -1,6 +1,7 @@
 *.exe
 *.lock
 *.swp
+*.rsproj
 tags*
 *bootstrap.cache
 build/

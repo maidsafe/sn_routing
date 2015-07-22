@@ -69,11 +69,11 @@ pub trait Interface : Sync + Send {
     /// an address for further handling of the request is provided. Failure is indicated as an
     /// InterfaceError.
     fn handle_post(&mut self,
-                   our_authority: Authority,
+                   our_authority : Authority,
                    from_authority: Authority,
-                   from_address: NameType,
-                   name : NameType,
-                   data: Data) -> Result<Vec<MethodCall>, InterfaceError>;
+                   from_address  : SourceAddress,
+                   dest_address  : DestinationAddress,
+                   data          : Data) -> Result<Vec<MethodCall>, InterfaceError>;
 
     /// Handle messages internal to the group (triggered by churn events). Payloads
     /// from these messages are grouped by (type_tag, from_group) key, and once
@@ -96,9 +96,9 @@ pub trait Interface : Sync + Send {
     /// handles the response to a post request. Depending on ResponseError, performing an action of
     /// type MethodCall is requested.
     fn handle_post_response(&mut self,
-                            from_authority: Authority,
-                            from_address: NameType,
-                            response: Result<Vec<u8>, ResponseError>);
+                            from_authority : Authority,
+                            from_address   : SourceAddress,
+                            response       : ResponseError) -> Vec<MethodCall>;
 
     /// handles the actions to be carried out in the event of a churn. The function provides a list
     /// of actions (of type MethodCall) to be carried out in order to update relevant nodes.
