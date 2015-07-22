@@ -192,7 +192,7 @@ impl<F> RoutingClient<F> where F: Interface {
                                 MessageType::GetDataResponse(result) => {
                                     self.handle_get_data_response(result);
                                 },
-                                MessageType::PutDataResponse(put_response) => {
+                                MessageType::PutDataResponse(put_response, _) => {
                                     self.handle_put_data_response(put_response);
                                 },
                                 _ => {}

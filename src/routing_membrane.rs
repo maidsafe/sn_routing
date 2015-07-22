@@ -26,8 +26,8 @@
 //! Other network management messages are handled by Routing after Sentinel resolution.
 
 use rand;
-use sodiumoxide::crypto::sign::{verify_detached};
-use std::collections::{BTreeMap};
+use sodiumoxide::crypto::sign;
+use std::collections::BTreeMap;
 use std::boxed::Box;
 use std::ops::DerefMut;
 use std::sync::mpsc::Receiver;
@@ -432,7 +432,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             destination  : DestinationAddress::Direct(name.clone()),
             source       : SourceAddress::Direct(name.clone()),
             orig_message : None,
-            message_type : MessageType::FindGroup(name),
+            message_type : MessageType::FindGroup,
             message_id   : message_id,
             authority    : Authority::ManagedNode,
         }
@@ -493,7 +493,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
                 match method_call {
                     Ok(MethodCall::Reply { data }) => {
-                        let response = GetDataResponse { data: data, orig_request : message_wrap.clone() };
+                        let response = GetDataResponse {
+                            data           : data,
+                            orig_request   : message_wrap.clone(),
+                            group_pub_keys : BTreeMap::new()
+                        };
                         let our_authority = our_authority(&message, &self.routing_table);
                         ignore(self.send_reply(
                             &message, our_authority, MessageType::GetDataResponse(response)));
@@ -546,7 +550,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // switch message type
                 match message.message_type {
                     MessageType::ConnectResponse(response) => self.handle_connect_response(response),
-                    MessageType::FindGroup(_find_group) => self.handle_find_group(message),
+                    MessageType::FindGroup => self.handle_find_group(message),
                     // Handled above for some reason.
                     //MessageType::FindGroupResponse(find_group_response) => self.handle_find_group_response(find_group_response),
                     MessageType::GetData(ref request) => self.handle_get_data(message_wrap,
@@ -554,13 +558,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageType::GetDataResponse(ref response) =>
                         self.handle_get_data_response(message_wrap, message.clone(), response.clone()),
                     MessageType::PutData(ref data) => self.handle_put_data(message_wrap, message.clone(), data.clone()),
-                    MessageType::PutDataResponse(ref response) => self.handle_put_data_response(message_wrap, message.clone(),
-                        response.clone()),
+                    MessageType::PutDataResponse(ref response, _)
+                        => self.handle_put_data_response(message_wrap, message.clone(), response.clone()),
                     MessageType::PutPublicId(ref id) => self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
-                    MessageType::Refresh(ref tag, ref data) => { self.handle_refresh(message.clone(), tag.clone(), data.clone()) },
+                    MessageType::Refresh(ref tag, ref data) => self.handle_refresh(message.clone(), tag.clone(), data.clone()),
                     MessageType::Post(ref data) => self.handle_post(message_wrap, message.clone(), data.clone()),
-                    MessageType::PostResponse(ref response) => self.handle_post_response(message_wrap, message.clone(),
-                        response.clone()),
+                    MessageType::PostResponse(ref response, _)
+                        => self.handle_post_response(message_wrap,
+                                                     message.clone(),
+                                                     response.clone()),
                     _ => {
                         Err(RoutingError::UnknownMessageType)
                     }
@@ -937,9 +943,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     error: error,
                     orig_request: signed_message
                 };
+
+                let group_pub_keys = if our_authority.is_group() {
+                    self.group_pub_keys()
+                }
+                else {
+                    BTreeMap::new()
+                };
+
                 try!(self.send_reply(&message,
                                      our_authority.clone(),
-                                     MessageType::PutDataResponse(signed_error)));
+                                     MessageType::PutDataResponse(signed_error,
+                                                                  group_pub_keys)));
             }
         }
         Ok(())
@@ -971,12 +986,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Err(InterfaceError::Abort) => {},
             Err(InterfaceError::Response(error)) => {
                 let signed_error = ErrorReturn {
-                    error: error,
-                    orig_request: signed_message
+                    error        : error,
+                    orig_request : signed_message
                 };
+
+                let group_pub_keys = if our_authority.is_group() {
+                    self.group_pub_keys()
+                }
+                else {
+                    BTreeMap::new()
+                };
+
                 try!(self.send_reply(&message,
                                      our_authority.clone(),
-                                     MessageType::PostResponse(signed_error)));
+                                     MessageType::PostResponse(signed_error,
+                                                               group_pub_keys)));
             }
         }
         Ok(())
@@ -1130,9 +1154,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // Verify a connect request was initiated by us.
         let connect_request = try!(decode::<ConnectRequest>(&connect_response.serialised_connect_request));
         if connect_request.requester_id != self.id.name() ||
-           !verify_detached(&connect_response.connect_request_signature,
-                            &connect_response.serialised_connect_request[..],
-                            &self.id.signing_public_key()) {
+           !sign::verify_detached(&connect_response.connect_request_signature,
+                                  &connect_response.serialised_connect_request[..],
+                                  &self.id.signing_public_key()) {
             return Err(RoutingError::Response(ResponseError::InvalidRequest));
         }
         // double check if fob is relocated;
@@ -1269,7 +1293,20 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Forward { destination } =>
                             ignore(self.forward(&orig_message, &message, destination)),
                         MethodCall::Reply { data } => {
-                            let response = GetDataResponse { data: data, orig_request: orig_message.clone() };
+
+                            let group_pub_keys = if our_authority.is_group() {
+                                self.group_pub_keys()
+                            }
+                            else {
+                                BTreeMap::new()
+                            };
+
+                            let response = GetDataResponse {
+                                data           : data,
+                                orig_request   : orig_message.clone(),
+                                group_pub_keys : group_pub_keys
+                            };
+
                             ignore(self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(response)))
                         },
                     }
@@ -1318,6 +1355,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
+    fn group_pub_keys(&self) -> BTreeMap<NameType, sign::PublicKey> {
+        let name_and_key_from_info = |node_info : NodeInfo| {
+            (node_info.fob.name(), node_info.fob.signing_public_key())
+        };
+
+        let ourselves = (self.id.name(), self.id.signing_public_key());
+
+        self.routing_table.our_close_group()
+                          .into_iter()
+                          .map(name_and_key_from_info)
+                          .chain(Some(ourselves).into_iter())
+                          .collect()
+    }
 
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
 }
@@ -1352,6 +1402,7 @@ use types::{DestinationAddress, SourceAddress, GROUP_SIZE, Address};
 use utils;
 use crust::Endpoint;
 use rand::distributions::{IndependentSample, Range};
+use std::collections::BTreeMap;
 
 
 // TODO: This duplicate must use the available code
@@ -1656,8 +1707,12 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         };
 
         let signed_message = SignedMessage::new(&message, &keys.1);
+
         let put_data_response = MessageType::PutDataResponse(
-            ErrorReturn::new(ResponseError::NoData, signed_message.unwrap()));
+                                    ErrorReturn::new(ResponseError::NoData,
+                                                     signed_message.unwrap()),
+                                    BTreeMap::new());
+
         assert_eq!(Tester::new().call_operation(put_data_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
@@ -1699,7 +1754,8 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
                 data: Data::ImmutableData(
                         ImmutableData::new(ImmutableDataType::Normal,
                                            array.iter().map(|&x|x).collect::<Vec<_>>())),
-                orig_request: signed_message
+                orig_request   : signed_message,
+                group_pub_keys : BTreeMap::new(),
             });
 
         assert_eq!(tester.call_operation(get_data_response,
@@ -1752,8 +1808,12 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         };
 
         let signed_message = SignedMessage::new(&message, &keys.1);
+
         let post_response = MessageType::PostResponse(
-            ErrorReturn::new(ResponseError::NoData, signed_message.unwrap()));
+                                ErrorReturn::new(ResponseError::NoData,
+                                                 signed_message.unwrap()),
+                                BTreeMap::new());
+
         assert_eq!(Tester::new().call_operation(post_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
