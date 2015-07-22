@@ -167,6 +167,23 @@ impl routing::client_interface::Interface for TestClient {
     fn handle_get_response(&mut self, data_location : NameType, data : Data) {
         println!("Testing client received get_response from {:?} with testdata {:?}",
                     data_location, data);
+        match data {
+            Data::PlainData(plain_data) => {
+                match decode_key_value(plain_data.value()) {
+                    Ok((key, value)) => {
+                        println!("Client received {} under key {} from {}",
+                            value, key, data_location);
+                    },
+                    Err(_) => {
+                        println!("Client received get response from {} but failed to decode",
+                            data_location);
+                    }
+                }
+            },
+            _ => {
+                println!("Client received get response from {} but it is not PlainData.",
+                    data_location);}
+        }
     }
 
     fn handle_put_response(&mut self, response_error: ResponseError, _request_data: Data) {
