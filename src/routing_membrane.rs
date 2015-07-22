@@ -55,7 +55,7 @@ use node_interface::MethodCall;
 use refresh_accumulator::RefreshAccumulator;
 use id::Id;
 use public_id::PublicId;
-use sentinel::pure_sentinel::*;
+use sentinel::pure_sentinel::{PureSentinel, AddResult};
 use sentinel_request::SentinelPutRequest;
 use utils;
 use utils::{encode, decode};
@@ -950,7 +950,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 message_id  : message_id,
                                 authority   : our_authority,
                             };
-                            let signed_message = SignedMessage::new(&msg, self.id.signing_private_key())
+                            let signed_msg = SignedMessage::new(&msg, self.id.signing_private_key());
                             ignore(self.forward(&signed_msg, &msg, destination));
                         },
                         MethodCall::Reply { data } =>

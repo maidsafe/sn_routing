@@ -19,6 +19,7 @@ use authority::Authority;
 use messages::{RoutingMessage};
 use name_type::NameType;
 use sentinel::pure_sentinel::Source;
+use types::MessageId;
 use data::Data;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -28,6 +29,7 @@ pub struct SentinelPutRequest {
     destination_group: NameType,
     source_authority: Authority,
     our_authority: Authority,
+    message_id: MessageId,
 }
 
 impl SentinelPutRequest {
@@ -37,7 +39,8 @@ impl SentinelPutRequest {
                              source_group: message.source.non_relayed_source(),
                              destination_group: message.destination.non_relayed_destination(),
                              source_authority: message.authority,
-                             our_authority: our_authority
+                             our_authority: our_authority,
+                             message_id: message.message_id
                            }
     }
 }
