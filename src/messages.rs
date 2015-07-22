@@ -105,7 +105,7 @@ pub enum MessageType {
     DeleteData(DataRequest),
     DeleteDataResponse(ErrorReturn),
     GetGroupKey,
-    GetGroupKeyResponse(Vec<(NameType, sign::PublicKey)>),
+    GetGroupKeyResponse(BTreeMap<NameType, sign::PublicKey>),
     Post(Data),
     PostResponse(ErrorReturn, BTreeMap<NameType, sign::PublicKey>),
     PutData(Data),
