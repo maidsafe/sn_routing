@@ -286,13 +286,13 @@ impl Interface for TestNode {
 
     fn handle_get_response(&mut self, from_address: NameType, response: Data) -> Vec<MethodCall> {
         println!("testing node received get_response from {} with data {:?}", from_address, response);
-        vec![MethodCall::None]
+        vec![]
     }
 
     fn handle_put_response(&mut self, _from_authority : Authority, _from_address: types::SourceAddress,
                                       response: ResponseError) -> Vec<MethodCall> {
         println!("testing node received error put_response {}", response);
-        vec![MethodCall::None]
+        vec![]
     }
 
     fn handle_post_response(&mut self, _from_authority: Authority,
@@ -305,7 +305,7 @@ impl Interface for TestNode {
         for name in close_group {
           println!("RT: {:?}", name);
         }
-        vec![MethodCall::None]
+        vec![]
     }
 
     fn handle_cache_get(&mut self, _data_request: DataRequest, _data_location: NameType,
