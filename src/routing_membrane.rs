@@ -1368,9 +1368,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
             (node_info.fob.name(), node_info.fob.signing_public_key())
         };
 
+        let ourselves = (self.id.name(), self.id.signing_public_key());
+
         self.routing_table.our_close_group()
                           .into_iter()
                           .map(name_and_key_from_info)
+                          .chain(Some(ourselves).into_iter())
                           .collect()
     }
 
