@@ -433,7 +433,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             destination  : DestinationAddress::Direct(name.clone()),
             source       : SourceAddress::Direct(name.clone()),
             orig_message : None,
-            message_type : MessageType::FindGroup(name),
+            message_type : MessageType::FindGroup,
             message_id   : message_id,
             authority    : Authority::ManagedNode,
         }
@@ -551,7 +551,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 // switch message type
                 match message.message_type {
                     MessageType::ConnectResponse(response) => self.handle_connect_response(response),
-                    MessageType::FindGroup(_find_group) => self.handle_find_group(message),
+                    MessageType::FindGroup => self.handle_find_group(message),
                     // Handled above for some reason.
                     //MessageType::FindGroupResponse(find_group_response) => self.handle_find_group_response(find_group_response),
                     MessageType::GetData(ref request) => self.handle_get_data(message_wrap,

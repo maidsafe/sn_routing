@@ -80,7 +80,7 @@ pub fn our_authority(message       : &RoutingMessage,
     let element = match message.message_type {
         MessageType::ConnectRequest(_)      => None,
         MessageType::ConnectResponse(_)     => None,
-        MessageType::FindGroup(_)           => None,
+        MessageType::FindGroup              => None,
         MessageType::FindGroupResponse(_)   => None,
         MessageType::GetData(_)             => Some(message.non_relayed_destination()),
         MessageType::GetDataResponse(_)     => None,
