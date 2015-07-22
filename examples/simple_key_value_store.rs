@@ -36,7 +36,7 @@
         unused_qualifications, unused_results, variant_size_differences)]
 #![feature(convert, core)]
 
-// extern crate cbor;
+extern crate cbor;
 extern crate core;
 extern crate docopt;
 extern crate rustc_serialize;
@@ -56,6 +56,7 @@ use std::thread::spawn;
 use std::collections::BTreeMap;
 
 // use cbor::CborTagEncode;
+use cbor::CborError;
 use docopt::Docopt;
 // use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_serialize::{Decodable, Decoder};
@@ -73,6 +74,7 @@ use routing::NameType;
 use routing::error::{ResponseError, InterfaceError};
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
+use routing::utils::{encode, public_key_to_client_name};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -218,10 +220,11 @@ impl Interface for TestNode {
                 _from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
                 data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         match our_authority {
-            Authority::ClientManager(node_name) => {
-                println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
-                         node_name, data.name());
-                return Ok(vec![MethodCall::Put { destination: data.name(), content: data }]);
+            Authority::ClientManager(client_name) => {
+                // println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
+                //          node_name, data.name());
+                // FIXME
+                return Ok(vec![MethodCall::Put { destination: client_name, content: data }]);
             },
             Authority::NaeManager(group_name) => {
                 println!("testing node handle put request to group {:?}", group_name);
@@ -296,6 +299,15 @@ fn calculate_key_name(key: &String) -> NameType {
     NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
 }
 
+#[allow(dead_code)]
+fn encode_key_value(key : String, value : String) -> Result<Vec<u8>, CborError> {
+    encode(&(key, value))
+}
+
+// fn decode_key_value(data : Vec<u8>) -> Result<(String, String), CBorError> {
+//
+// }
+
 fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
     let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
     if is_first {
@@ -317,7 +329,9 @@ fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
 }
 
 fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
-    let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), Id::new());
+    let our_id = Id::new();
+    let _our_client_name : NameType = public_key_to_client_name(&our_id.signing_public_key());
+    let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), our_id);
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
     let _ = spawn(move || {
