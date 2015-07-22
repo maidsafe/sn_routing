@@ -37,6 +37,14 @@ impl Data {
             Data::PlainData(ref d)      => d.name(),
         }
     }
+
+    pub fn payload_size(&self) -> usize {
+        match *self {
+            Data::StructuredData(ref d) => d.payload_size(),
+            Data::ImmutableData(ref d)  => d.payload_size(),
+            Data::PlainData(ref d)      => d.payload_size(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]

@@ -65,6 +65,9 @@ impl ImmutableData {
         }
     }
 
+    pub fn payload_size(&self) -> usize {
+        self.value.len()
+    }
 }
 
 
