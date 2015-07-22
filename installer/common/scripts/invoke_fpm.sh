@@ -2,6 +2,9 @@
 #
 # Create a package for Vault Release binaries
 
+# Stop the script if any command fails
+set -e
+
 # Get current version from Cargo.toml
 RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' $RootDir/Cargo.toml)
@@ -27,6 +30,9 @@ function create_package {
     installer/common/maidsafe_vault.bootstrap.cache=maidsafe_vault.bootstrap.cache
 }
 
+cd $RootDir
+cargo update
+cargo build --release
 mkdir -p $RootDir/packages/$1
 cd $RootDir/packages/$1
 if [[ "$1" == "linux" ]]
