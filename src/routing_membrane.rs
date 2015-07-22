@@ -1070,7 +1070,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::None => (),
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&signed_message, &message, destination)),
                 MethodCall::Reply { data: _data } =>
@@ -1378,7 +1377,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::None => (),
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&orig_message, &message, destination)),
                 MethodCall::Reply { data: _data } =>
