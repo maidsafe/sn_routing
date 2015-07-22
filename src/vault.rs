@@ -304,8 +304,12 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
 
     fn maid_manager_put(vault: &mut VaultFacade, from: SourceAddress,
                         dest: DestinationAddress, im_data: ImmutableData) {
+        let client = match from.clone() {
+            SourceAddress::Direct(address) => address,
+            _ => panic!("Unexpected"),
+        };
         let keys = crypto::sign::gen_keypair();
-        let put_result = vault.handle_put(Authority::ClientManager(NameType::new([1u8; 64])),
+        let put_result = vault.handle_put(Authority::ClientManager(client),
                                           Authority::Client(keys.0),
                                           from, dest, Data::ImmutableData(im_data.clone()));
         assert_eq!(put_result.is_err(), false);
@@ -337,7 +341,11 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
 
     fn pmid_manager_put(vault: &mut VaultFacade, from: SourceAddress,
                         dest: DestinationAddress, im_data: ImmutableData) {
-        let put_result = vault.handle_put(Authority::NodeManager(NameType::new([4u8; 64])),
+        let dest_address = match dest.clone() {
+            DestinationAddress::Direct(address) => address,
+            _ => panic!("Unexpected"),
+        };
+        let put_result = vault.handle_put(Authority::NodeManager(dest_address),
                                           Authority::NaeManager(im_data.name()),
                                           from, dest.clone(), Data::ImmutableData(im_data));
         assert_eq!(put_result.is_err(), false);
@@ -345,12 +353,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
         assert_eq!(calls.len(), 1);
         match calls[0] {
             MethodCall::Forward { destination } => {
-                match dest {
-                    DestinationAddress::Direct(expected) => {
-                        assert_eq!(destination, expected);
-                    }
-                    _ => panic!("Unexpected"),
-                }                
+                assert_eq!(destination, dest_address);                
             }
             _ => panic!("Unexpected"),
         }
@@ -430,7 +433,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
 
             let get_result = vault.handle_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
                                               Authority::ManagedNode,
-                                              Authority::NodeManager(im_data.name().clone()), from);
+                                              Authority::NaeManager(im_data.name().clone()), from);
             assert_eq!(get_result.is_err(), false);
             let mut get_calls = get_result.ok().unwrap();
             assert_eq!(get_calls.len(), 1);

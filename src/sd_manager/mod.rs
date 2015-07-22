@@ -138,7 +138,7 @@ mod test {
                     match data {
                         Data::StructuredData(sd) => {
                             assert_eq!(sd, sdv);
-                            assert_eq!(sd.name(), NameType([3u8;64]));
+                            assert_eq!(sd.name(), StructuredData::compute_name(0, &NameType([3u8; 64])));
                             assert_eq!(*sd.get_data(), value);
                         }
                         _ => panic!("Unexpected"),
@@ -161,7 +161,7 @@ mod test {
             Err(_) => panic!("Unexpected"),
         };
         sd_manager.handle_account_transfer(serialised_data);
-        assert_eq!(sd_manager.chunk_store_.has_chunk(name), true);
+        assert_eq!(sd_manager.chunk_store_.has_chunk(StructuredData::compute_name(0, &NameType([3u8; 64]))), true);
     }
 
 }
