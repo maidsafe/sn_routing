@@ -26,7 +26,7 @@
 //! Other network management messages are handled by Routing after Sentinel resolution.
 
 use rand;
-use sodiumoxide::crypto::sign::{verify_detached};
+use sodiumoxide::crypto::sign::{verify_detached, PublicKey, Signature};
 use std::collections::{BTreeMap};
 use std::boxed::Box;
 use std::ops::DerefMut;
@@ -45,7 +45,7 @@ use relay::{RelayMap, IdType};
 use sendable::Sendable;
 use data::{Data, DataRequest};
 use types;
-use types::{MessageId, Bytes, DestinationAddress, SourceAddress};
+use types::{MessageId, Bytes, DestinationAddress, SourceAddress, Address};
 use authority::{Authority, our_authority};
 use who_are_you::{WhoAreYou, IAm};
 use messages::{RoutingMessage, SignedMessage, MessageType,
@@ -55,7 +55,7 @@ use node_interface::MethodCall;
 use refresh_accumulator::RefreshAccumulator;
 use id::Id;
 use public_id::PublicId;
-use sentinel::pure_sentinel::PureSentinel;
+use sentinel::pure_sentinel::*;
 use sentinel_request::SentinelPutRequest;
 use utils;
 use utils::{encode, decode};
@@ -551,7 +551,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         self.handle_get_data_response(message_wrap, message.clone(), response.clone()),
         //             MessageType::Post => self.handle_post(header, body),
         //             MessageType::PostResponse => self.handle_post_response(header, body),
-                    MessageType::PutData(ref data) => self.handle_put_data(message_wrap, message.clone(), data.clone()),
+                    MessageType::PutData(ref data) => {
+                        match message.source.actual_source() {
+                            Address::Node(name) => self.handle_group_put_data(message_wrap, message.clone(), data.clone(), name),
+                            Address::Client(name) => self.handle_client_put_data(message_wrap, message.clone(), data.clone(), name),
+                        }
+                    },
                     MessageType::PutDataResponse(ref response) => self.handle_put_data_response(message_wrap, message.clone(),
                     response.clone()),
                     MessageType::PutPublicId(ref id) => self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
@@ -903,13 +908,83 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // -----Message Handlers from Routing Table connections----------------------------------------
 
     // Routing handle put_data
-    fn handle_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
-                       data: Data) -> RoutingResult {
+    fn handle_group_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
+                       data: Data, source: NameType) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source_address();
         //let to = message.send_to();
         let to = message.destination_address();
+
+        let resolved = match self.put_sentinel.add_claim(
+                        SentinelPutRequest::new(message, data, our_authority),
+                        source, signed_message.signature.clone(),
+                        signed_message.encoded_body.clone(), QUORUM_SIZE) {
+                            Some(result) =>  match  result {
+                                AddResult::RequestKeys(name) => {
+                                    // Get Key Request
+                                    return Ok(())
+                                },
+                                AddResult::Resolved(request, serialised_claim) => (request, serialised_claim)
+                                },
+                            None => return Ok(())
+                        };
+
+        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data) {
+            Ok(method_calls) => {
+                for method_call in method_calls {
+                    match method_call {
+                        MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                        MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                        MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                        MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                        MethodCall::Delete { name: x, data: y } => self.delete(x, y),
+                        MethodCall::None => (),
+                        MethodCall::Forward { destination } => {
+                            let message_id = self.get_next_message_id();
+                            let msg = RoutingMessage {
+                                destination : DestinationAddress::Direct(destination),
+                                source      : SourceAddress::Direct(self.id.name()),
+                                orig_message: None,
+                                message_type: MessageType::PutData(resolved.0.data.clone()),
+                                message_id  : message_id,
+                                authority   : our_authority,
+                            };
+                            let signed_message = SignedMessage::new(&msg, self.id.signing_private_key())
+                            ignore(self.forward(&signed_msg, &msg, destination));
+                        },
+                        MethodCall::Reply { data } =>
+                            ignore(self.send_reply(&message, our_authority.clone(),
+                                                   MessageType::PutData(resolved.0.data))),
+                    }
+                }
+            },
+            Err(InterfaceError::Abort) => {},
+            Err(InterfaceError::Response(error)) => {
+                let signed_error = ErrorReturn {
+                    error: error,
+                    orig_request: signed_message
+                };
+                try!(self.send_reply(&message,
+                                     our_authority.clone(),
+                                     MessageType::PutDataResponse(signed_error)));
+            }
+        }
+        Ok(())
+    }
+
+    // Routing handle put_data
+    fn handle_client_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
+                       data: Data, source: PublicKey) -> RoutingResult {
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from_authority = message.from_authority();
+        let from = message.source_address();
+        //let to = message.send_to();
+        let to = message.destination_address();
+
+        if !signed_message.verify_signature(&source) {
+            return Err(RoutingError::FailedSignature);
+        }
 
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data) {
             Ok(method_calls) => {

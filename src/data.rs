@@ -22,7 +22,7 @@ pub use plain_data::PlainData;
 use NameType;
 
 /// This is the data types routing handles in the public interface
-#[derive(Debug, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum Data {
     StructuredData(StructuredData),
     ImmutableData(ImmutableData),
