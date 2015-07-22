@@ -21,9 +21,7 @@ crust = "0.1.*"
 docopt = "*"
 itertools = "*"
 log = "*"
-
-[dependencies.maidsafe_sodiumoxide]
-git = "https://github.com/maidsafe/sodiumoxide.git"
+maidsafe_sodiumoxide = "*"
 
 [dev-dependencies]
 bit-vec = "*"
