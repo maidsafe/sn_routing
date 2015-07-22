@@ -23,8 +23,6 @@ use error::{InterfaceError, ResponseError};
 
 /// MethodCall denotes a specific request to be carried out by routing.
 pub enum MethodCall {
-    /// request for no action
-    None,
     /// request to have `destination` to handle put for the `content`
     Put { destination: NameType, content: Data },
     /// request to retreive data with specified type and name from network

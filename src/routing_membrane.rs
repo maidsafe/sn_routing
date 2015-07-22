@@ -415,7 +415,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                     MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                    MethodCall::None => (),
                     MethodCall::Forward { destination } =>
                         info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination),
                     MethodCall::Reply { data: _data } =>
@@ -820,7 +819,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                     MethodCall::Post { destination: x, content: y } => self.post(x, y),
                     MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                    MethodCall::None => (),
                     MethodCall::Forward { destination } =>
                         info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination),
                     MethodCall::Reply { data: _data } =>
@@ -926,7 +924,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                        MethodCall::None => (),
                         MethodCall::Forward { destination } =>
                             ignore(self.forward(&signed_message, &message, destination)),
                         MethodCall::Reply { data } =>
@@ -964,7 +961,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                        MethodCall::None => (),
                         MethodCall::Forward { destination } =>
                             ignore(self.forward(&signed_message, &message, destination)),
                         MethodCall::Reply { data } =>
@@ -1012,7 +1008,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::None => (),
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&signed_message, &message, destination)),
                 MethodCall::Reply { data: _data } =>
@@ -1036,7 +1031,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::None => (),
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&signed_message, &message, destination)),
                 MethodCall::Reply { data: _data } =>
@@ -1272,7 +1266,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                        MethodCall::None => (),
                         MethodCall::Forward { destination } =>
                             ignore(self.forward(&orig_message, &message, destination)),
                         MethodCall::Reply { data } => {
@@ -1316,7 +1309,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::None => (),
                 MethodCall::Forward { destination } =>
                     ignore(self.forward(&orig_message, &message, destination)),
                 MethodCall::Reply { data: _data } =>
@@ -1452,9 +1444,7 @@ impl Interface for TestInterface {
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_get_response called".to_string().into_bytes();
-        let mut method_calls = Vec::<MethodCall>::new();
-        method_calls.push(MethodCall::None);
-        method_calls
+        Vec::<MethodCall>::new()
     }
 
     fn handle_put_response(&mut self, _from_authority: Authority, _from_address: SourceAddress,
@@ -1463,9 +1453,7 @@ impl Interface for TestInterface {
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_put_response".to_string().into_bytes();
-        let mut method_calls = Vec::<MethodCall>::new();
-        method_calls.push(MethodCall::None);
-        method_calls
+        Vec::<MethodCall>::new()
     }
 
     fn handle_post_response(&mut self, _from_authority: Authority, _from_address: SourceAddress,
@@ -1474,9 +1462,7 @@ impl Interface for TestInterface {
         let mut stats_value = stats.lock().unwrap();
         stats_value.call_count += 1;
         stats_value.data = "handle_post_response".to_string().into_bytes();
-        let mut method_calls = Vec::<MethodCall>::new();
-        method_calls.push(MethodCall::None);
-        method_calls
+        Vec::<MethodCall>::new()
     }
 
     fn handle_churn(&mut self, _close_group: Vec<NameType>)
