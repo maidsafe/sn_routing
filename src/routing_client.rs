@@ -212,7 +212,7 @@ impl<F> RoutingClient<F> where F: Interface {
     /// or use CRUST self-discovery options.
     pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
         // FIXME: this should become part of run() with integrated eventloop
-        self.connection_manager.start_accepting();
+        let _ = self.connection_manager.start_accepting();
         loop {
             match self.event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
@@ -225,7 +225,7 @@ impl<F> RoutingClient<F> where F: Interface {
                     //         break; },
                     //     Err(_) => return Err(RoutingError::FailedToBootstrap)
                     // }
-
+        break;
                 },
                 _ => {}
             }
@@ -233,6 +233,7 @@ impl<F> RoutingClient<F> where F: Interface {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn send_bootstrap_connect_request(&mut self, accepting_on: Vec<Endpoint>) {
         match self.bootstrap_address.clone() {
             (_, Some(_)) => {
