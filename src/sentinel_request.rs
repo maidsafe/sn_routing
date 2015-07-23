@@ -33,10 +33,10 @@ pub struct SentinelPutRequest {
 }
 
 impl SentinelPutRequest {
-    pub fn new(message: RoutingMessage, data: Data, our_authority: Authority)
+    pub fn new(message: RoutingMessage, data: Data, our_authority: Authority, source_group: NameType)
         -> SentinelPutRequest {
         SentinelPutRequest { data: data,
-                             source_group: message.source.non_relayed_source(),
+                             source_group: source_group,
                              destination_group: message.destination.non_relayed_destination(),
                              source_authority: message.authority,
                              our_authority: our_authority,

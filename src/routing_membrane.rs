@@ -934,8 +934,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
             quorum = self.routing_table.size();
         }
 
+        let source_authority = match message.authority.clone() {
+            Authority::ClientManager(name) => name,
+            Authority::NaeManager(name)    => name,
+            Authority::NodeManager(name)   => name,
+            Authority::ManagedNode      => return Err(RoutingError::BadAuthority),
+            Authority::ManagedClient(_) => return Err(RoutingError::BadAuthority),
+            Authority::Client(_)        => return Err(RoutingError::BadAuthority),
+            Authority::Unknown          => return Err(RoutingError::BadAuthority),
+        };
+
         let resolved = match self.put_sentinel.add_claim(
-                        SentinelPutRequest::new(message.clone(), data.clone(), our_authority.clone()),
+                        SentinelPutRequest::new(message.clone(), data.clone(),
+                                                our_authority.clone(), source_authority),
                         source, signed_message.signature().clone(),
                         signed_message.encoded_body().clone(), quorum) {
                             Some(result) =>  match  result {
@@ -947,7 +958,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 },
                             None => return Ok(())
                         };
-
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data.clone()) {
             Ok(method_calls) => {
                 for method_call in method_calls {
@@ -1491,11 +1501,12 @@ use public_id::PublicId;
 use rand::{random, Rng, thread_rng};
 use routing_table;
 use sendable::Sendable;
+use sentinel_request::SentinelPutRequest;
 use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use test_utils::Random;
-use types::{DestinationAddress, SourceAddress, GROUP_SIZE, Address};
+use types::{DestinationAddress, MessageId, SourceAddress, GROUP_SIZE, Address};
 use utils;
 use crust::Endpoint;
 use rand::distributions::{IndependentSample, Range};
@@ -1681,7 +1692,6 @@ impl Tester {
         };
 
         let signed_message = SignedMessage::new(&message, self.membrane.id.signing_private_key());
-
         let connection_name = ConnectionName::Routing(match source.actual_source() {
             Address::Node(name) => name,
             _                   => Random::generate_random()
@@ -1762,28 +1772,60 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
     fn call_handle_put() {
         let mut array = [0u8; 64];
         thread_rng().fill_bytes(&mut array);
-        let put_data = MessageType::PutData(
-            Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
-        assert_eq!(Tester::new().call_operation(put_data,
-                   SourceAddress::Direct(Random::generate_random()),
-                   DestinationAddress::Direct(Random::generate_random()),
-                   Authority::NaeManager(Random::generate_random())).call_count, 1usize);
-    }
+        let data = Data::ImmutableData(
+            ImmutableData::new(ImmutableDataType::Normal,
+                               array.iter().map(|&x|x).collect::<Vec<_>>()));
+        let put_data = MessageType::PutData(data.clone());
+        let source_name_type1: NameType = Random::generate_random();
+        let source_name_type2: NameType = Random::generate_random();
+        let dest_name_type: NameType = Random::generate_random();
+        let authority = Authority::NodeManager(data.name());
+        let message_id = random::<MessageId>();
+        let message1 = RoutingMessage {
+            destination : DestinationAddress::Direct(dest_name_type),
+            source      : SourceAddress::Direct(source_name_type1.clone()),
+            orig_message: None,
+            message_type: put_data.clone(),
+            message_id  : message_id,
+            authority   : authority.clone(),
+        };
 
-    #[test]
-    fn call_handle_authorised_put() {
-        let mut array = [0u8; 64];
-        thread_rng().fill_bytes(&mut array);
-        let put_data = MessageType::PutData(
-            Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
-        let result_stats = Tester::new().call_operation(put_data,
-                   SourceAddress::Direct(Random::generate_random()),
-                   DestinationAddress::Direct(Random::generate_random()),
-                   Authority::Unknown);
-        assert_eq!(result_stats.call_count, 1usize);
-        assert_eq!(result_stats.data, "UnauthorisedPut".to_string().into_bytes());
+        let message2 = RoutingMessage {
+            destination : DestinationAddress::Direct(dest_name_type),
+            source      : SourceAddress::Direct(source_name_type2.clone()),
+            orig_message: None,
+            message_type: put_data,
+            message_id  : message_id,
+            authority   : authority.clone(),
+        };
+
+        let mut name_key_pairs = Vec::new();
+        let sign_keys1 =  crypto::sign::gen_keypair();
+        let sign_keys2 =  crypto::sign::gen_keypair();
+        name_key_pairs.push((source_name_type1.clone(), sign_keys1.0.clone()));
+        name_key_pairs.push((source_name_type2.clone(), sign_keys2.0.clone()));
+        let request1 = SentinelPutRequest::new(message1.clone(), data.clone(),
+                                              Authority::NodeManager(dest_name_type),
+                                              data.name());
+        let request2 = SentinelPutRequest::new(message2.clone(), data.clone(),
+                                               Authority::NodeManager(dest_name_type),
+                                               data.name());
+
+        let mut tester = Tester::new();
+        let signed_message1 = SignedMessage::new(&message1, &sign_keys1.1);
+        let connection_name1 = ConnectionName::Routing(source_name_type1);
+        let signed_message2 = SignedMessage::new(&message2, &sign_keys1.1);
+        let connection_name2 = ConnectionName::Routing(source_name_type2);
+
+        let _ = tester.membrane.message_received(&connection_name1, signed_message1.unwrap());
+        assert!(tester.membrane.put_sentinel.add_keys(
+            request1.clone(), Random::generate_random(), name_key_pairs.clone(), 2usize).is_none());
+        assert!(tester.membrane.put_sentinel.add_keys(
+            request2.clone(), Random::generate_random(), name_key_pairs, 2usize).is_none());
+        let _ = tester.membrane.message_received(&connection_name2, signed_message2.unwrap());
+        let stats = tester.stats.clone();
+        let stats_value = stats.lock().unwrap();
+        assert_eq!(stats_value.call_count, 1usize);
     }
 
     #[test]
@@ -1793,7 +1835,8 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let keys = crypto::sign::gen_keypair();
         let put_data = MessageType::PutData(
             Data::ImmutableData(
-                ImmutableData::new(ImmutableDataType::Normal, array.iter().map(|&x|x).collect::<Vec<_>>())));
+                ImmutableData::new(ImmutableDataType::Normal,
+                                   array.iter().map(|&x|x).collect::<Vec<_>>())));
         let message = RoutingMessage {
             destination : DestinationAddress::Direct(Random::generate_random()),
             source      : SourceAddress::Direct(Random::generate_random()),
