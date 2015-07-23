@@ -368,7 +368,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
     }
 
     fn sd_manager_put(vault: &mut VaultFacade, from: SourceAddress,
-                    dest: DestinationAddress, sdv: StructuredData) {
+                      dest: DestinationAddress, sdv: StructuredData) {
         let put_result = vault.handle_put(Authority::NaeManager(sdv.name()),
                                           Authority::ManagedNode,
                                           from.clone(), dest, Data::StructuredData(sdv.clone()));
@@ -380,6 +380,36 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                 match data {
                     Data::StructuredData(sd) => {
                         assert_eq!(sd, sdv);
+                    }
+                    _ => panic!("Unexpected"),
+                }
+            }
+            _ => panic!("Unexpected"),
+        }
+    }
+
+    fn sd_manager_post(vault: &mut VaultFacade, from: SourceAddress,
+                       dest: DestinationAddress, sdv: StructuredData) {
+        let post_result = vault.handle_post(Authority::NaeManager(sdv.name()),
+                                            Authority::ManagedNode,
+                                            from.clone(), dest, Data::StructuredData(sdv.clone()));
+        assert_eq!(post_result.is_ok(), true);
+    }
+
+    fn sd_manager_get(vault: &mut VaultFacade, from: SourceAddress,
+                      name: NameType, sd_expected: StructuredData) {
+        let get_result = vault.handle_get(DataRequest::StructuredData(0),
+                                          Authority::NaeManager(name),
+                                          Authority::ManagedNode,
+                                          from.clone());
+        assert_eq!(get_result.is_ok(), true);
+        let mut calls = get_result.ok().unwrap();
+        assert_eq!(calls.len(), 1);
+        match calls.remove(0) {
+            MethodCall::Reply { data } => {
+                match data {
+                    Data::StructuredData(sd) => {
+                        assert_eq!(sd, sd_expected);
                     }
                     _ => panic!("Unexpected"),
                 }
@@ -457,6 +487,27 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
                 _ => panic!("Unexpected"),
             }
         }
+    }
+
+    #[test]
+    fn structured_data_put_post_get() {
+        let mut vault = VaultFacade::new();
+
+        let from = SourceAddress::Direct(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
+        let dest = DestinationAddress::Direct(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
+        let name = NameType([3u8; 64]);
+        let value = generate_random_vec_u8(1024);
+        let keys1 = crypto::sign::gen_keypair();
+        let sd = StructuredData::new(0, name, value.clone(), vec![], 0, vec![keys1.0], vec![]);
+
+        sd_manager_put(&mut vault, from.clone(), dest.clone(), sd.clone());
+
+        let keys2 = crypto::sign::gen_keypair();
+        let mut sd_new = StructuredData::new(0, name, value.clone(), vec![keys1.0], 1, vec![keys2.0], vec![]);
+        assert_eq!(sd_new.add_signature(&keys1.1).ok(), Some(0));
+        sd_manager_post(&mut vault, from.clone(), dest.clone(), sd_new.clone());
+        
+        sd_manager_get(&mut vault, from.clone(), StructuredData::compute_name(0, &name), sd_new);
     }
 
     #[test]
