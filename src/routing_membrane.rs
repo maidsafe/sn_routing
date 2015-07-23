@@ -265,6 +265,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 },
                 Ok(crust::Event::LostConnection(endpoint)) => {
                     self.handle_lost_connection(endpoint);
+                },
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    // TODO(ben 23/07/2015): drop and stop crust bootstrapping
                 }
             };
         }
