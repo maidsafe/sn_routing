@@ -136,13 +136,22 @@ impl Interface for VaultFacade {
         }
     }
 
-    // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1110
+    // Post is only used to update the content or owners of a StructuredData
     fn handle_post(&mut self,
-                   _: Authority, // our_authority
+                   our_authority: Authority,
                    _: Authority, // from_authority
                    _: SourceAddress, // from_address
                    _: DestinationAddress, // dest_address
-                   _: Data) -> Result<Vec<MethodCall>, InterfaceError> { // data
+                   data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
+        match our_authority {
+            Authority::NaeManager(_) => {
+                match data {
+                    Data::StructuredData(data) => { return self.sd_manager.handle_post(data); }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
         Err(From::from(ResponseError::InvalidRequest))
     }
 
@@ -181,7 +190,7 @@ impl Interface for VaultFacade {
         }
     }
 
-    // TODO: this will be covered by the task of https://maidsafe.atlassian.net/browse/MAID-1111
+    // https://maidsafe.atlassian.net/browse/MAID-1111 post_response is not required on vault
     fn handle_post_response(&mut self, 
                             _: Authority, // from_authority
                             _: SourceAddress, // from_address
