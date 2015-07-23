@@ -22,7 +22,10 @@ docopt = "*"
 itertools = "*"
 log = "*"
 maidsafe_sodiumoxide = "*"
-sentinel = "*"
+
+[dependencies.sentinel]
+git = "https://github.com/maidsafe/sentinel"
+
 
 [dev-dependencies]
 bit-vec = "*"
