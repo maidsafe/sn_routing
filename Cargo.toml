@@ -26,7 +26,6 @@ maidsafe_sodiumoxide = "*"
 [dependencies.sentinel]
 git = "https://github.com/maidsafe/sentinel"
 
-
 [dev-dependencies]
 bit-vec = "*"
 env_logger = "*"
