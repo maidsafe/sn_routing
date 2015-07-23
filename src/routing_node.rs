@@ -82,6 +82,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     //  This might be moved into the constructor new
     //  For an initial draft, kept it as a separate function call.
     pub fn run(&mut self) -> Result<(), RoutingError> {
+        // keep state on whether we still might be the first around.
+        let mut possible_first = true;
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output, None);
         let _ = cm.start_accepting();
@@ -98,8 +100,10 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 Ok(crust::Event::LostConnection(_endpoint)) => {
 
                 },
-                // FIXME: comment out until after MAID-1136
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    // we found a bootstrap connection,
+                    // so disable us becoming a first node
+                    possible_first = false;
                     // register the bootstrap endpoint
 
                     // and try to request a name from this endpoint
