@@ -38,6 +38,7 @@ use error::{RoutingError};
 use std::thread::spawn;
 use std::path::PathBuf;
 
+#[allow(dead_code)]
 static MAX_BOOTSTRAP_CONNECTIONS : u8 = 3;
 
 type ConnectionManager = crust::ConnectionManager;
@@ -82,37 +83,37 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     /// routing node will consider itself the first node.
     //  This might be moved into the constructor new
     //  For an initial draft, kept it as a separate function call.
-    pub fn run(&mut self, config_path : Option<PathBuf>) -> Result<()> {
+    pub fn run(&mut self, _config_path : Option<PathBuf>) -> Result<(), RoutingError> {
         let (event_output, event_input) = mpsc::channel();
-        let mut cm = crust::ConnectionManager::new(event_output);
-        cm.start_accepting();
+        let mut _cm = crust::ConnectionManager::new(event_output);
+        // cm.start_accepting();
         // FIXME: this is still a blocking call; update after MAID-1136
-        let bootstrapped_to = try!(cm.bootstrap(None, None)
+        let _bootstrapped_to = try!(_cm.bootstrap(None, None)
             .map_err(|_|RoutingError::FailedToBootstrap));
         // cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         loop {
             match event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
-                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                Ok(crust::Event::NewMessage(_endpoint, _bytes)) => {
 
                 },
-                Ok(crust::Event::NewConnection(endpoint)) => {
+                Ok(crust::Event::NewConnection(_endpoint)) => {
 
                 },
-                Ok(crust::Event::LostConnection(endpoint)) => {
+                Ok(crust::Event::LostConnection(_endpoint)) => {
 
                 },
                 // FIXME: comment out until after MAID-1136
-                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                // Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
                     // register the bootstrap endpoint
 
                     // and try to request a name from this endpoint
-                    let put_public_id_msg
-                        = self.construct_put_public_id_msg(
-                        &types::PublicId::new(&unrelocated_id));
-                    let serialised_message = try!(encode(&put_public_id_msg));
-                    ignore(cm.send(bootstrapped_to.clone(), serialised_message));
-                }
+                    // let put_public_id_msg
+                    //     = self.construct_put_public_id_msg(
+                    //     &PublicId::new(&unrelocated_id));
+                    // let serialised_message = try!(encode(&put_public_id_msg));
+                    // ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+                // }
             }
         }
     }
