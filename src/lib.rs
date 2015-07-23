@@ -49,6 +49,7 @@ extern crate crust;
 extern crate accumulator;
 extern crate lru_time_cache;
 extern crate message_filter;
+extern crate sentinel;
 
 mod common_bits;
 mod macros;
@@ -76,5 +77,6 @@ pub mod structured_data;
 pub mod immutable_data;
 pub mod plain_data;
 pub mod data;
+pub mod sentinel_response;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};

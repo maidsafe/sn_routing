@@ -22,6 +22,7 @@ docopt = "*"
 itertools = "*"
 log = "*"
 maidsafe_sodiumoxide = "*"
+sentinel = "*"
 
 [dev-dependencies]
 bit-vec = "*"

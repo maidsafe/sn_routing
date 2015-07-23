@@ -57,6 +57,8 @@ use id::Id;
 use public_id::PublicId;
 use utils;
 use utils::{encode, decode};
+use sentinel::pure_sentinel::{PureSentinel, AddResult};
+use sentinel_response::{SentinelPutResponse, SentinelGetDataResponse};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -85,7 +87,9 @@ pub struct RoutingMembrane<F : Interface> {
     connection_cache: BTreeMap<NameType, SteadyTime>,
     refresh_accumulator: RefreshAccumulator,
     // for Persona logic
-    interface: Box<F>
+    interface: Box<F>,
+    put_response_sentinel: PureSentinel<SentinelPutResponse, NameType>,
+    get_data_response_sentinel: PureSentinel<SentinelGetDataResponse, NameType>
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
@@ -98,20 +102,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
                personas: F) -> RoutingMembrane<F> {
         debug_assert!(relocated_id.is_relocated());
         RoutingMembrane {
-                      event_input: event_input,
-                      connection_manager: cm,
-                      accepting_on: accepting_on,
-                      bootstrap: bootstrap,
-                      routing_table : RoutingTable::new(&relocated_id.name()),
-                      relay_map: RelayMap::new(&relocated_id),
-                      id : relocated_id,
-                      next_message_id: rand::random::<MessageId>(),
-                      filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
-                      public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-                      connection_cache: BTreeMap::new(),
-                      refresh_accumulator: RefreshAccumulator::new(),
-                      interface : Box::new(personas)
-                    }
+            event_input: event_input,
+            connection_manager: cm,
+            accepting_on: accepting_on,
+            bootstrap: bootstrap,
+            routing_table : RoutingTable::new(&relocated_id.name()),
+            relay_map: RelayMap::new(&relocated_id),
+            id : relocated_id,
+            next_message_id: rand::random::<MessageId>(),
+            filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
+            public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
+            connection_cache: BTreeMap::new(),
+            refresh_accumulator: RefreshAccumulator::new(),
+            interface : Box::new(personas),
+            put_response_sentinel: PureSentinel::new(),
+            get_data_response_sentinel: PureSentinel::new(),
+        }
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
@@ -1029,8 +1035,33 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_group_put_data_response(&mut self, signed_message: SignedMessage,
             message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
         info!("Handle group PUT data response.");
+        let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source.clone();
+        let mut quorum = types::QUORUM_SIZE;
+
+        let source = match message.source.actual_source() {
+            Address::Node(name) => name,
+            _ => return Err(RoutingError::BadAuthority),
+        };
+
+        if self.routing_table.size() < types::QUORUM_SIZE {
+            quorum = self.routing_table.size();
+        }
+
+        let resolved = match self.put_response_sentinel.add_claim(
+            SentinelPutResponse::new(message.clone(), response.clone(), our_authority.clone()),
+            source, signed_message.signature().clone(),
+            signed_message.encoded_body().clone(), quorum) {
+                Some(result) =>  match  result {
+                    AddResult::RequestKeys(_) => {
+                        // Get Key Request
+                        return Ok(())
+                    },
+                    AddResult::Resolved(request, serialised_claim) => (request, serialised_claim)
+                },
+                None => return Ok(())
+        };
 
         for method_call in self.mut_interface().handle_put_response(from_authority, from, response.error.clone()) {
             match method_call {
@@ -1039,8 +1070,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::Forward { destination } =>
-                    ignore(self.forward(&signed_message, &message, destination)),
+                MethodCall::Forward { destination } => {
+                    let message_id = self.get_next_message_id();
+                    let message = RoutingMessage {
+                        destination  : DestinationAddress::Direct(resolved.0.destination_group.clone()),
+                        source       : SourceAddress::Direct(self.id.name()),
+                        orig_message : None,
+                        message_type : MessageType::PutDataResponse(resolved.0.response.clone(), self.group_pub_keys()),
+                        message_id   : message_id,
+                        authority    : our_authority.clone(),
+                    };
+                    let signed_message = SignedMessage::new(&message, self.id.signing_private_key());
+                    ignore(self.forward(&signed_message.unwrap(), &message, destination));
+                }
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_put_data_response MethodCall:Reply is not a Valid action")
             }
@@ -1051,6 +1093,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn handle_client_put_data_response(&mut self, signed_message: SignedMessage,
             message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
         info!("Handle client PUT data response.");
+        let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source.clone();
 
@@ -1070,8 +1113,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::Forward { destination } =>
-                    ignore(self.forward(&signed_message, &message, destination)),
+                MethodCall::Forward { destination } => {
+                    let message_id = self.get_next_message_id();
+                    let message = RoutingMessage {
+                        destination  : DestinationAddress::Direct(destination),
+                        source       : SourceAddress::Direct(self.id.name()),
+                        orig_message : None,
+                        message_type : MessageType::PutDataResponse(response.clone(), BTreeMap::<NameType, sign::PublicKey>::new()),
+                        message_id   : message_id,
+                        authority    : our_authority.clone(),
+                    };
+                    let signed_message = SignedMessage::new(&message, self.id.signing_private_key());
+                    ignore(self.forward(&signed_message.unwrap(), &message, destination));
+                }
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_put_data_response MethodCall:Reply is not a Valid action")
             }
@@ -1366,9 +1420,34 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_group_get_data_response(&mut self, orig_message : SignedMessage,
+    fn handle_group_get_data_response(&mut self, signed_message : SignedMessage,
             message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
+        let our_authority = our_authority(&message, &self.routing_table);
         let from = message.source.non_relayed_source();
+        let mut quorum = types::QUORUM_SIZE;
+
+        let source = match message.source.actual_source() {
+            Address::Node(name) => name,
+            _ => return Err(RoutingError::BadAuthority),
+        };
+
+        if self.routing_table.size() < types::QUORUM_SIZE {
+            quorum = self.routing_table.size();
+        }
+
+        let resolved = match self.get_data_response_sentinel.add_claim(
+            SentinelGetDataResponse::new(message.clone(), response.clone(), our_authority.clone()),
+            source, signed_message.signature().clone(),
+            signed_message.encoded_body().clone(), quorum) {
+                Some(result) =>  match  result {
+                    AddResult::RequestKeys(_) => {
+                        // Get Key Request
+                        return Ok(())
+                    },
+                    AddResult::Resolved(request, serialised_claim) => (request, serialised_claim)
+                },
+                None => return Ok(())
+        };
 
         for method_call in self.mut_interface().handle_get_response(from, response.data.clone()) {
             match method_call {
@@ -1377,8 +1456,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::Forward { destination } =>
-                    ignore(self.forward(&orig_message, &message, destination)),
+                MethodCall::Forward { destination } => {
+                    let message_id = self.get_next_message_id();
+                    let message = RoutingMessage {
+                        destination  : DestinationAddress::Direct(resolved.0.destination_group.clone()),
+                        source       : SourceAddress::Direct(self.id.name()),
+                        orig_message : None,
+                        message_type : MessageType::GetDataResponse(resolved.0.response.clone()),
+                        message_id   : message_id,
+                        authority    : our_authority.clone(),
+                    };
+                    let signed_message = SignedMessage::new(&message, self.id.signing_private_key());
+                    ignore(self.forward(&signed_message.unwrap(), &message, destination));
+                },
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_get_data_response MethodCall:Reply is not a Valid action")
             }
@@ -1386,11 +1476,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_client_get_data_response(&mut self, orig_message : SignedMessage,
+    fn handle_client_get_data_response(&mut self, _orig_message : SignedMessage,
             message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
         if !response.verify_request_came_from(&self.id.signing_public_key()) {
             return Err(RoutingError::FailedSignature);
         }
+
+        let our_authority = our_authority(&message, &self.routing_table);
         let from = message.source.non_relayed_source();
 
         for method_call in self.mut_interface().handle_get_response(from, response.data.clone()) {
@@ -1400,8 +1492,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                MethodCall::Forward { destination } =>
-                    ignore(self.forward(&orig_message, &message, destination)),
+                MethodCall::Forward { destination } => {
+                    let message_id = self.get_next_message_id();
+                    let message = RoutingMessage {
+                        destination  : DestinationAddress::Direct(destination),
+                        source       : SourceAddress::Direct(self.id.name()),
+                        orig_message : None,
+                        message_type : MessageType::GetDataResponse(response.clone()),
+                        message_id   : message_id,
+                        authority    : our_authority.clone(),
+                    };
+                    let signed_message = SignedMessage::new(&message, self.id.signing_private_key());
+                    ignore(self.forward(&signed_message.unwrap(), &message, destination));
+                },
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_get_data_response MethodCall:Reply is not a Valid action")
             }
@@ -1770,7 +1873,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         assert_eq!(Tester::new().call_operation(put_data_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
-            Authority::NaeManager(Random::generate_random())).call_count, 1usize);
+            Authority::NaeManager(Random::generate_random())).call_count, 0usize);
     }
 
     #[test]
@@ -1815,7 +1918,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         assert_eq!(tester.call_operation(get_data_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
-            Authority::NaeManager(Random::generate_random())).call_count, 1usize);
+            Authority::NaeManager(Random::generate_random())).call_count, 0usize);
     }
 
     #[test]

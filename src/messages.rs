@@ -53,7 +53,7 @@ pub struct ConnectResponse {
     pub connect_request_signature: Signature
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, Clone, PartialOrd, Ord, Debug, RustcEncodable, RustcDecodable)]
 pub struct GetDataResponse {
     pub data           : Data,
     pub orig_request   : SignedMessage,
@@ -71,7 +71,7 @@ impl GetDataResponse {
 }
 
 /// Response error which can be verified that originated from our request.
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ErrorReturn {
     pub error: ResponseError,
     pub orig_request: SignedMessage
@@ -262,10 +262,10 @@ impl RoutingMessage {
 }
 
 /// All messages sent / received are constructed from this type
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
-    encoded_body: Vec<u8>,
-    signature:    Signature,
+    encoded_body : Vec<u8>,
+    signature    : Signature,
 }
 
 impl SignedMessage {

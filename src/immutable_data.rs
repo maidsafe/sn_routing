@@ -19,7 +19,7 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use NameType;
 use sodiumoxide::crypto;
 
-#[derive(Clone, Eq, PartialEq, RustcEncodable, RustcDecodable, Debug)]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, RustcEncodable, RustcDecodable, Debug)]
 pub enum ImmutableDataType {
     Normal,
     Backup,
@@ -28,7 +28,7 @@ pub enum ImmutableDataType {
 
 /// ImmutableData
 /// hash == SHA512
-#[derive(Clone, Eq, PartialEq, RustcEncodable, RustcDecodable, Debug)]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, RustcEncodable, RustcDecodable, Debug)]
 pub struct ImmutableData {
     type_tag: ImmutableDataType,
     value: Vec<u8>,
