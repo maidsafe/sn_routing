@@ -70,7 +70,7 @@ impl<F> RoutingClient<F> where F: Interface {
         RoutingClient {
             interface: my_interface,
             event_input: rx,
-            connection_manager: crust::ConnectionManager::new(tx),
+            connection_manager: crust::ConnectionManager::new(tx, None),
             public_id: PublicId::new(&id),
             id: id,
             bootstrap_address: (None, None),
@@ -210,28 +210,27 @@ impl<F> RoutingClient<F> where F: Interface {
 
     /// Use bootstrap to attempt connecting the client to previously known nodes,
     /// or use CRUST self-discovery options.
-    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
-         // FIXME: bootstrapping a relay should fully rely on WhoAreYou,
-         // then it is not need for CM to start listening;
-         // but currently connect_request requires endpoint to connect back on to.
-         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-         let beacon_port = Some(5483u16);
-         let listeners = match self.connection_manager
-             .start_listening2(ports_and_protocols, beacon_port) {
-             Err(reason) => {
-                 println!("Failed to start listening: {:?}", reason);
-                 (vec![], None)
-             }
-             Ok(listeners_and_beacon) => listeners_and_beacon
-         };
-         println!("trying to bootstrapped client");
-         let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
-                                    .map_err(|_|RoutingError::FailedToBootstrap));
-         self.bootstrap_address.1 = Some(bootstrapped_to);
-         println!("bootstrapped client");
-         // starts swapping ID with the bootstrap peer
-         self.send_bootstrap_connect_request(listeners.0);
-         Ok(())
+    pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
+        // FIXME: this should become part of run() with integrated eventloop
+        self.connection_manager.start_accepting();
+        loop {
+            match self.event_input.recv() {
+                Err(_) => return Err(RoutingError::FailedToBootstrap),
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    self.bootstrap_address.1 = Some(endpoint);
+                    // FIXME:(ben 23/07/2015) get_accepting_endpoints is not yet published in the API
+                    // match self.connection_manager.get_accepting_endpoints() {
+                    //     Ok(endpoints) => {
+                    //         self.send_bootstrap_connect_request(endpoints);
+                    //         break; },
+                    //     Err(_) => return Err(RoutingError::FailedToBootstrap)
+                    // }
+
+                },
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     fn send_bootstrap_connect_request(&mut self, accepting_on: Vec<Endpoint>) {

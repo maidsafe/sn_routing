@@ -1494,7 +1494,7 @@ fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     // key, so that the membrane thinks it is a relocated id.
     id.assign_relocated_name(NameType([0;NAME_TYPE_LEN]));
 
-    RoutingMembrane::<TestInterface>::new(cm, event_input, None, listeners.0, id.clone(), TestInterface {stats : stats})
+    RoutingMembrane::<TestInterface>::new(cm, event_input, None, vec![], id.clone(), TestInterface {stats : stats})
 }
 
 struct Tester {
