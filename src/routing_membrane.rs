@@ -1080,8 +1080,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         message_id   : message_id,
                         authority    : our_authority.clone(),
                     };
-                    let signed_message = SignedMessage::new(&message, self.id.signing_private_key());
-                    ignore(self.forward(&signed_message.unwrap(), &message, destination));
+                    ignore(self.forward(&try!(SignedMessage::new(&message, self.id.signing_private_key())), &message, destination));
                 }
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_put_data_response MethodCall:Reply is not a Valid action")
@@ -1123,8 +1122,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         message_id   : message_id,
                         authority    : our_authority.clone(),
                     };
-                    let signed_message = SignedMessage::new(&message, self.id.signing_private_key());
-                    ignore(self.forward(&signed_message.unwrap(), &message, destination));
+                    ignore(self.forward(&try!(SignedMessage::new(&message, self.id.signing_private_key())), &message, destination));
                 }
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_put_data_response MethodCall:Reply is not a Valid action")
@@ -1466,8 +1464,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         message_id   : message_id,
                         authority    : our_authority.clone(),
                     };
-                    let signed_message = SignedMessage::new(&message, self.id.signing_private_key());
-                    ignore(self.forward(&signed_message.unwrap(), &message, destination));
+                    ignore(self.forward(&try!(SignedMessage::new(&message, self.id.signing_private_key())), &message, destination));
                 },
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_get_data_response MethodCall:Reply is not a Valid action")
@@ -1502,8 +1499,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         message_id   : message_id,
                         authority    : our_authority.clone(),
                     };
-                    let signed_message = SignedMessage::new(&message, self.id.signing_private_key());
-                    ignore(self.forward(&signed_message.unwrap(), &message, destination));
+                    ignore(self.forward(&try!(SignedMessage::new(&message, self.id.signing_private_key())) , &message, destination));
                 },
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_get_data_response MethodCall:Reply is not a Valid action")
