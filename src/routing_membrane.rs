@@ -1484,18 +1484,11 @@ impl Interface for TestInterface {
 }
 
 fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
+    //FIXME(ben): review whether this is correct and wanted 23/07/2015
     let mut id = Id::new();
     let (event_output, event_input) = mpsc::channel();
-    let mut cm = crust::ConnectionManager::new(event_output);
-    let ports_and_protocols : Vec<crust::Port> = Vec::new();
-    let beacon_port = Some(5483u16);
-    let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
-        Err(reason) => {
-            info!("Failed to start listening: {:?}", reason);
-            (vec![], None)
-        }
-        Ok(listeners_and_beacon) => listeners_and_beacon
-    };
+    let mut cm = crust::ConnectionManager::new(event_output, None);
+    cm.start_accepting();
 
     // Hack: assign a name which is not a hash of the public sign
     // key, so that the membrane thinks it is a relocated id.
