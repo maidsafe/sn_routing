@@ -628,7 +628,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
     }
 
-    fn send_swarm_or_parallel(&mut self, msg : &RoutingMessage) -> Result<(), RoutingError> {
+    fn send_swarm_or_parallel(&self, msg : &RoutingMessage) -> Result<(), RoutingError> {
         let name = msg.non_relayed_destination();
 
         if self.routing_table.size() > 0 {
@@ -1490,7 +1490,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn forward(&mut self, orig_message: &SignedMessage, routing_message: &RoutingMessage,
+    fn forward(&self, orig_message: &SignedMessage, routing_message: &RoutingMessage,
             destination: NameType) -> RoutingResult {
         let our_authority = our_authority(&routing_message, &self.routing_table);
         let message = routing_message.create_forward(self.id.name().clone(),
