@@ -45,6 +45,7 @@ type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 type PortAndProtocol = crust::Port;
 
+static MAX_BOOTSTRAP_CONNECTIONS : usize = 3;
 
 pub struct RoutingClient<F: Interface> {
     interface: Arc<Mutex<F>>,
@@ -212,11 +213,14 @@ impl<F> RoutingClient<F> where F: Interface {
     /// or use CRUST self-discovery options.
     pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
         // FIXME(ben 24/07/2015) this should become part of run() with integrated eventloop
-        let _ = self.connection_manager.start_accepting(vec![]);
+        println!("start accepting");
+        try!(self.connection_manager.start_accepting(vec![]));
+        self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         loop {
             match self.event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    println!("NewBootstrapConnection");
                     self.bootstrap_address.1 = Some(endpoint);
                     // FIXME(ben 24/07/2015) this needs to replaced with a clear WhoAreYou
                     // ConnectRequest is a mis-use

@@ -21,9 +21,7 @@ docopt = "*"
 itertools = "*"
 log = "*"
 maidsafe_sodiumoxide = "*"
-
-[dependencies.crust]
-git = "https://github.com/maidsafe/crust.git"
+crust = "*"
 
 [dependencies.sentinel]
 git = "https://github.com/maidsafe/sentinel"
