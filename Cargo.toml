@@ -25,6 +25,9 @@ maidsafe_sodiumoxide = "*"
 [dependencies.crust]
 git = "https://github.com/maidsafe/crust.git"
 
+[dependencies.sentinel]
+git = "https://github.com/maidsafe/sentinel"
+
 [dev-dependencies]
 bit-vec = "*"
 env_logger = "*"

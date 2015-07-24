@@ -192,7 +192,7 @@ impl<F> RoutingClient<F> where F: Interface {
                                 MessageType::GetDataResponse(result) => {
                                     self.handle_get_data_response(result);
                                 },
-                                MessageType::PutDataResponse(put_response) => {
+                                MessageType::PutDataResponse(put_response, _) => {
                                     self.handle_put_data_response(put_response);
                                 },
                                 _ => {}
@@ -218,13 +218,11 @@ impl<F> RoutingClient<F> where F: Interface {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
                     self.bootstrap_address.1 = Some(endpoint);
-                    match self.connection_manager.get_accepting_endpoints() {
-                        Ok(endpoints) => {
-                            self.send_bootstrap_connect_request(endpoints);
-                            break; },
-                        Err(_) => return Err(RoutingError::FailedToBootstrap)
-                    }
-        break;
+                    // FIXME(ben 24/07/2015) this needs to replaced with a clear WhoAreYou
+                    // ConnectRequest is a mis-use
+                    let our_endpoints = self.connection_manager.get_own_endpoints();
+                    self.send_bootstrap_connect_request(our_endpoints);
+                    break;
                 },
                 _ => {}
             }
