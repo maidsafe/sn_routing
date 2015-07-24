@@ -16,14 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 //! usage example (using default methods of connecting to the network):
-//!      starting first node:                simple_key_value_store --first
-//!      starting a subsequent passive node: simple_key_value_store --node
-//!      starting an interactive node:       simple_key_value_store
-//!
-//! usage example (using explicit list of peer endpoints and overriding default methods to connect
-//! to the network - assume the first node's random listening endpoint is 127.0.0.1:7364):
-//!      starting a passive node:      simple_key_value_store --node 127.0.0.1:7364
-//!      starting an interactive node: simple_key_value_store 127.0.0.1:7364
+//!      starting a passive node:       simple_key_value_store --node
+//!      starting an interactive node:  simple_key_value_store
 
 #![forbid(bad_style, warnings)]
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
@@ -105,7 +99,6 @@ Options:
 struct Args {
     arg_peer: Vec<PeerEndpoint>,
     flag_node: bool,
-    flag_first: bool,
     flag_help: bool,
 }
 
