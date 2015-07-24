@@ -80,22 +80,18 @@ use routing::utils::{encode, decode, public_key_to_client_name};
 static USAGE: &'static str = "
 Usage:
   simple_key_value_store [<peer>...]
-  simple_key_value_store (--first | --node [<peer>...])
+  simple_key_value_store (--node [<peer>...])
   simple_key_value_store --help
 
 Options:
-  -f, --first  Node runs as the first passive node in the network.
-  -n, --node   Node runs as a non-first, passive node in the network.
+  -n, --node   Run as a non-interactive routing node in the network.
   -h, --help   Display this help message.
 
-  Running without any args (or with only peer endpoints) will start an
-  interactive node.  Such a node can be used to send requests such as 'put' and
+  Running without the --node option will start an interactive node.
+  Such a node can be used to send requests such as 'put' and
   'get' to the network.
 
-  Running without '--first' requires an existing network to connect to.  If this
-  is the first node of a new network, the only arg passed should be '--first'.
-
-  A passive node is one that simply reacts on received requests.  Such nodes are
+  A passive node is one that simply reacts on received requests. Such nodes are
   the workers; they route messages and store and provide data.
 
   The optional <peer>... arg(s) are a list of peer endpoints (other running
