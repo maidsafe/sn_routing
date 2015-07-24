@@ -21,12 +21,8 @@ docopt = "*"
 itertools = "*"
 log = "*"
 maidsafe_sodiumoxide = "*"
-
-[dependencies.crust]
-git = "https://github.com/maidsafe/crust.git"
-
-[dependencies.sentinel]
-git = "https://github.com/maidsafe/sentinel"
+crust = "0.2.*"
+sentinel = "0.1.*"
 
 [dev-dependencies]
 bit-vec = "*"
@@ -35,5 +31,5 @@ env_logger = "*"
 [[example]]
 name = "simple_key_value_store"
 path = "examples/simple_key_value_store.rs"
-test = false
+test = true
 bench = false
