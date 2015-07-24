@@ -127,9 +127,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                     if possible_first {
                         // break from listening to CM
                         // and first start RoutingMembrane
-                        let new_name = NameType(sodiumoxide::crypto::hash::sha512
-                            ::hash(&self.id.name().0).0);
-                        self.id.assign_relocated_name(new_name);
+                        relocated_name = Some(NameType(sodiumoxide::crypto::hash::sha512
+                            ::hash(&self.id.name().0).0));
                         break;
                     } else {
                         // aggressively refuse a connection when we already have
@@ -164,8 +163,9 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
         }
 
-        match possible_first {
-            true => {
+        match relocated_name {
+            Some(new_name) => {
+                self.id.assign_relocated_name(new_name);
                 let mut membrane = RoutingMembrane::<F>::new(
                     cm, event_input, None,
                     self.id.clone(),
@@ -174,10 +174,9 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 // and join the routing_node thread.
                 spawn(move || membrane.run());
             },
-            false => {
+            None => { return Err(RoutingError::FailedToBootstrap); }
+        }
 
-            }
-        };
         Ok(())
     }
 
