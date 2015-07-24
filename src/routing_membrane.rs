@@ -251,15 +251,29 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
                         Some(ConnectionName::Relay(_)) => {
-                            let message = match message.get_routing_message() {
+                            let mut message = match message.get_routing_message() {
                                 Ok(message) => message,
                                 Err(_)      => continue,
                             };
-
-                            // Forward
-                            ignore(self.send_swarm_or_parallel_or_relay(&message));
+                            // FIXME(ben 24/07/2015) the client/node should fill this information
+                            // in correctly, as us changing it here invalidates the signature,
+                            // currently routing_node is not smart enough for it to know our name,
+                            // so for the sake of functionality we now patch it here
+                            let patched_source = match message.source {
+                                SourceAddress::RelayedForClient(from, client_key) =>
+                                    SourceAddress::RelayedForClient(self.id.name(), client_key),
+                                SourceAddress::RelayedForNode(from, node_address) =>
+                                    SourceAddress::RelayedForNode(self.id.name(), node_address),
+                                SourceAddress::Direct(from) => {
+                                    // drop this, as it is false
+                                    continue; },
+                            };
                         },
                         Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
+                            // FIXME(ben 24/07/2015)
+                            // 1. we should not longer rely on messages from our bootstrap connection
+                            // 2. our bootstrap connection might send us direct (ie non-routing)
+                            //    messages
                             ignore(self.message_received(message));
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
