@@ -59,8 +59,7 @@ use public_id::PublicId;
 use utils;
 use utils::{encode, decode};
 use sentinel::pure_sentinel::{PureSentinel, AddResult};
-use sentinel_response::{SentinelPutResponse, SentinelGetDataResponse};
-use sentinel_request::SentinelPutRequest;
+use user_message::{SentinelPutRequest, SentinelPutResponse, SentinelGetDataResponse};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -972,6 +971,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 },
                             None => return Ok(())
                         };
+
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data.clone()) {
             Ok(method_calls) => {
                 for method_call in method_calls {
@@ -982,29 +982,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data: y } => self.delete(x, y),
                         MethodCall::Forward { destination } => {
-                            let message_id = self.get_next_message_id();
-                            let msg = RoutingMessage {
-                                destination : DestinationAddress::Direct(resolved.0.destination_group.clone()),
-                                source      : SourceAddress::Direct(self.id.name()),
-                                orig_message: None,
-                                message_type: MessageType::PutData(resolved.0.data.clone()),
-                                message_id  : message_id,
-                                authority   : our_authority.clone(),
-                            };
-                            let signed_msg = SignedMessage::new(&msg, self.id.signing_private_key());
-                            ignore(self.forward(&signed_msg.unwrap(), &msg, destination));
+                            let msg = resolved.0.create_forward(self.id.name(),
+                                                                destination,
+                                                                self.get_next_message_id());
+                            ignore(self.send_swarm_or_parallel(&msg));
                         },
                         MethodCall::Reply { data } => {
-                            let msg = RoutingMessage {
-                                destination : DestinationAddress::Direct(resolved.0.destination_group),
-                                source      : SourceAddress::Direct(self.id.name()),
-                                orig_message: None,
-                                message_type: MessageType::PutData(data),
-                                message_id  : resolved.0.message_id,
-                                authority   : our_authority.clone(),
-                            };
-                            try!(self.send_reply(&msg, our_authority.clone(),
-                                                 MessageType::PutData(resolved.0.data.clone())));
+                            let msg = resolved.0.create_reply(MessageType::PutData(data));
+                            ignore(self.send_swarm_or_parallel(&msg));
                         }
                     }
                 }
@@ -1021,9 +1006,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 else {
                     BTreeMap::new()
                 };
-                try!(self.send_reply(&message,
-                                     our_authority.clone(),
-                                     MessageType::PutDataResponse(signed_error, group_pub_keys)));
+                let msg = MessageType::PutDataResponse(signed_error, group_pub_keys);
+                let msg = resolved.0.create_reply(msg);
+                ignore(self.send_swarm_or_parallel(&msg));
             }
         }
         Ok(())
@@ -1125,18 +1110,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
             }
         }
         Ok(())
-    }
-
-    fn send_reply(&mut self,
-                  routing_message : &RoutingMessage,
-                  our_authority   : Authority,
-                  msg             : MessageType) -> RoutingResult {
-        let mut message = try!(routing_message.create_reply(&self.id.name(), &our_authority));
-
-        message.message_type = msg;
-        message.authority    = our_authority;
-
-        self.send_swarm_or_parallel_or_relay(&message)
     }
 
     fn handle_group_put_data_response(&mut self, signed_message: SignedMessage,
@@ -1525,6 +1498,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
+    fn send_reply(&mut self,
+                  routing_message : &RoutingMessage,
+                  our_authority   : Authority,
+                  msg             : MessageType) -> RoutingResult {
+        let mut message = try!(routing_message.create_reply(&self.id.name(), &our_authority));
+
+        message.message_type = msg;
+        message.authority    = our_authority;
+
+        self.send_swarm_or_parallel_or_relay(&message)
+    }
+
     fn handle_group_get_data_response(&mut self, signed_message : SignedMessage,
             message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
@@ -1654,7 +1639,7 @@ use public_id::PublicId;
 use rand::{random, Rng, thread_rng};
 use routing_table;
 use sendable::Sendable;
-use sentinel_request::SentinelPutRequest;
+use user_message::SentinelPutRequest;
 use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
