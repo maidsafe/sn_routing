@@ -119,13 +119,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             // so disable us becoming a first node
                             possible_first = false;
                             // register the bootstrap endpoint
-                            self.bootstrap = Some((endpoint, None));
+                            self.bootstrap = Some((endpoint.clone(), None));
                             // and try to request a name from this endpoint
-                            // let put_public_id_msg
-                            //     = try!(self.construct_put_public_id_msg(
-                            //     &PublicId::new(&self.id)));
-                            // let serialised_message = try!(encode(&put_public_id_msg));
-                            // ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+                            let our_public_id = PublicId::new(&self.id);
+                            let put_public_id_msg
+                                = try!(self.construct_put_public_id_msg(&our_public_id));
+                            let serialised_message = try!(encode(&put_public_id_msg));
+                            ignore(cm.send(endpoint, serialised_message));
                         },
                         Some(_) => {
                             // only work with a single bootstrap endpoint (for now)
