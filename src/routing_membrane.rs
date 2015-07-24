@@ -31,6 +31,8 @@ use sodiumoxide::crypto::sign;
 use std::collections::{BTreeMap};
 use std::boxed::Box;
 use std::ops::DerefMut;
+use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::Receiver;
 use time::{Duration, SteadyTime};
@@ -605,6 +607,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     // -----Name-based Send Functions----------------------------------------
 
+    fn get_our_reflective_endpoint(&self, port : u16) -> Endpoint {
+        match SocketAddr::from_str(&format!("127.0.0.1:{}", 0u16)) {
+            Ok(socket_address) => Endpoint::Tcp(socket_address),
+            Err(_) => panic!("TESTING!!!!!! FIXME")
+        }
+    }
+
     fn send_out_as_relay(&mut self, name: &IdType, msg: Bytes) {
         let mut failed_endpoints : Vec<Endpoint> = Vec::new();
         match self.relay_map.get_endpoints(name) {
@@ -684,6 +693,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //         None => Err(RoutingError::FailedToBootstrap)
         //     }
         // }
+    }
+
+    // When we swarm a message, we are also part of the effective close group.
+    // This is catered for under normal swarm, as our neighbours will send the message back,
+    // when we have no routing table connections, we explicitly have no choice, but to loop
+    // it back to ourselves
+    // this is the logically correct behaviour.
+    fn send_reflective_to_us(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
+        let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
+        let bytes = try!(encode(&signed_message));
+        // let loopback_event = Crust
+        // match self.sender_clone.send()
+        Ok(())
     }
 
     fn send_swarm_or_parallel_or_relay(&mut self, msg: &RoutingMessage)
