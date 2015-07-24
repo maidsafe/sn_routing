@@ -70,6 +70,7 @@ enum ConnectionName {
     Relay(IdType),
     Routing(NameType),
     OurBootstrap(NameType),
+    ReflectionOnToUs,
     UnidentifiedConnection,
     // ClaimedConnection(PublicId),
 }
@@ -237,6 +238,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     };
 
                     match self.lookup_endpoint(&endpoint) {
+                        // We sent this message to ourselves
+                        // as we are part of the effective close group
+                        Some(ConnectionName::ReflectionOnToUs) => {
+                            ignore(self.message_received(message));
+                        },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
@@ -359,6 +365,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
       info!("CRUST::NewConnection on {:?}", endpoint);
         self.drop_bootstrap();
         match self.lookup_endpoint(&endpoint) {
+            Some(ConnectionName::ReflectionOnToUs) => {
+                info!("UNEXPECTED: NewConnection {:?} on 127.0.0.1:0 (reflection endpoint).",
+                    endpoint);
+            }
             Some(_) => {
                 info!("UNEXPECTED: NewConnection {:?} on already connected endpoint.",
                     endpoint);
@@ -934,6 +944,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<ConnectionName> {
+        // first check whether it is reflected from us to us (bypassing CRUST)
+        if endpoint == &self.reflective_endpoint {
+            return Some(ConnectionName::ReflectionOnToUs);
+        }
         // prioritise routing table
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => Some(ConnectionName::Routing(name)),
