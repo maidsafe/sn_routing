@@ -31,6 +31,9 @@ use sodiumoxide::crypto::sign;
 use std::collections::{BTreeMap};
 use std::boxed::Box;
 use std::ops::DerefMut;
+use std::net::SocketAddr;
+use std::str::FromStr;
+use std::sync::mpsc::Sender;
 use std::sync::mpsc::Receiver;
 use time::{Duration, SteadyTime};
 
@@ -67,15 +70,25 @@ enum ConnectionName {
     Relay(IdType),
     Routing(NameType),
     OurBootstrap(NameType),
+    ReflectionOnToUs,
     UnidentifiedConnection,
     // ClaimedConnection(PublicId),
+}
+
+fn get_reflective_endpoint() -> Endpoint {
+    match SocketAddr::from_str(&format!("127.0.0.1:{}", 0u16)) {
+        Ok(socket_address) => Endpoint::Tcp(socket_address),
+        Err(_) => panic!("TESTING!!!!!! FIXME")
+    }
 }
 
 /// Routing Membrane
 pub struct RoutingMembrane<F : Interface> {
     // for CRUST
+    sender_clone: Sender<crust::Event>,
     event_input: Receiver<crust::Event>,
     connection_manager: crust::ConnectionManager,
+    reflective_endpoint : crust::Endpoint,
     accepting_on: Vec<crust::Endpoint>,
     bootstrap: Option<(crust::Endpoint, NameType)>,
     // for Routing
@@ -97,14 +110,17 @@ pub struct RoutingMembrane<F : Interface> {
 impl<F> RoutingMembrane<F> where F: Interface {
     // TODO: clean ownership transfer up with proper structure
     pub fn new(cm: crust::ConnectionManager,
+               sender_clone: Sender<crust::Event>,
                event_input: Receiver<crust::Event>,
                bootstrap: Option<(crust::Endpoint, NameType)>,
                relocated_id: Id,
                personas: F) -> RoutingMembrane<F> {
         debug_assert!(relocated_id.is_relocated());
         RoutingMembrane {
+            sender_clone: sender_clone,
             event_input: event_input,
             connection_manager: cm,
+            reflective_endpoint: get_reflective_endpoint(),
             accepting_on: vec![],
             bootstrap: bootstrap,
             routing_table : RoutingTable::new(&relocated_id.name()),
@@ -222,11 +238,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     };
 
                     match self.lookup_endpoint(&endpoint) {
+                        // We sent this message to ourselves
+                        // as we are part of the effective close group
+                        Some(ConnectionName::ReflectionOnToUs) => {
+                            ignore(self.message_received(message));
+                        },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our routing table
                         Some(ConnectionName::Routing(name)) => {
-                            ignore(self.message_received(&ConnectionName::Routing(name),
-                                                         message));
+                            ignore(self.message_received(message));
                         },
                         // we hold an active connection to this endpoint,
                         // mapped to a name in our relay map
@@ -235,13 +255,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 Ok(message) => message,
                                 Err(_)      => continue,
                             };
+
                             // Forward
                             ignore(self.send_swarm_or_parallel_or_relay(&message));
                         },
                         Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
-                            ignore(self.message_received(
-                                       &ConnectionName::Routing(bootstrap_node_name),
-                                       message));
+                            ignore(self.message_received(message));
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
                             // only expect WhoAreYou or IAm message
@@ -346,6 +365,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
       info!("CRUST::NewConnection on {:?}", endpoint);
         self.drop_bootstrap();
         match self.lookup_endpoint(&endpoint) {
+            Some(ConnectionName::ReflectionOnToUs) => {
+                info!("UNEXPECTED: NewConnection {:?} on 127.0.0.1:0 (reflection endpoint).",
+                    endpoint);
+            }
             Some(_) => {
                 info!("UNEXPECTED: NewConnection {:?} on already connected endpoint.",
                     endpoint);
@@ -434,13 +457,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
     fn message_received(&mut self,
-                        received_from       : &ConnectionName,
                         message_wrap        : SignedMessage,
                        ) -> RoutingResult {
-        match received_from {
-            &ConnectionName::Routing(_) => { },
-            _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
-        };
 
         let message = try!(message_wrap.get_routing_message());
 
@@ -646,21 +664,63 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     None => {}
                 };
             }
+
+            // FIXME(ben 24/07/2015)
+            // if the destination is within range for us,
+            // we are also part of the effective close group for destination.
+            // RoutingTable does not include ourselves in the target nodes,
+            // so we should check the filter (to avoid eternal looping)
+            // and also handle it ourselves.
+            // Instead we can for now rely on swarming to send it back to us.
             Ok(())
         } else {
-            match self.bootstrap {
-                Some((ref bootstrap_endpoint, _)) => {
+            // FIXME(ben 24/07/2015)
+            // This is a patch for the above: if we have no routing table connections,
+            // we are the only member of the effective close group for the target.
+            // In this case we can reflect it back to ourselves
+            // - and take the risk of piling up the stack; or holding other messages;
+            // afterall we are the only node on the network, as far as we know.
 
-                    let msg = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
-                    let msg = try!(encode(&msg));
-
-                    match self.connection_manager.send(bootstrap_endpoint.clone(), msg) {
-                        Ok(_)  => Ok(()),
-                        Err(e) => Err(RoutingError::Io(e))
-                    }},
-                None => Err(RoutingError::FailedToBootstrap)
-            }
+            // if routing table size is zero any target is in range, so no need to check
+            self.send_reflective_to_us(msg)
         }
+
+        // TODO(ben 24/07/2015) this can be removed. It is also not "wrong" but the crux
+        // of the rust-2 routing refactor was clearly separating the genuine routing network
+        // from bootstrap noise, so if such a functionality is needed, then it should go in
+        // a very explicit function.
+        // else {
+        //     match self.bootstrap {
+        //         Some((ref bootstrap_endpoint, _)) => {
+        //
+        //             let msg = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
+        //             let msg = try!(encode(&msg));
+        //
+        //             match self.connection_manager.send(bootstrap_endpoint.clone(), msg) {
+        //                 Ok(_)  => Ok(()),
+        //                 Err(e) => Err(RoutingError::Io(e))
+        //             }},
+        //         None => Err(RoutingError::FailedToBootstrap)
+        //     }
+        // }
+    }
+
+    // When we swarm a message, we are also part of the effective close group.
+    // This is catered for under normal swarm, as our neighbours will send the message back,
+    // when we have no routing table connections, we explicitly have no choice, but to loop
+    // it back to ourselves
+    // this is the logically correct behaviour.
+    fn send_reflective_to_us(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
+        let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
+        let bytes = try!(encode(&signed_message));
+        let new_event = crust::Event::NewMessage(self.reflective_endpoint.clone(), bytes);
+        match self.sender_clone.send(new_event) {
+            Ok(_) => {},
+            // FIXME(ben 24/07/2015) we have a broken channel with crust,
+            // should terminate node
+            Err(_) => return Err(RoutingError::FailedToBootstrap)
+        };
+        Ok(())
     }
 
     fn send_swarm_or_parallel_or_relay(&mut self, msg: &RoutingMessage)
@@ -887,6 +947,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<ConnectionName> {
+        // first check whether it is reflected from us to us (bypassing CRUST)
+        if endpoint == &self.reflective_endpoint {
+            return Some(ConnectionName::ReflectionOnToUs);
+        }
         // prioritise routing table
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => Some(ConnectionName::Routing(name)),
@@ -1764,14 +1828,14 @@ fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     //FIXME(ben): review whether this is correct and wanted 23/07/2015
     let mut id = Id::new();
     let (event_output, event_input) = mpsc::channel();
-    let mut cm = crust::ConnectionManager::new(event_output);
+    let mut cm = crust::ConnectionManager::new(event_output.clone());
     cm.start_accepting(vec![]);
 
     // Hack: assign a name which is not a hash of the public sign
     // key, so that the membrane thinks it is a relocated id.
     id.assign_relocated_name(NameType([0;NAME_TYPE_LEN]));
 
-    RoutingMembrane::<TestInterface>::new(cm, event_input, None, id.clone(), TestInterface {stats : stats})
+    RoutingMembrane::<TestInterface>::new(cm, event_output, event_input, None, id.clone(), TestInterface {stats : stats})
 }
 
 struct Tester {
@@ -1808,7 +1872,7 @@ impl Tester {
             _                   => Random::generate_random()
         });
 
-        let _ = self.membrane.message_received(&connection_name, signed_message.unwrap());
+        let _ = self.membrane.message_received(signed_message.unwrap());
         let stats = self.stats.clone();
         let stats_value = stats.lock().unwrap();
         stats_value.clone()
@@ -1928,12 +1992,12 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let signed_message2 = SignedMessage::new(&message2, &sign_keys1.1);
         let connection_name2 = ConnectionName::Routing(source_name_type2);
 
-        let _ = tester.membrane.message_received(&connection_name1, signed_message1.unwrap());
+        let _ = tester.membrane.message_received(signed_message1.unwrap());
         assert!(tester.membrane.put_sentinel.add_keys(
             request1.clone(), Random::generate_random(), name_key_pairs.clone(), 2usize).is_none());
         assert!(tester.membrane.put_sentinel.add_keys(
             request2.clone(), Random::generate_random(), name_key_pairs, 2usize).is_none());
-        let _ = tester.membrane.message_received(&connection_name2, signed_message2.unwrap());
+        let _ = tester.membrane.message_received(signed_message2.unwrap());
         let stats = tester.stats.clone();
         let stats_value = stats.lock().unwrap();
         assert_eq!(stats_value.call_count, 1usize);

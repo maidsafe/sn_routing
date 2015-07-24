@@ -87,7 +87,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let mut relocated_name : Option<NameType> = None;
 
         let (event_output, event_input) = mpsc::channel();
-        let mut cm = crust::ConnectionManager::new(event_output);
+        let mut cm = crust::ConnectionManager::new(event_output.clone());
         let _ = cm.start_accepting(vec![]);
         cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         loop {
@@ -167,7 +167,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             Some(new_name) => {
                 self.id.assign_relocated_name(new_name);
                 let mut membrane = RoutingMembrane::<F>::new(
-                    cm, event_input, None,
+                    cm, event_output, event_input, None,
                     self.id.clone(),
                     self.genesis.create_personas());
                 // TODO: currently terminated by main, should be signalable to terminate
