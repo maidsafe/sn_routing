@@ -345,9 +345,9 @@ fn decode_key_value(data : &Vec<u8>) -> Result<(String, String), CborError> {
     decode(data)
 }
 
-fn run_passive_node(is_first: bool, _bootstrap_peers: Option<Vec<Endpoint>>) {
+fn run_passive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
     let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
-    test_node.run();
+    let _ = test_node.run();
     let ref mut command = String::new();
     loop {
         command.clear();
@@ -361,14 +361,14 @@ fn run_passive_node(is_first: bool, _bootstrap_peers: Option<Vec<Endpoint>>) {
     }
 }
 
-fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
+fn run_interactive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
     let our_id = Id::new();
     let our_client_name : NameType = public_key_to_client_name(&our_id.signing_public_key());
     let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), our_id);
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
     let _ = spawn(move || {
-        let _ = copied_client.lock().unwrap().bootstrap(bootstrap_peers);
+        let _ = copied_client.lock().unwrap().bootstrap();
         thread::sleep_ms(100);
         loop {
             thread::sleep_ms(10);
@@ -447,8 +447,8 @@ fn main() {
         })))
     };
 
-    if args.flag_node || args.flag_first {
-        run_passive_node(args.flag_first, bootstrap_peers);
+    if args.flag_node {
+        run_passive_node(bootstrap_peers);
     } else {
         run_interactive_node(bootstrap_peers);
     }
