@@ -265,9 +265,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 SourceAddress::RelayedForNode(from, node_address) =>
                                     SourceAddress::RelayedForNode(self.id.name(), node_address),
                                 SourceAddress::Direct(from) => {
-                                    // drop this, as it is false
+                                    // drop this, as it is false.
                                     continue; },
                             };
+                            // forward, as we will reflect onto ourselves
+                            // when there are no connections in the routing table.
+                            ignore(self.send_swarm_or_parallel(&message));
                         },
                         Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
                             // FIXME(ben 24/07/2015)
