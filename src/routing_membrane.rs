@@ -74,12 +74,20 @@ enum ConnectionName {
     // ClaimedConnection(PublicId),
 }
 
+fn get_reflective_endpoint() -> Endpoint {
+    match SocketAddr::from_str(&format!("127.0.0.1:{}", 0u16)) {
+        Ok(socket_address) => Endpoint::Tcp(socket_address),
+        Err(_) => panic!("TESTING!!!!!! FIXME")
+    }
+}
+
 /// Routing Membrane
 pub struct RoutingMembrane<F : Interface> {
     // for CRUST
     sender_clone: Sender<crust::Event>,
     event_input: Receiver<crust::Event>,
     connection_manager: crust::ConnectionManager,
+    reflective_endpoint : crust::Endpoint,
     accepting_on: Vec<crust::Endpoint>,
     bootstrap: Option<(crust::Endpoint, NameType)>,
     // for Routing
@@ -111,6 +119,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             sender_clone: sender_clone,
             event_input: event_input,
             connection_manager: cm,
+            reflective_endpoint: get_reflective_endpoint(),
             accepting_on: vec![],
             bootstrap: bootstrap,
             routing_table : RoutingTable::new(&relocated_id.name()),
@@ -606,13 +615,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     // -----Name-based Send Functions----------------------------------------
-
-    fn get_our_reflective_endpoint(&self, port : u16) -> Endpoint {
-        match SocketAddr::from_str(&format!("127.0.0.1:{}", 0u16)) {
-            Ok(socket_address) => Endpoint::Tcp(socket_address),
-            Err(_) => panic!("TESTING!!!!!! FIXME")
-        }
-    }
 
     fn send_out_as_relay(&mut self, name: &IdType, msg: Bytes) {
         let mut failed_endpoints : Vec<Endpoint> = Vec::new();
