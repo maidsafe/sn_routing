@@ -23,6 +23,7 @@ use NameType;
 use error::{RoutingError};
 use id::Id;
 use utils;
+use sentinel::key_sentinel::{IdTrait, GroupClaimTrait};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct PublicId {
@@ -71,6 +72,31 @@ impl PublicId {
     // checks if the name is updated to a relocated name
     pub fn is_relocated(&self) -> bool {
         self.name != utils::public_key_to_client_name(&self.public_sign_key)
+    }
+}
+
+impl IdTrait<NameType> for PublicId {
+    fn name(&self) -> NameType  {
+        self.name.clone()
+    }
+
+    fn public_key(&self) -> sign::PublicKey {
+        self.signing_public_key().clone()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PublicIdGroupClaim { pub identities: Vec<PublicId>, }
+
+impl PublicIdGroupClaim {
+    pub fn new(identities: Vec<PublicId>) -> PublicIdGroupClaim {
+        PublicIdGroupClaim { identities: identities }
+    }
+}
+
+impl GroupClaimTrait<PublicId> for PublicIdGroupClaim {
+    fn group_identities(&self) -> Vec<PublicId> {
+        self.identities.clone()
     }
 }
 
