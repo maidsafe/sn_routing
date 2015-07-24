@@ -682,17 +682,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // afterall we are the only node on the network, as far as we know.
 
             // if routing table size is zero any target is in range, so no need to check
-            let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
-            let bytes = try!(encode(&signed_message));
-            let new_event = crust::Event::NewMessage(self.reflective_endpoint.clone(), bytes);
-            match self.sender_clone.send(new_event) {
-                Ok(_) => Ok(()),
-                // FIXME(ben 24/07/2015) we have a broken channel with crust,
-                // should terminate node
-                Err(_) => Err(RoutingError::FailedToBootstrap)
-            };
-            Ok(())
+            self.send_reflective_to_us(msg)
         }
+
         // TODO(ben 24/07/2015) this can be removed. It is also not "wrong" but the crux
         // of the rust-2 routing refactor was clearly separating the genuine routing network
         // from bootstrap noise, so if such a functionality is needed, then it should go in
@@ -721,8 +713,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn send_reflective_to_us(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
         let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
         let bytes = try!(encode(&signed_message));
-        // let loopback_event = Crust
-        // match self.sender_clone.send()
+        let new_event = crust::Event::NewMessage(self.reflective_endpoint.clone(), bytes);
+        match self.sender_clone.send(new_event) {
+            Ok(_) => {},
+            // FIXME(ben 24/07/2015) we have a broken channel with crust,
+            // should terminate node
+            Err(_) => return Err(RoutingError::FailedToBootstrap)
+        };
         Ok(())
     }
 
