@@ -45,6 +45,7 @@ type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 type PortAndProtocol = crust::Port;
 
+static MAX_BOOTSTRAP_CONNECTIONS : usize = 3;
 
 pub struct RoutingClient<F: Interface> {
     interface: Arc<Mutex<F>>,
@@ -192,7 +193,7 @@ impl<F> RoutingClient<F> where F: Interface {
                                 MessageType::GetDataResponse(result) => {
                                     self.handle_get_data_response(result);
                                 },
-                                MessageType::PutDataResponse(put_response) => {
+                                MessageType::PutDataResponse(put_response, _) => {
                                     self.handle_put_data_response(put_response);
                                 },
                                 _ => {}
@@ -210,30 +211,30 @@ impl<F> RoutingClient<F> where F: Interface {
 
     /// Use bootstrap to attempt connecting the client to previously known nodes,
     /// or use CRUST self-discovery options.
-    pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>) -> Result<(), RoutingError> {
-         // FIXME: bootstrapping a relay should fully rely on WhoAreYou,
-         // then it is not need for CM to start listening;
-         // but currently connect_request requires endpoint to connect back on to.
-         let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-         let beacon_port = Some(5483u16);
-         let listeners = match self.connection_manager
-             .start_listening2(ports_and_protocols, beacon_port) {
-             Err(reason) => {
-                 println!("Failed to start listening: {:?}", reason);
-                 (vec![], None)
-             }
-             Ok(listeners_and_beacon) => listeners_and_beacon
-         };
-         println!("trying to bootstrapped client");
-         let bootstrapped_to = try!(self.connection_manager.bootstrap(bootstrap_list, beacon_port)
-                                    .map_err(|_|RoutingError::FailedToBootstrap));
-         self.bootstrap_address.1 = Some(bootstrapped_to);
-         println!("bootstrapped client");
-         // starts swapping ID with the bootstrap peer
-         self.send_bootstrap_connect_request(listeners.0);
-         Ok(())
+    pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
+        // FIXME(ben 24/07/2015) this should become part of run() with integrated eventloop
+        println!("start accepting");
+        try!(self.connection_manager.start_accepting(vec![]));
+        self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+        loop {
+            match self.event_input.recv() {
+                Err(_) => return Err(RoutingError::FailedToBootstrap),
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    println!("NewBootstrapConnection");
+                    self.bootstrap_address.1 = Some(endpoint);
+                    // FIXME(ben 24/07/2015) this needs to replaced with a clear WhoAreYou
+                    // ConnectRequest is a mis-use
+                    let our_endpoints = self.connection_manager.get_own_endpoints();
+                    self.send_bootstrap_connect_request(our_endpoints);
+                    break;
+                },
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
+    #[allow(dead_code)]
     fn send_bootstrap_connect_request(&mut self, accepting_on: Vec<Endpoint>) {
         match self.bootstrap_address.clone() {
             (_, Some(_)) => {

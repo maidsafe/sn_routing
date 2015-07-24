@@ -27,7 +27,7 @@ use data::Data;
 
 //------------------------------------------------------------------------------
 #[deny(missing_docs)]
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 /// represents response errors
 pub enum ResponseError {
     /// data not found

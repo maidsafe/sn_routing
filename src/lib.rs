@@ -30,10 +30,10 @@
 #![feature(convert)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
-              html_root_url = "http://maidsafe.github.io/routing")]
+       html_root_url = "http://maidsafe.github.io/routing")]
 // #![warn(missing_docs)]
-#![deny(dead_code, unused_variables, unused_features, unused_attributes)]
-#![forbid(bad_style, warnings)]
+//#![deny(dead_code, unused_variables, unused_features, unused_attributes)]
+//#![forbid(bad_style, warnings)]
 
 #[macro_use]
 extern crate log;
@@ -49,6 +49,7 @@ extern crate crust;
 extern crate accumulator;
 extern crate lru_time_cache;
 extern crate message_filter;
+extern crate sentinel;
 
 mod common_bits;
 mod macros;
@@ -56,7 +57,6 @@ mod messages;
 mod name_type;
 mod routing_table;
 mod relay;
-mod utils;
 mod who_are_you;
 
 pub mod client_interface;
@@ -69,6 +69,7 @@ pub mod sendable;
 pub mod test_utils;
 pub mod types;
 pub mod id;
+pub mod utils;
 pub mod public_id;
 pub mod error;
 pub mod authority;
@@ -76,5 +77,6 @@ pub mod structured_data;
 pub mod immutable_data;
 pub mod plain_data;
 pub mod data;
+pub mod user_message;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
