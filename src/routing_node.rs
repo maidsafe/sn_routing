@@ -94,29 +94,64 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 Ok(crust::Event::NewMessage(_endpoint, _bytes)) => {
 
                 },
-                Ok(crust::Event::NewConnection(_endpoint)) => {
-
+                Ok(crust::Event::NewConnection(endpoint)) => {
+                    // only allow first if we still have the possibility
+                    if possible_first {
+                        // break from listening to CM
+                        // and first start RoutingMembrane
+                        let new_name = NameType(sodiumoxide::crypto::hash::sha512
+                            ::hash(&self.id.name().0).0);
+                        self.id.assign_relocated_name(new_name);
+                        break;
+                    } else {
+                        // aggressively refuse a connection when we already have
+                        // and drop it.
+                        cm.drop_node(endpoint);
+                    }
                 },
                 Ok(crust::Event::LostConnection(_endpoint)) => {
 
                 },
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                    // we found a bootstrap connection,
-                    // so disable us becoming a first node
-                    possible_first = false;
-                    // register the bootstrap endpoint
-
-                    // and try to request a name from this endpoint
-                    // let put_public_id_msg
-                    //     = self.construct_put_public_id_msg(
-                    //     &PublicId::new(&unrelocated_id));
-                    // let serialised_message = try!(encode(&put_public_id_msg));
-                    // ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+                    match self.bootstrap {
+                        None => {
+                            // we found a bootstrap connection,
+                            // so disable us becoming a first node
+                            possible_first = false;
+                            // register the bootstrap endpoint
+                            self.bootstrap = Some((endpoint, None));
+                            // and try to request a name from this endpoint
+                            // let put_public_id_msg
+                            //     = try!(self.construct_put_public_id_msg(
+                            //     &PublicId::new(&self.id)));
+                            // let serialised_message = try!(encode(&put_public_id_msg));
+                            // ignore(cm.send(bootstrapped_to.clone(), serialised_message));
+                        },
+                        Some(_) => {
+                            // only work with a single bootstrap endpoint (for now)
+                            cm.drop_node(endpoint);
+                        }
+                    }
                 }
             }
         }
-    }
 
+        match possible_first {
+            true => {
+                let mut membrane = RoutingMembrane::<F>::new(
+                    cm, event_input, None,
+                    self.id.clone(),
+                    self.genesis.create_personas());
+                // TODO: currently terminated by main, should be signalable to terminate
+                // and join the routing_node thread.
+                spawn(move || membrane.run());
+            },
+            false => {
+
+            }
+        };
+        Ok(())
+    }
 
     /// Starts a node without requiring responses from the network.
     /// Starts the routing membrane without looking to bootstrap.

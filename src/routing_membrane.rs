@@ -93,14 +93,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
     pub fn new(cm: crust::ConnectionManager,
                event_input: Receiver<crust::Event>,
                bootstrap: Option<(crust::Endpoint, NameType)>,
-               accepting_on: Vec<crust::Endpoint>,
                relocated_id: Id,
                personas: F) -> RoutingMembrane<F> {
         debug_assert!(relocated_id.is_relocated());
         RoutingMembrane {
                       event_input: event_input,
                       connection_manager: cm,
-                      accepting_on: accepting_on,
+                      accepting_on : vec![],
                       bootstrap: bootstrap,
                       routing_table : RoutingTable::new(&relocated_id.name()),
                       relay_map: RelayMap::new(&relocated_id),
@@ -338,31 +337,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
       info!("CRUST::NewConnection on {:?}", endpoint);
         self.drop_bootstrap();
         match self.lookup_endpoint(&endpoint) {
-            Some(ConnectionName::Routing(name)) => {
-                // should not occur; if the endpoint is in the lookup map of routing table,
-                // it was already marked online.
-                info!("DEBUG: NewConnection {:?} on already connected endpoint {:?} in RT.",
-                    endpoint, name);
-                match self.routing_table.mark_as_connected(&endpoint) {
-                    Some(peer_name) => {
-                        info!("RT (size : {:?}) Marked peer {:?} as connected on endpoint {:?}",
-                                 self.routing_table.size(), peer_name, endpoint);
-                        // FIXME: the presence of this debug assert indicates
-                        // that the logic for unconnected RT nodes is not quite right.
-                        debug_assert!(peer_name == name);
-                    },
-                    None => { }
-                };
-            },
-            Some(ConnectionName::Relay(_)) => {
-                // this endpoint is already present in the relay lookup_map
-                // nothing to do
-            },
-            Some(ConnectionName::OurBootstrap(_)) => {
-                // FIXME: for now do nothing
-            },
-            Some(ConnectionName::UnidentifiedConnection) => {
-                // again, already connected so examine later
+            Some(_) => {
+                info!("UNEXPECTED: NewConnection {:?} on already connected endpoint.",
+                    endpoint);
             },
             None => {
                 self.relay_map.register_unknown_connection(endpoint.clone());
@@ -1497,7 +1474,7 @@ fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     // key, so that the membrane thinks it is a relocated id.
     id.assign_relocated_name(NameType([0;NAME_TYPE_LEN]));
 
-    RoutingMembrane::<TestInterface>::new(cm, event_input, None, vec![], id.clone(), TestInterface {stats : stats})
+    RoutingMembrane::<TestInterface>::new(cm, event_input, None, id.clone(), TestInterface {stats : stats})
 }
 
 struct Tester {
