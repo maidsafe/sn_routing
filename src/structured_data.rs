@@ -24,7 +24,7 @@ use sodiumoxide::crypto;
 /// StructuredData
 /// These types may be stored unsigned with previous and current owner keys
 /// set to the same keys. Updates though require a signature to validate
-#[derive(Debug, Eq, PartialEq, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct StructuredData {
     type_tag: u64,
     identifier: NameType,
