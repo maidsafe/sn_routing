@@ -345,13 +345,9 @@ fn decode_key_value(data : &Vec<u8>) -> Result<(String, String), CborError> {
     decode(data)
 }
 
-fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
+fn run_passive_node(is_first: bool, _bootstrap_peers: Option<Vec<Endpoint>>) {
     let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
-    if is_first {
-        test_node.run_zero_membrane();
-    } else {
-        let _ = test_node.bootstrap(bootstrap_peers);
-    }
+    test_node.run();
     let ref mut command = String::new();
     loop {
         command.clear();
