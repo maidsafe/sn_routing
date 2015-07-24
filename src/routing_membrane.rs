@@ -670,8 +670,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // we are also part of the effective close group for destination.
             // RoutingTable does not include ourselves in the target nodes,
             // so we should check the filter (to avoid eternal looping)
-            // and also handle it ourselves. However, we are single threaded,
-            // so currently this risks piling up a big stack and holding the queue.
+            // and also handle it ourselves.
             // Instead we can for now rely on swarming to send it back to us.
             Ok(())
         } else {
@@ -683,8 +682,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // afterall we are the only node on the network, as far as we know.
 
             // if routing table size is zero any target is in range, so no need to check
-            // let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
-            // self.message_received(signed_message);
+            let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
+            let bytes = try!(encode(&signed_message));
+            let new_event = crust::Event::NewMessage(self.reflective_endpoint.clone(), bytes);
+            match self.sender_clone.send(new_event) {
+                Ok(_) => Ok(()),
+                // FIXME(ben 24/07/2015) we have a broken channel with crust,
+                // should terminate node
+                Err(_) => Err(RoutingError::FailedToBootstrap)
+            };
             Ok(())
         }
         // TODO(ben 24/07/2015) this can be removed. It is also not "wrong" but the crux
