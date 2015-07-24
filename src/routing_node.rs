@@ -84,6 +84,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     pub fn run(&mut self) -> Result<(), RoutingError> {
         // keep state on whether we still might be the first around.
         let mut possible_first = true;
+        let mut relocated_name : Option<NameType> = None;
+
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output, None);
         let _ = cm.start_accepting();
@@ -91,8 +93,34 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         loop {
             match event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
-                Ok(crust::Event::NewMessage(_endpoint, _bytes)) => {
-
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    match self.bootstrap {
+                        Some((ref bootstrap_endpoint, _)) => {
+                            debug_assert!(&endpoint == bootstrap_endpoint);
+                            match decode::<SignedMessage>(&bytes) {
+                                Err(_) => continue,
+                                Ok(wrapped_message) => {
+                                    match wrapped_message.get_routing_message() {
+                                        Err(_) => continue,
+                                        Ok(message) => {
+                                            match message.message_type {
+                                                MessageType::PutPublicIdResponse(
+                                                    ref new_public_id) => {
+                                                      relocated_name = Some(new_public_id.name());
+                                                      println!("Received PutPublicId relocated
+                                                          name {:?} from {:?}", relocated_name,
+                                                          self.id.name());
+                                                      break;
+                                                },
+                                                _ => continue,
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        None => {}
+                    }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
                     // only allow first if we still have the possibility
