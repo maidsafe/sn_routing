@@ -87,8 +87,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let mut relocated_name : Option<NameType> = None;
 
         let (event_output, event_input) = mpsc::channel();
-        let mut cm = crust::ConnectionManager::new(event_output, None);
-        let _ = cm.start_accepting();
+        let mut cm = crust::ConnectionManager::new(event_output);
+        let _ = cm.start_accepting(vec![]);
         cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         loop {
             match event_input.recv() {

@@ -70,7 +70,7 @@ impl<F> RoutingClient<F> where F: Interface {
         RoutingClient {
             interface: my_interface,
             event_input: rx,
-            connection_manager: crust::ConnectionManager::new(tx, None),
+            connection_manager: crust::ConnectionManager::new(tx),
             public_id: PublicId::new(&id),
             id: id,
             bootstrap_address: (None, None),
@@ -211,20 +211,19 @@ impl<F> RoutingClient<F> where F: Interface {
     /// Use bootstrap to attempt connecting the client to previously known nodes,
     /// or use CRUST self-discovery options.
     pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
-        // FIXME: this should become part of run() with integrated eventloop
-        let _ = self.connection_manager.start_accepting();
+        // FIXME(ben 24/07/2015) this should become part of run() with integrated eventloop
+        let _ = self.connection_manager.start_accepting(vec![]);
         loop {
             match self.event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
                     self.bootstrap_address.1 = Some(endpoint);
-                    // FIXME:(ben 23/07/2015) get_accepting_endpoints is not yet published in the API
-                    // match self.connection_manager.get_accepting_endpoints() {
-                    //     Ok(endpoints) => {
-                    //         self.send_bootstrap_connect_request(endpoints);
-                    //         break; },
-                    //     Err(_) => return Err(RoutingError::FailedToBootstrap)
-                    // }
+                    match self.connection_manager.get_accepting_endpoints() {
+                        Ok(endpoints) => {
+                            self.send_bootstrap_connect_request(endpoints);
+                            break; },
+                        Err(_) => return Err(RoutingError::FailedToBootstrap)
+                    }
         break;
                 },
                 _ => {}

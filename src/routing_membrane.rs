@@ -1467,8 +1467,8 @@ fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     //FIXME(ben): review whether this is correct and wanted 23/07/2015
     let mut id = Id::new();
     let (event_output, event_input) = mpsc::channel();
-    let mut cm = crust::ConnectionManager::new(event_output, None);
-    cm.start_accepting();
+    let mut cm = crust::ConnectionManager::new(event_output);
+    cm.start_accepting(vec![]);
 
     // Hack: assign a name which is not a hash of the public sign
     // key, so that the membrane thinks it is a relocated id.
