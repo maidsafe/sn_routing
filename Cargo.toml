@@ -17,11 +17,11 @@ rand = "*"
 message_filter = "0.1.*"
 lru_time_cache = "0.2.*"
 accumulator = "0.0.*"
-crust = "0.1.*"
 docopt = "*"
 itertools = "*"
 log = "*"
 maidsafe_sodiumoxide = "*"
+crust = "*"
 
 [dependencies.sentinel]
 git = "https://github.com/maidsafe/sentinel"
@@ -33,5 +33,5 @@ env_logger = "*"
 [[example]]
 name = "simple_key_value_store"
 path = "examples/simple_key_value_store.rs"
-test = true
+test = false
 bench = false

@@ -16,14 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 //! usage example (using default methods of connecting to the network):
-//!      starting first node:                simple_key_value_store --first
-//!      starting a subsequent passive node: simple_key_value_store --node
-//!      starting an interactive node:       simple_key_value_store
-//!
-//! usage example (using explicit list of peer endpoints and overriding default methods to connect
-//! to the network - assume the first node's random listening endpoint is 127.0.0.1:7364):
-//!      starting a passive node:      simple_key_value_store --node 127.0.0.1:7364
-//!      starting an interactive node: simple_key_value_store 127.0.0.1:7364
+//!      starting a passive node:       simple_key_value_store --node
+//!      starting an interactive node:  simple_key_value_store
 
 #![forbid(bad_style, warnings)]
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
@@ -80,22 +74,18 @@ use routing::utils::{encode, decode, public_key_to_client_name};
 static USAGE: &'static str = "
 Usage:
   simple_key_value_store [<peer>...]
-  simple_key_value_store (--first | --node [<peer>...])
+  simple_key_value_store (--node [<peer>...])
   simple_key_value_store --help
 
 Options:
-  -f, --first  Node runs as the first passive node in the network.
-  -n, --node   Node runs as a non-first, passive node in the network.
+  -n, --node   Run as a non-interactive routing node in the network.
   -h, --help   Display this help message.
 
-  Running without any args (or with only peer endpoints) will start an
-  interactive node.  Such a node can be used to send requests such as 'put' and
+  Running without the --node option will start an interactive node.
+  Such a node can be used to send requests such as 'put' and
   'get' to the network.
 
-  Running without '--first' requires an existing network to connect to.  If this
-  is the first node of a new network, the only arg passed should be '--first'.
-
-  A passive node is one that simply reacts on received requests.  Such nodes are
+  A passive node is one that simply reacts on received requests. Such nodes are
   the workers; they route messages and store and provide data.
 
   The optional <peer>... arg(s) are a list of peer endpoints (other running
@@ -109,7 +99,6 @@ Options:
 struct Args {
     arg_peer: Vec<PeerEndpoint>,
     flag_node: bool,
-    flag_first: bool,
     flag_help: bool,
 }
 
@@ -345,13 +334,9 @@ fn decode_key_value(data : &Vec<u8>) -> Result<(String, String), CborError> {
     decode(data)
 }
 
-fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
+fn run_passive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
     let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
-    if is_first {
-        test_node.run_zero_membrane();
-    } else {
-        let _ = test_node.bootstrap(bootstrap_peers);
-    }
+    let _ = test_node.run();
     let ref mut command = String::new();
     loop {
         command.clear();
@@ -365,14 +350,14 @@ fn run_passive_node(is_first: bool, bootstrap_peers: Option<Vec<Endpoint>>) {
     }
 }
 
-fn run_interactive_node(bootstrap_peers: Option<Vec<Endpoint>>) {
+fn run_interactive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
     let our_id = Id::new();
     let our_client_name : NameType = public_key_to_client_name(&our_id.signing_public_key());
     let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), our_id);
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
     let _ = spawn(move || {
-        let _ = copied_client.lock().unwrap().bootstrap(bootstrap_peers);
+        let _ = copied_client.lock().unwrap().bootstrap();
         thread::sleep_ms(100);
         loop {
             thread::sleep_ms(10);
@@ -451,8 +436,8 @@ fn main() {
         })))
     };
 
-    if args.flag_node || args.flag_first {
-        run_passive_node(args.flag_first, bootstrap_peers);
+    if args.flag_node {
+        run_passive_node(bootstrap_peers);
     } else {
         run_interactive_node(bootstrap_peers);
     }
