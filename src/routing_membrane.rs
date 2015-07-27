@@ -102,9 +102,9 @@ pub struct RoutingMembrane<F : Interface> {
     refresh_accumulator: RefreshAccumulator,
     // for Persona logic
     interface: Box<F>,
-    put_response_sentinel: PureSentinel<SentinelPutResponse, NameType>,
-    get_data_response_sentinel: PureSentinel<SentinelGetDataResponse, NameType>,
-    put_sentinel: PureSentinel<SentinelPutRequest, NameType>
+//    put_response_sentinel: PureSentinel<(MessageId, NameType), SentinelPutResponse, NameType>,
+//    get_data_response_sentinel: PureSentinel<(MessageId, NameType), SentinelGetDataResponse, NameType>,
+    put_sentinel: PureSentinel<NameType, SentinelPutRequest, NameType>
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
@@ -132,8 +132,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             connection_cache: BTreeMap::new(),
             refresh_accumulator: RefreshAccumulator::new(),
             interface : Box::new(personas),
-            put_response_sentinel: PureSentinel::new(),
-            get_data_response_sentinel: PureSentinel::new(),
+//            put_response_sentinel: PureSentinel::new(),
+//            get_data_response_sentinel: PureSentinel::new(),
             put_sentinel: PureSentinel::new()
         }
     }
@@ -182,6 +182,21 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         ignore(self.send_swarm_or_parallel(&message));
     }
+
+    pub fn get_group_key(&mut self, group: NameType, our_authority: Authority) {
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(group),
+            source      : SourceAddress::Direct(self.id.name()),
+            orig_message: None,
+            message_type: MessageType::GetGroupKey,
+            message_id  : message_id,
+            authority   : our_authority,
+        };
+
+        ignore(self.send_swarm_or_parallel(&message));
+    }
+
 
     pub fn delete(&mut self, _destination: NameType, _data : Data) {
         unimplemented!()
@@ -549,7 +564,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // pre-sentinel message handling
         match message.message_type {
             // MessageType::GetKey => self.handle_get_key(header, body),
-            // MessageType::GetGroupKey => self.handle_get_group_key(header, body),
+            MessageType::GetGroupKeyResponse(ref btree_map) =>
+                self.handle_get_group_key(message_wrap, message.clone(), btree_map.clone()),
             MessageType::ConnectRequest(request) => self.handle_connect_request(request, message_wrap),
             _ => {
                 // Sentinel check
@@ -1007,8 +1023,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         source, signed_message.signature().clone(),
                         signed_message.encoded_body().clone(), quorum, quorum) {
                             Some(result) =>  match  result {
-                                AddResult::RequestKeys(_) => {
-                                    // Get Key Request
+                                AddResult::RequestKeys(group) => {
+                                    self.get_group_key(group, our_authority.clone());
                                     return Ok(())
                                 },
                                 AddResult::Resolved(request, serialised_claim) => (request, serialised_claim)
@@ -1056,6 +1072,85 @@ impl<F> RoutingMembrane<F> where F: Interface {
             }
         }
         Ok(())
+    }
+
+    fn get_quroum_size(&self) -> usize {
+        let mut quorum = types::QUORUM_SIZE;
+        if self.routing_table.size() < types::QUORUM_SIZE {
+            quorum = self.routing_table.size();
+        }
+        quorum
+    }
+
+    // handle get group key response
+    fn handle_get_group_key(&mut self, signed_message: SignedMessage, message: RoutingMessage,
+        btree_map: BTreeMap<NameType, sign::PublicKey>) -> RoutingResult {
+      let quorum = self.get_quroum_size();
+      let source = match message.authority.clone() {
+          Authority::ClientManager(name) => name,
+          Authority::NaeManager(name)    => name,
+          Authority::NodeManager(name)   => name,
+          Authority::ManagedNode      => return Err(RoutingError::BadAuthority),
+          Authority::ManagedClient(_) => return Err(RoutingError::BadAuthority),
+          Authority::Client(_)        => return Err(RoutingError::BadAuthority),
+          Authority::Unknown          => return Err(RoutingError::BadAuthority),
+      };
+
+      let mut values = Vec::new();
+      for (key, value) in btree_map {
+          values.push((key, value));
+      }
+
+      let resolved = match self.put_sentinel.add_keys(
+                        source.clone(), message.source_address().non_relayed_source(), values, quorum) {
+                            Some((request, serialised_claim)) => (request, serialised_claim),
+                            None => return Ok(())
+                        };
+
+     match self.mut_interface().handle_put(resolved.0.our_authority.clone(),
+                                           resolved.0.source_authority.clone(),
+                                           SourceAddress::Direct(resolved.0.source_group.clone()),
+                                           DestinationAddress::Direct(resolved.0.destination_group.clone()),
+                                           resolved.0.data.clone()) {
+         Ok(method_calls) => {
+             for method_call in method_calls {
+                 match method_call {
+                     MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                     MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                     MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                     MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                     MethodCall::Delete { name: x, data: y } => self.delete(x, y),
+                     MethodCall::Forward { destination } => {
+                         let msg = resolved.0.create_forward(self.id.name(),
+                                                             destination,
+                                                             self.get_next_message_id());
+                         ignore(self.send_swarm_or_parallel(&msg));
+                     },
+                     MethodCall::Reply { data } => {
+                         let msg = resolved.0.create_reply(MessageType::PutData(data));
+                         ignore(self.send_swarm_or_parallel(&msg));
+                     }
+                 }
+             }
+         },
+         Err(InterfaceError::Abort) => {},
+         Err(InterfaceError::Response(error)) => {
+             let signed_error = ErrorReturn {
+                 error: error,
+                 orig_request: signed_message
+             };
+             let group_pub_keys = if resolved.0.our_authority.is_group() {
+                 self.group_pub_keys()
+             }
+             else {
+                 BTreeMap::new()
+             };
+             let msg = MessageType::PutDataResponse(signed_error, group_pub_keys);
+             let msg = resolved.0.create_reply(msg);
+             ignore(self.send_swarm_or_parallel(&msg));
+         }
+     }
+     Ok(())
     }
 
     // Routing handle put_data
@@ -1156,9 +1251,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_group_put_data_response(&mut self, signed_message: SignedMessage,
-            message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
-        info!("Handle group PUT data response.");
+    fn handle_group_put_data_response(&mut self, _signed_message: SignedMessage,
+            _message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
+/*        info!("Handle group PUT data response.");
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source.clone();
@@ -1209,7 +1304,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_put_data_response MethodCall:Reply is not a Valid action")
             }
-        }
+        }*/
         Ok(())
     }
 
@@ -1554,9 +1649,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.send_swarm_or_parallel_or_relay(&message)
     }
 
-    fn handle_group_get_data_response(&mut self, signed_message : SignedMessage,
-            message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
-        let our_authority = our_authority(&message, &self.routing_table);
+    fn handle_group_get_data_response(&mut self, _signed_message : SignedMessage,
+            _message: RoutingMessage, _response: GetDataResponse) -> RoutingResult {
+/*        let our_authority = our_authority(&message, &self.routing_table);
         let from = message.source.non_relayed_source();
         let mut quorum = types::QUORUM_SIZE;
 
@@ -1605,7 +1700,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_get_data_response MethodCall:Reply is not a Valid action")
             }
-        }
+        }*/
         Ok(())
     }
 
