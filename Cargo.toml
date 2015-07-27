@@ -10,7 +10,6 @@ license = "GPL-3.0"
 homepage = "http://maidsafe.net"
 
 [dependencies]
-docopt = "*"
 rustc-serialize = "*"
 cbor = "*"
 time = "*"
