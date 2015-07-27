@@ -72,7 +72,7 @@ impl SentinelPutRequest {
         RoutingMessage {
             destination  : DestinationAddress::Direct(self.source_group),
             source       : SourceAddress::Direct(self.destination_group),
-            orig_message : Some(self.orig_message.clone()),
+            orig_message : None,
             message_type : reply_data,
             message_id   : self.message_id,
             authority    : self.our_authority.clone(),
