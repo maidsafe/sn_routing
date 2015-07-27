@@ -30,7 +30,8 @@ use node_interface::{Interface, CreatePersonas};
 use routing_membrane::RoutingMembrane;
 use id::Id;
 use public_id::PublicId;
-use types::{MessageId, SourceAddress, DestinationAddress};
+use who_are_you::IAm;
+use types::{MessageId, SourceAddress, DestinationAddress, Address};
 use utils::{encode, decode};
 use authority::{Authority};
 use messages::{RoutingMessage, SignedMessage, MessageType, ConnectRequest};
@@ -94,11 +95,12 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             match event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    let mut new_bootstrap_name :
+                        Option<(Endpoint, Option<NameType>)> = None;
                     match self.bootstrap {
-                        Some((ref bootstrap_endpoint, _)) => {
+                        Some((ref bootstrap_endpoint, ref bootstrap_name)) => {
                             debug_assert!(&endpoint == bootstrap_endpoint);
                             match decode::<SignedMessage>(&bytes) {
-                                Err(_) => continue,
                                 Ok(wrapped_message) => {
                                     match wrapped_message.get_routing_message() {
                                         Err(_) => continue,
@@ -116,11 +118,35 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                             }
                                         }
                                     }
+                                },
+                                Err(_) => {
+                                    // Try to decode it as an IAm message
+                                    match decode::<IAm>(&bytes) {
+                                        Ok(he_is_msg) => {
+                                            match he_is_msg.address {
+                                                Address::Node(node_name) => {
+                                                    match *bootstrap_name {
+                                                        Some(_) => continue, // name already set
+                                                        None => new_bootstrap_name =
+                                                            Some((bootstrap_endpoint.clone(),
+                                                                Some(node_name.clone()))),
+                                                    }
+                                                },
+                                                _ => continue, // only care about a Node
+                                            }
+                                        },
+                                        Err(_) => continue,
+                                    };
                                 }
-                            }
+                            };
                         },
                         None => {}
                     }
+                    match new_bootstrap_name {
+                        Some(new_endpoint_name_pair) =>
+                            self.bootstrap = Some(new_endpoint_name_pair.clone()),
+                        None => {},
+                    };
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
                     // only allow first if we still have the possibility
