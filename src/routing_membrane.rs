@@ -906,7 +906,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn send_i_am_msg(&mut self, endpoint: Endpoint) -> RoutingResult {
-        // FIXME: sign proper nonce
         let message = try!(encode(&IAm {
             address: types::Address::Node(self.id.name()),
             public_id : PublicId::new(&self.id)}));

@@ -198,8 +198,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             possible_first = false;
                             // register the bootstrap endpoint
                             self.bootstrap = Some((endpoint.clone(), None));
-                            // and try to request a name from this endpoint
-
+                            // and send an IAm message to our bootstrap endpoint
+                            let i_am_message = try!(encode(&IAm {
+                                // before we retrieve a name for ourselves from the network
+                                // we identify ourselves with the sign::PublicKey
+                                address: Address::Client(self.id.signing_public_key()),
+                                public_id: PublicId::new(&self.id)}));
+                            ignore(cm.send(endpoint, i_am_message));
                         },
                         Some(_) => {
                             // only work with a single bootstrap endpoint (for now)
