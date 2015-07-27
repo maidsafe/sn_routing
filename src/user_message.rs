@@ -66,11 +66,11 @@ impl SentinelPutRequest {
     }
 
     pub fn create_reply(&self, reply_data: MessageType) -> RoutingMessage {
-        // TODO: Check if the original message was forwarded and
-        // reply directly to the original poster if so (Look at the
-        // RoutingMessage::create_reply fn for reference).
         RoutingMessage {
-            destination  : DestinationAddress::Direct(self.source_group),
+            destination  :  match self.orig_message.get_routing_message() {
+                                Ok(routing_message) => routing_message.reply_destination(),
+                                Err(_) => DestinationAddress::Direct(self.source_group),
+                            },
             source       : SourceAddress::Direct(self.destination_group),
             orig_message : None,
             message_type : reply_data,
