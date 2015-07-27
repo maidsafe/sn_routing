@@ -1,10 +1,10 @@
 # Workflow for puting structured data to Vault Network
-Putting structured data to Vault Network will be the same from client's perspective. The put request, holding the structured data as payload, will goes to client's MaidManager first to check whether enough allownance is still available.
+Putting structured data to Vault Network will be the same from client's perspective. The put request, holding the structured data as payload, goes to client's client manager (MaidManager) first who will check whether enough allownance is still available.
 Once it is approved, MaidManager will pass the request to the NetworkElementManagers around the data's name.
 However, unlike immutable data for which DataManagers will pick up and handle the request, this time another special persona, named as StructuredDataManager, will pick up and handle the request.
 StructuredDataManager stores the structured data in it, just like PmidNode taking care of the immutable data.
 
-### Put(VD)
+### Put(SD)
 _Client_  =>> |__ClientManager__ (StructuredData))[Allow ? So : PutFailure]
          *->> |__StructuredDataManager__  [Exist(SD) ? Terminate_Flow : Store(SD)]
 

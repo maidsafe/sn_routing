@@ -6,7 +6,7 @@ DMs will pickup PmidNode to store the data and pmid_node's PmidManagers will be 
 PmidManagers updates account info of pmid_node and pass the put request further to it.
 When PmidNode doesn't have enough space to store the copy, it will try to remove the Sacrificial it holds to free up some space if the incoming copy is Primary.
 For each removed Sacrificial copy, a PutFailure will be sent out from PmidNode to PmidManager then to DataManager to ensure each persona get proper informed.
-
+It has to be pointed out that the 'data' metioned in this document actually means 'immutable data' (self-validating and updating is not allowed) only. The workflow of putting 'versionable data' (structured data, allowing updating) to network is defined in the documentation of [sd_put_post_flow](sd_put_post_flow.md)
 
 ### Put(D)
 _Client_   =>> |__ClientManager__ (Primary, Backup, Sacrificial)[Allow ? So : PutFailure]
