@@ -45,7 +45,7 @@ use NameType;
 use name_type::{closer_to_target_or_equal};
 use node_interface::Interface;
 use routing_table::{RoutingTable, NodeInfo};
-use relay::{RelayMap, IdType};
+use relay::{RelayMap};
 use sendable::Sendable;
 use data::{Data, DataRequest};
 use types;
@@ -67,7 +67,7 @@ use user_message::{SentinelPutRequest, SentinelPutResponse, SentinelGetDataRespo
 type RoutingResult = Result<(), RoutingError>;
 
 enum ConnectionName {
-    Relay(IdType),
+    Relay(Address),
     Routing(NameType),
     OurBootstrap(NameType),
     ReflectionOnToUs,
@@ -232,64 +232,53 @@ impl<F> RoutingMembrane<F> where F: Interface {
             match self.event_input.recv() {
                 Err(_) => (),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                    let message = match decode::<SignedMessage>(&bytes) {
-                        Ok(message) => message,
-                        Err(_)      => continue,
-                    };
+                    match decode::<SignedMessage>(&bytes) {
+                        Ok(message) => {
+                            match self.lookup_endpoint(&endpoint) {
+                                // We sent this message to ourselves
+                                // as we are part of the effective close group
+                                Some(ConnectionName::ReflectionOnToUs) => {
+                                    ignore(self.message_received(message));
+                                },
+                                // we hold an active connection to this endpoint,
+                                // mapped to a name in our routing table
+                                Some(ConnectionName::Routing(name)) => {
+                                    ignore(self.message_received(message));
+                                },
+                                // we hold an active connection to this endpoint,
+                                // mapped to a name in our relay map
+                                Some(ConnectionName::Relay(_)) => {
+                                    let message = match message.get_routing_message() {
+                                        Ok(message) => message,
+                                        Err(_)      => continue,
+                                    };
+                                    // forward, as we will reflect onto ourselves
+                                    // when there are no connections in the routing table.
+                                    ignore(self.send_swarm_or_parallel(&message));
+                                },
+                                Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
+                                    // FIXME(ben 24/07/2015)
+                                    // 1. we should not longer rely on messages from our bootstrap connection
+                                    // 2. our bootstrap connection might send us direct (ie non-routing)
+                                    //    messages
+                                    ignore(self.message_received(message));
+                                },
+                                Some(ConnectionName::UnidentifiedConnection) => {
+                                    // only expect IAm message
 
-                    match self.lookup_endpoint(&endpoint) {
-                        // We sent this message to ourselves
-                        // as we are part of the effective close group
-                        Some(ConnectionName::ReflectionOnToUs) => {
-                            ignore(self.message_received(message));
-                        },
-                        // we hold an active connection to this endpoint,
-                        // mapped to a name in our routing table
-                        Some(ConnectionName::Routing(name)) => {
-                            ignore(self.message_received(message));
-                        },
-                        // we hold an active connection to this endpoint,
-                        // mapped to a name in our relay map
-                        Some(ConnectionName::Relay(_)) => {
-                            let message = match message.get_routing_message() {
-                                Ok(message) => message,
-                                Err(_)      => continue,
+                                },
+                                None => {
+                                    // Don't accept Signed Routing Messages
+                                    // from unlabeled connections
+                                }
                             };
-                            // forward, as we will reflect onto ourselves
-                            // when there are no connections in the routing table.
-                            ignore(self.send_swarm_or_parallel(&message));
                         },
-                        Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
-                            // FIXME(ben 24/07/2015)
-                            // 1. we should not longer rely on messages from our bootstrap connection
-                            // 2. our bootstrap connection might send us direct (ie non-routing)
-                            //    messages
-                            ignore(self.message_received(message));
+                        // The message received is not a Signed Routing Message,
+                        // expect it to be an IAm message to identify a connection
+                        Err(_) => {
+                            let _ = self.handle_i_am(&endpoint, bytes);
                         },
-                        Some(ConnectionName::UnidentifiedConnection) => {
-                            // only expect IAm message
-                            match self.handle_unknown_connect_request(&endpoint, message) {
-                                Ok(_) => {},
-                                Err(_) => {
-                                    // on any error, handle as IAm
-                                    let _ = self.handle_i_am(&endpoint, bytes);
-                                },
-                            }
-
-                        },
-                        None => {
-                            // FIXME: probably the 'unidentified connection' is useless state;
-                            // only good for pruning later on.
-                            // If we don't know the sender, only accept a connect request
-                            match self.handle_unknown_connect_request(&endpoint, message) {
-                                Ok(_) => {},
-                                Err(_) => {
-                                    // on any error, handle as IAm
-                                    let _ = self.handle_i_am(&endpoint, bytes);
-                                },
-                            }
-                        }
-                    }
+                    };
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
                     self.handle_new_connection(endpoint);
@@ -379,7 +368,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             None => {
                 self.relay_map.register_unknown_connection(endpoint.clone());
-                // Send "Who are you?" message
+                // Send a polite "I Am" message introducing ourselves.
                 ignore(self.send_i_am_msg(endpoint));
             }
       }
@@ -646,7 +635,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     // -----Name-based Send Functions----------------------------------------
 
-    fn send_out_as_relay(&mut self, name: &IdType, msg: Bytes) {
+    fn send_out_as_relay(&mut self, name: &Address, msg: Bytes) {
         let mut failed_endpoints : Vec<Endpoint> = Vec::new();
         match self.relay_map.get_endpoints(name) {
             Some(&(_, ref endpoints)) => {
@@ -754,10 +743,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
             match dst {
                 DestinationAddress::RelayToClient(_, public_key) => {
-                    self.send_out_as_relay(&IdType::Client(public_key), msg.clone());
+                    self.send_out_as_relay(&Address::Client(public_key), msg.clone());
                 },
                 DestinationAddress::RelayToNode(_, node_address) => {
-                    self.send_out_as_relay(&IdType::Node(node_address), msg.clone());
+                    self.send_out_as_relay(&Address::Node(node_address), msg.clone());
                 },
                 DestinationAddress::Direct(_) => {},
             }
@@ -871,10 +860,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         }
                     },
                     // if it is not relocated, we consider the connection for our relay_map
-                    // but with unknown connect request we already successfully relay for an relocated node
                     false => {
-                        info!("I Am unrelocated {:?} on {:?}. Not Acting on this result.",
-                            i_am.public_id.name(), endpoint);
+                        // move endpoint based on identification
                     }
                 };
                 if trigger_handle_churn {
