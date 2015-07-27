@@ -563,26 +563,42 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageType::GetData(ref request) => self.handle_get_data(message_wrap,
                         message.clone(), request.clone()),
                     MessageType::GetDataResponse(ref response) => {
-                        match message.from_group() {
-                            None => self.handle_client_get_data_response(message_wrap, message.clone(), response.clone()),
-                            Some(_) => self.handle_group_get_data_response(message_wrap, message.clone(), response.clone()),
+                        match message.actual_source() {
+                            Address::Node(_) =>
+                                self.handle_client_get_data_response(message_wrap, message.clone(),
+                                                                     response.clone()),
+                            Address::Client(_)
+                                => self.handle_group_get_data_response(message_wrap,
+                                                                       message.clone(),
+                                                                       response.clone()),
                         }
                     },
                     MessageType::PutDataResponse(ref response, ref _map) => {
-                        match message.from_group() {
-                            None => self.handle_client_put_data_response(message_wrap, message.clone(), response.clone()),
-                            Some(_) => self.handle_group_put_data_response(message_wrap, message.clone(), response.clone()),
+                        match message.actual_source() {
+                            Address::Node(_) =>
+                                self.handle_client_put_data_response(message_wrap, message.clone(),
+                                                                     response.clone()),
+                            Address::Client(_) =>
+                                self.handle_group_put_data_response(message_wrap, message.clone(),
+                                                                    response.clone()),
                         }
                     },
                     MessageType::PutData(ref data) => {
                         match message.source.actual_source() {
-                            Address::Node(name) => self.handle_group_put_data(message_wrap, message.clone(), data.clone(), name),
-                            Address::Client(name) => self.handle_client_put_data(message_wrap, message.clone(), data.clone(), name),
+                            Address::Node(name) =>
+                                self.handle_group_put_data(message_wrap, message.clone(),
+                                                           data.clone(), name),
+                            Address::Client(name) =>
+                                self.handle_client_put_data(message_wrap, message.clone(),
+                                                            data.clone(), name),
                         }
                     },
-                    MessageType::PutPublicId(ref id) => self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
-                    MessageType::Refresh(ref tag, ref data) => self.handle_refresh(message.clone(), tag.clone(), data.clone()),
-                    MessageType::Post(ref data) => self.handle_post(message_wrap, message.clone(), data.clone()),
+                    MessageType::PutPublicId(ref id) =>
+                        self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
+                    MessageType::Refresh(ref tag, ref data) =>
+                        self.handle_refresh(message.clone(), tag.clone(), data.clone()),
+                    MessageType::Post(ref data) =>
+                        self.handle_post(message_wrap, message.clone(), data.clone()),
                     MessageType::PostResponse(ref response, _)
                         => self.handle_post_response(message_wrap,
                                                      message.clone(),
