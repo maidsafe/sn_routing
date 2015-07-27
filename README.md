@@ -34,9 +34,9 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 General note: please document code you touch, and introduce property-based unit tests where applicable.
 
-## [0.3.0] RUST-3 Sprint tasks
+## RUST-3 Sprint tasks
 
-### Unified Data
+### [0.3.0] Unified Data
 - [x] [MAID-1158](https://maidsafe.atlassian.net/browse/MAID-1158) Unified Data
     - [x] [MAID-1159](https://maidsafe.atlassian.net/browse/MAID-1159) Implement PlainData
     - [x] [MAID-1160](https://maidsafe.atlassian.net/browse/MAID-1160) Implement ImmutableData
@@ -54,25 +54,26 @@ General note: please document code you touch, and introduce property-based unit 
 - [ ] [MAID-1178](https://maidsafe.atlassian.net/browse/MAID-1178) Enable Churn in Routing simple_key_value_store
 - [ ] [MAID-1181](https://maidsafe.atlassian.net/browse/MAID-1181) Integration test for routing
 - [x] [MAID-1170](https://maidsafe.atlassian.net/browse/MAID-1170) Update RoutingClient and relay node: RoutingMessage
+- [x] [MAID-1251](https://maidsafe.atlassian.net/browse/MAID-1251) Remove option first from routing node
 
-### Sentinel
+### Use public key for all messages
+- [x] [MAID-1255](https://maidsafe.atlassian.net/browse/MAID-1255) RFC 0001 - Use public key for id on all messages
+    - [x] [MAID-1256](https://maidsafe.atlassian.net/browse/MAID-1256) MAID-1255 Remove redundant field header.source.reply_to
+    - [x] [MAID-1257](https://maidsafe.atlassian.net/browse/MAID-1257) MAID-1255 Modify Authority enum
+
+### [0.3.1] Sentinel
 - [ ] [MAID-1152](https://maidsafe.atlassian.net/browse/MAID-1152) Implement Sentinels into Routing (group task)
     - [ ] [MAID-1154](https://maidsafe.atlassian.net/browse/MAID-1154) MAID-1152 Implement PureSentinel in RoutingMembrane::handle_put_data
     - [ ] [MAID-1157](https://maidsafe.atlassian.net/browse/MAID-1157) MAID-1152 Implement KeySentinel for FindGroupResponse messages
-    - [ ] [MAID-1164](https://maidsafe.atlassian.net/browse/MAID-1164) MAID-1152 Refactor RoutingMembrane::handle_put_data as preparation for adding PureSentinel
-    - [ ] [MAID-1169](https://maidsafe.atlassian.net/browse/MAID-1169) MAID-1152 Refactor RoutingMembrane::handle_{get,put}_data_response as preparation for use with PureSentinel
-    - [ ] [MAID-1180](https://maidsafe.atlassian.net/browse/MAID-1180) MAID-1152 Modify GetDataResponse and PutDataResponse to also contain source group keys
+    - [x] [MAID-1164](https://maidsafe.atlassian.net/browse/MAID-1164) MAID-1152 Refactor RoutingMembrane::handle_put_data as preparation for adding PureSentinel
+    - [x] [MAID-1169](https://maidsafe.atlassian.net/browse/MAID-1169) MAID-1152 Refactor RoutingMembrane::handle_{get,put}_data_response as preparation for use with PureSentinel
+    - [x] [MAID-1180](https://maidsafe.atlassian.net/browse/MAID-1180) MAID-1152 Modify GetDataResponse and PutDataResponse to also contain source group keys
     - [ ] [MAID-1182](https://maidsafe.atlassian.net/browse/MAID-1182) MAID-1152 Implement PureSentinel in RoutingMembrane::handle_put_data_response
     - [ ] [MAID-1183](https://maidsafe.atlassian.net/browse/MAID-1183) MAID-1152 Implement PureSentinel in RoutingMembrane::handle_get_data_response
     - [ ] [MAID-1194](https://maidsafe.atlassian.net/browse/MAID-1194) MAID-1152 Create test for from_group PUT messages
     - [ ] [MAID-1196](https://maidsafe.atlassian.net/browse/MAID-1196) MAID-1152 Create test for from_group PUT response messages
     - [ ] [MAID-1197](https://maidsafe.atlassian.net/browse/MAID-1197) MAID-1152 Create test for from_group GET response messages
     - [ ] [MAID-1207](https://maidsafe.atlassian.net/browse/MAID-1207) MAID-1152 Implement PureSentinel for POST and DELETE messages
-
-### Use public key for all messages
-- [ ] [MAID-1255](https://maidsafe.atlassian.net/browse/MAID-1255) RFC 0001 - Use public key for id on all messages
-    - [ ] [MAID-1256](https://maidsafe.atlassian.net/browse/MAID-1256) MAID-1255 Remove redundant field header.source.reply_to
-    - [ ] [MAID-1257](https://maidsafe.atlassian.net/browse/MAID-1257) MAID-1255 Modify Authority enum
 
 
 ## Future sprints
