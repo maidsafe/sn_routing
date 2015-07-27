@@ -272,7 +272,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 Ok(_) => {},
                                 Err(_) => {
                                     // on any error, handle as IAm
-                                    let _ = self.handle_who_are_you(&endpoint, bytes);
+                                    let _ = self.handle_i_am(&endpoint, bytes);
                                 },
                             }
 
@@ -285,7 +285,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 Ok(_) => {},
                                 Err(_) => {
                                     // on any error, handle as IAm
-                                    let _ = self.handle_who_are_you(&endpoint, bytes);
+                                    let _ = self.handle_i_am(&endpoint, bytes);
                                 },
                             }
                         }
@@ -791,124 +791,118 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.send_swarm_or_parallel(&message)
     }
 
-    // ---- Who Are You ---------------------------------------------------------
+    // ---- I Am connection identification --------------------------------------------------------
 
-    fn handle_who_are_you(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
+    fn handle_i_am(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
         -> RoutingResult {
         match decode::<IAm>(&serialised_message) {
-            Ok(i_am_msg) => {
-                // FIXME: validate signature of nonce
-                ignore(self.handle_i_am(endpoint.clone(), i_am_msg));
+            Ok(i_am) => {
+                let mut trigger_handle_churn = false;
+                match i_am.public_id.is_relocated() {
+                    // if it is relocated, we consider the connection for our routing table
+                    true => {
+                        // check we have a cache for his public id from the relocation procedure
+                        match self.public_id_cache.get(&i_am.public_id.name()) {
+                            Some(cached_public_id) => {
+                                // check the full fob received corresponds, not just the names
+                                if cached_public_id == &i_am.public_id {
+                                    let peer_endpoints = vec![endpoint.clone()];
+                                    let peer_node_info = NodeInfo::new(i_am.public_id.clone(), peer_endpoints,
+                                        Some(endpoint.clone()));
+                                    // FIXME: node info cloned for debug printout below
+                                    let (added, _) = self.routing_table.add_node(peer_node_info.clone());
+                                    // TODO: drop dropped node in connection_manager
+                                    if !added {
+                                        info!("RT (size : {:?}) refused connection on {:?} as {:?}
+                                            from routing table.", self.routing_table.size(),
+                                            endpoint, i_am.public_id.name());
+                                        self.relay_map.remove_unknown_connection(endpoint);
+                                        self.connection_manager.drop_node(endpoint.clone());
+                                        return Err(RoutingError::RefusedFromRoutingTable); }
+                                    info!("RT (size : {:?}) added connected node {:?} on {:?}",
+                                        self.routing_table.size(), peer_node_info.fob.name(), endpoint);
+                                    trigger_handle_churn = self.routing_table
+                                        .address_in_our_close_group_range(&peer_node_info.fob.name());
+                                } else {
+                                    info!("I Am, relocated name {:?} conflicted with cached fob.",
+                                        i_am.public_id.name());
+                                    self.relay_map.remove_unknown_connection(endpoint);
+                                    self.connection_manager.drop_node(endpoint.clone());
+                                }
+                            },
+                            None => {
+                                // if we are connecting to an existing group
+              // FIXME: ConnectRequest had target name signed by us; so no state held on response
+              // I Am by default just has a nonce; now we will accept everyone, but we can avoid state,
+              // by repeating the Who Are You message, this time with the nonce as his name.
+              // So we check if the doubly signed nonce is his name, if so, add him to RT;
+              // if not do second WhoAreYou as above;
+              // we can do 512 + 1 bit to flag and break an endless loop
+                                match self.routing_table.check_node(&i_am.public_id.name()) {
+                                    true => {
+                                        let peer_endpoints = vec![endpoint.clone()];
+                                        let peer_node_info = NodeInfo::new(i_am.public_id.clone(),
+                                            peer_endpoints, Some(endpoint.clone()));
+                                        // FIXME: node info cloned for debug printout below
+                                        let (added, _) = self.routing_table.add_node(
+                                            peer_node_info.clone());
+                                        // TODO: drop dropped node in connection_manager
+                                        if !added {
+                                            info!("RT (size : {:?}) refused connection on {:?} as {:?}
+                                                from routing table.", self.routing_table.size(),
+                                                endpoint, i_am.public_id.name());
+                                            self.relay_map.remove_unknown_connection(endpoint);
+                                            self.connection_manager.drop_node(endpoint.clone());
+                                            return Err(RoutingError::RefusedFromRoutingTable); }
+                                        info!("RT (size : {:?}) added connected node {:?} on {:?}",
+                                            self.routing_table.size(), peer_node_info.fob.name(), endpoint);
+                                        trigger_handle_churn = self.routing_table
+                                            .address_in_our_close_group_range(&peer_node_info.fob.name());
+                                    },
+                                    false => {
+                                        info!("Dropping connection on {:?} as {:?} is relocated,
+                                            but not cached, or marked in our RT.",
+                                            endpoint, i_am.public_id.name());
+                                        self.relay_map.remove_unknown_connection(endpoint);
+                                        self.connection_manager.drop_node(endpoint.clone());
+                                    }
+                                };
+                            }
+                        }
+                    },
+                    // if it is not relocated, we consider the connection for our relay_map
+                    // but with unknown connect request we already successfully relay for an relocated node
+                    false => {
+                        info!("I Am unrelocated {:?} on {:?}. Not Acting on this result.",
+                            i_am.public_id.name(), endpoint);
+                    }
+                };
+                if trigger_handle_churn {
+                    info!("Handle CHURN new node {:?}", i_am.public_id.name());
+                    let mut close_group : Vec<NameType> = self.routing_table
+                            .our_close_group().iter()
+                            .map(|node_info| node_info.fob.name())
+                            .collect::<Vec<NameType>>();
+                    close_group.insert(0, self.id.name().clone());
+                    let churn_actions = self.mut_interface().handle_churn(close_group);
+                    for action in churn_actions {
+                        match action {
+                            MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                            MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                            MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                            MethodCall::Post { destination: x, content: y } => self.post(x, y),
+                            MethodCall::Delete { name: x, data : y } => self.delete(x, y),
+                            MethodCall::Forward { destination } =>
+                                info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination),
+                            MethodCall::Reply { data: _data } =>
+                                info!("IGNORED: on handle_churn MethodCall:Reply is not a Valid action")
+                        };
+                    }
+                }
                 Ok(())
             },
             Err(_) => Err(RoutingError::UnknownMessageType)
         }
-    }
-
-    fn handle_i_am(&mut self, endpoint: Endpoint, i_am: IAm) -> RoutingResult {
-        let mut trigger_handle_churn = false;
-        match i_am.public_id.is_relocated() {
-            // if it is relocated, we consider the connection for our routing table
-            true => {
-                // check we have a cache for his public id from the relocation procedure
-                match self.public_id_cache.get(&i_am.public_id.name()) {
-                    Some(cached_public_id) => {
-                        // check the full fob received corresponds, not just the names
-                        if cached_public_id == &i_am.public_id {
-                            let peer_endpoints = vec![endpoint.clone()];
-                            let peer_node_info = NodeInfo::new(i_am.public_id.clone(), peer_endpoints,
-                                Some(endpoint.clone()));
-                            // FIXME: node info cloned for debug printout below
-                            let (added, _) = self.routing_table.add_node(peer_node_info.clone());
-                            // TODO: drop dropped node in connection_manager
-                            if !added {
-                                info!("RT (size : {:?}) refused connection on {:?} as {:?}
-                                    from routing table.", self.routing_table.size(),
-                                    endpoint, i_am.public_id.name());
-                                self.relay_map.remove_unknown_connection(&endpoint);
-                                self.connection_manager.drop_node(endpoint);
-                                return Err(RoutingError::RefusedFromRoutingTable); }
-                            info!("RT (size : {:?}) added connected node {:?} on {:?}",
-                                self.routing_table.size(), peer_node_info.fob.name(), endpoint);
-                            trigger_handle_churn = self.routing_table
-                                .address_in_our_close_group_range(&peer_node_info.fob.name());
-                        } else {
-                            info!("I Am, relocated name {:?} conflicted with cached fob.",
-                                i_am.public_id.name());
-                            self.relay_map.remove_unknown_connection(&endpoint);
-                            self.connection_manager.drop_node(endpoint);
-                        }
-                    },
-                    None => {
-                        // if we are connecting to an existing group
-      // FIXME: ConnectRequest had target name signed by us; so no state held on response
-      // I Am by default just has a nonce; now we will accept everyone, but we can avoid state,
-      // by repeating the Who Are You message, this time with the nonce as his name.
-      // So we check if the doubly signed nonce is his name, if so, add him to RT;
-      // if not do second WhoAreYou as above;
-      // we can do 512 + 1 bit to flag and break an endless loop
-                        match self.routing_table.check_node(&i_am.public_id.name()) {
-                            true => {
-                                let peer_endpoints = vec![endpoint.clone()];
-                                let peer_node_info = NodeInfo::new(i_am.public_id.clone(),
-                                    peer_endpoints, Some(endpoint.clone()));
-                                // FIXME: node info cloned for debug printout below
-                                let (added, _) = self.routing_table.add_node(
-                                    peer_node_info.clone());
-                                // TODO: drop dropped node in connection_manager
-                                if !added {
-                                    info!("RT (size : {:?}) refused connection on {:?} as {:?}
-                                        from routing table.", self.routing_table.size(),
-                                        endpoint, i_am.public_id.name());
-                                    self.relay_map.remove_unknown_connection(&endpoint);
-                                    self.connection_manager.drop_node(endpoint);
-                                    return Err(RoutingError::RefusedFromRoutingTable); }
-                                info!("RT (size : {:?}) added connected node {:?} on {:?}",
-                                    self.routing_table.size(), peer_node_info.fob.name(), endpoint);
-                                trigger_handle_churn = self.routing_table
-                                    .address_in_our_close_group_range(&peer_node_info.fob.name());
-                            },
-                            false => {
-                                info!("Dropping connection on {:?} as {:?} is relocated,
-                                    but not cached, or marked in our RT.",
-                                    endpoint, i_am.public_id.name());
-                                self.relay_map.remove_unknown_connection(&endpoint);
-                                self.connection_manager.drop_node(endpoint);
-                            }
-                        };
-                    }
-                }
-            },
-            // if it is not relocated, we consider the connection for our relay_map
-            // but with unknown connect request we already successfully relay for an relocated node
-            false => {
-                info!("I Am unrelocated {:?} on {:?}. Not Acting on this result.",
-                    i_am.public_id.name(), endpoint);
-            }
-        };
-        if trigger_handle_churn {
-            info!("Handle CHURN new node {:?}", i_am.public_id.name());
-            let mut close_group : Vec<NameType> = self.routing_table
-                    .our_close_group().iter()
-                    .map(|node_info| node_info.fob.name())
-                    .collect::<Vec<NameType>>();
-            close_group.insert(0, self.id.name().clone());
-            let churn_actions = self.mut_interface().handle_churn(close_group);
-            for action in churn_actions {
-                match action {
-                    MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                    MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
-                    MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
-                    MethodCall::Post { destination: x, content: y } => self.post(x, y),
-                    MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                    MethodCall::Forward { destination } =>
-                        info!("IGNORED: on handle_churn MethodCall:Forward {} is not a Valid action", destination),
-                    MethodCall::Reply { data: _data } =>
-                        info!("IGNORED: on handle_churn MethodCall:Reply is not a Valid action")
-                };
-            }
-        }
-        Ok(())
     }
 
     fn send_i_am_msg(&mut self, endpoint: Endpoint) -> RoutingResult {
