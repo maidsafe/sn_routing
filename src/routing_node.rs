@@ -206,30 +206,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         Ok(())
     }
 
-    fn construct_connect_request_msg(&mut self, destination: &NameType,
-            accepting_on: Vec<Endpoint>) -> Result<SignedMessage, CborError> {
-        let message_id = self.get_next_message_id();
-
-        let connect_request = ConnectRequest {
-            local_endpoints    : accepting_on,
-            external_endpoints : vec![],
-            requester_id       : self.own_name.clone(),
-            receiver_id        : destination.clone(),
-            requester_fob      : PublicId::new(&self.id),
-        };
-
-        let message =  RoutingMessage {
-            destination  : DestinationAddress::Direct(destination.clone()),
-            source       : SourceAddress::RelayedForNode(self.id.name(), self.id.name()),
-            orig_message : None,
-            message_type : MessageType::ConnectRequest(connect_request),
-            message_id   : message_id.clone(),
-            authority    : Authority::ManagedNode,
-        };
-
-        SignedMessage::new(&message, self.id.signing_private_key())
-    }
-
     fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId)
             -> Result<SignedMessage, CborError> {
 
