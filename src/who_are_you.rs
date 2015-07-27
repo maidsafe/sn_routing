@@ -22,7 +22,7 @@ use types::Address;
 
 #[derive(Debug, Eq, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct IAm {
-    pub address: types::Address,
+    pub address: Address,
     pub public_id: PublicId,
 }
 

@@ -51,7 +51,7 @@ use data::{Data, DataRequest};
 use types;
 use types::{MessageId, Bytes, DestinationAddress, SourceAddress, Address};
 use authority::{Authority, our_authority};
-use who_are_you::{WhoAreYou, IAm};
+use who_are_you::IAm;
 use messages::{RoutingMessage, SignedMessage, MessageType,
                ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
 use error::{RoutingError, ResponseError, InterfaceError};
@@ -267,11 +267,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             ignore(self.message_received(message));
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
-                            // only expect WhoAreYou or IAm message
+                            // only expect IAm message
                             match self.handle_unknown_connect_request(&endpoint, message) {
                                 Ok(_) => {},
                                 Err(_) => {
-                                    // on any error, handle as WhoAreYou/IAm
+                                    // on any error, handle as IAm
                                     let _ = self.handle_who_are_you(&endpoint, bytes);
                                 },
                             }
@@ -284,7 +284,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                             match self.handle_unknown_connect_request(&endpoint, message) {
                                 Ok(_) => {},
                                 Err(_) => {
-                                    // on any error, handle as WhoAreYou/IAm
+                                    // on any error, handle as IAm
                                     let _ = self.handle_who_are_you(&endpoint, bytes);
                                 },
                             }
@@ -380,7 +380,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             None => {
                 self.relay_map.register_unknown_connection(endpoint.clone());
                 // Send "Who are you?" message
-                ignore(self.send_who_are_you_msg(endpoint));
+                ignore(self.send_i_am_msg(endpoint));
             }
       }
     }
@@ -795,19 +795,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn handle_who_are_you(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
         -> RoutingResult {
-        match decode::<WhoAreYou>(&serialised_message) {
-            Ok(who_are_you_msg) => {
-                ignore(self.send_i_am_msg(endpoint.clone(), who_are_you_msg.nonce));
+        match decode::<IAm>(&serialised_message) {
+            Ok(i_am_msg) => {
+                // FIXME: validate signature of nonce
+                ignore(self.handle_i_am(endpoint.clone(), i_am_msg));
                 Ok(())
             },
-            Err(_) => match decode::<IAm>(&serialised_message) {
-                Ok(i_am_msg) => {
-                    // FIXME: validate signature of nonce
-                    ignore(self.handle_i_am(endpoint.clone(), i_am_msg));
-                    Ok(())
-                },
-                Err(_) => Err(RoutingError::UnknownMessageType)
-            }
+            Err(_) => Err(RoutingError::UnknownMessageType)
         }
     }
 
@@ -917,15 +911,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn send_who_are_you_msg(&mut self, endpoint: Endpoint) -> RoutingResult {
-        let message = try!(encode(&WhoAreYou {nonce : 0u8}));
-        ignore(self.connection_manager.send(endpoint, message));
-        Ok(())
-    }
-
-    fn send_i_am_msg(&mut self, endpoint: Endpoint, _nonce : u8) -> RoutingResult {
+    fn send_i_am_msg(&mut self, endpoint: Endpoint) -> RoutingResult {
         // FIXME: sign proper nonce
-        let message = try!(encode(&IAm {public_id : PublicId::new(&self.id)}));
+        let message = try!(encode(&IAm {
+            address: types::Address::Node(self.id.name()),
+            public_id : PublicId::new(&self.id)}));
         ignore(self.connection_manager.send(endpoint, message));
         Ok(())
     }
