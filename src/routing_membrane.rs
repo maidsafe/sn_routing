@@ -564,23 +564,23 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         message.clone(), request.clone()),
                     MessageType::GetDataResponse(ref response) => {
                         match message.actual_source() {
-                            Address::Node(_) =>
-                                self.handle_client_get_data_response(message_wrap, message.clone(),
-                                                                     response.clone()),
-                            Address::Client(_)
+                            Address::Node(_)
                                 => self.handle_group_get_data_response(message_wrap,
                                                                        message.clone(),
                                                                        response.clone()),
+                           Address::Client(_) =>
+                               self.handle_client_get_data_response(message_wrap, message.clone(),
+                                                                    response.clone()),
                         }
                     },
                     MessageType::PutDataResponse(ref response, ref _map) => {
                         match message.actual_source() {
                             Address::Node(_) =>
-                                self.handle_client_put_data_response(message_wrap, message.clone(),
-                                                                     response.clone()),
-                            Address::Client(_) =>
                                 self.handle_group_put_data_response(message_wrap, message.clone(),
                                                                     response.clone()),
+                            Address::Client(_) =>
+                                self.handle_client_put_data_response(message_wrap, message.clone(),
+                                                                     response.clone()),
                         }
                     },
                     MessageType::PutData(ref data) => {
