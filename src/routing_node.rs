@@ -86,6 +86,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         // keep state on whether we still might be the first around.
         let mut possible_first = true;
         let mut relocated_name : Option<NameType> = None;
+        let mut sent_name_request = false;
 
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output.clone());
@@ -129,7 +130,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                                         Some(_) => continue, // name already set
                                                         None => new_bootstrap_name =
                                                             Some((bootstrap_endpoint.clone(),
-                                                                Some(node_name.clone()))),
+                                                            Some(node_name.clone()))),
                                                     }
                                                 },
                                                 _ => continue, // only care about a Node
@@ -142,11 +143,35 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                         },
                         None => {}
                     }
-                    match new_bootstrap_name {
+                    // store the recovered relay name
+                    match new_bootstrap_name.clone() {
                         Some(new_endpoint_name_pair) =>
-                            self.bootstrap = Some(new_endpoint_name_pair.clone()),
+                            self.bootstrap = Some(new_endpoint_name_pair),
                         None => {},
                     };
+                    // try to send a request for a network name with PutPublicId
+                    match new_bootstrap_name {  // avoid borrowing self
+                        Some((ref bootstrap_endpoint, ref opt_bootstrap_name)) => {
+                            match *opt_bootstrap_name {
+                                Some(bootstrap_name) => {
+                                    // we have aquired a bootstrap endpoint and relay name
+                                    if sent_name_request {
+                                        // now send a PutPublicId request
+                                        let our_public_id = PublicId::new(&self.id);
+                                        let put_public_id_msg
+                                            = try!(self.construct_put_public_id_msg(
+                                            &our_public_id, &bootstrap_name));
+                                        let serialised_message = try!(encode(&put_public_id_msg));
+                                        ignore(cm.send(bootstrap_endpoint.clone(),
+                                            serialised_message));
+                                        sent_name_request = true;
+                                    }
+                                },
+                                None => {}
+                            }
+                        },
+                        None => {}
+                    }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
                     // only allow first if we still have the possibility
@@ -174,11 +199,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             // register the bootstrap endpoint
                             self.bootstrap = Some((endpoint.clone(), None));
                             // and try to request a name from this endpoint
-                            let our_public_id = PublicId::new(&self.id);
-                            let put_public_id_msg
-                                = try!(self.construct_put_public_id_msg(&our_public_id));
-                            let serialised_message = try!(encode(&put_public_id_msg));
-                            ignore(cm.send(endpoint, serialised_message));
+
                         },
                         Some(_) => {
                             // only work with a single bootstrap endpoint (for now)
@@ -206,14 +227,14 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         Ok(())
     }
 
-    fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId)
-            -> Result<SignedMessage, CborError> {
+    fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId,
+        relay_name: &NameType) -> Result<SignedMessage, CborError> {
 
         let message_id = self.get_next_message_id();
 
         let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
-            source       : SourceAddress::RelayedForNode(self.id.name(), self.id.name()),
+            source       : SourceAddress::RelayedForNode(relay_name.clone(), self.id.name()),
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
