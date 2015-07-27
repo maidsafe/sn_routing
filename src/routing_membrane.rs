@@ -1196,24 +1196,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //        None => return Ok(())
         //};
 
-        for method_call in self.mut_interface().handle_put_response(from_authority, from, response.error.clone()) {
+        for method_call in self.mut_interface().handle_put_response(from_authority, from,
+                                                                    response.error.clone()) {
             match method_call {
                 MethodCall::Put { destination: x, content: y, } => self.put(x, y),
                 MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
-                MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                MethodCall::Refresh { type_tag, from_group, payload }
+                    => self.refresh(type_tag, from_group, payload),
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                 MethodCall::Forward { destination } => {
-                    let message_id = self.get_next_message_id();
-                    let message = RoutingMessage {
-                        destination  : DestinationAddress::Direct(resolved.0.destination_group.clone()),
-                        source       : SourceAddress::Direct(self.id.name()),
-                        orig_message : None,
-                        message_type : MessageType::PutDataResponse(resolved.0.response.clone(), self.group_pub_keys()),
-                        message_id   : message_id,
-                        authority    : our_authority.clone(),
-                    };
-                    ignore(self.forward(&try!(SignedMessage::new(&message, self.id.signing_private_key())), &message, destination));
+                    let msg = resolved.0.create_forward(self.id.name(), self.group_pub_keys(),
+                                                        self.get_next_message_id());
+                    ignore(self.send_swarm_or_parallel(&msg));
                 }
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_put_data_response MethodCall:Reply is not a Valid action")
@@ -1602,16 +1597,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                 MethodCall::Forward { destination } => {
-                    let message_id = self.get_next_message_id();
-                    let message = RoutingMessage {
-                        destination  : DestinationAddress::Direct(resolved.destination_group.clone()),
-                        source       : SourceAddress::Direct(self.id.name()),
-                        orig_message : None,
-                        message_type : MessageType::GetDataResponse(resolved.response.clone()),
-                        message_id   : message_id,
-                        authority    : our_authority.clone(),
-                    };
-                    ignore(self.forward(&try!(SignedMessage::new(&message, self.id.signing_private_key())), &message, destination));
+                    let msg = resolved.create_forward(self.id.name(), self.get_next_message_id());
+                    ignore(self.send_swarm_or_parallel(&msg));
                 },
                 MethodCall::Reply { data: _data } =>
                     info!("IGNORED: on handle_get_data_response MethodCall:Reply is not a Valid action")

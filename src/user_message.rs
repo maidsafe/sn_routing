@@ -15,6 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::collections::{BTreeMap};
+
+use sodiumoxide::crypto::sign::{PublicKey};
+
 use authority::Authority;
 use messages::{RoutingMessage, ErrorReturn, GetDataResponse};
 use name_type::NameType;
@@ -102,6 +106,20 @@ impl SentinelPutResponse {
             message_id: message.message_id
         }
     }
+    pub fn create_forward(&self,
+                          src               : NameType,
+                          group_public_keys : BTreeMap<NameType, PublicKey>,
+                          msg_id            : u32) -> RoutingMessage {
+        RoutingMessage {
+            destination  : DestinationAddress::Direct(self.destination_group),
+            source       : SourceAddress::Direct(src),
+            orig_message : None, // TODO
+            message_type : MessageType::PutDataResponse(self.response.clone(),
+                                                        group_public_keys),
+            message_id   : msg_id,
+            authority    : self.our_authority.clone(),
+        }
+    }
 }
 
 impl Source<NameType> for SentinelPutResponse {
@@ -130,6 +148,18 @@ impl SentinelGetDataResponse {
             source_authority: message.authority,
             our_authority: our_authority,
             message_id: message.message_id
+        }
+    }
+    pub fn create_forward(&self,
+                          src    : NameType,
+                          msg_id : u32) -> RoutingMessage {
+        RoutingMessage {
+            destination  : DestinationAddress::Direct(self.destination_group),
+            source       : SourceAddress::Direct(src),
+            orig_message : None, // TODO
+            message_type : MessageType::GetDataResponse(self.response.clone()),
+            message_id   : msg_id,
+            authority    : self.our_authority.clone(),
         }
     }
 }
