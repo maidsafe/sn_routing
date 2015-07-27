@@ -255,11 +255,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 Ok(message) => message,
                                 Err(_)      => continue,
                             };
-
-                            // Forward
-                            ignore(self.send_swarm_or_parallel_or_relay(&message));
+                            // forward, as we will reflect onto ourselves
+                            // when there are no connections in the routing table.
+                            ignore(self.send_swarm_or_parallel(&message));
                         },
                         Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
+                            // FIXME(ben 24/07/2015)
+                            // 1. we should not longer rely on messages from our bootstrap connection
+                            // 2. our bootstrap connection might send us direct (ie non-routing)
+                            //    messages
                             ignore(self.message_received(message));
                         },
                         Some(ConnectionName::UnidentifiedConnection) => {
