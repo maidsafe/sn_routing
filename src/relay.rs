@@ -26,22 +26,18 @@ use time::{SteadyTime};
 use crust::Endpoint;
 use id::Id;
 use public_id::PublicId;
+use types::Address;
 use NameType;
 use sodiumoxide::crypto::sign;
 
 const MAX_RELAY : usize = 100;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub enum IdType {
-    Node(NameType),
-    Client(sign::PublicKey)
-}
 
 /// The relay map is used to maintain a list of contacts for whom
 /// we are relaying messages, when we are ourselves connected to the network.
 pub struct RelayMap {
-    relay_map: BTreeMap<IdType, (PublicId, BTreeSet<Endpoint>)>,
-    lookup_map: HashMap<Endpoint, IdType>,
+    relay_map: BTreeMap<Address, (PublicId, BTreeSet<Endpoint>)>,
+    lookup_map: HashMap<Endpoint, Address>,
     // FIXME : we don't want to store a value; but LRUcache can clear itself out
     // however, we want the explicit timestamp stored and clear it at routing,
     // to drop the connection on clearing; for now CM will just keep all these connections
@@ -71,23 +67,23 @@ impl RelayMap {
             return false;
         }
         // impose limit on number of relay nodes active
-        if !self.relay_map.contains_key(&IdType::Node(relay_info.name()))
+        if !self.relay_map.contains_key(&Address::Node(relay_info.name()))
             && self.relay_map.len() >= MAX_RELAY {
             return false;
         }
         if self.lookup_map.contains_key(&relay_endpoint) {
           return false; }
         self.lookup_map.entry(relay_endpoint.clone())
-                       .or_insert(IdType::Node(relay_info.name()));
+                       .or_insert(Address::Node(relay_info.name()));
         let new_set = || { (relay_info.clone(), BTreeSet::<Endpoint>::new()) };
-        self.relay_map.entry(IdType::Node(relay_info.name())).or_insert_with(new_set).1
+        self.relay_map.entry(Address::Node(relay_info.name())).or_insert_with(new_set).1
                       .insert(relay_endpoint);
         true
     }
 
     /// This removes the provided endpoint and returns a NameType if this endpoint
     /// was the last endpoint assocoiated with this Name; otherwise returns None.
-    pub fn drop_endpoint(&mut self, endpoint_to_drop: &Endpoint) -> Option<IdType> {
+    pub fn drop_endpoint(&mut self, endpoint_to_drop: &Endpoint) -> Option<Address> {
         let mut old_entry = match self.lookup_map.remove(endpoint_to_drop) {
             Some(name) => {
                 match self.relay_map.remove(&name) {
@@ -121,7 +117,7 @@ impl RelayMap {
     /// Returns true if we keep relay endpoints for given name.
     // FIXME(ben) this needs to be used 16/07/2015
     #[allow(dead_code)]
-    pub fn contains_relay_for(&self, relay_name: &IdType) -> bool {
+    pub fn contains_relay_for(&self, relay_name: &Address) -> bool {
         self.relay_map.contains_key(relay_name)
     }
 
@@ -131,7 +127,7 @@ impl RelayMap {
     }
 
     /// Returns Option<NameType> if an endpoint is found
-    pub fn lookup_endpoint(&self, relay_endpoint: &Endpoint) -> Option<IdType> {
+    pub fn lookup_endpoint(&self, relay_endpoint: &Endpoint) -> Option<Address> {
         match self.lookup_map.get(relay_endpoint) {
             Some(name) => Some(name.clone()),
             None => None
@@ -139,7 +135,7 @@ impl RelayMap {
     }
 
     /// This returns a pair of the stored PublicId and a BTreeSet of the stored Endpoints.
-    pub fn get_endpoints(&self, relay_name: &IdType) -> Option<&(PublicId, BTreeSet<Endpoint>)> {
+    pub fn get_endpoints(&self, relay_name: &Address) -> Option<&(PublicId, BTreeSet<Endpoint>)> {
         self.relay_map.get(relay_name)
     }
 
@@ -170,6 +166,7 @@ mod test {
     use crust::Endpoint;
     use id::Id;
     use public_id::PublicId;
+    use types::Address;
     use std::net::SocketAddr;
     use std::str::FromStr;
     use rand::random;
@@ -178,7 +175,7 @@ mod test {
         Endpoint::Tcp(SocketAddr::from_str(&format!("127.0.0.1:{}", random::<u16>())).unwrap())
     }
 
-    fn drop_ip_node(relay_map: &mut RelayMap, ip_node_to_drop: &IdType) {
+    fn drop_ip_node(relay_map: &mut RelayMap, ip_node_to_drop: &Address) {
         match relay_map.relay_map.get(&ip_node_to_drop) {
             Some(relay_entry) => {
                 for endpoint in relay_entry.1.iter() {
@@ -213,7 +210,7 @@ mod test {
         let our_id : Id = Id::new();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
-        let test_id = IdType::Node(test_public_id.name());
+        let test_id = Address::Node(test_public_id.name());
         let test_endpoint = generate_random_endpoint();
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint.clone()));
@@ -230,10 +227,10 @@ mod test {
         let our_id : Id = Id::new();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
-        let test_id = IdType::Node(test_public_id.name());
+        let test_id = Address::Node(test_public_id.name());
         let test_endpoint = generate_random_endpoint();
         let test_conflicting_public_id = PublicId::new(&Id::new());
-        let test_conflicting_id = IdType::Node(test_conflicting_public_id.name());
+        let test_conflicting_id = Address::Node(test_conflicting_public_id.name());
         assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
                                                test_endpoint.clone()));
         assert_eq!(true, relay_map.contains_relay_for(&test_id));
@@ -257,7 +254,7 @@ mod test {
                     new_endpoint)); };
         }
         let test_public_id = PublicId::new(&Id::new());
-        let test_id = IdType::Node(test_public_id.name());
+        let test_id = Address::Node(test_public_id.name());
 
         let mut test_endpoint_1 = generate_random_endpoint();
         let mut test_endpoint_2 = generate_random_endpoint();
