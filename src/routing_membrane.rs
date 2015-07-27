@@ -1001,25 +1001,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Authority::Unknown          => return Err(RoutingError::BadAuthority),
         };
 
-        // FIXME(ben 24/07/2015) plugging in sentinel should go in as a feature;
-        // partial solutions and not-working changes can no longer be accepted to
-        // interfere with the functioning of master.
+        // Temporarily pretend that the sentinel passed, later implement
+        // sentinel.
         let resolved = (SentinelPutRequest::new(message.clone(), data.clone(),
             our_authority.clone(), source_authority), true);
-        // let resolved = match self.put_sentinel.add_claim(
-        //                 SentinelPutRequest::new(message.clone(), data.clone(),
-        //                                         our_authority.clone(), source_authority),
-        //                 source, signed_message.signature().clone(),
-        //                 signed_message.encoded_body().clone(), quorum, quorum) {
-        //                     Some(result) =>  match  result {
-        //                         AddResult::RequestKeys(_) => {
-        //                             // Get Key Request
-        //                             return Ok(())
-        //                         },
-        //                         AddResult::Resolved(request, serialised_claim) => (request, serialised_claim)
-        //                         },
-        //                     None => return Ok(())
-        //                 };
 
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data.clone()) {
             Ok(method_calls) => {
@@ -1178,19 +1163,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
             quorum = self.routing_table.size();
         }
 
-        let resolved = match self.put_response_sentinel.add_claim(
-            SentinelPutResponse::new(message.clone(), response.clone(), our_authority.clone()),
-            source, signed_message.signature().clone(),
-            signed_message.encoded_body().clone(), quorum, quorum) {
-                Some(result) =>  match  result {
-                    AddResult::RequestKeys(_) => {
-                        // Get Key Request
-                        return Ok(())
-                    },
-                    AddResult::Resolved(request, serialised_claim) => (request, serialised_claim)
-                },
-                None => return Ok(())
-        };
+        let resolved = (SentinelPutResponse::new(message.clone(), response.clone(),
+            our_authority.clone()), true);
+
+        //let resolved = match self.put_response_sentinel.add_claim(
+        //    SentinelPutResponse::new(message.clone(), response.clone(), our_authority.clone()),
+        //    source, signed_message.signature().clone(),
+        //    signed_message.encoded_body().clone(), quorum, quorum) {
+        //        Some(result) =>  match  result {
+        //            AddResult::RequestKeys(_) => {
+        //                // Get Key Request
+        //                return Ok(())
+        //            },
+        //            AddResult::Resolved(request, serialised_claim) => (request, serialised_claim)
+        //        },
+        //        None => return Ok(())
+        //};
 
         for method_call in self.mut_interface().handle_put_response(from_authority, from, response.error.clone()) {
             match method_call {
@@ -2037,7 +2025,7 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         assert_eq!(Tester::new().call_operation(put_data_response,
             SourceAddress::Direct(Random::generate_random()),
             DestinationAddress::Direct(Random::generate_random()),
-            Authority::NaeManager(Random::generate_random())).call_count, 0usize);
+            Authority::NaeManager(Random::generate_random())).call_count, 1usize);
     }
 
     #[test]
