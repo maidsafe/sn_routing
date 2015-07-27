@@ -1019,8 +1019,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Temporarily pretend that the sentinel passed, later implement
         // sentinel.
-        let resolved = (SentinelPutRequest::new(message.clone(), data.clone(),
-            our_authority.clone(), source_authority), true);
+        let resolved = (SentinelPutRequest::new(message.clone(), signed_message.clone(),
+                        data.clone(), our_authority.clone(), source_authority), true);
 
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data.clone()) {
             Ok(method_calls) => {
@@ -1179,8 +1179,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             quorum = self.routing_table.size();
         }
 
-        let resolved = (SentinelPutResponse::new(message.clone(), response.clone(),
-            our_authority.clone()), true);
+        let resolved = (SentinelPutResponse::new(message.clone(), signed_message.clone(),
+                        response.clone(), our_authority.clone()), true);
 
         //let resolved = match self.put_response_sentinel.add_claim(
         //    SentinelPutResponse::new(message.clone(), response.clone(), our_authority.clone()),
@@ -1573,7 +1573,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             quorum = self.routing_table.size();
         }
 
-        let resolved = SentinelGetDataResponse::new(message, response, our_authority.clone());
+        let resolved = SentinelGetDataResponse::new(message, signed_message, response,
+                                                    our_authority.clone());
 
         //let resolved = match self.get_data_response_sentinel.add_claim(
         //    SentinelGetDataResponse::new(message.clone(), response.clone(), our_authority.clone()),
@@ -1979,25 +1980,26 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let sign_keys2 =  crypto::sign::gen_keypair();
         name_key_pairs.push((source_name_type1.clone(), sign_keys1.0.clone()));
         name_key_pairs.push((source_name_type2.clone(), sign_keys2.0.clone()));
-        let request1 = SentinelPutRequest::new(message1.clone(), data.clone(),
-                                              Authority::NodeManager(dest_name_type),
-                                              data.name());
-        let request2 = SentinelPutRequest::new(message2.clone(), data.clone(),
-                                               Authority::NodeManager(dest_name_type),
-                                               data.name());
+        let signed_message1 = SignedMessage::new(&message1, &sign_keys1.1).unwrap();
+        let signed_message2 = SignedMessage::new(&message2, &sign_keys1.1).unwrap();
+        let request1 = SentinelPutRequest::new(
+            message1.clone(), signed_message1.clone(), data.clone(),
+            Authority::NodeManager(dest_name_type), data.name());
+        let request2 = SentinelPutRequest::new(
+            message2.clone(), signed_message2.clone(), data.clone(),
+            Authority::NodeManager(dest_name_type), data.name());
 
         let mut tester = Tester::new();
-        let signed_message1 = SignedMessage::new(&message1, &sign_keys1.1);
+
         let connection_name1 = ConnectionName::Routing(source_name_type1);
-        let signed_message2 = SignedMessage::new(&message2, &sign_keys1.1);
         let connection_name2 = ConnectionName::Routing(source_name_type2);
 
-        let _ = tester.membrane.message_received(signed_message1.unwrap());
+        let _ = tester.membrane.message_received(signed_message1);
         assert!(tester.membrane.put_sentinel.add_keys(
             request1.clone(), Random::generate_random(), name_key_pairs.clone(), 2usize).is_none());
         assert!(tester.membrane.put_sentinel.add_keys(
             request2.clone(), Random::generate_random(), name_key_pairs, 2usize).is_none());
-        let _ = tester.membrane.message_received(signed_message2.unwrap());
+        let _ = tester.membrane.message_received(signed_message2);
         let stats = tester.stats.clone();
         let stats_value = stats.lock().unwrap();
         assert_eq!(stats_value.call_count, 1usize);

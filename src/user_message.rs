@@ -20,7 +20,7 @@ use std::collections::{BTreeMap};
 use sodiumoxide::crypto::sign::{PublicKey};
 
 use authority::Authority;
-use messages::{RoutingMessage, ErrorReturn, GetDataResponse};
+use messages::{ErrorReturn, GetDataResponse, RoutingMessage, SignedMessage};
 use name_type::NameType;
 use sentinel::pure_sentinel::Source;
 use types::{MessageId, SourceAddress, DestinationAddress};
@@ -35,17 +35,19 @@ pub struct SentinelPutRequest {
     pub source_authority: Authority,
     pub our_authority: Authority,
     pub message_id: MessageId,
+    pub orig_message: SignedMessage,
 }
 
 impl SentinelPutRequest {
-    pub fn new(message: RoutingMessage, data: Data, our_authority: Authority, source_group: NameType)
-        -> SentinelPutRequest {
+    pub fn new(message: RoutingMessage, orig_message: SignedMessage, data: Data,
+               our_authority: Authority, source_group: NameType) -> SentinelPutRequest {
         SentinelPutRequest { data: data,
                              source_group: source_group,
                              destination_group: message.destination.non_relayed_destination(),
                              source_authority: message.authority,
                              our_authority: our_authority,
-                             message_id: message.message_id
+                             message_id: message.message_id,
+                             orig_message: orig_message
                            }
     }
 
@@ -56,7 +58,7 @@ impl SentinelPutRequest {
         RoutingMessage {
             destination  : DestinationAddress::Direct(dst),
             source       : SourceAddress::Direct(src),
-            orig_message : None, // TODO
+            orig_message : Some(self.orig_message.clone()),
             message_type : MessageType::PutData(self.data.clone()),
             message_id   : msg_id,
             authority    : self.our_authority.clone(),
@@ -70,7 +72,7 @@ impl SentinelPutRequest {
         RoutingMessage {
             destination  : DestinationAddress::Direct(self.source_group),
             source       : SourceAddress::Direct(self.destination_group),
-            orig_message : None,
+            orig_message : Some(self.orig_message.clone()),
             message_type : reply_data,
             message_id   : self.message_id,
             authority    : self.our_authority.clone(),
@@ -91,19 +93,21 @@ pub struct SentinelPutResponse {
     pub destination_group: NameType,
     pub source_authority: Authority,
     pub our_authority: Authority,
-    pub message_id: MessageId
+    pub message_id: MessageId,
+    pub orig_message: SignedMessage,
 }
 
 impl SentinelPutResponse {
-    pub fn new(message: RoutingMessage, response: ErrorReturn, our_authority: Authority)
-        -> SentinelPutResponse {
+    pub fn new(message: RoutingMessage, orig_message: SignedMessage, response: ErrorReturn,
+               our_authority: Authority) -> SentinelPutResponse {
         SentinelPutResponse {
             response: response,
             source_group: message.source.non_relayed_source(),
             destination_group: message.destination.non_relayed_destination(),
             source_authority: message.authority,
             our_authority: our_authority,
-            message_id: message.message_id
+            message_id: message.message_id,
+            orig_message: orig_message
         }
     }
     pub fn create_forward(&self,
@@ -113,7 +117,7 @@ impl SentinelPutResponse {
         RoutingMessage {
             destination  : DestinationAddress::Direct(self.destination_group),
             source       : SourceAddress::Direct(src),
-            orig_message : None, // TODO
+            orig_message : Some(self.orig_message.clone()),
             message_type : MessageType::PutDataResponse(self.response.clone(),
                                                         group_public_keys),
             message_id   : msg_id,
@@ -135,19 +139,21 @@ pub struct SentinelGetDataResponse {
     pub destination_group: NameType,
     pub source_authority: Authority,
     pub our_authority: Authority,
-    pub message_id: MessageId
+    pub message_id: MessageId,
+    pub orig_message: SignedMessage,
 }
 
 impl SentinelGetDataResponse {
-    pub fn new(message: RoutingMessage, response: GetDataResponse, our_authority: Authority)
-        -> SentinelGetDataResponse {
+    pub fn new(message: RoutingMessage, orig_message: SignedMessage, response: GetDataResponse,
+               our_authority: Authority) -> SentinelGetDataResponse {
         SentinelGetDataResponse {
             response: response,
             source_group: message.source.non_relayed_source(),
             destination_group: message.destination.non_relayed_destination(),
             source_authority: message.authority,
             our_authority: our_authority,
-            message_id: message.message_id
+            message_id: message.message_id,
+            orig_message: orig_message,
         }
     }
     pub fn create_forward(&self,
@@ -156,7 +162,7 @@ impl SentinelGetDataResponse {
         RoutingMessage {
             destination  : DestinationAddress::Direct(self.destination_group),
             source       : SourceAddress::Direct(src),
-            orig_message : None, // TODO
+            orig_message : Some(self.orig_message.clone()),
             message_type : MessageType::GetDataResponse(self.response.clone()),
             message_id   : msg_id,
             authority    : self.our_authority.clone(),
