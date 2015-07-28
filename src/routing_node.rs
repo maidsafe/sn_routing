@@ -30,7 +30,8 @@ use node_interface::{Interface, CreatePersonas};
 use routing_membrane::RoutingMembrane;
 use id::Id;
 use public_id::PublicId;
-use types::{MessageId, SourceAddress, DestinationAddress};
+use who_are_you::IAm;
+use types::{MessageId, SourceAddress, DestinationAddress, Address};
 use utils::{encode, decode};
 use authority::{Authority};
 use messages::{RoutingMessage, SignedMessage, MessageType, ConnectRequest};
@@ -85,6 +86,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         // keep state on whether we still might be the first around.
         let mut possible_first = true;
         let mut relocated_name : Option<NameType> = None;
+        let mut sent_name_request = false;
 
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output.clone());
@@ -94,11 +96,12 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             match event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    let mut new_bootstrap_name :
+                        Option<(Endpoint, Option<NameType>)> = None;
                     match self.bootstrap {
-                        Some((ref bootstrap_endpoint, _)) => {
+                        Some((ref bootstrap_endpoint, ref bootstrap_name)) => {
                             debug_assert!(&endpoint == bootstrap_endpoint);
                             match decode::<SignedMessage>(&bytes) {
-                                Err(_) => continue,
                                 Ok(wrapped_message) => {
                                     match wrapped_message.get_routing_message() {
                                         Err(_) => continue,
@@ -116,7 +119,55 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                             }
                                         }
                                     }
+                                },
+                                Err(_) => {
+                                    // Try to decode it as an IAm message
+                                    match decode::<IAm>(&bytes) {
+                                        Ok(he_is_msg) => {
+                                            match he_is_msg.address {
+                                                Address::Node(node_name) => {
+                                                    match *bootstrap_name {
+                                                        Some(_) => continue, // name already set
+                                                        None => new_bootstrap_name =
+                                                            Some((bootstrap_endpoint.clone(),
+                                                            Some(node_name.clone()))),
+                                                    }
+                                                },
+                                                _ => continue, // only care about a Node
+                                            }
+                                        },
+                                        Err(_) => continue,
+                                    };
                                 }
+                            };
+                        },
+                        None => {}
+                    }
+                    // store the recovered relay name
+                    match new_bootstrap_name.clone() {
+                        Some(new_endpoint_name_pair) =>
+                            self.bootstrap = Some(new_endpoint_name_pair),
+                        None => {},
+                    };
+                    // try to send a request for a network name with PutPublicId
+                    match new_bootstrap_name {  // avoid borrowing self
+                        Some((ref bootstrap_endpoint, ref opt_bootstrap_name)) => {
+                            match *opt_bootstrap_name {
+                                Some(bootstrap_name) => {
+                                    // we have aquired a bootstrap endpoint and relay name
+                                    if !sent_name_request {
+                                        // now send a PutPublicId request
+                                        let our_public_id = PublicId::new(&self.id);
+                                        let put_public_id_msg
+                                            = try!(self.construct_put_public_id_msg(
+                                            &our_public_id, &bootstrap_name));
+                                        let serialised_message = try!(encode(&put_public_id_msg));
+                                        ignore(cm.send(bootstrap_endpoint.clone(),
+                                            serialised_message));
+                                        sent_name_request = true;
+                                    }
+                                },
+                                None => {}
                             }
                         },
                         None => {}
@@ -147,12 +198,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             possible_first = false;
                             // register the bootstrap endpoint
                             self.bootstrap = Some((endpoint.clone(), None));
-                            // and try to request a name from this endpoint
-                            let our_public_id = PublicId::new(&self.id);
-                            let put_public_id_msg
-                                = try!(self.construct_put_public_id_msg(&our_public_id));
-                            let serialised_message = try!(encode(&put_public_id_msg));
-                            ignore(cm.send(endpoint, serialised_message));
+                            // and send an IAm message to our bootstrap endpoint
+                            let i_am_message = try!(encode(&IAm {
+                                // before we retrieve a name for ourselves from the network
+                                // we identify ourselves with the sign::PublicKey
+                                address: Address::Client(self.id.signing_public_key()),
+                                public_id: PublicId::new(&self.id)}));
+                            ignore(cm.send(endpoint, i_am_message));
                         },
                         Some(_) => {
                             // only work with a single bootstrap endpoint (for now)
@@ -180,214 +232,14 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         Ok(())
     }
 
-    /// Starts a node without requiring responses from the network.
-    /// Starts the routing membrane without looking to bootstrap.
-    /// It will relocate its own address with the hash of twice its name.
-    /// This allows the network to later reject this zero node
-    /// when the routing_table is full.
-    ///
-    /// A zero_membrane will not be able to connect to an existing network,
-    /// and as a special node, it will be rejected by the network later on.
-    pub fn run_zero_membrane(&mut self) {
-        // This code is currently refactored by Ben, but I'm getting
-        // compilation errors so I'm commenting it temporarily.
-        unimplemented!()
-        //let (event_output, event_input) = mpsc::channel();
-        //let mut cm = crust::ConnectionManager::new(event_output);
-        //// TODO: Default Protocol and Port need to be passed down
-        //let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-        //// TODO: Beacon port should be passed down
-        //let beacon_port = Some(5483u16);
-        //let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
-        //    Err(reason) => {
-        //        println!("Failed to start listening: {:?}", reason);
-        //        (vec![], None)
-        //    }
-        //    Ok(listeners_and_beacon) => listeners_and_beacon
-        //};
-        //let self_relocated_name = utils::calculate_self_relocated_name(
-        //    &self.id.get_crypto_public_sign_key(),
-        //    &self.id.get_crypto_public_key(),
-        //    &self.id.get_validation_token());
-        //println!("ZERO listening on {:?}, named {:?}", listeners.0.first(),
-        //    self_relocated_name);
-        //self.id.assign_relocated_name(self_relocated_name);
-
-        //let mut membrane = RoutingMembrane::<F>::new(
-        //    cm, event_input, None,
-        //    listeners.0, self.id.clone(),
-        //    self.genesis.create_personas());
-        //// TODO: currently terminated by main, should be signalable to terminate
-        //// and join the routing_node thread.
-        //spawn(move || membrane.run());
-    }
-
-    /// Bootstrap the node to an existing (or zero) node on the network.
-    /// If a bootstrap list is provided those will be used over the beacon support from CRUST.
-    /// Spawns a new thread and moves a newly constructed Membrane into this thread.
-    /// Routing node uses the genesis object to create a new instance of the personas to embed
-    /// inside the membrane.
-    //  TODO: a (two-way) channel should be passed in to control the membrane.
-    // pub fn bootstrap(&mut self, bootstrap_list: Option<Vec<Endpoint>>)
-    //         -> Result<(), RoutingError>  {
-    //
-    //     let (event_output, event_input) = mpsc::channel();
-    //     let mut cm = crust::ConnectionManager::new(event_output);
-    //     // TODO: Default Protocol and Port need to be passed down
-    //     let ports_and_protocols : Vec<PortAndProtocol> = Vec::new();
-    //     // TODO: Beacon port should be passed down
-    //     let beacon_port = Some(5483u16);
-    //     let listeners = match cm.start_listening2(ports_and_protocols, beacon_port) {
-    //         Err(reason) => {
-    //             println!("Failed to start listening: {:?}", reason);
-    //             (vec![], None)
-    //         }
-    //         Ok(listeners_and_beacon) => listeners_and_beacon
-    //     };
-    //
-    //     // CRUST bootstrap
-    //     let bootstrapped_to = try!(cm.bootstrap(bootstrap_list, beacon_port)
-    //         .map_err(|_|RoutingError::FailedToBootstrap));
-    //     println!("BOOTSTRAP to {:?}", bootstrapped_to);
-    //     println!("NODE listening on {:?}", listeners.0.first());
-    //     self.bootstrap = Some((bootstrapped_to.clone(), None));
-    //     cm.connect(vec![bootstrapped_to.clone()]);
-    //     // allow CRUST to connect
-    //     thread::sleep_ms(100);
-    //
-    //     let unrelocated_id = self.id.clone();
-    //     let relocated_name : Option<NameType>;
-    //
-    //     // FIXME: connect request should not require the knowledge of the name you're connecting to
-    //     let connect_msg = match self.construct_connect_request_msg(&unrelocated_id.name(),
-    //                                listeners.0.clone()) {
-    //         Ok(msg)  => msg,
-    //         Err(err) => return Err(RoutingError::Cbor(err)),
-    //     };
-    //
-    //     let serialised_message = try!(encode(&connect_msg));
-    //
-    //     ignore(cm.send(bootstrapped_to.clone(), serialised_message));
-    //
-    //     // FIXME: for now just write out explicitly in this function the bootstrapping loop
-    //     // - fully check match of returned public id with ours
-    //     // - break from loop if unsuccessful; no response; retry
-    //     // - this initial bootstrap should only use the WhoAreYou paradigm,
-    //     //   not the unknown_connect_request as currently used.
-    //     println!("Waiting for responses from network");
-    //     loop {
-    //         match event_input.recv() {
-    //             Err(_) => {},
-    //             Ok(crust::Event::NewMessage(source_endpoint, bytes)) => {
-    //                 match decode::<RoutingMessage>(&bytes) {
-    //                     Ok(message) => {
-    //                         match message.message_type {
-    //                             MessageType::ConnectResponse(connect_response) => {
-    //                                 println!("Received connect response");
-    //
-    //                                 let put_public_id_msg
-    //                                     = try!(self.construct_put_public_id_msg(
-    //                                                     &PublicId::new(&unrelocated_id)));
-    //
-    //                                 let serialised_message = try!(encode(&put_public_id_msg));
-    //
-    //                                 // Store the NameType of the bootstrap node.
-    //                                 self.bootstrap = self.bootstrap.clone().map(|(ep, name)| {
-    //                                         if ep == source_endpoint {
-    //                                             (ep, Some(connect_response.receiver_id))
-    //                                         }
-    //                                         else {
-    //                                             (ep, name)
-    //                                         }
-    //                                     });
-    //
-    //                                 ignore(cm.send(bootstrapped_to.clone(), serialised_message));
-    //                             },
-    //                             MessageType::PutPublicIdResponse(public_id) => {
-    //                                 relocated_name = Some(public_id.name());
-    //                                 debug_assert!(public_id.is_relocated());
-    //                                 //if public_id.validation_token
-    //                                 //        != self.id.get_validation_token() {
-    //                                 //    return Err(RoutingError::FailedToBootstrap);
-    //                                 //}
-    //                                 println!("Received PutPublicId relocated name {:?} from {:?}",
-    //                                     relocated_name, self.id.name());
-    //                                 break;
-    //                             },
-    //                             _ => {
-    //                                 println!("Received unexpected message {:?}",
-    //                                     message.message_type);
-    //                             }
-    //                         }
-    //                     },
-    //                     Err(_) => {
-    //                       // WhoAreYou/IAm messages fall in here.
-    //                     }
-    //                 };
-    //             },
-    //             Ok(crust::Event::NewConnection(endpoint)) => {
-    //                 println!("NewConnection on {:?} while waiting on network.", endpoint);
-    //             },
-    //             Ok(crust::Event::LostConnection(_)) => {
-    //                 return Err(RoutingError::FailedToBootstrap);
-    //             }
-    //         }
-    //     };
-    //
-    //     match (relocated_name, self.bootstrap.clone()) {
-    //         // This means that we have been relocated, we know our bootstrap
-    //         // endpoint and we also know the name of the bootstrap node.
-    //         (Some(relocated_name), Some((bootstrap_ep, Some(bootstrap_name)))) => {
-    //             self.id.assign_relocated_name(relocated_name);
-    //             debug_assert!(self.id.is_relocated());
-    //
-    //             let mut membrane = RoutingMembrane::<F>::new(
-    //                 cm,
-    //                 event_input,
-    //                 Some((bootstrap_ep, bootstrap_name)),
-    //                 listeners.0,
-    //                 self.id.clone(),
-    //                 self.genesis.create_personas());
-    //
-    //             spawn(move || membrane.run());
-    //         },
-    //         _ => panic!("DEBUG: failed to bootstrap or did not relocate the publicId.")
-    //     };
-    //     Ok(())
-    // }
-
-    fn construct_connect_request_msg(&mut self, destination: &NameType,
-            accepting_on: Vec<Endpoint>) -> Result<SignedMessage, CborError> {
-        let message_id = self.get_next_message_id();
-
-        let connect_request = ConnectRequest {
-            local_endpoints    : accepting_on,
-            external_endpoints : vec![],
-            requester_id       : self.own_name.clone(),
-            receiver_id        : destination.clone(),
-            requester_fob      : PublicId::new(&self.id),
-        };
-
-        let message =  RoutingMessage {
-            destination  : DestinationAddress::Direct(destination.clone()),
-            source       : SourceAddress::RelayedForNode(self.id.name(), self.id.name()),
-            orig_message : None,
-            message_type : MessageType::ConnectRequest(connect_request),
-            message_id   : message_id.clone(),
-            authority    : Authority::ManagedNode,
-        };
-
-        SignedMessage::new(&message, self.id.signing_private_key())
-    }
-
-    fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId)
-            -> Result<SignedMessage, CborError> {
+    fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId,
+        relay_name: &NameType) -> Result<SignedMessage, CborError> {
 
         let message_id = self.get_next_message_id();
 
         let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
-            source       : SourceAddress::RelayedForNode(self.id.name(), self.id.name()),
+            source       : SourceAddress::RelayedForNode(relay_name.clone(), self.id.name()),
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
