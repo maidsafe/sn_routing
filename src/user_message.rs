@@ -20,12 +20,66 @@ use std::collections::{BTreeMap};
 use sodiumoxide::crypto::sign::{PublicKey};
 
 use authority::Authority;
+use error::{RoutingError, ResponseError};
 use messages::{ErrorReturn, GetDataResponse, RoutingMessage, SignedMessage};
 use name_type::NameType;
 use sentinel::pure_sentinel::Source;
 use types::{MessageId, SourceAddress, DestinationAddress};
 use data::Data;
 use messages::MessageType;
+
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum SEvent {
+    PutRequest(SignedMessage, Data, NameType, NameType, Authority, Authority, MessageId),
+}
+
+pub fn create_forward(event: SEvent, source: NameType, destination: NameType, msg_id : u32)
+    -> Result<RoutingMessage, RoutingError> {
+    match event {
+        SEvent::PutRequest(orig_message, data, source_group, _destination_group, source_authority,
+             our_authority, _message_id) =>
+        {
+            return Ok(RoutingMessage {
+                destination  : DestinationAddress::Direct(destination),
+                source       : SourceAddress::Direct(source),
+                orig_message : Some(orig_message.clone()),
+                message_type : MessageType::PutData(data.clone()),
+                message_id   : msg_id,
+                authority    : our_authority.clone(),
+            })
+        },
+    }
+    return Err(RoutingError::RefreshNotFromGroup)    // TODO use the proper error code
+}
+
+pub fn create_reply(event: SEvent, reply_data: MessageType)
+    -> Result<RoutingMessage, RoutingError> {
+    match event {
+        SEvent::PutRequest(orig_message, data, source_group, destination_group, source_authority,
+             our_authority, message_id) =>
+        {
+            return Ok(RoutingMessage {
+                destination  : match orig_message.get_routing_message() {
+                                    Ok(routing_message) => routing_message.reply_destination(),
+                                    Err(_) => DestinationAddress::Direct(source_group),
+                               },
+                source       : SourceAddress::Direct(destination_group),
+                orig_message : None,
+                message_type : reply_data,
+                message_id   : message_id,
+                authority    : our_authority
+            })
+        },
+    }
+    Err(RoutingError::RefreshNotFromGroup)    // TODO use the proper error code
+}
+
+pub fn get_orig_message(event: SEvent) -> Result<SignedMessage, RoutingError> {
+    match event {
+        SEvent::PutRequest(orig_message, _, _, _, _, _, _) => return Ok(orig_message)
+    }
+    Err(RoutingError::RefreshNotFromGroup)
+}
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct SentinelPutRequest {
@@ -118,8 +172,7 @@ impl SentinelPutResponse {
             destination  : DestinationAddress::Direct(self.destination_group),
             source       : SourceAddress::Direct(src),
             orig_message : Some(self.orig_message.clone()),
-            message_type : MessageType::PutDataResponse(self.response.clone(),
-                                                        group_public_keys),
+            message_type : MessageType::PutDataResponse(self.response.clone(), group_public_keys),
             message_id   : msg_id,
             authority    : self.our_authority.clone(),
         }

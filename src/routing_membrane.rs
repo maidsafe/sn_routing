@@ -62,7 +62,8 @@ use public_id::PublicId;
 use utils;
 use utils::{encode, decode};
 use sentinel::pure_sentinel::{PureSentinel, AddResult};
-use user_message::{SentinelPutRequest, SentinelPutResponse, SentinelGetDataResponse};
+use user_message::{SentinelPutRequest, SentinelPutResponse, SentinelGetDataResponse, SEvent,
+                   create_forward, create_reply, get_orig_message};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -1007,7 +1008,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             quorum = self.routing_table.size();
         }
 
-        let source_authority = match message.authority.clone() {
+        let source_group = match message.authority.clone() {
             Authority::ClientManager(name) => name,
             Authority::NaeManager(name)    => name,
             Authority::NodeManager(name)   => name,
@@ -1019,9 +1020,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Temporarily pretend that the sentinel passed, later implement
         // sentinel.
-        let resolved = SentinelPutRequest::new(message.clone(), signed_message.clone(),
-                                               data.clone(), our_authority.clone(),
-                                               source_authority);
+        let resolved = SEvent::PutRequest(signed_message.clone(), data.clone(), source_group,
+                                          message.destination.non_relayed_destination(),
+                                          message.authority.clone(), our_authority.clone(),
+                                          message.message_id.clone());
 
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data.clone()) {
             Ok(method_calls) => {
@@ -1034,12 +1036,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data: y } => self.delete(x, y),
                         MethodCall::Forward { destination } => {
-                            let msg = resolved.create_forward(self.id.name(), destination,
-                                                              self.get_next_message_id());
+                            let msg = try!(create_forward(resolved.clone(), self.id.name(), destination,
+                                                          self.get_next_message_id()));
                             ignore(self.send_swarm_or_parallel(&msg));
                         },
                         MethodCall::Reply { data } => {
-                            let msg = resolved.create_reply(MessageType::PutData(data));
+                            let msg = try!(create_reply(resolved.clone(), MessageType::PutData(data)));
                             ignore(self.send_swarm_or_parallel(&msg));
                         }
                     }
@@ -1049,7 +1051,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Err(InterfaceError::Response(error)) => {
                 let signed_error = ErrorReturn {
                     error: error,
-                    orig_request: resolved.orig_message.clone(),
+                    orig_request: try!(get_orig_message(resolved.clone()))
                 };
                 let group_pub_keys = if our_authority.is_group() {
                     self.group_pub_keys()
@@ -1058,7 +1060,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     BTreeMap::new()
                 };
                 let msg = MessageType::PutDataResponse(signed_error, group_pub_keys);
-                let msg = resolved.create_reply(msg);
+                let msg = try!(create_reply(resolved, msg));
                 ignore(self.send_swarm_or_parallel(&msg));
             }
         }
@@ -1526,7 +1528,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 group_pub_keys : group_pub_keys
                             };
 
-                            ignore(self.send_reply(&message, our_authority.clone(), MessageType::GetDataResponse(response)))
+                            ignore(self.send_reply(&message, our_authority.clone(),
+                                                   MessageType::GetDataResponse(response)))
                         },
                     }
                 }
