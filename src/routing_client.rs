@@ -54,7 +54,6 @@ pub struct RoutingClient<F: Interface> {
     connection_manager : ConnectionManager,
     id                 : Id,
     public_id          : PublicId,
-    //bootstrap_address: (Option<NameType>, Option<Endpoint>),
     bootstrap          : Option<(Endpoint, Option<NameType>)>,
     next_message_id    : MessageId
 }
@@ -169,15 +168,13 @@ impl<F> RoutingClient<F> where F: Interface {
 
 //######################################## API ABOVE this point ##################
 
-
     pub fn run_one(&mut self) {
-        println!("Starting client run");
         match self.event_input.try_recv() {
             Err(_) => (),
             Ok(crust::connection_manager::Event::NewMessage(endpoint, bytes)) => {
-                println!(">> 1 {:?}", decode::<SignedMessage>(&bytes));
-                println!(">> 2 {:?}", decode::<RoutingMessage>(&bytes));
-                println!(">> 3 {:?}", decode::<IAm>(&bytes));
+                //println!(">> 1 {:?}", decode::<SignedMessage>(&bytes));
+                //println!(">> 2 {:?}", decode::<RoutingMessage>(&bytes));
+                //println!(">> 3 {:?}", decode::<IAm>(&bytes));
 
                 match decode::<IAm>(&bytes) {
                     Ok(msg) => { self.handle_i_am(endpoint, msg); return; },
@@ -212,7 +209,7 @@ impl<F> RoutingClient<F> where F: Interface {
                             }
                         }
                     },
-                    _ => { println!("Received message but not fully bootstrapped"); }
+                    _ => { info!("Received message but not fully bootstrapped"); }
                 }
             },
             _ => { // as a client, shall not handle any connection related change
@@ -224,24 +221,23 @@ impl<F> RoutingClient<F> where F: Interface {
     /// Use bootstrap to attempt connecting the client to previously known nodes,
     /// or use CRUST self-discovery options.
     pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
-        // FIXME(ben 24/07/2015) this should become part of run() with integrated eventloop
-        println!("start accepting");
         try!(self.connection_manager.start_accepting(vec![]));
+
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+
         loop {
             match self.event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
                     println!("NewBootstrapConnection");
                     self.bootstrap = Some((endpoint, None));
-                    // FIXME(ben 24/07/2015) this needs to replaced with a clear WhoAreYou
-                    // ConnectRequest is a mis-use
                     let our_endpoints = self.connection_manager.get_own_endpoints();
                     break;
                 },
                 _ => {}
             }
         }
+
         Ok(())
     }
 
