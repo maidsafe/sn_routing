@@ -17,7 +17,7 @@ install:
 - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
 - tar xvfz libsodium-1.0.0.tar.gz
 - pwd
-- cd libsodium-1.0.0 && mkdir build && ./configure --user --prefix=/usr && make && make install --user && cd ..
+- cd libsodium-1.0.0 && mkdir build && ./configure --prefix=/usr && make && make install --user && cd ..
 script:
 - cargo build --verbose
 - RUST_TEST_THREADS=1 cargo test
