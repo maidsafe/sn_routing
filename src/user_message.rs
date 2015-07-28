@@ -29,114 +29,64 @@ use data::Data;
 use messages::MessageType;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub enum SEvent {
+pub enum Event {
     PutRequest(SignedMessage, Data, NameType, NameType, Authority, Authority, MessageId),
 }
 
-pub fn create_forward(event: SEvent, source: NameType, destination: NameType, msg_id : u32)
-    -> Result<RoutingMessage, RoutingError> {
-    match event {
-        SEvent::PutRequest(orig_message, data, source_group, _destination_group, source_authority,
-             our_authority, _message_id) =>
-        {
-            return Ok(RoutingMessage {
-                destination  : DestinationAddress::Direct(destination),
-                source       : SourceAddress::Direct(source),
-                orig_message : Some(orig_message.clone()),
-                message_type : MessageType::PutData(data.clone()),
-                message_id   : msg_id,
-                authority    : our_authority.clone(),
-            })
-        },
-    }
-    return Err(RoutingError::RefreshNotFromGroup)    // TODO use the proper error code
-}
-
-pub fn create_reply(event: SEvent, reply_data: MessageType)
-    -> Result<RoutingMessage, RoutingError> {
-    match event {
-        SEvent::PutRequest(orig_message, data, source_group, destination_group, source_authority,
-             our_authority, message_id) =>
-        {
-            return Ok(RoutingMessage {
-                destination  : match orig_message.get_routing_message() {
-                                    Ok(routing_message) => routing_message.reply_destination(),
-                                    Err(_) => DestinationAddress::Direct(source_group),
-                               },
-                source       : SourceAddress::Direct(destination_group),
-                orig_message : None,
-                message_type : reply_data,
-                message_id   : message_id,
-                authority    : our_authority
-            })
-        },
-    }
-    Err(RoutingError::RefreshNotFromGroup)    // TODO use the proper error code
-}
-
-pub fn get_orig_message(event: SEvent) -> Result<SignedMessage, RoutingError> {
-    match event {
-        SEvent::PutRequest(orig_message, _, _, _, _, _, _) => return Ok(orig_message)
-    }
-    Err(RoutingError::RefreshNotFromGroup)
-}
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct SentinelPutRequest {
-    pub data: Data,
-    pub source_group: NameType,
-    pub destination_group: NameType,
-    pub source_authority: Authority,
-    pub our_authority: Authority,
-    pub message_id: MessageId,
-    pub orig_message: SignedMessage,
-}
-
-impl SentinelPutRequest {
-    pub fn new(message: RoutingMessage, orig_message: SignedMessage, data: Data,
-               our_authority: Authority, source_group: NameType) -> SentinelPutRequest {
-        SentinelPutRequest { data: data,
-                             source_group: source_group,
-                             destination_group: message.destination.non_relayed_destination(),
-                             source_authority: message.authority,
-                             our_authority: our_authority,
-                             message_id: message.message_id,
-                             orig_message: orig_message
-                           }
-    }
-
-    pub fn create_forward(&self,
-                          src    : NameType,
-                          dst    : NameType,
-                          msg_id : u32) -> RoutingMessage {
-        RoutingMessage {
-            destination  : DestinationAddress::Direct(dst),
-            source       : SourceAddress::Direct(src),
-            orig_message : Some(self.orig_message.clone()),
-            message_type : MessageType::PutData(self.data.clone()),
-            message_id   : msg_id,
-            authority    : self.our_authority.clone(),
+impl Event {
+    pub fn create_forward(&self, source: NameType, destination: NameType, msg_id : u32)
+        -> Result<RoutingMessage, RoutingError> {
+        match self {
+            &Event::PutRequest(ref orig_message, ref data, ref source_group,
+                               ref _destination_group, ref source_authority,
+                               ref our_authority, ref _message_id) =>
+            {
+                return Ok(RoutingMessage {
+                    destination  : DestinationAddress::Direct(destination),
+                    source       : SourceAddress::Direct(source),
+                    orig_message : Some(orig_message.clone()),
+                    message_type : MessageType::PutData(data.clone()),
+                    message_id   : msg_id,
+                    authority    : our_authority.clone(),
+                })
+            },
         }
+        return Err(RoutingError::RefreshNotFromGroup)    // TODO use the proper error code
     }
 
-    pub fn create_reply(&self, reply_data: MessageType) -> RoutingMessage {
-        RoutingMessage {
-            destination  : match self.orig_message.get_routing_message() {
-                                Ok(routing_message) => routing_message.reply_destination(),
-                                Err(_) => DestinationAddress::Direct(self.source_group),
-                           },
-            source       : SourceAddress::Direct(self.destination_group),
-            orig_message : None,
-            message_type : reply_data,
-            message_id   : self.message_id,
-            authority    : self.our_authority.clone(),
+    pub fn create_reply(&self, reply_data: MessageType)
+        -> Result<RoutingMessage, RoutingError> {
+        match self {
+            &Event::PutRequest(ref orig_message, ref data, ref source_group, ref destination_group,
+                               ref source_authority, ref our_authority, ref message_id) => {
+                return Ok(RoutingMessage {
+                    destination  : match orig_message.get_routing_message() {
+                                        Ok(routing_message) => routing_message.reply_destination(),
+                                        Err(_) => DestinationAddress::Direct(source_group.clone()),
+                                   },
+                    source       : SourceAddress::Direct(destination_group.clone()),
+                    orig_message : None,
+                    message_type : reply_data,
+                    message_id   : message_id.clone(),
+                    authority    : our_authority.clone()
+                })
+            },
+        }
+        Err(RoutingError::RefreshNotFromGroup)    // TODO use the proper error code
+    }
+
+    pub fn get_orig_message(&self) -> Result<SignedMessage, RoutingError> {
+        match self {
+            &Event::PutRequest(ref orig_message, _, _, _, _, _, _) => Ok(orig_message.clone())
         }
     }
 }
 
-impl Source<NameType> for SentinelPutRequest {
+impl Source<NameType> for Event {
     fn get_source(&self) -> NameType {
-        self.source_group.clone()
+        match self {
+            &Event::PutRequest(_, _, source_group, _, _, _, _) => source_group
+        }
     }
 }
 

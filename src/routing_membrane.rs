@@ -38,7 +38,8 @@ use std::sync::mpsc::Receiver;
 use time::{Duration, SteadyTime};
 
 use crust;
-use crust::{ConnectionManager, Event, Endpoint};
+use crust::{ConnectionManager, Endpoint};
+use crust::Event as CrustEvent;
 use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
@@ -62,8 +63,7 @@ use public_id::PublicId;
 use utils;
 use utils::{encode, decode};
 use sentinel::pure_sentinel::{PureSentinel, AddResult};
-use user_message::{SentinelPutRequest, SentinelPutResponse, SentinelGetDataResponse, SEvent,
-                   create_forward, create_reply, get_orig_message};
+use user_message::{SentinelPutResponse, SentinelGetDataResponse, Event};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -86,8 +86,8 @@ fn get_reflective_endpoint() -> Endpoint {
 /// Routing Membrane
 pub struct RoutingMembrane<F : Interface> {
     // for CRUST
-    sender_clone: Sender<crust::Event>,
-    event_input: Receiver<crust::Event>,
+    sender_clone: Sender<CrustEvent>,
+    event_input: Receiver<CrustEvent>,
     connection_manager: crust::ConnectionManager,
     reflective_endpoint : crust::Endpoint,
     accepting_on: Vec<crust::Endpoint>,
@@ -105,14 +105,14 @@ pub struct RoutingMembrane<F : Interface> {
     interface: Box<F>,
     put_response_sentinel: PureSentinel<SentinelPutResponse, NameType>,
     get_data_response_sentinel: PureSentinel<SentinelGetDataResponse, NameType>,
-    put_sentinel: PureSentinel<SentinelPutRequest, NameType>
+    put_sentinel: PureSentinel<Event, NameType>
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
     // TODO: clean ownership transfer up with proper structure
     pub fn new(cm: crust::ConnectionManager,
-               sender_clone: Sender<crust::Event>,
-               event_input: Receiver<crust::Event>,
+               sender_clone: Sender<CrustEvent>,
+               event_input: Receiver<CrustEvent>,
                bootstrap: Option<(crust::Endpoint, NameType)>,
                relocated_id: Id,
                personas: F) -> RoutingMembrane<F> {
@@ -232,7 +232,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         loop {
             match self.event_input.recv() {
                 Err(_) => (),
-                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                Ok(CrustEvent::NewMessage(endpoint, bytes)) => {
                     let message = match decode::<SignedMessage>(&bytes) {
                         Ok(message) => message,
                         Err(_)      => continue,
@@ -288,13 +288,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         }
                     }
                 },
-                Ok(crust::Event::NewConnection(endpoint)) => {
+                Ok(CrustEvent::NewConnection(endpoint)) => {
                     self.handle_new_connection(endpoint);
                 },
-                Ok(crust::Event::LostConnection(endpoint)) => {
+                Ok(CrustEvent::LostConnection(endpoint)) => {
                     self.handle_lost_connection(endpoint);
                 },
-                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                Ok(CrustEvent::NewBootstrapConnection(endpoint)) => {
                     // TODO(ben 23/07/2015): drop and stop crust bootstrapping
                 }
             };
@@ -730,7 +730,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn send_reflective_to_us(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
         let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
         let bytes = try!(encode(&signed_message));
-        let new_event = crust::Event::NewMessage(self.reflective_endpoint.clone(), bytes);
+        let new_event = CrustEvent::NewMessage(self.reflective_endpoint.clone(), bytes);
         match self.sender_clone.send(new_event) {
             Ok(_) => {},
             // FIXME(ben 24/07/2015) we have a broken channel with crust,
@@ -1020,7 +1020,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Temporarily pretend that the sentinel passed, later implement
         // sentinel.
-        let resolved = SEvent::PutRequest(signed_message.clone(), data.clone(), source_group,
+        let resolved = Event::PutRequest(signed_message.clone(), data.clone(), source_group,
                                           message.destination.non_relayed_destination(),
                                           message.authority.clone(), our_authority.clone(),
                                           message.message_id.clone());
@@ -1036,12 +1036,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data: y } => self.delete(x, y),
                         MethodCall::Forward { destination } => {
-                            let msg = try!(create_forward(resolved.clone(), self.id.name(), destination,
-                                                          self.get_next_message_id()));
+                            let msg = try!(resolved.create_forward(self.id.name(), destination,
+                                                                   self.get_next_message_id()));
                             ignore(self.send_swarm_or_parallel(&msg));
                         },
                         MethodCall::Reply { data } => {
-                            let msg = try!(create_reply(resolved.clone(), MessageType::PutData(data)));
+                            let msg = try!(resolved.create_reply(MessageType::PutData(data)));
                             ignore(self.send_swarm_or_parallel(&msg));
                         }
                     }
@@ -1051,7 +1051,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Err(InterfaceError::Response(error)) => {
                 let signed_error = ErrorReturn {
                     error: error,
-                    orig_request: try!(get_orig_message(resolved.clone()))
+                    orig_request: try!(resolved.get_orig_message())
                 };
                 let group_pub_keys = if our_authority.is_group() {
                     self.group_pub_keys()
@@ -1060,7 +1060,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     BTreeMap::new()
                 };
                 let msg = MessageType::PutDataResponse(signed_error, group_pub_keys);
-                let msg = try!(create_reply(resolved, msg));
+                let msg = try!(resolved.create_reply(msg));
                 ignore(self.send_swarm_or_parallel(&msg));
             }
         }
@@ -1686,7 +1686,6 @@ use public_id::PublicId;
 use rand::{random, Rng, thread_rng};
 use routing_table;
 use sendable::Sendable;
-use user_message::SentinelPutRequest;
 use sodiumoxide::crypto;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
