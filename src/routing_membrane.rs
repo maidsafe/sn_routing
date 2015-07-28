@@ -565,7 +565,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageType::GetDataResponse(ref response) => {
                         match message.actual_source() {
                             Address::Node(_)
-                                => self.handle_group_get_data_response(message_wrap,
+                                => self.handle_node_get_data_response(message_wrap,
                                                                        message.clone(),
                                                                        response.clone()),
                            Address::Client(_) =>
@@ -576,7 +576,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageType::PutDataResponse(ref response, ref _map) => {
                         match message.actual_source() {
                             Address::Node(_) =>
-                                self.handle_group_put_data_response(message_wrap, message.clone(),
+                                self.handle_node_put_data_response(message_wrap, message.clone(),
                                                                     response.clone()),
                             Address::Client(_) =>
                                 self.handle_client_put_data_response(message_wrap, message.clone(),
@@ -586,7 +586,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     MessageType::PutData(ref data) => {
                         match message.source.actual_source() {
                             Address::Node(name) =>
-                                self.handle_group_put_data(message_wrap, message.clone(),
+                                self.handle_node_put_data(message_wrap, message.clone(),
                                                            data.clone(), name),
                             Address::Client(name) =>
                                 self.handle_client_put_data(message_wrap, message.clone(),
@@ -994,7 +994,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // -----Message Handlers from Routing Table connections----------------------------------------
 
     // Routing handle put_data
-    fn handle_group_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
+    fn handle_node_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
                        data: Data, source: NameType) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
@@ -1163,7 +1163,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_group_put_data_response(&mut self, signed_message: SignedMessage,
+    fn handle_node_put_data_response(&mut self, signed_message: SignedMessage,
             message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
         info!("Handle group PUT data response.");
         let our_authority = our_authority(&message, &self.routing_table);
@@ -1559,7 +1559,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.send_swarm_or_parallel_or_relay(&message)
     }
 
-    fn handle_group_get_data_response(&mut self, signed_message : SignedMessage,
+    fn handle_node_get_data_response(&mut self, signed_message : SignedMessage,
             message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from = message.source.non_relayed_source();
