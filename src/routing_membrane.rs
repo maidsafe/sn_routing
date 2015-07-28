@@ -216,14 +216,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     .send(bootstrap_endpoint.clone(), msg)));
             },
             None => {
-                // routing_table is still empty now, but check
-                // should never happen
-                if self.routing_table.size() == 0 {
-                    // only for a self-relocated node is this a normal situation.
-                    if !self.id.is_self_relocated() {
-                        panic!("No connections to get started.");
-                    }
-                }
             }
         }
 
