@@ -33,7 +33,7 @@ use std::error::Error;
 use std::io::Read;
 
 #[test]
-// This test requires the executable maidsafe_vault is presented at the same place of the test get executed
+// This test requires the executable safe_vault is presented at the same place of the test get executed
 // also it depends a printout in routing lib. if such printout is changed / muted, this test needs to be updated
 fn executable_test() {
     let mut processes = Vec::new();
@@ -41,7 +41,7 @@ fn executable_test() {
     let executable_path = match std::env::current_exe() {
         Ok(mut exe_path) => {
             exe_path.pop();
-            std::path::Path::new("./target").join(exe_path.iter().last().unwrap()).join("maidsafe_vault")
+            std::path::Path::new("./target").join(exe_path.iter().last().unwrap()).join("safe_vault")
         }
         Err(e) => panic!("Failed to get current integration test path: {}", e),
     };
@@ -49,7 +49,7 @@ fn executable_test() {
     // the first vault must be run in zero_membrane mode
     println!("---------- starting node 0 --------------");
     processes.push(match Command::new(executable_path.to_path_buf()).arg("-f").stdout(Stdio::piped()).spawn() {
-                Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
+                Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
                 Ok(process) => process,
             });
     thread::sleep_ms(1000);
@@ -57,7 +57,7 @@ fn executable_test() {
     for i in 1..num_of_nodes {
         println!("---------- starting node {} --------------", i);
         processes.push(match Command::new(executable_path.to_path_buf()).stdout(Stdio::piped()).spawn() {
-                    Err(why) => panic!("couldn't spawn maidsafe_vault: {}", why.description()),
+                    Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
                     Ok(process) => process,
                 });
         thread::sleep_ms(1000 + i * 1500);
@@ -71,7 +71,7 @@ fn executable_test() {
         println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
         let v: Vec<&str> = s.split("added connected node").collect();
         let marked_connections = v.len() - 1;
-        println!("\t  maidsafe_vault {} has {} connected connections.", processes.len(), marked_connections);
+        println!("\t  safe_vault {} has {} connected connections.", processes.len(), marked_connections);
         if num_of_nodes as usize != marked_connections + 1 {
         	test_failed = true;
         }

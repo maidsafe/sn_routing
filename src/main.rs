@@ -92,9 +92,9 @@ impl Vault {
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage:
-  maidsafe_vault [<peer>...]
-  maidsafe_vault --first
-  maidsafe_vault --help
+  safe_vault [<peer>...]
+  safe_vault --first
+  safe_vault --help
 
 Options:
   -f, --first  Node runs as the first vault in the network.
