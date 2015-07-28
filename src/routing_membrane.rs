@@ -341,7 +341,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let signed_message = try!(SignedMessage::new(&routing_msg, self.id.signing_private_key()));
         let serialised_msg = try!(encode(&signed_message));
 
-        self.relay_map.add_ip_node(connect_request.requester_fob, endpoint.clone());
+        self.relay_map.add_client(connect_request.requester_fob, endpoint.clone());
         self.relay_map.remove_unknown_connection(endpoint);
 
         debug_assert!(self.relay_map.contains_endpoint(&endpoint));
@@ -862,6 +862,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     // if it is not relocated, we consider the connection for our relay_map
                     false => {
                         // move endpoint based on identification
+                        match i_am.address {
+                            Address::Client(public_key) => {
+                                self.relay_map.add_client(i_am.public_id.clone(), endpoint.clone());
+                                self.relay_map.remove_unknown_connection(endpoint);
+                            },
+                            _ => {}, // only accept identified as client in relay map.
+                        }
+
                     }
                 };
                 if trigger_handle_churn {

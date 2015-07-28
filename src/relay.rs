@@ -61,7 +61,7 @@ impl RelayMap {
     /// Returns true is the endpoint is newly added, or was already present.
     /// Returns false if the threshold was reached or name is our name.
     /// Returns false if the endpoint is already assigned to a different name.
-    pub fn add_ip_node(&mut self, relay_info: PublicId, relay_endpoint: Endpoint) -> bool {
+    pub fn add_client(&mut self, relay_info: PublicId, relay_endpoint: Endpoint) -> bool {
         // always reject our own id
         if self.our_name == relay_info.name() {
             return false;
@@ -73,10 +73,12 @@ impl RelayMap {
         }
         if self.lookup_map.contains_key(&relay_endpoint) {
           return false; }
+        // only add Client
         self.lookup_map.entry(relay_endpoint.clone())
-                       .or_insert(Address::Node(relay_info.name()));
+                       .or_insert(Address::Client(relay_info.signing_public_key()));
         let new_set = || { (relay_info.clone(), BTreeSet::<Endpoint>::new()) };
-        self.relay_map.entry(Address::Node(relay_info.name())).or_insert_with(new_set).1
+        self.relay_map.entry(Address::Client(relay_info.signing_public_key()))
+                      .or_insert_with(new_set).1
                       .insert(relay_endpoint);
         true
     }
@@ -192,16 +194,16 @@ mod test {
         let our_id : Id = Id::new();
         let our_public_id = PublicId::new(&our_id);
         let mut relay_map = RelayMap::new(&our_id);
-        assert_eq!(false, relay_map.add_ip_node(our_public_id.clone(), generate_random_endpoint()));
+        assert_eq!(false, relay_map.add_client(our_public_id.clone(), generate_random_endpoint()));
         assert_eq!(0, relay_map.relay_map.len());
         assert_eq!(0, relay_map.lookup_map.len());
         while relay_map.relay_map.len() < super::MAX_RELAY {
             let new_endpoint = generate_random_endpoint();
             if !relay_map.contains_endpoint(&new_endpoint) {
-                assert_eq!(true, relay_map.add_ip_node(PublicId::new(&Id::new()),
+                assert_eq!(true, relay_map.add_client(PublicId::new(&Id::new()),
                     new_endpoint)); };
         }
-        assert_eq!(false, relay_map.add_ip_node(PublicId::new(&Id::new()),
+        assert_eq!(false, relay_map.add_client(PublicId::new(&Id::new()),
                           generate_random_endpoint()));
     }
 
@@ -210,9 +212,9 @@ mod test {
         let our_id : Id = Id::new();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
-        let test_id = Address::Node(test_public_id.name());
+        let test_id = Address::Client(test_public_id.signing_public_key());
         let test_endpoint = generate_random_endpoint();
-        assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
+        assert_eq!(true, relay_map.add_client(test_public_id.clone(),
                                                test_endpoint.clone()));
         assert_eq!(true, relay_map.contains_relay_for(&test_id));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint));
@@ -227,15 +229,15 @@ mod test {
         let our_id : Id = Id::new();
         let mut relay_map = RelayMap::new(&our_id);
         let test_public_id = PublicId::new(&Id::new());
-        let test_id = Address::Node(test_public_id.name());
+        let test_id = Address::Client(test_public_id.signing_public_key());
         let test_endpoint = generate_random_endpoint();
         let test_conflicting_public_id = PublicId::new(&Id::new());
-        let test_conflicting_id = Address::Node(test_conflicting_public_id.name());
-        assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
+        let test_conflicting_id = Address::Client(test_conflicting_public_id.signing_public_key());
+        assert_eq!(true, relay_map.add_client(test_public_id.clone(),
                                                test_endpoint.clone()));
         assert_eq!(true, relay_map.contains_relay_for(&test_id));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint));
-        assert_eq!(false, relay_map.add_ip_node(test_conflicting_public_id.clone(),
+        assert_eq!(false, relay_map.add_client(test_conflicting_public_id.clone(),
                                                 test_endpoint.clone()));
         assert_eq!(false, relay_map.contains_relay_for(&test_conflicting_id))
     }
@@ -250,7 +252,7 @@ mod test {
         while relay_map.relay_map.len() < super::MAX_RELAY - 1 {
             let new_endpoint = generate_random_endpoint();
             if !relay_map.contains_endpoint(&new_endpoint) {
-                assert_eq!(true, relay_map.add_ip_node(PublicId::new(&Id::new()),
+                assert_eq!(true, relay_map.add_client(PublicId::new(&Id::new()),
                     new_endpoint)); };
         }
         let test_public_id = PublicId::new(&Id::new());
@@ -264,13 +266,13 @@ mod test {
         loop {
             if !relay_map.contains_endpoint(&test_endpoint_2) { break; }
             test_endpoint_2 = generate_random_endpoint(); };
-        assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
+        assert_eq!(true, relay_map.add_client(test_public_id.clone(),
                                                test_endpoint_1.clone()));
         assert_eq!(true, relay_map.contains_relay_for(&test_id));
         assert_eq!(true, relay_map.contains_endpoint(&test_endpoint_1));
-        assert_eq!(false, relay_map.add_ip_node(test_public_id.clone(),
+        assert_eq!(false, relay_map.add_client(test_public_id.clone(),
                                                 test_endpoint_1.clone()));
-        assert_eq!(true, relay_map.add_ip_node(test_public_id.clone(),
+        assert_eq!(true, relay_map.add_client(test_public_id.clone(),
                                                test_endpoint_2.clone()));
         assert!(relay_map.get_endpoints(&test_id).unwrap().1
                          .contains(&test_endpoint_1));
