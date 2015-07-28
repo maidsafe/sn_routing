@@ -26,10 +26,8 @@ use client_interface::Interface;
 use crust;
 use messages;
 use name_type::NameType;
-use sendable::Sendable;
 use error::RoutingError;
-use messages::{RoutingMessage, SignedMessage, MessageType,
-               ConnectResponse, ConnectRequest, ErrorReturn, };
+use messages::{RoutingMessage, SignedMessage, MessageType, ErrorReturn};
 use types::{MessageId, DestinationAddress, SourceAddress, Address};
 use id::Id;
 use public_id::PublicId;
@@ -229,14 +227,13 @@ impl<F> RoutingClient<F> where F: Interface {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
                     self.bootstrap = Some((endpoint.clone(), None));
-                    let our_endpoints = self.connection_manager.get_own_endpoints();
 
                     let i_am_msg = IAm {
                         address   : Address::Client(self.public_id.signing_public_key()),
                         public_id : self.public_id.clone(),
                     };
 
-                    self.connection_manager.send(endpoint, try!(encode(&i_am_msg)));
+                    try!(self.connection_manager.send(endpoint, try!(encode(&i_am_msg))));
                     break;
                 },
                 _ => {}
@@ -246,7 +243,7 @@ impl<F> RoutingClient<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_i_am(&mut self, endpoint: Endpoint, message: IAm) {
+    fn handle_i_am(&mut self, _endpoint: Endpoint, message: IAm) {
         let node_name = match message.address {
             Address::Node(n) => n,
             // We don't care about clients.
