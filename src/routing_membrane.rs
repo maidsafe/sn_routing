@@ -1406,8 +1406,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 put_public_id_relocated.assign_relocated_name(relocated_name.clone());
 
                 info!("RELOCATED {:?} to {:?}", public_id.name(), relocated_name);
+                let mut relocated_message = message.clone();
+                relocated_message.message_type =
+                    MessageType::PutPublicId(put_public_id_relocated);
                 // Forward to relocated_name group, which will actually store the relocated public id
-                try!(self.forward(&signed_message, &message, relocated_name));
+                try!(self.forward(&signed_message, &relocated_message, relocated_name));
                 Ok(())
             },
             (Authority::NaeManager(_), Authority::NaeManager(_), true) => {
