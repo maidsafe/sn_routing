@@ -1406,8 +1406,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 put_public_id_relocated.assign_relocated_name(relocated_name.clone());
 
                 info!("RELOCATED {:?} to {:?}", public_id.name(), relocated_name);
+                let mut relocated_message = message.clone();
+                relocated_message.message_type =
+                    MessageType::PutPublicId(put_public_id_relocated);
                 // Forward to relocated_name group, which will actually store the relocated public id
-                try!(self.forward(&signed_message, &message, relocated_name));
+                try!(self.forward(&signed_message, &relocated_message, relocated_name));
                 Ok(())
             },
             (Authority::NaeManager(_), Authority::NaeManager(_), true) => {
@@ -1416,16 +1419,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
                   self.public_id_cache.add(public_id.name(), public_id.clone());
                   info!("CACHED RELOCATED {:?}", public_id.name());
                   // Reply with PutPublicIdResponse to the reply_to address
-                  //let reply_message = message.create_reply(&self.id.name(), &our_authority);
-                  let routing_msg = RoutingMessage { destination  : message.reply_destination(),
-                                                     source       : SourceAddress::Direct(self.id.name().clone()),
-                                                     orig_message : None, // TODO: Check this
-                                                     message_type : MessageType::PutPublicIdResponse(public_id.clone()),
-                                                     message_id   : message.message_id,
-                                                     authority    : our_authority.clone(),
-                                                   };
+                  match message.orig_message.clone() {
+                      Some(original_signed_msg) => {
+                          ignore(self.send_reply(&message, our_authority,
+                              MessageType::PutPublicIdResponse(public_id, original_signed_msg)));
+                      },
+                      None => {
+                          error!("Name Request: there should always be an original request message
+                              present at reply. Dropping reply.");
+                      }
+                  }
 
-                  ignore(self.send_swarm_or_parallel(&routing_msg));
                 }
                 Ok(())
             },
@@ -1516,7 +1520,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn forward(&self, orig_message: &SignedMessage, routing_message: &RoutingMessage,
             destination: NameType) -> RoutingResult {
-        let our_authority = our_authority(&routing_message, &self.routing_table);
+        let original_routing_message =
+            try!(orig_message.get_routing_message());
+        let our_authority = our_authority(&original_routing_message, &self.routing_table);
         let message = routing_message.create_forward(self.id.name().clone(),
                                                      our_authority,
                                                      destination,

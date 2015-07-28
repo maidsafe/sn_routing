@@ -108,7 +108,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                         Ok(message) => {
                                             match message.message_type {
                                                 MessageType::PutPublicIdResponse(
-                                                    ref new_public_id) => {
+                                                    ref new_public_id, ref _orig_request) => {
                                                       relocated_name = Some(new_public_id.name());
                                                       println!("Received PutPublicId relocated
                                                           name {:?} from {:?}", relocated_name,
@@ -239,7 +239,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
         let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
-            source       : SourceAddress::RelayedForNode(relay_name.clone(), self.id.name()),
+            source       : SourceAddress::RelayedForClient(relay_name.clone(),
+                self.id.signing_public_key()),
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
