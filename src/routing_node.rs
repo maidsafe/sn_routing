@@ -239,7 +239,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
         let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
-            source       : SourceAddress::RelayedForClient(relay_name.clone(), self.id.name()),
+            source       : SourceAddress::RelayedForClient(relay_name.clone(),
+                self.id.signing_public_key()),
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
