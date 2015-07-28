@@ -1019,8 +1019,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Temporarily pretend that the sentinel passed, later implement
         // sentinel.
-        let resolved = (SentinelPutRequest::new(message.clone(), signed_message.clone(),
-                        data.clone(), our_authority.clone(), source_authority), true);
+        let resolved = SentinelPutRequest::new(message.clone(), signed_message.clone(),
+                                               data.clone(), our_authority.clone(),
+                                               source_authority);
 
         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data.clone()) {
             Ok(method_calls) => {
@@ -1032,13 +1033,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data: y } => self.delete(x, y),
                         MethodCall::Forward { destination } => {
-                            let msg = resolved.0.create_forward(self.id.name(),
+                            let msg = resolved.create_forward(self.id.name(),
                                                                 destination,
                                                                 self.get_next_message_id());
                             ignore(self.send_swarm_or_parallel(&msg));
                         },
                         MethodCall::Reply { data } => {
-                            let msg = resolved.0.create_reply(MessageType::PutData(data));
+                            let msg = resolved.create_reply(MessageType::PutData(data));
                             ignore(self.send_swarm_or_parallel(&msg));
                         }
                     }
@@ -1057,7 +1058,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     BTreeMap::new()
                 };
                 let msg = MessageType::PutDataResponse(signed_error, group_pub_keys);
-                let msg = resolved.0.create_reply(msg);
+                let msg = resolved.create_reply(msg);
                 ignore(self.send_swarm_or_parallel(&msg));
             }
         }
@@ -1179,8 +1180,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             quorum = self.routing_table.size();
         }
 
-        let resolved = (SentinelPutResponse::new(message.clone(), signed_message.clone(),
-                        response.clone(), our_authority.clone()), true);
+        let resolved = SentinelPutResponse::new(message.clone(), signed_message.clone(),
+                                                response.clone(), our_authority.clone());
 
         //let resolved = match self.put_response_sentinel.add_claim(
         //    SentinelPutResponse::new(message.clone(), response.clone(), our_authority.clone()),
@@ -1206,7 +1207,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                 MethodCall::Forward { destination } => {
-                    let msg = resolved.0.create_forward(self.id.name(), self.group_pub_keys(),
+                    let msg = resolved.create_forward(self.id.name(), self.group_pub_keys(),
                                                         self.get_next_message_id());
                     ignore(self.send_swarm_or_parallel(&msg));
                 }
