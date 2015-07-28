@@ -287,9 +287,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn my_source_address(&self) -> SourceAddress {
         self.bootstrap.clone().map(|(_, name)| {
-            SourceAddress::RelayedForNode(name, self.id.name().clone())
+            SourceAddress::RelayedForClient(name, self.id.signing_public_key())
         })
-        .unwrap_or(SourceAddress::Direct(self.id.name().clone()))
+        .unwrap_or(SourceAddress::Direct(self.id.name()))
     }
 
     ///
@@ -675,35 +675,30 @@ impl<F> RoutingMembrane<F> where F: Interface {
             // Instead we can for now rely on swarming to send it back to us.
             Ok(())
         } else {
-            // FIXME(ben 24/07/2015)
-            // This is a patch for the above: if we have no routing table connections,
-            // we are the only member of the effective close group for the target.
-            // In this case we can reflect it back to ourselves
-            // - and take the risk of piling up the stack; or holding other messages;
-            // afterall we are the only node on the network, as far as we know.
+            match self.bootstrap {
+                Some((ref bootstrap_endpoint, _)) => {
+println!("Sending {:?} over bootstrap connection", msg);
+                    let msg = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
+                    let msg = try!(encode(&msg));
 
-            // if routing table size is zero any target is in range, so no need to check
-            self.send_reflective_to_us(msg)
+                    match self.connection_manager.send(bootstrap_endpoint.clone(), msg) {
+                        Ok(_)  => Ok(()),
+                        Err(e) => Err(RoutingError::Io(e))
+                    }
+                },
+                None => {
+                    // FIXME(ben 24/07/2015)
+                    // This is a patch for the above: if we have no routing table connections,
+                    // we are the only member of the effective close group for the target.
+                    // In this case we can reflect it back to ourselves
+                    // - and take the risk of piling up the stack; or holding other messages;
+                    // afterall we are the only node on the network, as far as we know.
+
+                    // if routing table size is zero any target is in range, so no need to check
+                    self.send_reflective_to_us(msg)
+                }
+            }
         }
-
-        // TODO(ben 24/07/2015) this can be removed. It is also not "wrong" but the crux
-        // of the rust-2 routing refactor was clearly separating the genuine routing network
-        // from bootstrap noise, so if such a functionality is needed, then it should go in
-        // a very explicit function.
-        // else {
-        //     match self.bootstrap {
-        //         Some((ref bootstrap_endpoint, _)) => {
-        //
-        //             let msg = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
-        //             let msg = try!(encode(&msg));
-        //
-        //             match self.connection_manager.send(bootstrap_endpoint.clone(), msg) {
-        //                 Ok(_)  => Ok(()),
-        //                 Err(e) => Err(RoutingError::Io(e))
-        //             }},
-        //         None => Err(RoutingError::FailedToBootstrap)
-        //     }
-        // }
     }
 
     // When we swarm a message, we are also part of the effective close group.
