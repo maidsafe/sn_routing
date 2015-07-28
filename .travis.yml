@@ -20,7 +20,7 @@ script:
 - cargo build --verbose
 - RUST_TEST_THREADS=1 cargo test
 after_success: |
-  if  [[ $TRAVIS_OS = linux ]] && [[ $TRAVIS_BRANCH = master ]] && [[ $TRAVIS_PULL_REQUEST = false ]]; then
+  if  [[ $TRAVIS_OS_NAME = linux ]] && [[ $TRAVIS_BRANCH = master ]] && [[ $TRAVIS_PULL_REQUEST = false ]]; then
     cargo doc &&
     echo "<meta http-equiv=refresh content=0;url=`echo $TRAVIS_REPO_SLUG | cut -d '/' -f 2`/index.html>" > target/doc/index.html &&
     pip install --user ghp-import &&
