@@ -215,11 +215,38 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
         }
 
+        let our_bootstrap = match possible_first {
+            // we bootstrapped to a node
+            false => {
+                // verify bootstrap connection
+                let our_bootstrap = match self.bootstrap {
+                    Some((ref endpoint, ref opt_name)) => {
+                        match *opt_name {
+                            Some(name) => {
+                                (endpoint.clone(), name.clone())
+                            },
+                            None => return Err(RoutingError::FailedToBootstrap)
+                        }
+                    },
+                    None => return Err(RoutingError::FailedToBootstrap)
+                };
+
+                // send FindGroup request before moving to Membrane
+                let find_group_msg =
+                    try!(self.construct_find_group_msg_as_client(&our_bootstrap.1));
+                ignore(cm.send(our_bootstrap.0.clone(), try!(encode(&find_group_msg))));
+
+                Some(our_bootstrap)
+            },
+            // someone tried to bootstrap to us
+            true => None
+        };
+
         match relocated_name {
             Some(new_name) => {
                 self.id.assign_relocated_name(new_name);
                 let mut membrane = RoutingMembrane::<F>::new(
-                    cm, event_output, event_input, None,
+                    cm, event_output, event_input, our_bootstrap,
                     self.id.clone(),
                     self.genesis.create_personas());
                 // TODO: currently terminated by main, should be signalable to terminate
@@ -244,6 +271,25 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
+            authority    : Authority::ManagedNode,
+        };
+
+        SignedMessage::new(&message, self.id.signing_private_key())
+    }
+
+
+    fn construct_find_group_msg_as_client(&mut self, bootstrap_name: &NameType)
+        -> Result<SignedMessage, CborError> {
+        let name   = self.id.name().clone();
+        let message_id = self.get_next_message_id();
+
+        let message = RoutingMessage {
+            destination  : DestinationAddress::Direct(name.clone()),
+            source       : SourceAddress::RelayedForClient(bootstrap_name.clone(),
+                self.id.signing_public_key()),
+            orig_message : None,
+            message_type : MessageType::FindGroup,
+            message_id   : message_id,
             authority    : Authority::ManagedNode,
         };
 
