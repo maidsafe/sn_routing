@@ -16,8 +16,8 @@ env:
 install:
 - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
 - tar xvfz libsodium-1.0.0.tar.gz
-- pwd
-- cd libsodium-1.0.0 && mkdir build && ./configure --prefix=/usr && make && pip install --user libsodium && cd ..
+- cd libsodium-1.0.0 && ./configure --prefix=/home/travis/build/maidsafe/maidsafe_vault/libsodium-1.0.0 && make && make install && cd ..
+- ln -s libsodium.so.1.0.0 libsodium.so.1 && ln -s libsodium.so.1.0.0 libsodium.so && export LD_LIBRARY_PATH=/home/travis/build/maidsafe/maidsafe_vault/libsodium-1.0.0
 script:
 - cargo build --verbose
 - RUST_TEST_THREADS=1 cargo test
