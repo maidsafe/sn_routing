@@ -63,7 +63,7 @@ use public_id::PublicId;
 use utils;
 use utils::{encode, decode};
 use sentinel::pure_sentinel::{PureSentinel, AddResult};
-use user_message::Event;
+use event::Event;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -1691,6 +1691,7 @@ use crust;
 use data::{Data, DataRequest};
 use error::{ResponseError, InterfaceError};
 use id::Id;
+use event::Event;
 use immutable_data::{ImmutableData, ImmutableDataType};
 use structured_data::StructuredData;
 use messages::{ErrorReturn, RoutingMessage, MessageType, SignedMessage, GetDataResponse};
@@ -1999,12 +2000,20 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         name_key_pairs.push((source_name_type2.clone(), sign_keys2.0.clone()));
         let signed_message1 = SignedMessage::new(&message1, &sign_keys1.1).unwrap();
         let signed_message2 = SignedMessage::new(&message2, &sign_keys1.1).unwrap();
-        let request1 = SentinelPutRequest::new(
-            message1.clone(), signed_message1.clone(), data.clone(),
-            Authority::NodeManager(dest_name_type), data.name());
-        let request2 = SentinelPutRequest::new(
-            message2.clone(), signed_message2.clone(), data.clone(),
-            Authority::NodeManager(dest_name_type), data.name());
+
+        let request1 = Event::PutDataRequest(signed_message1.clone(), data.clone(),
+                                             source_name_type1,
+                                             message1.destination.non_relayed_destination(),
+                                             Authority::NodeManager(dest_name_type),
+                                             authority.clone(),
+                                             message1.message_id.clone());
+
+        let request2 = Event::PutDataRequest(signed_message1.clone(), data.clone(),
+                                             source_name_type1,
+                                             message2.destination.non_relayed_destination(),
+                                             Authority::NodeManager(dest_name_type),
+                                             authority.clone(),
+                                             message2.message_id.clone());
 
         let mut tester = Tester::new();
 
