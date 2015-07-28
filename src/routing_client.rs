@@ -191,8 +191,7 @@ impl<F> RoutingClient<F> where F: Interface {
                     Err(_)  => { debug_assert!(false); return }
                 };
 
-                println!("received a {:?} from {:?}", routing_msg.message_type,
-                         endpoint );
+                info!("received a {:?} from {:?}", routing_msg.message_type, endpoint);
 
                 match self.bootstrap {
                     Some((ref bootstrap_endpoint, _)) => {
@@ -229,9 +228,15 @@ impl<F> RoutingClient<F> where F: Interface {
             match self.event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                    println!("NewBootstrapConnection");
-                    self.bootstrap = Some((endpoint, None));
+                    self.bootstrap = Some((endpoint.clone(), None));
                     let our_endpoints = self.connection_manager.get_own_endpoints();
+
+                    let i_am_msg = IAm {
+                        address   : Address::Client(self.public_id.signing_public_key()),
+                        public_id : self.public_id.clone(),
+                    };
+
+                    self.connection_manager.send(endpoint, try!(encode(&i_am_msg)));
                     break;
                 },
                 _ => {}
@@ -266,7 +271,9 @@ impl<F> RoutingClient<F> where F: Interface {
 
         match self.bootstrap {
             Some((ref bootstrap_endpoint, _)) => {
-                let encoded_message = try!(encode(&message));
+                let priv_key        = self.id.signing_private_key();
+                let signed_message  = try!(SignedMessage::new(message, priv_key));
+                let encoded_message = try!(encode(&signed_message));
 
                 let _ = self.connection_manager.send(bootstrap_endpoint.clone(),
                                                      encoded_message);
