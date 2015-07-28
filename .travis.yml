@@ -17,7 +17,7 @@ install:
 - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
 - tar xvfz libsodium-1.0.0.tar.gz
 - pwd
-- cd libsodium-1.0.0 && mkdir build && ./configure --prefix=~/libsodium-1.0.0/build && make && make install && cd ..
+- cd libsodium-1.0.0 && mkdir build && ./configure --prefix=/home/travis/build/maidsafe/maidsafe_vault/libsodium-1.0.0/build && make && make install && cd ..
 - wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz
 - tar xzf master.tar.gz
 - mkdir kcov-master/build
