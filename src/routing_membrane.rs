@@ -1519,7 +1519,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     fn forward(&self, orig_message: &SignedMessage, routing_message: &RoutingMessage,
             destination: NameType) -> RoutingResult {
-        let our_authority = our_authority(&routing_message, &self.routing_table);
+        let original_routing_message =
+            try!(orig_message.get_routing_message());
+        let our_authority = our_authority(&original_routing_message, &self.routing_table);
         let message = routing_message.create_forward(self.id.name().clone(),
                                                      our_authority,
                                                      destination,
