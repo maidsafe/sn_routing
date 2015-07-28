@@ -3,36 +3,36 @@ os:
   - osx
 language: rust
 rust:
-#    - 1.0.0-beta
-    - nightly
-sudo: true
-before_install:
-    - sudo apt-get update -qq
-    - sudo apt-get install -qq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev
-
+  - nightly
+  - beta
+  - stable
+sudo: false
+branches:
+  only:
+      - master
 env:
   global:
     secure: "Kh4TbgJ7jQdL+dPOuNmPIWZfQJL6zDzc0clGIVQP3oP5yDt0qcxUziSxTzRmwoGDRdWDTr+TjdzUaRprfkGpwHsNBKcL90G8GcoBEyevtrzCCtBDUJJrtABaDAJCqa7Rl29d9UNXu01Cnpfskhxv6miwHOuQfzfFKe2OW+RwTy0="
 install:
 - wget https://github.com/jedisct1/libsodium/releases/download/1.0.0/libsodium-1.0.0.tar.gz
 - tar xvfz libsodium-1.0.0.tar.gz
-- cd libsodium-1.0.0 && ./configure --prefix=/usr && make && sudo make install && cd ..
+- cd libsodium-1.0.0 && ./configure --prefix=/usr && make && make install && cd ..
 - wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz
 - tar xzf master.tar.gz
 - mkdir kcov-master/build
 - cd kcov-master/build
 - cmake ..
 - make
-- sudo make install
+- make install
 - cd ../..
 script:
 - cargo build --verbose
 - RUST_TEST_THREADS=1 cargo test
 after_success: |
-  if  [[ $TRAVIS_BRANCH = master ]] && [[ $TRAVIS_PULL_REQUEST = false ]]; then
+  if  [[ $TRAVIS_OS = linux ]] && [[ $TRAVIS_BRANCH = master ]] && [[ $TRAVIS_PULL_REQUEST = false ]]; then
     cargo doc &&
     echo "<meta http-equiv=refresh content=0;url=`echo $TRAVIS_REPO_SLUG | cut -d '/' -f 2`/index.html>" > target/doc/index.html &&
-    sudo pip install ghp-import &&
+    pip install --user ghp-import &&
     mkdir docs-stage &&
     COMMIT_MSG=$(git log -1 | tr '[:upper:]' '[:lower:]' | grep "version change to " | tr -d ' ') &&
     git clone https://github.com/${TRAVIS_REPO_SLUG}.git  docs-stage &&
