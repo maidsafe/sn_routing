@@ -1419,16 +1419,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                   self.public_id_cache.add(public_id.name(), public_id.clone());
                   info!("CACHED RELOCATED {:?}", public_id.name());
                   // Reply with PutPublicIdResponse to the reply_to address
-                  //let reply_message = message.create_reply(&self.id.name(), &our_authority);
-                  let routing_msg = RoutingMessage { destination  : message.reply_destination(),
-                                                     source       : SourceAddress::Direct(self.id.name().clone()),
-                                                     orig_message : None, // TODO: Check this
-                                                     message_type : MessageType::PutPublicIdResponse(public_id.clone()),
-                                                     message_id   : message.message_id,
-                                                     authority    : our_authority.clone(),
-                                                   };
-
-                  ignore(self.send_swarm_or_parallel(&routing_msg));
+                  ignore(self.send_reply(&message, our_authority,
+                      MessageType::PutPublicIdResponse(public_id)));
                 }
                 Ok(())
             },
