@@ -566,8 +566,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         match message.actual_source() {
                             Address::Node(_)
                                 => self.handle_node_get_data_response(message_wrap,
-                                                                       message.clone(),
-                                                                       response.clone()),
+                                                                      message.clone(),
+                                                                      response.clone()),
                            Address::Client(_) =>
                                self.handle_client_get_data_response(message_wrap, message.clone(),
                                                                     response.clone()),
@@ -577,7 +577,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         match message.actual_source() {
                             Address::Node(_) =>
                                 self.handle_node_put_data_response(message_wrap, message.clone(),
-                                                                    response.clone()),
+                                                                   response.clone()),
                             Address::Client(_) =>
                                 self.handle_client_put_data_response(message_wrap, message.clone(),
                                                                      response.clone()),
@@ -587,7 +587,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         match message.source.actual_source() {
                             Address::Node(name) =>
                                 self.handle_node_put_data(message_wrap, message.clone(),
-                                                           data.clone(), name),
+                                                          data.clone(), name),
                             Address::Client(name) =>
                                 self.handle_client_put_data(message_wrap, message.clone(),
                                                             data.clone(), name),
@@ -1029,13 +1029,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     match method_call {
                         MethodCall::Put { destination: x, content: y, } => self.put(x, y),
                         MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
-                        MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                        MethodCall::Refresh { type_tag, from_group, payload }
+                            => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data: y } => self.delete(x, y),
                         MethodCall::Forward { destination } => {
-                            let msg = resolved.create_forward(self.id.name(),
-                                                                destination,
-                                                                self.get_next_message_id());
+                            let msg = resolved.create_forward(self.id.name(), destination,
+                                                              self.get_next_message_id());
                             ignore(self.send_swarm_or_parallel(&msg));
                         },
                         MethodCall::Reply { data } => {
@@ -1049,7 +1049,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             Err(InterfaceError::Response(error)) => {
                 let signed_error = ErrorReturn {
                     error: error,
-                    orig_request: signed_message
+                    orig_request: resolved.orig_message.clone(),
                 };
                 let group_pub_keys = if our_authority.is_group() {
                     self.group_pub_keys()
