@@ -63,7 +63,7 @@ use public_id::PublicId;
 use utils;
 use utils::{encode, decode};
 use sentinel::pure_sentinel::{PureSentinel, AddResult};
-use user_message::{SentinelPutResponse, SentinelGetDataResponse, Event};
+use user_message::Event;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -103,8 +103,8 @@ pub struct RoutingMembrane<F : Interface> {
     refresh_accumulator: RefreshAccumulator,
     // for Persona logic
     interface: Box<F>,
-    put_response_sentinel: PureSentinel<SentinelPutResponse, NameType>,
-    get_data_response_sentinel: PureSentinel<SentinelGetDataResponse, NameType>,
+    put_response_sentinel: PureSentinel<Event, NameType>,
+    get_data_response_sentinel: PureSentinel<Event, NameType>,
     put_sentinel: PureSentinel<Event, NameType>
 }
 
@@ -1020,12 +1020,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Temporarily pretend that the sentinel passed, later implement
         // sentinel.
-        let resolved = Event::PutRequest(signed_message.clone(), data.clone(), source_group,
-                                          message.destination.non_relayed_destination(),
-                                          message.authority.clone(), our_authority.clone(),
-                                          message.message_id.clone());
+        let resolved = Event::PutDataRequest(signed_message.clone(), data.clone(), source_group,
+                                             message.destination.non_relayed_destination(),
+                                             message.authority.clone(), our_authority.clone(),
+                                             message.message_id.clone());
 
-        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data.clone()) {
+        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to,
+                                              data.clone()) {
             Ok(method_calls) => {
                 for method_call in method_calls {
                     match method_call {
@@ -1036,8 +1037,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data: y } => self.delete(x, y),
                         MethodCall::Forward { destination } => {
-                            let msg = try!(resolved.create_forward(self.id.name(), destination,
-                                                                   self.get_next_message_id()));
+                            let data = try!(resolved.get_data());
+                            let msg = try!(resolved.create_forward(
+                                MessageType::PutData(data), self.id.name(), destination,
+                                self.get_next_message_id()));
                             ignore(self.send_swarm_or_parallel(&msg));
                         },
                         MethodCall::Reply { data } => {
@@ -1182,8 +1185,10 @@ impl<F> RoutingMembrane<F> where F: Interface {
             quorum = self.routing_table.size();
         }
 
-        let resolved = SentinelPutResponse::new(message.clone(), signed_message.clone(),
-                                                response.clone(), our_authority.clone());
+        let resolved = Event::PutDataResponse(signed_message.clone(), response.clone(), source,
+                                              message.destination.non_relayed_destination(),
+                                              message.authority.clone(), our_authority.clone(),
+                                              message.message_id.clone());
 
         //let resolved = match self.put_response_sentinel.add_claim(
         //    SentinelPutResponse::new(message.clone(), response.clone(), our_authority.clone()),
@@ -1209,8 +1214,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                 MethodCall::Forward { destination } => {
-                    let msg = resolved.create_forward(self.id.name(), self.group_pub_keys(),
-                                                        self.get_next_message_id());
+                    let response = try!(resolved.get_response());
+                    let message_type = MessageType::PutDataResponse(response,
+                                                                    self.group_pub_keys());
+                    let msg = try!(resolved.create_forward(message_type, self.id.name(), destination,
+                                                           self.get_next_message_id()));
                     ignore(self.send_swarm_or_parallel(&msg));
                 }
                 MethodCall::Reply { data: _data } =>
@@ -1577,8 +1585,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
             quorum = self.routing_table.size();
         }
 
-        let resolved = SentinelGetDataResponse::new(message, signed_message, response,
-                                                    our_authority.clone());
+        let resolved = Event::GetDataResponse(signed_message.clone(), response.clone(), source,
+                                              message.destination.non_relayed_destination(),
+                                              message.authority.clone(), our_authority.clone(),
+                                              message.message_id.clone());
+
 
         //let resolved = match self.get_data_response_sentinel.add_claim(
         //    SentinelGetDataResponse::new(message.clone(), response.clone(), our_authority.clone()),
@@ -1593,8 +1604,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //        },
         //        None => return Ok(())
         //};
-
-        for method_call in self.mut_interface().handle_get_response(from, resolved.response.data.clone()) {
+        let data_response = try!(resolved.get_data_response());
+        for method_call in self.mut_interface().handle_get_response(from,
+                                                                    data_response.data.clone()) {
             match method_call {
                 MethodCall::Put { destination: x, content: y, } => self.put(x, y),
                 MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
@@ -1602,7 +1614,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                 MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                 MethodCall::Forward { destination } => {
-                    let msg = resolved.create_forward(self.id.name(), self.get_next_message_id());
+                    let message_type = MessageType::GetDataResponse(data_response.clone());
+                    let msg = try!(resolved.create_forward(message_type, self.id.name(), destination,
+                                                           self.get_next_message_id()));
                     ignore(self.send_swarm_or_parallel(&msg));
                 },
                 MethodCall::Reply { data: _data } =>
