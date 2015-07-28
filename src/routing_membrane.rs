@@ -1419,8 +1419,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
                   self.public_id_cache.add(public_id.name(), public_id.clone());
                   info!("CACHED RELOCATED {:?}", public_id.name());
                   // Reply with PutPublicIdResponse to the reply_to address
-                  ignore(self.send_reply(&message, our_authority,
-                      MessageType::PutPublicIdResponse(public_id)));
+                  match message.orig_message.clone() {
+                      Some(original_signed_msg) => {
+                          ignore(self.send_reply(&message, our_authority,
+                              MessageType::PutPublicIdResponse(public_id, original_signed_msg)));
+                      },
+                      None => {
+                          error!("Name Request: there should always be an original request message
+                              present at reply. Dropping reply.");
+                      }
+                  }
+
                 }
                 Ok(())
             },
