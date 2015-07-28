@@ -35,6 +35,7 @@ const MAX_RELAY : usize = 100;
 
 /// The relay map is used to maintain a list of contacts for whom
 /// we are relaying messages, when we are ourselves connected to the network.
+/// These have to identify as Client(sign::PublicKey)
 pub struct RelayMap {
     relay_map: BTreeMap<Address, (PublicId, BTreeSet<Endpoint>)>,
     lookup_map: HashMap<Endpoint, Address>,
@@ -67,7 +68,7 @@ impl RelayMap {
             return false;
         }
         // impose limit on number of relay nodes active
-        if !self.relay_map.contains_key(&Address::Node(relay_info.name()))
+        if !self.relay_map.contains_key(&Address::Client(relay_info.signing_public_key()))
             && self.relay_map.len() >= MAX_RELAY {
             return false;
         }
@@ -256,7 +257,7 @@ mod test {
                     new_endpoint)); };
         }
         let test_public_id = PublicId::new(&Id::new());
-        let test_id = Address::Node(test_public_id.name());
+        let test_id = Address::Client(test_public_id.signing_public_key());
 
         let mut test_endpoint_1 = generate_random_endpoint();
         let mut test_endpoint_2 = generate_random_endpoint();
