@@ -108,7 +108,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                         Ok(message) => {
                                             match message.message_type {
                                                 MessageType::PutPublicIdResponse(
-                                                    ref new_public_id) => {
+                                                    ref new_public_id, ref _orig_request) => {
                                                       relocated_name = Some(new_public_id.name());
                                                       println!("Received PutPublicId relocated
                                                           name {:?} from {:?}", relocated_name,
