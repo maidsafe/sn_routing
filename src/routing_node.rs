@@ -155,7 +155,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             match *opt_bootstrap_name {
                                 Some(bootstrap_name) => {
                                     // we have aquired a bootstrap endpoint and relay name
-                                    if sent_name_request {
+                                    if !sent_name_request {
                                         // now send a PutPublicId request
                                         let our_public_id = PublicId::new(&self.id);
                                         let put_public_id_msg
