@@ -14,20 +14,17 @@ function create_package {
     -t $1 \
     -s dir \
     -C $RootDir \
-    --prefix /opt/maidsafe \
     --force \
-    --name maidsafe-vault \
+    --name safe-vault \
     --version $Version \
     --license GPLv3 \
     --vendor MaidSafe \
-    --directories /opt/maidsafe/ \
+    --directories /var/cache/safe/ \
     --maintainer "MaidSafeQA <qa@maidsafe.net>" \
     --description "SAFE Network vault" \
     --url "http://maidsafe.net" \
-    --after-install $RootDir/installer/common/scripts/after_install.sh \
-    --after-remove $RootDir/installer/common/scripts/after_remove.sh \
-    target/release/maidsafe_vault=maidsafe_vault \
-    installer/common/maidsafe_vault.bootstrap.cache=maidsafe_vault.bootstrap.cache
+    target/release/safe_vault=/usr/local/bin/ \
+    installer/common/safe_vault.bootstrap.cache=/var/cache/safe/
 }
 
 cd $RootDir
