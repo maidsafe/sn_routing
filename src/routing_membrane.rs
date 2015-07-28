@@ -208,16 +208,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
         // First send FindGroup request
-        match self.bootstrap.clone() {
-            Some((ref bootstrap_endpoint, _)) => {
-                let find_group_msg = self.construct_find_group_msg();
-                // FIXME: act on error to send; don't over clone bootstrap_endpoint
-                ignore(encode(&find_group_msg).map(|msg|self.connection_manager
-                    .send(bootstrap_endpoint.clone(), msg)));
-            },
-            None => {
-            }
-        }
+        // match self.bootstrap.clone() {
+        //     Some((ref bootstrap_endpoint, _)) => {
+        //         let find_group_msg = self.construct_find_group_msg();
+        //         // FIXME: act on error to send; don't over clone bootstrap_endpoint
+        //         ignore(encode(&find_group_msg).map(|msg|self.connection_manager
+        //             .send(bootstrap_endpoint.clone(), msg)));
+        //     },
+        //     None => {
+        //     }
+        // }
 
         info!("Started Membrane loop");
         loop {
