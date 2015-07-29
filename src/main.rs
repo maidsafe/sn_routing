@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.                                                              */
 
-#![crate_name = "maidsafe_vault"]
+#![crate_name = "safe_vault"]
 #![crate_type = "bin"]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
@@ -92,9 +92,9 @@ impl Vault {
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage:
-  maidsafe_vault [<peer>...]
-  maidsafe_vault --first
-  maidsafe_vault --help
+  safe_vault [<peer>...]
+  safe_vault --first
+  safe_vault --help
 
 Options:
   -f, --first  Node runs as the first vault in the network.
