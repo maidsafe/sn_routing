@@ -164,18 +164,15 @@ impl<F> RoutingClient<F> where F: Interface {
         }
     }
 
-//######################################## API ABOVE this point ##################
-
-    pub fn run_one(&mut self) {
+    pub fn poll_one(&mut self) {
         match self.event_input.try_recv() {
             Err(_) => (),
             Ok(crust::connection_manager::Event::NewMessage(endpoint, bytes)) => {
-                //println!(">> 1 {:?}", decode::<SignedMessage>(&bytes));
-                //println!(">> 2 {:?}", decode::<RoutingMessage>(&bytes));
-                //println!(">> 3 {:?}", decode::<IAm>(&bytes));
-
                 match decode::<IAm>(&bytes) {
-                    Ok(msg) => { self.handle_i_am(endpoint, msg); return; },
+                    Ok(msg) => {
+                        // Ignore, should have been handled while bootstrapping.
+                        return;
+                    },
                     Err(_)  => {;}
                 }
 
@@ -219,7 +216,6 @@ impl<F> RoutingClient<F> where F: Interface {
     /// or use CRUST self-discovery options.
     pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
         try!(self.connection_manager.start_accepting(vec![]));
-
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
 
         loop {
@@ -234,7 +230,12 @@ impl<F> RoutingClient<F> where F: Interface {
                     };
 
                     try!(self.connection_manager.send(endpoint, try!(encode(&i_am_msg))));
-                    break;
+                },
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    if let Ok(msg) = decode::<IAm>(&bytes) {
+                        self.handle_i_am(endpoint, msg);
+                        return Ok(());
+                    }
                 },
                 _ => {}
             }
