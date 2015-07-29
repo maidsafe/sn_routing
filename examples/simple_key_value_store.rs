@@ -361,7 +361,7 @@ fn run_interactive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
         thread::sleep_ms(100);
         loop {
             thread::sleep_ms(10);
-            copied_client.lock().unwrap().run();
+            copied_client.lock().unwrap().run_one();
         }
     });
     let ref mut command = String::new();

@@ -26,17 +26,16 @@ use client_interface::Interface;
 use crust;
 use messages;
 use name_type::NameType;
-use sendable::Sendable;
 use error::RoutingError;
-use messages::{RoutingMessage, MessageType,
-               ConnectResponse, ConnectRequest, ErrorReturn, };
-use types::{MessageId, DestinationAddress, SourceAddress};
+use messages::{RoutingMessage, SignedMessage, MessageType, ErrorReturn};
+use types::{MessageId, DestinationAddress, SourceAddress, Address};
 use id::Id;
 use public_id::PublicId;
 use authority::Authority;
 use utils::*;
 use data::{Data, DataRequest};
 use cbor::{CborError};
+use who_are_you::IAm;
 
 pub use crust::Endpoint;
 
@@ -48,13 +47,13 @@ type PortAndProtocol = crust::Port;
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 3;
 
 pub struct RoutingClient<F: Interface> {
-    interface: Arc<Mutex<F>>,
-    event_input: Receiver<Event>,
-    connection_manager: ConnectionManager,
-    id: Id,
-    public_id: PublicId,
-    bootstrap_address: (Option<NameType>, Option<Endpoint>),
-    next_message_id: MessageId
+    interface          : Arc<Mutex<F>>,
+    event_input        : Receiver<Event>,
+    connection_manager : ConnectionManager,
+    id                 : Id,
+    public_id          : PublicId,
+    bootstrap          : Option<(Endpoint, Option<NameType>)>,
+    next_message_id    : MessageId
 }
 
 impl<F> Drop for RoutingClient<F> where F: Interface {
@@ -69,20 +68,20 @@ impl<F> RoutingClient<F> where F: Interface {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let (tx, rx) = mpsc::channel::<Event>();
         RoutingClient {
-            interface: my_interface,
-            event_input: rx,
-            connection_manager: crust::ConnectionManager::new(tx),
-            public_id: PublicId::new(&id),
-            id: id,
-            bootstrap_address: (None, None),
-            next_message_id: rand::random::<MessageId>()
+            interface          : my_interface,
+            event_input        : rx,
+            connection_manager : crust::ConnectionManager::new(tx),
+            public_id          : PublicId::new(&id),
+            id                 : id,
+            bootstrap          : None,
+            next_message_id    : rand::random::<MessageId>()
         }
     }
 
     fn bootstrap_name(&self) -> Result<NameType, RoutingError> {
-        match self.bootstrap_address.0 {
-            Some(name) => Ok(name),
-            None       => Err(RoutingError::NotBootstrapped),
+        match self.bootstrap {
+            Some((_, Some(name))) => Ok(name),
+            _                     => Err(RoutingError::NotBootstrapped),
         }
     }
 
@@ -167,29 +166,36 @@ impl<F> RoutingClient<F> where F: Interface {
 
 //######################################## API ABOVE this point ##################
 
-
-    pub fn run(&mut self) {
+    pub fn run_one(&mut self) {
         match self.event_input.try_recv() {
             Err(_) => (),
             Ok(crust::connection_manager::Event::NewMessage(endpoint, bytes)) => {
-                // The received id is Endpoint(i.e. ip + socket) which is no use to upper layer
-                // println!("received a new message from {}",
-                //          match endpoint.clone() { Tcp(socket_addr) => socket_addr });
-                let routing_msg = match decode::<RoutingMessage>(&bytes) {
-                    Ok(routing_msg) => routing_msg,
-                    Err(_) => return
+                //println!(">> 1 {:?}", decode::<SignedMessage>(&bytes));
+                //println!(">> 2 {:?}", decode::<RoutingMessage>(&bytes));
+                //println!(">> 3 {:?}", decode::<IAm>(&bytes));
+
+                match decode::<IAm>(&bytes) {
+                    Ok(msg) => { self.handle_i_am(endpoint, msg); return; },
+                    Err(_)  => {;}
+                }
+
+                let signed_msg = match decode::<SignedMessage>(&bytes) {
+                    Ok(msg) => msg,
+                    Err(_) => { debug_assert!(false); return }
                 };
-                println!("received a {:?} from {:?}", routing_msg.message_type,
-                         endpoint );
-                match self.bootstrap_address.1.clone() {
-                    Some(ref bootstrap_endpoint) => {
+
+                let routing_msg = match signed_msg.get_routing_message() {
+                    Ok(m) => m,
+                    Err(_)  => { debug_assert!(false); return }
+                };
+
+                info!("received a {:?} from {:?}", routing_msg.message_type, endpoint);
+
+                match self.bootstrap {
+                    Some((ref bootstrap_endpoint, _)) => {
                         // only accept messages from our bootstrap endpoint
                         if bootstrap_endpoint == &endpoint {
                             match routing_msg.message_type {
-                                MessageType::ConnectResponse(connect_response) => {
-                                    self.handle_connect_response(endpoint,
-                                                                 connect_response);
-                                },
                                 MessageType::GetDataResponse(result) => {
                                     self.handle_get_data_response(result);
                                 },
@@ -200,7 +206,7 @@ impl<F> RoutingClient<F> where F: Interface {
                             }
                         }
                     },
-                    None => { println!("Client is not connected to a node."); }
+                    _ => { info!("Received message but not fully bootstrapped"); }
                 }
             },
             _ => { // as a client, shall not handle any connection related change
@@ -212,70 +218,59 @@ impl<F> RoutingClient<F> where F: Interface {
     /// Use bootstrap to attempt connecting the client to previously known nodes,
     /// or use CRUST self-discovery options.
     pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
-        // FIXME(ben 24/07/2015) this should become part of run() with integrated eventloop
-        println!("start accepting");
         try!(self.connection_manager.start_accepting(vec![]));
+
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+
         loop {
             match self.event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                    println!("NewBootstrapConnection");
-                    self.bootstrap_address.1 = Some(endpoint);
-                    // FIXME(ben 24/07/2015) this needs to replaced with a clear WhoAreYou
-                    // ConnectRequest is a mis-use
-                    let our_endpoints = self.connection_manager.get_own_endpoints();
-                    self.send_bootstrap_connect_request(our_endpoints);
+                    self.bootstrap = Some((endpoint.clone(), None));
+
+                    let i_am_msg = IAm {
+                        address   : Address::Client(self.public_id.signing_public_key()),
+                        public_id : self.public_id.clone(),
+                    };
+
+                    try!(self.connection_manager.send(endpoint, try!(encode(&i_am_msg))));
                     break;
                 },
                 _ => {}
             }
         }
+
         Ok(())
     }
 
-    #[allow(dead_code)]
-    fn send_bootstrap_connect_request(&mut self, accepting_on: Vec<Endpoint>) {
-        match self.bootstrap_address.clone() {
-            (_, Some(_)) => {
-                println!("Sending connect request");
+    fn handle_i_am(&mut self, _endpoint: Endpoint, message: IAm) {
+        let node_name = match message.address {
+            Address::Node(n) => n,
+            // We don't care about clients.
+            Address::Client(_) => {
+                // TODO: Remove from self.bootstrap if endpoint (arg)
+                // is the bootstrap endpoint (self.bootstrap.0).
+                return;
+            }
+        };
 
-                let message = RoutingMessage {
-                    destination : DestinationAddress::Direct(self.public_id.name()),
-                    source      : SourceAddress::Direct(self.public_id.name()),
-                    orig_message: None,
-                    message_type: MessageType::ConnectRequest(messages::ConnectRequest {
-                        local_endpoints: accepting_on,
-                        external_endpoints: vec![],
-                        requester_id: self.public_id.name(),
-                        // FIXME: this field is ignored; again fixed on WhoAreYou approach
-                        receiver_id: self.public_id.name(),
-                        requester_fob: self.public_id.clone()
-                    }),
-                    message_id  : self.get_next_message_id(),
-                    authority   : Authority::Client(self.id.signing_public_key()),
-                };
-
-                let _ = self.send_to_bootstrap_node(&message);
+        self.bootstrap = match self.bootstrap {
+            // TODO: Endpoints are currently non comparable(?)
+            Some((ref ep, None)) /* if ep == endpoint */ => {
+                Some((ep.clone(), Some(node_name)))
             },
-            _ => {}
+            _ => self.bootstrap.clone()
         }
-    }
-
-    fn handle_connect_response(&mut self,
-                               peer_endpoint: Endpoint,
-                               connect_response: ConnectResponse) {
-        assert!(self.bootstrap_address.0.is_none());
-        assert_eq!(self.bootstrap_address.1, Some(peer_endpoint.clone()));
-        self.bootstrap_address.0 = Some(connect_response.receiver_fob.name());
     }
 
     fn send_to_bootstrap_node(&mut self, message: &RoutingMessage)
             -> Result<(), CborError> {
 
-        match self.bootstrap_address.1 {
-            Some(ref bootstrap_endpoint) => {
-                let encoded_message = try!(encode(&message));
+        match self.bootstrap {
+            Some((ref bootstrap_endpoint, _)) => {
+                let priv_key        = self.id.signing_private_key();
+                let signed_message  = try!(SignedMessage::new(message, priv_key));
+                let encoded_message = try!(encode(&signed_message));
 
                 let _ = self.connection_manager.send(bootstrap_endpoint.clone(),
                                                      encoded_message);
