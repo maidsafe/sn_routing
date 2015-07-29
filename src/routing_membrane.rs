@@ -652,13 +652,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn send_swarm_or_parallel(&self, msg : &RoutingMessage) -> Result<(), RoutingError> {
-        let name = msg.non_relayed_destination();
+        let destination = msg.non_relayed_destination();
+        let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
+        self.send_swarm_or_parallel_signed_message(&signed_message, &destination)
+    }
+
+    fn send_swarm_or_parallel_signed_message(&self, signed_message : &SignedMessage,
+        destination: &NameType) -> Result<(), RoutingError> {
 
         if self.routing_table.size() > 0 {
-            let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
             let bytes = try!(encode(&signed_message));
 
-            for peer in self.routing_table.target_nodes(&name) {
+            for peer in self.routing_table.target_nodes(&destination) {
                 match peer.connected_endpoint {
                     Some(peer_endpoint) => {
                         ignore(self.connection_manager.send(peer_endpoint, bytes.clone()));
@@ -678,9 +683,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         } else {
             match self.bootstrap {
                 Some((ref bootstrap_endpoint, _)) => {
-println!("Sending {:?} over bootstrap connection", msg);
-                    let msg = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
-                    let msg = try!(encode(&msg));
+                    let msg = try!(encode(&signed_message));
 
                     match self.connection_manager.send(bootstrap_endpoint.clone(), msg) {
                         Ok(_)  => Ok(()),
@@ -696,7 +699,7 @@ println!("Sending {:?} over bootstrap connection", msg);
                     // afterall we are the only node on the network, as far as we know.
 
                     // if routing table size is zero any target is in range, so no need to check
-                    self.send_reflective_to_us(msg)
+                    self.send_reflective_to_us(signed_message)
                 }
             }
         }
@@ -707,8 +710,7 @@ println!("Sending {:?} over bootstrap connection", msg);
     // when we have no routing table connections, we explicitly have no choice, but to loop
     // it back to ourselves
     // this is the logically correct behaviour.
-    fn send_reflective_to_us(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
-        let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
+    fn send_reflective_to_us(&self, signed_message: &SignedMessage) -> Result<(), RoutingError> {
         let bytes = try!(encode(&signed_message));
         let new_event = crust::Event::NewMessage(self.reflective_endpoint.clone(), bytes);
         match self.sender_clone.send(new_event) {
@@ -751,7 +753,7 @@ println!("Sending {:?} over bootstrap connection", msg);
         let connect_request = ConnectRequest {
             local_endpoints: self.accepting_on.clone(),
             external_endpoints: vec![],
-            requester_id: self.id.name().clone(),
+            requester_id: self.id.name(),
             receiver_id: peer_id.clone(),
             requester_fob: PublicId::new(&self.id),
         };

@@ -281,11 +281,11 @@ impl SignedMessage {
         })
     }
 
-    pub fn with_signature(message: &RoutingMessage, signature: &Signature)
+    pub fn with_signature(message: &RoutingMessage, signature: Signature)
         -> Result<SignedMessage, CborError> {
 
           let encoded_body = try!(utils::encode(&message));
-          
+
           Ok(SignedMessage {
               encoded_body: encoded_body,
               signature:    signature
