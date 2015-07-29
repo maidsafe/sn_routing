@@ -83,7 +83,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     //  For an initial draft, kept it as a separate function call.
     pub fn run(&mut self) -> Result<(), RoutingError> {
         // keep state on whether we still might be the first around.
-        let mut possible_first = true;
+        let mut found_bootstrap = false;
         let relocated_name : Option<NameType>;
         let mut sent_name_request = false;
 
@@ -167,7 +167,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
                     // only allow first if we still have the possibility
-                    if possible_first {
+                    if !found_bootstrap {
                         // break from listening to CM
                         // and first start RoutingMembrane
                         relocated_name = Some(NameType(sodiumoxide::crypto::hash::sha512
@@ -188,7 +188,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                         None => {
                             // we found a bootstrap connection,
                             // so disable us becoming a first node
-                            possible_first = false;
+                            found_bootstrap = true;
                             // register the bootstrap endpoint
                             self.bootstrap = Some((endpoint.clone(), None));
                             info!("Established bootstrap connection on {:?}", endpoint);
@@ -211,26 +211,25 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
         }
 
-        let our_bootstrap = match possible_first {
+        let our_bootstrap = if found_bootstrap {
             // we bootstrapped to a node
-            false => {
-                // verify bootstrap connection
-                let our_bootstrap = match self.bootstrap {
-                    Some((ref endpoint, Some(ref name))) => {
-                        (endpoint.clone(), name.clone())
-                    },
-                    _ => return Err(RoutingError::FailedToBootstrap)
-                };
+            // verify bootstrap connection
+            let our_bootstrap = match self.bootstrap {
+                Some((ref endpoint, Some(ref name))) => {
+                    (endpoint.clone(), name.clone())
+                },
+                _ => return Err(RoutingError::FailedToBootstrap)
+            };
 
-                // send FindGroup request before moving to Membrane
-                let find_group_msg =
-                    try!(self.construct_find_group_msg_as_client(&our_bootstrap.1));
-                ignore(cm.send(our_bootstrap.0.clone(), try!(encode(&find_group_msg))));
+            // send FindGroup request before moving to Membrane
+            let find_group_msg =
+                try!(self.construct_find_group_msg_as_client(&our_bootstrap.1));
+            ignore(cm.send(our_bootstrap.0.clone(), try!(encode(&find_group_msg))));
 
-                Some(our_bootstrap)
-            },
+            Some(our_bootstrap)
+        } else {
             // someone tried to bootstrap to us
-            true => None
+            None
         };
 
         match relocated_name {
