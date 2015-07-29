@@ -37,7 +37,7 @@ use messages::{RoutingMessage, SignedMessage, MessageType};
 use error::{RoutingError};
 use std::thread::spawn;
 
-static MAX_BOOTSTRAP_CONNECTIONS : usize = 3;
+static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
