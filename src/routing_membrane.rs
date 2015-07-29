@@ -116,12 +116,13 @@ impl<F> RoutingMembrane<F> where F: Interface {
                relocated_id: Id,
                personas: F) -> RoutingMembrane<F> {
         debug_assert!(relocated_id.is_relocated());
+        let accepting_on = cm.get_own_endpoints();
         RoutingMembrane {
             sender_clone: sender_clone,
             event_input: event_input,
             connection_manager: cm,
             reflective_endpoint: get_reflective_endpoint(),
-            accepting_on: vec![],
+            accepting_on: accepting_on,
             bootstrap: bootstrap,
             routing_table : RoutingTable::new(&relocated_id.name()),
             relay_map: RelayMap::new(&relocated_id),
