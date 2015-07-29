@@ -208,17 +208,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
-        // First send FindGroup request
-        // match self.bootstrap.clone() {
-        //     Some((ref bootstrap_endpoint, _)) => {
-        //         let find_group_msg = self.construct_find_group_msg();
-        //         // FIXME: act on error to send; don't over clone bootstrap_endpoint
-        //         ignore(encode(&find_group_msg).map(|msg|self.connection_manager
-        //             .send(bootstrap_endpoint.clone(), msg)));
-        //     },
-        //     None => {
-        //     }
-        // }
 
         info!("Started Membrane loop");
         loop {
@@ -284,58 +273,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
             SourceAddress::RelayedForClient(name, self.id.signing_public_key())
         })
         .unwrap_or(SourceAddress::Direct(self.id.name()))
-    }
-
-    ///
-    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: SignedMessage)
-            -> RoutingResult {
-
-        //let (serialised_connect_request, signature) = match message.clone() {
-        //    Message::Signed(serialised_cr, signature) => (serialised_cr, signature),
-        //    Message::Unsigned(_) => return Err(RoutingError::NotEnoughSignatures)
-        //};
-
-        let routing_message = try!(message.get_routing_message());
-        let connect_request = match routing_message.message_type {
-            MessageType::ConnectRequest(ref request) => request.clone(),
-            _ => return Ok(()), // To be changed to Parse error
-        };
-
-        let our_authority = our_authority(&routing_message, &self.routing_table);
-
-        // only accept unrelocated Ids from unknown connections
-        if connect_request.requester_fob.is_relocated() {
-            return Err(RoutingError::RejectedPublicId);
-        }
-
-        // if the PublicId is not relocated,
-        // only accept the connection into the RelayMap.
-        // This will enable this connection to bootstrap or act as a client.
-        let mut routing_msg = try!(routing_message.create_reply(&self.id.name(), &our_authority));
-        routing_msg.message_type = MessageType::ConnectResponse(ConnectResponse {
-                    requester_local_endpoints: connect_request.local_endpoints.clone(),
-                    requester_external_endpoints: connect_request.external_endpoints.clone(),
-                    receiver_local_endpoints: self.accepting_on.clone(),
-                    receiver_external_endpoints: vec![],
-                    requester_id: connect_request.requester_id.clone(),
-                    receiver_id: self.id.name().clone(),
-                    receiver_fob: PublicId::new(&self.id),
-                    serialised_connect_request: message.encoded_body().clone(),
-                    connect_request_signature: message.signature().clone()
-                });
-
-        let signed_message = try!(SignedMessage::new(&routing_msg, self.id.signing_private_key()));
-        let serialised_msg = try!(encode(&signed_message));
-
-        self.relay_map.add_client(connect_request.requester_fob, endpoint.clone());
-        self.relay_map.remove_unknown_connection(endpoint);
-
-        debug_assert!(self.relay_map.contains_endpoint(&endpoint));
-
-        match self.connection_manager.send(endpoint.clone(), serialised_msg) {
-            Ok(_)  => Ok(()),
-            Err(e) => Err(RoutingError::Io(e))
-        }
     }
 
     /// When CRUST receives a connect to our listening port and establishes a new connection,
