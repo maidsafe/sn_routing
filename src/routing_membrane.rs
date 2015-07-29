@@ -220,29 +220,40 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 // We sent this message to ourselves
                                 // as we are part of the effective close group
                                 Some(ConnectionName::ReflectionOnToUs) => {
+                                    debug!("New Message from REFLECTION {:?}", endpoint);
                                     ignore(self.message_received(message));
                                 },
                                 // we hold an active connection to this endpoint,
                                 // mapped to a name in our routing table
                                 Some(ConnectionName::Routing(name)) => {
+                                    debug!("New Message from ROUTING {:?} on {:?}",
+                                        name, endpoint);
                                     ignore(self.message_received(message));
                                 },
                                 // we hold an active connection to this endpoint,
                                 // mapped to a name in our relay map
-                                Some(ConnectionName::Relay(_)) => {
+                                Some(ConnectionName::Relay(address)) => {
+                                    debug!("New Message from RELAY {:?} on {:?}",
+                                        address, endpoint);
                                     // messages are owned by the signature of the sender
                                     // we can handle it as a normal signed routing message.
                                     // TODO(ben 29/07/2015) message can be validated
                                     ignore(self.message_received(message));
                                 },
                                 Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
+                                    debug!("New Message from BOOTSTRAP {:?} on {:?}",
+                                        bootstrap_node_name, endpoint);
                                     ignore(self.message_received(message));
                                 },
                                 Some(ConnectionName::UnidentifiedConnection) => {
+                                    debug!("New Message from UNIDENTIFIED connection {:?} - dropped message",
+                                        endpoint);
                                     // Don't accept Signed Routing Messages
                                     // from unidentified connections
                                 },
                                 None => {
+                                    error!("New Message from UNLABELED connection {:?} - dropped message",
+                                        endpoint);
                                     // Don't accept Signed Routing Messages
                                     // from unlabeled connections
                                 }
