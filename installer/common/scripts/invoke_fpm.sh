@@ -83,8 +83,7 @@ function prepare_sysv_style_scripts {
   printf 'PATH=/sbin:/usr/sbin:/bin:/usr/bin\n' >> $InitName
   printf 'Description="%s"\n' "$Description" >> $InitName
   printf 'Name=%s\n' "$InitName" >> $InitName
-  printf 'Daemon=%s\n' "$VaultPath$VaultName" >> $InitName
-  printf 'PidFile=/var/run/$Name.pid\n\n' >> $InitName
+  printf 'Daemon=%s\n\n' "$VaultPath$VaultName" >> $InitName
   printf '# Exit if the package is not installed\n' >> $InitName
   printf '[ -x "%s" ] || exit 0\n\n' "$VaultPath$VaultName" >> $InitName
   printf '# Load the VERBOSE setting and other rcS variables\n' >> $InitName
@@ -97,8 +96,8 @@ function prepare_sysv_style_scripts {
   printf '#   1 if daemon was already running\n' >> $InitName
   printf '#   2 if daemon could not be started\n' >> $InitName
   printf 'do_start() {\n' >> $InitName
-  printf '  start-stop-daemon --start --quiet --pidfile $PidFile --exec $Daemon --test > /dev/null || return 1\n' >> $InitName
-  printf '  start-stop-daemon --start --background --quiet --pidfile $PidFile --exec $Daemon || return 2\n' >> $InitName
+  printf '  start-stop-daemon --start --quiet --exec $Daemon --test > /dev/null || return 1\n' >> $InitName
+  printf '  start-stop-daemon --start --background --quiet --exec $Daemon || return 2\n' >> $InitName
   printf '}\n\n' >> $InitName
   printf '# Returns\n' >> $InitName
   printf '#   0 if daemon has been stopped\n' >> $InitName
@@ -106,10 +105,9 @@ function prepare_sysv_style_scripts {
   printf '#   2 if daemon could not be stopped\n' >> $InitName
   printf '#   other if a failure occurred\n' >> $InitName
   printf 'do_stop() {\n' >> $InitName
-  printf '  start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PidFile --name $Name\n' >> $InitName
+  printf '  start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --name $Name\n' >> $InitName
   printf '  ReturnValue="$?"\n' >> $InitName
   printf '  [ "$ReturnValue" = 2 ] && return 2\n' >> $InitName
-  printf '#  rm -f $PidFile\n' >> $InitName
   printf '  return "$ReturnValue"\n' >> $InitName
   printf '}\n\n' >> $InitName
   printf 'case "$1" in\n' >> $InitName
