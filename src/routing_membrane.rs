@@ -61,7 +61,7 @@ use id::Id;
 use public_id::PublicId;
 use utils;
 use utils::{encode, decode};
-use sentinel::pure_sentinel::{PureSentinel, AddResult};
+use sentinel::pure_sentinel::{PureSentinel};
 use user_message::{SentinelPutRequest, SentinelPutResponse, SentinelGetDataResponse};
 
 type RoutingResult = Result<(), RoutingError>;
@@ -102,9 +102,9 @@ pub struct RoutingMembrane<F : Interface> {
     refresh_accumulator: RefreshAccumulator,
     // for Persona logic
     interface: Box<F>,
-    put_response_sentinel: PureSentinel<SentinelPutResponse, NameType>,
-    get_data_response_sentinel: PureSentinel<SentinelGetDataResponse, NameType>,
-    put_sentinel: PureSentinel<SentinelPutRequest, NameType>
+    _put_response_sentinel: PureSentinel<SentinelPutResponse, NameType>,
+    _get_data_response_sentinel: PureSentinel<SentinelGetDataResponse, NameType>,
+    _put_sentinel: PureSentinel<SentinelPutRequest, NameType>
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
@@ -133,9 +133,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             connection_cache: BTreeMap::new(),
             refresh_accumulator: RefreshAccumulator::new(),
             interface : Box::new(personas),
-            put_response_sentinel: PureSentinel::new(),
-            get_data_response_sentinel: PureSentinel::new(),
-            put_sentinel: PureSentinel::new()
+            _put_response_sentinel: PureSentinel::new(),
+            _get_data_response_sentinel: PureSentinel::new(),
+            _put_sentinel: PureSentinel::new()
         }
     }
 
@@ -272,7 +272,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                 Ok(crust::Event::LostConnection(endpoint)) => {
                     self.handle_lost_connection(endpoint);
                 },
-                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                Ok(crust::Event::NewBootstrapConnection(_endpoint)) => {
                     // TODO(ben 23/07/2015): drop and stop crust bootstrapping
                 }
             };
@@ -604,6 +604,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.send_swarm_or_parallel_signed_message(&signed_message, &destination)
     }
 
+    #[allow(dead_code)]
     fn send_swarm_or_parallel_with_signature(&self, msg: &RoutingMessage,
         signature : Signature) -> Result<(), RoutingError> {
         let destination = msg.non_relayed_destination();
@@ -826,7 +827,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     false => {
                         // move endpoint based on identification
                         match i_am.address {
-                            Address::Client(public_key) => {
+                            Address::Client(_) => {
                                 self.relay_map.add_client(i_am.public_id.clone(), endpoint.clone());
                                 self.relay_map.remove_unknown_connection(endpoint);
                             },
@@ -940,17 +941,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     // Routing handle put_data
     fn handle_group_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
-                       data: Data, source: NameType) -> RoutingResult {
+                              data: Data, _source: NameType) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source_address();
         //let to = message.send_to();
         let to = message.destination_address();
-        let mut quorum = types::QUORUM_SIZE;
-
-        if self.routing_table.size() < types::QUORUM_SIZE {
-            quorum = self.routing_table.size();
-        }
 
         let source_authority = match message.authority.clone() {
             Authority::ClientManager(name) => name,
@@ -1107,22 +1103,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_group_put_data_response(&mut self, signed_message: SignedMessage,
+    fn handle_group_put_data_response(&mut self, _signed_message: SignedMessage,
             message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
         info!("Handle group PUT data response.");
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source.clone();
-        let mut quorum = types::QUORUM_SIZE;
-
-        let source = match message.source.actual_source() {
+        let _source = match message.source.actual_source() {
             Address::Node(name) => name,
             _ => return Err(RoutingError::BadAuthority),
         };
-
-        if self.routing_table.size() < types::QUORUM_SIZE {
-            quorum = self.routing_table.size();
-        }
 
         let resolved = (SentinelPutResponse::new(message.clone(), response.clone(),
             our_authority.clone()), true);
@@ -1515,20 +1505,25 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.send_swarm_or_parallel_or_relay(&message)
     }
 
-    fn handle_group_get_data_response(&mut self, signed_message : SignedMessage,
-            message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
-        let our_authority = our_authority(&message, &self.routing_table);
-        let from = message.source.non_relayed_source();
+    pub fn get_quorum(&self) -> usize {
         let mut quorum = types::QUORUM_SIZE;
-
-        let source = match message.source.actual_source() {
-            Address::Node(name) => name,
-            _ => return Err(RoutingError::BadAuthority),
-        };
-
         if self.routing_table.size() < types::QUORUM_SIZE {
             quorum = self.routing_table.size();
         }
+        quorum
+    }
+
+    fn handle_group_get_data_response(&mut self, _signed_message : SignedMessage,
+            message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
+        let our_authority = our_authority(&message, &self.routing_table);
+        let from = message.source.non_relayed_source();
+
+        let _ = self.get_quorum();
+
+        let _source = match message.source.actual_source() {
+            Address::Node(name) => name,
+            _ => return Err(RoutingError::BadAuthority),
+        };
 
         let resolved = SentinelGetDataResponse::new(message, response, our_authority.clone());
 
@@ -1792,7 +1787,7 @@ fn create_membrane(stats: Arc<Mutex<Stats>>) -> RoutingMembrane<TestInterface> {
     let mut id = Id::new();
     let (event_output, event_input) = mpsc::channel();
     let mut cm = crust::ConnectionManager::new(event_output.clone());
-    cm.start_accepting(vec![]);
+    let _ = cm.start_accepting(vec![]);
 
     // Hack: assign a name which is not a hash of the public sign
     // key, so that the membrane thinks it is a relocated id.
@@ -1830,7 +1825,7 @@ impl Tester {
         };
 
         let signed_message = SignedMessage::new(&message, self.membrane.id.signing_private_key());
-        let connection_name = ConnectionName::Routing(match source.actual_source() {
+        let _connection_name = ConnectionName::Routing(match source.actual_source() {
             Address::Node(name) => name,
             _                   => Random::generate_random()
         });
@@ -1953,14 +1948,14 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
 
         let mut tester = Tester::new();
         let signed_message1 = SignedMessage::new(&message1, &sign_keys1.1);
-        let connection_name1 = ConnectionName::Routing(source_name_type1);
+        let _connection_name1 = ConnectionName::Routing(source_name_type1);
         let signed_message2 = SignedMessage::new(&message2, &sign_keys1.1);
-        let connection_name2 = ConnectionName::Routing(source_name_type2);
+        let _connection_name2 = ConnectionName::Routing(source_name_type2);
 
         let _ = tester.membrane.message_received(signed_message1.unwrap());
-        assert!(tester.membrane.put_sentinel.add_keys(
+        assert!(tester.membrane._put_sentinel.add_keys(
             request1.clone(), Random::generate_random(), name_key_pairs.clone(), 2usize).is_none());
-        assert!(tester.membrane.put_sentinel.add_keys(
+        assert!(tester.membrane._put_sentinel.add_keys(
             request2.clone(), Random::generate_random(), name_key_pairs, 2usize).is_none());
         let _ = tester.membrane.message_received(signed_message2.unwrap());
         let stats = tester.stats.clone();
