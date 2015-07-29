@@ -26,7 +26,7 @@
 //! Other network management messages are handled by Routing after Sentinel resolution.
 
 use rand;
-use sodiumoxide::crypto::sign::{verify_detached};
+use sodiumoxide::crypto::sign::{verify_detached, Signature};
 use sodiumoxide::crypto::sign;
 use std::collections::{BTreeMap};
 use std::boxed::Box;
@@ -657,6 +657,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
         self.send_swarm_or_parallel_signed_message(&signed_message, &destination)
     }
 
+    fn send_swarm_or_parallel_with_signature(&self, msg: &RoutingMessage,
+        signature : Signature) -> Result<(), RoutingError> {
+        let destination = msg.non_relayed_destination();
+        let signed_message = try!(SignedMessage::with_signature(&msg,
+            signature));
+        self.send_swarm_or_parallel_signed_message(&signed_message, &destination)
+    }
+
     fn send_swarm_or_parallel_signed_message(&self, signed_message : &SignedMessage,
         destination: &NameType) -> Result<(), RoutingError> {
 
@@ -725,25 +733,33 @@ impl<F> RoutingMembrane<F> where F: Interface {
     fn send_swarm_or_parallel_or_relay(&mut self, msg: &RoutingMessage)
         -> Result<(), RoutingError> {
 
-        let dst = msg.destination_address();
+        let destination = msg.destination_address();
+        let signed_message = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
+        self.send_swarm_or_parallel_or_relay_signed_message(
+            &signed_message, &destination)
+    }
 
-        if dst.non_relayed_destination() == self.id.name() {
-            let msg = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
-            let msg = try!(encode(&msg));
+    fn send_swarm_or_parallel_or_relay_signed_message(&mut self,
+        signed_message: &SignedMessage, destination_address: &DestinationAddress)
+        -> Result<(), RoutingError> {
 
-            match dst {
+        if destination_address.non_relayed_destination() == self.id.name() {
+            let bytes = try!(encode(signed_message));
+
+            match *destination_address {
                 DestinationAddress::RelayToClient(_, public_key) => {
-                    self.send_out_as_relay(&Address::Client(public_key), msg.clone());
+                    self.send_out_as_relay(&Address::Client(public_key), bytes.clone());
                 },
                 DestinationAddress::RelayToNode(_, node_address) => {
-                    self.send_out_as_relay(&Address::Node(node_address), msg.clone());
+                    self.send_out_as_relay(&Address::Node(node_address), bytes.clone());
                 },
                 DestinationAddress::Direct(_) => {},
             }
             Ok(())
         }
         else {
-            self.send_swarm_or_parallel(msg)
+            self.send_swarm_or_parallel_signed_message(
+                signed_message, &destination_address.non_relayed_destination())
         }
     }
 
