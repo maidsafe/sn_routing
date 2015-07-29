@@ -85,7 +85,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     //  This might be moved into the constructor new
     //  For an initial draft, kept it as a separate function call.
     pub fn run(&mut self) -> Result<(), RoutingError> {
-        // keep state on whether we still might be the first around.
         let relocated_name : Option<NameType>;
         let mut sent_name_request = false;
 
@@ -93,13 +92,14 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let mut cm = crust::ConnectionManager::new(event_output.clone());
         let _ = cm.start_accepting(vec![]);
         cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+
         loop {
             match event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
                     println!("Event::NewMessage({:?}, bytes)", endpoint);
-                    let mut new_bootstrap_name :
-                        Option<(Endpoint, Option<NameType>)> = None;
+
+                    let self_id = self.id.clone();
 
                     if self.bootstraps.contains(&endpoint) {
                         if let Ok(wrapped_message) = decode::<SignedMessage>(&bytes) {
@@ -123,36 +123,24 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             match he_is_msg.address {
                                 Address::Node(node_name) => {
                                     info!("Name of our relay node is {:?}", node_name);
-                                    new_bootstrap_name = Some((endpoint.clone(), Some(node_name.clone())));
-                                    self.bootstrap = new_bootstrap_name.clone();
+                                    self.bootstrap = Some((endpoint.clone(), Some(node_name.clone())));
+                                    if !sent_name_request {
+                                        sent_name_request = true;
+
+                                        let put_public_id_msg
+                                            = try!(self.construct_put_public_id_msg(
+                                                     &PublicId::new(&self_id),
+                                                     &node_name));
+
+                                        let serialised_message = try!(encode(&put_public_id_msg));
+
+                                        ignore(cm.send(endpoint, serialised_message));
+                                    }
                                 },
                                 _ => continue, // only care about a Node
                             }
                         }
                         else { continue }
-                    }
-                    // try to send a request for a network name with PutPublicId
-                    match new_bootstrap_name {  // avoid borrowing self
-                        Some((ref bootstrap_endpoint, ref opt_bootstrap_name)) => {
-                            match *opt_bootstrap_name {
-                                Some(bootstrap_name) => {
-                                    // we have aquired a bootstrap endpoint and relay name
-                                    if !sent_name_request {
-                                        // now send a PutPublicId request
-                                        let our_public_id = PublicId::new(&self.id);
-                                        let put_public_id_msg
-                                            = try!(self.construct_put_public_id_msg(
-                                            &our_public_id, &bootstrap_name));
-                                        let serialised_message = try!(encode(&put_public_id_msg));
-                                        ignore(cm.send(bootstrap_endpoint.clone(),
-                                            serialised_message));
-                                        sent_name_request = true;
-                                    }
-                                },
-                                None => {}
-                            }
-                        },
-                        None => {}
                     }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
