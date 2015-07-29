@@ -13,9 +13,7 @@ env:
     secure: "Kh4TbgJ7jQdL+dPOuNmPIWZfQJL6zDzc0clGIVQP3oP5yDt0qcxUziSxTzRmwoGDRdWDTr+TjdzUaRprfkGpwHsNBKcL90G8GcoBEyevtrzCCtBDUJJrtABaDAJCqa7Rl29d9UNXu01Cnpfskhxv6miwHOuQfzfFKe2OW+RwTy0="
 install:
 - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_libsodium.sh | bash
-- echo $LIBRARY_PATH
-- echo $LD_LIBRARY_PATH
-- ln -s libsodium.so.13.2.0 libsodium.so.13 && ln -s libsodium.so.13.2.0 libsodium.so && export LIBRARY_PATH=$LIBRARY_PATH:$HOME/libsodium-1.0.0/lib && export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/libsodium-1.0.0/lib
+- export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/libsodium-1.0.0/lib
 script:
 - cargo build --verbose
 - RUST_TEST_THREADS=1 cargo test
