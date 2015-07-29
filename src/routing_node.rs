@@ -55,7 +55,6 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     id              : Id,
     _own_name       : NameType,
     next_message_id : MessageId,
-    bootstrap       : Option<(Endpoint, Option<NameType>)>,
     bootstraps      : BTreeSet<Endpoint>,
 }
 
@@ -70,7 +69,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                       id              : id,
                       _own_name       : own_name.clone(),
                       next_message_id : rand::random::<MessageId>(),
-                      bootstrap       : None,
                       bootstraps      : BTreeSet::new(),
                     }
     }
@@ -87,6 +85,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     pub fn run(&mut self) -> Result<(), RoutingError> {
         let relocated_name : Option<NameType>;
         let mut sent_name_request = false;
+        let mut our_bootstrap : Option<(Endpoint, NameType)> = None;
 
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output.clone());
@@ -123,7 +122,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             match he_is_msg.address {
                                 Address::Node(node_name) => {
                                     info!("Name of our relay node is {:?}", node_name);
-                                    self.bootstrap = Some((endpoint.clone(), Some(node_name.clone())));
+                                    our_bootstrap = Some((endpoint.clone(), node_name.clone()));
                                     if !sent_name_request {
                                         sent_name_request = true;
 
@@ -164,7 +163,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                     println!("Event::NewBootstrapConnection({:?})", endpoint);
                     if !self.bootstraps.contains(&endpoint) {
                         // register the bootstrap endpoint
-                        self.bootstrap = Some((endpoint.clone(), None));
                         self.bootstraps.insert(endpoint.clone());
 
                         info!("Established bootstrap connection on {:?}", endpoint);
@@ -180,38 +178,22 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
         }
 
-        let our_bootstrap = if !self.bootstraps.is_empty() {
-            // we bootstrapped to a node
-            // verify bootstrap connection
-            let our_bootstrap = match self.bootstrap {
-                Some((ref endpoint, Some(ref name))) => {
-                    (endpoint.clone(), name.clone())
-                },
-                _ => return Err(RoutingError::FailedToBootstrap)
-            };
-
-            // send FindGroup request before moving to Membrane
-            let find_group_msg =
-                try!(self.construct_find_group_msg_as_client(&our_bootstrap.1));
-
-            ignore(cm.send(our_bootstrap.0.clone(), try!(encode(&find_group_msg))));
-
-            Some(our_bootstrap)
-        } else {
-            // someone tried to bootstrap to us
-            None
-        };
+        if let Some((ref b_ep, ref b_name)) = our_bootstrap {
+            let find_group_msg = try!(self.construct_find_group_msg_as_client(b_name));
+            ignore(cm.send(b_ep.clone(), try!(encode(&find_group_msg))));
+        }
 
         match relocated_name {
             Some(new_name) => {
                 self.id.assign_relocated_name(new_name);
+
                 println!(">>>>>>>>>>>>>>>>>>>>>>>>>>> Starting RoutingMembrane");
+
                 let mut membrane = RoutingMembrane::<F>::new(
                     cm, event_output, event_input, our_bootstrap,
                     self.id.clone(),
                     self.genesis.create_personas());
-                // TODO: currently terminated by main, should be signalable to terminate
-                // and join the routing_node thread.
+
                 spawn(move || membrane.run());
             },
             None => { return Err(RoutingError::FailedToBootstrap); }
