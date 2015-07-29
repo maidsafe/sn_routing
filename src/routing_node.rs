@@ -36,6 +36,7 @@ use authority::{Authority};
 use messages::{RoutingMessage, SignedMessage, MessageType};
 use error::{RoutingError};
 use std::thread::spawn;
+use std::collections::BTreeSet;
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
@@ -49,12 +50,13 @@ type RoutingResult = Result<(), RoutingError>;
 /// DHT node
 pub struct RoutingNode<F, G> where F : Interface + 'static,
                                    G : CreatePersonas<F> {
-    genesis: Box<G>,
-    phantom_data: PhantomData<F>,
-    id: Id,
-    _own_name: NameType,
-    next_message_id: MessageId,
-    bootstrap: Option<(Endpoint, Option<NameType>)>,
+    genesis         : Box<G>,
+    phantom_data    : PhantomData<F>,
+    id              : Id,
+    _own_name       : NameType,
+    next_message_id : MessageId,
+    bootstrap       : Option<(Endpoint, Option<NameType>)>,
+    bootstraps      : BTreeSet<Endpoint>,
 }
 
 impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
@@ -63,12 +65,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
         let id = Id::new();
         let own_name = id.name();
-        RoutingNode { genesis: Box::new(genesis),
-                      phantom_data: PhantomData,
-                      id : id,
-                      _own_name : own_name.clone(),
-                      next_message_id: rand::random::<MessageId>(),
-                      bootstrap: None,
+        RoutingNode { genesis         : Box::new(genesis),
+                      phantom_data    : PhantomData,
+                      id              : id,
+                      _own_name       : own_name.clone(),
+                      next_message_id : rand::random::<MessageId>(),
+                      bootstrap       : None,
+                      bootstraps      : BTreeSet::new(),
                     }
     }
 
@@ -83,7 +86,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     //  For an initial draft, kept it as a separate function call.
     pub fn run(&mut self) -> Result<(), RoutingError> {
         // keep state on whether we still might be the first around.
-        let mut found_bootstrap = false;
         let relocated_name : Option<NameType>;
         let mut sent_name_request = false;
 
@@ -95,12 +97,11 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             match event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    println!("Event::NewMessage({:?}, bytes)", endpoint);
                     let mut new_bootstrap_name :
                         Option<(Endpoint, Option<NameType>)> = None;
 
-                    if let Some((ref bootstrap_endpoint, ref bootstrap_name)) = self.bootstrap {
-                        if endpoint != *bootstrap_endpoint { continue; }
-
+                    if self.bootstraps.contains(&endpoint) {
                         if let Ok(wrapped_message) = decode::<SignedMessage>(&bytes) {
                             match wrapped_message.get_routing_message() {
                                 Err(_) => continue,
@@ -121,26 +122,15 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                         else if let Ok(he_is_msg) = decode::<IAm>(&bytes) {
                             match he_is_msg.address {
                                 Address::Node(node_name) => {
-                                    info!("Name of our relay node is {:?}",
-                                        node_name);
-                                    match *bootstrap_name {
-                                        Some(_) => continue, // name already set
-                                        None => new_bootstrap_name =
-                                            Some((bootstrap_endpoint.clone(),
-                                            Some(node_name.clone()))),
-                                    }
+                                    info!("Name of our relay node is {:?}", node_name);
+                                    new_bootstrap_name = Some((endpoint.clone(), Some(node_name.clone())));
+                                    self.bootstrap = new_bootstrap_name.clone();
                                 },
                                 _ => continue, // only care about a Node
                             }
                         }
                         else { continue }
                     }
-                    // store the recovered relay name
-                    match new_bootstrap_name.clone() {
-                        Some(new_endpoint_name_pair) =>
-                            self.bootstrap = Some(new_endpoint_name_pair),
-                        None => {},
-                    };
                     // try to send a request for a network name with PutPublicId
                     match new_bootstrap_name {  // avoid borrowing self
                         Some((ref bootstrap_endpoint, ref opt_bootstrap_name)) => {
@@ -166,8 +156,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                     }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
-                    // only allow first if we still have the possibility
-                    if !found_bootstrap {
+                    if self.bootstraps.is_empty() {
                         // break from listening to CM
                         // and first start RoutingMembrane
                         relocated_name = Some(NameType(sodiumoxide::crypto::hash::sha512
@@ -184,34 +173,26 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
                 },
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                    match self.bootstrap {
-                        None => {
-                            // we found a bootstrap connection,
-                            // so disable us becoming a first node
-                            found_bootstrap = true;
-                            // register the bootstrap endpoint
-                            self.bootstrap = Some((endpoint.clone(), None));
-                            info!("Established bootstrap connection on {:?}", endpoint);
-                            // and send an IAm message to our bootstrap endpoint
-                            let i_am_message = try!(encode(&IAm {
-                                // before we retrieve a name for ourselves from the network
-                                // we identify ourselves with the sign::PublicKey
-                                address: Address::Client(self.id.signing_public_key()),
-                                public_id: PublicId::new(&self.id)}));
-                            ignore(cm.send(endpoint, i_am_message));
-                        },
-                        Some(_) => {
-                            debug!("Dropped bootstrap connection on {:?} as we already have one.",
-                                endpoint);
-                            // only work with a single bootstrap endpoint (for now)
-                            cm.drop_node(endpoint);
-                        }
+                    println!("Event::NewBootstrapConnection({:?})", endpoint);
+                    if !self.bootstraps.contains(&endpoint) {
+                        // register the bootstrap endpoint
+                        self.bootstrap = Some((endpoint.clone(), None));
+                        self.bootstraps.insert(endpoint.clone());
+
+                        info!("Established bootstrap connection on {:?}", endpoint);
+
+                        let i_am_message = try!(encode(&IAm {
+                            address   : Address::Client(self.id.signing_public_key()),
+                            public_id : PublicId::new(&self.id)
+                        }));
+
+                        ignore(cm.send(endpoint, i_am_message));
                     }
                 }
             }
         }
 
-        let our_bootstrap = if found_bootstrap {
+        let our_bootstrap = if !self.bootstraps.is_empty() {
             // we bootstrapped to a node
             // verify bootstrap connection
             let our_bootstrap = match self.bootstrap {
@@ -224,6 +205,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             // send FindGroup request before moving to Membrane
             let find_group_msg =
                 try!(self.construct_find_group_msg_as_client(&our_bootstrap.1));
+
             ignore(cm.send(our_bootstrap.0.clone(), try!(encode(&find_group_msg))));
 
             Some(our_bootstrap)
@@ -235,6 +217,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         match relocated_name {
             Some(new_name) => {
                 self.id.assign_relocated_name(new_name);
+                println!(">>>>>>>>>>>>>>>>>>>>>>>>>>> Starting RoutingMembrane");
                 let mut membrane = RoutingMembrane::<F>::new(
                     cm, event_output, event_input, our_bootstrap,
                     self.id.clone(),
