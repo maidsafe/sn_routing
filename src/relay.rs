@@ -124,9 +124,9 @@ impl RelayMap {
     }
 
     /// Returns true if we already have a name associated with this endpoint.
-    pub fn contains_endpoint(&self, relay_endpoint: &Endpoint) -> bool {
-        self.lookup_map.contains_key(relay_endpoint)
-    }
+    //pub fn contains_endpoint(&self, relay_endpoint: &Endpoint) -> bool {
+    //    self.lookup_map.contains_key(relay_endpoint)
+    //}
 
     /// Returns Option<NameType> if an endpoint is found
     pub fn lookup_endpoint(&self, relay_endpoint: &Endpoint) -> Option<Address> {

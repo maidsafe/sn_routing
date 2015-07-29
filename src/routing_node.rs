@@ -97,51 +97,43 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
                     let mut new_bootstrap_name :
                         Option<(Endpoint, Option<NameType>)> = None;
-                    match self.bootstrap {
-                        Some((ref bootstrap_endpoint, ref bootstrap_name)) => {
-                            debug_assert!(&endpoint == bootstrap_endpoint);
-                            match decode::<SignedMessage>(&bytes) {
-                                Ok(wrapped_message) => {
-                                    match wrapped_message.get_routing_message() {
-                                        Err(_) => continue,
-                                        Ok(message) => {
-                                            match message.message_type {
-                                                MessageType::PutPublicIdResponse(
-                                                    ref new_public_id, ref _orig_request) => {
-                                                      relocated_name = Some(new_public_id.name());
-                                                      info!("Received name {:?} from network; original name was {:?}",
-                                                          relocated_name, self.id.name());
-                                                      break;
-                                                },
-                                                _ => continue,
-                                            }
-                                        }
+
+                    if let Some((ref bootstrap_endpoint, ref bootstrap_name)) = self.bootstrap {
+                        if endpoint != *bootstrap_endpoint { continue; }
+
+                        if let Ok(wrapped_message) = decode::<SignedMessage>(&bytes) {
+                            match wrapped_message.get_routing_message() {
+                                Err(_) => continue,
+                                Ok(message) => {
+                                    match message.message_type {
+                                        MessageType::PutPublicIdResponse(
+                                            ref new_public_id, ref _orig_request) => {
+                                              relocated_name = Some(new_public_id.name());
+                                              info!("Received name {:?} from network; original name was {:?}",
+                                                  relocated_name, self.id.name());
+                                              break;
+                                        },
+                                        _ => continue,
+                                    }
+                                }
+                            }
+                        }
+                        else if let Ok(he_is_msg) = decode::<IAm>(&bytes) {
+                            match he_is_msg.address {
+                                Address::Node(node_name) => {
+                                    info!("Name of our relay node is {:?}",
+                                        node_name);
+                                    match *bootstrap_name {
+                                        Some(_) => continue, // name already set
+                                        None => new_bootstrap_name =
+                                            Some((bootstrap_endpoint.clone(),
+                                            Some(node_name.clone()))),
                                     }
                                 },
-                                Err(_) => {
-                                    // Try to decode it as an IAm message
-                                    match decode::<IAm>(&bytes) {
-                                        Ok(he_is_msg) => {
-                                            match he_is_msg.address {
-                                                Address::Node(node_name) => {
-                                                    info!("Name of our relay node is {:?}",
-                                                        node_name);
-                                                    match *bootstrap_name {
-                                                        Some(_) => continue, // name already set
-                                                        None => new_bootstrap_name =
-                                                            Some((bootstrap_endpoint.clone(),
-                                                            Some(node_name.clone()))),
-                                                    }
-                                                },
-                                                _ => continue, // only care about a Node
-                                            }
-                                        },
-                                        Err(_) => continue,
-                                    };
-                                }
-                            };
-                        },
-                        None => {}
+                                _ => continue, // only care about a Node
+                            }
+                        }
+                        else { continue }
                     }
                     // store the recovered relay name
                     match new_bootstrap_name.clone() {
@@ -224,15 +216,10 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             false => {
                 // verify bootstrap connection
                 let our_bootstrap = match self.bootstrap {
-                    Some((ref endpoint, ref opt_name)) => {
-                        match *opt_name {
-                            Some(name) => {
-                                (endpoint.clone(), name.clone())
-                            },
-                            None => return Err(RoutingError::FailedToBootstrap)
-                        }
+                    Some((ref endpoint, Some(ref name))) => {
+                        (endpoint.clone(), name.clone())
                     },
-                    None => return Err(RoutingError::FailedToBootstrap)
+                    _ => return Err(RoutingError::FailedToBootstrap)
                 };
 
                 // send FindGroup request before moving to Membrane
