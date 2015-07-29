@@ -18,36 +18,15 @@
 use cbor::CborTagEncode;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use public_id::PublicId;
+use types::Address;
 
-#[derive(RustcEncodable, RustcDecodable, Debug, Eq, PartialEq)]
-pub struct WhoAreYou {
-    pub nonce: u8  // FIXME: a placeholder for nonce
-}
-// TODO: add nonce to be signed for added security later
-
-
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct IAm {
+    pub address: Address,
     pub public_id: PublicId,
-    // FIXME: return signed nonce
-}
-
-impl Encodable for IAm {
-    fn encode<E: Encoder>(&self, encoder: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_001, &(&self.public_id)).encode(encoder)
-    }
-}
-
-impl Decodable for IAm {
-    fn decode<D: Decoder>(decoder: &mut D)->Result<IAm, D::Error> {
-        try!(decoder.read_u64());
-        let public_id = try!(Decodable::decode(decoder));
-        Ok(IAm { public_id: public_id })
-    }
 }
 
 #[cfg(test)]
 mod test {
-    // TODO: add encode / decode test
     // TODO: add validation test
 }

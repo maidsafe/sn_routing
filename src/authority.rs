@@ -94,7 +94,7 @@ pub fn our_authority(message       : &RoutingMessage,
         MessageType::PutDataResponse(_, _)  => None,
         MessageType::PutKey                 => None,
         MessageType::PutPublicId(ref public_id) => Some(public_id.name()),
-        MessageType::PutPublicIdResponse(_) => None,
+        MessageType::PutPublicIdResponse(_, _) => None,
         MessageType::Refresh(_,_)           => None,
         MessageType::Unknown                => None,
     };
