@@ -112,7 +112,7 @@ pub enum MessageType {
     PutDataResponse(ErrorReturn, BTreeMap<NameType, sign::PublicKey>),
     PutKey,
     PutPublicId(PublicId),
-    PutPublicIdResponse(PublicId),
+    PutPublicIdResponse(PublicId, SignedMessage),
     Refresh(u64, Vec<u8>),
     Unknown,
 }
