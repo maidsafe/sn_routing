@@ -1046,7 +1046,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     // Routing handle put_data
     fn handle_client_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
-                       data: Data, source: sign::PublicKey) -> RoutingResult {
+                              data: Data, source: sign::PublicKey) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source_address();

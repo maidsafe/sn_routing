@@ -20,13 +20,12 @@ use std::collections::{BTreeMap};
 use sodiumoxide::crypto::sign::{PublicKey};
 
 use authority::Authority;
+use data::Data;
 use error::{RoutingError, ResponseError};
-use messages::{ErrorReturn, GetDataResponse, RoutingMessage, SignedMessage};
+use messages::{ErrorReturn, GetDataResponse, MessageType, RoutingMessage, SignedMessage};
 use name_type::NameType;
 use sentinel::pure_sentinel::Source;
 use types::{MessageId, SourceAddress, DestinationAddress};
-use data::Data;
-use messages::MessageType;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Event {
@@ -43,8 +42,8 @@ impl Event {
         -> Result<RoutingMessage, RoutingError> {
         match self {
             &Event::PutDataRequest(ref orig_message, ref data, ref source_group,
-                               ref _destination_group, ref source_authority,
-                               ref our_authority, ref _message_id) =>
+                                   ref _destination_group, ref source_authority,
+                                   ref our_authority, ref _message_id) =>
             {
                 return Ok(RoutingMessage {
                     destination  : DestinationAddress::Direct(destination),
@@ -56,8 +55,8 @@ impl Event {
                 })
             },
             &Event::PutDataResponse(ref orig_message, ref response, ref source_group,
-                                ref destination_group, ref source_authority,
-                                ref our_authority, ref _message_id) =>
+                                    ref destination_group, ref source_authority,
+                                    ref our_authority, ref _message_id) =>
             {
                 return Ok(RoutingMessage {
                     destination  : DestinationAddress::Direct(destination_group.clone()),
@@ -69,8 +68,8 @@ impl Event {
                 })
             },
             &Event::GetDataResponse(ref orig_message, ref response, ref source_group,
-                                ref destination_group, ref source_authority,
-                                ref our_authority, ref _message_id) =>
+                                    ref destination_group, ref source_authority,
+                                    ref our_authority, ref _message_id) =>
             {
                 return Ok(RoutingMessage {
                     destination  : DestinationAddress::Direct(destination_group.clone()),
@@ -83,7 +82,6 @@ impl Event {
             }
 
         }
-        return Err(RoutingError::RefreshNotFromGroup)    // TODO use the proper error code
     }
 
     pub fn create_reply(&self, reply_data: MessageType)
@@ -104,7 +102,7 @@ impl Event {
                     authority    : our_authority.clone()
                 })
             },
-            _ => Err(RoutingError::RefreshNotFromGroup)    // TODO use the proper error code
+            _ => Err(RoutingError::Response(ResponseError::InvalidRequest))
         }
     }
 
@@ -122,21 +120,21 @@ impl Event {
     pub fn get_data(&self) -> Result<Data, RoutingError> {
         match self {
             &Event::PutDataRequest(_, ref data, _, _, _, _, _) => Ok(data.clone()),
-            _ => Err(RoutingError::RefreshNotFromGroup)
+            _ => Err(RoutingError::Response(ResponseError::InvalidRequest))
         }
     }
 
     pub fn get_response(&self) -> Result<ErrorReturn, RoutingError> {
         match self {
             &Event::PutDataResponse(_, ref response, _, _, _, _, _) => Ok(response.clone()),
-            _ => Err(RoutingError::RefreshNotFromGroup)
+            _ => Err(RoutingError::Response(ResponseError::InvalidRequest))
         }
     }
 
     pub fn get_data_response(&self) -> Result<GetDataResponse, RoutingError> {
         match self {
             &Event::GetDataResponse(_, ref response, _, _, _, _, _) => Ok(response.clone()),
-            _ => Err(RoutingError::RefreshNotFromGroup)
+            _ => Err(RoutingError::Response(ResponseError::InvalidRequest))
         }
     }
 }
