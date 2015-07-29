@@ -241,24 +241,17 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 // we hold an active connection to this endpoint,
                                 // mapped to a name in our relay map
                                 Some(ConnectionName::Relay(_)) => {
-                                    let message = match message.get_routing_message() {
-                                        Ok(message) => message,
-                                        Err(_)      => continue,
-                                    };
-                                    // forward, as we will reflect onto ourselves
-                                    // when there are no connections in the routing table.
-                                    ignore(self.send_swarm_or_parallel(&message));
+                                    // messages are owned by the signature of the sender
+                                    // we can handle it as a normal signed routing message.
+                                    // TODO(ben 29/07/2015) message can be validated
+                                    ignore(self.message_received(message));
                                 },
                                 Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
-                                    // FIXME(ben 24/07/2015)
-                                    // 1. we should not longer rely on messages from our bootstrap connection
-                                    // 2. our bootstrap connection might send us direct (ie non-routing)
-                                    //    messages
                                     ignore(self.message_received(message));
                                 },
                                 Some(ConnectionName::UnidentifiedConnection) => {
-                                    // only expect IAm message
-
+                                    // Don't accept Signed Routing Messages
+                                    // from unidentified connections
                                 },
                                 None => {
                                     // Don't accept Signed Routing Messages
