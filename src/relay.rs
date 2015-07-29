@@ -28,7 +28,6 @@ use id::Id;
 use public_id::PublicId;
 use types::Address;
 use NameType;
-use sodiumoxide::crypto::sign;
 
 const MAX_RELAY : usize = 100;
 

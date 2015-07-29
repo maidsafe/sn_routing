@@ -169,7 +169,7 @@ impl<F> RoutingClient<F> where F: Interface {
             Err(_) => (),
             Ok(crust::connection_manager::Event::NewMessage(endpoint, bytes)) => {
                 match decode::<IAm>(&bytes) {
-                    Ok(msg) => {
+                    Ok(_msg) => {
                         // Ignore, should have been handled while bootstrapping.
                         return;
                     },
@@ -240,8 +240,6 @@ impl<F> RoutingClient<F> where F: Interface {
                 _ => {}
             }
         }
-
-        Ok(())
     }
 
     fn handle_i_am(&mut self, _endpoint: Endpoint, message: IAm) {
