@@ -503,7 +503,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         }
 
         // Forward
-        ignore(self.send_swarm_or_parallel_or_relay(&message));
+        ignore(self.send_swarm_or_parallel_or_relay_with_signature(
+            &message, &message_wrap.signature));
 
         let address_in_close_group_range =
             self.address_in_close_group_range(&message.non_relayed_destination());
