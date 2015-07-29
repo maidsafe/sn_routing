@@ -739,6 +739,16 @@ impl<F> RoutingMembrane<F> where F: Interface {
             &signed_message, &destination)
     }
 
+    fn send_swarm_or_parallel_or_relay_with_signature(&mut self, msg: &RoutingMessage,
+        signature: Signature) -> Result<(), RoutingError> {
+
+        let destination = msg.destination_address();
+        let signed_message = try!(SignedMessage::with_signature(
+            msg, signature));
+        self.send_swarm_or_parallel_or_relay_signed_message(
+            &signed_message, &destination)
+    }
+
     fn send_swarm_or_parallel_or_relay_signed_message(&mut self,
         signed_message: &SignedMessage, destination_address: &DestinationAddress)
         -> Result<(), RoutingError> {
