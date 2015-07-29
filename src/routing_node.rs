@@ -53,7 +53,6 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     genesis         : Box<G>,
     phantom_data    : PhantomData<F>,
     id              : Id,
-    _own_name       : NameType,
     next_message_id : MessageId,
     bootstraps      : BTreeSet<Endpoint>,
 }
@@ -62,12 +61,10 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                    G : CreatePersonas<F> {
     pub fn new(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let id = Id::new();
-        let own_name = id.name();
+
         RoutingNode { genesis         : Box::new(genesis),
                       phantom_data    : PhantomData,
-                      id              : id,
-                      _own_name       : own_name.clone(),
+                      id              : Id::new(),
                       next_message_id : rand::random::<MessageId>(),
                       bootstraps      : BTreeSet::new(),
                     }
@@ -101,8 +98,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                     let self_id = self.id.clone();
 
                     if self.bootstraps.contains(&endpoint) {
-                        if let Ok(wrapped_message) = decode::<SignedMessage>(&bytes) {
-                            match wrapped_message.get_routing_message() {
+                        if let Ok(signed_message) = decode::<SignedMessage>(&bytes) {
+                            match signed_message.get_routing_message() {
                                 Err(_) => continue,
                                 Ok(message) => {
                                     match message.message_type {
@@ -202,15 +199,16 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         Ok(())
     }
 
-    fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId,
-        relay_name: &NameType) -> Result<SignedMessage, CborError> {
+    fn construct_put_public_id_msg(&mut self, our_unrelocated_id : &PublicId,
+                                              relay_name         : &NameType)
+            -> Result<SignedMessage, CborError> {
 
         let message_id = self.get_next_message_id();
 
         let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
             source       : SourceAddress::RelayedForClient(relay_name.clone(),
-                self.id.signing_public_key()),
+                                                           self.id.signing_public_key()),
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
@@ -223,13 +221,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
     fn construct_find_group_msg_as_client(&mut self, bootstrap_name: &NameType)
         -> Result<SignedMessage, CborError> {
-        let name   = self.id.name().clone();
+        let name       = self.id.name();
         let message_id = self.get_next_message_id();
 
         let message = RoutingMessage {
-            destination  : DestinationAddress::Direct(name.clone()),
+            destination  : DestinationAddress::Direct(name),
             source       : SourceAddress::RelayedForClient(bootstrap_name.clone(),
-                self.id.signing_public_key()),
+                                                           self.id.signing_public_key()),
             orig_message : None,
             message_type : MessageType::FindGroup,
             message_id   : message_id,
