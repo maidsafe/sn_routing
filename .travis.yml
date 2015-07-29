@@ -49,6 +49,7 @@ after_success: |
     cp -rf ../target/doc/* master &&
     cd .. &&
     ghp-import -n docs-stage &&
+    echo $GH_TOKEN &&
     git push -fq https://${GH_TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git gh-pages;
     wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz &&
     tar xzf master.tar.gz &&
