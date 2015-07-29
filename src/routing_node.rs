@@ -84,7 +84,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     pub fn run(&mut self) -> Result<(), RoutingError> {
         // keep state on whether we still might be the first around.
         let mut possible_first = true;
-        let mut relocated_name : Option<NameType>;
+        let relocated_name : Option<NameType>;
         let mut sent_name_request = false;
 
         let (event_output, event_input) = mpsc::channel();
@@ -258,7 +258,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 spawn(move || membrane.run());
             },
             None => { return Err(RoutingError::FailedToBootstrap); }
-        }
+        };
 
         Ok(())
     }
