@@ -18,7 +18,7 @@ script:
 - cargo build --verbose
 - RUST_TEST_THREADS=1 cargo test
 after_success: |
-  if  [[ $TRAVIS_OS_NAME = linux ]] && [[ $TRAVIS_BRANCH = master ]] && [[ $TRAVIS_PULL_REQUEST = false ]]; then
+  if  [[ $TRAVIS_OS_NAME = linux ]] && [[ $TRAVIS_RUST_VERSION = nightly ]] && [[ $TRAVIS_BRANCH = master ]] && [[ $TRAVIS_PULL_REQUEST = false ]]; then
     cargo doc &&
     echo "<meta http-equiv=refresh content=0;url=`echo $TRAVIS_REPO_SLUG | cut -d '/' -f 2`/index.html>" > target/doc/index.html &&
     pip install --user ghp-import &&
@@ -49,7 +49,6 @@ after_success: |
     cp -rf ../target/doc/* master &&
     cd .. &&
     ghp-import -n docs-stage &&
-    echo $GH_TOKEN &&
     git push -fq https://${GH_TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git gh-pages;
     wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz &&
     tar xzf master.tar.gz &&
