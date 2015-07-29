@@ -58,11 +58,12 @@ use error::{RoutingError, ResponseError, InterfaceError};
 use node_interface::MethodCall;
 use refresh_accumulator::RefreshAccumulator;
 use id::Id;
-use public_id::PublicId;
+use public_id::{PublicId, PublicIdGroupClaim};
 use utils;
 use utils::{encode, decode};
 use sentinel::pure_sentinel::{PureSentinel, AddResult};
-use user_message::{SentinelPutRequest, SentinelPutResponse, SentinelGetDataResponse};
+use sentinel::key_sentinel::KeySentinel;
+use user_message::{SentinelPutRequest, SentinelPutResponse, SentinelGetDataResponse, SentinelFindGroupResponse};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -104,7 +105,8 @@ pub struct RoutingMembrane<F : Interface> {
     interface: Box<F>,
     put_response_sentinel: PureSentinel<SentinelPutResponse, NameType>,
     get_data_response_sentinel: PureSentinel<SentinelGetDataResponse, NameType>,
-    put_sentinel: PureSentinel<SentinelPutRequest, NameType>
+    put_sentinel: PureSentinel<SentinelPutRequest, NameType>,
+    find_group_response_sentinel: KeySentinel<SentinelFindGroupResponse, NameType, PublicId, PublicIdGroupClaim>
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
@@ -135,7 +137,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             interface : Box::new(personas),
             put_response_sentinel: PureSentinel::new(),
             get_data_response_sentinel: PureSentinel::new(),
-            put_sentinel: PureSentinel::new()
+            put_sentinel: PureSentinel::new(),
+            find_group_response_sentinel: KeySentinel::new()
         }
     }
 
@@ -504,10 +507,11 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Handle FindGroupResponse
         match  message.message_type {
-            MessageType::FindGroupResponse(ref vec_of_public_ids) =>
+            MessageType::FindGroupResponse(ref vec_of_public_ids) => {
                 ignore(self.handle_find_group_response(
-                            vec_of_public_ids.clone(),
-                            address_in_close_group_range.clone())),
+                    vec_of_public_ids, &message_wrap, &message,
+                    address_in_close_group_range.clone()));
+            },
              _ => (),
         };
 
@@ -1476,11 +1480,37 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
     fn handle_find_group_response(&mut self,
-                                  find_group_response: Vec<PublicId>,
+                                  find_group_response: &Vec<PublicId>,
+                                  signed_message: &SignedMessage,
+                                  message: &RoutingMessage,
                                   refresh_our_own_group: bool) -> RoutingResult {
-        for peer in find_group_response {
+        let mut quorum = types::QUORUM_SIZE;
+        if self.routing_table.size() < types::QUORUM_SIZE {
+            quorum = self.routing_table.size();
+        }
+
+        let source = match message.source.actual_source() {
+            Address::Node(source) => source,
+            _ => return Err(RoutingError::Response(ResponseError::InvalidRequest)),
+        };
+
+        let request = SentinelFindGroupResponse::new(message.source.non_relayed_source(), message.message_id);
+        let resolved = match self.find_group_response_sentinel.add_identities(
+                request.clone(),
+                source.clone(),
+                signed_message.encoded_body().clone(),
+                signed_message.signature().clone(),
+                PublicIdGroupClaim { identities: find_group_response.clone() },
+                quorum) {
+            Some((request, find_group_response)) => (request, find_group_response),
+            None => return Ok(())
+        };
+
+
+        for peer in resolved.1 {
             self.refresh_routing_table(&peer.name());
         }
+
         if refresh_our_own_group {
             let our_name = self.id.name().clone();
             if !self.connection_cache.contains_key(&our_name) {

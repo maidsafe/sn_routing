@@ -139,3 +139,25 @@ impl Source<NameType> for SentinelGetDataResponse {
         self.source_group.clone()
     }
 }
+
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub struct SentinelFindGroupResponse {
+    pub source_group: NameType,
+    pub message_id: MessageId
+}
+
+impl SentinelFindGroupResponse {
+    pub fn new(source_group: NameType, message_id: MessageId)
+        -> SentinelFindGroupResponse {
+        SentinelFindGroupResponse {
+            source_group: source_group,
+            message_id: message_id
+        }
+    }
+}
+
+impl Source<NameType> for SentinelFindGroupResponse {
+    fn get_source(&self) -> NameType {
+        self.source_group.clone()
+    }
+}
