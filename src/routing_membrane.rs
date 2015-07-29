@@ -970,19 +970,20 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     // Routing handle put_data
     fn handle_node_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
-                       data: Data, source: NameType) -> RoutingResult {
+                            data: Data, source: NameType) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source_address();
         //let to = message.send_to();
         let to = message.destination_address();
+
         let mut quorum = types::QUORUM_SIZE;
 
         if self.routing_table.size() < types::QUORUM_SIZE {
             quorum = self.routing_table.size();
         }
 
-        let source_group = match message.authority.clone() {
+        let source_group = match message.from_authority() {
             Authority::ClientManager(name) => name,
             Authority::NaeManager(name)    => name,
             Authority::NodeManager(name)   => name,
@@ -1063,13 +1064,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     match method_call {
                         MethodCall::Put { destination: x, content: y, } => self.put(x, y),
                         MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
-                        MethodCall::Refresh { type_tag, from_group, payload } => self.refresh(type_tag, from_group, payload),
+                        MethodCall::Refresh { type_tag, from_group, payload }
+                            => self.refresh(type_tag, from_group, payload),
                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
                         MethodCall::Delete { name: x, data : y } => self.delete(x, y),
                         MethodCall::Forward { destination } =>
                             ignore(self.forward(&signed_message, &message, destination)),
                         MethodCall::Reply { data } =>
-                            ignore(self.send_reply(&message, our_authority.clone(), MessageType::PutData(data))),
+                            ignore(self.send_reply(&message, our_authority.clone(),
+                                                   MessageType::PutData(data))),
                     }
                 }
             },
