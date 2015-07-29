@@ -1058,45 +1058,55 @@ impl<F> RoutingMembrane<F> where F: Interface {
             return Err(RoutingError::FailedSignature);
         }
 
-        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data) {
-            Ok(method_calls) => {
-                for method_call in method_calls {
-                    match method_call {
-                        MethodCall::Put { destination: x, content: y, } => self.put(x, y),
-                        MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
-                        MethodCall::Refresh { type_tag, from_group, payload }
-                            => self.refresh(type_tag, from_group, payload),
-                        MethodCall::Post { destination: x, content: y, } => self.post(x, y),
-                        MethodCall::Delete { name: x, data : y } => self.delete(x, y),
-                        MethodCall::Forward { destination } =>
-                            ignore(self.forward(&signed_message, &message, destination)),
-                        MethodCall::Reply { data } =>
-                            ignore(self.send_reply(&message, our_authority.clone(),
-                                                   MessageType::PutData(data))),
-                    }
-                }
-            },
-            Err(InterfaceError::Abort) => {},
-            Err(InterfaceError::Response(error)) => {
-                let signed_error = ErrorReturn {
-                    error: error,
-                    orig_request: signed_message
-                };
+        let resolved = Event::PutDataRequest(signed_message.clone(), data.clone(),
+                                             message.source.non_relayed_source(),
+                                             message.destination.non_relayed_destination(),
+                                             message.authority.clone(), our_authority.clone(),
+                                             message.message_id.clone());
 
-                let group_pub_keys = if our_authority.is_group() {
-                    self.group_pub_keys()
-                }
-                else {
-                    BTreeMap::new()
-                };
-
-                try!(self.send_reply(&message,
-                                     our_authority.clone(),
-                                     MessageType::PutDataResponse(signed_error,
-                                                                  group_pub_keys)));
-            }
-        }
-        Ok(())
+         match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to,
+                                               data.clone()) {
+             Ok(method_calls) => {
+                 for method_call in method_calls {
+                     match method_call {
+                         MethodCall::Put { destination: x, content: y, } => self.put(x, y),
+                         MethodCall::Get { name: x, data_request: y, } => self.get(x, y),
+                         MethodCall::Refresh { type_tag, from_group, payload }
+                             => self.refresh(type_tag, from_group, payload),
+                         MethodCall::Post { destination: x, content: y, } => self.post(x, y),
+                         MethodCall::Delete { name: x, data: y } => self.delete(x, y),
+                         MethodCall::Forward { destination } => {
+                             let data = try!(resolved.get_data());
+                             let msg = try!(resolved.create_forward(
+                                 MessageType::PutData(data), self.id.name(), destination,
+                                 self.get_next_message_id()));
+                             ignore(self.send_swarm_or_parallel(&msg));
+                         },
+                         MethodCall::Reply { data } => {
+                             let msg = try!(resolved.create_reply(MessageType::PutData(data)));
+                             ignore(self.send_swarm_or_parallel(&msg));
+                         }
+                     }
+                 }
+             },
+             Err(InterfaceError::Abort) => {},
+             Err(InterfaceError::Response(error)) => {
+                 let signed_error = ErrorReturn {
+                     error: error,
+                     orig_request: try!(resolved.get_orig_message())
+                 };
+                 let group_pub_keys = if our_authority.is_group() {
+                     self.group_pub_keys()
+                 }
+                 else {
+                     BTreeMap::new()
+                 };
+                 let msg = MessageType::PutDataResponse(signed_error, group_pub_keys);
+                 let msg = try!(resolved.create_reply(msg));
+                 ignore(self.send_swarm_or_parallel(&msg));
+             }
+         }
+         Ok(())
     }
 
     fn handle_post(&mut self, signed_message: SignedMessage, message: RoutingMessage, data: Data)
