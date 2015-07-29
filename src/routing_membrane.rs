@@ -208,17 +208,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
-        // First send FindGroup request
-        // match self.bootstrap.clone() {
-        //     Some((ref bootstrap_endpoint, _)) => {
-        //         let find_group_msg = self.construct_find_group_msg();
-        //         // FIXME: act on error to send; don't over clone bootstrap_endpoint
-        //         ignore(encode(&find_group_msg).map(|msg|self.connection_manager
-        //             .send(bootstrap_endpoint.clone(), msg)));
-        //     },
-        //     None => {
-        //     }
-        // }
 
         info!("Started Membrane loop");
         loop {
@@ -231,29 +220,40 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 // We sent this message to ourselves
                                 // as we are part of the effective close group
                                 Some(ConnectionName::ReflectionOnToUs) => {
+                                    debug!("New Message from REFLECTION {:?}", endpoint);
                                     ignore(self.message_received(message));
                                 },
                                 // we hold an active connection to this endpoint,
                                 // mapped to a name in our routing table
-                                Some(ConnectionName::Routing(_name)) => {
+                                Some(ConnectionName::Routing(name)) => {
+                                    debug!("New Message from ROUTING {:?} on {:?}",
+                                        name, endpoint);
                                     ignore(self.message_received(message));
                                 },
                                 // we hold an active connection to this endpoint,
                                 // mapped to a name in our relay map
                                 Some(ConnectionName::Relay(_)) => {
+                                    debug!("New Message from RELAY on {:?}",
+                                        endpoint);
                                     // messages are owned by the signature of the sender
                                     // we can handle it as a normal signed routing message.
                                     // TODO(ben 29/07/2015) message can be validated
                                     ignore(self.message_received(message));
                                 },
-                                Some(ConnectionName::OurBootstrap(_bootstrap_node_name)) => {
+                                Some(ConnectionName::OurBootstrap(bootstrap_node_name)) => {
+                                    debug!("New Message from BOOTSTRAP {:?} on {:?}",
+                                        bootstrap_node_name, endpoint);
                                     ignore(self.message_received(message));
                                 },
                                 Some(ConnectionName::UnidentifiedConnection) => {
+                                    debug!("New Message from UNIDENTIFIED connection {:?} - dropped message",
+                                        endpoint);
                                     // Don't accept Signed Routing Messages
                                     // from unidentified connections
                                 },
                                 None => {
+                                    error!("New Message from UNLABELED connection {:?} - dropped message",
+                                        endpoint);
                                     // Don't accept Signed Routing Messages
                                     // from unlabeled connections
                                 }
@@ -286,73 +286,22 @@ impl<F> RoutingMembrane<F> where F: Interface {
         .unwrap_or(SourceAddress::Direct(self.id.name()))
     }
 
-    #[allow(dead_code)]
-    fn handle_unknown_connect_request(&mut self, endpoint: &Endpoint, message: SignedMessage)
-            -> RoutingResult {
-
-        //let (serialised_connect_request, signature) = match message.clone() {
-        //    Message::Signed(serialised_cr, signature) => (serialised_cr, signature),
-        //    Message::Unsigned(_) => return Err(RoutingError::NotEnoughSignatures)
-        //};
-
-        let routing_message = try!(message.get_routing_message());
-        let connect_request = match routing_message.message_type {
-            MessageType::ConnectRequest(ref request) => request.clone(),
-            _ => return Ok(()), // To be changed to Parse error
-        };
-
-        let our_authority = our_authority(&routing_message, &self.routing_table);
-
-        // only accept unrelocated Ids from unknown connections
-        if connect_request.requester_fob.is_relocated() {
-            return Err(RoutingError::RejectedPublicId);
-        }
-
-        // if the PublicId is not relocated,
-        // only accept the connection into the RelayMap.
-        // This will enable this connection to bootstrap or act as a client.
-        let mut routing_msg = try!(routing_message.create_reply(&self.id.name(), &our_authority));
-        routing_msg.message_type = MessageType::ConnectResponse(ConnectResponse {
-                    requester_local_endpoints: connect_request.local_endpoints.clone(),
-                    requester_external_endpoints: connect_request.external_endpoints.clone(),
-                    receiver_local_endpoints: self.accepting_on.clone(),
-                    receiver_external_endpoints: vec![],
-                    requester_id: connect_request.requester_id.clone(),
-                    receiver_id: self.id.name().clone(),
-                    receiver_fob: PublicId::new(&self.id),
-                    serialised_connect_request: message.encoded_body().clone(),
-                    connect_request_signature: message.signature().clone()
-                });
-
-        let signed_message = try!(SignedMessage::new(&routing_msg, self.id.signing_private_key()));
-        let serialised_msg = try!(encode(&signed_message));
-
-        self.relay_map.add_client(connect_request.requester_fob, endpoint.clone());
-        self.relay_map.remove_unknown_connection(endpoint);
-
-        debug_assert!(self.relay_map.contains_endpoint(&endpoint));
-
-        match self.connection_manager.send(endpoint.clone(), serialised_msg) {
-            Ok(_)  => Ok(()),
-            Err(e) => Err(RoutingError::Io(e))
-        }
-    }
-
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
-      info!("CRUST::NewConnection on {:?}", endpoint);
+        info!("CRUST::NewConnection on {:?}", endpoint);
         self.drop_bootstrap();
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::ReflectionOnToUs) => {
-                info!("UNEXPECTED: NewConnection {:?} on 127.0.0.1:0 (reflection endpoint).",
+                error!("NewConnection {:?} on 127.0.0.1:0 (reflection endpoint).",
                     endpoint);
             }
             Some(_) => {
-                info!("UNEXPECTED: NewConnection {:?} on already connected endpoint.",
+                error!("NewConnection {:?} on already connected endpoint.",
                     endpoint);
             },
             None => {
+                debug!("Register unknown connection; {:?}", endpoint);
                 self.relay_map.register_unknown_connection(endpoint.clone());
                 // Send a polite "I Am" message introducing ourselves.
                 ignore(self.send_i_am_msg(endpoint));
@@ -444,8 +393,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // filter check
         if self.filter.check(&message.get_filter()) {
             // should just return quietly
+            debug!("FILTER BLOCKED message {:?} from {:?} to {:?}", message.message_type,
+                message.source.non_relayed_source(), message.destination.non_relayed_destination());
             return Err(RoutingError::FilterCheckFailed);
         }
+        debug!("message {:?} from {:?} to {:?}", message.message_type,
+            message.source.non_relayed_source(), message.destination.non_relayed_destination());
         // add to filter
         self.filter.add(message.get_filter());
 

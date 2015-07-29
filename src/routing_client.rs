@@ -186,7 +186,7 @@ impl<F> RoutingClient<F> where F: Interface {
                     Err(_)  => { debug_assert!(false); return }
                 };
 
-                info!("received a {:?} from {:?}", routing_msg.message_type, endpoint);
+                debug!("received a {:?} from {:?}", routing_msg.message_type, endpoint);
 
                 match self.bootstrap {
                     Some((ref bootstrap_endpoint, _)) => {
@@ -203,7 +203,7 @@ impl<F> RoutingClient<F> where F: Interface {
                             }
                         }
                     },
-                    _ => { info!("Received message but not fully bootstrapped"); }
+                    _ => { debug!("Received message but not fully bootstrapped"); }
                 }
             },
             _ => { // as a client, shall not handle any connection related change
