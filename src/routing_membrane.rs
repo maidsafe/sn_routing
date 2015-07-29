@@ -232,9 +232,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 },
                                 // we hold an active connection to this endpoint,
                                 // mapped to a name in our relay map
-                                Some(ConnectionName::Relay(address)) => {
-                                    debug!("New Message from RELAY {:?} on {:?}",
-                                        address, endpoint);
+                                Some(ConnectionName::Relay(_)) => {
+                                    debug!("New Message from RELAY on {:?}",
+                                        endpoint);
                                     // messages are owned by the signature of the sender
                                     // we can handle it as a normal signed routing message.
                                     // TODO(ben 29/07/2015) message can be validated
@@ -393,8 +393,12 @@ impl<F> RoutingMembrane<F> where F: Interface {
         // filter check
         if self.filter.check(&message.get_filter()) {
             // should just return quietly
+            debug!("FILTER BLOCKED message {:?} from {:?} to {:?}", message.message_type,
+                message.source.non_relayed_source(), message.destination.non_relayed_destination());
             return Err(RoutingError::FilterCheckFailed);
         }
+        debug!("message {:?} from {:?} to {:?}", message.message_type,
+            message.source.non_relayed_source(), message.destination.non_relayed_destination());
         // add to filter
         self.filter.add(message.get_filter());
 
