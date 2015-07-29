@@ -15,10 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::{BTreeMap};
-
-use sodiumoxide::crypto::sign::{PublicKey};
-
 use authority::Authority;
 use data::Data;
 use error::{RoutingError, ResponseError};
