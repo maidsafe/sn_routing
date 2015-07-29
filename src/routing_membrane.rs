@@ -289,18 +289,19 @@ impl<F> RoutingMembrane<F> where F: Interface {
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
-      info!("CRUST::NewConnection on {:?}", endpoint);
+        info!("CRUST::NewConnection on {:?}", endpoint);
         self.drop_bootstrap();
         match self.lookup_endpoint(&endpoint) {
             Some(ConnectionName::ReflectionOnToUs) => {
-                info!("UNEXPECTED: NewConnection {:?} on 127.0.0.1:0 (reflection endpoint).",
+                error!("NewConnection {:?} on 127.0.0.1:0 (reflection endpoint).",
                     endpoint);
             }
             Some(_) => {
-                info!("UNEXPECTED: NewConnection {:?} on already connected endpoint.",
+                error!("NewConnection {:?} on already connected endpoint.",
                     endpoint);
             },
             None => {
+                debug!("Register unknown connection; {:?}", endpoint);
                 self.relay_map.register_unknown_connection(endpoint.clone());
                 // Send a polite "I Am" message introducing ourselves.
                 ignore(self.send_i_am_msg(endpoint));
