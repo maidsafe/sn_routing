@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use error::ResponseError;
+use error::{ResponseError};
 use data::Data;
 use NameType;
 

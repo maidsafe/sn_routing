@@ -21,7 +21,6 @@ use rand;
 use sodiumoxide;
 use std::sync::mpsc;
 use std::boxed::Box;
-use std::thread;
 use std::marker::PhantomData;
 
 use crust;
@@ -34,7 +33,7 @@ use who_are_you::IAm;
 use types::{MessageId, SourceAddress, DestinationAddress, Address};
 use utils::{encode, decode};
 use authority::{Authority};
-use messages::{RoutingMessage, SignedMessage, MessageType, ConnectRequest};
+use messages::{RoutingMessage, SignedMessage, MessageType};
 use error::{RoutingError};
 use std::thread::spawn;
 
@@ -53,7 +52,7 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     genesis: Box<G>,
     phantom_data: PhantomData<F>,
     id: Id,
-    own_name: NameType,
+    _own_name: NameType,
     next_message_id: MessageId,
     bootstrap: Option<(Endpoint, Option<NameType>)>,
 }
@@ -67,7 +66,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         RoutingNode { genesis: Box::new(genesis),
                       phantom_data: PhantomData,
                       id : id,
-                      own_name : own_name.clone(),
+                      _own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap: None,
                     }
@@ -85,7 +84,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     pub fn run(&mut self) -> Result<(), RoutingError> {
         // keep state on whether we still might be the first around.
         let mut possible_first = true;
-        let mut relocated_name : Option<NameType> = None;
+        let mut relocated_name : Option<NameType>;
         let mut sent_name_request = false;
 
         let (event_output, event_input) = mpsc::channel();
@@ -215,11 +214,38 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             }
         }
 
+        let our_bootstrap = match possible_first {
+            // we bootstrapped to a node
+            false => {
+                // verify bootstrap connection
+                let our_bootstrap = match self.bootstrap {
+                    Some((ref endpoint, ref opt_name)) => {
+                        match *opt_name {
+                            Some(name) => {
+                                (endpoint.clone(), name.clone())
+                            },
+                            None => return Err(RoutingError::FailedToBootstrap)
+                        }
+                    },
+                    None => return Err(RoutingError::FailedToBootstrap)
+                };
+
+                // send FindGroup request before moving to Membrane
+                let find_group_msg =
+                    try!(self.construct_find_group_msg_as_client(&our_bootstrap.1));
+                ignore(cm.send(our_bootstrap.0.clone(), try!(encode(&find_group_msg))));
+
+                Some(our_bootstrap)
+            },
+            // someone tried to bootstrap to us
+            true => None
+        };
+
         match relocated_name {
             Some(new_name) => {
                 self.id.assign_relocated_name(new_name);
                 let mut membrane = RoutingMembrane::<F>::new(
-                    cm, event_output, event_input, None,
+                    cm, event_output, event_input, our_bootstrap,
                     self.id.clone(),
                     self.genesis.create_personas());
                 // TODO: currently terminated by main, should be signalable to terminate
@@ -244,6 +270,25 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
+            authority    : Authority::ManagedNode,
+        };
+
+        SignedMessage::new(&message, self.id.signing_private_key())
+    }
+
+
+    fn construct_find_group_msg_as_client(&mut self, bootstrap_name: &NameType)
+        -> Result<SignedMessage, CborError> {
+        let name   = self.id.name().clone();
+        let message_id = self.get_next_message_id();
+
+        let message = RoutingMessage {
+            destination  : DestinationAddress::Direct(name.clone()),
+            source       : SourceAddress::RelayedForClient(bootstrap_name.clone(),
+                self.id.signing_public_key()),
+            orig_message : None,
+            message_type : MessageType::FindGroup,
+            message_id   : message_id,
             authority    : Authority::ManagedNode,
         };
 

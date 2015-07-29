@@ -281,6 +281,17 @@ impl SignedMessage {
         })
     }
 
+    pub fn with_signature(message: &RoutingMessage, signature: Signature)
+        -> Result<SignedMessage, CborError> {
+
+          let encoded_body = try!(utils::encode(&message));
+
+          Ok(SignedMessage {
+              encoded_body: encoded_body,
+              signature:    signature
+          })
+    }
+
     pub fn verify_signature(&self, public_sign_key: &sign::PublicKey) -> bool {
         sign::verify_detached(&self.signature,
                               &self.encoded_body,
