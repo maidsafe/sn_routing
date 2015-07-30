@@ -124,6 +124,7 @@ impl RelayMap {
     }
 
     /// Returns true if we already have a name associated with this endpoint.
+    #[allow(dead_code)]
     pub fn contains_endpoint(&self, relay_endpoint: &Endpoint) -> bool {
         self.lookup_map.contains_key(relay_endpoint)
     }
