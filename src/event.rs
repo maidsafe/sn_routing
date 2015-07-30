@@ -37,8 +37,8 @@ impl Event {
                           destination: NameType, msg_id : u32)
         -> Result<RoutingMessage, RoutingError> {
         match self {
-            &Event::PutDataRequest(ref orig_message, ref data, ref source_group,
-                                   ref _destination_group, ref source_authority,
+            &Event::PutDataRequest(ref orig_message, ref _data, ref _source_group,
+                                   ref _destination_group, ref _source_authority,
                                    ref our_authority, ref _message_id) =>
             {
                 return Ok(RoutingMessage {
@@ -50,8 +50,8 @@ impl Event {
                     authority    : our_authority.clone(),
                 })
             },
-            &Event::PutDataResponse(ref orig_message, ref response, ref source_group,
-                                    ref destination_group, ref source_authority,
+            &Event::PutDataResponse(ref orig_message, ref _response, ref _source_group,
+                                    ref destination_group, ref _source_authority,
                                     ref our_authority, ref _message_id) =>
             {
                 return Ok(RoutingMessage {
@@ -63,8 +63,8 @@ impl Event {
                     authority    : our_authority.clone(),
                 })
             },
-            &Event::GetDataResponse(ref orig_message, ref response, ref source_group,
-                                    ref destination_group, ref source_authority,
+            &Event::GetDataResponse(ref orig_message, ref _response, ref _source_group,
+                                    ref destination_group, ref _source_authority,
                                     ref our_authority, ref _message_id) =>
             {
                 return Ok(RoutingMessage {
@@ -83,8 +83,8 @@ impl Event {
     pub fn create_reply(&self, reply_data: MessageType)
         -> Result<RoutingMessage, RoutingError> {
         match self {
-            &Event::PutDataRequest(ref orig_message, ref data, ref source_group,
-                                   ref destination_group, ref source_authority, ref our_authority,
+            &Event::PutDataRequest(ref orig_message, ref _data, ref source_group,
+                                   ref destination_group, ref _source_authority, ref our_authority,
                                    ref message_id) => {
                 return Ok(RoutingMessage {
                     destination  : match orig_message.get_routing_message() {
