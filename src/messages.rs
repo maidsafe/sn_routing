@@ -302,9 +302,10 @@ impl SignedMessage {
         utils::decode::<RoutingMessage>(&self.encoded_body)
     }
 
-    //pub fn encoded_body(&self) -> &Vec<u8> {
-    //    &self.encoded_body
-    //}
+    #[allow(dead_code)]
+    pub fn encoded_body(&self) -> &Vec<u8> {
+        &self.encoded_body
+    }
 
     pub fn signature(&self) -> &Signature { &self.signature }
 }
