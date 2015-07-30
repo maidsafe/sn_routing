@@ -30,6 +30,8 @@
         unused_qualifications, unused_results, variant_size_differences)]
 #![feature(convert, core)]
 
+extern crate env_logger;
+
 extern crate cbor;
 extern crate core;
 extern crate docopt;
@@ -40,7 +42,6 @@ extern crate crust;
 extern crate routing;
 
 use core::iter::FromIterator;
-// use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -49,10 +50,8 @@ use std::thread;
 use std::thread::spawn;
 use std::collections::BTreeMap;
 
-// use cbor::CborTagEncode;
 use cbor::CborError;
 use docopt::Docopt;
-// use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
@@ -361,7 +360,7 @@ fn run_interactive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
         thread::sleep_ms(100);
         loop {
             thread::sleep_ms(10);
-            copied_client.lock().unwrap().run_one();
+            copied_client.lock().unwrap().poll_one();
         }
     });
     let ref mut command = String::new();
@@ -423,6 +422,11 @@ fn run_interactive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
 }
 
 fn main() {
+    match env_logger::init() {
+        Ok(()) => {},
+        Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
+    }
+
     let args: Args = Docopt::new(USAGE)
                             .and_then(|docopt| docopt.decode())
                             .unwrap_or_else(|error| error.exit());
