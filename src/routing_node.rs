@@ -21,7 +21,6 @@ use rand;
 use sodiumoxide;
 use std::sync::mpsc;
 use std::boxed::Box;
-use std::thread;
 use std::marker::PhantomData;
 
 use crust;
@@ -34,11 +33,12 @@ use who_are_you::IAm;
 use types::{MessageId, SourceAddress, DestinationAddress, Address};
 use utils::{encode, decode};
 use authority::{Authority};
-use messages::{RoutingMessage, SignedMessage, MessageType, ConnectRequest};
+use messages::{RoutingMessage, SignedMessage, MessageType};
 use error::{RoutingError};
 use std::thread::spawn;
+use std::collections::BTreeSet;
 
-static MAX_BOOTSTRAP_CONNECTIONS : usize = 3;
+static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
@@ -50,26 +50,23 @@ type RoutingResult = Result<(), RoutingError>;
 /// DHT node
 pub struct RoutingNode<F, G> where F : Interface + 'static,
                                    G : CreatePersonas<F> {
-    genesis: Box<G>,
-    phantom_data: PhantomData<F>,
-    id: Id,
-    own_name: NameType,
-    next_message_id: MessageId,
-    bootstrap: Option<(Endpoint, Option<NameType>)>,
+    genesis         : Box<G>,
+    phantom_data    : PhantomData<F>,
+    id              : Id,
+    next_message_id : MessageId,
+    bootstraps      : BTreeSet<Endpoint>,
 }
 
 impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                    G : CreatePersonas<F> {
     pub fn new(genesis: G) -> RoutingNode<F, G> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let id = Id::new();
-        let own_name = id.name();
-        RoutingNode { genesis: Box::new(genesis),
-                      phantom_data: PhantomData,
-                      id : id,
-                      own_name : own_name.clone(),
-                      next_message_id: rand::random::<MessageId>(),
-                      bootstrap: None,
+
+        RoutingNode { genesis         : Box::new(genesis),
+                      phantom_data    : PhantomData,
+                      id              : Id::new(),
+                      next_message_id : rand::random::<MessageId>(),
+                      bootstraps      : BTreeSet::new(),
                     }
     }
 
@@ -83,103 +80,72 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     //  This might be moved into the constructor new
     //  For an initial draft, kept it as a separate function call.
     pub fn run(&mut self) -> Result<(), RoutingError> {
-        // keep state on whether we still might be the first around.
-        let mut possible_first = true;
-        let mut relocated_name : Option<NameType> = None;
+        let relocated_name : Option<NameType>;
         let mut sent_name_request = false;
+        let mut our_bootstrap : Option<(Endpoint, NameType)> = None;
 
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output.clone());
         let _ = cm.start_accepting(vec![]);
         cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+
         loop {
             match event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                    let mut new_bootstrap_name :
-                        Option<(Endpoint, Option<NameType>)> = None;
-                    match self.bootstrap {
-                        Some((ref bootstrap_endpoint, ref bootstrap_name)) => {
-                            debug_assert!(&endpoint == bootstrap_endpoint);
-                            match decode::<SignedMessage>(&bytes) {
-                                Ok(wrapped_message) => {
-                                    match wrapped_message.get_routing_message() {
-                                        Err(_) => continue,
-                                        Ok(message) => {
-                                            match message.message_type {
-                                                MessageType::PutPublicIdResponse(
-                                                    ref new_public_id, ref _orig_request) => {
-                                                      relocated_name = Some(new_public_id.name());
-                                                      println!("Received PutPublicId relocated
-                                                          name {:?} from {:?}", relocated_name,
-                                                          self.id.name());
-                                                      break;
-                                                },
-                                                _ => continue,
-                                            }
-                                        }
-                                    }
-                                },
-                                Err(_) => {
-                                    // Try to decode it as an IAm message
-                                    match decode::<IAm>(&bytes) {
-                                        Ok(he_is_msg) => {
-                                            match he_is_msg.address {
-                                                Address::Node(node_name) => {
-                                                    match *bootstrap_name {
-                                                        Some(_) => continue, // name already set
-                                                        None => new_bootstrap_name =
-                                                            Some((bootstrap_endpoint.clone(),
-                                                            Some(node_name.clone()))),
-                                                    }
-                                                },
-                                                _ => continue, // only care about a Node
-                                            }
+                    //println!("Event::NewMessage({:?}, bytes)", endpoint);
+
+                    let self_id = self.id.clone();
+
+                    if self.bootstraps.contains(&endpoint) {
+                        if let Ok(signed_message) = decode::<SignedMessage>(&bytes) {
+                            match signed_message.get_routing_message() {
+                                Err(_) => continue,
+                                Ok(message) => {
+                                    match message.message_type {
+                                        MessageType::PutPublicIdResponse(
+                                            ref new_public_id, ref _orig_request) => {
+                                              relocated_name = Some(new_public_id.name());
+                                              info!("Received name {:?} from network; original name was {:?}",
+                                                  relocated_name, self.id.name());
+                                              break;
                                         },
-                                        Err(_) => continue,
-                                    };
+                                        _ => continue,
+                                    }
                                 }
-                            };
-                        },
-                        None => {}
-                    }
-                    // store the recovered relay name
-                    match new_bootstrap_name.clone() {
-                        Some(new_endpoint_name_pair) =>
-                            self.bootstrap = Some(new_endpoint_name_pair),
-                        None => {},
-                    };
-                    // try to send a request for a network name with PutPublicId
-                    match new_bootstrap_name {  // avoid borrowing self
-                        Some((ref bootstrap_endpoint, ref opt_bootstrap_name)) => {
-                            match *opt_bootstrap_name {
-                                Some(bootstrap_name) => {
-                                    // we have aquired a bootstrap endpoint and relay name
+                            }
+                        }
+                        else if let Ok(he_is_msg) = decode::<IAm>(&bytes) {
+                            match he_is_msg.address {
+                                Address::Node(node_name) => {
+                                    info!("Name of our relay node is {:?}", node_name);
+                                    our_bootstrap = Some((endpoint.clone(), node_name.clone()));
                                     if !sent_name_request {
-                                        // now send a PutPublicId request
-                                        let our_public_id = PublicId::new(&self.id);
+                                        sent_name_request = true;
+
                                         let put_public_id_msg
                                             = try!(self.construct_put_public_id_msg(
-                                            &our_public_id, &bootstrap_name));
+                                                     &PublicId::new(&self_id),
+                                                     &node_name));
+
                                         let serialised_message = try!(encode(&put_public_id_msg));
-                                        ignore(cm.send(bootstrap_endpoint.clone(),
-                                            serialised_message));
-                                        sent_name_request = true;
+
+                                        ignore(cm.send(endpoint, serialised_message));
                                     }
                                 },
-                                None => {}
+                                _ => continue, // only care about a Node
                             }
-                        },
-                        None => {}
+                        }
+                        else { continue }
                     }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
-                    // only allow first if we still have the possibility
-                    if possible_first {
+                    if self.bootstraps.is_empty() {
                         // break from listening to CM
                         // and first start RoutingMembrane
                         relocated_name = Some(NameType(sodiumoxide::crypto::hash::sha512
                             ::hash(&self.id.name().0).0));
+                        info!("Acting on new connection {:?}; no longer bootstrapping.", endpoint);
                         break;
                     } else {
                         // aggressively refuse a connection when we already have
@@ -191,83 +157,58 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
                 },
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                    match self.bootstrap {
-                        None => {
-                            // we found a bootstrap connection,
-                            // so disable us becoming a first node
-                            possible_first = false;
-                            // register the bootstrap endpoint
-                            self.bootstrap = Some((endpoint.clone(), None));
-                            // and send an IAm message to our bootstrap endpoint
-                            let i_am_message = try!(encode(&IAm {
-                                // before we retrieve a name for ourselves from the network
-                                // we identify ourselves with the sign::PublicKey
-                                address: Address::Client(self.id.signing_public_key()),
-                                public_id: PublicId::new(&self.id)}));
-                            ignore(cm.send(endpoint, i_am_message));
-                        },
-                        Some(_) => {
-                            // only work with a single bootstrap endpoint (for now)
-                            cm.drop_node(endpoint);
-                        }
+                    //println!("Event::NewBootstrapConnection({:?})", endpoint);
+                    if !self.bootstraps.contains(&endpoint) {
+                        // register the bootstrap endpoint
+                        self.bootstraps.insert(endpoint.clone());
+
+                        info!("Established bootstrap connection on {:?}", endpoint);
+
+                        let i_am_message = try!(encode(&IAm {
+                            address   : Address::Client(self.id.signing_public_key()),
+                            public_id : PublicId::new(&self.id)
+                        }));
+
+                        ignore(cm.send(endpoint, i_am_message));
                     }
                 }
             }
         }
 
-        let our_bootstrap = match possible_first {
-            // we bootstrapped to a node
-            false => {
-                // verify bootstrap connection
-                let our_bootstrap = match self.bootstrap {
-                    Some((ref endpoint, ref opt_name)) => {
-                        match *opt_name {
-                            Some(name) => {
-                                (endpoint.clone(), name.clone())
-                            },
-                            None => return Err(RoutingError::FailedToBootstrap)
-                        }
-                    },
-                    None => return Err(RoutingError::FailedToBootstrap)
-                };
-
-                // send FindGroup request before moving to Membrane
-                let find_group_msg =
-                    try!(self.construct_find_group_msg_as_client(&our_bootstrap.1));
-                ignore(cm.send(our_bootstrap.0.clone(), try!(encode(&find_group_msg))));
-
-                Some(our_bootstrap)
-            },
-            // someone tried to bootstrap to us
-            true => None
-        };
+        if let Some((ref b_ep, ref b_name)) = our_bootstrap {
+            let find_group_msg = try!(self.construct_find_group_msg_as_client(b_name));
+            ignore(cm.send(b_ep.clone(), try!(encode(&find_group_msg))));
+        }
 
         match relocated_name {
             Some(new_name) => {
                 self.id.assign_relocated_name(new_name);
+
+                //println!(">>>>>>>>>>>>>>>>>>>>>>>>>>> Starting RoutingMembrane");
+
                 let mut membrane = RoutingMembrane::<F>::new(
                     cm, event_output, event_input, our_bootstrap,
                     self.id.clone(),
                     self.genesis.create_personas());
-                // TODO: currently terminated by main, should be signalable to terminate
-                // and join the routing_node thread.
+
                 spawn(move || membrane.run());
             },
             None => { return Err(RoutingError::FailedToBootstrap); }
-        }
+        };
 
         Ok(())
     }
 
-    fn construct_put_public_id_msg(&mut self, our_unrelocated_id: &PublicId,
-        relay_name: &NameType) -> Result<SignedMessage, CborError> {
+    fn construct_put_public_id_msg(&mut self, our_unrelocated_id : &PublicId,
+                                              relay_name         : &NameType)
+            -> Result<SignedMessage, CborError> {
 
         let message_id = self.get_next_message_id();
 
         let message =  RoutingMessage {
             destination  : DestinationAddress::Direct(our_unrelocated_id.name()),
             source       : SourceAddress::RelayedForClient(relay_name.clone(),
-                self.id.signing_public_key()),
+                                                           self.id.signing_public_key()),
             orig_message : None,
             message_type : MessageType::PutPublicId(our_unrelocated_id.clone()),
             message_id   : message_id.clone(),
@@ -280,13 +221,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
     fn construct_find_group_msg_as_client(&mut self, bootstrap_name: &NameType)
         -> Result<SignedMessage, CborError> {
-        let name   = self.id.name().clone();
+        let name       = self.id.name();
         let message_id = self.get_next_message_id();
 
         let message = RoutingMessage {
-            destination  : DestinationAddress::Direct(name.clone()),
+            destination  : DestinationAddress::Direct(name),
             source       : SourceAddress::RelayedForClient(bootstrap_name.clone(),
-                self.id.signing_public_key()),
+                                                           self.id.signing_public_key()),
             orig_message : None,
             message_type : MessageType::FindGroup,
             message_id   : message_id,
