@@ -81,7 +81,6 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     //  For an initial draft, kept it as a separate function call.
     pub fn run(&mut self) -> Result<(), RoutingError> {
         let relocated_name : Option<NameType>;
-        let mut sent_name_request = false;
         let mut our_bootstrap : Option<(Endpoint, NameType)> = None;
 
         let (event_output, event_input) = mpsc::channel();
@@ -120,18 +119,15 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                 Address::Node(node_name) => {
                                     info!("Name of our relay node is {:?}", node_name);
                                     our_bootstrap = Some((endpoint.clone(), node_name.clone()));
-                                    if !sent_name_request {
-                                        sent_name_request = true;
 
-                                        let put_public_id_msg
-                                            = try!(self.construct_put_public_id_msg(
-                                                     &PublicId::new(&self_id),
-                                                     &node_name));
+                                    let put_public_id_msg
+                                        = try!(self.construct_put_public_id_msg(
+                                                 &PublicId::new(&self_id),
+                                                 &node_name));
 
-                                        let serialised_message = try!(encode(&put_public_id_msg));
+                                    let serialised_message = try!(encode(&put_public_id_msg));
 
-                                        ignore(cm.send(endpoint, serialised_message));
-                                    }
+                                    ignore(cm.send(endpoint, serialised_message));
                                 },
                                 _ => continue, // only care about a Node
                             }
@@ -172,6 +168,16 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                         ignore(cm.send(endpoint, i_am_message));
                     }
                 }
+            }
+        }
+
+        // Drop bootstrap connections which we're not using.
+        for ep in self.bootstraps.iter() {
+            match our_bootstrap {
+                Some((ref b_ep, _)) if *ep != *b_ep => {
+                    cm.drop_node(ep.clone());
+                },
+                _ => cm.drop_node(ep.clone())
             }
         }
 
