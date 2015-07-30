@@ -21,7 +21,6 @@ use rand;
 use sodiumoxide;
 use std::sync::mpsc;
 use std::boxed::Box;
-use std::thread;
 use std::marker::PhantomData;
 
 use crust;
@@ -34,11 +33,11 @@ use who_are_you::IAm;
 use types::{MessageId, SourceAddress, DestinationAddress, Address};
 use utils::{encode, decode};
 use authority::{Authority};
-use messages::{RoutingMessage, SignedMessage, MessageType, ConnectRequest};
+use messages::{RoutingMessage, SignedMessage, MessageType};
 use error::{RoutingError};
 use std::thread::spawn;
 
-static MAX_BOOTSTRAP_CONNECTIONS : usize = 3;
+static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
 type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
@@ -53,7 +52,7 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     genesis: Box<G>,
     phantom_data: PhantomData<F>,
     id: Id,
-    own_name: NameType,
+    _own_name: NameType,
     next_message_id: MessageId,
     bootstrap: Option<(Endpoint, Option<NameType>)>,
 }
@@ -67,7 +66,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         RoutingNode { genesis: Box::new(genesis),
                       phantom_data: PhantomData,
                       id : id,
-                      own_name : own_name.clone(),
+                      _own_name : own_name.clone(),
                       next_message_id: rand::random::<MessageId>(),
                       bootstrap: None,
                     }
@@ -85,7 +84,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     pub fn run(&mut self) -> Result<(), RoutingError> {
         // keep state on whether we still might be the first around.
         let mut possible_first = true;
-        let mut relocated_name : Option<NameType> = None;
+        let relocated_name : Option<NameType>;
         let mut sent_name_request = false;
 
         let (event_output, event_input) = mpsc::channel();
@@ -110,9 +109,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                                 MessageType::PutPublicIdResponse(
                                                     ref new_public_id, ref _orig_request) => {
                                                       relocated_name = Some(new_public_id.name());
-                                                      println!("Received PutPublicId relocated
-                                                          name {:?} from {:?}", relocated_name,
-                                                          self.id.name());
+                                                      info!("Received name {:?} from network; original name was {:?}",
+                                                          relocated_name, self.id.name());
                                                       break;
                                                 },
                                                 _ => continue,
@@ -126,6 +124,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                         Ok(he_is_msg) => {
                                             match he_is_msg.address {
                                                 Address::Node(node_name) => {
+                                                    info!("Name of our relay node is {:?}",
+                                                        node_name);
                                                     match *bootstrap_name {
                                                         Some(_) => continue, // name already set
                                                         None => new_bootstrap_name =
@@ -180,6 +180,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                         // and first start RoutingMembrane
                         relocated_name = Some(NameType(sodiumoxide::crypto::hash::sha512
                             ::hash(&self.id.name().0).0));
+                        info!("Acting on new connection {:?}; no longer bootstrapping.", endpoint);
                         break;
                     } else {
                         // aggressively refuse a connection when we already have
@@ -198,6 +199,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             possible_first = false;
                             // register the bootstrap endpoint
                             self.bootstrap = Some((endpoint.clone(), None));
+                            info!("Established bootstrap connection on {:?}", endpoint);
                             // and send an IAm message to our bootstrap endpoint
                             let i_am_message = try!(encode(&IAm {
                                 // before we retrieve a name for ourselves from the network
@@ -207,6 +209,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                             ignore(cm.send(endpoint, i_am_message));
                         },
                         Some(_) => {
+                            debug!("Dropped bootstrap connection on {:?} as we already have one.",
+                                endpoint);
                             // only work with a single bootstrap endpoint (for now)
                             cm.drop_node(endpoint);
                         }
@@ -254,7 +258,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 spawn(move || membrane.run());
             },
             None => { return Err(RoutingError::FailedToBootstrap); }
-        }
+        };
 
         Ok(())
     }
