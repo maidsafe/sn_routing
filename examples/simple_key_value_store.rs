@@ -30,6 +30,8 @@
         unused_qualifications, unused_results, variant_size_differences)]
 #![feature(convert, core)]
 
+#[macro_use]
+extern crate log;
 extern crate env_logger;
 
 extern crate cbor;
@@ -217,13 +219,13 @@ impl Interface for TestNode {
                       Authority::NaeManager(group_name) => {
                           match self.db.get(&group_name) {
                               Some(plain_data) => {
-                                  println!("node replied to get request for chunk {}",
+                                  info!("node replied to get request for chunk {}",
                                       group_name);
                                   return Ok(vec![MethodCall::Reply {
                                       data : Data::PlainData(plain_data.clone()) }]);
                               },
                               None => {
-                                  println!("node didn't have chunk {}",
+                                  info!("node didn't have chunk {}",
                                       group_name);
                               }
                           }
@@ -243,16 +245,20 @@ impl Interface for TestNode {
             Data::PlainData(plain_data) => {
                 match our_authority {
                     Authority::ClientManager(client_name) => {
-                        println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
+                        info!("ClientManager of {:?} forwarding data to DataManager around {:?}",
                             client_name, plain_data.name());
                         return Ok(vec![MethodCall::Put {
                             destination: plain_data.name(),
                             content: Data::PlainData(plain_data) }]);
                     },
                     Authority::NaeManager(group_name) => {
+                        info!("DataManager of {:?} asked to put plain data named {:?}",
+                            group_name, plain_data.name());
                         assert_eq!(group_name, plain_data.name());
+                        let data_name = plain_data.name();
                         let _ = self.db.entry(plain_data.name())
                             .or_insert(plain_data);
+                        assert!(self.db.contains_key(&data_name));
                     },
                     _ => {}
                 }

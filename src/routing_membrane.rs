@@ -1230,7 +1230,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             return Err(RoutingError::RejectedPublicId);
         }
         // first verify that the message is correctly self-signed
-        if message.verify_signature(&connect_request.requester_fob
+        if !message.verify_signature(&connect_request.requester_fob
             .signing_public_key()) {
             return Err(RoutingError::FailedSignature);
         }
