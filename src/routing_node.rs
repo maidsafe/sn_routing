@@ -86,6 +86,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output.clone());
         let _ = cm.start_accepting(vec![]);
+
+        println!("Node is accepting connections on {:?}", cm.get_own_endpoints());
         cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
 
         loop {
