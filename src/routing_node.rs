@@ -183,10 +183,14 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         // Drop bootstrap connections which we're not using.
         for ep in self.bootstraps.iter() {
             match our_bootstrap {
-                Some((ref b_ep, _)) if *ep.0 != *b_ep => {
-                    cm.drop_node(ep.0.clone());
+                Some((ref b_ep, _)) => {
+                    if *ep.0 != *b_ep {
+                        cm.drop_node(ep.0.clone());
+                    }
                 },
-                _ => cm.drop_node(ep.0.clone())
+                None => {
+                    cm.drop_node(ep.0.clone())
+                }
             }
         }
 
