@@ -93,7 +93,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             match event_input.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                    println!("Event::NewMessage({:?}, bytes)", endpoint);
+                    //println!("Event::NewMessage({:?}, bytes)", endpoint);
 
                     let self_id = self.id.clone();
 
@@ -157,7 +157,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
 
                 },
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                    println!("Event::NewBootstrapConnection({:?})", endpoint);
+                    //println!("Event::NewBootstrapConnection({:?})", endpoint);
                     if !self.bootstraps.contains(&endpoint) {
                         // register the bootstrap endpoint
                         self.bootstraps.insert(endpoint.clone());
@@ -184,7 +184,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
             Some(new_name) => {
                 self.id.assign_relocated_name(new_name);
 
-                println!(">>>>>>>>>>>>>>>>>>>>>>>>>>> Starting RoutingMembrane");
+                //println!(">>>>>>>>>>>>>>>>>>>>>>>>>>> Starting RoutingMembrane");
 
                 let mut membrane = RoutingMembrane::<F>::new(
                     cm, event_output, event_input, our_bootstrap,
