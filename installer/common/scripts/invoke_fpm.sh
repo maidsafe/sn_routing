@@ -10,16 +10,30 @@ RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' $RootDir/Cargo.toml)
 VaultName=$(sed -n 's/[ \t]*name[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' $RootDir/Cargo.toml)
 VaultPath=/usr/local/bin/
+BootstrapFilePath=/var/cache/safe/
 Platform=$1
 Description="SAFE Network vault"
 
 function add_file_check {
-  local Output=$1
-  local TargetFileName=$2
-  local TargetPath=$3
-  printf 'if [ ! -f %s ] ; then\n' "$TargetPath$TargetFileName" >> $Output
-  printf '  echo "%s is missing from %s" >&2\n' "$TargetFileName" "$TargetPath" >> $Output
-  printf '  exit 1\nfi\n\n' >> $Output
+  local TargetFileName=$1
+  local TargetPath=$2
+  printf 'if [ ! -f %s ]; then\n' "$TargetPath$TargetFileName" >>  after_install.sh
+  printf '  echo "%s is missing from %s" >&2\n' "$TargetFileName" "$TargetPath" >>  after_install.sh
+  printf '  exit 1\nfi\n\n' >>  after_install.sh
+}
+
+function add_safe_user {
+  printf 'useradd safe --system --shell /bin/false --user-group\n\n' >> after_install.sh
+}
+
+function remove_safe_user {
+  printf 'userdel safe\n' >> before_remove.sh
+}
+
+function set_owner {
+  printf 'chown -R safe:safe %s\n' "$BootstrapFilePath" >> after_install.sh
+  printf 'chown safe:safe %s\n' "$VaultPath$VaultName" >> after_install.sh
+  printf 'chmod 775 %s\n\n' "$VaultPath$VaultName" >> after_install.sh
 }
 
 function prepare_systemd_scripts {
@@ -29,21 +43,28 @@ function prepare_systemd_scripts {
   mkdir -p $RootDir/packages/$Platform/systemd/scripts
   cd $RootDir/packages/$Platform/systemd/scripts
 
-  # This will check the exe and service files are installed and will add and start the service
+  # This will:
+  #   * check the exe and service files are installed
+  #   * create a user and group called "safe" if they don't already exist
+  #   * set these as the owner/group for the installed files
+  #   * add and start the service
   printf '#!/bin/sh\n' > after_install.sh
-  add_file_check after_install.sh "$VaultName" "$VaultPath"
-  add_file_check after_install.sh "$ServiceName" "$ServicePath"
+  add_file_check "$VaultName" "$VaultPath"
+  add_file_check "$ServiceName" "$ServicePath"
+  add_safe_user
+  set_owner
   printf 'systemctl enable %s\n' "$ServiceName" >> after_install.sh
   printf 'systemctl start %s\n' "$ServiceName" >> after_install.sh
 
-  # This will stop and remove the service
+  # This will remove the "safe" user and group then stop and remove the service
   printf '#!/bin/sh\n' > before_remove.sh
   printf 'systemctl stop %s\n' "$ServiceName" >> before_remove.sh
   printf 'systemctl disable %s\n' "$ServiceName" >> before_remove.sh
+  remove_safe_user
 
   # This specifies the service
   printf '[Unit]\nDescription=%s\n\n' "$Description" > $ServiceName
-  printf '[Service]\nExecStart=%s\nRestart=on-failure\n\n' "$VaultPath$VaultName" >> $ServiceName
+  printf '[Service]\nExecStart=%s\nRestart=on-failure\nUser=safe\n\n' "$VaultPath$VaultName" >> $ServiceName
   printf '[Install]\nWantedBy=multi-user.target' >> $ServiceName
 
   # Set var to allow fpm to include the service file
@@ -59,16 +80,43 @@ function prepare_sysv_style_scripts {
   mkdir -p $RootDir/packages/$Platform/SysV-style/scripts
   cd $RootDir/packages/$Platform/SysV-style/scripts
 
-  # This will check the exe is installed, will install the init script and will start the vault
+  # This will:
+  #   * check the exe is installed
+  #   * install the init script
+  #   * create a user and group called "safe" if they don't already exist
+  #   * set these as the owner/group for the installed files
+  #   * start the vault
   printf '#!/bin/sh\n' > after_install.sh
-  add_file_check after_install.sh "$VaultName" "$VaultPath"
-  printf 'update-rc.d %s defaults\n' "$InitName" >> after_install.sh
+  add_file_check "$VaultName" "$VaultPath"
+  add_safe_user
+  set_owner
+  printf 'if [ $(command -v update-rc.d >/dev/null; echo $?) -eq 0 ]; then\n' >> after_install.sh
+  printf '  update-rc.d %s defaults\n' "$InitName" >> after_install.sh
+  printf 'elif [ $(command -v chkconfig >/dev/null; echo $?) -eq 0 ]; then\n' >> after_install.sh
+  printf '  chkconfig --add %s\n' "$InitName" >> after_install.sh
+  printf '  chkconfig --level 2345 %s on\n' "$InitName" >> after_install.sh
+  printf '  chkconfig --level 016 %s off\n' "$InitName" >> after_install.sh
+  printf 'else\n' >> after_install.sh
+  printf '  echo "Need update-rc.d or chkconfig."\n' >> after_install.sh
+  printf '  exit 1\n' >> after_install.sh
+  printf 'fi\n\n' >> after_install.sh
   printf '/etc/init.d/%s start\n' "$InitName" >> after_install.sh
 
-  # This will stop the vault, and remove the init script
+  # This will:
+  #   * remove the "safe" user and group
+  #   * stop the vault
+  #   * remove the init script
   printf '#!/bin/sh\n' > before_remove.sh
-  printf '/etc/init.d/%s stop\n' "$InitName" >> before_remove.sh
-  printf 'update-rc.d -f %s remove\n' "$InitName" >> before_remove.sh
+  printf '/etc/init.d/%s stop\n\n' "$InitName" >> before_remove.sh
+  printf 'if [ $(command -v update-rc.d >/dev/null; echo $?) -eq 0 ]; then\n' >> before_remove.sh
+  printf '  update-rc.d -f %s remove\n' "$InitName" >> before_remove.sh
+  printf 'elif [ $(command -v chkconfig >/dev/null; echo $?) -eq 0 ]; then\n' >> before_remove.sh
+  printf '  chkconfig --del %s\n' "$InitName" >> before_remove.sh
+  printf 'else\n' >> before_remove.sh
+  printf '  echo "Need update-rc.d or chkconfig."\n' >> before_remove.sh
+  printf '  exit 1\n' >> before_remove.sh
+  printf 'fi\n\n' >> before_remove.sh
+  remove_safe_user
 
   # This specifies the init script
   printf '#!/bin/sh\n' > $InitName
@@ -80,80 +128,89 @@ function prepare_sysv_style_scripts {
   printf '# Default-Stop:      0 1 6\n' >> $InitName
   printf '# Short-Description: Start or stop the %s.\n' "$Description" >> $InitName
   printf '### END INIT INFO\n\n' >> $InitName
-  printf 'PATH=/sbin:/usr/sbin:/bin:/usr/bin\n' >> $InitName
-  printf 'Description="%s"\n' "$Description" >> $InitName
-  printf 'Name=%s\n' "$InitName" >> $InitName
-  printf 'Daemon=%s\n\n' "$VaultPath$VaultName" >> $InitName
-  printf '# Exit if the package is not installed\n' >> $InitName
-  printf '[ -x "%s" ] || exit 0\n\n' "$VaultPath$VaultName" >> $InitName
-  printf '# Load the VERBOSE setting and other rcS variables\n' >> $InitName
-  printf '. /lib/init/vars.sh\n\n' >> $InitName
-  printf '# Define LSB log_* functions.\n' >> $InitName
-  printf '# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.\n' >> $InitName
-  printf '. /lib/lsb/init-functions\n\n' >> $InitName
-  printf '# Returns\n' >> $InitName
-  printf '#   0 if daemon has been started\n' >> $InitName
-  printf '#   1 if daemon was already running\n' >> $InitName
-  printf '#   2 if daemon could not be started\n' >> $InitName
-  printf 'do_start() {\n' >> $InitName
-  printf '  start-stop-daemon --start --quiet --exec $Daemon --test > /dev/null || return 1\n' >> $InitName
-  printf '  start-stop-daemon --start --background --quiet --exec $Daemon || return 2\n' >> $InitName
+  printf 'Dir="%s"\n' "$VaultPath" >> $InitName
+  printf 'Command="./%s"\n' "$VaultName" >> $InitName
+  printf 'User="safe"\n\n' >> $InitName
+  printf 'Name=`basename $0`\n' >> $InitName
+  printf 'PidFile="/var/run/$Name.pid"\n' >> $InitName
+  printf 'StdoutLog="/var/log/$Name.log"\n' >> $InitName
+  printf 'StderrLog="/var/log/$Name.err"\n\n' >> $InitName
+  printf 'get_pid() {\n' >> $InitName
+  printf '  cat "$PidFile"\n' >> $InitName
   printf '}\n\n' >> $InitName
-  printf '# Returns\n' >> $InitName
-  printf '#   0 if daemon has been stopped\n' >> $InitName
-  printf '#   1 if daemon was already stopped\n' >> $InitName
-  printf '#   2 if daemon could not be stopped\n' >> $InitName
-  printf '#   other if a failure occurred\n' >> $InitName
-  printf 'do_stop() {\n' >> $InitName
-  printf '  start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --name $Name\n' >> $InitName
-  printf '  ReturnValue="$?"\n' >> $InitName
-  printf '  [ "$ReturnValue" = 2 ] && return 2\n' >> $InitName
-  printf '  return "$ReturnValue"\n' >> $InitName
+  printf 'is_running() {\n' >> $InitName
+  printf '  [ -f "$PidFile" ] && ps `get_pid` > /dev/null 2>&1\n' >> $InitName
   printf '}\n\n' >> $InitName
   printf 'case "$1" in\n' >> $InitName
   printf '  start)\n' >> $InitName
-  printf '  [ "$VERBOSE" != no ] && log_daemon_msg "Starting $Description" "$Name"\n' >> $InitName
-  printf '  do_start\n' >> $InitName
-  printf '  case "$?" in\n' >> $InitName
-  printf '    0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;\n' >> $InitName
-  printf '    2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;\n' >> $InitName
-  printf '  esac\n' >> $InitName
+  printf '  if is_running; then\n' >> $InitName
+  printf '    echo "Already started"\n' >> $InitName
+  printf '    exit 1\n' >> $InitName
+  printf '  else\n' >> $InitName
+  printf '    echo "Starting $Name"\n' >> $InitName
+  printf '    cd "$Dir"\n' >> $InitName
+  printf '    if [ -z "$User" ]; then\n' >> $InitName
+  printf '      sudo $Command >> "$StdoutLog" 2>> "$StderrLog" &\n' >> $InitName
+  printf '    else\n' >> $InitName
+  printf '      runuser -u "$User" $Command >> "$StdoutLog" 2>> "$StderrLog" &\n' >> $InitName
+  printf '    fi\n' >> $InitName
+  printf '    echo $! > "$PidFile"\n' >> $InitName
+  printf '    if ! is_running; then\n' >> $InitName
+  printf '      echo "Unable to start, see $StdoutLog and $StderrLog"\n' >> $InitName
+  printf '      exit 2\n' >> $InitName
+  printf '    fi\n' >> $InitName
+  printf '  fi\n' >> $InitName
   printf '  ;;\n' >> $InitName
   printf '  stop)\n' >> $InitName
-  printf '  [ "$VERBOSE" != no ] && log_daemon_msg "Stopping $Description" "$Name"\n' >> $InitName
-  printf '  do_stop\n' >> $InitName
-  printf '  case "$?" in\n' >> $InitName
-  printf '    0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;\n' >> $InitName
-  printf '    2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;\n' >> $InitName
-  printf '  esac\n' >> $InitName
+  printf '  if is_running; then\n' >> $InitName
+  printf '    echo -n "Stopping $Name.."\n' >> $InitName
+  printf '    kill `get_pid`\n\n' >> $InitName
+  printf '    for i in 0 1 2 3 4 5 6 7 8 9\n' >> $InitName
+  printf '    do\n' >> $InitName
+  printf '      if ! is_running; then\n' >> $InitName
+  printf '        break\n' >> $InitName
+  printf '      fi\n\n' >> $InitName
+  printf '      echo -n "."\n' >> $InitName
+  printf '      sleep 1\n' >> $InitName
+  printf '    done\n' >> $InitName
+  printf '    echo\n\n' >> $InitName
+  printf '    if is_running; then\n' >> $InitName
+  printf '      echo "Not stopped; may still be shutting down or shutdown may have failed"\n' >> $InitName
+  printf '      exit 2\n' >> $InitName
+  printf '    else\n' >> $InitName
+  printf '      echo "Stopped"\n' >> $InitName
+  printf '      if [ -f "$PidFile" ]; then\n' >> $InitName
+  printf '        rm "$PidFile"\n' >> $InitName
+  printf '      fi\n' >> $InitName
+  printf '    fi\n' >> $InitName
+  printf '  else\n' >> $InitName
+  printf '    echo "Not running"\n' >> $InitName
+  printf '    rm -f "$PidFile"\n' >> $InitName
+  printf '    exit 1\n' >> $InitName
+  printf '  fi\n' >> $InitName
+  printf '  ;;\n' >> $InitName
+  printf '  restart)\n' >> $InitName
+  printf '  $0 stop\n' >> $InitName
+  printf '  if is_running; then\n' >> $InitName
+  printf '    echo "Unable to stop, will not attempt to start"\n' >> $InitName
+  printf '    exit 2\n' >> $InitName
+  printf '  fi\n' >> $InitName
+  printf '  $0 start\n' >> $InitName
   printf '  ;;\n' >> $InitName
   printf '  status)\n' >> $InitName
-  printf '       status_of_proc "$Daemon" "$Name" && exit 0 || exit $?\n' >> $InitName
-  printf '       ;;\n' >> $InitName
-  printf '  restart|force-reload)\n' >> $InitName
-  printf '  log_daemon_msg "Restarting $Description" "$Name"\n' >> $InitName
-  printf '  do_stop\n' >> $InitName
-  printf '  case "$?" in\n' >> $InitName
-  printf '    0|1)\n' >> $InitName
-  printf '    do_start\n' >> $InitName
-  printf '    case "$?" in\n' >> $InitName
-  printf '      0) log_end_msg 0 ;;\n' >> $InitName
-  printf '      1) log_end_msg 1 ;; # Old process is still running\n' >> $InitName
-  printf '      *) log_end_msg 1 ;; # Failed to start\n' >> $InitName
-  printf '    esac\n' >> $InitName
-  printf '    ;;\n' >> $InitName
-  printf '    *)\n' >> $InitName
-  printf '    # Failed to stop\n' >> $InitName
-  printf '    log_end_msg 1\n' >> $InitName
-  printf '    ;;\n' >> $InitName
-  printf '  esac\n' >> $InitName
+  printf '  if is_running; then\n' >> $InitName
+  printf '    echo "Running"\n' >> $InitName
+  printf '  else\n' >> $InitName
+  printf '    echo "Stopped"\n' >> $InitName
+  printf '    exit 2\n' >> $InitName
+  printf '  fi\n' >> $InitName
   printf '  ;;\n' >> $InitName
   printf '  *)\n' >> $InitName
-  printf '  echo "Usage: %s {start|stop|status|restart|force-reload}" >&2\n' "/etc/init.d/$InitName" >> $InitName
-  printf '  exit 3\n' >> $InitName
+  printf '  echo "Usage: $0 {start|stop|restart|status}"\n' >> $InitName
+  printf '  exit 1\n' >> $InitName
   printf '  ;;\n' >> $InitName
   printf 'esac\n\n' >> $InitName
-  printf ':\n' >> $InitName
+  printf 'exit 0\n' >> $InitName
 
   # Set var to allow fpm to include the init script
   ExtraFilesCommand=scripts/$InitName=/etc/init.d/
@@ -171,14 +228,14 @@ function create_package {
     --version $Version \
     --license GPLv3 \
     --vendor MaidSafe \
-    --directories /var/cache/safe/ \
+    --directories $BootstrapFilePath \
     --maintainer "MaidSafeQA <qa@maidsafe.net>" \
     --description "$Description" \
     --url "http://maidsafe.net" \
     --after-install scripts/after_install.sh\
     --before-remove scripts/before_remove.sh \
     $RootDir/target/release/$VaultName=$VaultPath \
-    $RootDir/installer/common/$VaultName.bootstrap.cache=/var/cache/safe/ \
+    $RootDir/installer/common/$VaultName.bootstrap.cache=$BootstrapFilePath \
     $ExtraFilesCommand
 }
 
