@@ -36,7 +36,7 @@ use authority::{Authority};
 use messages::{RoutingMessage, SignedMessage, MessageType};
 use error::{RoutingError};
 use std::thread::spawn;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
@@ -54,7 +54,7 @@ pub struct RoutingNode<F, G> where F : Interface + 'static,
     phantom_data    : PhantomData<F>,
     id              : Id,
     next_message_id : MessageId,
-    bootstraps      : BTreeSet<Endpoint>,
+    bootstraps      : BTreeMap<Endpoint, Option<NameType>>,
 }
 
 impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
@@ -66,7 +66,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                       phantom_data    : PhantomData,
                       id              : Id::new(),
                       next_message_id : rand::random::<MessageId>(),
-                      bootstraps      : BTreeSet::new(),
+                      bootstraps      : BTreeMap::new(),
                     }
     }
 
@@ -81,7 +81,7 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
     //  For an initial draft, kept it as a separate function call.
     pub fn run(&mut self) -> Result<(), RoutingError> {
         let relocated_name : Option<NameType>;
-        let mut our_bootstrap : Option<(Endpoint, NameType)> = None;
+        let our_bootstrap  : Option<(Endpoint, NameType)>;
 
         let (event_output, event_input) = mpsc::channel();
         let mut cm = crust::ConnectionManager::new(event_output.clone());
@@ -95,50 +95,59 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                     //println!("Event::NewMessage({:?}, bytes)", endpoint);
 
                     let self_id = self.id.clone();
+                    let opt_bootstrap_name = self.bootstraps.get(&endpoint).cloned();
 
-                    if self.bootstraps.contains(&endpoint) {
-                        if let Ok(signed_message) = decode::<SignedMessage>(&bytes) {
-                            match signed_message.get_routing_message() {
-                                Err(_) => continue,
-                                Ok(message) => {
-                                    match message.message_type {
-                                        MessageType::PutPublicIdResponse(
-                                            ref new_public_id, ref _orig_request) => {
-                                              relocated_name = Some(new_public_id.name());
-                                              info!("Received name {:?} from network; original name was {:?}",
-                                                  relocated_name, self.id.name());
-                                              break;
-                                        },
-                                        _ => continue,
+                    if let Some(opt_name) = opt_bootstrap_name {
+                        match opt_name {
+                            Some(name) => {
+                                if let Ok(signed_message) = decode::<SignedMessage>(&bytes) {
+                                    match signed_message.get_routing_message() {
+                                        Err(_) => continue,
+                                        Ok(message) => {
+                                            match message.message_type {
+                                                MessageType::PutPublicIdResponse(
+                                                    ref new_public_id, ref _orig_request) => {
+                                                      our_bootstrap  = Some((endpoint, name));
+                                                      relocated_name = Some(new_public_id.name());
+                                                      info!("Received name {:?} from network; original name was {:?}",
+                                                          relocated_name, self.id.name());
+                                                      break;
+                                                },
+                                                _ => continue,
+                                            }
+                                        }
                                     }
                                 }
+                            },
+                            None => {
+                                if let Ok(he_is_msg) = decode::<IAm>(&bytes) {
+                                    match he_is_msg.address {
+                                        Address::Node(node_name) => {
+                                            info!("Name of our relay node is {:?}", node_name);
+                                            self.bootstraps.insert(endpoint.clone(), Some(node_name.clone()));
+
+                                            let put_public_id_msg
+                                                = try!(self.construct_put_public_id_msg(
+                                                         &PublicId::new(&self_id),
+                                                         &node_name));
+
+                                            let serialised_message = try!(encode(&put_public_id_msg));
+
+                                            ignore(cm.send(endpoint, serialised_message));
+                                        },
+                                        _ => continue, // only care about a Node
+                                    }
+                                }
+                                else { continue }
                             }
                         }
-                        else if let Ok(he_is_msg) = decode::<IAm>(&bytes) {
-                            match he_is_msg.address {
-                                Address::Node(node_name) => {
-                                    info!("Name of our relay node is {:?}", node_name);
-                                    our_bootstrap = Some((endpoint.clone(), node_name.clone()));
-
-                                    let put_public_id_msg
-                                        = try!(self.construct_put_public_id_msg(
-                                                 &PublicId::new(&self_id),
-                                                 &node_name));
-
-                                    let serialised_message = try!(encode(&put_public_id_msg));
-
-                                    ignore(cm.send(endpoint, serialised_message));
-                                },
-                                _ => continue, // only care about a Node
-                            }
-                        }
-                        else { continue }
                     }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
                     if self.bootstraps.is_empty() {
                         // break from listening to CM
                         // and first start RoutingMembrane
+                        our_bootstrap  = None;
                         relocated_name = Some(NameType(sodiumoxide::crypto::hash::sha512
                             ::hash(&self.id.name().0).0));
                         info!("Acting on new connection {:?}; no longer bootstrapping.", endpoint);
@@ -154,9 +163,9 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                 },
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
                     //println!("Event::NewBootstrapConnection({:?})", endpoint);
-                    if !self.bootstraps.contains(&endpoint) {
+                    if !self.bootstraps.contains_key(&endpoint) {
                         // register the bootstrap endpoint
-                        self.bootstraps.insert(endpoint.clone());
+                        self.bootstraps.insert(endpoint.clone(), None);
 
                         info!("Established bootstrap connection on {:?}", endpoint);
 
@@ -174,10 +183,10 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         // Drop bootstrap connections which we're not using.
         for ep in self.bootstraps.iter() {
             match our_bootstrap {
-                Some((ref b_ep, _)) if *ep != *b_ep => {
-                    cm.drop_node(ep.clone());
+                Some((ref b_ep, _)) if *ep.0 != *b_ep => {
+                    cm.drop_node(ep.0.clone());
                 },
-                _ => cm.drop_node(ep.clone())
+                _ => cm.drop_node(ep.0.clone())
             }
         }
 
