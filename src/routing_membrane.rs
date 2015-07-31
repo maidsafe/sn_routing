@@ -948,10 +948,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
                     Authority::ClientManager(name) => name,
                     Authority::NaeManager(name)    => name,
                     Authority::NodeManager(name)   => name,
-                    Authority::ManagedNode      => return Err(RoutingError::BadAuthority),
-                    Authority::ManagedClient(_) => return Err(RoutingError::BadAuthority),
-                    Authority::Client(_)        => return Err(RoutingError::BadAuthority),
-                    Authority::Unknown          => return Err(RoutingError::BadAuthority),
+                    _ => return Err(RoutingError::BadAuthority),
                 }
             },
             Address::Client(source) => {

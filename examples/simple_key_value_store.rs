@@ -47,7 +47,7 @@ use core::iter::FromIterator;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::thread::spawn;
 use std::collections::BTreeMap;
@@ -63,6 +63,7 @@ use routing::routing_client::RoutingClient;
 use routing::routing_node::RoutingNode;
 use routing::sendable::Sendable;
 use routing::types;
+use routing::event::Event;
 use routing::id::Id;
 use routing::authority::Authority;
 use routing::NameType;
@@ -358,7 +359,8 @@ fn run_passive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
 fn run_interactive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
     let our_id = Id::new();
     let our_client_name : NameType = public_key_to_client_name(&our_id.signing_public_key());
-    let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), our_id);
+    let (tx, _) = mpsc::channel::<Event>();
+    let test_client = RoutingClient::new(tx.clone(), our_id);
     let mutate_client = Arc::new(Mutex::new(test_client));
     let copied_client = mutate_client.clone();
     let _ = spawn(move || {

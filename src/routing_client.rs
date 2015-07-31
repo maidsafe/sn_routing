@@ -19,15 +19,15 @@
 use rand;
 use sodiumoxide;
 use sodiumoxide::crypto::sign;
-use std::sync::{Mutex, Arc, mpsc};
-use std::sync::mpsc::Receiver;
+use std::sync::{mpsc};
+use std::sync::mpsc::{Receiver, Sender};
 
-use client_interface::Interface;
 use crust;
+use error::RoutingError;
+use event::Event;
 use messages;
 use name_type::NameType;
-use error::RoutingError;
-use messages::{RoutingMessage, SignedMessage, MessageType, ErrorReturn};
+use messages::{RoutingMessage, SignedMessage, MessageType};
 use types::{MessageId, DestinationAddress, SourceAddress, Address};
 use id::Id;
 use public_id::PublicId;
@@ -41,14 +41,14 @@ pub use crust::Endpoint;
 
 type Bytes = Vec<u8>;
 type ConnectionManager = crust::ConnectionManager;
-type Event = crust::Event;
+type CrustEvent = crust::Event;
 type PortAndProtocol = crust::Port;
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 3;
 
-pub struct RoutingClient<F: Interface> {
-    interface          : Arc<Mutex<F>>,
-    event_input        : Receiver<Event>,
+pub struct RoutingClient {
+    event_sender       : Sender<Event>,
+    event_receiver     : Receiver<CrustEvent>,
     connection_manager : ConnectionManager,
     id                 : Id,
     public_id          : PublicId,
@@ -56,20 +56,20 @@ pub struct RoutingClient<F: Interface> {
     next_message_id    : MessageId
 }
 
-impl<F> Drop for RoutingClient<F> where F: Interface {
+impl Drop for RoutingClient {
     fn drop(&mut self) {
         // self.connection_manager.stop(); // TODO This should be coded in ConnectionManager once Peter
         // implements it.
     }
 }
 
-impl<F> RoutingClient<F> where F: Interface {
-    pub fn new(my_interface: Arc<Mutex<F>>, id: Id) -> RoutingClient<F> {
+impl RoutingClient {
+    pub fn new(sender: Sender<Event> , id: Id) -> RoutingClient {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-        let (tx, rx) = mpsc::channel::<Event>();
+        let (tx, rx) = mpsc::channel::<CrustEvent>();
         RoutingClient {
-            interface          : my_interface,
-            event_input        : rx,
+            event_sender       : sender,
+            event_receiver     : rx,
             connection_manager : crust::ConnectionManager::new(tx),
             public_id          : PublicId::new(&id),
             id                 : id,
@@ -101,7 +101,7 @@ impl<F> RoutingClient<F> where F: Interface {
             message_type: MessageType::GetData(data),
             message_id  : self.get_next_message_id(),
             authority   : Authority::Client(self.id.signing_public_key()),
-            };
+        };
 
         match self.send_to_bootstrap_node(&message){
             Ok(_) => Ok(()),
@@ -165,7 +165,7 @@ impl<F> RoutingClient<F> where F: Interface {
     }
 
     pub fn poll_one(&mut self) {
-        match self.event_input.try_recv() {
+        match self.event_receiver.try_recv() {
             Err(_) => (),
             Ok(crust::connection_manager::Event::NewMessage(endpoint, bytes)) => {
                 match decode::<IAm>(&bytes) {
@@ -193,11 +193,11 @@ impl<F> RoutingClient<F> where F: Interface {
                         // only accept messages from our bootstrap endpoint
                         if bootstrap_endpoint == &endpoint {
                             match routing_msg.message_type {
-                                MessageType::GetDataResponse(result) => {
-                                    self.handle_get_data_response(result);
+                                MessageType::GetDataResponse(_) => {
+                                    self.handle_get_data_response(routing_msg);
                                 },
-                                MessageType::PutDataResponse(put_response, _) => {
-                                    self.handle_put_data_response(put_response);
+                                MessageType::PutDataResponse(_, _) => {
+                                    self.handle_put_data_response(routing_msg);
                                 },
                                 _ => {}
                             }
@@ -219,7 +219,7 @@ impl<F> RoutingClient<F> where F: Interface {
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
 
         loop {
-            match self.event_input.recv() {
+            match self.event_receiver.recv() {
                 Err(_) => return Err(RoutingError::FailedToBootstrap),
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
                     self.bootstrap = Some((endpoint.clone(), None));
@@ -284,7 +284,12 @@ impl<F> RoutingClient<F> where F: Interface {
         self.next_message_id
     }
 
-    fn handle_get_data_response(&self, response: messages::GetDataResponse) {
+    fn handle_get_data_response(&self, message: messages::RoutingMessage) {
+        let response = match message.message_type {
+            MessageType::GetDataResponse(ref response) => response.clone(),
+            _ => return
+        };
+
         if !response.verify_request_came_from(&self.public_sign_key()) {
             return;
         }
@@ -294,13 +299,29 @@ impl<F> RoutingClient<F> where F: Interface {
             Err(_) => return
         };
 
-        let location = orig_request.non_relayed_destination();
+        let source_group = match message.actual_source() {
+            Address::Node(_) => {
+                match message.from_authority() {
+                    Authority::ClientManager(name) => name,
+                    Authority::NaeManager(name)    => name,
+                    Authority::NodeManager(name)   => name,
+                    _ => return
+                }
+            },
+            _ => return
+        };
 
-        let mut interface = self.interface.lock().unwrap();
-        interface.handle_get_response(location, response.data);
+        let location = orig_request.non_relayed_destination();
+        let _ = self.event_sender.send(Event::ClientGetDataResponse(location, source_group,
+                                                                    response.data));
     }
 
-    fn handle_put_data_response(&self, signed_error: ErrorReturn) {
+    fn handle_put_data_response(&self, message: messages::RoutingMessage) {
+        let signed_error = match message.message_type {
+            MessageType::PutDataResponse(ref put_response, _) => put_response.clone(),
+            _ => return
+        };
+
         if !signed_error.verify_request_came_from(&self.public_sign_key()) {
             return;
         }
@@ -310,63 +331,68 @@ impl<F> RoutingClient<F> where F: Interface {
             Err(_) => return
         };
 
+        let source_group = match message.actual_source() {
+            Address::Node(_) => {
+                match message.from_authority() {
+                    Authority::ClientManager(name) => name,
+                    Authority::NaeManager(name)    => name,
+                    Authority::NodeManager(name)   => name,
+                    _ => return
+                }
+            },
+            _ => return
+        };
+
         // The request must have been a PUT message.
         let orig_put_data = match orig_request.message_type {
             MessageType::PutData(data) => data,
             _                          => return
         };
-
-        let mut interface = self.interface.lock().unwrap();
-        interface.handle_put_response(signed_error.error, orig_put_data);
+        let _ = self.event_sender.send(Event::ClientPutDataResponse(signed_error.error,
+                                                                    source_group,
+                                                                    orig_put_data));
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     extern crate cbor;
-//     extern crate rand;
-//
-//     use super::*;
-//     use std::sync::{Mutex, Arc};
-//     use types::*;
-//     use client_interface::Interface;
-//     use Action;
-//     use ResponseError;
-//     use maidsafe_types::Random;
-//     use maidsafe_types::Maid;
-//
-//     struct TestInterface;
-//
-//     impl Interface for TestInterface {
-//         fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: NameType , data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
-//         fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
-//                       from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
-//         fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
-//         fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!() }
-//         fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
-//         fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
-//         fn add_node(&mut self, node: NameType) { unimplemented!(); }
-//         fn drop_node(&mut self, node: NameType) { unimplemented!(); }
-//     }
-//
-//     pub fn generate_random(size : usize) -> Vec<u8> {
-//         let mut content: Vec<u8> = vec![];
-//         for _ in (0..size) {
-//             content.push(rand::random::<u8>());
-//         }
-//         content
-//     }
-//
-//     // #[test]
-//     // fn routing_client_put() {
-//     //     let interface = Arc::new(Mutex::new(TestInterface));
-//     //     let maid = Maid::generate_random();
-//     //     let dht_id = NameType::generate_random();
-//     //     let mut routing_client = RoutingClient::new(interface, maid, dht_id);
-//     //     let name = NameType::generate_random();
-//     //     let content = generate_random(1024);
-//     //
-//     //     let put_result = routing_client.put(name, content);
-//     //     // assert_eq!(put_result.is_err(), false);
-//     // }
-// }
+#[cfg(test)]
+mod test {
+    extern crate cbor;
+    extern crate rand;
+
+    use std::sync::mpsc::channel;
+    use super::*;
+    use event::Event;
+    use id::Id;
+
+//    struct TestInterface;
+
+/*    impl Interface for TestInterface {
+        fn handle_get(&mut self, type_id: u64, our_authority: Authority, from_authority: Authority,from_address: NameType , data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
+        fn handle_put(&mut self, our_authority: Authority, from_authority: Authority,
+                      from_address: NameType, dest_address: DestinationAddress, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
+        fn handle_post(&mut self, our_authority: Authority, from_authority: Authority, from_address: NameType, data: Vec<u8>)->Result<Action, ResponseError> { unimplemented!(); }
+        fn handle_get_response(&mut self, from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!() }
+        fn handle_put_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
+        fn handle_post_response(&mut self, from_authority: Authority,from_address: NameType , response: Result<Vec<u8>, ResponseError>) { unimplemented!(); }
+        fn add_node(&mut self, node: NameType) { unimplemented!(); }
+        fn drop_node(&mut self, node: NameType) { unimplemented!(); }
+    }*/
+
+    pub fn generate_random(size : usize) -> Vec<u8> {
+        let mut content: Vec<u8> = vec![];
+        for _ in (0..size) {
+            content.push(rand::random::<u8>());
+        }
+        content
+    }
+
+    #[test]
+    fn routing_client_put() {
+        let (tx, _) = channel::<Event>();
+        let mut _routing_client = RoutingClient::new(tx.clone(), Id::new());
+        let _content = generate_random(1024);
+
+//        let put_result = routing_client.put(name, content);
+        // assert_eq!(put_result.is_err(), false);
+    }
+}

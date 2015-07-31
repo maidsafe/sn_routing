@@ -30,6 +30,8 @@ pub enum Event {
                     MessageId),
     GetDataResponse(Option<SignedMessage>, GetDataResponse, NameType, NameType, Authority, Authority,
                     MessageId),
+    ClientGetDataResponse(NameType, NameType, Data),
+    ClientPutDataResponse(ResponseError, NameType, Data),
 }
 
 impl Event {
@@ -76,7 +78,7 @@ impl Event {
                     authority    : our_authority.clone(),
                 })
             }
-
+            _ => Err(RoutingError::Response(ResponseError::InvalidRequest))
         }
     }
 
@@ -116,7 +118,8 @@ impl Event {
             &Event::PutDataResponse(ref orig_message, _, _, _, _, _, _)
                 => orig_message.clone(),
             &Event::GetDataResponse(ref orig_message, _, _, _, _, _, _)
-                => orig_message.clone()
+                => orig_message.clone(),
+            _ => None
         }
     }
 
@@ -148,6 +151,8 @@ impl Source<NameType> for Event {
             &Event::PutDataRequest(_, _, source_group, _, _, _, _) => source_group,
             &Event::PutDataResponse(_, _, source_group, _, _, _, _) => source_group,
             &Event::GetDataResponse(_, _, source_group, _, _, _, _) => source_group,
+            &Event::ClientGetDataResponse(_, source_group, _) => source_group,
+            &Event::ClientPutDataResponse(_, source_group, _) => source_group,
         }
     }
 }
