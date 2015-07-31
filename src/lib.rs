@@ -77,6 +77,6 @@ pub mod structured_data;
 pub mod immutable_data;
 pub mod plain_data;
 pub mod data;
-pub mod user_message;
+pub mod event;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
