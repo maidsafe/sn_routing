@@ -1,6 +1,6 @@
-# maidsafe_vault
+# safe_vault
 
-[![](https://img.shields.io/badge/Project%20SAFE-Approved-green.svg)](http://maidsafe.net/applications) [![](https://img.shields.io/badge/License-GPL3-green.svg)](https://github.com/maidsafe/maidsafe_vault/blob/master/COPYING)
+[![](https://img.shields.io/badge/Project%20SAFE-Approved-green.svg)](http://maidsafe.net/applications) [![](https://img.shields.io/badge/License-GPL3-green.svg)](https://github.com/maidsafe/safe_vault/blob/master/COPYING)
 
 **Primary Maintainer:**     Qi Ma (qi.ma@maidsafe.net)
 
@@ -8,10 +8,10 @@
 
 |Crate|Linux|Windows|OSX|Coverage|Issues|
 |:------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-|[![](http://meritbadge.herokuapp.com/maidsafe_vault)](https://crates.io/crates/maidsafe_vault)|[![Build Status](https://travis-ci.org/maidsafe/maidsafe_vault.svg?branch=master)](https://travis-ci.org/maidsafe/maidsafe_vault) | [![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_win64_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=maidsafe_vault_osx_status_badge)](http://ci.maidsafe.net:8080/job/maidsafe_vault_osx_status_badge/) |[![Coverage Status](https://coveralls.io/repos/maidsafe/maidsafe_vault/badge.svg)](https://coveralls.io/r/maidsafe/maidsafe_vault)|[![Stories in Ready](https://badge.waffle.io/maidsafe/maidsafe_vault.png?label=ready&title=Ready)](https://waffle.io/maidsafe/maidsafe_vault)|
+|[![](http://meritbadge.herokuapp.com/safe_vault)](https://crates.io/crates/safe_vault)|[![Build Status](https://travis-ci.org/maidsafe/safe_vault.svg?branch=master)](https://travis-ci.org/maidsafe/safe_vault) | [![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=safe_vault_win64_status_badge)](http://ci.maidsafe.net:8080/job/safe_vault_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=safe_vault_osx_status_badge)](http://ci.maidsafe.net:8080/job/safe_vault_osx_status_badge/) |[![Coverage Status](https://coveralls.io/repos/maidsafe/safe_vault/badge.svg)](https://coveralls.io/r/maidsafe/safe_vault)|[![Stories in Ready](https://badge.waffle.io/maidsafe/safe_vault.png?label=ready&title=Ready)](https://waffle.io/maidsafe/safe_vault)|
 
 
-| [API Documentation - master branch ](http://maidsafe.net/maidsafe_vault/master) | [SAFE Network System Documention](http://systemdocs.maidsafe.net) | [MaidSafe website](http://maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
+| [API Documentation - master branch ](http://maidsafe.net/safe_vault/master) | [SAFE Network System Documention](http://systemdocs.maidsafe.net) | [MaidSafe website](http://maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
 |:------:|:-------:|:-------:|:-------:|
 
 #Overview
