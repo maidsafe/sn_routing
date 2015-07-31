@@ -20,16 +20,14 @@ use rustc_serialize::{Decodable, Decoder};
 use data_manager::{DataManagerSendable, DataManagerStatsSendable};
 use maid_manager::MaidManagerAccountWrapper;
 use pmid_manager::PmidManagerAccountWrapper;
-use version_handler::VersionHandlerSendable;
 
 pub mod transfer_tags {
-    use maidsafe_types;
-    pub const MAIDSAFE_TRANSFER_TAG: u64 = maidsafe_types::MAIDSAFE_TAG + 200;
+    pub const MAIDSAFE_TRANSFER_TAG: u64 = 5483_000 + 200;
 
     pub const MAID_MANAGER_ACCOUNT_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 1;
     pub const DATA_MANAGER_ACCOUNT_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 2;
     pub const PMID_MANAGER_ACCOUNT_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 3;
-    pub const VERSION_HANDLER_ACCOUNT_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 4;
+    pub const SD_MANAGER_ACCOUNT_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 4;
     pub const DATA_MANAGER_STATS_TAG: u64 = MAIDSAFE_TRANSFER_TAG + 5;
 }
 
@@ -37,7 +35,6 @@ pub enum Transfer {
     MaidManagerAccount(MaidManagerAccountWrapper),
     DataManagerAccount(DataManagerSendable),
     PmidManagerAccount(PmidManagerAccountWrapper),
-    VersionHandlerAccount(VersionHandlerSendable),
     DataManagerStats(DataManagerStatsSendable),
     Unknown(u64),
 }
@@ -52,8 +49,6 @@ impl Decodable for Transfer {
                 Ok(Transfer::DataManagerAccount(try!(Decodable::decode(decoder)))),
             transfer_tags::PMID_MANAGER_ACCOUNT_TAG =>
                 Ok(Transfer::PmidManagerAccount(try!(Decodable::decode(decoder)))),
-            transfer_tags::VERSION_HANDLER_ACCOUNT_TAG =>
-                Ok(Transfer::VersionHandlerAccount(try!(Decodable::decode(decoder)))),
             transfer_tags::DATA_MANAGER_STATS_TAG =>
                 Ok(Transfer::DataManagerStats(try!(Decodable::decode(decoder)))),
             _ => Ok(Transfer::Unknown(tag)),

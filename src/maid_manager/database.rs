@@ -202,14 +202,17 @@ impl MaidManagerDatabase {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use routing;
     use cbor;
+
+    use super::*;
+
+    use routing::NameType;
+    use routing::types::*;
 
     #[test]
     fn exist() {
         let mut db = MaidManagerDatabase::new();
-        let name = routing::test_utils::Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         assert_eq!(db.exist(&name), false);
         db.put_data(&name, 1024);
         assert_eq!(db.exist(&name), true);
@@ -218,7 +221,7 @@ mod test {
     #[test]
     fn put_data() {
         let mut db = MaidManagerDatabase::new();
-        let name = routing::test_utils::Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         assert_eq!(db.put_data(&name, 0), true);
         assert_eq!(db.put_data(&name, 1), true);
         assert_eq!(db.put_data(&name, 1073741823), true);
@@ -232,7 +235,7 @@ mod test {
     #[test]
     fn delete_data() {
         let mut db = MaidManagerDatabase::new();
-        let name = routing::test_utils::Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         db.delete_data(&name, 0);
         assert_eq!(db.exist(&name), false);
         assert_eq!(db.put_data(&name, 0), true);
@@ -253,7 +256,7 @@ mod test {
     #[test]
     fn handle_account_transfer() {
         let mut db = MaidManagerDatabase::new();
-        let name = routing::test_utils::Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         assert_eq!(db.put_data(&name, 0), true);
         assert_eq!(db.put_data(&name, 1073741823), true);
         assert_eq!(db.put_data(&name, 2), false);
@@ -278,7 +281,7 @@ mod test {
 
     #[test]
     fn maid_manager_account_wrapper_serialisation() {
-        let obj_before = MaidManagerAccountWrapper::new(routing::NameType([1u8;64]), MaidManagerAccount::new());
+        let obj_before = MaidManagerAccountWrapper::new(NameType([1u8;64]), MaidManagerAccount::new());
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
