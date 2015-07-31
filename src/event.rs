@@ -25,10 +25,10 @@ use types::{MessageId, SourceAddress, DestinationAddress};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Event {
-    PutDataRequest(SignedMessage, Data, NameType, NameType, Authority, Authority, MessageId),
-    PutDataResponse(SignedMessage, ErrorReturn, NameType, NameType, Authority, Authority,
+    PutDataRequest(Option<SignedMessage>, Data, NameType, NameType, Authority, Authority, MessageId),
+    PutDataResponse(Option<SignedMessage>, ErrorReturn, NameType, NameType, Authority, Authority,
                     MessageId),
-    GetDataResponse(SignedMessage, GetDataResponse, NameType, NameType, Authority, Authority,
+    GetDataResponse(Option<SignedMessage>, GetDataResponse, NameType, NameType, Authority, Authority,
                     MessageId),
 }
 
@@ -44,7 +44,7 @@ impl Event {
                 return Ok(RoutingMessage {
                     destination  : DestinationAddress::Direct(destination),
                     source       : SourceAddress::Direct(source),
-                    orig_message : Some(orig_message.clone()),
+                    orig_message : orig_message.clone(),
                     message_type : message_type,
                     message_id   : msg_id,
                     authority    : our_authority.clone(),
@@ -57,7 +57,7 @@ impl Event {
                 return Ok(RoutingMessage {
                     destination  : DestinationAddress::Direct(destination_group.clone()),
                     source       : SourceAddress::Direct(source),
-                    orig_message : Some(orig_message.clone()),
+                    orig_message : orig_message.clone(),
                     message_type : message_type,
                     message_id   : msg_id,
                     authority    : our_authority.clone(),
@@ -70,7 +70,7 @@ impl Event {
                 return Ok(RoutingMessage {
                     destination  : DestinationAddress::Direct(destination_group.clone()),
                     source       : SourceAddress::Direct(source),
-                    orig_message : Some(orig_message.clone()),
+                    orig_message : orig_message.clone(),
                     message_type : message_type,
                     message_id   : msg_id,
                     authority    : our_authority.clone(),
@@ -87,10 +87,17 @@ impl Event {
                                    ref destination_group, ref _source_authority, ref our_authority,
                                    ref message_id) => {
                 return Ok(RoutingMessage {
-                    destination  : match orig_message.get_routing_message() {
-                                        Ok(routing_message) => routing_message.reply_destination(),
-                                        Err(_) => DestinationAddress::Direct(source_group.clone()),
+                    destination  : match orig_message {
+                                       &Some(ref signed_message) => {
+                                           let routing_message = try!(signed_message.get_routing_message());
+                                           routing_message.reply_destination()
+                                       }
+                                       &None => DestinationAddress::Direct(source_group.clone()),
                                    },
+                    //destination  : match orig_message.get_routing_message() {
+                    //                    Ok(routing_message) => routing_message.reply_destination(),
+                    //                    Err(_) => DestinationAddress::Direct(source_group.clone()),
+                    //               },
                     source       : SourceAddress::Direct(destination_group.clone()),
                     orig_message : None,
                     message_type : reply_data,
@@ -102,14 +109,14 @@ impl Event {
         }
     }
 
-    pub fn get_orig_message(&self) -> Result<SignedMessage, RoutingError> {
+    pub fn get_orig_message(&self) -> Option<SignedMessage> {
         match self {
             &Event::PutDataRequest(ref orig_message, _, _, _, _, _, _)
-                => Ok(orig_message.clone()),
+                => orig_message.clone(),
             &Event::PutDataResponse(ref orig_message, _, _, _, _, _, _)
-                => Ok(orig_message.clone()),
+                => orig_message.clone(),
             &Event::GetDataResponse(ref orig_message, _, _, _, _, _, _)
-                => Ok(orig_message.clone())
+                => orig_message.clone()
         }
     }
 

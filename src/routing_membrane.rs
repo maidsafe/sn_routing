@@ -941,7 +941,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     // -----Message Handlers from Routing Table connections----------------------------------------
 
     // Routing handle put_data
-    fn handle_node_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
+    fn handle_node_put_data(&mut self, _signed_message: SignedMessage, message: RoutingMessage,
                             data: Data, _source: NameType) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
@@ -961,7 +961,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
         // Temporarily pretend that the sentinel passed, later implement
         // sentinel.
-        let resolved = Event::PutDataRequest(signed_message.clone(), data.clone(), source_group,
+        let resolved = Event::PutDataRequest(message.orig_message.clone(), data.clone(), source_group,
                                              message.destination.non_relayed_destination(),
                                              message.authority.clone(), our_authority.clone(),
                                              message.message_id.clone());
@@ -993,9 +993,18 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(InterfaceError::Abort) => {},
             Err(InterfaceError::Response(error)) => {
+                let orig_request = match resolved.get_orig_message() {
+                    Some(m) => m,
+                    None    => {
+                        // TODO: The error code is wrong, but this code will
+                        // be gone anyway once we switch to channels.
+                        return Err(RoutingError::FailedSignature);
+                    }
+                };
+
                 let signed_error = ErrorReturn {
                     error: error,
-                    orig_request: try!(resolved.get_orig_message())
+                    orig_request: orig_request
                 };
                 let group_pub_keys = if our_authority.is_group() {
                     self.group_pub_keys()
@@ -1111,7 +1120,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_node_put_data_response(&mut self, signed_message: SignedMessage,
+    fn handle_node_put_data_response(&mut self, _signed_message: SignedMessage,
             message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
         info!("Handle group PUT data response.");
         let our_authority = our_authority(&message, &self.routing_table);
@@ -1122,7 +1131,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             _ => return Err(RoutingError::BadAuthority),
         };
 
-        let resolved = Event::PutDataResponse(signed_message.clone(), response.clone(), source,
+        let resolved = Event::PutDataResponse(message.orig_message.clone(), response.clone(), source,
                                               message.destination.non_relayed_destination(),
                                               message.authority.clone(), our_authority.clone(),
                                               message.message_id.clone());
@@ -1521,7 +1530,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
     }
 
 
-    fn handle_node_get_data_response(&mut self, signed_message : SignedMessage,
+    fn handle_node_get_data_response(&mut self, _signed_message : SignedMessage,
             message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from = message.source.non_relayed_source();
@@ -1533,7 +1542,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             _ => return Err(RoutingError::BadAuthority),
         };
 
-        let resolved = Event::GetDataResponse(signed_message.clone(), response.clone(), source,
+        let resolved = Event::GetDataResponse(message.orig_message.clone(), response.clone(), source,
                                               message.destination.non_relayed_destination(),
                                               message.authority.clone(), our_authority.clone(),
                                               message.message_id.clone());
@@ -1949,14 +1958,14 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let signed_message1 = SignedMessage::new(&message1, &sign_keys1.1).unwrap();
         let signed_message2 = SignedMessage::new(&message2, &sign_keys1.1).unwrap();
 
-        let request1 = Event::PutDataRequest(signed_message1.clone(), data.clone(),
+        let request1 = Event::PutDataRequest(signed_message1.orig_message.clone(), data.clone(),
                                              source_name_type1,
                                              message1.destination.non_relayed_destination(),
                                              Authority::NodeManager(dest_name_type),
                                              authority.clone(),
                                              message1.message_id.clone());
 
-        let request2 = Event::PutDataRequest(signed_message1.clone(), data.clone(),
+        let request2 = Event::PutDataRequest(signed_message1.orig_message.clone(), data.clone(),
                                              source_name_type1,
                                              message2.destination.non_relayed_destination(),
                                              Authority::NodeManager(dest_name_type),
