@@ -44,7 +44,7 @@ type ConnectionManager = crust::ConnectionManager;
 type Event = crust::Event;
 type PortAndProtocol = crust::Port;
 
-static MAX_BOOTSTRAP_CONNECTIONS : usize = 3;
+static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
 pub struct RoutingClient<F: Interface> {
     interface          : Arc<Mutex<F>>,
