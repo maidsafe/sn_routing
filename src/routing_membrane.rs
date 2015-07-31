@@ -62,8 +62,9 @@ use id::Id;
 use public_id::PublicId;
 use utils;
 use utils::{encode, decode};
-use sentinel::pure_sentinel::{PureSentinel};
 use event::Event;
+use sentinel::pure_sentinel::PureSentinel;
+
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -209,7 +210,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     /// RoutingMembrane::Run starts the membrane
     pub fn run(&mut self) {
-
         info!("Started Membrane loop");
         loop {
             match self.event_input.recv() {
@@ -221,11 +221,14 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                 // We sent this message to ourselves
                                 // as we are part of the effective close group
                                 Some(ConnectionName::ReflectionOnToUs) => {
+                                    debug!("New Message from REFLECTION {:?}", endpoint);
                                     ignore(self.message_received(message));
                                 },
                                 // we hold an active connection to this endpoint,
                                 // mapped to a name in our routing table
-                                Some(ConnectionName::Routing(_name)) => {
+                                Some(ConnectionName::Routing(name)) => {
+                                    debug!("New Message from ROUTING {:?} on {:?}",
+                                        name, endpoint);
                                     ignore(self.message_received(message));
                                 },
                                 // we hold an active connection to this endpoint,
@@ -250,6 +253,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                     // from unidentified connections
                                 },
                                 None => {
+                                    error!("New Message from UNLABELED connection {:?} - dropped message",
+                                        endpoint);
                                     // Don't accept Signed Routing Messages
                                     // from unlabeled connections
                                 }
@@ -495,8 +500,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         match message.actual_source() {
                             Address::Node(_)
                                 => self.handle_node_get_data_response(message_wrap,
-                                                                      message.clone(),
-                                                                      response.clone()),
                            Address::Client(_) =>
                                self.handle_client_get_data_response(message_wrap, message.clone(),
                                                                     response.clone()),
@@ -506,7 +509,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
                         match message.actual_source() {
                             Address::Node(_) =>
                                 self.handle_node_put_data_response(message_wrap, message.clone(),
-                                                                   response.clone()),
                             Address::Client(_) =>
                                 self.handle_client_put_data_response(message_wrap, message.clone(),
                                                                      response.clone()),
@@ -759,7 +761,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                             endpoint, i_am.public_id.name());
                                         self.relay_map.remove_unknown_connection(endpoint);
                                         self.connection_manager.drop_node(endpoint.clone());
-                                        return Err(RoutingError::RefusedFromRoutingTable); }
+                                        return Err(RoutingError::RefusedFromRoutingTable);
+                                    }
                                     info!("RT (size : {:?}) added connected node {:?} on {:?}",
                                         self.routing_table.size(), peer_node_info.fob.name(), endpoint);
                                     trigger_handle_churn = self.routing_table
@@ -989,6 +992,15 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(InterfaceError::Abort) => {},
             Err(InterfaceError::Response(error)) => {
+                let orig_request = match resolved.get_orig_message() {
+                    Some(m) => m,
+                    None    => {
+                        // TODO: The error code is wrong, but this code will
+                        // be gone anyway once we switch to channels.
+                        return Err(RoutingError::FailedSignature);
+                    }
+                };
+
                 let signed_error = ErrorReturn {
                     error: error,
                     orig_request: try!(resolved.get_orig_message())
@@ -1053,7 +1065,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         Ok(())
     }
 
-    fn handle_node_put_data_response(&mut self, signed_message: SignedMessage,
+    fn handle_node_put_data_response(&mut self, _signed_message: SignedMessage,
             message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
         info!("Handle group PUT data response.");
         let our_authority = our_authority(&message, &self.routing_table);
@@ -1180,7 +1192,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
             return Err(RoutingError::RejectedPublicId);
         }
         // first verify that the message is correctly self-signed
-        if message.verify_signature(&connect_request.requester_fob
+        if !message.verify_signature(&connect_request.requester_fob
             .signing_public_key()) {
             return Err(RoutingError::FailedSignature);
         }
@@ -1462,7 +1474,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         quorum
     }
 
-    fn handle_node_get_data_response(&mut self, signed_message : SignedMessage,
+    fn handle_node_get_data_response(&mut self, _signed_message : SignedMessage,
             message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from = message.source.non_relayed_source();
