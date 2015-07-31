@@ -481,8 +481,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         //
         // pre-sentinel message handling
         match message.message_type {
-            MessageType::GetKey => self.handle_get_key(header, body),
-            MessageType::GetGroupKey => self.handle_get_group_key(header, body),
+            //MessageType::GetKey => self.handle_get_key(header, body),
+            //MessageType::GetGroupKey => self.handle_get_group_key(header, body),
             MessageType::ConnectRequest(request) => self.handle_connect_request(request, message_wrap),
             _ => {
                 // Sentinel check
@@ -997,15 +997,6 @@ impl<F> RoutingMembrane<F> where F: Interface {
             },
             Err(InterfaceError::Abort) => {},
             Err(InterfaceError::Response(error)) => {
-                let _ = match resolved.get_orig_message() {
-                    Some(m) => m,
-                    None    => {
-                        // TODO: The error code is wrong, but this code will
-                        // be gone anyway once we switch to channels.
-                        return Err(RoutingError::FailedSignature);
-                    }
-                };
-
                 let signed_error = ErrorReturn {
                     error: error,
                     orig_request: match resolved.get_orig_message() {
