@@ -1,5 +1,5 @@
 [package]
-name = "maidsafe_vault"
+name = "safe_vault"
 version = "0.1.1"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
@@ -10,7 +10,6 @@ license = "GPL-3.0"
 homepage = "http://maidsafe.net"
 
 [dependencies]
-docopt = "*"
 rustc-serialize = "*"
 cbor = "*"
 time = "*"
