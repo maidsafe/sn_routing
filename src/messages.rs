@@ -137,6 +137,7 @@ impl RoutingMessage {
         self.message_id.clone()
     }
 
+    #[allow(dead_code)]
     pub fn source_address(&self) -> SourceAddress {
         self.source.clone()
     }
@@ -200,6 +201,7 @@ impl RoutingMessage {
     /// Authority is changed at this point as this method is called after
     /// the interface has processed the message.
     /// Note: this is not for XOR-forwarding; then the header is preserved!
+    #[allow(dead_code)]
     pub fn create_forward(&self,
                           our_name      : NameType,
                           our_authority : Authority,
