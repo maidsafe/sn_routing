@@ -1958,14 +1958,14 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let signed_message1 = SignedMessage::new(&message1, &sign_keys1.1).unwrap();
         let signed_message2 = SignedMessage::new(&message2, &sign_keys1.1).unwrap();
 
-        let request1 = Event::PutDataRequest(signed_message1.orig_message.clone(), data.clone(),
+        let request1 = Event::PutDataRequest(message1.orig_message.clone(), data.clone(),
                                              source_name_type1,
                                              message1.destination.non_relayed_destination(),
                                              Authority::NodeManager(dest_name_type),
                                              authority.clone(),
                                              message1.message_id.clone());
 
-        let request2 = Event::PutDataRequest(signed_message1.orig_message.clone(), data.clone(),
+        let request2 = Event::PutDataRequest(message2.orig_message.clone(), data.clone(),
                                              source_name_type1,
                                              message2.destination.non_relayed_destination(),
                                              Authority::NodeManager(dest_name_type),
