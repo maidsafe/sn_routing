@@ -109,10 +109,12 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                             match message.message_type {
                                                 MessageType::PutPublicIdResponse(
                                                     ref new_public_id, ref _orig_request) => {
-                                                      our_bootstrap  = Some((endpoint, name));
                                                       relocated_name = Some(new_public_id.name());
-                                                      info!("Received name {:?} from network; original name was {:?}",
-                                                          relocated_name, self.id.name());
+                                                      info!("Received name {:?} from {:?} on {:?};
+                                                          original name was {:?}",
+                                                          relocated_name, endpoint, name,
+                                                          self.id.name());
+                                                      our_bootstrap  = Some((endpoint, name));
                                                       break;
                                                 },
                                                 _ => continue,
@@ -125,7 +127,8 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
                                 if let Ok(he_is_msg) = decode::<IAm>(&bytes) {
                                     match he_is_msg.address {
                                         Address::Node(node_name) => {
-                                            info!("Name of our relay node is {:?}", node_name);
+                                            info!("Name of our relay node on {:?} is {:?}",
+                                                endpoint, node_name);
                                             self.bootstraps.insert(endpoint.clone(), Some(node_name.clone()));
 
                                             let put_public_id_msg
@@ -183,10 +186,13 @@ impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
         }
 
         // Drop bootstrap connections which we're not using.
+        debug!("Our bootstrap is set to {:?}", our_bootstrap);
         for ep in self.bootstraps.iter() {
             match our_bootstrap {
                 Some((ref b_ep, _)) => {
                     if *ep.0 != *b_ep {
+                        debug!("Dropping unused bootstrap connection to {:?}",
+                            ep);
                         cm.drop_node(ep.0.clone());
                     }
                 },
