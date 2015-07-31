@@ -771,7 +771,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
                                             endpoint, i_am.public_id.name());
                                         self.relay_map.remove_unknown_connection(endpoint);
                                         self.connection_manager.drop_node(endpoint.clone());
-                                        return Err(RoutingError::RefusedFromRoutingTable); }
+                                        return Err(RoutingError::RefusedFromRoutingTable);
+                                    }
                                     info!("RT (size : {:?}) added connected node {:?} on {:?}",
                                         self.routing_table.size(), peer_node_info.fob.name(), endpoint);
                                     trigger_handle_churn = self.routing_table

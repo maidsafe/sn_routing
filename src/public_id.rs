@@ -23,12 +23,19 @@ use NameType;
 use error::{RoutingError};
 use id::Id;
 use utils;
+use std::fmt::{Debug, Formatter, Error};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub struct PublicId {
     public_encrypt_key: box_::PublicKey,
     public_sign_key: sign::PublicKey,
     name: NameType,
+}
+
+impl Debug for PublicId {
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
+        formatter.write_str(&format!("PublicId(name:{:?})", self.name))
+    }
 }
 
 impl PublicId {
