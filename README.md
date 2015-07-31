@@ -21,19 +21,11 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 
 #Todo Items
 
-## [0.1.2] - code clean up
-- [ ] [MAID 1185](https://maidsafe.atlassian.net/browse/MAID-1185) using unwrap unsafely
-
-## [0.1.3] - integration test with client having churn event
+## [0.1.4]
 - [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
 
-## [0.1.4] - persona update
-- [ ] [MAID-1186](https://maidsafe.atlassian.net/browse/MAID-1186) Handling of unified Structrued Data
-    - [ ] [MAID-1187](https://maidsafe.atlassian.net/browse/MAID-1187) Updating Version Handler
-    - [ ] [MAID-1188](https://maidsafe.atlassian.net/browse/MAID-1188) Updating other personas if required
+## [0.1.5]
 - [ ] [MAID-1189](https://maidsafe.atlassian.net/browse/MAID-1189) Proper PmidNode Initialisation (max diskspace)
-
-## [0.1.5] - account creation
 - [ ] [MAID-1190](https://maidsafe.atlassian.net/browse/MAID-1190) Proper MaidManager account entry creation (allownance)
 - [ ] [MAID-1191](https://maidsafe.atlassian.net/browse/MAID-1191) Proper PmidManager account entry creation (pmidnode diskspace info)
 
