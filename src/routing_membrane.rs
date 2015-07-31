@@ -1899,8 +1899,8 @@ fn populate_routing_node() -> RoutingMembrane<TestInterface> {
         let sign_keys2 =  crypto::sign::gen_keypair();
         name_key_pairs.push((source_name_type1.clone(), sign_keys1.0.clone()));
         name_key_pairs.push((source_name_type2.clone(), sign_keys2.0.clone()));
-        let signed_message1 = SignedMessage::new(&message1, &sign_keys1.1).unwrap();
-        let signed_message2 = SignedMessage::new(&message2, &sign_keys1.1).unwrap();
+        let _signed_message1 = SignedMessage::new(&message1, &sign_keys1.1).unwrap();
+        let _signed_message2 = SignedMessage::new(&message2, &sign_keys1.1).unwrap();
 
         let request1 = Event::PutDataRequest(message1.orig_message.clone(), data.clone(),
                                              source_name_type1,
