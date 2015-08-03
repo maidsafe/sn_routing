@@ -22,7 +22,7 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 #Todo Items
 
 ### [0.1.4]
-+- [X] [MAID-1283](https://maidsafe.atlassian.net/browse/MAID-1283) Rename repositories from "maidsafe_" to "safe_"
+- [X] [MAID-1283](https://maidsafe.atlassian.net/browse/MAID-1283) Rename repositories from "maidsafe_" to "safe_"
 
 ## [0.1.5]
 - [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
