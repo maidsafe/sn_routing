@@ -24,9 +24,28 @@ use sentinel::pure_sentinel::Source;
 use types::{MessageId, SourceAddress, DestinationAddress};
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
+///   1. Event::MessageSecured provides the RoutingMessage after being secured by routing,
+///      our authority provides the base authority as validated by routing
+///   2. Event::Refresh has accumulated Refresh messages centered on a name for a type_tag.
+///      This can be used to transfer accounts between nodes of an effective close group.
+///   3. Event::Churn occurs when our close group changes.  The new close group is provided.
+///      Our close group always contains our own name first.  When we are connected to other
+///      nodes the list contains minimally two names.
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Event {
-    MessageSecured(message : RoutingMessage, our_authority : Authority),
-    Refresh(type_tag : u64, from_group : NameType, payloads : Vec<Vec<u8>>),
-    Churn(our_close_group : Vec<NameType>),
+    MessageSecured(RoutingMessage, Authority),
+    //             ~~|~~~~~~~~~~~  ~~|~~~~~~
+    //               |               | our authority as calculated
+    //               |               | note: can be removed if we enforce it to be identical
+    //               |               |       to RoutingMessage::to_authority
+    //               | secured routing message
+    Refresh(u64, NameType, Vec<Vec<u8>>),
+    //      ~|~  ~~|~~~~~  ~~|~~~~~~~~~
+    //       |     |         | payloads
+    //       |     | from group
+    //       | type tag
+    Churn(Vec<NameType>),
+    //    ~~|~~~~~~~~~~
+    //      | our close group sorted from our name; always including our name
+    //      | if size > 1, we are connected to the network
 }
