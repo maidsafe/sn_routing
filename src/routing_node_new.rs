@@ -48,18 +48,83 @@ type RoutingResult = Result<(), RoutingError>;
 
 /// DHT node
 pub struct RoutingNode {
-    id              : Id,
-    next_message_id : MessageId,
+    sender : mpsc::Sender<>
 }
 
 impl RoutingNode {
     pub fn new() -> RoutingNode {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
+        // start the handler for routing
+        let routing_handler = RoutingHandler::new();
         RoutingNode {
-            id              : Id::new(),
-            next_message_id : rand::random::<MessageId>(),
         }
     }
 
+    /// Retrieve something from the network (non mutating) - Direct call
+    pub fn get(&mut self, location: NameType, data : DataRequest) {
+        let message_id = self.get_next_message_id();
+        let message =  RoutingMessage {
+            destination : DestinationAddress::Direct(location),
+            source      : SourceAddress::Direct(self.id.name()),
+            orig_message: None,
+            message_type: MessageType::GetData(data),
+            message_id  : message_id,
+            authority   : Authority::Unknown
+        };
+
+        ignore(self.send_swarm_or_parallel(&message));
+    }
+
+    /// Add something to the network, will always go via ClientManager group
+    pub fn put(&mut self, destination: NameType, data : Data) {
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(destination),
+            source      : SourceAddress::Direct(self.id.name()),
+            orig_message: None,
+            message_type: MessageType::PutData(data),
+            message_id  : message_id,
+            authority   : Authority::Unknown,
+        };
+
+        ignore(self.send_swarm_or_parallel(&message));
+    }
+
+    /// Add something to the network, will always go via ClientManager group
+    pub fn post(&mut self, destination: NameType, data : Data) {
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(destination),
+            source      : SourceAddress::Direct(self.id.name()),
+            orig_message: None,
+            message_type: MessageType::Post(data),
+            message_id  : message_id,
+            authority   : Authority::Unknown,
+        };
+
+        ignore(self.send_swarm_or_parallel(&message));
+    }
+
+    pub fn delete(&mut self, _destination: NameType, _data : Data) {
+        unimplemented!()
+    }
+
+    /// Refresh the content in the close group nodes of group address content::name.
+    /// This method needs to be called when churn is triggered.
+    /// all the group members need to call this, otherwise it will not be resolved as a valid
+    /// content.
+    pub fn refresh(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
+        let message_id = self.get_next_message_id();
+        let message = RoutingMessage {
+            destination : DestinationAddress::Direct(from_group.clone()),
+            source      : SourceAddress::Direct(self.id.name()),
+            orig_message: None,
+            message_type: MessageType::Refresh(type_tag, content),
+            message_id  : message_id,
+            authority   : Authority::Unknown,
+        };
+
+        ignore(self.send_swarm_or_parallel(&message));
+    }
 }
