@@ -1,4 +1,4 @@
-# MaidSafe Vault - Change Log
+# Safe Vault - Change Log
 
 ## [0.1.3]
 - [MAID-1186](https://maidsafe.atlassian.net/browse/MAID-1186) Handling of unified Structrued Data
@@ -11,8 +11,8 @@
 ## [0.1.1]
 - Updated dependencies' versions
 - Fixed lint warnings caused by latest Rust nightly
-- [Issue 117](https://github.com/maidsafe/maidsafe_vault/issues/117) meaningful type_tag
-- [PR 124](https://github.com/maidsafe/maidsafe_vault/pull/124) integration test with client
+- [Issue 117](https://github.com/maidsafe/safe_vault/issues/117) meaningful type_tag
+- [PR 124](https://github.com/maidsafe/safe_vault/pull/124) integration test with client
     - client log in / log out
     - complete put flow
     - complete get flow

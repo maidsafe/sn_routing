@@ -14,7 +14,7 @@ ImmutableData has three types, these are ImmutableData, ImmutableDataBackup & Im
 
 ## Sacrifical copies
 
-The third data type ImmutableDataSacrificial which is the network measuring stick. These types are only attempted to be stored, whereas other types MUST be stored. In the case where other types cannot be stored then copies of Sacrificial data will be deleted from the PMID nodes, and a notification will be sent from pmid_node back to PmidManager then eventually reach DataManager (see [put_flow](https://github.com/maidsafe/maidsafe_vault/blob/master/docs/put_flow.md) and check put_response part for detail).
+The third data type ImmutableDataSacrificial which is the network measuring stick. These types are only attempted to be stored, whereas other types MUST be stored. In the case where other types cannot be stored then copies of Sacrificial data will be deleted from the PMID nodes, and a notification will be sent from pmid_node back to PmidManager then eventually reach DataManager (see [put_flow](https://github.com/maidsafe/safe_vault/blob/master/docs/put_flow.md) and check put_response part for detail).
 
 ## Farming Rate
 This rate calculation is a simple approach and meant as a tool to investigate the algorithm. A simple add/subtract mechanism is in place to allow measurement. This is not intended for production and will undergo vigorous proofs (which are not complex, but need to be linked to cost of storage from client side)
