@@ -120,14 +120,10 @@ pub enum MessageType {
 /// the bare (unsigned) routing message
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
-    pub destination  : DestinationAddress,
-    pub source       : SourceAddress,
-    // orig_message represents original message when this is forwarded
-    // from a client or single node
-    pub orig_message : Option<SignedMessage>,
-    pub message_type : MessageType,
-    pub message_id   : types::MessageId,
-    pub authority    : Authority
+    pub from_authority : Authority,
+    pub to_authority   : Authority,
+    pub message_type   : MessageType,
+    pub message_id     : types::MessageId,
 }
 
 impl RoutingMessage {
