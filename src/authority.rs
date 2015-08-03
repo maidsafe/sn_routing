@@ -27,10 +27,10 @@ pub enum Authority {
   NaeManager(NameType),     // we are responsible for this element
                             // and the destination is the element
   NodeManager(NameType),    // the destination is not the element, and we are responsible for it
-  ManagedNode,              // our name is the destination
+  ManagedNode(NameType),    // our name is the destination
                             // and the message came from within our range
-  ManagedClient(crypto::sign::PublicKey),  // in our group
-  Client(crypto::sign::PublicKey),         // detached
+  ManagedClient(crypto::sign::PublicKey),      // in our group
+  Client(NameType, crypto::sign::PublicKey),   // detached with name of relay node
   Unknown,
 }
 
@@ -42,7 +42,7 @@ impl Authority {
             &Authority::NodeManager(_)   => true,
             &Authority::ManagedNode      => false,
             &Authority::ManagedClient(_) => false,
-            &Authority::Client(_)        => false,
+            &Authority::Client(_, _)     => false,
             &Authority::Unknown          => false,
         }
     }
