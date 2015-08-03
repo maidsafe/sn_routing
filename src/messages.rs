@@ -263,6 +263,9 @@ impl RoutingMessage {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
     encoded_body : Vec<u8>,
+    claimant     : Address,
+    //             when signed by Client(sign::PublicKey) the data needs to contain it as an owner
+    //             when signed by a Node(NameType), Sentinel needs to validate the signature
     signature    : Signature,
 }
 
