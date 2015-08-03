@@ -27,6 +27,6 @@ use types::{MessageId, SourceAddress, DestinationAddress};
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Event {
     MessageSecured(message : RoutingMessage, our_authority : Authority),
-    Refresh(u64, NameType, Vec<Vec<u8>>),
-    Churn(Vec<NameType>),
+    Refresh(type_tag : u64, from_group : NameType, payloads : Vec<Vec<u8>>),
+    Churn(our_close_group : Vec<NameType>),
 }
