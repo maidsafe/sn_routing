@@ -21,17 +21,16 @@ mod database;
 
 use std::cmp;
 use cbor;
-use cbor::Decoder;
 use rustc_serialize::Encodable;
 
-use maidsafe_types::data_tags;
 use routing::{closer_to_target, NameType};
+use routing::data::Data;
 use routing::error::{InterfaceError, ResponseError};
+use routing::immutable_data::{ImmutableData, ImmutableDataType};
 use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
-use routing::types::{GROUP_SIZE, MessageAction};
+use routing::types::GROUP_SIZE;
 
-use data_parser::Data;
 use transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG;
 use utils::{median, encode, decode};
 
@@ -107,21 +106,21 @@ impl DataManager {
     DataManager { db_: database::DataManagerDatabase::new(), resource_index: 1 }
   }
 
-  pub fn handle_get(&mut self, name : &NameType) ->Result<MessageAction, InterfaceError> {
+  pub fn handle_get(&mut self, name : &NameType) ->Result<Vec<MethodCall>, InterfaceError> {
 	  let result = self.db_.get_pmid_nodes(name);
 	  if result.len() == 0 {
 	    return Err(From::from(ResponseError::NoData));
 	  }
 
-	  let mut dest_pmids : Vec<NameType> = Vec::new();
+	  let mut dest_pmids : Vec<MethodCall> = Vec::new();
 	  for pmid in result.iter() {
-        dest_pmids.push(pmid.clone());
+        dest_pmids.push(MethodCall::Forward { destination: pmid.clone() });
 	  }
-	  Ok(MessageAction::SendOn(dest_pmids))
+	  Ok(dest_pmids)
   }
 
-  pub fn handle_put<Data: Sendable>(&mut self, data: Data, nodes_in_table: &mut Vec<NameType>)
-          -> Result<MessageAction, InterfaceError> {
+  pub fn handle_put(&mut self, data: ImmutableData, nodes_in_table: &mut Vec<NameType>)
+          -> Result<Vec<MethodCall>, InterfaceError> {
     let data_name = data.name();
     if self.db_.exist(&data_name) {
       return Err(InterfaceError::Abort);
@@ -136,96 +135,66 @@ impl DataManager {
     let pmid_nodes_num = cmp::min(nodes_in_table.len(), PARALLELISM);
     let mut dest_pmids: Vec<NameType> = Vec::new();
     for index in 0..pmid_nodes_num {
-      dest_pmids.push(nodes_in_table[index].clone());
+        dest_pmids.push(nodes_in_table[index].clone());
     }
     self.db_.put_pmid_nodes(&data_name, dest_pmids.clone());
-    if data.type_tag() == data_tags::IMMUTABLE_DATA_SACRIFICIAL_TAG {
-      self.resource_index = cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
+    match *data.get_type_tag() {
+        ImmutableDataType::Sacrificial => {
+            self.resource_index = cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
+        }
+        _ => {}
     }
-    Ok(MessageAction::SendOn(dest_pmids))
+    let mut forwarding_calls : Vec<MethodCall> = Vec::new();
+    for pmid in dest_pmids {
+        forwarding_calls.push(MethodCall::Forward { destination: pmid.clone() });
+    }
+    Ok(forwarding_calls)
   }
 
-  pub fn handle_get_response(&mut self, response: Vec<u8>) -> MethodCall {
-      let name: NameType;
-      let mut decoder = Decoder::from_bytes(&response[..]);
-      if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-          match parsed_data {
-              Data::Immutable(parsed) => name = parsed.name(),
-              Data::PublicMaid(parsed) => name = parsed.name(),
-              _ => return MethodCall::None,
-          }
-      } else {
-          return MethodCall::None;
-      }
-
-      let replicate_to = self.replicate_to(&name);
+  pub fn handle_get_response(&mut self, response: Data) -> Vec<MethodCall> {
+      let replicate_to = self.replicate_to(&response.name());
       match replicate_to {
           Some(pmid_node) => {
-              self.db_.add_pmid_node(&name, pmid_node.clone());
-              return MethodCall::Put {
-                  destination: pmid_node,
-                  content: Box::new(DataManagerSendable::with_content(name, response)),
-              };
+              self.db_.add_pmid_node(&response.name(), pmid_node.clone());
+              vec![MethodCall::Put { destination: pmid_node, content: response, }]
           },
-          None => {}
-      }
-      MethodCall::None
+          None => vec![]
+      }      
   }
 
-  pub fn handle_put_response(&mut self, response: &Result<Vec<u8>, ResponseError>,
-                             from_address: &NameType) -> MethodCall {
-    // TODO: assumption is the content in Result is the full payload of failed to store data
-    //       or the removed Sacrificial copy, which indicates as a failure response.
-    if response.is_err() {
-      return MethodCall::None;
-    }
-    let data = match response.clone() {
-        Ok(response) => response,
-        Err(_) => return MethodCall::None,
-    };
-    let mut decoder = Decoder::from_bytes(&data[..]);
-    let name: NameType;
-    let mut replicate = false;
-    if let Some(parsed_data) = decoder.decode().next().and_then(|result| result.ok()) {
-      match parsed_data {
-        Data::Immutable(parsed) => {
-          name = parsed.name();
-          replicate = true;
-        },
-        Data::ImmutableBackup(parsed) => name = parsed.name(),
-        Data::ImmutableSacrificial(parsed) => {
-          name = parsed.name();
-          self.resource_index = cmp::max(1, self.resource_index - 1);
-        },
-        Data::PublicMaid(parsed) => {
-          name = parsed.name();
-          replicate = true;
-        },
-        _ => return MethodCall::None,
+  pub fn handle_put_response(&mut self, response: ResponseError,
+                             from_address: &NameType) -> Vec<MethodCall> {
+      match response {
+          ResponseError::FailedToStoreData(data) => {
+              match data.clone() {
+                  // DataManager shall only handle Immutable data
+                  // Structured Data shall be handled in StructuredDataManager
+                  Data::ImmutableData(immutable_data) => {
+                      let name = data.name();
+                      self.db_.remove_pmid_node(&name, from_address.clone());
+                      match *immutable_data.get_type_tag() {
+                          ImmutableDataType::Normal => {
+                              let replicate_to = self.replicate_to(&name);
+                              match replicate_to {
+                                  Some(pmid_node) => {
+                                      self.db_.add_pmid_node(&name, pmid_node.clone());
+                                      return vec![MethodCall::Put { destination: pmid_node, content: data }];
+                                  },
+                                  None => {}
+                              }
+                          }
+                          ImmutableDataType::Sacrificial => {
+                              self.resource_index = cmp::max(1, self.resource_index - 1);
+                          }
+                          _ => {}
+                      }
+                  }
+                  _ => {}
+              }
+          }
+          _ => {}
       }
-    } else {
-      return MethodCall::None;
-    }
-
-    self.db_.remove_pmid_node(&name, from_address.clone());
-
-    // No replication for Backup and Sacrificial copies.
-    if !replicate {
-      return MethodCall::None;
-    }
-
-    let replicate_to = self.replicate_to(&name);
-    match replicate_to {
-        Some(pmid_node) => {
-            self.db_.add_pmid_node(&name, pmid_node.clone());
-            return MethodCall::Put {
-                destination: pmid_node,
-                content: Box::new(DataManagerSendable::with_content(name, data)),
-            };
-        },
-        None => {}
-    }
-    MethodCall::None
+      vec![]
   }
 
   pub fn handle_account_transfer(&mut self, merged_account: DataManagerSendable) {
@@ -283,55 +252,57 @@ impl DataManager {
 
 #[cfg(test)]
 mod test {
-  extern crate cbor;
-  extern crate maidsafe_types;
-  extern crate routing;
+    use super::{DataManager, DataManagerStatsSendable};
+    use super::database::DataManagerSendable;
 
-  use super::{DataManager, DataManagerStatsSendable};
-  use super::database::DataManagerSendable;
-  use maidsafe_types::ImmutableData;
-  use routing::types::MessageAction;
-  use routing::NameType;
-  use routing::sendable::Sendable;
+    use routing::immutable_data::{ImmutableData, ImmutableDataType};
+    use routing::node_interface::MethodCall;
+    use routing::NameType;
+    use routing::sendable::Sendable;
+    use routing::types::*;
 
-  #[test]
-  fn handle_put_get() {
-    let mut data_manager = DataManager::new();
-    let value = routing::types::generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
-    let mut nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
-                                  NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
-    let put_result = data_manager.handle_put(data.clone(), &mut nodes_in_table);
-    assert_eq!(put_result.is_err(), false);
-    match put_result.ok().unwrap() {
-      MessageAction::SendOn(ref x) => {
-        assert_eq!(x.len(), super::PARALLELISM);
-        assert_eq!(x[0], nodes_in_table[0]);
-        assert_eq!(x[1], nodes_in_table[1]);
-        assert_eq!(x[2], nodes_in_table[2]);
-        assert_eq!(x[3], nodes_in_table[3]);
-      }
-      MessageAction::Reply(_) => panic!("Unexpected"),
+    #[test]
+    fn handle_put_get() {
+        let mut data_manager = DataManager::new();
+        let value = generate_random_vec_u8(1024);
+        let data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let mut nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]), NameType::new([3u8; 64]), NameType::new([4u8; 64]),
+                                      NameType::new([5u8; 64]), NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
+        {
+            let put_result = data_manager.handle_put(data.clone(), &mut nodes_in_table);
+            assert_eq!(put_result.is_err(), false);
+            let calls = put_result.ok().unwrap();
+            assert_eq!(calls.len(), super::PARALLELISM);
+            for i in 0..calls.len() {
+                match calls[i] {
+                    MethodCall::Forward { destination } => {
+                        assert_eq!(destination, nodes_in_table[i]);
+                    }
+                    _ => panic!("Unexpected"),
+                }
+            }
+        }
+        let data_name = NameType::new(data.name().get_id());
+        {
+            let get_result = data_manager.handle_get(&data_name);
+            assert_eq!(get_result.is_err(), false);
+            let calls = get_result.ok().unwrap();
+            assert_eq!(calls.len(), super::PARALLELISM);
+            for i in 0..calls.len() {
+                match calls[i] {
+                    MethodCall::Forward { destination } => {
+                        assert_eq!(destination, nodes_in_table[i]);
+                    }
+                    _ => panic!("Unexpected"),
+                }
+            }
+        }
     }
-    let data_name = NameType::new(data.name().get_id());
-    let get_result = data_manager.handle_get(&data_name);
-    assert_eq!(get_result.is_err(), false);
-    match get_result.ok().unwrap() {
-      MessageAction::SendOn(ref x) => {
-        assert_eq!(x.len(), super::PARALLELISM);
-        assert_eq!(x[0], nodes_in_table[0]);
-        assert_eq!(x[1], nodes_in_table[1]);
-        assert_eq!(x[2], nodes_in_table[2]);
-        assert_eq!(x[3], nodes_in_table[3]);
-      }
-      MessageAction::Reply(_) => panic!("Unexpected"),
-    }
-  }
 
     #[test]
     fn handle_account_transfer() {
         let mut data_manager = DataManager::new();
-        let name : NameType = routing::test_utils::Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         let account_wrapper = DataManagerSendable::new(name.clone(), vec![]);
         data_manager.handle_account_transfer(account_wrapper);
         assert_eq!(data_manager.db_.exist(&name), true);
@@ -340,7 +311,7 @@ mod test {
     #[test]
     fn handle_stats_transfer() {
         let mut data_manager = DataManager::new();
-        let name : NameType = routing::test_utils::Random::generate_random();
+        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         let stats_sendable = DataManagerStatsSendable::new(name.clone(), 1023);
         data_manager.handle_stats_transfer(stats_sendable);
         assert_eq!(data_manager.resource_index, 512);

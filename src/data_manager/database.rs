@@ -25,6 +25,8 @@ use routing::NameType;
 use routing::node_interface::MethodCall;
 use routing::sendable::Sendable;
 use routing::types::GROUP_SIZE;
+use routing::immutable_data::ImmutableDataType;
+use routing::data::DataRequest;
 
 use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
 
@@ -202,8 +204,9 @@ impl DataManagerDatabase {
             match self.temp_storage_after_churn.get(key) {
                 Some(result) => { if result.len() < 3 {
                     actions.push(MethodCall::Get {
-                        type_id: DATA_MANAGER_ACCOUNT_TAG,
                         name: (*key).clone(),
+                        // DataManager only handles ImmutableData
+                        data_request: DataRequest::ImmutableData(ImmutableDataType::Normal)
                     });
                 }}
                 None => continue
@@ -226,21 +229,20 @@ impl DataManagerDatabase {
 #[cfg(test)]
 mod test {
   use super::*;
-  use maidsafe_types::ImmutableData;
+  use routing::immutable_data::{ImmutableData, ImmutableDataType};
   use routing::NameType;
-  use routing::types::generate_random_vec_u8;
-  use routing::test_utils::Random;
+  use routing::types::*;
   use routing::sendable::Sendable;
 
   #[test]
   fn exist() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
 
     let data_name = data.name();
@@ -253,12 +255,12 @@ mod test {
   fn put() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let data_name = data.name();
     let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
 
     let result = db.get_pmid_nodes(&data_name);
@@ -274,12 +276,12 @@ mod test {
   fn remove_pmid() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let data_name = data.name();
     let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
 
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());
@@ -299,14 +301,14 @@ mod test {
   fn replace_pmids() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let data_name = data.name();
     let mut pmid_nodes : Vec<NameType> = vec![];
     let mut new_pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
-      new_pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
+      new_pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
 
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());
@@ -328,12 +330,12 @@ mod test {
   fn handle_account_transfer() {
     let mut db = DataManagerDatabase::new();
     let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(value);
+    let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let data_name = data.name();
     let mut pmid_nodes : Vec<NameType> = vec![];
 
     for _ in 0..4 {
-      pmid_nodes.push(Random::generate_random());
+      pmid_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
     }
     db.put_pmid_nodes(&data_name, pmid_nodes.clone());
     assert_eq!(db.get_pmid_nodes(&data_name).len(), pmid_nodes.len());

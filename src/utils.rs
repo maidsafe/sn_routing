@@ -18,8 +18,10 @@
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
 /// unsorted.  If `values` is empty, returns `0`.
 
-use cbor::{Decoder, Encoder, CborError};
+use cbor::{Decoder, Encoder};
 use rustc_serialize::{Decodable, Encodable};
+
+use routing::error::InterfaceError;
 
 pub fn median(mut values: Vec<u64>) -> u64 {
     match values.len() {
@@ -38,17 +40,19 @@ pub fn median(mut values: Vec<u64>) -> u64 {
     }
 }
 
-pub fn encode<T>(value: &T) -> Result<Vec<u8>, CborError> where T: Encodable {
+pub fn encode<T>(value: &T) -> Result<Vec<u8>, InterfaceError> where T: Encodable {
     let mut enc = Encoder::from_memory();
-    try!(enc.encode(&[value]));
-    Ok(enc.into_bytes())
+    match enc.encode(&[value]) {
+        Ok(_) => Ok(enc.into_bytes()),
+        Err(_) => Err(InterfaceError::Abort)
+    }
 }
 
-pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, CborError> where T: Decodable {
+pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, InterfaceError> where T: Decodable {
     let mut dec = Decoder::from_bytes(&bytes[..]);
     match dec.decode().next() {
-        Some(result) => result,
-        None => Err(CborError::UnexpectedEOF)
+        Some(result) => Ok(result.ok().unwrap()),
+        None => Err(InterfaceError::Abort)
     }
 }
 

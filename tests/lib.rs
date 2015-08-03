@@ -46,15 +46,8 @@ fn executable_test() {
     //     Err(e) => panic!("Failed to get current integration test path: {}", e),
     // };
     // println!("Expecting vault executable at the path of {}", executable_path.to_path_buf().display());
-    // // the first vault must be run in zero_membrane mode
-    // println!("---------- starting node 0 --------------");
-    // processes.push(match Command::new(executable_path.to_path_buf()).arg("-f").stdout(Stdio::piped()).spawn() {
-    //             Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
-    //             Ok(process) => process,
-    //         });
-    // thread::sleep_ms(1000);
 
-    // for i in 1..num_of_nodes {
+    // for i in 0..num_of_nodes {
     //     println!("---------- starting node {} --------------", i);
     //     processes.push(match Command::new(executable_path.to_path_buf()).stdout(Stdio::piped()).spawn() {
     //                 Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
