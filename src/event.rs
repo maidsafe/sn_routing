@@ -41,7 +41,8 @@ pub enum Event {
     //               | secured routing message
     Refresh(u64, NameType, Vec<Vec<u8>>),
     //      ~|~  ~~|~~~~~  ~~|~~~~~~~~~
-    //       |     |         | payloads
+    //       |     |         | payloads is a vector of serialised account records as sent out
+    //       |     |         | routing has made no attempt at parsing the content
     //       |     | from group
     //       | type tag
     Churn(Vec<NameType>),
