@@ -16,12 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use data::Data;
-use error::{RoutingError, ResponseError};
-use messages::{ErrorReturn, GetDataResponse, MessageType, RoutingMessage, SignedMessage};
+use messages::RoutingMessage;
 use name_type::NameType;
-use sentinel::pure_sentinel::Source;
-use types::{MessageId, SourceAddress, DestinationAddress};
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 ///   1. Event::MessageSecured provides the RoutingMessage after being secured by routing,
