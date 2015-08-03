@@ -24,15 +24,6 @@ mod test {
     use rand::random;
     use test_utils::random_trait::Random;
 
-    impl Random for NameAndTypeId {
-        fn generate_random() -> NameAndTypeId {
-            NameAndTypeId {
-                name: Random::generate_random(),
-                type_id: random::<u64>(),
-            }
-        }
-    }
-
     impl Random for PublicId {
         fn generate_random() -> PublicId {
             PublicId::new(&Id::new())
