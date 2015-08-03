@@ -16,6 +16,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
+
 /// Routing Membrane
 pub struct RoutingHandler {
     // for CRUST
@@ -35,4 +37,39 @@ pub struct RoutingHandler {
     public_id_cache     : LruCache<NameType, PublicId>,
     connection_cache    : BTreeMap<NameType, SteadyTime>,
     refresh_accumulator : RefreshAccumulator,
+}
+
+impl RoutingHandler {
+    pub fn new() -> RoutingHandler {
+        let id = Id::new();
+
+        let (crust_output, crust_input) = mpsc::channel();
+        let mut cm = crust::ConnectionManager::new(crust_output.clone());
+        let _ = cm.start_accepting(vec![]);
+
+        cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+        match crust_input.recv() {
+            Ok(crust::Event::NewConnection(endpoint)) => {},
+            Ok(crust::Event::NewBootstrapConnection(endpoint)) =>
+                RoutingHandler::bootstrap(),
+            _ => {
+                error!("The first event received from Crust is not a new connection.");
+                return Err(RoutingError::FailedToBootstrap)
+            }
+        }
+        RoutingHandler{
+
+        }
+    }
+
+
+
+    fn bootstrap(&mut cm : crust::ConnectionManager) {
+
+    }
+
+    fn request_network_name(&mut cm : crust::ConnectionManager)
+        -> Result<NameType,RoutingError>  {
+
+    }
 }
