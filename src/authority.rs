@@ -79,7 +79,7 @@ impl Authority {
 // extract the element from RoutingMessage,
 // then pass on to determine_authority
 pub fn our_authority(message       : &RoutingMessage,
-                     routing_table : &RoutingTable) -> Authority {
+                     routing_table : &RoutingTable) -> Option<Authority> {
 
     // Purposely listing all the cases and not using wild cards so
     // that if a new message is added to the MessageType enum, compiler
@@ -89,7 +89,9 @@ pub fn our_authority(message       : &RoutingMessage,
         MessageType::ConnectResponse(_)     => None,
         MessageType::FindGroup              => None,
         MessageType::FindGroupResponse(_)   => None,
-        MessageType::GetData(_)             => Some(message.non_relayed_destination()),
+        MessageType::GetData(_)             => {
+            Some(message.destination().get_location().clone())
+        },
         MessageType::GetDataResponse(_)     => None,
         MessageType::DeleteData(_)          => None,
         MessageType::DeleteDataResponse(_)  => None,
@@ -108,10 +110,10 @@ pub fn our_authority(message       : &RoutingMessage,
 
     let element = match element {
         Some(e) => e,
-        None    => { return Authority::Unknown; }
+        None    => { return None; }
     };
 
-    return determine_authority(message, routing_table, element);
+    determine_authority(message, routing_table, element)
 }
 
 // determine_authority is split off to allow unit tests to test it
@@ -120,7 +122,7 @@ pub fn our_authority(message       : &RoutingMessage,
 // or outside the close group of routing table.
 fn determine_authority(message       : &RoutingMessage,
                        routing_table : &RoutingTable,
-                       element       : NameType) -> Authority {
+                       element       : NameType) -> Option<Authority> {
 
     // if signed by a client in our range and destination is not the element
     // this explicitly excludes GetData from ever being passed to ClientManager
@@ -128,25 +130,29 @@ fn determine_authority(message       : &RoutingMessage,
     match message.client_key_as_name() {
         Some(client_name) => {
             if routing_table.address_in_our_close_group_range(&client_name)
-                && message.non_relayed_destination() != element {
-                return Authority::ClientManager(client_name); }
+                && *message.destination().get_location() != element {
+                return Some(Authority::ClientManager(client_name));
+            }
         },
         None => { }
     };
     if routing_table.address_in_our_close_group_range(&element)
-        && message.non_relayed_destination() == element
+        && *message.destination().get_location() == element
         && element != routing_table.our_name() {
-        return Authority::NaeManager(element); }
+        return Some(Authority::NaeManager(element));
+    }
     else if message.from_group().is_some()
-        && routing_table.address_in_our_close_group_range(&message.non_relayed_destination())
-        && message.non_relayed_destination() != routing_table.our_name() {
-        return Authority::NodeManager(message.non_relayed_destination()); }
+        && routing_table.address_in_our_close_group_range(message.destination().get_location())
+        && *message.destination().get_location() != routing_table.our_name() {
+        return Some(Authority::NodeManager(message.destination().get_location().clone()));
+    }
     else if message.from_group()
                    .map(|group| routing_table.address_in_our_close_group_range(&group))
                    .unwrap_or(false)
-        && message.non_relayed_destination() == routing_table.our_name() {
-        return Authority::ManagedNode; }
-    return Authority::Unknown;
+        && *message.destination().get_location() == routing_table.our_name() {
+        return Some(Authority::ManagedNode(routing_table.our_name()));
+    }
+    return None;
 }
 
 
