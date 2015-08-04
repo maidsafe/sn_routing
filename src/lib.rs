@@ -61,7 +61,7 @@ mod routing_node;
 mod relay;
 mod who_are_you;
 
-pub mod routing_identity;
+pub mod routing;
 pub mod refresh_accumulator;
 pub mod sendable;
 pub mod test_utils;

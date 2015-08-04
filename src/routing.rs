@@ -35,26 +35,27 @@ use types::Bytes;
 //use std::thread::spawn;
 //use std::collections::BTreeMap;
 
-/// RoutingIdentity provides an actionable interface to RoutingNode.
-/// On constructing a new Identity a RoutingNode will be started.
-/// Identities are clonable for multithreading, or an Identity can be
-/// cloned with a new set of keys.
+/// Routing provides an actionable interface to RoutingNode.
+/// On constructing a new Routing object a RoutingNode will also be started.
+/// Routing objects are clonable for multithreading, or a Routing object can be
+/// cloned with a new set of keys while preserving a single RoutingNode.
 #[derive(Clone)]
-pub struct RoutingIdentity {
+pub struct Routing {
     given_keys    : Option<Id>,
     action_sender : mpsc::Sender<Action>,
 }
 
-impl RoutingIdentity {
+impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
-    pub fn new(event_receiver : mpsc::Receiver<Event>) -> RoutingIdentity {
+    pub fn new(event_receiver : mpsc::Receiver<Event>) -> Routing {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
         // start the handler for routing
-        let routing_node = RoutingNode::new(event_receiver);
+        let routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
+            event_receiver);
         RoutingIdentity {
             given_keys    : None,
             action_sender : action_sender,
@@ -64,11 +65,11 @@ impl RoutingIdentity {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will only bootstrap to the network and not attempt to
     /// achieve full routing node status.
-    pub fn new_client(event_receiver : mpsc::Receiver<Event>) -> RoutingIdentity {
+    pub fn new_client(event_receiver : mpsc::Receiver<Event>) -> Routing {
         unimplemented!()
     }
 
-    pub fn clone_with_keys() -> RoutingIdentity {
+    pub fn clone_with_keys() -> Routing {
         unimplemented!()
     }
 
