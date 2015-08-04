@@ -17,39 +17,49 @@
 // relating to use of the SAFE Network Software.
 
 use std::sync::mpsc;
+use std::thread::spawn;
+use std::collections::BTreeMap;
 
 use crust;
 
 use action::Action;
 use event::Event;
+use NameType;
+use id::Id;
+use public_id::PublicId;
+use who_are_you::IAm;
+use types::{MessageId, Address};
+use utils::{encode, decode};
+use authority::{Authority};
+use messages::{RoutingMessage, SignedMessage, MessageType};
+use error::{RoutingError};
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
-/// Routing Membrane
-pub struct RoutingHandler {
+/// Routing Node
+pub struct RoutingNode {
     // for CRUST
     crust_sender        : mpsc::Sender<crust::Event>,
     crust_receiver      : mpsc::Receiver<crust::Event>,
     connection_manager  : crust::ConnectionManager,
-    reflective_endpoint : crust::Endpoint,
     accepting_on        : Vec<crust::Endpoint>,
     bootstraps          : BTreeMap<Endpoint, Option<NameType>>,
     // for RoutingNode
     action_receiver     : mpsc::Receiver<Action>,
     // for Routing
     id                  : Id,
-    routing_table       : RoutingTable,
-    relay_map           : RelayMap,
-    filter              : MessageFilter<types::FilterType>,
-    public_id_cache     : LruCache<NameType, PublicId>,
-    connection_cache    : BTreeMap<NameType, SteadyTime>,
-    refresh_accumulator : RefreshAccumulator,
+    // routing_table       : RoutingTable,
+    // relay_map           : RelayMap,
+    // filter              : MessageFilter<types::FilterType>,
+    // public_id_cache     : LruCache<NameType, PublicId>,
+    // connection_cache    : BTreeMap<NameType, SteadyTime>,
+    // refresh_accumulator : RefreshAccumulator,
 }
 
-impl RoutingHandler {
+impl RoutingNode {
     pub fn new(action_sender   : mpsc::Sender<Action>,
                action_receiver : mpsc::Receiver<Action>,
-               event_sender    : mpsc::Sender<Event> ) -> RoutingHandler {
+               event_sender    : mpsc::Sender<Event> ) -> RoutingNode {
         let id = Id::new();
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
@@ -60,30 +70,31 @@ impl RoutingHandler {
         cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         let bootstraps : BTreeMap<Endpoint, Option<NameType>>
             = match crust_input.recv() {
-            Ok(crust::Event::NewConnection(endpoint)) => {BTreeMap::new()},
-            Ok(crust::Event::NewBootstrapConnection(endpoint)) =>
-                RoutingHandler::bootstrap(),
+            Ok(crust::Event::NewConnection(endpoint)) => BTreeMap::new(),
+            Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                RoutingHandler::bootstrap(&cm)
+            },
             _ => {
                 error!("The first event received from Crust is not a new connection.");
                 return Err(RoutingError::FailedToBootstrap)
             }
-        }
+        };
 
-        RoutingHandler {
+        RoutingNode {
             crust_sender        : crust_sender,
             crust_receiver      : crust_receiver,
             connection_manager  : cm,
-            reflective_endpoint : get_reflective_endpoint(),
             accepting_on        : accepting_on,
             bootstraps          : bootstraps,
-            action_receiver
+            action_receiver     : action_receiver,
+            id                  : id,
         }
     }
 
 
 
-    fn bootstrap(&mut cm : crust::ConnectionManager) -> {
-
+    fn bootstrap(&mut cm : crust::ConnectionManager) -> BTreeMap<Endpoint, Option<NameType>> {
+        unimplemented!()
     }
 
     fn request_network_name(&mut cm : crust::ConnectionManager)
@@ -99,7 +110,7 @@ impl RoutingHandler {
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
-        unimpelemnted!()
+        unimplemented!()
     }
 
     /// This the fundamental functional function in routing.
@@ -205,7 +216,7 @@ impl RoutingHandler {
                     Authority::NodeManager(_)    => return Ok(()), // TODO: Should be error
                     Authority::ManagedNode(name) => if name != self.id.name() { return Ok(()) },
                     Authority::Client(_, _)      => return Ok(()), // TODO: Should be error
-                }
+                },
             _ => (),
         }
         //
@@ -376,15 +387,17 @@ impl RoutingHandler {
     // it back to ourselves
     // this is the logically correct behaviour.
     fn send_reflective_to_us(&self, signed_message: &SignedMessage) -> Result<(), RoutingError> {
-        let bytes = try!(encode(&signed_message));
-        let new_event = CrustEvent::NewMessage(self.reflective_endpoint.clone(), bytes);
-        match self.sender_clone.send(new_event) {
-            Ok(_) => {},
-            // FIXME(ben 24/07/2015) we have a broken channel with crust,
-            // should terminate node
-            Err(_) => return Err(RoutingError::FailedToBootstrap)
-        };
-        Ok(())
+        unimplemented!()
+        // TODO (ben 4/08/2015) use the action_sender to send a message back to ourselves.
+        // let bytes = try!(encode(&signed_message));
+        // let new_event = CrustEvent::NewMessage(self.reflective_endpoint.clone(), bytes);
+        // match self.sender_clone.send(new_event) {
+        //     Ok(_) => {},
+        //     // FIXME(ben 24/07/2015) we have a broken channel with crust,
+        //     // should terminate node
+        //     Err(_) => return Err(RoutingError::FailedToBootstrap)
+        // };
+        // Ok(())
     }
 
     fn send_swarm_or_parallel_or_relay(&mut self, msg: &RoutingMessage)
@@ -482,7 +495,7 @@ impl RoutingHandler {
             Authority::NodeManager(name)   => name,
             Authority::ManagedNode(name)   => name,
             Authority::Client(_, _)        => return false,
-        }
+        };
 
         if self.routing_table.size() < types::QUORUM_SIZE  ||
            *address == self.id.name().clone()
@@ -505,10 +518,6 @@ impl RoutingHandler {
     }
 
     fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<ConnectionName> {
-        // first check whether it is reflected from us to us (bypassing CRUST)
-        if endpoint == &self.reflective_endpoint {
-            return Some(ConnectionName::ReflectionOnToUs);
-        }
         // prioritise routing table
         match self.routing_table.lookup_endpoint(&endpoint) {
             Some(name) => Some(ConnectionName::Routing(name)),
@@ -548,7 +557,7 @@ impl RoutingHandler {
 
     fn handle_put_data_response(&mut self, _signed_message: SignedMessage,
             message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
-        unimplmeneted!()
+        unimplemented!()
     }
 
     fn handle_post_response(&mut self, signed_message: SignedMessage,
@@ -561,7 +570,7 @@ impl RoutingHandler {
                               connect_request: ConnectRequest,
                               message:         SignedMessage
                              ) -> RoutingResult {
-        unimplemented!() 
+        unimplemented!()
     }
 
     fn handle_refresh(&mut self, message: RoutingMessage, tag: u64, payload: Vec<u8>) -> RoutingResult {
