@@ -58,6 +58,7 @@ mod messages;
 mod name_type;
 mod routing_table;
 mod routing_node;
+mod routing_core;
 mod relay;
 mod who_are_you;
 
