@@ -66,6 +66,7 @@ pub mod refresh_accumulator;
 pub mod sendable;
 pub mod test_utils;
 pub mod types;
+pub mod peer;
 pub mod id;
 pub mod utils;
 pub mod public_id;
