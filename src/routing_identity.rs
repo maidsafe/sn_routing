@@ -24,6 +24,8 @@ use action::Action;
 use event::Event;
 use routing_node::RoutingNode;
 use NameType;
+use data::{Data, DataRequest};
+use types::Bytes;
 
 //use types::{MessageId, Address};
 //use utils::{encode, decode};
