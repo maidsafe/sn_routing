@@ -152,7 +152,7 @@ function prepare_sysv_style_scripts {
   printf '    if [ -z "$User" ]; then\n' >> $InitName
   printf '      sudo $Command >> "$StdoutLog" 2>> "$StderrLog" &\n' >> $InitName
   printf '    else\n' >> $InitName
-  printf '      runuser -u "$User" $Command >> "$StdoutLog" 2>> "$StderrLog" &\n' >> $InitName
+  printf '      sudo -u "$User" $Command >> "$StdoutLog" 2>> "$StderrLog" &\n' >> $InitName
   printf '    fi\n' >> $InitName
   printf '    echo $! > "$PidFile"\n' >> $InitName
   printf '    if ! is_running; then\n' >> $InitName
