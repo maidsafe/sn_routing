@@ -52,6 +52,7 @@ extern crate message_filter;
 extern crate sentinel;
 
 mod common_bits;
+mod action;
 mod macros;
 mod messages;
 mod name_type;
