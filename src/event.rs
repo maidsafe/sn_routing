@@ -21,7 +21,9 @@ use name_type::NameType;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 ///   1. Event::MessageSecured provides the RoutingMessage after being secured by routing,
-///      our authority provides the base authority as validated by routing
+///      our authority provides the base authority as validated by routing.
+///      When the from_authority in routing message is a Client or ManagedNode, the original
+///      signature is provided for reply or response.
 ///   2. Event::Refresh has accumulated Refresh messages centered on a name for a type_tag.
 ///      This can be used to transfer accounts between nodes of an effective close group.
 ///   3. Event::Churn occurs when our close group changes.  The new close group is provided.
@@ -31,8 +33,10 @@ use name_type::NameType;
 ///      are processed and empty.
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Event {
-    MessageSecured(RoutingMessage, Authority),
-    //             ~~|~~~~~~~~~~~  ~~|~~~~~~
+    MessageSecured(RoutingMessage, Authority, Option<Signature>),
+    //             ~~|~~~~~~~~~~~  ~~|~~~~~~  ~~|~~~~~~~~~~~~~~
+    //               |               |          | the original signature when the RoutingMessage
+    //               |               |          | is signed by a Client or ManagedNode
     //               |               | our authority as calculated
     //               |               | note: can be removed if we enforce it to be identical
     //               |               |       to RoutingMessage::to_authority
