@@ -57,12 +57,11 @@ mod macros;
 mod messages;
 mod name_type;
 mod routing_table;
+mod routing_node;
 mod relay;
 mod who_are_you;
 
-pub mod client_interface;
-pub mod node_interface;
-pub mod routing_client;
+pub mod routing_identity;
 pub mod refresh_accumulator;
 pub mod sendable;
 pub mod test_utils;
