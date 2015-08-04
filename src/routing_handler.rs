@@ -79,74 +79,12 @@ impl RoutingHandler {
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
-        self.drop_bootstrap();
-        match self.lookup_endpoint(&endpoint) {
-            Some(ConnectionName::ReflectionOnToUs) => { }
-            Some(_) => { },
-            None => {
-                self.relay_map.register_unknown_connection(endpoint.clone());
-                ignore(self.send_i_am_msg(endpoint));
-            }
-      }
+        unimplemented!()
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
-    /// TODO: A churn event might be triggered
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
-        // Make sure the endpoint is dropped anywhere
-        // The relay map will automatically drop the Name if the last endpoint to it is dropped
-        self.relay_map.remove_unknown_connection(&endpoint);
-        self.relay_map.drop_endpoint(&endpoint);
-        let mut trigger_handle_churn = false;
-        match self.routing_table.lookup_endpoint(&endpoint) {
-            Some(name) => {
-                trigger_handle_churn = self.routing_table
-                    .address_in_our_close_group_range(&name);
-                self.routing_table.drop_node(&name);
-                info!("RT (size : {:?}) connection {:?} disconnected for {:?}.",
-                    self.routing_table.size(), endpoint, name);
-            },
-            None => {}
-        };
-        let mut drop_bootstrap = false;
-        match self.bootstrap {
-            Some((ref bootstrap_endpoint, _)) => {
-                if &endpoint == bootstrap_endpoint {
-                    info!("Bootstrap connection disconnected by relay node.");
-                    self.connection_manager.drop_node(endpoint);
-                    drop_bootstrap = true;
-                }
-            },
-            None => {}
-        };
-        if drop_bootstrap { self.bootstrap = None; }
-
-        if trigger_handle_churn {
-            info!("Handle CHURN lost node");
-
-            let mut close_group : Vec<NameType> = self.routing_table
-                .our_close_group().iter()
-                .map(|node_info| node_info.fob.name())
-                .collect();
-
-            close_group.insert(0, self.id.name().clone());
-
-            self.send_event_to_user(Event::Churn(close_group));
-        };
-    }
-
-    fn construct_find_group_msg(&mut self) -> RoutingMessage {
-        let name   = self.id.name().clone();
-        let message_id = self.get_next_message_id();
-
-        RoutingMessage {
-            destination  : DestinationAddress::Direct(name.clone()),
-            source       : SourceAddress::Direct(name.clone()),
-            orig_message : None,
-            message_type : MessageType::FindGroup,
-            message_id   : message_id,
-            authority    : Authority::ManagedNode,
-        }
+        unimpelemnted!()
     }
 
     /// This the fundamental functional function in routing.
@@ -505,14 +443,6 @@ impl RoutingHandler {
     fn handle_i_am(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
         -> RoutingResult {
             unimplemented!()
-    }
-
-    fn send_i_am_msg(&mut self, endpoint: Endpoint) -> RoutingResult {
-        let message = try!(encode(&IAm {
-            address: types::Address::Node(self.id.name()),
-            public_id : PublicId::new(&self.id)}));
-        ignore(self.connection_manager.send(endpoint, message));
-        Ok(())
     }
 
     // -----Address and various functions----------------------------------------
