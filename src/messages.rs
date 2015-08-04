@@ -146,29 +146,31 @@ impl RoutingMessage {
     //    self.source.non_relayed_source()
     //}
 
-    #[allow(dead_code)]
-    pub fn actual_source(&self) -> types::Address {
-        self.source.actual_source()
-    }
+    //#[allow(dead_code)]
+    //pub fn actual_source(&self) -> types::Address {
+    //    self.source.actual_source()
+    //}
 
-    pub fn non_relayed_destination(&self) -> NameType {
-        self.destination.non_relayed_destination()
-    }
+    //pub fn non_relayed_destination(&self) -> NameType {
+    //    self.destination.non_relayed_destination()
+    //}
 
-    // FIXME: add from_authority to filter value
-    pub fn get_filter(&self) -> types::FilterType {
-        (self.source.clone(), self.message_id, self.destination.clone())
-    }
+    //// FIXME: add from_authority to filter value
+    //pub fn get_filter(&self) -> types::FilterType {
+    //    (self.source.clone(), self.message_id, self.destination.clone())
+    //}
 
-    pub fn from_authority(&self) -> Authority {
-        self.authority.clone()
-    }
+    //pub fn from_authority(&self) -> Authority {
+    //    self.authority.clone()
+    //}
 
     pub fn client_key(&self) -> Option<sign::PublicKey> {
-        match self.source {
-            SourceAddress::RelayedForClient(_, client_key) => Some(client_key),
-            SourceAddress::RelayedForNode(_, _)            => None,
-            SourceAddress::Direct(_)                       => None,
+        match self.from_authority {
+            Authority::ClientManager(_) => None,
+            Authority::NaeManager(_)    => None,
+            Authority::NodeManager(_)   => None,
+            Authority::ManagedNode(_)   => None,
+            Authority::Client(_, key)   => Some(key),
         }
     }
 
@@ -186,70 +188,70 @@ impl RoutingMessage {
         }
     }
 
-    /// This creates a new message for Action::Forward. It clones all the fields,
-    /// and then mutates the destination and source accordingly.
-    /// Authority is changed at this point as this method is called after
-    /// the interface has processed the message.
-    /// Note: this is not for XOR-forwarding; then the header is preserved!
-    #[allow(dead_code)]
-    pub fn create_forward(&self,
-                          our_name      : NameType,
-                          our_authority : Authority,
-                          destination   : NameType,
-                          orig_signed_message  : SignedMessage) -> RoutingMessage {
+    ///// This creates a new message for Action::Forward. It clones all the fields,
+    ///// and then mutates the destination and source accordingly.
+    ///// Authority is changed at this point as this method is called after
+    ///// the interface has processed the message.
+    ///// Note: this is not for XOR-forwarding; then the header is preserved!
+    //#[allow(dead_code)]
+    //pub fn create_forward(&self,
+    //                      our_name      : NameType,
+    //                      our_authority : Authority,
+    //                      destination   : NameType,
+    //                      orig_signed_message  : SignedMessage) -> RoutingMessage {
 
-        // implicitly preserve all non-mutated fields.
-        let mut forward_message = self.clone();
-        // if we are sending on and the original message is not stored
-        // then store it and preserve along the route
-        // it will contain the address to reply to as well as proof the request was made
-        // FIXME(dirvine) We need the original encoded signed message here  :13/07/2015
-        // FIXME(ben) only attach when from client or node 15/07/2015
-        if self.orig_message.is_none() {
-            forward_message.orig_message = Some(orig_signed_message);
-        }
+    //    // implicitly preserve all non-mutated fields.
+    //    let mut forward_message = self.clone();
+    //    // if we are sending on and the original message is not stored
+    //    // then store it and preserve along the route
+    //    // it will contain the address to reply to as well as proof the request was made
+    //    // FIXME(dirvine) We need the original encoded signed message here  :13/07/2015
+    //    // FIXME(ben) only attach when from client or node 15/07/2015
+    //    if self.orig_message.is_none() {
+    //        forward_message.orig_message = Some(orig_signed_message);
+    //    }
 
-        forward_message.source      = SourceAddress::Direct(our_name);
-        forward_message.destination = DestinationAddress::Direct(destination);
-        forward_message.authority   = our_authority;
-        forward_message
-    }
+    //    forward_message.source      = SourceAddress::Direct(our_name);
+    //    forward_message.destination = DestinationAddress::Direct(destination);
+    //    forward_message.authority   = our_authority;
+    //    forward_message
+    //}
 
-    /// This creates a new message for Action::Reply. It clones all the fields,
-    /// and then mutates the destination and source accordingly.
-    /// Authority is changed at this point as this method is called after
-    /// the interface has processed the message.
-    /// Note: this is not for XOR-forwarding; then the header is preserved!
-    pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)
-        -> Result<RoutingMessage, CborError> {
-        // Commented the below code as it doesn't compile.
-        let mut reply_message = self.clone();
+    ///// This creates a new message for Action::Reply. It clones all the fields,
+    ///// and then mutates the destination and source accordingly.
+    ///// Authority is changed at this point as this method is called after
+    ///// the interface has processed the message.
+    ///// Note: this is not for XOR-forwarding; then the header is preserved!
+    //pub fn create_reply(&self, our_name : &NameType, our_authority : &Authority)
+    //    -> Result<RoutingMessage, CborError> {
+    //    // Commented the below code as it doesn't compile.
+    //    let mut reply_message = self.clone();
 
-        // Check if the message was forwarded, if so, reply directly to the
-        // original poster (not the one who forwarded the message).
-        reply_message.destination = match self.orig_message {
-            Some(ref orig_message) => {
-                try!(orig_message.get_routing_message()).reply_destination()
-            },
-            None => {
-                self.reply_destination()
-            }
-        };
+    //    // Check if the message was forwarded, if so, reply directly to the
+    //    // original poster (not the one who forwarded the message).
+    //    reply_message.destination = match self.orig_message {
+    //        Some(ref orig_message) => {
+    //            try!(orig_message.get_routing_message()).reply_destination()
+    //        },
+    //        None => {
+    //            self.reply_destination()
+    //        }
+    //    };
 
-        reply_message.orig_message = None;
-        reply_message.source       = SourceAddress::Direct(our_name.clone());
-        reply_message.authority    = our_authority.clone();
+    //    reply_message.orig_message = None;
+    //    reply_message.source       = SourceAddress::Direct(our_name.clone());
+    //    reply_message.authority    = our_authority.clone();
 
-        Ok(reply_message)
-    }
+    //    Ok(reply_message)
+    //}
 
-    pub fn reply_destination(&self) -> DestinationAddress {
-        match self.source {
-            SourceAddress::RelayedForClient(a, b) => DestinationAddress::RelayToClient(a, b),
-            SourceAddress::RelayedForNode(a, b)   => DestinationAddress::RelayToNode(a, b),
-            SourceAddress::Direct(a)              => DestinationAddress::Direct(a),
-        }
-    }
+    //pub fn reply_destination(&self) -> DestinationAddress {
+    //    match self.source {
+    //        SourceAddress::RelayedForClient(a, b) => DestinationAddress::RelayToClient(a, b),
+    //        SourceAddress::RelayedForNode(a, b)   => DestinationAddress::RelayToNode(a, b),
+    //        SourceAddress::Direct(a)              => DestinationAddress::Direct(a),
+    //    }
+    //}
 
 }
 
@@ -264,26 +266,28 @@ pub struct SignedMessage {
 }
 
 impl SignedMessage {
-    pub fn new(message: &RoutingMessage, private_sign_key: &sign::SecretKey)
+    pub fn new(claimant: types::Address, message: &RoutingMessage, private_sign_key: &sign::SecretKey)
         -> Result<SignedMessage, CborError> {
 
         let encoded_body = try!(utils::encode(&message));
         let signature    = sign::sign_detached(&encoded_body, private_sign_key);
 
         Ok(SignedMessage {
-            encoded_body: encoded_body,
-            signature:    signature
+            encoded_body : encoded_body,
+            claimant     : claimant,
+            signature    : signature
         })
     }
 
-    pub fn with_signature(message: &RoutingMessage, signature: Signature)
+    pub fn with_signature(claimant: types::Address, message: &RoutingMessage, signature: Signature)
         -> Result<SignedMessage, CborError> {
 
           let encoded_body = try!(utils::encode(&message));
 
           Ok(SignedMessage {
-              encoded_body: encoded_body,
-              signature:    signature
+              encoded_body : encoded_body,
+              claimant     : claimant,
+              signature    : signature
           })
     }
 
