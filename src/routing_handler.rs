@@ -16,19 +16,26 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::sync::mpsc;
+
+use crust;
+
+use action::Action;
+use event::Event;
+
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
 /// Routing Membrane
 pub struct RoutingHandler {
     // for CRUST
-    sender_clone        : Sender<CrustEvent>,
-    crust_channel       : Receiver<CrustEvent>,
+    crust_sender        : mpsc::Sender<crust::Event>,
+    crust_receiver      : mpsc::Receiver<crust::Event>,
     connection_manager  : crust::ConnectionManager,
     reflective_endpoint : crust::Endpoint,
     accepting_on        : Vec<crust::Endpoint>,
     bootstraps          : BTreeMap<Endpoint, Option<NameType>>,
     // for RoutingNode
-    node_channel        : Sender<NodeEvent>,
+    action_receiver     : mpsc::Receiver<Action>,
     // for Routing
     id                  : Id,
     routing_table       : RoutingTable,
@@ -40,16 +47,20 @@ pub struct RoutingHandler {
 }
 
 impl RoutingHandler {
-    pub fn new() -> RoutingHandler {
+    pub fn new(action_sender   : mpsc::Sender<Action>,
+               action_receiver : mpsc::Receiver<Action>,
+               event_sender    : mpsc::Sender<Event> ) -> RoutingHandler {
         let id = Id::new();
 
-        let (crust_output, crust_input) = mpsc::channel();
-        let mut cm = crust::ConnectionManager::new(crust_output.clone());
+        let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
+        let mut cm = crust::ConnectionManager::new(crust_sender.clone());
         let _ = cm.start_accepting(vec![]);
+        let accepting_on = cm.get_own_endpoints();
 
         cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
-        match crust_input.recv() {
-            Ok(crust::Event::NewConnection(endpoint)) => {},
+        let bootstraps : BTreeMap<Endpoint, Option<NameType>>
+            = match crust_input.recv() {
+            Ok(crust::Event::NewConnection(endpoint)) => {BTreeMap::new()},
             Ok(crust::Event::NewBootstrapConnection(endpoint)) =>
                 RoutingHandler::bootstrap(),
             _ => {
@@ -57,17 +68,21 @@ impl RoutingHandler {
                 return Err(RoutingError::FailedToBootstrap)
             }
         }
-        RoutingHandler{
 
+        RoutingHandler {
+            crust_sender        : crust_sender,
+            crust_receiver      : crust_receiver,
+            connection_manager  : cm,
+            reflective_endpoint : get_reflective_endpoint(),
+            accepting_on        : accepting_on,
+            bootstraps          : bootstraps,
+            action_receiver
         }
     }
 
 
-    fn send_event_to_user(&self, _event: Event) {
-        unimplemented!()
-    }
 
-    fn bootstrap(&mut cm : crust::ConnectionManager) {
+    fn bootstrap(&mut cm : crust::ConnectionManager) -> {
 
     }
 
