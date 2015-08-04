@@ -76,13 +76,6 @@ struct SignedKey {
   encrypt_public_key: crypto::box_::PublicKey,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct NameAndTypeId {
-  pub name : NameType,
-  pub type_id : u64
-}
-
-
 //                        +-> from_node name
 //                        |           +-> preserve the message_id when sending on
 //                        |           |         +-> destination name

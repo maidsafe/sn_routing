@@ -52,22 +52,21 @@ extern crate message_filter;
 extern crate sentinel;
 
 mod common_bits;
+mod action;
 mod macros;
 mod messages;
 mod name_type;
 mod routing_table;
+mod routing_node;
 mod relay;
 mod who_are_you;
 
-pub mod client_interface;
-pub mod node_interface;
-pub mod routing_client;
-pub mod routing_node;
-pub mod routing_membrane;
+pub mod routing;
 pub mod refresh_accumulator;
 pub mod sendable;
 pub mod test_utils;
 pub mod types;
+pub mod peer;
 pub mod id;
 pub mod utils;
 pub mod public_id;

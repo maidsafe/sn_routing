@@ -15,4 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use messages::RoutingMessage;
 
+/// An Action initiates a message flow < A | B > where we are (a part of) A.
+///    1. Action::SendMessage hands a fully formed RoutingMessage over to RoutingHandler
+///       for it to be sent on across the network as a SignedMessage.
+///    2. Terminate indicates to RoutingHandler that no new actions should be taken and all
+///       pending events should be handled.  After completion Routing will send Event::Terminated.
+#[derive(Clone, Eq, PartialEq)]
+pub enum Action {
+    SendMessage(RoutingMessage),
+    Terminate,
+}

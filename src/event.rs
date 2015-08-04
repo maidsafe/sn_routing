@@ -16,138 +16,41 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use data::Data;
-use error::{RoutingError, ResponseError};
-use messages::{ErrorReturn, GetDataResponse, MessageType, RoutingMessage, SignedMessage};
+use messages::RoutingMessage;
 use name_type::NameType;
-use sentinel::pure_sentinel::Source;
-use types::{MessageId, SourceAddress, DestinationAddress};
+use sodiumoxide::crypto::sign;
 
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
+/// An Event is received at the effective close group of B of a message flow < A | B >
+///   1. Event::MessageSecured provides the RoutingMessage after being secured by routing,
+///      our authority provides the base authority as validated by routing.
+///      When the from_authority in routing message is a Client or ManagedNode, the original
+///      signature is provided for reply or response.
+///   2. Event::Refresh has accumulated Refresh messages centered on a name for a type_tag.
+///      This can be used to transfer accounts between nodes of an effective close group.
+///   3. Event::Churn occurs when our close group changes.  The new close group is provided.
+///      Our close group always contains our own name first.  When we are connected to other
+///      nodes the list contains minimally two names.
+///   4. Event::Terminated is called after RoutingNode::stop() has ensured all message queues
+///      are processed and empty.
+#[derive(Clone, Eq, PartialEq)]
 pub enum Event {
-    PutDataRequest(Option<SignedMessage>, Data, NameType, NameType, Authority, Authority, MessageId),
-    PutDataResponse(Option<SignedMessage>, ErrorReturn, NameType, NameType, Authority, Authority,
-                    MessageId),
-    GetDataResponse(Option<SignedMessage>, GetDataResponse, NameType, NameType, Authority, Authority,
-                    MessageId),
-}
-
-impl Event {
-    pub fn create_forward(&self, message_type: MessageType, source: NameType,
-                          destination: NameType, msg_id : u32)
-        -> Result<RoutingMessage, RoutingError> {
-        match self {
-            &Event::PutDataRequest(ref orig_message, ref _data, ref _source_group,
-                                   ref _destination_group, ref _source_authority,
-                                   ref our_authority, ref _message_id) =>
-            {
-                return Ok(RoutingMessage {
-                    destination  : DestinationAddress::Direct(destination),
-                    source       : SourceAddress::Direct(source),
-                    orig_message : orig_message.clone(),
-                    message_type : message_type,
-                    message_id   : msg_id,
-                    authority    : our_authority.clone(),
-                })
-            },
-            &Event::PutDataResponse(ref orig_message, ref _response, ref _source_group,
-                                    ref destination_group, ref _source_authority,
-                                    ref our_authority, ref _message_id) =>
-            {
-                return Ok(RoutingMessage {
-                    destination  : DestinationAddress::Direct(destination_group.clone()),
-                    source       : SourceAddress::Direct(source),
-                    orig_message : orig_message.clone(),
-                    message_type : message_type,
-                    message_id   : msg_id,
-                    authority    : our_authority.clone(),
-                })
-            },
-            &Event::GetDataResponse(ref orig_message, ref _response, ref _source_group,
-                                    ref destination_group, ref _source_authority,
-                                    ref our_authority, ref _message_id) =>
-            {
-                return Ok(RoutingMessage {
-                    destination  : DestinationAddress::Direct(destination_group.clone()),
-                    source       : SourceAddress::Direct(source),
-                    orig_message : orig_message.clone(),
-                    message_type : message_type,
-                    message_id   : msg_id,
-                    authority    : our_authority.clone(),
-                })
-            }
-
-        }
-    }
-
-    pub fn create_reply(&self, reply_data: MessageType)
-        -> Result<RoutingMessage, RoutingError> {
-        match self {
-            &Event::PutDataRequest(ref orig_message, ref _data, ref source_group,
-                                   ref destination_group, ref _source_authority, ref our_authority,
-                                   ref message_id) => {
-                return Ok(RoutingMessage {
-                    destination  : match orig_message {
-                                       &Some(ref signed_message) => {
-                                           let routing_message = try!(signed_message.get_routing_message());
-                                           routing_message.reply_destination()
-                                       }
-                                       &None => DestinationAddress::Direct(source_group.clone()),
-                                   },
-                    //destination  : match orig_message.get_routing_message() {
-                    //                    Ok(routing_message) => routing_message.reply_destination(),
-                    //                    Err(_) => DestinationAddress::Direct(source_group.clone()),
-                    //               },
-                    source       : SourceAddress::Direct(destination_group.clone()),
-                    orig_message : None,
-                    message_type : reply_data,
-                    message_id   : message_id.clone(),
-                    authority    : our_authority.clone()
-                })
-            },
-            _ => Err(RoutingError::Response(ResponseError::InvalidRequest))
-        }
-    }
-
-    pub fn get_orig_message(&self) -> Option<SignedMessage> {
-        match self {
-            &Event::PutDataRequest(ref orig_message, _, _, _, _, _, _)
-                => orig_message.clone(),
-            &Event::PutDataResponse(ref orig_message, _, _, _, _, _, _)
-                => orig_message.clone(),
-            &Event::GetDataResponse(ref orig_message, _, _, _, _, _, _)
-                => orig_message.clone()
-        }
-    }
-
-    pub fn get_data(&self) -> Result<Data, RoutingError> {
-        match self {
-            &Event::PutDataRequest(_, ref data, _, _, _, _, _) => Ok(data.clone()),
-            _ => Err(RoutingError::Response(ResponseError::InvalidRequest))
-        }
-    }
-
-    pub fn get_response(&self) -> Result<ErrorReturn, RoutingError> {
-        match self {
-            &Event::PutDataResponse(_, ref response, _, _, _, _, _) => Ok(response.clone()),
-            _ => Err(RoutingError::Response(ResponseError::InvalidRequest))
-        }
-    }
-
-    pub fn get_data_response(&self) -> Result<GetDataResponse, RoutingError> {
-        match self {
-            &Event::GetDataResponse(_, ref response, _, _, _, _, _) => Ok(response.clone()),
-            _ => Err(RoutingError::Response(ResponseError::InvalidRequest))
-        }
-    }
-}
-
-impl Source<NameType> for Event {
-    fn get_source(&self) -> NameType {
-        match self {
-            &Event::PutDataRequest(_, _, source_group, _, _, _, _) => source_group,
-            &Event::PutDataResponse(_, _, source_group, _, _, _, _) => source_group,
-            &Event::GetDataResponse(_, _, source_group, _, _, _, _) => source_group,
-        }
-    }
+    MessageSecured(RoutingMessage, Authority, Option<sign::Signature>),
+    //             ~~|~~~~~~~~~~~  ~~|~~~~~~  ~~|~~~~~~~~~~~~~~
+    //               |               |          | the original signature when the RoutingMessage
+    //               |               |          | is signed by a Client or ManagedNode
+    //               |               | our authority as calculated
+    //               |               | note: can be removed if we enforce it to be identical
+    //               |               |       to RoutingMessage::to_authority
+    //               | secured routing message
+    Refresh(u64, NameType, Vec<Vec<u8>>),
+    //      ~|~  ~~|~~~~~  ~~|~~~~~~~~~
+    //       |     |         | payloads is a vector of serialised account records as sent out
+    //       |     |         | routing has made no attempt at parsing the content
+    //       |     | from group
+    //       | type tag
+    Churn(Vec<NameType>),
+    //    ~~|~~~~~~~~~~
+    //      | our close group sorted from our name; always including our name
+    //      | if size > 1, we are connected to the network
+    Terminated,
 }

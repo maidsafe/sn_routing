@@ -1,5 +1,6 @@
 // Copyright 2015 MaidSafe.net limited.
 //
+//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -15,17 +16,35 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use name_type;
+use crust;
 
-/// This trait is required for any type of message to be
-/// passed to routing, refresh / account transfer is optional
-/// The name will let routing know its a NaeManager and the owner will allow routing to hash
-/// the requesters ID with this name (by hashing the requesters ID) for put and post messages
-pub trait Sendable {
-    fn name(&self)->name_type::NameType;
-    fn type_tag(&self)->u64;
-    fn serialised_contents(&self)->Vec<u8>;
-    fn owner(&self)->Option<name_type::NameType> { Option::None }
-    fn refresh(&self)->bool; // is this an account transfer type
-    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>>;
+use types::Address;
+
+/// Peer enables multiple endpoints per peer in the network.
+/// It currently wraps around crust::endpoint, and will be extended to enable multiple
+/// endpoints, merging, comparing and other functionality.
+pub struct Peer {
+    identity : Address,
+    //         ~~|~~~~
+    //           | address can be either a Node(NameType) or a Client(PublicKey)
+    endpoint : crust::Endpoint,
+    //         ~~|~~~~~~~~~~~~
+    //           | initially only support a single endpoint
+}
+
+impl Peer {
+    pub fn new(identity : Address, endpoint : crust::Endpoint) -> Peer {
+        Peer {
+            identity : Address,
+            endpoint : endpoint,
+        }
+    }
+
+    pub fn identity(&self) -> &Address {
+        &self.identity
+    }
+
+    pub fn endpoint(&self) -> &endpoint {
+        &self.endpoint
+    }
 }
