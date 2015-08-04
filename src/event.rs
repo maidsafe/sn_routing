@@ -32,7 +32,7 @@ use sodiumoxide::crypto::sign;
 ///      nodes the list contains minimally two names.
 ///   4. Event::Terminated is called after RoutingNode::stop() has ensured all message queues
 ///      are processed and empty.
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     MessageSecured(RoutingMessage, Authority, Option<sign::Signature>),
     //             ~~|~~~~~~~~~~~  ~~|~~~~~~  ~~|~~~~~~~~~~~~~~

@@ -19,16 +19,23 @@
 use std::sync::mpsc;
 use std::thread::spawn;
 use std::collections::BTreeMap;
+use sodiumoxide::crypto::sign::{verify_detached, Signature};
+use sodiumoxide::crypto::sign;
+use time::{Duration, SteadyTime};
 
 use crust;
+use crust::{ConnectionManager, Endpoint};
 
 use action::Action;
 use event::Event;
 use NameType;
+use name_type::{closer_to_target_or_equal};
+use routing_table::{RoutingTable, NodeInfo};
 use id::Id;
 use public_id::PublicId;
 use who_are_you::IAm;
-use types::{MessageId, Address};
+use types;
+use types::{MessageId, Bytes, Address};
 use utils::{encode, decode};
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
@@ -109,10 +116,10 @@ impl RoutingNode {
 
         cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         let bootstraps : BTreeMap<Endpoint, Option<NameType>>
-            = match crust_input.recv() {
+            = match crust_receiver.recv() {
             Ok(crust::Event::NewConnection(endpoint)) => BTreeMap::new(),
             Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                RoutingHandler::bootstrap(&cm)
+                RoutingNode::bootstrap(&cm)
             },
             _ => {
                 error!("The first event received from Crust is not a new connection.");
@@ -229,7 +236,7 @@ impl RoutingNode {
         ignore(self.send_swarm_or_parallel_or_relay_with_signature(
             &message, message_wrap.signature().clone()));
 
-        let maddress_in_close_group_range =
+        let address_in_close_group_range =
             self.address_in_close_group_range(&message.destination());
 
         // Handle FindGroupResponse
@@ -658,3 +665,5 @@ impl RoutingNode {
         unimplemented!()
     }
 }
+
+fn ignore<R,E>(_result: Result<R,E>) {}

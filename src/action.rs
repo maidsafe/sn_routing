@@ -22,7 +22,7 @@ use messages::RoutingMessage;
 ///       for it to be sent on across the network as a SignedMessage.
 ///    2. Terminate indicates to RoutingHandler that no new actions should be taken and all
 ///       pending events should be handled.  After completion Routing will send Event::Terminated.
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Action {
     SendMessage(RoutingMessage),
     Terminate,
