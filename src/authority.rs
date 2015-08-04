@@ -29,7 +29,8 @@ pub enum Authority {
   NodeManager(NameType),    // the destination is not the element, and we are responsible for it
   ManagedNode(NameType),    // our name is the destination
                             // and the message came from within our range
-  Client(NameType, crypto::sign::PublicKey),   // detached with name of relay node
+  Client(NameType, crypto::sign::PublicKey),   // client can specify a location where a relay
+                                               // will be found
 }
 
 impl Authority {
@@ -38,8 +39,18 @@ impl Authority {
             &Authority::ClientManager(_) => true,
             &Authority::NaeManager(_)    => true,
             &Authority::NodeManager(_)   => true,
-            &Authority::ManagedNode      => false,
+            &Authority::ManagedNode(_)   => false,
             &Authority::Client(_, _)     => false,
+        }
+    }
+
+    pub fn get_location(&self) -> &NameType {
+        match self {
+            &Authority::ClientManager(ref loc) => loc,
+            &Authority::NaeManager(ref loc)    => loc,
+            &Authority::NodeManager(ref loc)   => loc,
+            &Authority::ManagedNode(ref loc)   => loc,
+            &Authority::Client(ref loc, _)     => loc,
         }
     }
 }
