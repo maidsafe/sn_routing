@@ -27,6 +27,8 @@ use name_type::NameType;
 ///   3. Event::Churn occurs when our close group changes.  The new close group is provided.
 ///      Our close group always contains our own name first.  When we are connected to other
 ///      nodes the list contains minimally two names.
+///   4. Event::Terminated is called after RoutingNode::stop() has ensured all message queues
+///      are processed and empty.
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Event {
     MessageSecured(RoutingMessage, Authority),
@@ -45,4 +47,5 @@ pub enum Event {
     //    ~~|~~~~~~~~~~
     //      | our close group sorted from our name; always including our name
     //      | if size > 1, we are connected to the network
+    Terminated,
 }

@@ -23,14 +23,14 @@ use messages::{RoutingMessage, MessageType};
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone)]
 pub enum Authority {
-  ClientManager(NameType),  // signed by a client and corresponding ClientName is in our range
-  NaeManager(NameType),     // we are responsible for this element
-                            // and the destination is the element
-  NodeManager(NameType),    // the destination is not the element, and we are responsible for it
-  ManagedNode(NameType),    // our name is the destination
-                            // and the message came from within our range
-  Client(NameType, crypto::sign::PublicKey),   // client can specify a location where a relay
-                                               // will be found
+    ClientManager(NameType),  // signed by a client and corresponding ClientName is in our range
+    NaeManager(NameType),     // we are responsible for this element
+                              // and the destination is the element
+    NodeManager(NameType),    // the destination is not the element, and we are responsible for it
+    ManagedNode(NameType),    // our name is the destination
+                              // and the message came from within our range
+    Client(NameType, crypto::sign::PublicKey),   // client can specify a location where a relay
+                                                 // will be found
 }
 
 impl Authority {
@@ -232,7 +232,7 @@ fn our_authority_full_routing_table() {
     let some_data : Data = Data::ImmutableData(ImmutableData::new(
         ImmutableDataType::Normal, vec![213u8; 20usize]));
     let client_manager_message = RoutingMessage {
-        destination : DestinationAddress::Direct(name_outside_close_group.clone()),
+        from_authority : Authority::Client(name_outside_close_group.clone()),
         // note: the CM NameType needs to equal SHA512 of the crypto::sign::PublicKey
         // but then it is cryptohard to find a matching set; so ignored for this unit test
         source      : SourceAddress::RelayedForClient(nae_or_client_in_our_close_group.clone(),
