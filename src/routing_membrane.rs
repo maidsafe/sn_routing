@@ -103,9 +103,9 @@ pub struct RoutingMembrane<F : Interface> {
     refresh_accumulator: RefreshAccumulator,
     // for Persona logic
     interface: Box<F>,
-    _put_response_sentinel: PureSentinel<Event, NameType>,
-    _get_data_response_sentinel: PureSentinel<Event, NameType>,
-    _put_sentinel: PureSentinel<Event, NameType>
+    //_put_response_sentinel: PureSentinel<Event, NameType>,
+    //_get_data_response_sentinel: PureSentinel<Event, NameType>,
+    //_put_sentinel: PureSentinel<Event, NameType>
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
@@ -134,9 +134,9 @@ impl<F> RoutingMembrane<F> where F: Interface {
             connection_cache: BTreeMap::new(),
             refresh_accumulator: RefreshAccumulator::new(),
             interface : Box::new(personas),
-            _put_response_sentinel: PureSentinel::new(),
-            _get_data_response_sentinel: PureSentinel::new(),
-            _put_sentinel: PureSentinel::new()
+            //_put_response_sentinel: PureSentinel::new(),
+            //_get_data_response_sentinel: PureSentinel::new(),
+            //_put_sentinel: PureSentinel::new()
         }
     }
 

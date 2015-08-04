@@ -134,17 +134,17 @@ impl RoutingMessage {
     }
 
     #[allow(dead_code)]
-    pub fn source_address(&self) -> SourceAddress {
-        self.source.clone()
+    pub fn source(&self) -> Authority {
+        self.from_authority.clone()
     }
 
-    pub fn destination_address(&self) -> DestinationAddress {
-        self.destination.clone()
+    pub fn destination(&self) -> Authority {
+        self.to_authority.clone()
     }
 
-    pub fn non_relayed_source(&self) -> NameType {
-        self.source.non_relayed_source()
-    }
+    //pub fn non_relayed_source(&self) -> NameType {
+    //    self.source.non_relayed_source()
+    //}
 
     #[allow(dead_code)]
     pub fn actual_source(&self) -> types::Address {
@@ -177,18 +177,12 @@ impl RoutingMessage {
     }
 
     pub fn from_group(&self) -> Option<NameType /* Group name */> {
-        match self.source {
-            SourceAddress::RelayedForClient(_, _) => None,
-            SourceAddress::RelayedForNode(_, _)   => None,
-            SourceAddress::Direct(_) => match self.authority {
-                Authority::ClientManager(n) => Some(n),
-                Authority::NaeManager(n)    => Some(n),
-                Authority::NodeManager(n)   => Some(n),
-                Authority::ManagedNode      => None,
-                Authority::ManagedClient(_) => None,
-                Authority::Client(_)        => None,
-                Authority::Unknown          => None,
-            },
+        match self.from_authority {
+            Authority::ClientManager(name) => Some(name),
+            Authority::NaeManager(name)    => Some(name),
+            Authority::NodeManager(name)   => Some(name),
+            Authority::ManagedNode(_)      => None,
+            Authority::Client(_, _)        => None,
         }
     }
 

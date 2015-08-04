@@ -42,7 +42,6 @@ static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
 type CrustEvent = crust::Event;
 pub type Endpoint = crust::Endpoint;
-type PortAndProtocol = crust::Port;
 
 type RoutingResult = Result<(), RoutingError>;
 

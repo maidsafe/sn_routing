@@ -18,6 +18,7 @@
 use authority::Authority;
 use messages::RoutingMessage;
 use name_type::NameType;
+use sodiumoxide::crypto::sign;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 ///   1. Event::MessageSecured provides the RoutingMessage after being secured by routing,
@@ -33,7 +34,7 @@ use name_type::NameType;
 ///      are processed and empty.
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Event {
-    MessageSecured(RoutingMessage, Authority, Option<Signature>),
+    MessageSecured(RoutingMessage, Authority, Option<sign::Signature>),
     //             ~~|~~~~~~~~~~~  ~~|~~~~~~  ~~|~~~~~~~~~~~~~~
     //               |               |          | the original signature when the RoutingMessage
     //               |               |          | is signed by a Client or ManagedNode
