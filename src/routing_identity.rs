@@ -16,93 +16,78 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor::{CborError};
-use rand;
 use sodiumoxide;
 use std::sync::mpsc;
-use std::boxed::Box;
-use std::marker::PhantomData;
 
-use crust;
-use NameType;
-use node_interface::{Interface, CreatePersonas};
-use routing_membrane::RoutingMembrane;
 use id::Id;
-use public_id::PublicId;
-use who_are_you::IAm;
-use types::{MessageId, SourceAddress, DestinationAddress, Address};
-use utils::{encode, decode};
-use authority::{Authority};
-use messages::{RoutingMessage, SignedMessage, MessageType};
-use error::{RoutingError};
-use std::thread::spawn;
-use std::collections::BTreeMap;
+use action::Action;
+use event::Event;
+use routing_node::RoutingNode;
+//use crust;
+use NameType;
+//use node_interface::{Interface, CreatePersonas};
+//use routing_membrane::RoutingMembrane;
+//use id::Id;
+//use public_id::PublicId;
+//use who_are_you::IAm;
+//use types::{MessageId, SourceAddress, DestinationAddress, Address};
+//use utils::{encode, decode};
+//use authority::{Authority};
+//use messages::{RoutingMessage, SignedMessage, MessageType};
+//use error::{RoutingError};
+//use std::thread::spawn;
+//use std::collections::BTreeMap;
 
-static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
-
-type CrustEvent = crust::Event;
-pub type Endpoint = crust::Endpoint;
-
-type RoutingResult = Result<(), RoutingError>;
-
-/// DHT node
-pub struct RoutingNode {
-    sender : mpsc::Sender<>
+/// RoutingIdentity provides an actionable interface to RoutingNode.
+/// On constructing a new Identity a RoutingNode will be started.
+/// Identities are clonable for multithreading, or an Identity can be
+/// cloned with a new set of keys.
+#[derive(Clone)]
+pub struct RoutingIdentity {
+    given_keys    : Option<Id>,
+    action_sender : mpsc::Sender<Action>,
 }
 
-impl RoutingNode {
-    pub fn new() -> RoutingNode {
+impl RoutingIdentity {
+    /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
+    /// The RoutingNode will attempt to achieve full routing node status.
+    pub fn new(event_receiver : mpsc::Receiver<Event>) -> RoutingIdentity {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
+        let (action_sender, action_receiver) = mpsc::channel::<Action>();
+
         // start the handler for routing
-        let routing_handler = RoutingHandler::new();
-        RoutingNode {
+        let routing_node = RoutingNode::new(event_receiver);
+        RoutingIdentity {
+            given_keys    : None,
+            action_sender : action_sender,
         }
+    }
+
+    /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
+    /// The RoutingNode will only bootstrap to the network and not attempt to
+    /// achieve full routing node status.
+    pub fn new_client(event_receiver : mpsc::Receiver<Event>) -> RoutingIdentity {
+        unimplemented!()
+    }
+
+    pub fn clone_with_keys() -> RoutingIdentity {
+        unimplemented!()
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
     pub fn get(&mut self, location: NameType, data : DataRequest) {
-        let message_id = self.get_next_message_id();
-        let message =  RoutingMessage {
-            destination : DestinationAddress::Direct(location),
-            source      : SourceAddress::Direct(self.id.name()),
-            orig_message: None,
-            message_type: MessageType::GetData(data),
-            message_id  : message_id,
-            authority   : Authority::Unknown
-        };
-
-        ignore(self.send_swarm_or_parallel(&message));
+        unimplemented!()
     }
 
     /// Add something to the network, will always go via ClientManager group
     pub fn put(&mut self, destination: NameType, data : Data) {
-        let message_id = self.get_next_message_id();
-        let message = RoutingMessage {
-            destination : DestinationAddress::Direct(destination),
-            source      : SourceAddress::Direct(self.id.name()),
-            orig_message: None,
-            message_type: MessageType::PutData(data),
-            message_id  : message_id,
-            authority   : Authority::Unknown,
-        };
-
-        ignore(self.send_swarm_or_parallel(&message));
+        unimplemented!()
     }
 
     /// Add something to the network, will always go via ClientManager group
     pub fn post(&mut self, destination: NameType, data : Data) {
-        let message_id = self.get_next_message_id();
-        let message = RoutingMessage {
-            destination : DestinationAddress::Direct(destination),
-            source      : SourceAddress::Direct(self.id.name()),
-            orig_message: None,
-            message_type: MessageType::Post(data),
-            message_id  : message_id,
-            authority   : Authority::Unknown,
-        };
-
-        ignore(self.send_swarm_or_parallel(&message));
+        unimplemented!()
     }
 
     pub fn delete(&mut self, _destination: NameType, _data : Data) {
@@ -114,16 +99,6 @@ impl RoutingNode {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
     pub fn refresh(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
-        let message_id = self.get_next_message_id();
-        let message = RoutingMessage {
-            destination : DestinationAddress::Direct(from_group.clone()),
-            source      : SourceAddress::Direct(self.id.name()),
-            orig_message: None,
-            message_type: MessageType::Refresh(type_tag, content),
-            message_id  : message_id,
-            authority   : Authority::Unknown,
-        };
-
-        ignore(self.send_swarm_or_parallel(&message));
+        unimplemented!()
     }
 }
