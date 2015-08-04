@@ -7,8 +7,8 @@ set -e
 
 # Get current version and executable's name from Cargo.toml
 RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' $RootDir/Cargo.toml)
-VaultName=$(sed -n 's/[ \t]*name[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' $RootDir/Cargo.toml)
+Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
+VaultName=$(sed -n 's/[ \t]*name[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
 VaultPath=/usr/local/bin/
 BootstrapFilePath=/var/cache/safe/
 Platform=$1
@@ -40,8 +40,8 @@ function prepare_systemd_scripts {
   ServiceName=safe-vault.service
   ServicePath=/usr/lib/systemd/system/
 
-  mkdir -p $RootDir/packages/$Platform/systemd/scripts
-  cd $RootDir/packages/$Platform/systemd/scripts
+  mkdir -p "$RootDir/packages/$Platform/systemd/scripts"
+  cd "$RootDir/packages/$Platform/systemd/scripts"
 
   # This will:
   #   * check the exe and service files are installed
@@ -77,8 +77,8 @@ function prepare_systemd_scripts {
 function prepare_sysv_style_scripts {
   InitName=safe-vault
 
-  mkdir -p $RootDir/packages/$Platform/SysV-style/scripts
-  cd $RootDir/packages/$Platform/SysV-style/scripts
+  mkdir -p "$RootDir/packages/$Platform/SysV-style/scripts"
+  cd "$RootDir/packages/$Platform/SysV-style/scripts"
 
   # This will:
   #   * check the exe is installed
@@ -234,12 +234,12 @@ function create_package {
     --url "http://maidsafe.net" \
     --after-install scripts/after_install.sh\
     --before-remove scripts/before_remove.sh \
-    $RootDir/target/release/$VaultName=$VaultPath \
-    $RootDir/installer/common/$VaultName.bootstrap.cache=$BootstrapFilePath \
+    "$RootDir/target/release/$VaultName"=$VaultPath \
+    "$RootDir/installer/common/$VaultName.bootstrap.cache"=$BootstrapFilePath \
     $ExtraFilesCommand
 }
 
-cd $RootDir
+cd "$RootDir"
 cargo update
 cargo build --release
 if [[ "$1" == "linux" ]]
