@@ -23,14 +23,9 @@ use id::Id;
 use action::Action;
 use event::Event;
 use routing_node::RoutingNode;
-//use crust;
 use NameType;
-//use node_interface::{Interface, CreatePersonas};
-//use routing_membrane::RoutingMembrane;
-//use id::Id;
-//use public_id::PublicId;
-//use who_are_you::IAm;
-//use types::{MessageId, SourceAddress, DestinationAddress, Address};
+
+//use types::{MessageId, Address};
 //use utils::{encode, decode};
 //use authority::{Authority};
 //use messages::{RoutingMessage, SignedMessage, MessageType};

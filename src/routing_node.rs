@@ -30,9 +30,49 @@ use public_id::PublicId;
 use who_are_you::IAm;
 use types::{MessageId, Address};
 use utils::{encode, decode};
-use authority::{Authority};
-use messages::{RoutingMessage, SignedMessage, MessageType};
+use data::{Data, DataRequest};
+use authority::{Authority, our_authority};
+use messages::{RoutingMessage, SignedMessage, MessageType,
+               ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
 use error::{RoutingError};
+use refresh_accumulator::RefreshAccumulator;
+
+
+//use lru_time_cache::LruCache;
+//use message_filter::MessageFilter;
+//use NameType;
+//use name_type::{closer_to_target_or_equal};
+//use node_interface::Interface;
+//use routing_table::{RoutingTable, NodeInfo};
+//use relay::{RelayMap};
+//use sendable::Sendable;
+//use types;
+//use types::{MessageId, Bytes, DestinationAddress, SourceAddress, Address};
+//use authority::{Authority, our_authority};
+//use who_are_you::IAm;
+//use messages::{RoutingMessage, SignedMessage, MessageType,
+//               ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
+//use error::{RoutingError, ResponseError, InterfaceError};
+//use node_interface::MethodCall;
+
+//use id::Id;
+//use public_id::PublicId;
+//use utils;
+//use utils::{encode, decode};
+//use sentinel::pure_sentinel::PureSentinel;
+//use event::Event;
+//
+
+type RoutingResult = Result<(), RoutingError>;
+
+enum ConnectionName {
+   Relay(Address),
+   Routing(NameType),
+   OurBootstrap(NameType),
+   ReflectionOnToUs,
+   UnidentifiedConnection,
+   // ClaimedConnection(PublicId),
+}
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
@@ -420,50 +460,51 @@ impl RoutingNode {
     }
 
     fn send_swarm_or_parallel_or_relay_signed_message(&mut self,
-        signed_message: &SignedMessage, destination_address: &DestinationAddress)
+        signed_message: &SignedMessage, destination: &Authority)
         -> Result<(), RoutingError> {
-
-        if destination_address.non_relayed_destination() == self.id.name() {
-            let bytes = try!(encode(signed_message));
-
-            match *destination_address {
-                DestinationAddress::RelayToClient(_, public_key) => {
-                    self.send_out_as_relay(&Address::Client(public_key), bytes.clone());
-                },
-                DestinationAddress::RelayToNode(_, node_address) => {
-                    self.send_out_as_relay(&Address::Node(node_address), bytes.clone());
-                },
-                DestinationAddress::Direct(_) => {},
-            }
-            Ok(())
-        }
-        else {
-            self.send_swarm_or_parallel_signed_message(
-                signed_message, &destination_address.non_relayed_destination())
-        }
+        unimplemented!()
+        // if destination_address.non_relayed_destination() == self.id.name() {
+        //     let bytes = try!(encode(signed_message));
+        //
+        //     match *destination_address {
+        //         DestinationAddress::RelayToClient(_, public_key) => {
+        //             self.send_out_as_relay(&Address::Client(public_key), bytes.clone());
+        //         },
+        //         DestinationAddress::RelayToNode(_, node_address) => {
+        //             self.send_out_as_relay(&Address::Node(node_address), bytes.clone());
+        //         },
+        //         DestinationAddress::Direct(_) => {},
+        //     }
+        //     Ok(())
+        // }
+        // else {
+        //     self.send_swarm_or_parallel_signed_message(
+        //         signed_message, &destination_address.non_relayed_destination())
+        // }
     }
 
-    fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
-        // FIXME: We're sending all accepting connections as local since we don't differentiate
-        // between local and external yet.
-        let connect_request = ConnectRequest {
-            local_endpoints: self.accepting_on.clone(),
-            external_endpoints: vec![],
-            requester_id: self.id.name(),
-            receiver_id: peer_id.clone(),
-            requester_fob: PublicId::new(&self.id),
-        };
-
-        let message =  RoutingMessage {
-            destination  : DestinationAddress::Direct(peer_id.clone()),
-            source       : self.my_source_address(),
-            orig_message : None,
-            message_type : MessageType::ConnectRequest(connect_request),
-            message_id   : self.get_next_message_id(),
-            authority    : Authority::ManagedNode
-        };
-
-        self.send_swarm_or_parallel(&message)
+    fn send_connect_request_msg(&mut self, peer_id: &Authority) -> RoutingResult {
+        unimplemented!()
+        // // FIXME: We're sending all accepting connections as local since we don't differentiate
+        // // between local and external yet.
+        // let connect_request = ConnectRequest {
+        //     local_endpoints: self.accepting_on.clone(),
+        //     external_endpoints: vec![],
+        //     requester_id: self.id.name(),
+        //     receiver_id: peer_id.clone(),
+        //     requester_fob: PublicId::new(&self.id),
+        // };
+        //
+        // let message =  RoutingMessage {
+        //     destination  : peer_id,
+        //     source       : self.my_source_address(),
+        //     orig_message : None,
+        //     message_type : MessageType::ConnectRequest(connect_request),
+        //     message_id   : self.get_next_message_id(),
+        //     authority    : Authority::ManagedNode
+        // };
+        //
+        // self.send_swarm_or_parallel(&message)
     }
 
     // ---- I Am connection identification --------------------------------------------------------
