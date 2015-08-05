@@ -143,8 +143,7 @@ impl RoutingNode {
         // };
     }
 
-    fn request_network_name(&mut cm : crust::ConnectionManager)
-        -> Result<NameType,RoutingError>  {
+    fn request_network_name(&mut self) -> Result<NameType, RoutingError>  {
 
     }
 
@@ -575,7 +574,7 @@ impl RoutingNode {
                 None => match self.bootstrap {
                     Some((ref bootstrap_ep, ref bootstrap_name)) => {
                         if bootstrap_ep == endpoint {
-                            Some(ConnectionName::OurBootstrap(bootstrap_name.clone()))
+                            Some(ConnectionName::Bootstrap(bootstrap_name.clone()))
                         } else {
                             None
                         }
