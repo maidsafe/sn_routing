@@ -75,10 +75,8 @@ type RoutingResult = Result<(), RoutingError>;
 enum ConnectionName {
    Relay(Address),
    Routing(NameType),
-   OurBootstrap(NameType),
-   ReflectionOnToUs,
+   Bootstrap(NameType),
    UnidentifiedConnection,
-   // ClaimedConnection(PublicId),
 }
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
