@@ -18,6 +18,7 @@
 
 use routing_table::RoutingTable;
 use relay::RelayMap;
+use types::Address;
 use id::Id;
 use NameType;
 
