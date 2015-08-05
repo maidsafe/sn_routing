@@ -144,7 +144,7 @@ impl RoutingNode {
     }
 
     fn request_network_name(&mut self) -> Result<NameType, RoutingError>  {
-
+        unimplemented!()
     }
 
     /// When CRUST receives a connect to our listening port and establishes a new connection,
@@ -524,57 +524,54 @@ impl RoutingNode {
     }
 
     fn address_in_close_group_range(&self, destination_auth: &Authority) -> bool {
-        let address = match destination_auth {
-            Authority::ClientManager(name) => name,
-            Authority::NaeManager(name)    => name,
-            Authority::NodeManager(name)   => name,
-            Authority::ManagedNode(_)      => return false,
-            Authority::Client(_, _)        => return false,
-        };
-
-        if self.routing_table.size() < types::QUORUM_SIZE  ||
-           *address == self.id.name().clone()
-        {
-            return true;
-        }
-
-        match self.routing_table.our_close_group().last() {
-            Some(furthest_close_node) => {
-                closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.id.name())
-            },
-            None => false  // ...should never reach here
-        }
-    }
-
-    fn get_next_message_id(&mut self) -> MessageId {
-        let temp = self.next_message_id;
-        self.next_message_id = self.next_message_id.wrapping_add(1);
-        return temp;
+        unimplemented!()
+        // TODO (ben 05/08/2015) again, this needs to rely on core
+        // let address = match *destination_auth {
+        //     Authority::ClientManager(name) => name,
+        //     Authority::NaeManager(name)    => name,
+        //     Authority::NodeManager(name)   => name,
+        //     Authority::ManagedNode(_)      => return false,
+        //     Authority::Client(_, _)        => return false,
+        // };
+        //
+        // if self.routing_table.size() < types::QUORUM_SIZE  ||
+        //    *address == self.id.name().clone()
+        // {
+        //     return true;
+        // }
+        //
+        // match self.routing_table.our_close_group().last() {
+        //     Some(furthest_close_node) => {
+        //         closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.id.name())
+        //     },
+        //     None => false  // ...should never reach here
+        // }
     }
 
     fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<ConnectionName> {
+        unimplemented!()
         // prioritise routing table
-        match self.routing_table.lookup_endpoint(&endpoint) {
-            Some(name) => Some(ConnectionName::Routing(name)),
-            // secondly look in the relay_map
-            None => match self.relay_map.lookup_endpoint(&endpoint) {
-                Some(name) => Some(ConnectionName::Relay(name)),
-                // check to see if it is our bootstrap_endpoint
-                None => match self.bootstrap {
-                    Some((ref bootstrap_ep, ref bootstrap_name)) => {
-                        if bootstrap_ep == endpoint {
-                            Some(ConnectionName::Bootstrap(bootstrap_name.clone()))
-                        } else {
-                            None
-                        }
-                    },
-                    None => match self.relay_map.lookup_unknown_connection(&endpoint) {
-                        true => Some(ConnectionName::UnidentifiedConnection),
-                        false => None
-                    }
-                }
-            }
-        }
+        // match self.routing_table.lookup_endpoint(&endpoint) {
+        //     Some(name) => Some(ConnectionName::Routing(name)),
+        //     // secondly look in the relay_map
+        //     None => match self.relay_map.lookup_endpoint(&endpoint) {
+        //         Some(name) => Some(ConnectionName::Relay(name)),
+        //         // check to see if it is our bootstrap_endpoint
+        //         None => match self.bootstrap {
+        //             Some((ref bootstrap_ep, ref bootstrap_name)) => {
+        //                 if bootstrap_ep == endpoint {
+        //                     Some(ConnectionName::Bootstrap(bootstrap_name.clone()))
+        //                 } else {
+        //                     None
+        //                 }
+        //             },
+        //             None => match self.relay_map.lookup_unknown_connection(&endpoint) {
+        //                 true => Some(ConnectionName::UnidentifiedConnection),
+        //                 false => None
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     // -----Message Handlers from Routing Table connections----------------------------------------

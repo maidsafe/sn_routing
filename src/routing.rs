@@ -51,7 +51,7 @@ pub struct Routing {
 impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
-    pub fn new(event_receiver : mpsc::Receiver<Event>) -> Result<Routing, RoutingError> {
+    pub fn new(event_sender : mpsc::Sender<Event>) -> Result<Routing, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
@@ -60,7 +60,7 @@ impl Routing {
         //      be handled internally
         // start the handler for routing
         let routing_node = match RoutingNode::new(action_sender.clone(), action_receiver,
-            event_receiver) {
+            event_sender) {
                 Ok(routing_node) => routing_node,
                 Err(e) => return Err(e),
         };
