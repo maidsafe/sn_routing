@@ -528,7 +528,7 @@ impl RoutingNode {
             Authority::ClientManager(name) => name,
             Authority::NaeManager(name)    => name,
             Authority::NodeManager(name)   => name,
-            Authority::ManagedNode(name)   => name,
+            Authority::ManagedNode(_)      => return false,
             Authority::Client(_, _)        => return false,
         };
 
