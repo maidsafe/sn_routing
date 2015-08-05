@@ -19,24 +19,35 @@
 use crust;
 
 use types::Address;
+use routing_core::ConnectionName;
+use public_id:PublicId;
 
 /// Peer enables multiple endpoints per peer in the network.
 /// It currently wraps around crust::endpoint, and will be extended to enable multiple
 /// endpoints, merging, comparing and other functionality.
 pub struct Peer {
-    identity : Address,
-    //         ~~|~~~~
-    //           | address can be either a Node(NameType) or a Client(PublicKey)
-    endpoint : crust::Endpoint,
-    //         ~~|~~~~~~~~~~~~
-    //           | initially only support a single endpoint
+    identity            : ConnectionName,
+    //                    ~~|~~~~~~~~~~~
+    //                      | identifies the peer in relation to us
+    endpoint            : crust::Endpoint,
+    //                    ~~|~~~~~~~~~~~~
+    //                      | initially only support a single endpoint
+    public_id           : Option<PublicId>,
+    //                    ~~|~~~~~~~~~~~~~
+    //                      | store public_id once obtained
+    connected_timestamp : SteadyTime,
+    //                    ~~|~~~~~~~
+    //                      | the recorded time when the connection was established,
+    //                      | this allows unidentified connections to time-out
 }
 
 impl Peer {
-    pub fn new(identity : Address, endpoint : crust::Endpoint) -> Peer {
+    pub fn new(identity : ConnectionName, endpoint : crust::Endpoint) -> Peer {
         Peer {
-            identity : identity,
-            endpoint : endpoint,
+            identity            : identity,
+            endpoint            : endpoint,
+            public_id           : None,
+            connected_timestamp : SteadyTime::now(),
         }
     }
 
@@ -47,4 +58,17 @@ impl Peer {
     pub fn endpoint(&self) -> &crust::Endpoint {
         &self.endpoint
     }
+
+    pub fn public_id(&self) -> Option<PublicId> {
+        &self.public_id
+    }
+
+    pub fn connected_timestamp(&self) -> SteadyTime {
+        &self.connected_timestamp
+    }
+
+    pub fn set_public_id(&mut self, public_id : PublicId) {
+        self.public_id = Some(public_id);
+    }
+
 }
