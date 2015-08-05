@@ -39,8 +39,8 @@ pub struct RoutingCore {
 }
 
 impl RoutingCore {
-    pub fn new(id : Id) -> RoutingCore {
-
+    pub fn new() -> RoutingCore {
+        let id = Id::new();
         RoutingCore {
             id            : id,
             network_name  : None,

@@ -98,7 +98,6 @@ impl RoutingNode {
     pub fn new(action_sender   : mpsc::Sender<Action>,
                action_receiver : mpsc::Receiver<Action>,
                event_sender    : mpsc::Sender<Event> ) -> Result<RoutingNode, RoutingError> {
-        let id = Id::new();
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
         let mut cm = crust::ConnectionManager::new(crust_sender.clone());
@@ -113,7 +112,7 @@ impl RoutingNode {
             bootstraps          : BTreeMap::new(),
             action_receiver     : action_receiver,
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
-            core                : RoutingCore::new(id);
+            core                : RoutingCore::new(),
         })
     }
 
