@@ -19,6 +19,7 @@
 use routing_table::RoutingTable;
 use relay::RelayMap;
 use id::Id;
+use NameType;
 
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
 /// table and the relay map.  Routing core deals in

@@ -56,7 +56,7 @@ impl Routing {
         // start the handler for routing
         let routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
             event_receiver);
-        RoutingIdentity {
+        Routing {
             given_keys    : None,
             action_sender : action_sender,
         }

@@ -35,7 +35,7 @@ pub struct Peer {
 impl Peer {
     pub fn new(identity : Address, endpoint : crust::Endpoint) -> Peer {
         Peer {
-            identity : Address,
+            identity : identity,
             endpoint : endpoint,
         }
     }
@@ -44,7 +44,7 @@ impl Peer {
         &self.identity
     }
 
-    pub fn endpoint(&self) -> &endpoint {
+    pub fn endpoint(&self) -> &crust::Endpoint {
         &self.endpoint
     }
 }
