@@ -29,6 +29,8 @@ use utils;
 use cbor::{CborError};
 use std::collections::BTreeMap;
 
+pub static VERSION_NUMBER : u8 = 0;
+
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectRequest {
     pub local_endpoints: Vec<Endpoint>,
@@ -120,6 +122,7 @@ pub enum MessageType {
 /// the bare (unsigned) routing message
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
+    // version_number     : u8
     pub from_authority : Authority,
     pub to_authority   : Authority,
     pub message_type   : MessageType,
