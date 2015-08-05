@@ -48,4 +48,8 @@ impl RoutingCore {
             relay_map     : RelayMap::new(),
         }
     }
+
+    pub fn id(&self) -> &Id {
+        &self.id
+    }
 }

@@ -87,12 +87,8 @@ pub struct RoutingNode {
     bootstraps          : BTreeMap<Endpoint, Option<NameType>>,
     // for RoutingNode
     action_receiver     : mpsc::Receiver<Action>,
-    // for Routing
-    id                  : Id,
-    // routing_table       : RoutingTable,
-    // relay_map           : RelayMap,
     filter              : MessageFilter<types::FilterType>,
-    routing_core        : RoutingCore,
+    core                : RoutingCore,
     // public_id_cache     : LruCache<NameType, PublicId>,
     // connection_cache    : BTreeMap<NameType, SteadyTime>,
     // refresh_accumulator : RefreshAccumulator,
@@ -116,8 +112,8 @@ impl RoutingNode {
             accepting_on        : accepting_on,
             bootstraps          : BTreeMap::new(),
             action_receiver     : action_receiver,
-            id                  : id,
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
+            core                : RoutingCore::new(id);
         })
     }
 
@@ -255,7 +251,7 @@ impl RoutingNode {
                     Authority::ClientManager(_)  => return Ok(()), // TODO: Should be error
                     Authority::NaeManager(_)     => return Ok(()), // TODO: Should be error
                     Authority::NodeManager(_)    => return Ok(()), // TODO: Should be error
-                    Authority::ManagedNode(name) => if name != self.id.name() { return Ok(()) },
+                    Authority::ManagedNode(name) => if name != self.core.id().name() { return Ok(()) },
                     Authority::Client(_, _)      => return Ok(()), // TODO: Should be error
                 },
             _ => (),
@@ -346,7 +342,7 @@ impl RoutingNode {
     fn send_swarm_or_parallel(&self, msg : &RoutingMessage) -> Result<(), RoutingError> {
         unimplemented!()
         // let destination = msg.destination();
-        // let signed_message = try!(SignedMessage::new(&msg, self.id.signing_private_key()));
+        // let signed_message = try!(SignedMessage::new(&msg, self.core.id().signing_private_key()));
         // self.send_swarm_or_parallel_signed_message(&signed_message, &destination)
     }
 
@@ -431,7 +427,7 @@ impl RoutingNode {
         -> Result<(), RoutingError> {
         unimplemented!()
         // let destination = msg.destination_address();
-        // let signed_message = try!(SignedMessage::new(msg, &self.id.signing_private_key()));
+        // let signed_message = try!(SignedMessage::new(msg, &self.core.id().signing_private_key()));
         // self.send_swarm_or_parallel_or_relay_signed_message(
         //     &signed_message, &destination)
     }
@@ -451,7 +447,7 @@ impl RoutingNode {
         signed_message: &SignedMessage, destination: &Authority)
         -> Result<(), RoutingError> {
         unimplemented!()
-        // if destination_address.non_relayed_destination() == self.id.name() {
+        // if destination_address.non_relayed_destination() == self.core.id().name() {
         //     let bytes = try!(encode(signed_message));
         //
         //     match *destination_address {
@@ -478,9 +474,9 @@ impl RoutingNode {
         // let connect_request = ConnectRequest {
         //     local_endpoints: self.accepting_on.clone(),
         //     external_endpoints: vec![],
-        //     requester_id: self.id.name(),
+        //     requester_id: self.core.id().name(),
         //     receiver_id: peer_id.clone(),
-        //     requester_fob: PublicId::new(&self.id),
+        //     requester_fob: PublicId::new(&self.core.id()),
         // };
         //
         // let message =  RoutingMessage {
@@ -531,14 +527,14 @@ impl RoutingNode {
         // };
         //
         // if self.routing_table.size() < types::QUORUM_SIZE  ||
-        //    *address == self.id.name().clone()
+        //    *address == self.core.id().name().clone()
         // {
         //     return true;
         // }
         //
         // match self.routing_table.our_close_group().last() {
         //     Some(furthest_close_node) => {
-        //         closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.id.name())
+        //         closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.core.id().name())
         //     },
         //     None => false  // ...should never reach here
         // }
