@@ -22,6 +22,7 @@ use types::Address;
 use id::Id;
 use NameType;
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ConnectionName {
    Relay(Address),
    Routing(NameType),

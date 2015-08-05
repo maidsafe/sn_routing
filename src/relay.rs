@@ -28,6 +28,8 @@ use id::Id;
 use public_id::PublicId;
 use types::Address;
 use NameType;
+use peer::Peer;
+use routing_core::ConnectionName;
 
 const MAX_RELAY : usize = 100;
 
@@ -35,8 +37,8 @@ const MAX_RELAY : usize = 100;
 /// we are relaying messages, when we are ourselves connected to the network.
 /// These have to identify as Client(sign::PublicKey)
 pub struct RelayMap {
-    relay_map  : BTreeSet<Peer>,
-    lookup_map : HashMap<Endpoint, Peer>,
+    relay_map  : BTreeMap<ConnectionName, Peer>,
+    lookup_map : HashMap<Endpoint, ConnectionName>,
 }
 
 impl RelayMap {
