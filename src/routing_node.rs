@@ -41,7 +41,7 @@ use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
 use messages::{RoutingMessage, SignedMessage, MessageType,
                ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
-use error::{RoutingError};
+use error::{RoutingError, ResponseError};
 use refresh_accumulator::RefreshAccumulator;
 
 
@@ -59,7 +59,7 @@ use refresh_accumulator::RefreshAccumulator;
 //use who_are_you::IAm;
 //use messages::{RoutingMessage, SignedMessage, MessageType,
 //               ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
-//use error::{RoutingError, ResponseError, InterfaceError};
+
 //use node_interface::MethodCall;
 
 //use id::Id;
@@ -106,7 +106,7 @@ pub struct RoutingNode {
 impl RoutingNode {
     pub fn new(action_sender   : mpsc::Sender<Action>,
                action_receiver : mpsc::Receiver<Action>,
-               event_sender    : mpsc::Sender<Event> ) -> RoutingNode {
+               event_sender    : mpsc::Sender<Event> ) -> Result<RoutingNode, RoutingError> {
         let id = Id::new();
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
@@ -114,34 +114,33 @@ impl RoutingNode {
         let _ = cm.start_accepting(vec![]);
         let accepting_on = cm.get_own_endpoints();
 
-        cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
-        let bootstraps : BTreeMap<Endpoint, Option<NameType>>
-            = match crust_receiver.recv() {
-            Ok(crust::Event::NewConnection(endpoint)) => BTreeMap::new(),
-            Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                RoutingNode::bootstrap(&cm)
-            },
-            _ => {
-                error!("The first event received from Crust is not a new connection.");
-                return Err(RoutingError::FailedToBootstrap)
-            }
-        };
-
-        RoutingNode {
+        Ok(RoutingNode {
             crust_sender        : crust_sender,
             crust_receiver      : crust_receiver,
             connection_manager  : cm,
             accepting_on        : accepting_on,
-            bootstraps          : bootstraps,
+            bootstraps          : BTreeMap::new(),
             action_receiver     : action_receiver,
             id                  : id,
-        }
+        })
     }
 
 
 
-    fn bootstrap(&mut cm : crust::ConnectionManager) -> BTreeMap<Endpoint, Option<NameType>> {
-        unimplemented!()
+    pub fn bootstrap(&mut self) {
+        // TODO (ben 05/08/2015) To be continued
+        // cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+        // let bootstraps : BTreeMap<Endpoint, Option<NameType>>
+        //     = match crust_receiver.recv() {
+        //     Ok(crust::Event::NewConnection(endpoint)) => BTreeMap::new(),
+        //     Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+        //         RoutingNode::bootstrap(cm)
+        //     },
+        //     _ => {
+        //         error!("The first event received from Crust is not a new connection.");
+        //         return Err(RoutingError::FailedToBootstrap)
+        //     }
+        // };
     }
 
     fn request_network_name(&mut cm : crust::ConnectionManager)

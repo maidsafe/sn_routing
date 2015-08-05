@@ -26,6 +26,7 @@ use routing_node::RoutingNode;
 use NameType;
 use data::{Data, DataRequest};
 use types::Bytes;
+use error::{RoutingError, ResponseError};
 
 //use types::{MessageId, Address};
 //use utils::{encode, decode};
@@ -34,6 +35,8 @@ use types::Bytes;
 //use error::{RoutingError};
 //use std::thread::spawn;
 //use std::collections::BTreeMap;
+
+type RoutingResult = Result<(), RoutingError>;
 
 /// Routing provides an actionable interface to RoutingNode.
 /// On constructing a new Routing object a RoutingNode will also be started.
@@ -48,18 +51,23 @@ pub struct Routing {
 impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
-    pub fn new(event_receiver : mpsc::Receiver<Event>) -> Routing {
+    pub fn new(event_receiver : mpsc::Receiver<Event>) -> Result<Routing, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
+        // TODO (ben 5/08/2015) Errors on starting RoutingNode should more aggressively
+        //      be handled internally
         // start the handler for routing
-        let routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
-            event_receiver);
-        Routing {
+        let routing_node = match RoutingNode::new(action_sender.clone(), action_receiver,
+            event_receiver) {
+                Ok(routing_node) => routing_node,
+                Err(e) => return Err(e),
+        };
+        Ok(Routing {
             given_keys    : None,
             action_sender : action_sender,
-        }
+        })
     }
 
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
