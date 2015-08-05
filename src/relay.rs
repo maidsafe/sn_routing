@@ -22,7 +22,7 @@
 //! These messages include bootstrap actions by starting nodes or relay messages for clients.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use time::{SteadyTime};
+use time::SteadyTime;
 use crust::Endpoint;
 use id::Id;
 use public_id::PublicId;
@@ -31,28 +31,20 @@ use NameType;
 
 const MAX_RELAY : usize = 100;
 
-
 /// The relay map is used to maintain a list of contacts for whom
 /// we are relaying messages, when we are ourselves connected to the network.
 /// These have to identify as Client(sign::PublicKey)
 pub struct RelayMap {
-    relay_map: BTreeMap<Address, (PublicId, BTreeSet<Endpoint>)>,
-    lookup_map: HashMap<Endpoint, Address>,
-    // FIXME : we don't want to store a value; but LRUcache can clear itself out
-    // however, we want the explicit timestamp stored and clear it at routing,
-    // to drop the connection on clearing; for now CM will just keep all these connections
-    unknown_connections: HashMap<Endpoint, SteadyTime>,
-    our_name: NameType,
+    relay_map  : BTreeSet<Peer>,
+    lookup_map : HashMap<Endpoint, Peer>,
 }
 
 impl RelayMap {
     /// This creates a new RelayMap.
-    pub fn new(our_id: &Id) -> RelayMap {
+    pub fn new() -> RelayMap {
         RelayMap {
-            relay_map: BTreeMap::new(),
-            lookup_map: HashMap::new(),
-            unknown_connections: HashMap::new(),
-            our_name: our_id.name(),
+            relay_map  : BTreeMap::new(),
+            lookup_map : HashMap::new(),
         }
     }
 
@@ -62,10 +54,6 @@ impl RelayMap {
     /// Returns false if the threshold was reached or name is our name.
     /// Returns false if the endpoint is already assigned to a different name.
     pub fn add_client(&mut self, relay_info: PublicId, relay_endpoint: Endpoint) -> bool {
-        // always reject our own id
-        if self.our_name == relay_info.name() {
-            return false;
-        }
         // impose limit on number of relay nodes active
         if !self.relay_map.contains_key(&Address::Client(relay_info.signing_public_key()))
             && self.relay_map.len() >= MAX_RELAY {

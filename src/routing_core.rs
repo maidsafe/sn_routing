@@ -21,17 +21,30 @@ use relay::RelayMap;
 use id::Id;
 use NameType;
 
+pub enum ConnectionName {
+   Relay(Address),
+   Routing(NameType),
+   Bootstrap(NameType),
+   UnidentifiedConnection,
+}
+
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
-/// table and the relay map.  Routing core deals in
+/// table and the relay map.  Routing core
 pub struct RoutingCore {
     id            : Id,
     network_name  : Option<NameType>,
-    routing_table : RoutingTable,
+    routing_table : Option<RoutingTable>,
     relay_map     : RelayMap,
 }
 
 impl RoutingCore {
-    pub fn new() -> RoutingCore {
-        unimplemented!()
+    pub fn new(id : Id) -> RoutingCore {
+
+        RoutingCore {
+            id            : id,
+            network_name  : None,
+            routing_table : None,
+            relay_map     : RelayMap::new(),
+        }
     }
 }

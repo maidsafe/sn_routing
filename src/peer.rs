@@ -20,7 +20,7 @@ use crust;
 
 use types::Address;
 use routing_core::ConnectionName;
-use public_id:PublicId;
+use public_id::PublicId;
 
 /// Peer enables multiple endpoints per peer in the network.
 /// It currently wraps around crust::endpoint, and will be extended to enable multiple

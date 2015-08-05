@@ -30,7 +30,7 @@ use action::Action;
 use event::Event;
 use NameType;
 use name_type::{closer_to_target_or_equal};
-use routing_table::{RoutingTable, NodeInfo};
+use routing_core::{RoutingCore, ConnectionName};
 use id::Id;
 use public_id::PublicId;
 use who_are_you::IAm;
@@ -73,12 +73,7 @@ use message_filter::MessageFilter;
 
 type RoutingResult = Result<(), RoutingError>;
 
-enum ConnectionName {
-   Relay(Address),
-   Routing(NameType),
-   Bootstrap(NameType),
-   UnidentifiedConnection,
-}
+
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
@@ -97,6 +92,7 @@ pub struct RoutingNode {
     // routing_table       : RoutingTable,
     // relay_map           : RelayMap,
     filter              : MessageFilter<types::FilterType>,
+    routing_core        : RoutingCore,
     // public_id_cache     : LruCache<NameType, PublicId>,
     // connection_cache    : BTreeMap<NameType, SteadyTime>,
     // refresh_accumulator : RefreshAccumulator,
