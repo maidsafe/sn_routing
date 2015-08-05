@@ -161,7 +161,7 @@ impl RoutingMessage {
     /// Return the filter value for this message,
     /// defined as (from_authority, message_id, to_authority)
     pub fn get_filter(&self) -> types::FilterType {
-       (self.source, self.message_id, self.destination)
+       (self.from_authority.clone(), self.message_id, self.to_authority.clone())
     }
 
     //pub fn from_authority(&self) -> Authority {
