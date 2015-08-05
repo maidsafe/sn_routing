@@ -43,6 +43,7 @@ use messages::{RoutingMessage, SignedMessage, MessageType,
                ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
 use error::{RoutingError, ResponseError};
 use refresh_accumulator::RefreshAccumulator;
+use message_filter::MessageFilter;
 
 
 //use lru_time_cache::LruCache;
@@ -95,7 +96,7 @@ pub struct RoutingNode {
     id                  : Id,
     // routing_table       : RoutingTable,
     // relay_map           : RelayMap,
-    // filter              : MessageFilter<types::FilterType>,
+    filter              : MessageFilter<types::FilterType>,
     // public_id_cache     : LruCache<NameType, PublicId>,
     // connection_cache    : BTreeMap<NameType, SteadyTime>,
     // refresh_accumulator : RefreshAccumulator,
@@ -120,6 +121,7 @@ impl RoutingNode {
             bootstraps          : BTreeMap::new(),
             action_receiver     : action_receiver,
             id                  : id,
+            filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
         })
     }
 

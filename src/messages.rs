@@ -155,10 +155,11 @@ impl RoutingMessage {
     //    self.destination.non_relayed_destination()
     //}
 
-    //// FIXME: add from_authority to filter value
-    //pub fn get_filter(&self) -> types::FilterType {
-    //    (self.source.clone(), self.message_id, self.destination.clone())
-    //}
+    /// Return the filter value for this message,
+    /// defined as (from_authority, message_id, to_authority)
+    pub fn get_filter(&self) -> types::FilterType {
+       (self.source, self.message_id, self.destination)
+    }
 
     //pub fn from_authority(&self) -> Authority {
     //    self.authority.clone()

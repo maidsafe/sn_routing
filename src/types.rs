@@ -20,6 +20,7 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use rand::random;
 use sodiumoxide::crypto::sign;
 use NameType;
+use authority::Authority;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -76,11 +77,11 @@ struct SignedKey {
   encrypt_public_key: crypto::box_::PublicKey,
 }
 
-//                        +-> from_node name
+//                        +-> from_authority
 //                        |           +-> preserve the message_id when sending on
-//                        |           |         +-> destination name
+//                        |           |         +-> to_authority
 //                        |           |         |
-pub type FilterType = (SourceAddress, MessageId, DestinationAddress);
+pub type FilterType = (Authority, MessageId, Authority);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum Address {

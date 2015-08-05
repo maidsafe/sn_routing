@@ -21,7 +21,7 @@ use NameType;
 use sodiumoxide::crypto;
 use messages::{RoutingMessage, MessageType};
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone)]
+#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Hash)]
 pub enum Authority {
     ClientManager(NameType),  // signed by a client and corresponding ClientName is in our range
     NaeManager(NameType),     // we are responsible for this element
