@@ -225,27 +225,22 @@ impl RoutingMessage {
 /// All messages sent / received are constructed as signed message.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
-    // We store here both, the encoded and non-encoded message, it's a bit
-    // space inefficient but allows us to call `verify_signature` without
-    // needing to encode it there.
-    body         : RoutingMessage,
-    encoded_body : Vec<u8>,
-    claimant     : types::Address,
-    //             when signed by Client(sign::PublicKey) the data needs to contain it as an owner
-    //             when signed by a Node(NameType), Sentinel needs to validate the signature
-    signature    : Signature,
+    body      : RoutingMessage,
+    claimant  : types::Address,
+    //          when signed by Client(sign::PublicKey) the data needs to contain it as an owner
+    //          when signed by a Node(NameType), Sentinel needs to validate the signature
+    signature : Signature,
 }
 
 impl SignedMessage {
     pub fn new(claimant: types::Address, message: RoutingMessage, private_sign_key: &sign::SecretKey)
         -> Result<SignedMessage, CborError> {
 
-        let encoded_body = try!(utils::encode(&message));
+        let encoded_body = try!(utils::encode(&(&message, &claimant)));
         let signature    = sign::sign_detached(&encoded_body, private_sign_key);
 
         Ok(SignedMessage {
             body         : message,
-            encoded_body : encoded_body,
             claimant     : claimant,
             signature    : signature
         })
@@ -254,29 +249,24 @@ impl SignedMessage {
     pub fn with_signature(claimant: types::Address, message: RoutingMessage, signature: Signature)
         -> Result<SignedMessage, CborError> {
 
-          let encoded_body = try!(utils::encode(&message));
-
           Ok(SignedMessage {
               body         : message,
-              encoded_body : encoded_body,
               claimant     : claimant,
               signature    : signature
           })
     }
 
     pub fn verify_signature(&self, public_sign_key: &sign::PublicKey) -> bool {
-        sign::verify_detached(&self.signature,
-                              &self.encoded_body,
-                              &public_sign_key)
+        let encoded_body = match utils::encode(&(&self.body, &self.claimant)) {
+            Ok(x)  => x,
+            Err(_) => return false,
+        };
+
+        sign::verify_detached(&self.signature, &encoded_body, &public_sign_key)
     }
 
     pub fn get_routing_message(&self) -> &RoutingMessage {
         &self.body
-    }
-
-    #[allow(dead_code)]
-    pub fn encoded_body(&self) -> &Vec<u8> {
-        &self.encoded_body
     }
 
     pub fn signature(&self) -> &Signature { &self.signature }
