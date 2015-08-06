@@ -98,7 +98,7 @@ pub struct RoutingNode {
     filter              : MessageFilter<types::FilterType>,
     core                : RoutingCore,
     // public_id_cache     : LruCache<NameType, PublicId>,
-    // connection_cache    : BTreeMap<NameType, SteadyTime>,
+    connection_cache    : BTreeMap<NameType, SteadyTime>,
     // refresh_accumulator : RefreshAccumulator,
 }
 
@@ -121,6 +121,7 @@ impl RoutingNode {
             action_receiver     : action_receiver,
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
             core                : RoutingCore::new(),
+            connection_cache    : BTreeMap::new(),
         })
     }
 
@@ -252,28 +253,27 @@ impl RoutingNode {
     /// all re-occurances of this name, and block a new connect request
     /// TODO: The behaviour of this function has been adapted to serve as a filter
     /// to cover for the lack of a filter on FindGroupResponse
-    fn refresh_routing_table(&mut self, from_node : &NameType) {
+    fn refresh_routing_table(&mut self, from_node : NameType) {
       // disable refresh when scanning on small routing_table size
-      // TODO (ben 5/08/2015) RoutingTable (and "connection_cache") are moved to core
-      // let time_now = SteadyTime::now();
-      // if !self.connection_cache.contains_key(from_node) {
-      //     if self.routing_table.check_node(from_node) {
-      //         ignore(self.send_connect_request_msg(&from_node));
-      //     }
-      //     self.connection_cache.entry(from_node.clone())
-      //         .or_insert(time_now);
-      //  }
-      //
-      //  let mut prune_blockage : Vec<NameType> = Vec::new();
-      //  for (blocked_node, time) in self.connection_cache.iter_mut() {
-      //      // clear block for nodes
-      //      if time_now - *time > Duration::seconds(10) {
-      //          prune_blockage.push(blocked_node.clone());
-      //      }
-      //  }
-      //  for prune_name in prune_blockage {
-      //      self.connection_cache.remove(&prune_name);
-      //  }
+      let time_now = SteadyTime::now();
+      if !self.connection_cache.contains_key(&from_node) {
+          if self.core.check_node(&ConnectionName::Routing(from_node)) {
+              ignore(self.send_connect_request_msg(&from_node));
+          }
+          self.connection_cache.entry(from_node.clone())
+              .or_insert(time_now);
+       }
+
+       let mut prune_blockage : Vec<NameType> = Vec::new();
+       for (blocked_node, time) in self.connection_cache.iter_mut() {
+           // clear block for nodes
+           if time_now - *time > Duration::seconds(10) {
+               prune_blockage.push(blocked_node.clone());
+           }
+       }
+       for prune_name in prune_blockage {
+           self.connection_cache.remove(&prune_name);
+       }
     }
 
     // -----Name-based Send Functions----------------------------------------
@@ -430,7 +430,7 @@ impl RoutingNode {
         // }
     }
 
-    fn send_connect_request_msg(&mut self, peer_id: &Authority) -> RoutingResult {
+    fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
         unimplemented!()
         // // FIXME: We're sending all accepting connections as local since we don't differentiate
         // // between local and external yet.
@@ -500,32 +500,6 @@ impl RoutingNode {
         //         closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.core.id().name())
         //     },
         //     None => false  // ...should never reach here
-        // }
-    }
-
-    fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<ConnectionName> {
-        unimplemented!()
-        // prioritise routing table
-        // match self.routing_table.lookup_endpoint(&endpoint) {
-        //     Some(name) => Some(ConnectionName::Routing(name)),
-        //     // secondly look in the relay_map
-        //     None => match self.relay_map.lookup_endpoint(&endpoint) {
-        //         Some(name) => Some(ConnectionName::Relay(name)),
-        //         // check to see if it is our bootstrap_endpoint
-        //         None => match self.bootstrap {
-        //             Some((ref bootstrap_ep, ref bootstrap_name)) => {
-        //                 if bootstrap_ep == endpoint {
-        //                     Some(ConnectionName::Bootstrap(bootstrap_name.clone()))
-        //                 } else {
-        //                     None
-        //                 }
-        //             },
-        //             None => match self.relay_map.lookup_unknown_connection(&endpoint) {
-        //                 true => Some(ConnectionName::UnidentifiedConnection),
-        //                 false => None
-        //             }
-        //         }
-        //     }
         // }
     }
 
