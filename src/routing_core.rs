@@ -24,6 +24,7 @@ use types::Address;
 use id::Id;
 use NameType;
 
+/// ConnectionName labels the counterparty on a connection in relation to us
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ConnectionName {
    Relay(Address),
@@ -42,6 +43,7 @@ pub struct RoutingCore {
 }
 
 impl RoutingCore {
+    /// Start a RoutingCore with a new Id and the disabled RoutingTable
     pub fn new() -> RoutingCore {
         let id = Id::new();
         RoutingCore {
@@ -52,7 +54,44 @@ impl RoutingCore {
         }
     }
 
+    ///
     pub fn id(&self) -> &Id {
         &self.id
+    }
+
+    /// Assigning a network received name to the core.
+    /// If a name is already assigned, the function returns false and no action is taken.
+    /// After a name is assigned, Routing connections can be accepted.
+    pub fn assign_network_name(&mut self, network_name: &NameType) -> bool {
+        // if routing_table is constructed, reject name assignment
+        match self.routing_table {
+            Some(_) => return false,
+            None => {},
+        };
+        if !self.id.assign_relocated_name(network_name.clone()) {
+            return false };
+        self.routing_table = Some(RoutingTable::new(&network_name));
+        true
+    }
+
+    /// Look up an endpoint in the routing table and the relay map and return the ConnectionName
+    pub fn lookup_endpoint(&self, endpoint: &crust::Endpoint) -> Option<ConnectionName> {
+        let routing_name = match self.routing_table {
+            Some(ref routing_table) => {
+                match routing_table.lookup_endpoint(&endpoint) {
+                    Some(name) => Some(ConnectionName::Routing(name)),
+                    None => None,
+                }
+            },
+            None => None,
+        };
+
+        match routing_name {
+            Some(name) => Some(name),
+            None => match self.relay_map.lookup_endpoint(&endpoint) {
+                Some(peer) => Some(peer.identity().clone()),
+                None => None,
+            }
+        }
     }
 }
