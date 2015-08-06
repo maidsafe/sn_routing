@@ -111,6 +111,10 @@ impl RelayMap {
     pub fn lookup_connection_name(&self, identity: &ConnectionName) -> Option<&Peer> {
         self.relay_map.get(identity)
     }
+
+    pub fn is_full(&self) -> bool {
+        self.relay_map.len() <= MAX_RELAY
+    }
 }
 
 #[cfg(test)]
