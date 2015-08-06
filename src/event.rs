@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use messages::RoutingMessage;
+use messages::{RoutingMessage, Request, Response};
 use name_type::NameType;
 use sodiumoxide::crypto::sign;
 
@@ -34,6 +34,17 @@ use sodiumoxide::crypto::sign;
 ///      are processed and empty.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
+    Request {
+        request        : Request,
+        our_authority  : Authority,
+        from_authority : Authority,
+        response_token : Vec<u8>,
+    },
+    Response {
+        response       : Response,
+        our_authority  : Authority,
+        from_authority : Authority,
+    },
     MessageSecured(RoutingMessage, Authority, Option<sign::Signature>),
     //             ~~|~~~~~~~~~~~  ~~|~~~~~~  ~~|~~~~~~~~~~~~~~
     //               |               |          | the original signature when the RoutingMessage
