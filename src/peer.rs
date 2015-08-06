@@ -54,7 +54,7 @@ impl Peer {
         }
     }
 
-    pub fn identity(&self) -> &Address {
+    pub fn identity(&self) -> &ConnectionName {
         &self.identity
     }
 
@@ -62,11 +62,11 @@ impl Peer {
         &self.endpoint
     }
 
-    pub fn public_id(&self) -> Option<PublicId> {
+    pub fn public_id(&self) -> &Option<PublicId> {
         &self.public_id
     }
 
-    pub fn connected_timestamp(&self) -> SteadyTime {
+    pub fn connected_timestamp(&self) -> &SteadyTime {
         &self.connected_timestamp
     }
 
