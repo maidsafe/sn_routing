@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use messages::{RoutingMessage, Request, Response};
+use messages::{RoutingMessage, ExternalRequest, ExternalResponse};
 use name_type::NameType;
 use sodiumoxide::crypto::sign;
 
@@ -35,13 +35,13 @@ use sodiumoxide::crypto::sign;
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     Request {
-        request        : Request,
+        request        : ExternalRequest,
         our_authority  : Authority,
         from_authority : Authority,
         response_token : Vec<u8>,
     },
     Response {
-        response       : Response,
+        response       : ExternalResponse,
         our_authority  : Authority,
         from_authority : Authority,
     },
