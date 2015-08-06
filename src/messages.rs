@@ -253,4 +253,15 @@ impl SignedMessage {
     }
 
     pub fn signature(&self) -> &Signature { &self.signature }
+
+    pub fn encoded_body(&self) -> Result<Vec<u8>, CborError> {
+        utils::encode(&(&self.body, &self.claimant))
+    }
+
+    pub fn as_token(&self) -> Result<SignedToken, CborError> {
+        Ok(SignedToken {
+            serialised_request : try!(self.encoded_body()),
+            signature          : self.signature().clone(),
+        })
+    }
 }

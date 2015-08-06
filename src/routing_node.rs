@@ -41,7 +41,7 @@ use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
 
 use messages::{RoutingMessage,
-               SignedMessage,
+               SignedMessage, SignedToken,
                ConnectRequest,
                ConnectResponse,
                ErrorReturn,
@@ -219,6 +219,10 @@ impl RoutingNode {
         }
         //
         // pre-sentinel message handling
+
+        // TODO: Calculate our authority and make sure it is the same
+        //       as the to_authority from arguments. (if not, don't
+        //       send to the user).
         match message.content {
             //MessageType::GetKey => self.handle_get_key(header, body),
             //MessageType::GetGroupKey => self.handle_get_group_key(header, body),
@@ -248,12 +252,27 @@ impl RoutingNode {
             }
             Content::InternalResponse(response, serialised_request) => {
             }
-            Content::ExternalRequest(_) => {
+            Content::ExternalRequest(request) => {
+                self.send_to_user(Event::Request {
+                    request        : request,
+                    our_authority  : message.to_authority,
+                    from_authority : message.from_authority,
+                    response_token : try!(message_wrap.as_token()),
+                })
             }
-            Content::ExternalResponse(_) => {
+            Content::ExternalResponse(response) => {
+                self.send_to_user(Event::Response {
+                    response       : response,
+                    our_authority  : message.to_authority,
+                    from_authority : message.from_authority,
+                })
             }
         }
         Ok(())
+    }
+
+    fn send_to_user(&self, _event: Event) {
+        unimplemented!()
     }
 
     /// Scan all passing messages for the existance of nodes in the address space.
