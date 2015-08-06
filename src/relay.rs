@@ -193,43 +193,45 @@ mod test {
         assert_eq!(false, relay_map.contains_relay_for(&test_conflicting_id))
     }
 
-    #[test]
-    fn add_multiple_endpoints() {
-        let our_id : Id = Id::new();
-        let mut relay_map = RelayMap::new(&our_id);
-        assert!(super::MAX_RELAY - 1 > 0);
-        // ensure relay_map is all but full, so multiple endpoints are not counted as different
-        // relays.
-        while relay_map.relay_map.len() < super::MAX_RELAY - 1 {
-            let new_endpoint = generate_random_endpoint();
-            if !relay_map.contains_endpoint(&new_endpoint) {
-                assert_eq!(true, relay_map.add_client(PublicId::new(&Id::new()),
-                    new_endpoint)); };
-        }
-        let test_public_id = PublicId::new(&Id::new());
-        let test_id = Address::Client(test_public_id.signing_public_key());
-
-        let mut test_endpoint_1 = generate_random_endpoint();
-        let mut test_endpoint_2 = generate_random_endpoint();
-        loop {
-            if !relay_map.contains_endpoint(&test_endpoint_1) { break; }
-            test_endpoint_1 = generate_random_endpoint(); };
-        loop {
-            if !relay_map.contains_endpoint(&test_endpoint_2) { break; }
-            test_endpoint_2 = generate_random_endpoint(); };
-        assert_eq!(true, relay_map.add_client(test_public_id.clone(),
-                                               test_endpoint_1.clone()));
-        assert_eq!(true, relay_map.contains_relay_for(&test_id));
-        assert_eq!(true, relay_map.contains_endpoint(&test_endpoint_1));
-        assert_eq!(false, relay_map.add_client(test_public_id.clone(),
-                                                test_endpoint_1.clone()));
-        assert_eq!(true, relay_map.add_client(test_public_id.clone(),
-                                               test_endpoint_2.clone()));
-        assert!(relay_map.get_endpoints(&test_id).unwrap().1
-                         .contains(&test_endpoint_1));
-        assert!(relay_map.get_endpoints(&test_id).unwrap().1
-                         .contains(&test_endpoint_2));
-    }
+    // TODO (ben 6/08/2015) multiple endpoints are not supported by RelayMap
+    // until Peer supports it.
+    // #[test]
+    // fn add_multiple_endpoints() {
+    //     let our_id : Id = Id::new();
+    //     let mut relay_map = RelayMap::new(&our_id);
+    //     assert!(super::MAX_RELAY - 1 > 0);
+    //     // ensure relay_map is all but full, so multiple endpoints are not counted as different
+    //     // relays.
+    //     while relay_map.relay_map.len() < super::MAX_RELAY - 1 {
+    //         let new_endpoint = generate_random_endpoint();
+    //         if !relay_map.contains_endpoint(&new_endpoint) {
+    //             assert_eq!(true, relay_map.add_client(PublicId::new(&Id::new()),
+    //                 new_endpoint)); };
+    //     }
+    //     let test_public_id = PublicId::new(&Id::new());
+    //     let test_id = Address::Client(test_public_id.signing_public_key());
+    //
+    //     let mut test_endpoint_1 = generate_random_endpoint();
+    //     let mut test_endpoint_2 = generate_random_endpoint();
+    //     loop {
+    //         if !relay_map.contains_endpoint(&test_endpoint_1) { break; }
+    //         test_endpoint_1 = generate_random_endpoint(); };
+    //     loop {
+    //         if !relay_map.contains_endpoint(&test_endpoint_2) { break; }
+    //         test_endpoint_2 = generate_random_endpoint(); };
+    //     assert_eq!(true, relay_map.add_client(test_public_id.clone(),
+    //                                            test_endpoint_1.clone()));
+    //     assert_eq!(true, relay_map.contains_relay_for(&test_id));
+    //     assert_eq!(true, relay_map.contains_endpoint(&test_endpoint_1));
+    //     assert_eq!(false, relay_map.add_client(test_public_id.clone(),
+    //                                             test_endpoint_1.clone()));
+    //     assert_eq!(true, relay_map.add_client(test_public_id.clone(),
+    //                                            test_endpoint_2.clone()));
+    //     assert!(relay_map.get_endpoints(&test_id).unwrap().1
+    //                      .contains(&test_endpoint_1));
+    //     assert!(relay_map.get_endpoints(&test_id).unwrap().1
+    //                      .contains(&test_endpoint_2));
+    // }
 
     // TODO: add test for drop_endpoint
 
