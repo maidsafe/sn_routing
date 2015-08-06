@@ -45,7 +45,6 @@ use messages::{RoutingMessage,
                ConnectRequest,
                ConnectResponse,
                ErrorReturn,
-               GetDataResponse,
                Content,
                Request, Response, InternalRequest, InternalResponse };
 
@@ -569,12 +568,12 @@ impl RoutingNode {
     }
 
     fn handle_node_get_data_response(&mut self, _signed_message : SignedMessage,
-            message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
+            message: RoutingMessage, response: Data) -> RoutingResult {
         unimplemented!()
     }
 
     fn handle_client_get_data_response(&mut self, _orig_message : SignedMessage,
-            message: RoutingMessage, response: GetDataResponse) -> RoutingResult {
+            message: RoutingMessage, response: Data) -> RoutingResult {
         unimplemented!()
     }
 }

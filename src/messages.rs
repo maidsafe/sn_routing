@@ -67,23 +67,6 @@ impl SignedToken {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, PartialOrd, Ord, Debug, RustcEncodable, RustcDecodable)]
-pub struct GetDataResponse {
-    pub data           : Data,
-    pub orig_request   : SignedToken,
-    // If this is a group response, we carry the
-    // (name, pub_key) pairs with it for sentinel.
-    // In a similar fassion as GetGroupKeyResponse
-    // message does.
-    pub group_pub_keys : BTreeMap<NameType, sign::PublicKey>,
-}
-
-impl GetDataResponse {
-    pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
-        self.orig_request.verify_signature(requester_pub_key)
-    }
-}
-
 /// Response error which can be verified that originated from our request.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ErrorReturn {
@@ -117,7 +100,7 @@ pub enum Request {
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum Response {
-    Get(GetDataResponse),
+    Get(Data),
     Put(ErrorReturn),
     Post(ErrorReturn),
     Delete(ErrorReturn),
