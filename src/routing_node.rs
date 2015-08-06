@@ -39,8 +39,16 @@ use types::{MessageId, Bytes, Address};
 use utils::{encode, decode};
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
-use messages::{RoutingMessage, SignedMessage, MessageType,
-               ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
+
+use messages::{RoutingMessage,
+               SignedMessage,
+               ConnectRequest,
+               ConnectResponse,
+               ErrorReturn,
+               GetDataResponse,
+               Content,
+               Request, Response, InternalRequest, InternalResponse };
+
 use error::{RoutingError, ResponseError};
 use refresh_accumulator::RefreshAccumulator;
 use message_filter::MessageFilter;
@@ -158,68 +166,19 @@ impl RoutingNode {
     fn message_received(&mut self, message_wrap : SignedMessage,
                        ) -> RoutingResult {
 
-        let message = try!(message_wrap.get_routing_message());
+        let message = message_wrap.get_routing_message().clone();
 
         // filter check
         if self.filter.check(&message.get_filter()) {
             // should just return quietly
-            debug!("FILTER BLOCKED message {:?} from {:?} to {:?}", message.message_type,
+            debug!("FILTER BLOCKED message {:?} from {:?} to {:?}", message.content,
                 message.source(), message.destination());
             return Err(RoutingError::FilterCheckFailed);
         }
-        debug!("message {:?} from {:?} to {:?}", message.message_type,
+        debug!("message {:?} from {:?} to {:?}", message.content,
             message.source(), message.destination());
         // add to filter
         self.filter.add(message.get_filter());
-
-        // TODO: Caching will be implemented differently, kept code for reference.
-        //       Feel free to delete it.
-        //
-        //// Caching on GetData and GetDataRequest
-        //match message.message_type {
-        //    // Add to cache, only for ImmutableData; For StructuredData caching
-        //    // can result in old versions being returned.
-        //    MessageType::GetDataResponse(ref response) => {
-        //        match response.data {
-        //            Data::ImmutableData(ref immutable_data) => {
-        //                let from = message.from_group()
-        //                                  .unwrap_or(message.non_relayed_source());
-
-        //                ignore(self.mut_interface().handle_cache_put(
-        //                    message.from_authority(),
-        //                    from,
-        //                    Data::ImmutableData(immutable_data.clone())));
-        //            },
-        //            _ => {}
-        //        }
-        //    },
-        //    // check cache
-        //    MessageType::GetData(ref data_request) => {
-        //        let from = message.from_group()
-        //                          .unwrap_or(message.non_relayed_source());
-
-        //        let method_call = self.mut_interface().handle_cache_get(
-        //                        data_request.clone(),
-        //                        message.non_relayed_destination(),
-        //                        from);
-
-        //        match method_call {
-        //            Ok(MethodCall::Reply { data }) => {
-        //                let response = GetDataResponse {
-        //                    data           : data,
-        //                    orig_request   : message_wrap.clone(),
-        //                    group_pub_keys : BTreeMap::new()
-        //                };
-        //                let our_authority = our_authority(&message, &self.routing_table);
-        //                ignore(self.send_reply(
-        //                    &message, our_authority, MessageType::GetDataResponse(response)));
-        //            },
-        //            _ => (),
-
-        //        }
-        //    },
-        //    _ => {}
-        //}
 
         // Forward
         ignore(self.send_swarm_or_parallel_or_relay_with_signature(
@@ -229,13 +188,12 @@ impl RoutingNode {
             self.address_in_close_group_range(&message.destination());
 
         // Handle FindGroupResponse
-        match  message.message_type {
-            MessageType::FindGroupResponse(ref vec_of_public_ids) =>
-                ignore(self.handle_find_group_response(
-                            vec_of_public_ids.clone(),
-                            address_in_close_group_range.clone())),
-             _ => (),
-        };
+        if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids), _)
+                = message.content {
+            ignore(self.handle_find_group_response(
+                        vec_of_public_ids.clone(),
+                        address_in_close_group_range.clone()));
+        }
 
         if !address_in_close_group_range {
             return Ok(());
@@ -243,41 +201,47 @@ impl RoutingNode {
 
         // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
         // and this node is in the group but the message destination is another group member node.
-        match  message.message_type {
-            MessageType::ConnectRequest(_) |
-            MessageType::ConnectResponse(_) =>
+        match message.content {
+            Content::InternalRequest(InternalRequest::Connect(_)) |
+            Content::InternalResponse(InternalResponse::Connect(_), _) => {
                 match message.destination() {
                     Authority::ClientManager(_)  => return Ok(()), // TODO: Should be error
                     Authority::NaeManager(_)     => return Ok(()), // TODO: Should be error
                     Authority::NodeManager(_)    => return Ok(()), // TODO: Should be error
-                    Authority::ManagedNode(name) => if name != self.core.id().name() { return Ok(()) },
+                    Authority::ManagedNode(name) => if name != self.core.id().name() {
+                        return Ok(())
+                    },
                     Authority::Client(_, _)      => return Ok(()), // TODO: Should be error
-                },
+                }
+            }
             _ => (),
         }
         //
         // pre-sentinel message handling
-        match message.message_type {
+        match message.content {
             //MessageType::GetKey => self.handle_get_key(header, body),
             //MessageType::GetGroupKey => self.handle_get_group_key(header, body),
-            MessageType::ConnectRequest(request) => self.handle_connect_request(request, message_wrap),
+            Content::InternalRequest(InternalRequest::Connect(request)) =>
+                self.handle_connect_request(request, message_wrap),
             _ => {
                 // Sentinel check
 
+                // TODO:
                 // switch message type
-                match message.message_type {
-                    MessageType::ConnectResponse(response) =>
-                        self.handle_connect_response(response),
-                    MessageType::FindGroup =>
-                         self.handle_find_group(message),
-                    MessageType::PutPublicId(ref id) =>
-                        self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
-                    MessageType::Refresh(ref tag, ref data) =>
-                        self.handle_refresh(message.clone(), tag.clone(), data.clone()),
-                    _ => {
-                        Err(RoutingError::UnknownMessageType)
-                    }
-                }
+                //match message.message_type {
+                //    MessageType::ConnectResponse(response) =>
+                //        self.handle_connect_response(response),
+                //    MessageType::FindGroup =>
+                //         self.handle_find_group(message),
+                //    MessageType::PutPublicId(ref id) =>
+                //        self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
+                //    MessageType::Refresh(ref tag, ref data) =>
+                //        self.handle_refresh(message.clone(), tag.clone(), data.clone()),
+                //    _ => {
+                //        Err(RoutingError::UnknownMessageType)
+                //    }
+                //}
+                Ok(())
             }
         }
     }

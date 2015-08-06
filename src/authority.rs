@@ -19,7 +19,7 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use routing_table::RoutingTable;
 use NameType;
 use sodiumoxide::crypto;
-use messages::{RoutingMessage, MessageType};
+use messages::{RoutingMessage, Content, Request, Response, InternalRequest, InternalResponse};
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Hash)]
 pub enum Authority {
@@ -84,28 +84,31 @@ pub fn our_authority(message       : &RoutingMessage,
     // Purposely listing all the cases and not using wild cards so
     // that if a new message is added to the MessageType enum, compiler
     // will warn us that we need to add it here.
-    let element = match message.message_type {
-        MessageType::ConnectRequest(_)      => None,
-        MessageType::ConnectResponse(_)     => None,
-        MessageType::FindGroup              => None,
-        MessageType::FindGroupResponse(_)   => None,
-        MessageType::GetData(_)             => {
-            Some(message.destination().get_location().clone())
+    let element = match message.content {
+        Content::Request(ref request) => {
+            match *request {
+                // Previously we used the destination for this, but David
+                // noted that we should probably use `name` from the data
+                // request. But data_request contains no such information
+                // so this needs to be revisited.
+                Request::Get(ref data_request) => unimplemented!(),
+                Request::Put(ref data)         => Some(data.name()),
+                Request::Post(ref data)        => Some(data.name()),
+                Request::Delete(_)             => None,
+                Request::Refresh(_, _)         => None,
+            }
         },
-        MessageType::GetDataResponse(_)     => None,
-        MessageType::DeleteData(_)          => None,
-        MessageType::DeleteDataResponse(_)  => None,
-        MessageType::GetGroupKey            => None,
-        MessageType::GetGroupKeyResponse(_) => None,
-        MessageType::Post(ref data)         => Some(data.name()),
-        MessageType::PostResponse(_, _)     => None,
-        MessageType::PutData(ref data)      => Some(data.name()),
-        MessageType::PutDataResponse(_, _)  => None,
-        MessageType::PutKey                 => None,
-        MessageType::PutPublicId(ref public_id) => Some(public_id.name()),
-        MessageType::PutPublicIdResponse(_, _) => None,
-        MessageType::Refresh(_,_)           => None,
-        MessageType::Unknown                => None,
+        Content::InternalRequest(ref request) => {
+            match *request {
+                InternalRequest::Connect(_)                 => None,
+                InternalRequest::FindGroup                  => None,
+                InternalRequest::GetGroupKey                => None,
+                InternalRequest::PutKey                     => None,
+                InternalRequest::PutPublicId(ref public_id) => Some(public_id.name()),
+            }
+        },
+        Content::Response(_)            => None,
+        Content::InternalResponse(_, _) => None,
     };
 
     let element = match element {
