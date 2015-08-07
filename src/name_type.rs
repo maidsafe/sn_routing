@@ -51,23 +51,23 @@ impl NameType {
 
     // private function exposed in fmt Debug {:?} and Display {} traits
     fn get_debug_id(&self) -> String {
-      format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
-              self.0[0],
-              self.0[1],
-              self.0[2],
-              self.0[NAME_TYPE_LEN-3],
-              self.0[NAME_TYPE_LEN-2],
-              self.0[NAME_TYPE_LEN-1])
+        format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+            self.0[0],
+            self.0[1],
+            self.0[2],
+            self.0[NAME_TYPE_LEN-3],
+            self.0[NAME_TYPE_LEN-2],
+            self.0[NAME_TYPE_LEN-1])
     }
 
     // private function exposed in fmt LowerHex {:x} trait
     // note(ben): UpperHex explicitly not implemented to prevent mixed usage
     fn get_full_id(&self) -> String {
-      let mut full_id = String::with_capacity(2 * NAME_TYPE_LEN);
-      for char in self.0.iter() {
-        full_id.push_str(format!("{:02x}", char).as_str());
-      }
-      full_id
+        let mut full_id = String::with_capacity(2 * NAME_TYPE_LEN);
+        for char in self.0.iter() {
+            full_id.push_str(format!("{:02x}", char).as_str());
+        }
+        full_id
     }
 }
 
