@@ -220,9 +220,11 @@ impl RoutingNode {
         //
         // pre-sentinel message handling
 
-        // TODO: Calculate our authority and make sure it is the same
-        //       as the to_authority from arguments. (if not, don't
-        //       send to the user).
+        if self.our_authority(&message)
+            .map(|our_auth| message.to_authority == our_auth).unwrap_or(false) {
+            return Err(RoutingError::BadAuthority);
+        }
+
         match message.content {
             //MessageType::GetKey => self.handle_get_key(header, body),
             //MessageType::GetGroupKey => self.handle_get_group_key(header, body),
@@ -261,13 +263,41 @@ impl RoutingNode {
                 })
             }
             Content::ExternalResponse(response) => {
-                self.send_to_user(Event::Response {
-                    response       : response,
-                    our_authority  : message.to_authority,
-                    from_authority : message.from_authority,
-                })
+                try!(self.handle_external_response(response,
+                                                   message.to_authority,
+                                                   message.from_authority))
             }
         }
+        Ok(())
+    }
+
+    fn handle_external_response(&self, response       : ExternalResponse,
+                                       to_authority   : Authority,
+                                       from_authority : Authority) -> RoutingResult {
+
+        let orig_request_msg = try!(response.get_orig_request());
+
+        // Have we sent the request?
+        if *orig_request_msg.claimant() != *self.name() {
+            return Err(RoutingError::UnknownMessageType)
+        }
+
+        if !orig_request_msg.verify_signature(self.public_sign_key()) {
+            return Err(RoutingError::FailedSignature)
+        }
+
+        let orig_request = match orig_request_msg.get_routing_message().content {
+            Content::ExternalRequest(ref request) => request.clone(),
+            _ => return Err(RoutingError::UnknownMessageType)
+        };
+
+        self.send_to_user(Event::Response {
+            response       : response,
+            our_authority  : to_authority,
+            from_authority : from_authority,
+            orig_request   : orig_request,
+        });
+
         Ok(())
     }
 
@@ -303,6 +333,18 @@ impl RoutingNode {
     // ----- Send Functions -----------------------------------------------------------------------
 
     fn send_to_user(&self, _event: Event) {
+        unimplemented!()
+    }
+
+    fn name(&self) -> &Address {
+        unimplemented!()
+    }
+
+    fn our_authority(&self, message: &RoutingMessage) -> Option<Authority> {
+        unimplemented!()
+    }
+
+    fn public_sign_key(&self) -> &sign::PublicKey {
         unimplemented!()
     }
 

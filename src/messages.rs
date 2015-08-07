@@ -123,6 +123,19 @@ pub enum ExternalResponse {
     Delete(ErrorReturn),
 }
 
+impl ExternalResponse {
+    pub fn get_orig_request(&self) -> Result<SignedMessage, CborError> {
+        let token = match *self {
+            ExternalResponse::Get(ref r)    => &r.orig_request,
+            ExternalResponse::Put(ref r)    => &r.orig_request,
+            ExternalResponse::Post(ref r)   => &r.orig_request,
+            ExternalResponse::Delete(ref r) => &r.orig_request,
+        };
+
+        SignedMessage::new_from_token(token.clone())
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
     Connect(ConnectRequest),
@@ -239,6 +252,16 @@ impl SignedMessage {
           })
     }
 
+    pub fn new_from_token(signed_token : SignedToken) -> Result<SignedMessage, CborError> {
+        let (message, claimant) = try!(utils::decode(&signed_token.serialised_request));
+
+        Ok(SignedMessage {
+            body      : message,
+            claimant  : claimant,
+            signature : signed_token.signature
+        })
+    }
+
     pub fn verify_signature(&self, public_sign_key: &sign::PublicKey) -> bool {
         let encoded_body = match utils::encode(&(&self.body, &self.claimant)) {
             Ok(x)  => x,
@@ -263,5 +286,9 @@ impl SignedMessage {
             serialised_request : try!(self.encoded_body()),
             signature          : self.signature().clone(),
         })
+    }
+
+    pub fn claimant(&self) -> &types::Address {
+        &self.claimant
     }
 }
