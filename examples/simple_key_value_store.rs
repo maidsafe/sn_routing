@@ -28,14 +28,12 @@
         while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results, variant_size_differences)]
-#![feature(convert, core)]
 
 #[macro_use]
 extern crate log;
 extern crate env_logger;
 
 extern crate cbor;
-extern crate core;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate maidsafe_sodiumoxide as sodiumoxide;
@@ -43,7 +41,6 @@ extern crate maidsafe_sodiumoxide as sodiumoxide;
 extern crate crust;
 extern crate routing;
 
-use core::iter::FromIterator;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
