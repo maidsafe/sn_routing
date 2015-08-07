@@ -24,6 +24,7 @@ use action::Action;
 use event::Event;
 use routing_node::RoutingNode;
 use NameType;
+use authority::Authority;
 use data::{Data, DataRequest};
 use types::Bytes;
 use error::{RoutingError, ResponseError};
