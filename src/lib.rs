@@ -32,7 +32,9 @@
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
        html_root_url = "http://maidsafe.github.io/routing")]
 // #![warn(missing_docs)]
-#![deny(dead_code, unused_variables, unused_features, unused_attributes)]
+// #![deny(dead_code, unused_variables, unused_features, unused_attributes)]
+#![deny(unused_features, unused_attributes)]
+#![allow(dead_code, unused_variables, unused_imports)]
 #![forbid(bad_style, warnings)]
 
 #[macro_use]
@@ -52,22 +54,21 @@ extern crate message_filter;
 extern crate sentinel;
 
 mod common_bits;
+mod action;
 mod macros;
 mod messages;
 mod name_type;
 mod routing_table;
+mod routing_node;
+mod routing_core;
 mod relay;
 mod who_are_you;
 
-pub mod client_interface;
-pub mod node_interface;
-pub mod routing_client;
-pub mod routing_node;
-pub mod routing_membrane;
+pub mod routing;
 pub mod refresh_accumulator;
-pub mod sendable;
 pub mod test_utils;
 pub mod types;
+pub mod peer;
 pub mod id;
 pub mod utils;
 pub mod public_id;
@@ -80,3 +81,4 @@ pub mod data;
 pub mod event;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
+pub use messages::SignedToken;

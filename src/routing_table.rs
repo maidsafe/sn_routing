@@ -370,7 +370,7 @@ impl RoutingTable {
         8 * index_of_mismatch + common_bits as usize
     }
 
-    fn has_node(&self, node_id: &NameType) -> bool {
+    pub fn has_node(&self, node_id: &NameType) -> bool {
         for node_info in &self.routing_table {
             if node_info.id() == *node_id {
                 return true;

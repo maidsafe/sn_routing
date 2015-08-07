@@ -49,9 +49,19 @@ impl Data {
 
 #[derive(Debug, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
 pub enum DataRequest {
-    StructuredData(u64),
-    ImmutableData(ImmutableDataType),
-    PlainData,
+    StructuredData(NameType, u64),
+    ImmutableData(NameType, ImmutableDataType),
+    PlainData(NameType),
+}
+
+impl DataRequest {
+    pub fn name(&self) -> &NameType {
+        match *self {
+            DataRequest::StructuredData(ref name, _) => name,
+            DataRequest::ImmutableData(ref name, _)  => name,
+            DataRequest::PlainData(ref name)         => name,
+        }
+    }
 }
 
 #[cfg(test)]
