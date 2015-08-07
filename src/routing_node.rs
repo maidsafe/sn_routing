@@ -183,8 +183,7 @@ impl RoutingNode {
         self.filter.add(message.get_filter());
 
         // Forward
-        ignore(self.send_swarm_or_parallel_or_relay_with_signature(
-            &message, message_wrap.signature().clone()));
+        ignore(self.send(message_wrap.clone()));
 
         let address_in_close_group_range =
             self.address_in_close_group_range(&message.destination());
@@ -272,10 +271,6 @@ impl RoutingNode {
         Ok(())
     }
 
-    fn send_to_user(&self, _event: Event) {
-        unimplemented!()
-    }
-
     /// Scan all passing messages for the existance of nodes in the address space.
     /// If a node is detected with a name that would improve our routing table,
     /// then try to connect.  During a delay of 5 seconds, we collapse
@@ -305,158 +300,16 @@ impl RoutingNode {
        }
     }
 
-    // -----Name-based Send Functions----------------------------------------
+    // ----- Send Functions -----------------------------------------------------------------------
 
-    fn send_out_as_relay(&mut self, name: &Address, msg: Bytes) {
+    fn send_to_user(&self, _event: Event) {
         unimplemented!()
-        // let mut failed_endpoints : Vec<Endpoint> = Vec::new();
-        // match self.relay_map.get_endpoints(name) {
-        //     Some(&(_, ref endpoints)) => {
-        //         for endpoint in endpoints {
-        //             match self.connection_manager.send(endpoint.clone(), msg.clone()) {
-        //                 Ok(_) => break,
-        //                 Err(_) => {
-        //                     info!("Dropped relay connection {:?} on failed attempt
-        //                         to relay for node {:?}", endpoint, name);
-        //                     failed_endpoints.push(endpoint.clone());
-        //                 }
-        //             };
-        //         }
-        //     },
-        //     None => {}
-        // };
-        // for failed_endpoint in failed_endpoints {
-        //     self.relay_map.drop_endpoint(&failed_endpoint);
-        //     self.connection_manager.drop_node(failed_endpoint);
-        // }
     }
 
-    fn send_swarm_or_parallel(&self, msg : &RoutingMessage) -> Result<(), RoutingError> {
+    /// Send queries the core for a vector of endpoints over which the signed message
+    /// needs to be sent out.
+    fn send(&self, signed_message : SignedMessage) -> RoutingResult {
         unimplemented!()
-        // let destination = msg.destination();
-        // let signed_message = try!(SignedMessage::new(&msg, self.core.id().signing_private_key()));
-        // self.send_swarm_or_parallel_signed_message(&signed_message, &destination)
-    }
-
-    #[allow(dead_code)]
-    fn send_swarm_or_parallel_with_signature(&self, msg: &RoutingMessage,
-        signature : Signature) -> Result<(), RoutingError> {
-        unimplemented!()
-        // let destination = msg.non_relayed_destination();
-        // let signed_message = try!(SignedMessage::with_signature(&msg,
-        //     signature));
-        // self.send_swarm_or_parallel_signed_message(&signed_message, &destination)
-    }
-
-    fn send_swarm_or_parallel_signed_message(&self, signed_message : &SignedMessage,
-        destination: &NameType) -> Result<(), RoutingError> {
-        unimplemented!()
-        // if self.routing_table.size() > 0 {
-        //     let bytes = try!(encode(&signed_message));
-        //
-        //     for peer in self.routing_table.target_nodes(&destination) {
-        //         match peer.connected_endpoint {
-        //             Some(peer_endpoint) => {
-        //                 ignore(self.connection_manager.send(peer_endpoint, bytes.clone()));
-        //             },
-        //             None => {}
-        //         };
-        //     }
-        //
-        //     // FIXME(ben 24/07/2015)
-        //     // if the destination is within range for us,
-        //     // we are also part of the effective close group for destination.
-        //     // RoutingTable does not include ourselves in the target nodes,
-        //     // so we should check the filter (to avoid eternal looping)
-        //     // and also handle it ourselves.
-        //     // Instead we can for now rely on swarming to send it back to us.
-        //     Ok(())
-        // } else {
-        //     match self.bootstrap {
-        //         Some((ref bootstrap_endpoint, _)) => {
-        //             let msg = try!(encode(&signed_message));
-        //
-        //             match self.connection_manager.send(bootstrap_endpoint.clone(), msg) {
-        //                 Ok(_)  => Ok(()),
-        //                 Err(e) => Err(RoutingError::Io(e))
-        //             }
-        //         },
-        //         None => {
-        //             // FIXME(ben 24/07/2015)
-        //             // This is a patch for the above: if we have no routing table connections,
-        //             // we are the only member of the effective close group for the target.
-        //             // In this case we can reflect it back to ourselves
-        //             // - and take the risk of piling up the stack; or holding other messages;
-        //             // afterall we are the only node on the network, as far as we know.
-        //
-        //             // if routing table size is zero any target is in range, so no need to check
-        //             self.send_reflective_to_us(signed_message)
-        //         }
-        //     }
-        // }
-    }
-
-    // When we swarm a message, we are also part of the effective close group.
-    // This is catered for under normal swarm, as our neighbours will send the message back,
-    // when we have no routing table connections, we explicitly have no choice, but to loop
-    // it back to ourselves
-    // this is the logically correct behaviour.
-    fn send_reflective_to_us(&self, signed_message: &SignedMessage) -> Result<(), RoutingError> {
-        unimplemented!()
-        // TODO (ben 4/08/2015) use the action_sender to send a message back to ourselves.
-        // let bytes = try!(encode(&signed_message));
-        // let new_event = CrustEvent::NewMessage(self.reflective_endpoint.clone(), bytes);
-        // match self.sender_clone.send(new_event) {
-        //     Ok(_) => {},
-        //     // FIXME(ben 24/07/2015) we have a broken channel with crust,
-        //     // should terminate node
-        //     Err(_) => return Err(RoutingError::FailedToBootstrap)
-        // };
-        // Ok(())
-    }
-
-    fn send_swarm_or_parallel_or_relay(&mut self, msg: &RoutingMessage)
-        -> Result<(), RoutingError> {
-        unimplemented!()
-        // let destination = msg.destination_address();
-        // let signed_message = try!(SignedMessage::new(msg, &self.core.id().signing_private_key()));
-        // self.send_swarm_or_parallel_or_relay_signed_message(
-        //     &signed_message, &destination)
-    }
-
-    fn send_swarm_or_parallel_or_relay_with_signature(&mut self, msg: &RoutingMessage,
-        signature: Signature) -> Result<(), RoutingError> {
-        unimplemented!()
-        //
-        // let destination = msg.destination_address();
-        // let signed_message = try!(SignedMessage::with_signature(
-        //     msg, signature));
-        // self.send_swarm_or_parallel_or_relay_signed_message(
-        //     &signed_message, &destination)
-    }
-
-    fn send_swarm_or_parallel_or_relay_signed_message(&mut self,
-        signed_message: &SignedMessage, destination: &Authority)
-        -> Result<(), RoutingError> {
-        unimplemented!()
-        // if destination_address.non_relayed_destination() == self.core.id().name() {
-        //     let bytes = try!(encode(signed_message));
-        //
-        //     match *destination_address {
-        //         DestinationAddress::RelayToClient(_, public_key) => {
-        //             self.send_out_as_relay(&Address::Client(public_key), bytes.clone());
-        //         },
-        //         DestinationAddress::RelayToNode(_, node_address) => {
-        //             self.send_out_as_relay(&Address::Node(node_address), bytes.clone());
-        //         },
-        //         DestinationAddress::Direct(_) => {},
-        //     }
-        //     Ok(())
-        // }
-        // else {
-        //     self.send_swarm_or_parallel_signed_message(
-        //         signed_message, &destination_address.non_relayed_destination())
-        // }
     }
 
     fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
