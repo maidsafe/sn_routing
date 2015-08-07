@@ -41,13 +41,14 @@ use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
 
 use messages::{RoutingMessage,
-               SignedMessage,
+               SignedMessage, SignedToken,
                ConnectRequest,
                ConnectResponse,
                ErrorReturn,
                GetDataResponse,
                Content,
-               Request, Response, InternalRequest, InternalResponse };
+               ExternalRequest, ExternalResponse,
+               InternalRequest, InternalResponse };
 
 use error::{RoutingError, ResponseError};
 use refresh_accumulator::RefreshAccumulator;
@@ -219,32 +220,60 @@ impl RoutingNode {
         }
         //
         // pre-sentinel message handling
+
+        // TODO: Calculate our authority and make sure it is the same
+        //       as the to_authority from arguments. (if not, don't
+        //       send to the user).
         match message.content {
             //MessageType::GetKey => self.handle_get_key(header, body),
             //MessageType::GetGroupKey => self.handle_get_group_key(header, body),
-            Content::InternalRequest(InternalRequest::Connect(request)) =>
-                self.handle_connect_request(request, message_wrap),
-            _ => {
-                // Sentinel check
+            //Content::InternalRequest(InternalRequest::Connect(request)) =>
+            //    self.handle_connect_request(request, message_wrap),
+            //_ => {
+            //    // Sentinel check
 
-                // TODO:
-                // switch message type
-                //match message.message_type {
-                //    MessageType::ConnectResponse(response) =>
-                //        self.handle_connect_response(response),
-                //    MessageType::FindGroup =>
-                //         self.handle_find_group(message),
-                //    MessageType::PutPublicId(ref id) =>
-                //        self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
-                //    MessageType::Refresh(ref tag, ref data) =>
-                //        self.handle_refresh(message.clone(), tag.clone(), data.clone()),
-                //    _ => {
-                //        Err(RoutingError::UnknownMessageType)
-                //    }
-                //}
-                Ok(())
+            //    // TODO:
+            //    // switch message type
+            //    //match message.message_type {
+            //    //    MessageType::ConnectResponse(response) =>
+            //    //        self.handle_connect_response(response),
+            //    //    MessageType::FindGroup =>
+            //    //         self.handle_find_group(message),
+            //    //    MessageType::PutPublicId(ref id) =>
+            //    //        self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
+            //    //    MessageType::Refresh(ref tag, ref data) =>
+            //    //        self.handle_refresh(message.clone(), tag.clone(), data.clone()),
+            //    //    _ => {
+            //    //        Err(RoutingError::UnknownMessageType)
+            //    //    }
+            //    //}
+            //    Ok(())
+            //}
+            Content::InternalRequest(request) => {
+            }
+            Content::InternalResponse(response, serialised_request) => {
+            }
+            Content::ExternalRequest(request) => {
+                self.send_to_user(Event::Request {
+                    request        : request,
+                    our_authority  : message.to_authority,
+                    from_authority : message.from_authority,
+                    response_token : try!(message_wrap.as_token()),
+                })
+            }
+            Content::ExternalResponse(response) => {
+                self.send_to_user(Event::Response {
+                    response       : response,
+                    our_authority  : message.to_authority,
+                    from_authority : message.from_authority,
+                })
             }
         }
+        Ok(())
+    }
+
+    fn send_to_user(&self, _event: Event) {
+        unimplemented!()
     }
 
     /// Scan all passing messages for the existance of nodes in the address space.

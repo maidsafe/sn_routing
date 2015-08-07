@@ -107,7 +107,7 @@ impl ErrorReturn {
 
 /// These are the messageTypes routing provides
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum Request {
+pub enum ExternalRequest {
     Get(DataRequest),
     Put(Data),
     Post(Data),
@@ -116,7 +116,7 @@ pub enum Request {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum Response {
+pub enum ExternalResponse {
     Get(GetDataResponse),
     Put(ErrorReturn),
     Post(ErrorReturn),
@@ -142,9 +142,9 @@ pub enum InternalResponse {
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum Content {
-    Request(Request),
+    ExternalRequest(ExternalRequest),
     InternalRequest(InternalRequest),
-    Response(Response),
+    ExternalResponse(ExternalResponse),
     InternalResponse(InternalResponse, Vec<u8> /* serialised request */),
 }
 
@@ -174,28 +174,11 @@ impl RoutingMessage {
         self.to_authority.clone()
     }
 
-    //pub fn non_relayed_source(&self) -> NameType {
-    //    self.source.non_relayed_source()
-    //}
-
-    //#[allow(dead_code)]
-    //pub fn actual_source(&self) -> types::Address {
-    //    self.source.actual_source()
-    //}
-
-    //pub fn non_relayed_destination(&self) -> NameType {
-    //    self.destination.non_relayed_destination()
-    //}
-
     /// Return the filter value for this message,
     /// defined as (from_authority, message_id, to_authority)
     pub fn get_filter(&self) -> types::FilterType {
        (self.from_authority.clone(), self.message_id, self.to_authority.clone())
     }
-
-    //pub fn from_authority(&self) -> Authority {
-    //    self.authority.clone()
-    //}
 
     pub fn client_key(&self) -> Option<sign::PublicKey> {
         match self.from_authority {
@@ -270,4 +253,15 @@ impl SignedMessage {
     }
 
     pub fn signature(&self) -> &Signature { &self.signature }
+
+    pub fn encoded_body(&self) -> Result<Vec<u8>, CborError> {
+        utils::encode(&(&self.body, &self.claimant))
+    }
+
+    pub fn as_token(&self) -> Result<SignedToken, CborError> {
+        Ok(SignedToken {
+            serialised_request : try!(self.encoded_body()),
+            signature          : self.signature().clone(),
+        })
+    }
 }

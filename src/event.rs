@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use messages::{RoutingMessage, Request, Response};
+use messages::{RoutingMessage, ExternalRequest, ExternalResponse, SignedToken};
 use name_type::NameType;
 use sodiumoxide::crypto::sign;
 
@@ -35,24 +35,16 @@ use sodiumoxide::crypto::sign;
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     Request {
-        request        : Request,
+        request        : ExternalRequest,
         our_authority  : Authority,
         from_authority : Authority,
-        response_token : Vec<u8>,
+        response_token : SignedToken,
     },
     Response {
-        response       : Response,
+        response       : ExternalResponse,
         our_authority  : Authority,
         from_authority : Authority,
     },
-    MessageSecured(RoutingMessage, Authority, Option<sign::Signature>),
-    //             ~~|~~~~~~~~~~~  ~~|~~~~~~  ~~|~~~~~~~~~~~~~~
-    //               |               |          | the original signature when the RoutingMessage
-    //               |               |          | is signed by a Client or ManagedNode
-    //               |               | our authority as calculated
-    //               |               | note: can be removed if we enforce it to be identical
-    //               |               |       to RoutingMessage::to_authority
-    //               | secured routing message
     Refresh(u64, NameType, Vec<Vec<u8>>),
     //      ~|~  ~~|~~~~~  ~~|~~~~~~~~~
     //       |     |         | payloads is a vector of serialised account records as sent out

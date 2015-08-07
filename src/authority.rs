@@ -19,7 +19,9 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use routing_table::RoutingTable;
 use NameType;
 use sodiumoxide::crypto;
-use messages::{RoutingMessage, Content, Request, Response, InternalRequest, InternalResponse};
+use messages::{RoutingMessage, Content,
+               ExternalRequest, ExternalResponse,
+               InternalRequest, InternalResponse};
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Hash)]
 pub enum Authority {
@@ -85,17 +87,17 @@ pub fn our_authority(message       : &RoutingMessage,
     // that if a new message is added to the MessageType enum, compiler
     // will warn us that we need to add it here.
     let element = match message.content {
-        Content::Request(ref request) => {
+        Content::ExternalRequest(ref request) => {
             match *request {
                 // Previously we used the destination for this, but David
                 // noted that we should probably use `name` from the data
                 // request. But data_request contains no such information
                 // so this needs to be revisited.
-                Request::Get(ref data_request) => unimplemented!(),
-                Request::Put(ref data)         => Some(data.name()),
-                Request::Post(ref data)        => Some(data.name()),
-                Request::Delete(_)             => None,
-                Request::Refresh(_, _)         => None,
+                ExternalRequest::Get(ref data_request) => unimplemented!(),
+                ExternalRequest::Put(ref data)         => Some(data.name()),
+                ExternalRequest::Post(ref data)        => Some(data.name()),
+                ExternalRequest::Delete(_)             => None,
+                ExternalRequest::Refresh(_, _)         => None,
             }
         },
         Content::InternalRequest(ref request) => {
@@ -107,7 +109,7 @@ pub fn our_authority(message       : &RoutingMessage,
                 InternalRequest::PutPublicId(ref public_id) => Some(public_id.name()),
             }
         },
-        Content::Response(_)            => None,
+        Content::ExternalResponse(_)    => None,
         Content::InternalResponse(_, _) => None,
     };
 
