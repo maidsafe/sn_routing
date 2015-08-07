@@ -239,6 +239,16 @@ impl SignedMessage {
           })
     }
 
+    pub fn new_from_token(signed_token : SignedToken) -> Result<SignedMessage, CborError> {
+        let (message, claimant) = try!(utils::decode(&signed_token.serialised_request));
+
+        Ok(SignedMessage {
+            body      : message,
+            claimant  : claimant,
+            signature : signed_token.signature
+        })
+    }
+
     pub fn verify_signature(&self, public_sign_key: &sign::PublicKey) -> bool {
         let encoded_body = match utils::encode(&(&self.body, &self.claimant)) {
             Ok(x)  => x,
