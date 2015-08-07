@@ -220,9 +220,11 @@ impl RoutingNode {
         //
         // pre-sentinel message handling
 
-        // TODO: Calculate our authority and make sure it is the same
-        //       as the to_authority from arguments. (if not, don't
-        //       send to the user).
+        if self.our_authority(&message)
+            .map(|our_auth| message.to_authority == our_auth).unwrap_or(false) {
+            return Err(RoutingError::BadAuthority);
+        }
+
         match message.content {
             //MessageType::GetKey => self.handle_get_key(header, body),
             //MessageType::GetGroupKey => self.handle_get_group_key(header, body),
@@ -303,6 +305,10 @@ impl RoutingNode {
     // ----- Send Functions -----------------------------------------------------------------------
 
     fn send_to_user(&self, _event: Event) {
+        unimplemented!()
+    }
+
+    fn our_authority(&self, message: &RoutingMessage) -> Option<Authority> {
         unimplemented!()
     }
 
