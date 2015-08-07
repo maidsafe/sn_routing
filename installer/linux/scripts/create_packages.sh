@@ -6,9 +6,9 @@
 hash fpm 2>/dev/null || {
   echo >&2 "
 You need fpm.  Run:
-    sudo apt-get install ruby-dev gcc
+    sudo apt-get install ruby-dev rubygems gcc -y
 OR
-    sudo yum install ruby-devel gcc
+    sudo yum install ruby-devel rubygems gcc
 
 Then run:
     sudo gem install fpm
@@ -21,7 +21,7 @@ Then run:
 hash rpmbuild 2>/dev/null || {
   echo >&2 "
 You need rpm-build.  Run:
-    sudo apt-get install rpm
+    sudo apt-get install rpm -y
 OR
     sudo yum install rpm-build
 
@@ -31,4 +31,4 @@ OR
 
 Platform=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-${0%/*}/../../common/scripts/invoke_fpm.sh ${Platform##*/}
+"${0%/*}/../../common/scripts/invoke_fpm.sh" ${Platform##*/}

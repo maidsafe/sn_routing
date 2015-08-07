@@ -3,7 +3,8 @@
 # Create a package for Vault Release binaries
 
 # Stop the script if any command fails
-set -e
+set -o errtrace
+trap 'exit' ERR
 
 # Get current version and executable's name from Cargo.toml
 RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
@@ -242,6 +243,7 @@ function create_package {
 cd "$RootDir"
 cargo update
 cargo build --release
+rm -rf "$RootDir/packages/$Platform" || true
 if [[ "$1" == "linux" ]]
 then
   prepare_systemd_scripts
