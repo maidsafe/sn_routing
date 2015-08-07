@@ -129,7 +129,7 @@ impl Routing {
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
-    pub fn refresh(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
+    pub fn refresh(&self, type_tag: u64, from_group: NameType, content: Bytes) {
         unimplemented!()
     }
 

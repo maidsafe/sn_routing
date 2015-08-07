@@ -93,7 +93,6 @@ pub fn our_authority(message       : &RoutingMessage,
                 ExternalRequest::Put(ref data)         => Some(data.name()),
                 ExternalRequest::Post(ref data)        => Some(data.name()),
                 ExternalRequest::Delete(_)             => None,
-                ExternalRequest::Refresh(_, _)         => None,
             }
         },
         Content::InternalRequest(ref request) => {
@@ -101,8 +100,8 @@ pub fn our_authority(message       : &RoutingMessage,
                 InternalRequest::Connect(_)                 => None,
                 InternalRequest::FindGroup                  => None,
                 InternalRequest::GetGroupKey                => None,
-                InternalRequest::PutKey                     => None,
                 InternalRequest::PutPublicId(ref public_id) => Some(public_id.name()),
+                InternalRequest::Refresh(_, _)              => None,
             }
         },
         Content::ExternalResponse(_)    => None,

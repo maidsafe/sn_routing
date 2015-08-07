@@ -74,7 +74,6 @@ pub enum ExternalRequest {
     Put(Data),
     Post(Data),
     Delete(DataRequest),
-    Refresh(u64, Vec<u8>),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -109,8 +108,8 @@ pub enum InternalRequest {
     Connect(ConnectRequest),
     FindGroup,
     GetGroupKey,
-    PutKey,
     PutPublicId(PublicId),
+    Refresh(u64, Vec<u8>),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
