@@ -67,27 +67,6 @@ impl SignedToken {
     }
 }
 
-/// Response error which can be verified that originated from our request.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct ErrorReturn {
-    pub error        : ResponseError,
-    pub orig_request : SignedToken
-}
-
-impl ErrorReturn {
-    #[allow(dead_code)]
-    pub fn new(error: ResponseError, orig_request: SignedToken) -> ErrorReturn {
-        ErrorReturn {
-            error        : error,
-            orig_request : orig_request,
-        }
-    }
-
-    pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
-        self.orig_request.verify_signature(requester_pub_key)
-    }
-}
-
 /// These are the messageTypes routing provides
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalRequest {
@@ -100,22 +79,28 @@ pub enum ExternalRequest {
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalResponse {
-    Get(Data),
-    Put(ErrorReturn),
-    Post(ErrorReturn),
-    Delete(ErrorReturn),
+    Get   (Data,          SignedToken),
+    Put   (ResponseError, SignedToken),
+    Post  (ResponseError, SignedToken),
+    Delete(ResponseError, SignedToken),
 }
 
 impl ExternalResponse {
-    pub fn get_orig_request(&self) -> Result<SignedMessage, CborError> {
-        let token = match *self {
-            ExternalResponse::Get(ref r)    => &r.orig_request,
-            ExternalResponse::Put(ref r)    => &r.orig_request,
-            ExternalResponse::Post(ref r)   => &r.orig_request,
-            ExternalResponse::Delete(ref r) => &r.orig_request,
-        };
+    pub fn get_signed_token(&self) -> &SignedToken {
+        match *self {
+            ExternalResponse::Get(_, ref r)    => r,
+            ExternalResponse::Put(_, ref r)    => r,
+            ExternalResponse::Post(_, ref r)   => r,
+            ExternalResponse::Delete(_, ref r) => r,
+        }
+    }
 
-        SignedMessage::new_from_token(token.clone())
+    pub fn get_orig_request(&self) -> Result<SignedMessage, CborError> {
+        SignedMessage::new_from_token(self.get_signed_token().clone())
+    }
+
+    pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
+        self.get_signed_token().verify_signature(requester_pub_key)
     }
 }
 

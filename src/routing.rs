@@ -27,6 +27,7 @@ use NameType;
 use data::{Data, DataRequest};
 use types::Bytes;
 use error::{RoutingError, ResponseError};
+use authority::Authority;
 
 //use types::{MessageId, Address};
 //use utils::{encode, decode};

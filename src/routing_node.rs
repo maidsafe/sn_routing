@@ -44,7 +44,6 @@ use messages::{RoutingMessage,
                SignedMessage, SignedToken,
                ConnectRequest,
                ConnectResponse,
-               ErrorReturn,
                Content,
                ExternalRequest, ExternalResponse,
                InternalRequest, InternalResponse };
@@ -67,7 +66,7 @@ use message_filter::MessageFilter;
 //use authority::{Authority, our_authority};
 //use who_are_you::IAm;
 //use messages::{RoutingMessage, SignedMessage, MessageType,
-//               ConnectRequest, ConnectResponse, ErrorReturn, GetDataResponse};
+//               ConnectRequest, ConnectResponse, GetDataResponse};
 
 //use node_interface::MethodCall;
 
@@ -439,14 +438,12 @@ impl RoutingNode {
         unimplemented!()
     }
 
-    fn handle_put_data_response(&mut self, _signed_message: SignedMessage,
-            message: RoutingMessage, response: ErrorReturn) -> RoutingResult {
+    fn handle_put_data_response(&mut self, _signed_message: SignedMessage)
+        -> RoutingResult {
         unimplemented!()
     }
 
-    fn handle_post_response(&mut self, signed_message: SignedMessage,
-                                       message: RoutingMessage,
-                                       response: ErrorReturn) -> RoutingResult {
+    fn handle_post_response(&mut self, signed_message: SignedMessage) -> RoutingResult {
         unimplemented!()
     }
 
