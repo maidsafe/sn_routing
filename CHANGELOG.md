@@ -1,5 +1,29 @@
 # Routing - Change Log
 
+### [0.3.0] Unified Data and refactor for channel interface
+- [MAID-1158](https://maidsafe.atlassian.net/browse/MAID-1158) Unified Data
+    - [MAID-1159](https://maidsafe.atlassian.net/browse/MAID-1159) Implement PlainData
+    - [MAID-1160](https://maidsafe.atlassian.net/browse/MAID-1160) Implement ImmutableData
+    - [MAID-1163](https://maidsafe.atlassian.net/browse/MAID-1163) Implement StructuredData
+    - [MAID-1165](https://maidsafe.atlassian.net/browse/MAID-1165) StructuredData::is_valid_successor
+    - [MAID-1166](https://maidsafe.atlassian.net/browse/MAID-1166) Unit Tests for PlainData and ImmutableData
+    - [MAID-1167](https://maidsafe.atlassian.net/browse/MAID-1167) Unit Tests for StructuredData
+    - [MAID-1168](https://maidsafe.atlassian.net/browse/MAID-1168) Unit Test IsValidSuccessor for StructuredData
+    - [MAID-1171](https://maidsafe.atlassian.net/browse/MAID-1171) Implement UnifiedData enum
+    - [MAID-1172](https://maidsafe.atlassian.net/browse/MAID-1172) Update with UnifiedData: GetData and GetDataResponse
+    - [MAID-1173](https://maidsafe.atlassian.net/browse/MAID-1173) Update with UnifiedData: PutData and PutDataResponse
+    - [MAID-1175](https://maidsafe.atlassian.net/browse/MAID-1175) Update with UnifiedData: RoutingMembrane RoutingClient Put and Get
+    - [MAID-1176](https://maidsafe.atlassian.net/browse/MAID-1176) Update with UnifiedData: Interfaces and churn
+- [MAID-1179](https://maidsafe.atlassian.net/browse/MAID-1179) Implement Post and PostResponse
+- [MAID-1170](https://maidsafe.atlassian.net/browse/MAID-1170) Update RoutingClient and relay node: RoutingMessage
+- [MAID-1251](https://maidsafe.atlassian.net/browse/MAID-1251) Remove option first from routing node
+- [MAID-1255](https://maidsafe.atlassian.net/browse/MAID-1255) RFC 0001 - Use public key for id on all messages
+    - [MAID-1256](https://maidsafe.atlassian.net/browse/MAID-1256) Remove redundant field header.source.reply_to
+    - [MAID-1257](https://maidsafe.atlassian.net/browse/MAID-1257) Modify Authority enum
+- [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
+
+- [#557](https://github.com/maidsafe/routing/pull/557) channel architecture and simplified message
+
 ## [0.2.8] - Version updates and minor fixes
 
 - Updated dependencies' versions

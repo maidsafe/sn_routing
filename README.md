@@ -14,6 +14,10 @@ Routing - a specialised storage DHT
 | [API Documentation - master branch](http://maidsafe.net/routing/master/) | [SAFE Network System Documention](http://systemdocs.maidsafe.net) | [MaidSafe website](http://maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
 |:------:|:-------:|:-------:|:-------:|
 
+#Important notice on 6 August 2015
+
+The routing library is undergoing an important rewriting.  The external API and the internal outlines have been laid out.  The library is currently not in a functional state.  To obtain the last functional state of Routing we refer to Routing version 0.2.8, as published on crates.io.  We expect it to be a few more days of work before routing will be published as version 0.3.1, the first expected functional version of the new routing API. The published version 0.3.0 should only be used by a user library to compile against, and prepare for the upcoming new interface.
+
 #Overview
 
 A secured [DHT](http://en.wikipedia.org/wiki/Distributed_hash_table), based on a [kademlia-like](http://en.wikipedia.org/wiki/Kademlia) implementation, but with some very stark differences. This is a recursive as opposed to iterative network, enabling easier NAT traversal and providing more efficient use of routers and larger networks. This also allows very fast reconfiguration of network changes, aleviating the requirement for a refresh algorithm. A recursive solution based on a network protocol layer that is 'connection oriented' also allows a close group to be aligned with security protocols.
