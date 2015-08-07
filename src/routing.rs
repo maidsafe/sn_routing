@@ -73,30 +73,32 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will only bootstrap to the network and not attempt to
     /// achieve full routing node status.
-    pub fn new_client(event_receiver : mpsc::Receiver<Event>) -> Routing {
+    pub fn new_client(event_receiver : mpsc::Receiver<Event>)
+        -> Result<Routing, RoutingError> {
         unimplemented!()
     }
 
-    pub fn clone_with_keys() -> Routing {
+    /// Clone the interface
+    pub fn clone_with_keys(&self, keys : Id) -> Routing {
         unimplemented!()
     }
 
     /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get(&mut self, location: NameType, data : DataRequest) {
+    pub fn get_request(&mut self, location: Authority, data : DataRequest) {
         unimplemented!()
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put(&mut self, destination: NameType, data : Data) {
+    pub fn put_request(&mut self, location: Authority, data : Data) {
         unimplemented!()
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn post(&mut self, destination: NameType, data : Data) {
+    pub fn post_request(&mut self, location: Authority, data : Data) {
         unimplemented!()
     }
 
-    pub fn delete(&mut self, _destination: NameType, _data : Data) {
+    pub fn delete_request(&mut self, _destination: NameType, _data : Data) {
         unimplemented!()
     }
 
@@ -105,6 +107,11 @@ impl Routing {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
     pub fn refresh(&mut self, type_tag: u64, from_group: NameType, content: Bytes) {
+        unimplemented!()
+    }
+
+    ///
+    pub fn stop(&mut self) {
         unimplemented!()
     }
 }
