@@ -133,7 +133,8 @@ impl Routing {
         unimplemented!()
     }
 
-    ///
+    /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
+    /// messages.  After handling all messages it will send an Event::Terminated to the user.
     pub fn stop(&mut self) {
         unimplemented!()
     }
