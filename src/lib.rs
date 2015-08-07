@@ -81,3 +81,4 @@ pub mod data;
 pub mod event;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
+pub use messages::SignedToken;

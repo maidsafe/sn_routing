@@ -22,6 +22,7 @@ use std::sync::mpsc;
 use id::Id;
 use action::Action;
 use event::Event;
+use messages::SignedToken;
 use routing_node::RoutingNode;
 use NameType;
 use data::{Data, DataRequest};
@@ -45,16 +46,18 @@ type RoutingResult = Result<(), RoutingError>;
 /// cloned with a new set of keys while preserving a single RoutingNode.
 #[derive(Clone)]
 pub struct Routing {
-    given_keys    : Option<Id>,
+    keys          : Id,
     action_sender : mpsc::Sender<Action>,
 }
 
 impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
+    /// The intial Routing object will have newly generated keys
     pub fn new(event_sender : mpsc::Sender<Event>) -> Result<Routing, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
+        let keys = Id::new();
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
         // TODO (ben 5/08/2015) Errors on starting RoutingNode should more aggressively
@@ -66,7 +69,7 @@ impl Routing {
                 Err(e) => return Err(e),
         };
         Ok(Routing {
-            given_keys    : None,
+            keys          : keys,
             action_sender : action_sender,
         })
     }
@@ -79,27 +82,46 @@ impl Routing {
         unimplemented!()
     }
 
-    /// Clone the interface
+    /// Clone the interface while maintaining the same RoutingNode, with a given set of keys.
     pub fn clone_with_keys(&self, keys : Id) -> Routing {
         unimplemented!()
     }
 
-    /// Retrieve something from the network (non mutating) - Direct call
-    pub fn get_request(&mut self, location: Authority, data : DataRequest) {
+    /// Send a Get message with a DataRequest to an Authority, signed with given keys.
+    pub fn get_request(&self, location : Authority, data_request : DataRequest) {
         unimplemented!()
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn put_request(&mut self, location: Authority, data : Data) {
+    pub fn put_request(&self, location : Authority, data : Data) {
         unimplemented!()
     }
 
     /// Add something to the network, will always go via ClientManager group
-    pub fn post_request(&mut self, location: Authority, data : Data) {
+    pub fn post_request(&self, location : Authority, data : Data) {
         unimplemented!()
     }
 
-    pub fn delete_request(&mut self, _destination: NameType, _data : Data) {
+    pub fn delete_request(&self, location : Authority, data_request : DataRequest) {
+        unimplemented!()
+    }
+
+    pub fn get_response(&self, location : Authority, data: Data, signed_token : SignedToken) {
+        unimplemented!()
+    }
+
+    pub fn put_response(&self, location : Authority, response_error : ResponseError,
+        signed_token : SignedToken) {
+        unimplemented!()
+    }
+
+    pub fn post_response(&self, location : Authority, response_error : ResponseError,
+        signed_token : SignedToken) {
+        unimplemented!()
+    }
+
+    pub fn delete_response(&self, location : Authority, response_error : ResponseError,
+        signed_token : SignedToken) {
         unimplemented!()
     }
 
