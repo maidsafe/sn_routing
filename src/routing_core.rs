@@ -21,6 +21,7 @@ use crust;
 use routing_table::RoutingTable;
 use relay::RelayMap;
 use types::Address;
+use authority::Authority;
 use id::Id;
 use NameType;
 
@@ -95,6 +96,26 @@ impl RoutingCore {
         }
     }
 
+    /// Returns the ConnectionName if either a Routing(name) is found in RoutingTable,
+    /// or Relay(Address::Node(name)) or Bootstrap(name) is found in the RelayMap.
+    pub fn lookup_name(&self, name : &NameType) -> Option<ConnectionName> {
+        let routing_name = match self.routing_table {
+            Some(ref routing_table) => {
+                if routing_table.has_node(name) {
+                    Some(ConnectionName::Routing(name.clone()))
+                } else { None } },
+            None => None,
+        };
+
+        match routing_name {
+            Some(found_name) => Some(found_name),
+            None => match self.relay_map.lookup_name(name) {
+                Some(relay_name) => Some(relay_name),
+                None => None,
+            }
+        }
+    }
+
     /// Check whether a certain identity is of interest to the core.
     /// For a Routing(NameType), the routing table will be consulted;
     /// for completeness we quote the documentation of RoutingTable::check_node below.
@@ -145,5 +166,9 @@ impl RoutingCore {
                 self.routing_table.is_none() },
             ConnectionName::Unidentified(_) => true,
         }
+    }
+
+    pub fn target_endpoints(&self, to_authority : &Authority) -> Vec<crust::Endpoint> {
+        unimplemented!()
     }
 }

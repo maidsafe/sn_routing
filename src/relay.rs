@@ -57,6 +57,11 @@ impl RelayMap {
     /// Returns false if the threshold was reached or identity already exists.
     /// Returns false if the endpoint is already assigned (to a different name).
     pub fn add_peer(&mut self, identity: ConnectionName, endpoint: Endpoint) -> bool {
+        // reject Routing peers from relay_map
+        match identity {
+            ConnectionName::Routing(_) => return false,
+            _ => {},
+        };
         // impose limit on number of relay nodes active
         if !self.relay_map.contains_key(&identity)  // legacy for multiple endpoints per identity
             && self.relay_map.len() >= MAX_RELAY {
@@ -103,7 +108,24 @@ impl RelayMap {
     pub fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<&Peer> {
         match self.lookup_map.get(endpoint) {
             Some(identity) => self.relay_map.get(&identity),
-            None => None
+            None => None,
+        }
+    }
+
+    // Returns the ConnectionName if either a Relay(Address::Node(name))
+    // or Bootstrap(name) is found in the relay map.
+    pub fn lookup_name(&self, name : &NameType) -> Option<ConnectionName> {
+        let relay_name = match self.relay_map.get(
+            &ConnectionName::Relay(Address::Node(name.clone()))) {
+            Some(peer) => Some(peer.identity().clone()),
+            None => None,
+        };
+        match relay_name {
+            None => match self.relay_map.get(&ConnectionName::Bootstrap(name.clone())) {
+                Some(peer) => Some(peer.identity().clone()),
+                None => None,
+            },
+            Some(found_name) => Some(found_name),
         }
     }
 
