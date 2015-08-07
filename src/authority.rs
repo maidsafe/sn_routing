@@ -89,11 +89,7 @@ pub fn our_authority(message       : &RoutingMessage,
     let element = match message.content {
         Content::ExternalRequest(ref request) => {
             match *request {
-                // Previously we used the destination for this, but David
-                // noted that we should probably use `name` from the data
-                // request. But data_request contains no such information
-                // so this needs to be revisited.
-                ExternalRequest::Get(ref data_request) => unimplemented!(),
+                ExternalRequest::Get(ref data_request) => Some(data_request.name().clone()),
                 ExternalRequest::Put(ref data)         => Some(data.name()),
                 ExternalRequest::Post(ref data)        => Some(data.name()),
                 ExternalRequest::Delete(_)             => None,
