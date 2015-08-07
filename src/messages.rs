@@ -123,6 +123,19 @@ pub enum ExternalResponse {
     Delete(ErrorReturn),
 }
 
+impl ExternalResponse {
+    pub fn get_orig_request(&self) -> Result<SignedMessage, CborError> {
+        let token = match *self {
+            ExternalResponse::Get(ref r)    => &r.orig_request,
+            ExternalResponse::Put(ref r)    => &r.orig_request,
+            ExternalResponse::Post(ref r)   => &r.orig_request,
+            ExternalResponse::Delete(ref r) => &r.orig_request,
+        };
+
+        SignedMessage::new_from_token(token.clone())
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
     Connect(ConnectRequest),
@@ -273,5 +286,9 @@ impl SignedMessage {
             serialised_request : try!(self.encoded_body()),
             signature          : self.signature().clone(),
         })
+    }
+
+    pub fn claimant(&self) -> &types::Address {
+        &self.claimant
     }
 }
