@@ -371,7 +371,7 @@ fn run_interactive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
     });
     let ref mut command = String::new();
     let docopt: Docopt = Docopt::new(CLI_USAGE).unwrap_or_else(|error| error.exit());
-    let mut stdin = io::stdin();
+    let stdin = io::stdin();
     loop {
         command.clear();
         println!("Enter command (stop | put <key> <value> | get <key>)>");
