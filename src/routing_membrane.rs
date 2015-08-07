@@ -744,6 +744,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
         -> RoutingResult {
         match decode::<IAm>(&serialised_message) {
             Ok(i_am) => {
+                info!("Connection {:?} identifies as {:?}", endpoint, i_am.public_id.name());
                 let mut trigger_handle_churn = false;
                 match i_am.public_id.is_relocated() {
                     // if it is relocated, we consider the connection for our routing table
