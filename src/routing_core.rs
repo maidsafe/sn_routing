@@ -169,6 +169,20 @@ impl RoutingCore {
     }
 
     pub fn target_endpoints(&self, to_authority : &Authority) -> Vec<crust::Endpoint> {
-        unimplemented!()
+        let mut target_endpoints : Vec<crust::Endpoint> = Vec::new();
+        match *to_authority {
+            Authority::Client(_, ref client_public_key) => {
+                match self.relay_map.lookup_connection_name(
+                    &ConnectionName::Relay(Address::Client(client_public_key.clone()))) {
+                    Some(ref client_peer) => {
+                        target_endpoints.push(client_peer.endpoint().clone());
+                        return target_endpoints;
+                    },
+                    None => {}
+                }
+            },
+            _ => {},
+        };
+        unimplemented!();
     }
 }
