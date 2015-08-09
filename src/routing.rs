@@ -44,7 +44,6 @@ type RoutingResult = Result<(), RoutingError>;
 /// On constructing a new Routing object a RoutingNode will also be started.
 /// Routing objects are clonable for multithreading, or a Routing object can be
 /// cloned with a new set of keys while preserving a single RoutingNode.
-#[derive(Clone)]
 pub struct Routing {
     keys          : Id,
     action_sender : mpsc::Sender<Action>,
