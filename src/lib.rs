@@ -55,7 +55,6 @@ extern crate sentinel;
 
 mod common_bits;
 mod action;
-mod macros;
 mod messages;
 mod name_type;
 mod routing_table;
