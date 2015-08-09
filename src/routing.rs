@@ -53,6 +53,7 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
     /// The intial Routing object will have newly generated keys
+    // TODO(dirvine) Always start a node if possible  :09/08/2015
     pub fn new(event_sender : mpsc::Sender<Event>) -> Result<Routing, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
@@ -76,6 +77,8 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will only bootstrap to the network and not attempt to
     /// achieve full routing node status.
+    // TODO(dirvine) take an Id as a param to sign messages ???? (or amend put etc. for a client put_request to take reference to a particular ID for sign/encryt, we should be already bootstrapped anyway with the new() call :09/08/2015
+    // FIXME(dirvine) discussion required :09/08/2015
     pub fn new_client(event_receiver : mpsc::Receiver<Event>)
         -> Result<Routing, RoutingError> {
         unimplemented!()
@@ -91,34 +94,35 @@ impl Routing {
         unimplemented!()
     }
 
-    /// Add something to the network, will always go via ClientManager group
+    /// Add something to the network
     pub fn put_request(&self, location : Authority, data : Data) {
         unimplemented!()
     }
 
-    /// Add something to the network, will always go via ClientManager group
+    /// Change something already on the network
     pub fn post_request(&self, location : Authority, data : Data) {
         unimplemented!()
     }
-
+    /// Remove something from the network
     pub fn delete_request(&self, location : Authority, data_request : DataRequest) {
         unimplemented!()
     }
-
+    /// Respond to a get_request (no error can be sent)
     pub fn get_response(&self, location : Authority, data: Data, signed_token : SignedToken) {
         unimplemented!()
     }
-
+    // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error cann instead :09/08/2015
+    /// response error to a put request
     pub fn put_response(&self, location : Authority, response_error : ResponseError,
         signed_token : SignedToken) {
         unimplemented!()
     }
-
+    /// Response error to a post request
     pub fn post_response(&self, location : Authority, response_error : ResponseError,
         signed_token : SignedToken) {
         unimplemented!()
     }
-
+    /// response error to a delete respons
     pub fn delete_response(&self, location : Authority, response_error : ResponseError,
         signed_token : SignedToken) {
         unimplemented!()
@@ -128,12 +132,13 @@ impl Routing {
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
-    pub fn refresh(&self, type_tag: u64, from_group: NameType, content: Bytes) {
+    pub fn refresh_request(&self, type_tag: u64, from_group: NameType, content: Bytes) {
         unimplemented!()
     }
 
     /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
     /// messages.  After handling all messages it will send an Event::Terminated to the user.
+    // TODO(dirvine) This maybe should be implementing  aDrop trait  :09/08/2015
     pub fn stop(&mut self) {
         unimplemented!()
     }
