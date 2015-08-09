@@ -111,7 +111,8 @@ impl Routing {
     pub fn get_response(&self, location : Authority, data: Data, signed_token : SignedToken) {
         unimplemented!()
     }
-    // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error cann instead :09/08/2015
+    // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error fn instead 
+    // Also these shoudl return an error so if not yet a node they fail (if clients try and call for instance) :09/08/2015
     /// response error to a put request
     pub fn put_response(&self, location : Authority, response_error : ResponseError,
         signed_token : SignedToken) {
