@@ -176,9 +176,11 @@ impl RoutingNode {
         loop {
             match self.crust_receiver.recv() {
                 Ok(crust::Event::NewConnection(endpoint)) => {
+                    self.send_i_am_message(&endpoint);
                     boot_state.add(endpoint, false);
                 },
                 Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    self.send_i_am_message(&endpoint);
                     boot_state.add(endpoint, true);
                 },
                 Ok(crust::Event::LostConnection(endpoint)) => {
@@ -247,6 +249,10 @@ impl RoutingNode {
     }
 
     fn send_public_id(&self, endpoint: &Endpoint) {
+        unimplemented!()
+    }
+
+    fn send_i_am_message(&self, endpoint: &Endpoint) {
         unimplemented!()
     }
 
