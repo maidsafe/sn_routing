@@ -171,4 +171,8 @@ impl RoutingCore {
     pub fn target_endpoints(&self, to_authority : &Authority) -> Vec<crust::Endpoint> {
         unimplemented!()
     }
+
+    pub fn is_my_address(&self, address: &Address) -> bool {
+        unimplemented!()
+    }
 }

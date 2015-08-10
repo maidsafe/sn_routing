@@ -39,6 +39,7 @@ use types::{MessageId, Bytes, Address};
 use utils::{encode, decode};
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
+use sodiumoxide::crypto::hash::sha512;
 
 use messages::{RoutingMessage,
                SignedMessage, SignedToken,
@@ -126,20 +127,119 @@ impl RoutingNode {
 
 
 
-    pub fn bootstrap(&mut self) {
-        // TODO (ben 05/08/2015) To be continued
-        // cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
-        // let bootstraps : BTreeMap<Endpoint, Option<NameType>>
-        //     = match crust_receiver.recv() {
-        //     Ok(crust::Event::NewConnection(endpoint)) => BTreeMap::new(),
-        //     Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-        //         RoutingNode::bootstrap(cm)
-        //     },
-        //     _ => {
-        //         error!("The first event received from Crust is not a new connection.");
-        //         return Err(RoutingError::FailedToBootstrap)
-        //     }
-        // };
+    pub fn blocking_bootstrap(&mut self) -> RoutingResult {
+        enum ConnectionState {
+            WaitingForIAm{ is_bootstrap : bool },
+            WaitingForIdResponse{ he_is: IAm },
+        };
+
+        impl ConnectionState {
+            fn is_bootstrap(&self) -> bool {
+                match *self {
+                    ConnectionState::WaitingForIAm{ ref is_bootstrap } => is_bootstrap.clone(),
+                    ConnectionState::WaitingForIdResponse{ ref he_is } => true,
+                }
+            }
+        };
+
+        struct BootState {
+            connections : BTreeMap<Endpoint, ConnectionState>,
+        };
+
+        impl BootState {
+            fn new() -> BootState {
+                BootState {
+                    connections: BTreeMap::new(),
+                }
+            }
+
+            fn has_bootstrap_cons(&self) -> bool {
+                for (_, ref c) in self.connections.iter() {
+                    if c.is_bootstrap() { return true; }
+                }
+                return false;
+            }
+
+            fn add(&mut self, ep: Endpoint, is_bootstrap: bool) {
+                self.connections.entry(ep)
+                    .or_insert(ConnectionState::WaitingForIAm{
+                                    is_bootstrap: is_bootstrap
+                               });
+            }
+        };
+
+        let mut boot_state = BootState::new();
+
+        self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+
+        let result : (Endpoint, NameType);
+
+        loop {
+            match self.crust_receiver.recv() {
+                Ok(crust::Event::NewConnection(endpoint)) => {
+                    boot_state.add(endpoint, false);
+                },
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    boot_state.add(endpoint, true);
+                },
+                Ok(crust::Event::LostConnection(endpoint)) => {
+                    boot_state.connections.remove(&endpoint);
+                },
+                Ok(crust::Event::NewMessage(endpoint, data)) => {
+                    if let Ok(msg) = decode::<SignedMessage>(&data) {
+                        let routing_msg = msg.get_routing_message();
+
+                        if let Content::InternalResponse(InternalResponse::PutPublicId(ref pub_id, _), _) = routing_msg.content {
+                            result = (endpoint, pub_id.name());
+                            break;
+                        }
+                        else {
+                            continue;
+                        }
+                    }
+                    else if let Ok(msg) = decode::<IAm>(&data) {
+                        let i_am_first = boot_state.has_bootstrap_cons();
+
+                        //let &mut state = boot_state.connections.get(&endpoint);
+
+                        //boot_state.connections.get(&endpoint)
+                        //          .map(|state| {
+                        //              if let ConnectionState::WaitingForIAm{is_bootstrap} = state {
+                        //                  if i_am_first {
+                        //                      result = (endpoint, NameType(sha512::hash(&self.id.name().0).0));
+                        //                      break;
+                        //                  }
+
+                        //                  if is_bootstrap {
+                        //                      // TODO: Send PutPublicId
+                        //                  }
+
+                        //                  // TODO: WIP
+                        //                  
+                        //                  ConnectionState::WaitingForIdResponse {
+                        //                      he_is: msg,
+                        //                  }
+                        //              }
+                        //              else {
+                        //                  state
+                        //              }
+                        //          })
+                    }
+                    else {
+                        continue;
+                    }
+                },
+                Err(_) => {
+                    return Err(RoutingError::FailedToBootstrap)
+                }
+            }
+        };
+
+        // TODO: Clear unused bootstrap connections.
+        // TODO: Set our name.
+
+        println!("result = {:?}", result);
+        Ok(())
     }
 
     fn request_network_name(&mut self) -> Result<NameType, RoutingError>  {
