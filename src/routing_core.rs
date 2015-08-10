@@ -55,7 +55,7 @@ impl RoutingCore {
         }
     }
 
-    /// Get the
+    /// Getter
     pub fn id(&self) -> &Id {
         &self.id
     }

@@ -27,7 +27,7 @@ use data::Data;
 
 //------------------------------------------------------------------------------
 #[deny(missing_docs)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 /// represents response errors
 pub enum ResponseError {
     /// data not found
@@ -63,42 +63,6 @@ impl fmt::Display for ResponseError {
     }
 }
 
-impl Encodable for ResponseError {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let type_tag;
-        let mut data : Option<Data> = None;
-        match *self {
-            ResponseError::NoData => type_tag = "NoData",
-            ResponseError::InvalidRequest => type_tag = "InvalidRequest",
-            ResponseError::FailedToStoreData(ref err_data) => {
-                type_tag = "FailedToStoreData";
-                data = Some(err_data.clone());
-            }
-        };
-        CborTagEncode::new(5483_100, &(&type_tag, &data)).encode(e)
-    }
-}
-
-impl Decodable for ResponseError {
-    fn decode<D: Decoder>(d: &mut D)->Result<ResponseError, D::Error> {
-        try!(d.read_u64());
-        // let mut type_tag : String;
-        // // let mut data : Option<Vec<u8>>;
-        let (type_tag, data) : (String, Option<Data>)
-            = try!(Decodable::decode(d));
-        match &type_tag[..] {
-            "NoData" => Ok(ResponseError::NoData),
-            "InvalidRequest" => Ok(ResponseError::InvalidRequest),
-            "FailedToStoreData" => {
-                match data {
-                    Some(err_data) => Ok(ResponseError::FailedToStoreData(err_data)),
-                    None => Err(d.error("No data in FailedToStoreData"))
-                }
-            },
-            _ => Err(d.error("Unrecognised ResponseError"))
-        }
-    }
-}
 
 //------------------------------------------------------------------------------
 #[derive(PartialEq, Eq, Clone, Debug)]
