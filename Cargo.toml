@@ -15,9 +15,6 @@ cbor = "*"
 time = "*"
 lru_time_cache = "0.2.*"
 crust = "0.1.*"
-routing = "0.2.*"
-
-[dev-dependencies]
 rand = "*"
 
 [dev-dependencies.maidsafe_sodiumoxide]

@@ -25,13 +25,13 @@ use rustc_serialize::{Decodable, Encodable};
 
 use lru_time_cache::LruCache;
 
-use routing::NameType;
-use routing::error::{ResponseError, InterfaceError};
-use routing::authority::Authority;
-use routing::data::{Data, DataRequest};
-use routing::node_interface::{Interface, MethodCall, CreatePersonas};
-use routing::sendable::Sendable;
-use routing::types::{DestinationAddress, SourceAddress};
+use routing_types::*;
+// #[cfg(not(feature = "USE_ACTUAL_ROUTING"))]
+use non_networking_test_framework::RoutingVaultMock;
+// #[cfg(not(feature = "USE_ACTUAL_ROUTING"))]
+type RoutingVault = ::std::sync::Arc<::std::sync::Mutex<RoutingVaultMock>>;
+// #[cfg(not(feature = "USE_ACTUAL_ROUTING"))]
+
 
 use data_manager::{DataManager, DataManagerSendable, DataManagerStatsSendable};
 use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
@@ -93,8 +93,7 @@ impl Interface for VaultFacade {
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to them are both from Node
                 match data_request {
                     DataRequest::ImmutableData(_) => self.data_manager.handle_get(&name),
-                    DataRequest::StructuredData(_) => self.sd_manager.handle_get(name),
-                    _ => Err(From::from(ResponseError::InvalidRequest)),
+                    DataRequest::StructuredData(_) => self.sd_manager.handle_get(name)
                 }
             }
             Authority::ManagedNode => {
@@ -248,7 +247,7 @@ impl Interface for VaultFacade {
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
     fn handle_cache_get(&mut self,
-                        _: DataRequest, // data_request 
+                        _: DataRequest, // data_request
                         data_location: NameType,
                         _: NameType) -> Result<MethodCall, InterfaceError> { // from_address
         match self.data_cache.get(&data_location) {

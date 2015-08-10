@@ -19,11 +19,7 @@
 
 mod database;
 
-use routing::data::Data;
-use routing::error::{ResponseError, InterfaceError};
-use routing::NameType;
-use routing::node_interface::MethodCall;
-use routing::sendable::Sendable;
+use routing_types::*;
 
 pub use self::database::{MaidManagerAccountWrapper, MaidManagerAccount};
 

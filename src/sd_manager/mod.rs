@@ -17,14 +17,8 @@
 
 #![allow(dead_code)]
 
-use routing::NameType;
-use routing::data::Data;
-use routing::error::{ResponseError, InterfaceError};
-use routing::node_interface::MethodCall;
-use routing::sendable::Sendable;
-use routing::structured_data::StructuredData;
-
 use chunk_store::ChunkStore;
+use routing_types::*;
 use transfer_parser::transfer_tags::SD_MANAGER_ACCOUNT_TAG;
 use utils::{encode, decode};
 

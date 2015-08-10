@@ -18,7 +18,7 @@
 #![allow(dead_code)]
 #![deny(missing_docs)]
 
-use routing::NameType;
+use routing_types::NameType;
 
 /// Data entry in the chunkstore network name and data.
 pub struct Entry {

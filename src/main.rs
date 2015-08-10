@@ -28,7 +28,7 @@
         unused_features, unused_parens, while_true)]
 
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, variant_size_differences)]
+        unused_qualifications)]
 
 //! Safe Vault provides the interface to SAFE routing.
 //!
@@ -41,14 +41,13 @@
 extern crate core;
 extern crate rustc_serialize;
 extern crate cbor;
+extern crate crust;
 extern crate time;
 extern crate lru_time_cache;
-extern crate routing;
 
-#[cfg(test)]
-extern crate rand;
-#[cfg(test)]
 extern crate maidsafe_sodiumoxide as sodiumoxide;
+
+extern crate rand;
 
 use std::thread;
 use std::thread::spawn;
@@ -62,21 +61,25 @@ mod pmid_node;
 mod transfer_parser;
 mod vault;
 mod utils;
+mod routing_types;
+
+mod non_networking_test_framework;
 
 use vault::{ VaultFacade, VaultGenerator };
+use routing_types::RoutingNode;
 
 /// Placeholder doc test
 pub fn always_true() -> bool { true }
 
 /// The Vault structure to hold the logical interface to provide behavioural logic to routing.
 pub struct Vault {
-    routing_node: routing::routing_node::RoutingNode<VaultFacade, VaultGenerator>,
+    routing_node: RoutingNode<VaultFacade, VaultGenerator>,
 }
 
 impl Vault {
     fn new() -> Vault {
         Vault {
-            routing_node: routing::routing_node::RoutingNode::<VaultFacade, VaultGenerator>::new(VaultGenerator),
+            routing_node: RoutingNode::<VaultFacade, VaultGenerator>::new(VaultGenerator),
         }
     }
 }

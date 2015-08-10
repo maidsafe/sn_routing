@@ -21,11 +21,7 @@ use cbor;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
 
-use routing::NameType;
-use routing::node_interface::MethodCall;
-use routing::sendable::Sendable;
-use routing::types::GROUP_SIZE;
-
+use routing_types::*;
 use transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG;
 use utils::{median, encode, decode};
 

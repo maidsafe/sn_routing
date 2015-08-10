@@ -17,14 +17,8 @@
 
 #![allow(dead_code)]
 
-use routing::data::Data;
-use routing::immutable_data::{ImmutableData, ImmutableDataType};
-use routing::NameType;
-use routing::node_interface::MethodCall;
-use routing::error::{ResponseError, InterfaceError};
-use routing::sendable::Sendable;
-
 use chunk_store::ChunkStore;
+use routing_types::*;
 use utils::{encode, decode};
 
 pub struct PmidNode {

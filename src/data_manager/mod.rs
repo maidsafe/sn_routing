@@ -23,14 +23,7 @@ use std::cmp;
 use cbor;
 use rustc_serialize::Encodable;
 
-use routing::{closer_to_target, NameType};
-use routing::data::Data;
-use routing::error::{InterfaceError, ResponseError};
-use routing::immutable_data::{ImmutableData, ImmutableDataType};
-use routing::node_interface::MethodCall;
-use routing::sendable::Sendable;
-use routing::types::GROUP_SIZE;
-
+use routing_types::*;
 use transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG;
 use utils::{median, encode, decode};
 
