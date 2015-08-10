@@ -349,10 +349,11 @@ impl RoutingNode {
     /// 2. if we can forward it to nodes closer to the destination, it will be sent in parallel
     /// 3. if the destination is in range for us, then send it to all our close group nodes
     /// 4. if all the above failed, try sending it over all available bootstrap connections
-    /// 5.
+    /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&self, signed_message : SignedMessage) -> RoutingResult {
         let destination = signed_message.get_routing_message().destination();
         let bytes = try!(encode(&signed_message));
+        // query the routing table for parallel or swarm
         let endpoints = self.core.target_endpoints(&destination);
         if !endpoints.is_empty() {
             for endpoint in endpoints {
@@ -374,11 +375,11 @@ impl RoutingNode {
             return Ok(());
         }
 
+        // If we need handle this message, move this copy into the channel for later processing.
         if self.core.name_in_range(&destination.get_location()) {
-
+            ignore(self.action_sender.send(Action::SendMessage(signed_message)));
         }
-
-        unimplemented!()
+        Ok(())
     }
 
     fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
