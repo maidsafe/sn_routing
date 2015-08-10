@@ -134,8 +134,21 @@ impl RelayMap {
         self.relay_map.get(identity)
     }
 
+    /// Returns true if the length of the relay map is bigger or equal to the maximum
+    /// allowed connections.
     pub fn is_full(&self) -> bool {
-        self.relay_map.len() <= MAX_RELAY
+        self.relay_map.len() >= MAX_RELAY
+    }
+
+    /// Returns a vector of all bootstrap connections listed. If none found, returns empty.
+    pub fn bootstrap_connections(&self) -> Vec<Peer> {
+        let mut bootstrap_connections : Vec<Peer> = Vec::new();
+        for (_, peer) in self.relay_map.iter()
+            .filter(|ref entry| match *entry.1.identity() {
+                ConnectionName::Bootstrap(_) => true, _ => false }) {
+            bootstrap_connections.push(peer.clone());
+        }
+        bootstrap_connections
     }
 }
 

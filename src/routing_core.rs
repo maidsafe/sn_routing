@@ -24,6 +24,7 @@ use types::Address;
 use authority::Authority;
 use id::Id;
 use NameType;
+use peer::Peer;
 
 /// ConnectionName labels the counterparty on a connection in relation to us
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -55,7 +56,7 @@ impl RoutingCore {
         }
     }
 
-    /// Getter
+    /// Borrow RoutingNode id
     pub fn id(&self) -> &Id {
         &self.id
     }
@@ -168,8 +169,70 @@ impl RoutingCore {
         }
     }
 
+    /// Get the endpoints to send on as a node.  This will exclude the bootstrap connections
+    /// we might have.  Endpoints returned here will expect us to send the message,
+    /// as anything but a Client.  If to_authority is Client(_, public_key) and this client is
+    /// connected, then we only return this endpoint.
+    /// If the above condition is not satisfied, the routing table will either provide
+    /// a set of endpoints to send parallel to or our full close group (ourselves excluded)
+    /// when the destination is in range.
+    /// If resulting vector is empty there are no routing connections.
     pub fn target_endpoints(&self, to_authority : &Authority) -> Vec<crust::Endpoint> {
-        unimplemented!()
+        let mut target_endpoints : Vec<crust::Endpoint> = Vec::new();
+        // if we can relay to the client, return that client connection
+        match *to_authority {
+            Authority::Client(_, ref client_public_key) => {
+                match self.relay_map.lookup_connection_name(
+                    &ConnectionName::Relay(Address::Client(client_public_key.clone()))) {
+                    Some(ref client_peer) => {
+                        target_endpoints.push(client_peer.endpoint().clone());
+                        return target_endpoints;
+                    },
+                    None => {}
+                }
+            },
+            _ => {},
+        };
+        let destination = to_authority.get_location();
+        // query the routing table to send it out parallel or to our close group
+        // (ourselves excluded)
+        match self.routing_table {
+            Some(ref routing_table) => {
+                for node_info in routing_table.target_nodes(destination) {
+                    match node_info.connected_endpoint {
+                        Some(endpoint) => target_endpoints.push(endpoint.clone()),
+                        None => {}
+                    }
+                };
+            },
+            None => {}
+        };
+        target_endpoints
+    }
+
+    /// Returns the available Boostrap connections as Peers. If the routing_table is
+    /// available then access to the bootstrap connections will be blocked, and an empty
+    /// vector is returned.
+    pub fn bootstrap_endpoints(&self) -> Vec<Peer> {
+        // block explicitly if routing table is available
+        match self.routing_table {
+            Some(_) => return Vec::new(),
+            None => {},
+        };
+        self.relay_map.bootstrap_connections()
+    }
+
+    /// Returns true if the core is a full routing node
+    pub fn is_node(&self) -> bool {
+        self.routing_table.is_some()
+    }
+
+    /// Returns true if the core is a full routing node and has connections
+    pub fn is_connected_node(&self) -> bool {
+        match self.routing_table {
+            Some(ref routing_table) => routing_table.size() > 0,
+            None => false,
+        }
     }
 
     pub fn is_my_address(&self, address: &Address) -> bool {
