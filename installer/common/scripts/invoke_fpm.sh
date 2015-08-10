@@ -40,6 +40,8 @@ function set_owner {
 function prepare_for_tar {
   mkdir -p "$RootDir/packages/$Platform"
   cd "$RootDir/packages/$Platform"
+  Bits=$(getconf LONG_BIT)
+  PackageName="$VaultName"_"$Version"_"$Bits"-bit
   AfterInstallCommand=
   BeforeRemoveCommand=
   ExtraFilesCommand=
@@ -77,6 +79,7 @@ function prepare_systemd_scripts {
   printf '[Install]\nWantedBy=multi-user.target' >> $ServiceName
 
   # Set vars to allow fpm to include the after_install and before_remove scripts and the service file
+  PackageName=$VaultName
   AfterInstallCommand='--after-install scripts/after_install.sh'
   BeforeRemoveCommand='--before-remove scripts/before_remove.sh'
   ExtraFilesCommand=scripts/$ServiceName=$ServicePath
@@ -224,6 +227,7 @@ function prepare_sysv_style_scripts {
   printf 'exit 0\n' >> $InitName
 
   # Set vars to allow fpm to include the after_install, before_remove and the init scripts
+  PackageName=$VaultName
   AfterInstallCommand='--after-install scripts/after_install.sh'
   BeforeRemoveCommand='--before-remove scripts/before_remove.sh'
   ExtraFilesCommand=scripts/$InitName=/etc/init.d/
@@ -237,7 +241,7 @@ function create_package {
     -t $1 \
     -s dir \
     --force \
-    --name $VaultName \
+    --name $PackageName \
     --version $Version \
     --license GPLv3 \
     --vendor MaidSafe \
