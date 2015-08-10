@@ -56,7 +56,8 @@ impl RelayMap {
     /// Returns true is the endpoint is newly added, or was already present.
     /// Returns false if the threshold was reached or identity already exists.
     /// Returns false if the endpoint is already assigned (to a different name).
-    pub fn add_peer(&mut self, identity: ConnectionName, endpoint: Endpoint) -> bool {
+    pub fn add_peer(&mut self, identity: ConnectionName, endpoint: Endpoint,
+        public_id : Option<PublicId>) -> bool {
         // reject Routing peers from relay_map
         match identity {
             ConnectionName::Routing(_) => return false,
@@ -74,7 +75,7 @@ impl RelayMap {
             return false; }
         self.lookup_map.entry(endpoint.clone())
                        .or_insert(identity.clone());
-        let new_peer = || { Peer::new(identity.clone(), endpoint.clone()) };
+        let new_peer = || { Peer::new(identity.clone(), endpoint  , public_id) };
         self.relay_map.entry(identity.clone())
                       .or_insert_with(new_peer);
         true

@@ -138,33 +138,38 @@ impl RoutingNode {
         // };
     }
 
-    pub fn run(&self) {
-      loop {
-          match self.crust_receiver.recv() {
-              Err(_) => {},
-              Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+    pub fn run(&self, _restricted_to_client : bool) {
+        loop {
+            match self.crust_receiver.recv() {
+                Err(_) => {},
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    match decode::<SignedMessage>(&bytes) {
+                        Ok(message) => {
 
-              },
-              Ok(crust::Event::NewConnection(endpoint)) => {
+                        },
+                        Err(_) => {},
+                    }
+                },
+                Ok(crust::Event::NewConnection(endpoint)) => {
 
-              },
-              Ok(crust::Event::LostConnection(endpoint)) => {
+                },
+                Ok(crust::Event::LostConnection(endpoint)) => {
 
-              },
-              Ok(crust::Event::NewBootstrapConnection(_endpoint)) => {
+                },
+                Ok(crust::Event::NewBootstrapConnection(_endpoint)) => {
 
-              }
-          };
-          match self.action_receiver.try_recv() {
-              Err(_) => {},
-              Ok(Action::SendMessage(signed_message)) => {
+                }
+            };
+            match self.action_receiver.try_recv() {
+                Err(_) => {},
+                Ok(Action::SendMessage(signed_message)) => {
 
-              },
-              Ok(Action::Terminate) => {
+                },
+                Ok(Action::Terminate) => {
 
-              },
-          }
-      }
+                },
+            }
+        }
     }
 
     fn request_network_name(&mut self) -> Result<NameType, RoutingError>  {
@@ -437,7 +442,7 @@ impl RoutingNode {
 
     fn handle_i_am(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
         -> RoutingResult {
-            unimplemented!()
+        unimplemented!()
     }
 
     // -----Address and various functions----------------------------------------

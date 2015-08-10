@@ -18,11 +18,12 @@
 
 use crust;
 
-use routing_table::RoutingTable;
+use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
 use types::Address;
 use authority::Authority;
 use id::Id;
+use public_id::PublicId;
 use NameType;
 use peer::Peer;
 
@@ -114,6 +115,33 @@ impl RoutingCore {
                 Some(relay_name) => Some(relay_name),
                 None => None,
             }
+        }
+    }
+
+    pub fn add_peer(&mut self, identity : ConnectionName, endpoint : crust::Endpoint,
+        public_id : Option<PublicId>) -> bool {
+        match identity {
+            ConnectionName::Routing(routing_name) => {
+                match self.routing_table {
+                    Some(ref mut routing_table) => {
+                        match public_id {
+                            None => return false,
+                            Some(given_public_id) => {
+                                if given_public_id.name() != routing_name { return false; }
+                                let node_info = NodeInfo::new(given_public_id, vec![endpoint.clone()],
+                                    Some(endpoint));
+                                // TODO (ben 10/08/2015) drop connection of dropped node
+                                let (added, _) = routing_table.add_node(node_info);
+                                added
+                            },
+                        }
+                    },
+                    None => false,
+                }
+            },
+            _ => {
+                false
+            },
         }
     }
 
