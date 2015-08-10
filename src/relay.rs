@@ -140,7 +140,7 @@ impl RelayMap {
         self.relay_map.len() >= MAX_RELAY
     }
 
-    /// Returns a vector of all bootstrap connections listed.
+    /// Returns a vector of all bootstrap connections listed. If none found, returns empty.
     pub fn bootstrap_connections(&self) -> Vec<Peer> {
         let mut bootstrap_connections : Vec<Peer> = Vec::new();
         for (_, peer) in self.relay_map.iter()
