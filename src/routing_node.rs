@@ -182,7 +182,7 @@ impl RoutingNode {
         ignore(self.send(message_wrap.clone()));
 
         let address_in_close_group_range =
-            self.address_in_close_group_range(&message.destination());
+            self.core.name_in_range(&message.destination().get_location());
 
         // Handle FindGroupResponse
         if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids), _)
@@ -371,6 +371,11 @@ impl RoutingNode {
                 ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
                     bytes.clone()));
             }
+            return Ok(());
+        }
+
+        if self.core.name_in_range(&destination.get_location()) {
+
         }
 
         unimplemented!()
@@ -422,31 +427,6 @@ impl RoutingNode {
         //     None => {}
         // };
         // self.bootstrap = None;
-    }
-
-    fn address_in_close_group_range(&self, destination_auth: &Authority) -> bool {
-        unimplemented!()
-        // TODO (ben 05/08/2015) again, this needs to rely on core
-        // let address = match *destination_auth {
-        //     Authority::ClientManager(name) => name,
-        //     Authority::NaeManager(name)    => name,
-        //     Authority::NodeManager(name)   => name,
-        //     Authority::ManagedNode(_)      => return false,
-        //     Authority::Client(_, _)        => return false,
-        // };
-        //
-        // if self.routing_table.size() < types::QUORUM_SIZE  ||
-        //    *address == self.core.id().name().clone()
-        // {
-        //     return true;
-        // }
-        //
-        // match self.routing_table.our_close_group().last() {
-        //     Some(furthest_close_node) => {
-        //         closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.core.id().name())
-        //     },
-        //     None => false  // ...should never reach here
-        // }
     }
 
     // -----Message Handlers from Routing Table connections----------------------------------------
