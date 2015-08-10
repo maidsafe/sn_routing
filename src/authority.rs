@@ -116,7 +116,7 @@ pub fn our_authority(message       : &RoutingMessage,
     determine_authority(message, routing_table, element)
 }
 
-// determine_authority is split off to allow unit tests to test it
+// determine_authority is a static method to allow unit tests to test it
 // separate from the content of the RoutingMessage;
 // in particular element needs to be controllably inside
 // or outside the close group of routing table.
