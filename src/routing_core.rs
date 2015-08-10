@@ -205,8 +205,18 @@ impl RoutingCore {
                     }
                 };
             },
-            None => {},
+            None => {}
         };
         target_endpoints
+    }
+
+    /// Returns the available Boostrap connections as Peers, if the routing_tbake
+    pub fn bootstrap_endpoints -> Vec<Peer> {
+        // block explicitly if routing table is available
+        match self.routing_table {
+            Some(_) => return Vec::new(),
+            None => {},
+        };
+        self.relay_map.bootstrap_connections()
     }
 }
