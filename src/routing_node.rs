@@ -80,8 +80,6 @@ use message_filter::MessageFilter;
 
 type RoutingResult = Result<(), RoutingError>;
 
-
-
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
 /// Routing Node
@@ -138,6 +136,35 @@ impl RoutingNode {
         //         return Err(RoutingError::FailedToBootstrap)
         //     }
         // };
+    }
+
+    pub fn run(&self) {
+      loop {
+          match self.crust_receiver.recv() {
+              Err(_) => {},
+              Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+
+              },
+              Ok(crust::Event::NewConnection(endpoint)) => {
+
+              },
+              Ok(crust::Event::LostConnection(endpoint)) => {
+
+              },
+              Ok(crust::Event::NewBootstrapConnection(_endpoint)) => {
+
+              }
+          };
+          match self.action_receiver.try_recv() {
+              Err(_) => {},
+              Ok(Action::SendMessage(signed_message)) => {
+
+              },
+              Ok(Action::Terminate) => {
+
+              },
+          }
+      }
     }
 
     fn request_network_name(&mut self) -> Result<NameType, RoutingError>  {
