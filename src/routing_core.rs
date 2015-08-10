@@ -24,6 +24,7 @@ use types::Address;
 use authority::Authority;
 use id::Id;
 use NameType;
+use peer::Peer;
 
 /// ConnectionName labels the counterparty on a connection in relation to us
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -55,7 +56,7 @@ impl RoutingCore {
         }
     }
 
-    /// Getter
+    /// Borrow RoutingNode id
     pub fn id(&self) -> &Id {
         &self.id
     }
@@ -168,8 +169,17 @@ impl RoutingCore {
         }
     }
 
+    /// Get the endpoints to send on as a node.  This will exclude the bootstrap connections
+    /// we might have.  Endpoints returned here will expect us to send the message,
+    /// as anything but a Client.  If to_authority is Client(_, public_key) and this client is
+    /// connected, then we only return this endpoint.
+    /// If the above condition is not satisfied, the routing table will either provide
+    /// a set of endpoints to send parallel to or our full close group (ourselves excluded)
+    /// when the destination is in range.
+    /// If resulting vector is empty there are no routing connections.
     pub fn target_endpoints(&self, to_authority : &Authority) -> Vec<crust::Endpoint> {
         let mut target_endpoints : Vec<crust::Endpoint> = Vec::new();
+        // if we can relay to the client, return that client connection
         match *to_authority {
             Authority::Client(_, ref client_public_key) => {
                 match self.relay_map.lookup_connection_name(
@@ -183,6 +193,20 @@ impl RoutingCore {
             },
             _ => {},
         };
-        unimplemented!();
+        let destination = to_authority.get_location();
+        // query the routing table to send it out parallel or to our close group
+        // (ourselves excluded)
+        match self.routing_table {
+            Some(ref routing_table) => {
+                for node_info in routing_table.target_nodes(destination) {
+                    match node_info.connected_endpoint {
+                        Some(endpoint) => target_endpoints.push(endpoint.clone()),
+                        None => {}
+                    }
+                };
+            },
+            None => {},
+        };
+        target_endpoints
     }
 }
