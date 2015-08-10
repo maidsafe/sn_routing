@@ -37,6 +37,14 @@ function set_owner {
   printf 'chmod 775 %s\n\n' "$VaultPath$VaultName" >> after_install.sh
 }
 
+function prepare_for_tar {
+  mkdir -p "$RootDir/packages/$Platform"
+  cd "$RootDir/packages/$Platform"
+  AfterInstallCommand=
+  BeforeRemoveCommand=
+  ExtraFilesCommand=
+}
+
 function prepare_systemd_scripts {
   ServiceName=safe-vault.service
   ServicePath=/usr/lib/systemd/system/
@@ -68,7 +76,9 @@ function prepare_systemd_scripts {
   printf '[Service]\nExecStart=%s\nRestart=on-failure\nUser=safe\n\n' "$VaultPath$VaultName" >> $ServiceName
   printf '[Install]\nWantedBy=multi-user.target' >> $ServiceName
 
-  # Set var to allow fpm to include the service file
+  # Set vars to allow fpm to include the after_install and before_remove scripts and the service file
+  AfterInstallCommand='--after-install scripts/after_install.sh'
+  BeforeRemoveCommand='--before-remove scripts/before_remove.sh'
   ExtraFilesCommand=scripts/$ServiceName=$ServicePath
 
   chmod 755 after_install.sh before_remove.sh
@@ -213,7 +223,9 @@ function prepare_sysv_style_scripts {
   printf 'esac\n\n' >> $InitName
   printf 'exit 0\n' >> $InitName
 
-  # Set var to allow fpm to include the init script
+  # Set vars to allow fpm to include the after_install, before_remove and the init scripts
+  AfterInstallCommand='--after-install scripts/after_install.sh'
+  BeforeRemoveCommand='--before-remove scripts/before_remove.sh'
   ExtraFilesCommand=scripts/$InitName=/etc/init.d/
 
   chmod 755 after_install.sh before_remove.sh $InitName
@@ -233,8 +245,8 @@ function create_package {
     --maintainer "MaidSafeQA <qa@maidsafe.net>" \
     --description "$Description" \
     --url "http://maidsafe.net" \
-    --after-install scripts/after_install.sh\
-    --before-remove scripts/before_remove.sh \
+    $AfterInstallCommand \
+    $BeforeRemoveCommand \
     "$RootDir/target/release/$VaultName"=$VaultPath \
     "$RootDir/installer/common/$VaultName.bootstrap.cache"=$BootstrapFilePath \
     $ExtraFilesCommand
@@ -246,13 +258,20 @@ cargo build --release
 rm -rf "$RootDir/packages/$Platform" || true
 if [[ "$1" == "linux" ]]
 then
+  prepare_for_tar
+  create_package tar
+
   prepare_systemd_scripts
   create_package deb
   create_package rpm
+
   prepare_sysv_style_scripts
   create_package deb
   create_package rpm
 elif [[ "$1" == "osx" ]]
 then
+  prepare_for_tar
+  create_package tar
+
   create_package osxpkg
 fi
