@@ -87,12 +87,12 @@ static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 /// Routing Node
 pub struct RoutingNode {
     // for CRUST
-    crust_sender        : mpsc::Sender<crust::Event>,
     crust_receiver      : mpsc::Receiver<crust::Event>,
     connection_manager  : crust::ConnectionManager,
     accepting_on        : Vec<crust::Endpoint>,
     bootstraps          : BTreeMap<Endpoint, Option<NameType>>,
     // for RoutingNode
+    action_sender       : mpsc::Sender<Action>,
     action_receiver     : mpsc::Receiver<Action>,
     filter              : MessageFilter<types::FilterType>,
     core                : RoutingCore,
@@ -107,24 +107,22 @@ impl RoutingNode {
                event_sender    : mpsc::Sender<Event> ) -> Result<RoutingNode, RoutingError> {
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
-        let mut cm = crust::ConnectionManager::new(crust_sender.clone());
+        let mut cm = crust::ConnectionManager::new(crust_sender);
         let _ = cm.start_accepting(vec![]);
         let accepting_on = cm.get_own_endpoints();
 
         Ok(RoutingNode {
-            crust_sender        : crust_sender,
             crust_receiver      : crust_receiver,
             connection_manager  : cm,
             accepting_on        : accepting_on,
             bootstraps          : BTreeMap::new(),
+            action_sender       : action_sender,
             action_receiver     : action_receiver,
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
             core                : RoutingCore::new(),
             connection_cache    : BTreeMap::new(),
         })
     }
-
-
 
     pub fn bootstrap(&mut self) {
         // TODO (ben 05/08/2015) To be continued
@@ -184,7 +182,7 @@ impl RoutingNode {
         ignore(self.send(message_wrap.clone()));
 
         let address_in_close_group_range =
-            self.address_in_close_group_range(&message.destination());
+            self.core.name_in_range(&message.destination().get_location());
 
         // Handle FindGroupResponse
         if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids), _)
@@ -346,10 +344,42 @@ impl RoutingNode {
         unimplemented!()
     }
 
-    /// Send queries the core for a vector of endpoints over which the signed message
-    /// needs to be sent out.
+    /// Send a SignedMessage out to the destination
+    /// 1. if it can be directly relayed to a Client, then it will
+    /// 2. if we can forward it to nodes closer to the destination, it will be sent in parallel
+    /// 3. if the destination is in range for us, then send it to all our close group nodes
+    /// 4. if all the above failed, try sending it over all available bootstrap connections
+    /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&self, signed_message : SignedMessage) -> RoutingResult {
-        unimplemented!()
+        let destination = signed_message.get_routing_message().destination();
+        let bytes = try!(encode(&signed_message));
+        // query the routing table for parallel or swarm
+        let endpoints = self.core.target_endpoints(&destination);
+        if !endpoints.is_empty() {
+            for endpoint in endpoints {
+                // TODO(ben 10/08/2015) drop endpoints that fail to send
+                ignore(self.connection_manager.send(endpoint, bytes.clone()));
+            }
+        }
+
+        if !self.core.is_connected_node() {
+            // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
+            // the relay_name in from_authority Client(relay_name, client_public_key) is
+            // the name of the bootstrap connection we're sending it on.  Although this might
+            // open a window for attacking a node, in v0.3.* we can leave this unresolved.
+            for bootstrap_peer in self.core.bootstrap_endpoints() {
+                // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
+                ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
+                    bytes.clone()));
+            }
+            return Ok(());
+        }
+
+        // If we need handle this message, move this copy into the channel for later processing.
+        if self.core.name_in_range(&destination.get_location()) {
+            ignore(self.action_sender.send(Action::SendMessage(signed_message)));
+        }
+        Ok(())
     }
 
     fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
@@ -398,31 +428,6 @@ impl RoutingNode {
         //     None => {}
         // };
         // self.bootstrap = None;
-    }
-
-    fn address_in_close_group_range(&self, destination_auth: &Authority) -> bool {
-        unimplemented!()
-        // TODO (ben 05/08/2015) again, this needs to rely on core
-        // let address = match *destination_auth {
-        //     Authority::ClientManager(name) => name,
-        //     Authority::NaeManager(name)    => name,
-        //     Authority::NodeManager(name)   => name,
-        //     Authority::ManagedNode(_)      => return false,
-        //     Authority::Client(_, _)        => return false,
-        // };
-        //
-        // if self.routing_table.size() < types::QUORUM_SIZE  ||
-        //    *address == self.core.id().name().clone()
-        // {
-        //     return true;
-        // }
-        //
-        // match self.routing_table.our_close_group().last() {
-        //     Some(furthest_close_node) => {
-        //         closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.core.id().name())
-        //     },
-        //     None => false  // ...should never reach here
-        // }
     }
 
     // -----Message Handlers from Routing Table connections----------------------------------------
