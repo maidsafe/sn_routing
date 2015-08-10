@@ -205,8 +205,33 @@ impl RoutingCore {
                     }
                 };
             },
-            None => {},
+            None => {}
         };
         target_endpoints
+    }
+
+    /// Returns the available Boostrap connections as Peers. If the routing_table is
+    /// available then access to the bootstrap connections will be blocked, and an empty
+    /// vector is returned.
+    pub fn bootstrap_endpoints(&self) -> Vec<Peer> {
+        // block explicitly if routing table is available
+        match self.routing_table {
+            Some(_) => return Vec::new(),
+            None => {},
+        };
+        self.relay_map.bootstrap_connections()
+    }
+
+    /// Returns true if the core is a full routing node
+    pub fn is_node(&self) -> bool {
+        self.routing_table.is_some()
+    }
+
+    /// Returns true if the core is a full routing node and has connections
+    pub fn is_connected_node(&self) -> bool {
+        match self.routing_table {
+            Some(ref routing_table) => routing_table.size() > 0,
+            None => false,
+        }
     }
 }
