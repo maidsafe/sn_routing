@@ -199,30 +199,35 @@ impl RoutingNode {
                     else if let Ok(msg) = decode::<IAm>(&data) {
                         let i_am_first = boot_state.has_bootstrap_cons();
 
-                        //let &mut state = boot_state.connections.get(&endpoint);
+                        let new_state = {
+                            let state = match boot_state.connections.get(&endpoint) {
+                                Some(state) => state,
+                                None        => { debug_assert!(false); continue; }
+                            };
 
-                        //boot_state.connections.get(&endpoint)
-                        //          .map(|state| {
-                        //              if let ConnectionState::WaitingForIAm{is_bootstrap} = state {
-                        //                  if i_am_first {
-                        //                      result = (endpoint, NameType(sha512::hash(&self.id.name().0).0));
-                        //                      break;
-                        //                  }
+                            match *state {
+                                ConnectionState::WaitingForIAm{ref is_bootstrap} => {
+                                    if i_am_first {
+                                        result = (endpoint, NameType(sha512::hash(&self.core.id().name().0).0));
+                                        break;
+                                    }
 
-                        //                  if is_bootstrap {
-                        //                      // TODO: Send PutPublicId
-                        //                  }
+                                    if *is_bootstrap {
+                                        self.send_public_id(&endpoint);
+                                    }
 
-                        //                  // TODO: WIP
-                        //                  
-                        //                  ConnectionState::WaitingForIdResponse {
-                        //                      he_is: msg,
-                        //                  }
-                        //              }
-                        //              else {
-                        //                  state
-                        //              }
-                        //          })
+                                    ConnectionState::WaitingForIdResponse {
+                                        he_is : msg,
+                                    }
+                                },
+                                _ => {
+                                    debug_assert!(false);
+                                    continue;
+                                }
+                            }
+                        };
+
+                        boot_state.connections.insert(endpoint, new_state);
                     }
                     else {
                         continue;
@@ -239,6 +244,10 @@ impl RoutingNode {
 
         println!("result = {:?}", result);
         Ok(())
+    }
+
+    fn send_public_id(&self, endpoint: &Endpoint) {
+        unimplemented!()
     }
 
     fn request_network_name(&mut self) -> Result<NameType, RoutingError>  {
