@@ -69,6 +69,7 @@ use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode, decode, public_key_to_client_name};
+use routing::{ExternalRequest, SignedToken};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -172,7 +173,44 @@ impl Node {
             };
 
             println!("Node: Receied event {:?}", event);
+
+            match event {
+                Event::Request{request,
+                               our_authority,
+                               from_authority,
+                               response_token} => {
+                    self.handle_request(request,
+                                        our_authority,
+                                        from_authority,
+                                        response_token);
+                },
+                _ => {}
+            }
         }
+    }
+
+    fn handle_request(&self, request        : ExternalRequest,
+                             our_authority  : Authority,
+                             from_authority : Authority,
+                             response_token : SignedToken) {
+        match request {
+            ExternalRequest::Get(DataRequest) => {
+            },
+            ExternalRequest::Put(Data) => {
+            },
+            ExternalRequest::Post(Data) => {
+                println!("Node: Post is not implemented, ignoring.");
+            },
+            ExternalRequest::Delete(DataRequest) => {
+                println!("Node: Delete is not implemented, ignoring.");
+            },
+        }
+    }
+
+    fn handle_get_request(&self, data_request   : DataRequest,
+                                 our_authority  : Authority,
+                                 from_authority : Authority,
+                                 response_token : SignedToken) {
     }
 }
 
