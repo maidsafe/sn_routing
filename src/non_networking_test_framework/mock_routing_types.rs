@@ -392,7 +392,7 @@ impl ImmutableData {
     }
 }
 
-#[derive(Debug, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Clone)]
 pub struct StructuredData {
     type_tag: u64,
     identifier: NameType,
@@ -406,23 +406,21 @@ pub struct StructuredData {
 impl StructuredData {
     pub fn new(type_tag: u64,
                identifier: NameType,
-               version: u64,
                data: Vec<u8>,
-               current_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
-               previous_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
-               sign_key: &::sodiumoxide::crypto::sign::SecretKey) -> StructuredData {
-        let mut structured_data = StructuredData {
-            type_tag: type_tag,
-            identifier: identifier,
-            version: version,
-            data: data,
-            current_owner_keys: current_owner_keys,
-            previous_owner_keys: previous_owner_keys,
-            previous_owner_signatures: vec![],
-        };
+               previous_owner_keys: Vec<crypto::sign::PublicKey>,
+               version: u64,
+               current_owner_keys: Vec<crypto::sign::PublicKey>,
+               previous_owner_signatures: Vec<crypto::sign::Signature>) -> StructuredData {
 
-        structured_data.add_signature(sign_key);
-        structured_data
+        StructuredData {
+                   type_tag: type_tag,
+                   identifier: identifier,
+                   data: data,
+                   previous_owner_keys: previous_owner_keys,
+                   version: version,
+                   current_owner_keys : current_owner_keys,
+                   previous_owner_signatures: previous_owner_signatures
+                 }
     }
 
     pub fn get_data(&self) -> &Vec<u8> {
@@ -449,19 +447,26 @@ impl StructuredData {
         &self.previous_owner_keys
     }
 
-    pub fn add_signature(&mut self, sign_key: &::sodiumoxide::crypto::sign::SecretKey) {
-        let signable = self.data_to_sign();
-        self.previous_owner_signatures.push(::sodiumoxide::crypto::sign::sign_detached(&signable[..], sign_key));
+    /// Returns number of previous_owner_signatures still required (if any, 0 means this is complete)
+    pub fn add_signature(&mut self, secret_key: &crypto::sign::SecretKey) -> Result<isize, RoutingError> {
+        let data = try!(self.data_to_sign());
+        let sig = crypto::sign::sign_detached(&data, secret_key);
+        self.previous_owner_signatures.push(sig);
+        Ok(((self.previous_owner_keys.len() + 1) as isize / 2) -
+             self.previous_owner_signatures.len() as isize)
     }
 
-    pub fn data_to_sign(&self) -> Vec<u8> {
-        self.data.iter().chain(self.version.to_string().as_bytes().iter().chain(
-                self.current_owner_keys.iter().fold(
-                    Vec::<u8>::new(), |mut key_vec, key| { key_vec.extend(key.0.iter().map(|a| *a).collect::<Vec<u8>>()); key_vec }
-                    ).iter().chain(
-                        self.previous_owner_keys.iter().fold(
-                            Vec::<u8>::new(), |mut key_vec, key| { key_vec.extend(key.0.iter().map(|a| *a).collect::<Vec<u8>>()); key_vec }
-                            ).iter()))).map(|a| *a).collect::<Vec<u8>>()
+    pub fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
+        // seems overkill to use serialisation here, but done
+        // to ensure cross platform signature handling is OK
+        let mut enc = cbor::Encoder::from_memory();
+        try!(enc.encode(self.type_tag.to_string().as_bytes()));
+        try!(enc.encode(&[self.identifier]));
+        try!(enc.encode(&self.data));
+        try!(enc.encode(&self.previous_owner_keys));
+        try!(enc.encode(&self.current_owner_keys));
+        try!(enc.encode(self.version.to_string().as_bytes()));
+        Ok(enc.into_bytes())
     }
 
     pub fn get_type_tag(&self) -> u64 {
@@ -527,7 +532,7 @@ impl StructuredData {
              return Err(RoutingError::NotEnoughSignatures);
          }
 
-         let data = self.data_to_sign();
+         let data = try!(self.data_to_sign());
          // Count valid previous_owner_signatures and refuse if quantity is not enough
          if self.previous_owner_signatures.iter()
                         .filter(|&sig| self.previous_owner_keys
@@ -629,16 +634,6 @@ impl ::rustc_serialize::Decodable for StructuredData {
     }
 }
 
-impl ::std::cmp::PartialEq for StructuredData {
-    fn eq(&self, other: &StructuredData) -> bool {
-        let lhs_signable = self.data_to_sign();
-        let rhs_signable = other.data_to_sign();
-
-        lhs_signable == rhs_signable &&
-            self.type_tag == other.type_tag &&
-            self.identifier == other.identifier
-    }
-}
 
 #[derive(Clone, RustcEncodable, RustcDecodable)]
 pub enum DataRequest {

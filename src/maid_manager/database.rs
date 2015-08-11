@@ -202,8 +202,7 @@ mod test {
 
     use super::*;
 
-    use routing::NameType;
-    use routing::types::*;
+    use routing_types::*;
 
     #[test]
     fn exist() {

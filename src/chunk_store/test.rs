@@ -19,8 +19,7 @@
 mod test {
   use rand::{thread_rng, Rng};
 
-  use routing::NameType;
-  use routing::types::*;
+  use routing_types::*;
 
   use chunk_store::ChunkStore;
 

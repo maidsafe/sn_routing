@@ -222,10 +222,7 @@ impl DataManagerDatabase {
 #[cfg(test)]
 mod test {
   use super::*;
-  use routing::immutable_data::{ImmutableData, ImmutableDataType};
-  use routing::NameType;
-  use routing::types::*;
-  use routing::sendable::Sendable;
+  use routing_types::*;
 
   #[test]
   fn exist() {

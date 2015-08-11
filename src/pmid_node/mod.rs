@@ -85,16 +85,12 @@ impl PmidNode {
 mod test {
     use super::*;
 
-    use routing;
-    use routing::data::Data;
-    use routing::immutable_data::{ImmutableData, ImmutableDataType};
-    use routing::node_interface::MethodCall;
-    use routing::sendable::Sendable;
+    use routing_types::*;
 
     #[test]
     fn handle_put_get() {
         let mut pmid_node = PmidNode::new();
-        let value = routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         {
             let put_result = pmid_node.handle_put(Data::ImmutableData(im_data.clone()));

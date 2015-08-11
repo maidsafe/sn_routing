@@ -59,12 +59,7 @@ impl MaidManager {
 mod test {
     use super::*;
 
-    use routing::data::Data;
-    use routing::NameType;
-    use routing::node_interface::MethodCall;
-    use routing::immutable_data::{ImmutableData, ImmutableDataType};
-    use routing::sendable::Sendable;
-    use routing::types::*;
+    use routing_types::*;
 
     #[test]
     fn handle_put() {
