@@ -48,7 +48,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::mpsc;
-use std::sync::mpsc::{Receiver};
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::thread::spawn;
 use std::collections::BTreeMap;
@@ -59,8 +59,6 @@ use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
 use crust::Endpoint;
-//use routing::routing_node::RoutingNode;
-//use routing::sendable::Sendable;
 use routing::routing::Routing;
 use routing::types;
 use routing::id::Id;
@@ -475,7 +473,7 @@ fn parse_user_command(cmd : String) -> Option<UserCommand> {
 
 ////////////////////////////////////////////////////////////////////////////////
 struct Client {
-    //routing          : Routing,
+    routing          : Routing,
     routing_receiver : Receiver<Event>,
     user_receiver    : Receiver<UserCommand>,
     is_done          : bool,
@@ -484,34 +482,14 @@ struct Client {
 impl Client {
     fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
         let (routing_sender, routing_receiver) = mpsc::channel::<Event>();
-        //let routing = try!(Routing::new_client(routing_sender));
+        let routing = try!(Routing::new_client(routing_sender));
 
         let (user_sender, user_receiver) = mpsc::channel::<UserCommand>();
 
-        thread::spawn(move || {
-            loop {
-                let mut command = String::new();
-                let mut stdin = io::stdin();
-                println!("Type command:");
-                let _ = stdin.read_line(&mut command);
-
-                match parse_user_command(command) {
-                    Some(cmd) => {
-                        user_sender.send(cmd.clone());
-                        if cmd == UserCommand::Exit {
-                            break;
-                        }
-                    },
-                    None => {
-                        println!("Unrecognised command");
-                        continue;
-                    }
-                }
-            }
-        });
+        thread::spawn(move || { Client::read_user_commands(user_sender); });
 
         Ok(Client {
-            //routing          : routing,
+            routing          : routing,
             routing_receiver : routing_receiver,
             user_receiver    : user_receiver,
             is_done          : false,
@@ -519,9 +497,8 @@ impl Client {
     }
 
     fn run(&mut self) {
-        // Need to do poll as Select is not yet stable in current
+        // Need to do poll as Select is not yet stable in the current
         // rust implementation.
-
         loop {
             while let Ok(command) = self.user_receiver.try_recv() {
                 self.handle_user_command(command);
@@ -537,7 +514,30 @@ impl Client {
 
             thread::sleep_ms(10);
         }
+
         println!("Bye");
+    }
+
+    fn read_user_commands(user_sender: Sender<UserCommand>) {
+        loop {
+            let mut command = String::new();
+            let mut stdin = io::stdin();
+            println!("Type command:");
+            let _ = stdin.read_line(&mut command);
+
+            match parse_user_command(command) {
+                Some(cmd) => {
+                    user_sender.send(cmd.clone());
+                    if cmd == UserCommand::Exit {
+                        break;
+                    }
+                },
+                None => {
+                    println!("Unrecognised command");
+                    continue;
+                }
+            }
+        }
     }
 
     fn handle_user_command(&mut self, cmd : UserCommand) {
