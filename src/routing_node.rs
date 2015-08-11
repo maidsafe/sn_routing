@@ -122,22 +122,6 @@ impl RoutingNode {
         })
     }
 
-    pub fn bootstrap(&mut self) {
-        // TODO (ben 05/08/2015) To be continued
-        // cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
-        // let bootstraps : BTreeMap<Endpoint, Option<NameType>>
-        //     = match crust_receiver.recv() {
-        //     Ok(crust::Event::NewConnection(endpoint)) => BTreeMap::new(),
-        //     Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-        //         RoutingNode::bootstrap(cm)
-        //     },
-        //     _ => {
-        //         error!("The first event received from Crust is not a new connection.");
-        //         return Err(RoutingError::FailedToBootstrap)
-        //     }
-        // };
-    }
-
     pub fn run(&mut self, _restricted_to_client : bool) {
         loop {
             match self.crust_receiver.recv() {
@@ -233,6 +217,53 @@ impl RoutingNode {
         }
         ignore(self.send_hello(endpoint));
     }
+
+    // ---- Hello connection identification -------------------------------------------------------
+
+    fn send_hello(&mut self, endpoint: Endpoint) -> RoutingResult {
+        let message = try!(encode(&Hello {
+            address   : self.core.our_address(),
+            public_id : PublicId::new(self.core.id())}));
+        ignore(self.connection_manager.send(endpoint, message));
+        Ok(())
+    }
+
+    fn handle_hello(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
+        -> RoutingResult {
+        match decode::<Hello>(&serialised_message) {
+            Ok(hello) => {
+                // let mut trigger_handle_churn = false;
+                // let mut peer = match self.core.lookup_endpoint(&endpoint) {
+                //     Some(ConnectionName::Unidenified(stored_endpoint, bootstrap)) => {
+                //
+                //     },
+                //     None =>
+                // }
+                match (hello.address, self.core.our_address()) {
+                    (Address::Node(his_name), Address::Node(our_name)) => {
+                    // He is a node, and we are a node, establish a routing table connection
+                    // FIXME (ben 11/08/2015) we need to check his PublicId against the network
+                    // but this requires an additional RFC so currently leave out such check
+                    // refer to https://github.com/maidsafe/routing/issues/387
+                        // self.core.add_peer()
+                    },
+                    (Address::Client(his_public_key), Address::Node(our_name)) => {
+                    // He is a client, we are a node, establish a relay connection
+                    },
+                    (Address::Node(his_name), Address::Client(our_public_key)) => {
+                    // He is a node, we are a client, establish a bootstrap connection
+                    },
+                    (Address::Client(his_public_key), Address::Client(our_public_key)) => {
+                    // He is a client, we are a client, no-go
+
+                    }
+                }
+                Ok(())
+            },
+            Err(_) => Err(RoutingError::UnknownMessageType)
+        }
+    }
+
 
     /// This the fundamental functional function in routing.
     /// It only handles messages received from connections in our routing table;
@@ -483,26 +514,6 @@ impl RoutingNode {
         // };
         //
         // self.send_swarm_or_parallel(&message)
-    }
-
-    // ---- Hello connection identification -------------------------------------------------------
-
-    fn send_hello(&mut self, endpoint: Endpoint) -> RoutingResult {
-        let message = try!(encode(&Hello {
-            address   : self.core.our_address(),
-            public_id : PublicId::new(self.core.id())}));
-        ignore(self.connection_manager.send(endpoint, message));
-        Ok(())
-    }
-
-    fn handle_hello(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
-        -> RoutingResult {
-        match decode::<Hello>(&serialised_message) {
-            Ok(hello) => {
-                Ok(())
-            },
-            Err(_) => Err(RoutingError::UnknownMessageType)
-        }
     }
 
     // -----Address and various functions----------------------------------------
