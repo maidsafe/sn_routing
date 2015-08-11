@@ -120,6 +120,7 @@ impl RoutingCore {
         }
     }
 
+    /// To be documented
     pub fn add_peer(&mut self, identity : ConnectionName, endpoint : crust::Endpoint,
         public_id : Option<PublicId>) -> bool {
         match identity {

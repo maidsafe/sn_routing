@@ -33,7 +33,7 @@ use name_type::{closer_to_target_or_equal};
 use routing_core::{RoutingCore, ConnectionName};
 use id::Id;
 use public_id::PublicId;
-use who_are_you::IAm;
+use who_are_you::Hello;
 use types;
 use types::{MessageId, Bytes, Address};
 use utils::{encode, decode};
@@ -64,7 +64,6 @@ use message_filter::MessageFilter;
 //use types;
 //use types::{MessageId, Bytes, DestinationAddress, SourceAddress, Address};
 //use authority::{Authority, our_authority};
-//use who_are_you::IAm;
 //use messages::{RoutingMessage, SignedMessage, MessageType,
 //               ConnectRequest, ConnectResponse, GetDataResponse};
 
@@ -153,9 +152,9 @@ impl RoutingNode {
                             };
                         },
                         // The message received is not a Signed Routing Message,
-                        // expect it to be an IAm message to identify a connection
+                        // expect it to be an Hello message to identify a connection
                         Err(_) => {
-                            let _ = self.handle_i_am(&endpoint, bytes);
+                            let _ = self.handle_hello(&endpoint, bytes);
                         },
                     }
                 },
@@ -457,9 +456,9 @@ impl RoutingNode {
         // self.send_swarm_or_parallel(&message)
     }
 
-    // ---- I Am connection identification --------------------------------------------------------
+    // ---- Hello connection identification -------------------------------------------------------
 
-    fn handle_i_am(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
+    fn handle_hello(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
         -> RoutingResult {
         unimplemented!()
     }

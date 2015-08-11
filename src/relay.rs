@@ -151,6 +151,16 @@ impl RelayMap {
         }
         bootstrap_connections
     }
+
+    /// Returns true if bootstrap connections are listed.
+    pub fn has_bootstrap_connections(&self) -> bool {
+        for _ in self.relay_map.iter()
+            .filter(|ref entry| match *entry.1.identity() {
+                ConnectionName::Bootstrap(_) => true, _ => false }) {
+            return true;
+        }
+        false
+    }
 }
 
 #[cfg(test)]
