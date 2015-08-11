@@ -264,6 +264,7 @@ if [[ "$1" == "linux" ]]
 then
   prepare_for_tar
   create_package tar
+  gzip $PackageName.tar
 
   prepare_systemd_scripts
   create_package deb
