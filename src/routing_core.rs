@@ -140,7 +140,7 @@ impl RoutingCore {
                 }
             },
             _ => {
-                false
+                self.relay_map.add_peer(identity, endpoint, public_id)
             },
         }
     }
