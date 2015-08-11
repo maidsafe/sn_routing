@@ -138,16 +138,25 @@ impl RoutingNode {
         // };
     }
 
-    pub fn run(&self, _restricted_to_client : bool) {
+    pub fn run(&mut self, _restricted_to_client : bool) {
         loop {
             match self.crust_receiver.recv() {
                 Err(_) => {},
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
                     match decode::<SignedMessage>(&bytes) {
                         Ok(message) => {
-
+                            // handle SignedMessage for any identified endpoint
+                            match self.core.lookup_endpoint(&endpoint) {
+                                Some(ConnectionName::Unidentified(_)) => {},
+                                None => {},
+                                _ => ignore(self.message_received(message)),
+                            };
                         },
-                        Err(_) => {},
+                        // The message received is not a Signed Routing Message,
+                        // expect it to be an IAm message to identify a connection
+                        Err(_) => {
+                            let _ = self.handle_i_am(&endpoint, bytes);
+                        },
                     }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
@@ -163,6 +172,9 @@ impl RoutingNode {
             match self.action_receiver.try_recv() {
                 Err(_) => {},
                 Ok(Action::SendMessage(signed_message)) => {
+
+                },
+                Ok(Action::SendContent(to_authority, content)) => {
 
                 },
                 Ok(Action::Terminate) => {
