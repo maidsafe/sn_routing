@@ -47,7 +47,7 @@ extern crate routing;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::mpsc;
 use std::sync::mpsc::{Receiver};
 use std::thread;
 use std::thread::spawn;
@@ -454,12 +454,105 @@ impl Node {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Eq, Debug, Clone)]
+enum UserCommand {
+    Exit,
+}
+
+fn parse_user_command(cmd : String) -> Option<UserCommand> {
+    let cmds = cmd.trim_right_matches(|c| c == '\r' || c == '\n')
+                  .split(' ')
+                  .collect::<Vec<_>>();
+
+    if cmds.is_empty() { return None; }
+
+    if cmds.len() == 1 && cmds[0] == "exit" {
+        return Some(UserCommand::Exit);
+    }
+
+    None
+}
+
+////////////////////////////////////////////////////////////////////////////////
 struct Client {
-    routing  : Routing,
-    receiver : Receiver<Event>,
+    //routing          : Routing,
+    routing_receiver : Receiver<Event>,
+    user_receiver    : Receiver<UserCommand>,
+    is_done          : bool,
 }
 
 impl Client {
+    fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
+        let (routing_sender, routing_receiver) = mpsc::channel::<Event>();
+        //let routing = try!(Routing::new_client(routing_sender));
+
+        let (user_sender, user_receiver) = mpsc::channel::<UserCommand>();
+
+        thread::spawn(move || {
+            loop {
+                let mut command = String::new();
+                let mut stdin = io::stdin();
+                println!("Type command:");
+                let _ = stdin.read_line(&mut command);
+
+                match parse_user_command(command) {
+                    Some(cmd) => {
+                        user_sender.send(cmd.clone());
+                        if cmd == UserCommand::Exit {
+                            break;
+                        }
+                    },
+                    None => {
+                        println!("Unrecognised command");
+                        continue;
+                    }
+                }
+            }
+        });
+
+        Ok(Client {
+            //routing          : routing,
+            routing_receiver : routing_receiver,
+            user_receiver    : user_receiver,
+            is_done          : false,
+        })
+    }
+
+    fn run(&mut self) {
+        // Need to do poll as Select is not yet stable in current
+        // rust implementation.
+
+        loop {
+            while let Ok(command) = self.user_receiver.try_recv() {
+                self.handle_user_command(command);
+            }
+
+            if self.is_done { break; }
+
+            while let Ok(event) = self.routing_receiver.try_recv() {
+                self.handle_routing_event(event);
+            }
+
+            if self.is_done { break; }
+
+            thread::sleep_ms(10);
+        }
+        println!("Bye");
+    }
+
+    fn handle_user_command(&mut self, cmd : UserCommand) {
+        match cmd {
+            UserCommand::Exit => {
+                self.is_done = true;
+            }
+        }
+    }
+
+    fn handle_routing_event(&mut self, event : Event) {
+    }
+
+    fn run_event_reader(&self) {
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -478,13 +571,18 @@ fn main() {
                                        .collect::<Vec<_>>();
 
     if args.flag_node {
-        let node = match Node::new(bootstrap_peers) {
+        let mut node = match Node::new(bootstrap_peers) {
             Ok(node) => node,
             Err(err) => { println!("Failed to create Node: {:?}", err); return; }
         };
 
         node.run();
     } else {
-        //run_interactive_node(bootstrap_peers);
+        let mut client = match Client::new(bootstrap_peers) {
+            Ok(client) => client,
+            Err(err) => { println!("Failed to create Client: {:?}", err); return; }
+        };
+
+        client.run();
     }
 }
