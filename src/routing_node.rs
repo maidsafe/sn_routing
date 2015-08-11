@@ -160,13 +160,13 @@ impl RoutingNode {
                     }
                 },
                 Ok(crust::Event::NewConnection(endpoint)) => {
-
+                    self.handle_new_connection(endpoint);
                 },
                 Ok(crust::Event::LostConnection(endpoint)) => {
-
+                    self.handle_lost_connection(endpoint);
                 },
-                Ok(crust::Event::NewBootstrapConnection(_endpoint)) => {
-
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    self.handle_new_bootstrap_connection(endpoint);
                 }
             };
             match self.action_receiver.try_recv() {
@@ -196,6 +196,10 @@ impl RoutingNode {
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
+        unimplemented!()
+    }
+
+    fn handle_new_bootstrap_connection(&mut self, endpoint : Endpoint) {
         unimplemented!()
     }
 
