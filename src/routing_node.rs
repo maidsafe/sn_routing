@@ -191,7 +191,10 @@ impl RoutingNode {
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
-        unimplemented!()
+        // only accept new connections if we are a full node
+        if self.core.is_node() {
+
+        }
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
