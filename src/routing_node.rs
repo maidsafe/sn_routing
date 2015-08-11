@@ -214,11 +214,11 @@ impl RoutingNode {
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
-        unimplemented!()
+        //unimplemented!()
     }
 
     fn handle_new_bootstrap_connection(&mut self, endpoint : Endpoint) {
-        unimplemented!()
+
     }
 
     /// This the fundamental functional function in routing.
@@ -474,9 +474,22 @@ impl RoutingNode {
 
     // ---- Hello connection identification -------------------------------------------------------
 
+    fn send_hello(&mut self, endpoint: Endpoint) -> RoutingResult {
+        let message = try!(encode(&Hello {
+            address: self.core.our_address(),
+            public_id : PublicId::new(self.core.id())}));
+        ignore(self.connection_manager.send(endpoint, message));
+        Ok(())
+    }
+
     fn handle_hello(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
         -> RoutingResult {
-        unimplemented!()
+        match decode::<Hello>(&serialised_message) {
+            Ok(hello) => {
+                Ok(())
+            },
+            Err(_) => Err(RoutingError::UnknownMessageType)
+        }
     }
 
     // -----Address and various functions----------------------------------------

@@ -64,6 +64,15 @@ impl RoutingCore {
         &self.id
     }
 
+    /// Returns Address::Node(network_given_name)
+    /// or Address::Client(PublicKey) when no network name is given
+    pub fn our_address(&self) -> Address {
+        match self.network_name {
+            Some(name) => Address::Node(name.clone()),
+            None => Address::Client(self.id.signing_public_key()),
+        }
+    }
+
     /// Assigning a network received name to the core.
     /// If a name is already assigned, the function returns false and no action is taken.
     /// After a name is assigned, Routing connections can be accepted.
@@ -76,6 +85,7 @@ impl RoutingCore {
         if !self.id.assign_relocated_name(network_name.clone()) {
             return false };
         self.routing_table = Some(RoutingTable::new(&network_name));
+        self.network_name = Some(network_name.clone());
         true
     }
 
