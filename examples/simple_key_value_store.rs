@@ -455,6 +455,8 @@ impl Node {
 #[derive(PartialEq, Eq, Debug, Clone)]
 enum UserCommand {
     Exit,
+    Get(String),
+    Put(String, String),
 }
 
 fn parse_user_command(cmd : String) -> Option<UserCommand> {
@@ -462,10 +464,17 @@ fn parse_user_command(cmd : String) -> Option<UserCommand> {
                   .split(' ')
                   .collect::<Vec<_>>();
 
-    if cmds.is_empty() { return None; }
-
-    if cmds.len() == 1 && cmds[0] == "exit" {
+    if cmds.is_empty() {
+        return None;
+    }
+    else if cmds.len() == 1 && cmds[0] == "exit" {
         return Some(UserCommand::Exit);
+    }
+    else if cmds.len() == 2 && cmds[0] == "get" {
+        return Some(UserCommand::Get(cmds[1].to_string()));
+    }
+    else if cmds.len() == 3 && cmds[0] == "put" {
+        return Some(UserCommand::Put(cmds[1].to_string(), cmds[2].to_string()));
     }
 
     None
@@ -545,13 +554,17 @@ impl Client {
             UserCommand::Exit => {
                 self.is_done = true;
             }
+            UserCommand::Get(what) => {
+                println!("TODO: send Get('{}')", what);
+            }
+            UserCommand::Put(put_where, what) => {
+                println!("TODO: send Put('{}', '{}')", put_where, what);
+            }
         }
     }
 
     fn handle_routing_event(&mut self, event : Event) {
-    }
-
-    fn run_event_reader(&self) {
+        println!("Client received routing event: {:?}", event);
     }
 }
 
