@@ -113,13 +113,7 @@ mod test {
     use super::*;
     use utils::encode;
 
-    use routing::data::Data;
-    use routing::error::ResponseError;
-    use routing::NameType;
-    use routing::node_interface::MethodCall;
-    use routing::sendable::Sendable;
-    use routing::structured_data::StructuredData;
-    use routing::types::*;
+    use routing_types::*;
 
     #[test]
     fn handle_put_get() {

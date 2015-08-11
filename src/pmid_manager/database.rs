@@ -230,8 +230,7 @@ mod test {
 
     use super::{PmidManagerDatabase, PmidManagerAccount, PmidManagerAccountWrapper};
 
-    use routing::NameType;
-    use routing::types::*;
+    use routing_types::*;
 
     #[test]
     fn exist() {

@@ -298,16 +298,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
     use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
     use utils::decode;
-
-    use routing::authority::Authority;
-    use routing::data::{Data, DataRequest};
-    use routing::error::{ResponseError, InterfaceError};
-    use routing::immutable_data::{ImmutableData, ImmutableDataType};
-    use routing::NameType;
-    use routing::node_interface::{ Interface, MethodCall };
-    use routing::sendable::Sendable;
-    use routing::structured_data::StructuredData;
-    use routing::types::*;
+    use routing_types::*;
 
     fn maid_manager_put(vault: &mut VaultFacade, from: SourceAddress,
                         dest: DestinationAddress, im_data: ImmutableData) {

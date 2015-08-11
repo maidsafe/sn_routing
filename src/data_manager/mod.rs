@@ -248,11 +248,7 @@ mod test {
     use super::{DataManager, DataManagerStatsSendable};
     use super::database::DataManagerSendable;
 
-    use routing::immutable_data::{ImmutableData, ImmutableDataType};
-    use routing::node_interface::MethodCall;
-    use routing::NameType;
-    use routing::sendable::Sendable;
-    use routing::types::*;
+    use routing_types::*;
 
     #[test]
     fn handle_put_get() {
