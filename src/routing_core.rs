@@ -86,6 +86,10 @@ impl RoutingCore {
             return false };
         self.routing_table = Some(RoutingTable::new(&network_name));
         self.network_name = Some(network_name.clone());
+        // TODO (ben 11/08/2015) assigning a network name changes our address from
+        // client to node; minimally we need to send a new hello on unidentified
+        // connections, we currently freeze our bootstrap connections
+        // ie send nothing new.
         true
     }
 
@@ -134,6 +138,25 @@ impl RoutingCore {
                 None => None,
             }
         }
+    }
+
+    /// Returns a copy of the peer information if found in the relay_map.
+    /// The routing table does not support retrieval of peer information,
+    /// and this does not pose a problem, as connections, once a Routing connection,
+    /// do not need to be moved; they can only be dropped.
+    pub fn get_relay_peer(&self, connection_name : &ConnectionName) -> Option<Peer> {
+        match *connection_name {
+            ConnectionName::Routing(name) => None,
+            _ => match self.relay_map.lookup_connection_name(connection_name) {
+                Some(peer) => Some(peer.clone()),
+                None => None,
+            },
+        }
+    }
+
+    /// Returns the peer if successfully dropped from the core
+    pub fn drop_peer(&mut self, connection_name : &ConnectionName) -> Option<Peer> {
+        None
     }
 
     /// To be documented
