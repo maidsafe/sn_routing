@@ -162,7 +162,7 @@ impl Node {
         })
     }
 
-    fn run(&self) {
+    fn run(&mut self) {
         loop {
             let event = match self.receiver.recv() {
                 Ok(event) => event,
@@ -189,14 +189,22 @@ impl Node {
         }
     }
 
-    fn handle_request(&self, request        : ExternalRequest,
-                             our_authority  : Authority,
-                             from_authority : Authority,
-                             response_token : SignedToken) {
+    fn handle_request(&mut self, request        : ExternalRequest,
+                                 our_authority  : Authority,
+                                 from_authority : Authority,
+                                 response_token : SignedToken) {
         match request {
-            ExternalRequest::Get(DataRequest) => {
+            ExternalRequest::Get(data_request) => {
+                self.handle_get_request(data_request,
+                                        our_authority,
+                                        from_authority,
+                                        response_token);
             },
-            ExternalRequest::Put(Data) => {
+            ExternalRequest::Put(data) => {
+                self.handle_put_request(data,
+                                        our_authority,
+                                        from_authority,
+                                        response_token);
             },
             ExternalRequest::Post(Data) => {
                 println!("Node: Post is not implemented, ignoring.");
@@ -207,10 +215,28 @@ impl Node {
         }
     }
 
-    fn handle_get_request(&self, data_request   : DataRequest,
-                                 our_authority  : Authority,
-                                 from_authority : Authority,
-                                 response_token : SignedToken) {
+    fn handle_get_request(&mut self, data_request   : DataRequest,
+                                     our_authority  : Authority,
+                                     from_authority : Authority,
+                                     response_token : SignedToken) {
+        let name = match data_request {
+            DataRequest::PlainData(name) => name,
+            _ => { println!("Only serving plain data in this example"); return; }
+        };
+
+        // TODO: Send back response.
+    }
+
+    fn handle_put_request(&mut self, data           : Data,
+                                     our_authority  : Authority,
+                                     from_authority : Authority,
+                                     response_token : SignedToken) {
+        let plain_data = match data {
+            Data::PlainData(plain_data) => plain_data,
+            _ => { println!("Only storing plain data in this example"); return; }
+        };
+
+        // TODO: Store the plain data.
     }
 }
 
