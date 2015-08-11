@@ -6,9 +6,9 @@
 
 **Secondary Maintainer:**   Chandra Prakash (prakash@maidsafe.net)
 
-|Crate|Linux|Windows|OSX|Coverage|Issues|
-|:------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-|[![](http://meritbadge.herokuapp.com/safe_vault)](https://crates.io/crates/safe_vault)|[![Build Status](https://travis-ci.org/maidsafe/safe_vault.svg?branch=master)](https://travis-ci.org/maidsafe/safe_vault) | [![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=safe_vault_win64_status_badge)](http://ci.maidsafe.net:8080/job/safe_vault_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=safe_vault_osx_status_badge)](http://ci.maidsafe.net:8080/job/safe_vault_osx_status_badge/) |[![Coverage Status](https://coveralls.io/repos/maidsafe/safe_vault/badge.svg)](https://coveralls.io/r/maidsafe/safe_vault)|[![Stories in Ready](https://badge.waffle.io/maidsafe/safe_vault.png?label=ready&title=Ready)](https://waffle.io/maidsafe/safe_vault)|
+|Crate|Linux|ARM/Linux|Windows|OSX|Coverage|Issues|
+|:------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
+|[![](http://meritbadge.herokuapp.com/safe_vault)](https://crates.io/crates/safe_vault)|[![Build Status](https://travis-ci.org/maidsafe/safe_vault.svg?branch=master)](https://travis-ci.org/maidsafe/safe_vault) |[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=safe_vault_arm_status_badge)](http://ci.maidsafe.net:8080/job/safe_vault_arm_status_badge/) | [![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=safe_vault_win64_status_badge)](http://ci.maidsafe.net:8080/job/safe_vault_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=safe_vault_osx_status_badge)](http://ci.maidsafe.net:8080/job/safe_vault_osx_status_badge/) |[![Coverage Status](https://coveralls.io/repos/maidsafe/safe_vault/badge.svg)](https://coveralls.io/r/maidsafe/safe_vault)|[![Stories in Ready](https://badge.waffle.io/maidsafe/safe_vault.png?label=ready&title=Ready)](https://waffle.io/maidsafe/safe_vault)|
 
 
 | [API Documentation - master branch ](http://maidsafe.net/safe_vault/master) | [SAFE Network System Documention](http://systemdocs.maidsafe.net) | [MaidSafe website](http://maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
@@ -22,9 +22,12 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 #Todo Items
 
 ## [0.1.4]
-- [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
+- [X] [MAID-1283](https://maidsafe.atlassian.net/browse/MAID-1283) Rename repositories from "maidsafe_" to "safe_"
 
 ## [0.1.5]
+- [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
+
+## [0.1.6]
 - [ ] [MAID-1189](https://maidsafe.atlassian.net/browse/MAID-1189) Proper PmidNode Initialisation (max diskspace)
 - [ ] [MAID-1190](https://maidsafe.atlassian.net/browse/MAID-1190) Proper MaidManager account entry creation (allownance)
 - [ ] [MAID-1191](https://maidsafe.atlassian.net/browse/MAID-1191) Proper PmidManager account entry creation (pmidnode diskspace info)
