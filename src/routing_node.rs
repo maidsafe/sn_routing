@@ -192,12 +192,23 @@ impl RoutingNode {
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
         // only accept new connections if we are a full node
-        if self.core.is_node() {
+        let has_bootstrap_endpoints = self.core.has_bootstrap_endpoints();
+        if !self.core.is_node() {
+            if has_bootstrap_endpoints {
+                // we are bootstrapping, refuse all normal connections
+                self.connection_manager.drop_node(endpoint);
+                return;
+            } else {
+                let assigned_name = NameType::new(crypto::hash::sha512::hash(
+                    &self.core.id().signing_public_key().0).0);
+                let _ = self.core.assign_name(&assigned_name);
+            }
+        }
 
-        } else if !self.core.has_bootstrap_connections() {
-            let assigned_name = NameType::new(crypto::hash::sha512::hash(
-                &self.core.id().signing_public_key().0).0);
-            let _ = self.core.assign_name(&assigned_name);
+        if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), false),
+            endpoint.clone(), None) {
+            // only fails if relay_map is full for unidentified connections
+            self.connection_manager.drop_node(endpoint);
         }
     }
 
