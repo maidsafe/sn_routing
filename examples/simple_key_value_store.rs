@@ -246,24 +246,24 @@ fn parse_user_command(cmd : String) -> Option<UserCommand> {
 ////////////////////////////////////////////////////////////////////////////////
 struct Client {
     routing          : Routing,
-    routing_receiver : Receiver<Event>,
-    user_receiver    : Receiver<UserCommand>,
+    event_receiver   : Receiver<Event>,
+    command_receiver : Receiver<UserCommand>,
     is_done          : bool,
 }
 
 impl Client {
     fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
-        let (routing_sender, routing_receiver) = mpsc::channel::<Event>();
-        let routing = try!(Routing::new_client(routing_sender));
+        let (event_sender, event_receiver) = mpsc::channel::<Event>();
+        let routing = try!(Routing::new_client(event_sender));
 
-        let (user_sender, user_receiver) = mpsc::channel::<UserCommand>();
+        let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
-        thread::spawn(move || { Client::read_user_commands(user_sender); });
+        thread::spawn(move || { Client::read_user_commands(command_sender); });
 
         Ok(Client {
             routing          : routing,
-            routing_receiver : routing_receiver,
-            user_receiver    : user_receiver,
+            event_receiver   : event_receiver,
+            command_receiver : command_receiver,
             is_done          : false,
         })
     }
@@ -272,13 +272,13 @@ impl Client {
         // Need to do poll as Select is not yet stable in the current
         // rust implementation.
         loop {
-            while let Ok(command) = self.user_receiver.try_recv() {
+            while let Ok(command) = self.command_receiver.try_recv() {
                 self.handle_user_command(command);
             }
 
             if self.is_done { break; }
 
-            while let Ok(event) = self.routing_receiver.try_recv() {
+            while let Ok(event) = self.event_receiver.try_recv() {
                 self.handle_routing_event(event);
             }
 
@@ -290,7 +290,7 @@ impl Client {
         println!("Bye");
     }
 
-    fn read_user_commands(user_sender: Sender<UserCommand>) {
+    fn read_user_commands(command_sender: Sender<UserCommand>) {
         loop {
             let mut command = String::new();
             let mut stdin = io::stdin();
@@ -299,7 +299,7 @@ impl Client {
 
             match parse_user_command(command) {
                 Some(cmd) => {
-                    user_sender.send(cmd.clone());
+                    command_sender.send(cmd.clone());
                     if cmd == UserCommand::Exit {
                         break;
                     }
