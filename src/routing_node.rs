@@ -21,6 +21,7 @@ use std::thread::spawn;
 use std::collections::BTreeMap;
 use sodiumoxide::crypto::sign::{verify_detached, Signature};
 use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto;
 use time::{Duration, SteadyTime};
 
 use crust;
@@ -33,7 +34,7 @@ use name_type::{closer_to_target_or_equal};
 use routing_core::{RoutingCore, ConnectionName};
 use id::Id;
 use public_id::PublicId;
-use who_are_you::IAm;
+use who_are_you::Hello;
 use types;
 use types::{MessageId, Bytes, Address};
 use utils::{encode, decode};
@@ -64,7 +65,6 @@ use message_filter::MessageFilter;
 //use types;
 //use types::{MessageId, Bytes, DestinationAddress, SourceAddress, Address};
 //use authority::{Authority, our_authority};
-//use who_are_you::IAm;
 //use messages::{RoutingMessage, SignedMessage, MessageType,
 //               ConnectRequest, ConnectResponse, GetDataResponse};
 
@@ -79,8 +79,6 @@ use message_filter::MessageFilter;
 //
 
 type RoutingResult = Result<(), RoutingError>;
-
-
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
@@ -140,6 +138,52 @@ impl RoutingNode {
         // };
     }
 
+    pub fn run(&mut self, _restricted_to_client : bool) {
+        loop {
+            match self.crust_receiver.recv() {
+                Err(_) => {},
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    match decode::<SignedMessage>(&bytes) {
+                        Ok(message) => {
+                            // handle SignedMessage for any identified endpoint
+                            match self.core.lookup_endpoint(&endpoint) {
+                                Some(ConnectionName::Unidentified(_, _)) => {},
+                                None => {},
+                                _ => ignore(self.message_received(message)),
+                            };
+                        },
+                        // The message received is not a Signed Routing Message,
+                        // expect it to be an Hello message to identify a connection
+                        Err(_) => {
+                            let _ = self.handle_hello(&endpoint, bytes);
+                        },
+                    }
+                },
+                Ok(crust::Event::NewConnection(endpoint)) => {
+                    self.handle_new_connection(endpoint);
+                },
+                Ok(crust::Event::LostConnection(endpoint)) => {
+                    self.handle_lost_connection(endpoint);
+                },
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    self.handle_new_bootstrap_connection(endpoint);
+                }
+            };
+            match self.action_receiver.try_recv() {
+                Err(_) => {},
+                Ok(Action::SendMessage(signed_message)) => {
+
+                },
+                Ok(Action::SendContent(to_authority, content)) => {
+
+                },
+                Ok(Action::Terminate) => {
+
+                },
+            }
+        }
+    }
+
     fn request_network_name(&mut self) -> Result<NameType, RoutingError>  {
         unimplemented!()
     }
@@ -147,12 +191,34 @@ impl RoutingNode {
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
-        unimplemented!()
+        // only accept new connections if we are a full node
+        let has_bootstrap_endpoints = self.core.has_bootstrap_endpoints();
+        if !self.core.is_node() {
+            if has_bootstrap_endpoints {
+                // we are bootstrapping, refuse all normal connections
+                self.connection_manager.drop_node(endpoint);
+                return;
+            } else {
+                let assigned_name = NameType::new(crypto::hash::sha512::hash(
+                    &self.core.id().signing_public_key().0).0);
+                let _ = self.core.assign_name(&assigned_name);
+            }
+        }
+
+        if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), false),
+            endpoint.clone(), None) {
+            // only fails if relay_map is full for unidentified connections
+            self.connection_manager.drop_node(endpoint);
+        }
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
-        unimplemented!()
+        //unimplemented!()
+    }
+
+    fn handle_new_bootstrap_connection(&mut self, endpoint : Endpoint) {
+
     }
 
     /// This the fundamental functional function in routing.
@@ -182,7 +248,7 @@ impl RoutingNode {
         ignore(self.send(message_wrap.clone()));
 
         let address_in_close_group_range =
-            self.address_in_close_group_range(&message.destination());
+            self.core.name_in_range(&message.destination().get_location());
 
         // Handle FindGroupResponse
         if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids), _)
@@ -349,10 +415,11 @@ impl RoutingNode {
     /// 2. if we can forward it to nodes closer to the destination, it will be sent in parallel
     /// 3. if the destination is in range for us, then send it to all our close group nodes
     /// 4. if all the above failed, try sending it over all available bootstrap connections
-    /// 5.
+    /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&self, signed_message : SignedMessage) -> RoutingResult {
         let destination = signed_message.get_routing_message().destination();
         let bytes = try!(encode(&signed_message));
+        // query the routing table for parallel or swarm
         let endpoints = self.core.target_endpoints(&destination);
         if !endpoints.is_empty() {
             for endpoint in endpoints {
@@ -371,9 +438,14 @@ impl RoutingNode {
                 ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
                     bytes.clone()));
             }
+            return Ok(());
         }
 
-        unimplemented!()
+        // If we need handle this message, move this copy into the channel for later processing.
+        if self.core.name_in_range(&destination.get_location()) {
+            ignore(self.action_sender.send(Action::SendMessage(signed_message)));
+        }
+        Ok(())
     }
 
     fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
@@ -400,11 +472,24 @@ impl RoutingNode {
         // self.send_swarm_or_parallel(&message)
     }
 
-    // ---- I Am connection identification --------------------------------------------------------
+    // ---- Hello connection identification -------------------------------------------------------
 
-    fn handle_i_am(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
+    fn send_hello(&mut self, endpoint: Endpoint) -> RoutingResult {
+        let message = try!(encode(&Hello {
+            address: self.core.our_address(),
+            public_id : PublicId::new(self.core.id())}));
+        ignore(self.connection_manager.send(endpoint, message));
+        Ok(())
+    }
+
+    fn handle_hello(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
         -> RoutingResult {
-            unimplemented!()
+        match decode::<Hello>(&serialised_message) {
+            Ok(hello) => {
+                Ok(())
+            },
+            Err(_) => Err(RoutingError::UnknownMessageType)
+        }
     }
 
     // -----Address and various functions----------------------------------------
@@ -422,31 +507,6 @@ impl RoutingNode {
         //     None => {}
         // };
         // self.bootstrap = None;
-    }
-
-    fn address_in_close_group_range(&self, destination_auth: &Authority) -> bool {
-        unimplemented!()
-        // TODO (ben 05/08/2015) again, this needs to rely on core
-        // let address = match *destination_auth {
-        //     Authority::ClientManager(name) => name,
-        //     Authority::NaeManager(name)    => name,
-        //     Authority::NodeManager(name)   => name,
-        //     Authority::ManagedNode(_)      => return false,
-        //     Authority::Client(_, _)        => return false,
-        // };
-        //
-        // if self.routing_table.size() < types::QUORUM_SIZE  ||
-        //    *address == self.core.id().name().clone()
-        // {
-        //     return true;
-        // }
-        //
-        // match self.routing_table.our_close_group().last() {
-        //     Some(furthest_close_node) => {
-        //         closer_to_target_or_equal(&address, &furthest_close_node.id(), &self.core.id().name())
-        //     },
-        //     None => false  // ...should never reach here
-        // }
     }
 
     // -----Message Handlers from Routing Table connections----------------------------------------

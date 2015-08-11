@@ -18,11 +18,12 @@
 
 use crust;
 
-use routing_table::RoutingTable;
+use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
 use types::Address;
 use authority::Authority;
 use id::Id;
+use public_id::PublicId;
 use NameType;
 use peer::Peer;
 
@@ -32,7 +33,9 @@ pub enum ConnectionName {
    Relay(Address),
    Routing(NameType),
    Bootstrap(NameType),
-   Unidentified(crust::Endpoint),
+   Unidentified(crust::Endpoint, bool),
+   //                            ~|~~
+   //                             | set true when connected as a bootstrap connection
 }
 
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
@@ -61,6 +64,15 @@ impl RoutingCore {
         &self.id
     }
 
+    /// Returns Address::Node(network_given_name)
+    /// or Address::Client(PublicKey) when no network name is given
+    pub fn our_address(&self) -> Address {
+        match self.network_name {
+            Some(name) => Address::Node(name.clone()),
+            None => Address::Client(self.id.signing_public_key()),
+        }
+    }
+
     /// Assigning a network received name to the core.
     /// If a name is already assigned, the function returns false and no action is taken.
     /// After a name is assigned, Routing connections can be accepted.
@@ -73,7 +85,14 @@ impl RoutingCore {
         if !self.id.assign_relocated_name(network_name.clone()) {
             return false };
         self.routing_table = Some(RoutingTable::new(&network_name));
+        self.network_name = Some(network_name.clone());
         true
+    }
+
+    /// Currently wraps around RoutingCore::assign_network_name
+    pub fn assign_name(&mut self, name: &NameType) -> bool {
+        // wrap to assign_network_name
+        self.assign_network_name(name)
     }
 
     /// Look up an endpoint in the routing table and the relay map and return the ConnectionName
@@ -114,6 +133,34 @@ impl RoutingCore {
                 Some(relay_name) => Some(relay_name),
                 None => None,
             }
+        }
+    }
+
+    /// To be documented
+    pub fn add_peer(&mut self, identity : ConnectionName, endpoint : crust::Endpoint,
+        public_id : Option<PublicId>) -> bool {
+        match identity {
+            ConnectionName::Routing(routing_name) => {
+                match self.routing_table {
+                    Some(ref mut routing_table) => {
+                        match public_id {
+                            None => return false,
+                            Some(given_public_id) => {
+                                if given_public_id.name() != routing_name { return false; }
+                                let node_info = NodeInfo::new(given_public_id, vec![endpoint.clone()],
+                                    Some(endpoint));
+                                // TODO (ben 10/08/2015) drop connection of dropped node
+                                let (added, _) = routing_table.add_node(node_info);
+                                added
+                            },
+                        }
+                    },
+                    None => false,
+                }
+            },
+            _ => {
+                self.relay_map.add_peer(identity, endpoint, public_id)
+            },
         }
     }
 
@@ -165,7 +212,7 @@ impl RoutingCore {
             ConnectionName::Bootstrap(_) => {
                 !self.relay_map.is_full() &&
                 self.routing_table.is_none() },
-            ConnectionName::Unidentified(_) => true,
+            ConnectionName::Unidentified(_, _) => true,
         }
     }
 
@@ -210,19 +257,26 @@ impl RoutingCore {
         target_endpoints
     }
 
-    /// Returns the available Boostrap connections as Peers. If the routing_table is
-    /// available then access to the bootstrap connections will be blocked, and an empty
+    /// Returns the available Boostrap connections as Peers. If we are a connected node,
+    /// then access to the bootstrap connections will be blocked, and an empty
     /// vector is returned.
     pub fn bootstrap_endpoints(&self) -> Vec<Peer> {
-        // block explicitly if routing table is available
-        match self.routing_table {
-            Some(_) => return Vec::new(),
-            None => {},
-        };
+        // block explicitly if we are a connected node
+        if self.is_connected_node() { return vec![] };
         self.relay_map.bootstrap_connections()
     }
 
-    /// Returns true if the core is a full routing node
+    /// Returns true if bootstrap connections are available. If we are a connected node,
+    /// then access to the bootstrap connections will be blocked, and false
+    /// is returned.  We might still receive messages from our bootstrap connections,
+    /// but active usage is blocked once we are a node.
+    pub fn has_bootstrap_endpoints(&self) -> bool {
+        // block explicitly if routing table is available
+        !self.is_connected_node() &&
+            self.relay_map.has_bootstrap_connections()
+    }
+
+    /// Returns true if the core is a full routing node, but not necessarily connected
     pub fn is_node(&self) -> bool {
         self.routing_table.is_some()
     }
@@ -231,6 +285,20 @@ impl RoutingCore {
     pub fn is_connected_node(&self) -> bool {
         match self.routing_table {
             Some(ref routing_table) => routing_table.size() > 0,
+            None => false,
+        }
+    }
+
+    /// Returns true if the relay map contains bootstrap connections
+    pub fn has_bootstrap_connections(&self) -> bool {
+        self.relay_map.has_bootstrap_connections()
+    }
+
+    /// Returns true if a name is in range for our close group.
+    /// If the core is not a full node, this always returns false.
+    pub fn name_in_range(&self, name : &NameType) -> bool {
+        match self.routing_table {
+            Some(ref routing_table) => routing_table.address_in_our_close_group_range(name),
             None => false,
         }
     }
