@@ -144,6 +144,189 @@ struct CliArgs {
     arg_value: String,
 }
 
+////////////////////////////////////////////////////////////////////////////////
+struct Node {
+    routing  : Routing,
+    receiver : Receiver<Event>,
+}
+
+impl Node {
+    fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Node, RoutingError> {
+        let (sender, receiver) = mpsc::channel::<Event>();
+        let routing = try!(Routing::new(sender));
+
+        Ok(Node {
+            routing  : routing,
+            receiver : receiver,
+        })
+    }
+
+    fn run(&self) {
+        loop {
+            let event = match self.receiver.recv() {
+                Ok(event) => event,
+                Err(err)  => {
+                    println!("Got error from node: {:?}", err);
+                    return;
+                }
+            };
+
+            println!("Node: Receied event {:?}", event);
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Eq, Debug, Clone)]
+enum UserCommand {
+    Exit,
+    Get(String),
+    Put(String, String),
+}
+
+fn parse_user_command(cmd : String) -> Option<UserCommand> {
+    let cmds = cmd.trim_right_matches(|c| c == '\r' || c == '\n')
+                  .split(' ')
+                  .collect::<Vec<_>>();
+
+    if cmds.is_empty() {
+        return None;
+    }
+    else if cmds.len() == 1 && cmds[0] == "exit" {
+        return Some(UserCommand::Exit);
+    }
+    else if cmds.len() == 2 && cmds[0] == "get" {
+        return Some(UserCommand::Get(cmds[1].to_string()));
+    }
+    else if cmds.len() == 3 && cmds[0] == "put" {
+        return Some(UserCommand::Put(cmds[1].to_string(), cmds[2].to_string()));
+    }
+
+    None
+}
+
+////////////////////////////////////////////////////////////////////////////////
+struct Client {
+    routing          : Routing,
+    routing_receiver : Receiver<Event>,
+    user_receiver    : Receiver<UserCommand>,
+    is_done          : bool,
+}
+
+impl Client {
+    fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
+        let (routing_sender, routing_receiver) = mpsc::channel::<Event>();
+        let routing = try!(Routing::new_client(routing_sender));
+
+        let (user_sender, user_receiver) = mpsc::channel::<UserCommand>();
+
+        thread::spawn(move || { Client::read_user_commands(user_sender); });
+
+        Ok(Client {
+            routing          : routing,
+            routing_receiver : routing_receiver,
+            user_receiver    : user_receiver,
+            is_done          : false,
+        })
+    }
+
+    fn run(&mut self) {
+        // Need to do poll as Select is not yet stable in the current
+        // rust implementation.
+        loop {
+            while let Ok(command) = self.user_receiver.try_recv() {
+                self.handle_user_command(command);
+            }
+
+            if self.is_done { break; }
+
+            while let Ok(event) = self.routing_receiver.try_recv() {
+                self.handle_routing_event(event);
+            }
+
+            if self.is_done { break; }
+
+            thread::sleep_ms(10);
+        }
+
+        println!("Bye");
+    }
+
+    fn read_user_commands(user_sender: Sender<UserCommand>) {
+        loop {
+            let mut command = String::new();
+            let mut stdin = io::stdin();
+            println!("Type command:");
+            let _ = stdin.read_line(&mut command);
+
+            match parse_user_command(command) {
+                Some(cmd) => {
+                    user_sender.send(cmd.clone());
+                    if cmd == UserCommand::Exit {
+                        break;
+                    }
+                },
+                None => {
+                    println!("Unrecognised command");
+                    continue;
+                }
+            }
+        }
+    }
+
+    fn handle_user_command(&mut self, cmd : UserCommand) {
+        match cmd {
+            UserCommand::Exit => {
+                self.is_done = true;
+            }
+            UserCommand::Get(what) => {
+                println!("TODO: send Get('{}')", what);
+            }
+            UserCommand::Put(put_where, what) => {
+                println!("TODO: send Put('{}', '{}')", put_where, what);
+            }
+        }
+    }
+
+    fn handle_routing_event(&mut self, event : Event) {
+        println!("Client received routing event: {:?}", event);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+fn main() {
+    match env_logger::init() {
+        Ok(()) => {},
+        Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
+    }
+
+    let args: Args = Docopt::new(USAGE)
+                            .and_then(|docopt| docopt.decode())
+                            .unwrap_or_else(|error| error.exit());
+
+    let bootstrap_peers = args.arg_peer.into_iter()
+                                       .map(|ep| ep.to_crust_endpoint())
+                                       .collect::<Vec<_>>();
+
+    if args.flag_node {
+        let mut node = match Node::new(bootstrap_peers) {
+            Ok(node) => node,
+            Err(err) => { println!("Failed to create Node: {:?}", err); return; }
+        };
+
+        node.run();
+    } else {
+        let mut client = match Client::new(bootstrap_peers) {
+            Ok(client) => client,
+            Err(err) => { println!("Failed to create Client: {:?}", err); return; }
+        };
+
+        client.run();
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Old code for reference, will be slowly disappearing.
 // ==========================   Implement traits   =================================
 //
 //struct TestClient {
@@ -419,183 +602,3 @@ struct CliArgs {
 //    }
 //}
 
-////////////////////////////////////////////////////////////////////////////////
-struct Node {
-    routing  : Routing,
-    receiver : Receiver<Event>,
-}
-
-impl Node {
-    fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Node, RoutingError> {
-        let (sender, receiver) = mpsc::channel::<Event>();
-        let routing = try!(Routing::new(sender));
-
-        Ok(Node {
-            routing  : routing,
-            receiver : receiver,
-        })
-    }
-
-    fn run(&self) {
-        loop {
-            let event = match self.receiver.recv() {
-                Ok(event) => event,
-                Err(err)  => {
-                    println!("Got error from node: {:?}", err);
-                    return;
-                }
-            };
-
-            println!("Node: Receied event {:?}", event);
-        }
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-#[derive(PartialEq, Eq, Debug, Clone)]
-enum UserCommand {
-    Exit,
-    Get(String),
-    Put(String, String),
-}
-
-fn parse_user_command(cmd : String) -> Option<UserCommand> {
-    let cmds = cmd.trim_right_matches(|c| c == '\r' || c == '\n')
-                  .split(' ')
-                  .collect::<Vec<_>>();
-
-    if cmds.is_empty() {
-        return None;
-    }
-    else if cmds.len() == 1 && cmds[0] == "exit" {
-        return Some(UserCommand::Exit);
-    }
-    else if cmds.len() == 2 && cmds[0] == "get" {
-        return Some(UserCommand::Get(cmds[1].to_string()));
-    }
-    else if cmds.len() == 3 && cmds[0] == "put" {
-        return Some(UserCommand::Put(cmds[1].to_string(), cmds[2].to_string()));
-    }
-
-    None
-}
-
-////////////////////////////////////////////////////////////////////////////////
-struct Client {
-    routing          : Routing,
-    routing_receiver : Receiver<Event>,
-    user_receiver    : Receiver<UserCommand>,
-    is_done          : bool,
-}
-
-impl Client {
-    fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
-        let (routing_sender, routing_receiver) = mpsc::channel::<Event>();
-        let routing = try!(Routing::new_client(routing_sender));
-
-        let (user_sender, user_receiver) = mpsc::channel::<UserCommand>();
-
-        thread::spawn(move || { Client::read_user_commands(user_sender); });
-
-        Ok(Client {
-            routing          : routing,
-            routing_receiver : routing_receiver,
-            user_receiver    : user_receiver,
-            is_done          : false,
-        })
-    }
-
-    fn run(&mut self) {
-        // Need to do poll as Select is not yet stable in the current
-        // rust implementation.
-        loop {
-            while let Ok(command) = self.user_receiver.try_recv() {
-                self.handle_user_command(command);
-            }
-
-            if self.is_done { break; }
-
-            while let Ok(event) = self.routing_receiver.try_recv() {
-                self.handle_routing_event(event);
-            }
-
-            if self.is_done { break; }
-
-            thread::sleep_ms(10);
-        }
-
-        println!("Bye");
-    }
-
-    fn read_user_commands(user_sender: Sender<UserCommand>) {
-        loop {
-            let mut command = String::new();
-            let mut stdin = io::stdin();
-            println!("Type command:");
-            let _ = stdin.read_line(&mut command);
-
-            match parse_user_command(command) {
-                Some(cmd) => {
-                    user_sender.send(cmd.clone());
-                    if cmd == UserCommand::Exit {
-                        break;
-                    }
-                },
-                None => {
-                    println!("Unrecognised command");
-                    continue;
-                }
-            }
-        }
-    }
-
-    fn handle_user_command(&mut self, cmd : UserCommand) {
-        match cmd {
-            UserCommand::Exit => {
-                self.is_done = true;
-            }
-            UserCommand::Get(what) => {
-                println!("TODO: send Get('{}')", what);
-            }
-            UserCommand::Put(put_where, what) => {
-                println!("TODO: send Put('{}', '{}')", put_where, what);
-            }
-        }
-    }
-
-    fn handle_routing_event(&mut self, event : Event) {
-        println!("Client received routing event: {:?}", event);
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-fn main() {
-    match env_logger::init() {
-        Ok(()) => {},
-        Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
-    }
-
-    let args: Args = Docopt::new(USAGE)
-                            .and_then(|docopt| docopt.decode())
-                            .unwrap_or_else(|error| error.exit());
-
-    let bootstrap_peers = args.arg_peer.into_iter()
-                                       .map(|ep| ep.to_crust_endpoint())
-                                       .collect::<Vec<_>>();
-
-    if args.flag_node {
-        let mut node = match Node::new(bootstrap_peers) {
-            Ok(node) => node,
-            Err(err) => { println!("Failed to create Node: {:?}", err); return; }
-        };
-
-        node.run();
-    } else {
-        let mut client = match Client::new(bootstrap_peers) {
-            Ok(client) => client,
-            Err(err) => { println!("Failed to create Client: {:?}", err); return; }
-        };
-
-        client.run();
-    }
-}
