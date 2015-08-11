@@ -321,7 +321,8 @@ impl RoutingCore {
     /// If the core is not a full node, this always returns false.
     pub fn name_in_range(&self, name : &NameType) -> bool {
         match self.routing_table {
-            Some(ref routing_table) => routing_table.address_in_our_close_group_range(name),
+            Some(ref routing_table) =>
+                routing_table.address_in_our_close_group_range(name),
             None => false,
         }
     }

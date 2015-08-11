@@ -92,6 +92,7 @@ pub struct RoutingNode {
     // for RoutingNode
     action_sender       : mpsc::Sender<Action>,
     action_receiver     : mpsc::Receiver<Action>,
+    event_sender        : mpsc::Sender<Event>,
     filter              : MessageFilter<types::FilterType>,
     core                : RoutingCore,
     // public_id_cache     : LruCache<NameType, PublicId>,
@@ -116,8 +117,9 @@ impl RoutingNode {
             bootstraps          : BTreeMap::new(),
             action_sender       : action_sender,
             action_receiver     : action_receiver,
+            event_sender        : event_sender.clone(),
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
-            core                : RoutingCore::new(),
+            core                : RoutingCore::new(event_sender),
             connection_cache    : BTreeMap::new(),
         })
     }
@@ -184,7 +186,7 @@ impl RoutingNode {
                 return;
             } else {
                 let assigned_name = NameType::new(crypto::hash::sha512::hash(
-                    &self.core.id().signing_public_key().0).0);
+                    &self.core.id().name().0).0);
                 let _ = self.core.assign_name(&assigned_name);
             }
         }
@@ -232,7 +234,6 @@ impl RoutingNode {
         -> RoutingResult {
         match decode::<Hello>(&serialised_message) {
             Ok(hello) => {
-                // let mut trigger_handle_churn = false;
                 let peer = match self.core.lookup_endpoint(&endpoint) {
                     // if already connected through the routing table, just confirm or destroy
                     Some(ConnectionName::Routing(known_name)) => {
