@@ -326,7 +326,7 @@ fn main() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Old code for reference, will be slowly disappearing.
+// Old code for reference, will be slowly disappearing.
 // ==========================   Implement traits   =================================
 //
 //struct TestClient {
