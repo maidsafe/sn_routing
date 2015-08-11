@@ -233,12 +233,27 @@ impl RoutingNode {
         match decode::<Hello>(&serialised_message) {
             Ok(hello) => {
                 // let mut trigger_handle_churn = false;
-                // let mut peer = match self.core.lookup_endpoint(&endpoint) {
-                //     Some(ConnectionName::Unidenified(stored_endpoint, bootstrap)) => {
-                //
-                //     },
-                //     None =>
-                // }
+                let peer = match self.core.lookup_endpoint(&endpoint) {
+                    // if already connected through the routing table, just confirm or destroy
+                    Some(ConnectionName::Routing(known_name)) => {
+                        match hello.address {
+                            // FIXME (ben 11/08/2015) Hello messages need to be signed and
+                            // we also need to check the match with the PublicId stored in RT
+                            Address::Node(known_name) =>
+                                return Ok(()),
+                            _ => {
+                                // the endpoint does not match with the routing information
+                                // we know about it; drop it
+                                let _ = self.core.drop_peer(&ConnectionName::Routing(known_name));
+                                self.connection_manager.drop_node(endpoint.clone());
+                                return Err(RoutingError::RejectedPublicId);
+                            },
+                        }
+                    },
+                    // a connection should have been labeled as Unidentified
+                    None => None,
+                    Some(relay_connection_name) => Some(relay_connection_name),
+                };
                 match (hello.address, self.core.our_address()) {
                     (Address::Node(his_name), Address::Node(our_name)) => {
                     // He is a node, and we are a node, establish a routing table connection
