@@ -21,6 +21,7 @@ use std::thread::spawn;
 use std::collections::BTreeMap;
 use sodiumoxide::crypto::sign::{verify_detached, Signature};
 use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto;
 use time::{Duration, SteadyTime};
 
 use crust;
@@ -193,6 +194,10 @@ impl RoutingNode {
         // only accept new connections if we are a full node
         if self.core.is_node() {
 
+        } else if !self.core.has_bootstrap_connections() {
+            let assigned_name = NameType::new(crypto::hash::sha512::hash(
+                &self.core.id().signing_public_key().0).0);
+            let _ = self.core.assign_name(&assigned_name);
         }
     }
 

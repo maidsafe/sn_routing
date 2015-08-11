@@ -79,6 +79,12 @@ impl RoutingCore {
         true
     }
 
+    /// Currently wraps around RoutingCore::assign_network_name
+    pub fn assign_name(&mut self, name: &NameType) -> bool {
+        // wrap to assign_network_name
+        self.assign_network_name(name)
+    }
+
     /// Look up an endpoint in the routing table and the relay map and return the ConnectionName
     pub fn lookup_endpoint(&self, endpoint: &crust::Endpoint) -> Option<ConnectionName> {
         let routing_name = match self.routing_table {
@@ -264,6 +270,11 @@ impl RoutingCore {
             Some(ref routing_table) => routing_table.size() > 0,
             None => false,
         }
+    }
+
+    /// Returns true if the relay map contains bootstrap connections
+    pub fn has_bootstrap_connections(&self) -> bool {
+        self.relay_map.has_bootstrap_connections()
     }
 
     /// Returns true if a name is in range for our close group.
