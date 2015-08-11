@@ -208,8 +208,9 @@ impl RoutingNode {
         if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), false),
             endpoint.clone(), None) {
             // only fails if relay_map is full for unidentified connections
-            self.connection_manager.drop_node(endpoint);
+            self.connection_manager.drop_node(endpoint.clone());
         }
+        ignore(self.send_hello(endpoint));
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
@@ -218,7 +219,19 @@ impl RoutingNode {
     }
 
     fn handle_new_bootstrap_connection(&mut self, endpoint : Endpoint) {
-
+        if !self.core.is_node() {
+            if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), true),
+                endpoint.clone(), None) {
+                // only fails if relay_map is full for unidentified connections
+                self.connection_manager.drop_node(endpoint.clone());
+                return;
+            }
+        } else {
+            // if core is a full node, don't accept new bootstrap connections
+            self.connection_manager.drop_node(endpoint);
+            return;
+        }
+        ignore(self.send_hello(endpoint));
     }
 
     /// This the fundamental functional function in routing.
@@ -476,7 +489,7 @@ impl RoutingNode {
 
     fn send_hello(&mut self, endpoint: Endpoint) -> RoutingResult {
         let message = try!(encode(&Hello {
-            address: self.core.our_address(),
+            address   : self.core.our_address(),
             public_id : PublicId::new(self.core.id())}));
         ignore(self.connection_manager.send(endpoint, message));
         Ok(())
