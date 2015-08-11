@@ -92,6 +92,17 @@ impl RelayMap {
         }
     }
 
+    /// Removes the provided ConnectionName from the relay map, providing the Peer as removed.
+    pub fn drop_connection_name(&mut self, connection_name : &ConnectionName) -> Option<Peer> {
+        match self.relay_map.remove(connection_name) {
+            Some(peer) => {
+                let _ = self.lookup_map.remove(peer.endpoint());
+                Some(peer)
+            },
+            None => None,
+        }
+    }
+
     /// Returns true if we keep relay endpoints for given name.
     // FIXME(ben) this needs to be used 16/07/2015
     #[allow(dead_code)]

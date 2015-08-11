@@ -16,6 +16,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::sync::mpsc::Sender;
+
 use crust;
 
 use routing_table::{RoutingTable, NodeInfo};
@@ -26,6 +28,7 @@ use id::Id;
 use public_id::PublicId;
 use NameType;
 use peer::Peer;
+use event::Event;
 
 /// ConnectionName labels the counterparty on a connection in relation to us
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -45,17 +48,20 @@ pub struct RoutingCore {
     network_name  : Option<NameType>,
     routing_table : Option<RoutingTable>,
     relay_map     : RelayMap,
+    // sender for signaling churn events
+    event_sender  : Sender<Event>,
 }
 
 impl RoutingCore {
     /// Start a RoutingCore with a new Id and the disabled RoutingTable
-    pub fn new() -> RoutingCore {
+    pub fn new(event_sender : Sender<Event>) -> RoutingCore {
         let id = Id::new();
         RoutingCore {
             id            : id,
             network_name  : None,
             routing_table : None,
             relay_map     : RelayMap::new(),
+            event_sender  : event_sender,
         }
     }
 
@@ -154,9 +160,32 @@ impl RoutingCore {
         }
     }
 
-    /// Returns the peer if successfully dropped from the core
+    /// Returns the peer if successfully dropped from the relay_map
+    /// If dropped from the routing table a churn event is triggered for the user
+    /// if the dropped peer changed our close group.
     pub fn drop_peer(&mut self, connection_name : &ConnectionName) -> Option<Peer> {
-        None
+        match *connection_name {
+            ConnectionName::Routing(name) => {
+                match self.routing_table {
+                    Some(ref mut routing_table) => {
+                        let trigger_churn = routing_table
+                            .address_in_our_close_group_range(&name);
+                        routing_table.drop_node(&name);
+                        if trigger_churn {
+                            let mut close_group : Vec<NameType> = routing_table
+                                    .our_close_group().iter()
+                                    .map(|node_info| node_info.fob.name())
+                                    .collect::<Vec<NameType>>();
+                            close_group.insert(0, self.id.name());
+                            let _ = self.event_sender.send(Event::Churn(close_group));
+                        };
+                        None
+                    },
+                    None => None,
+                }
+            },
+            _ => self.relay_map.drop_connection_name(connection_name)
+        }
     }
 
     /// To be documented
