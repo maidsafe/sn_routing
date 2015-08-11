@@ -33,7 +33,9 @@ pub enum ConnectionName {
    Relay(Address),
    Routing(NameType),
    Bootstrap(NameType),
-   Unidentified(crust::Endpoint),
+   Unidentified(crust::Endpoint, bool),
+   //                            ~|~~
+   //                             | set true when connected as a bootstrap connection
 }
 
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
@@ -193,7 +195,7 @@ impl RoutingCore {
             ConnectionName::Bootstrap(_) => {
                 !self.relay_map.is_full() &&
                 self.routing_table.is_none() },
-            ConnectionName::Unidentified(_) => true,
+            ConnectionName::Unidentified(_, _) => true,
         }
     }
 

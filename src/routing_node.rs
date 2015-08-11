@@ -147,7 +147,7 @@ impl RoutingNode {
                         Ok(message) => {
                             // handle SignedMessage for any identified endpoint
                             match self.core.lookup_endpoint(&endpoint) {
-                                Some(ConnectionName::Unidentified(_)) => {},
+                                Some(ConnectionName::Unidentified(_, _)) => {},
                                 None => {},
                                 _ => ignore(self.message_received(message)),
                             };
