@@ -10,7 +10,10 @@ branches:
     - master
 install:
   - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_libsodium.sh | bash
-  - export LIBRARY_PATH=$LIBRARY_PATH:$HOME/libsodium-1.0.3/lib && export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/libsodium-1.0.3/lib
+  - echo $LIBRARY_PATH
+  - echo $PKG_CONFIG_PATH
+  - echo $PATH
+  - export LIBRARY_PATH=$HOME/libsodium-1.0.3/lib:$LIBRARY_PATH && export PKG_CONFIG_PATH=$HOME/libsodium-1.0.3/lib:$PKG_CONFIG_PATH
 script:
   - cargo build --verbose
   - cargo test --verbose

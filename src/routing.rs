@@ -29,6 +29,7 @@ use data::{Data, DataRequest};
 use types::Bytes;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
+use sodiumoxide::crypto;
 
 //use types::{MessageId, Address};
 //use utils::{encode, decode};
@@ -143,5 +144,9 @@ impl Routing {
     // TODO(dirvine) This maybe should be implementing  aDrop trait  :09/08/2015
     pub fn stop(&mut self) {
         unimplemented!()
+    }
+
+    pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
+        self.keys.signing_public_key()
     }
 }
