@@ -16,9 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide::crypto;
+use sodiumoxide::crypto::sign::Signature;
+use sodiumoxide::crypto::sign;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use rand::random;
-use sodiumoxide::crypto::sign;
+
 use NameType;
 use authority::Authority;
 
@@ -77,11 +79,11 @@ struct SignedKey {
   encrypt_public_key: crypto::box_::PublicKey,
 }
 
-//                        +-> from_authority
-//                        |           +-> preserve the message_id when sending on
-//                        |           |         +-> to_authority
-//                        |           |         |
-pub type FilterType = (Authority, MessageId, Authority);
+// TODO (ben 12/08/2015) Discussion point, message_id from RoutingMessage has been removed
+// in favour the signature of the signed message.  There is an unresolved question on
+// how to handle an explicit double identical request (eg for a network based reference
+// counter).
+pub type FilterType = Signature;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum Address {
