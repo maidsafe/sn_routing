@@ -69,6 +69,7 @@ use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode, decode, public_key_to_client_name};
+use routing::{ExternalRequest, SignedToken};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -161,7 +162,7 @@ impl Node {
         })
     }
 
-    fn run(&self) {
+    fn run(&mut self) {
         loop {
             let event = match self.receiver.recv() {
                 Ok(event) => event,
@@ -172,7 +173,70 @@ impl Node {
             };
 
             println!("Node: Receied event {:?}", event);
+
+            match event {
+                Event::Request{request,
+                               our_authority,
+                               from_authority,
+                               response_token} => {
+                    self.handle_request(request,
+                                        our_authority,
+                                        from_authority,
+                                        response_token);
+                },
+                _ => {}
+            }
         }
+    }
+
+    fn handle_request(&mut self, request        : ExternalRequest,
+                                 our_authority  : Authority,
+                                 from_authority : Authority,
+                                 response_token : SignedToken) {
+        match request {
+            ExternalRequest::Get(data_request) => {
+                self.handle_get_request(data_request,
+                                        our_authority,
+                                        from_authority,
+                                        response_token);
+            },
+            ExternalRequest::Put(data) => {
+                self.handle_put_request(data,
+                                        our_authority,
+                                        from_authority,
+                                        response_token);
+            },
+            ExternalRequest::Post(Data) => {
+                println!("Node: Post is not implemented, ignoring.");
+            },
+            ExternalRequest::Delete(DataRequest) => {
+                println!("Node: Delete is not implemented, ignoring.");
+            },
+        }
+    }
+
+    fn handle_get_request(&mut self, data_request   : DataRequest,
+                                     our_authority  : Authority,
+                                     from_authority : Authority,
+                                     response_token : SignedToken) {
+        let name = match data_request {
+            DataRequest::PlainData(name) => name,
+            _ => { println!("Only serving plain data in this example"); return; }
+        };
+
+        // TODO: Send back response.
+    }
+
+    fn handle_put_request(&mut self, data           : Data,
+                                     our_authority  : Authority,
+                                     from_authority : Authority,
+                                     response_token : SignedToken) {
+        let plain_data = match data {
+            Data::PlainData(plain_data) => plain_data,
+            _ => { println!("Only storing plain data in this example"); return; }
+        };
+
+        // TODO: Store the plain data.
     }
 }
 
@@ -208,24 +272,24 @@ fn parse_user_command(cmd : String) -> Option<UserCommand> {
 ////////////////////////////////////////////////////////////////////////////////
 struct Client {
     routing          : Routing,
-    routing_receiver : Receiver<Event>,
-    user_receiver    : Receiver<UserCommand>,
+    event_receiver   : Receiver<Event>,
+    command_receiver : Receiver<UserCommand>,
     is_done          : bool,
 }
 
 impl Client {
     fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
-        let (routing_sender, routing_receiver) = mpsc::channel::<Event>();
-        let routing = try!(Routing::new_client(routing_sender));
+        let (event_sender, event_receiver) = mpsc::channel::<Event>();
+        let routing = try!(Routing::new_client(event_sender));
 
-        let (user_sender, user_receiver) = mpsc::channel::<UserCommand>();
+        let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
-        thread::spawn(move || { Client::read_user_commands(user_sender); });
+        thread::spawn(move || { Client::read_user_commands(command_sender); });
 
         Ok(Client {
             routing          : routing,
-            routing_receiver : routing_receiver,
-            user_receiver    : user_receiver,
+            event_receiver   : event_receiver,
+            command_receiver : command_receiver,
             is_done          : false,
         })
     }
@@ -234,13 +298,13 @@ impl Client {
         // Need to do poll as Select is not yet stable in the current
         // rust implementation.
         loop {
-            while let Ok(command) = self.user_receiver.try_recv() {
+            while let Ok(command) = self.command_receiver.try_recv() {
                 self.handle_user_command(command);
             }
 
             if self.is_done { break; }
 
-            while let Ok(event) = self.routing_receiver.try_recv() {
+            while let Ok(event) = self.event_receiver.try_recv() {
                 self.handle_routing_event(event);
             }
 
@@ -252,7 +316,7 @@ impl Client {
         println!("Bye");
     }
 
-    fn read_user_commands(user_sender: Sender<UserCommand>) {
+    fn read_user_commands(command_sender: Sender<UserCommand>) {
         loop {
             let mut command = String::new();
             let mut stdin = io::stdin();
@@ -261,7 +325,7 @@ impl Client {
 
             match parse_user_command(command) {
                 Some(cmd) => {
-                    user_sender.send(cmd.clone());
+                    command_sender.send(cmd.clone());
                     if cmd == UserCommand::Exit {
                         break;
                     }
