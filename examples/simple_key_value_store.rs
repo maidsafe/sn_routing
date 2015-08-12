@@ -52,22 +52,19 @@ use std::thread::spawn;
 use std::collections::BTreeMap;
 use std::io::Write;
 
-use cbor::CborError;
 use docopt::Docopt;
 use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
 use crust::Endpoint;
 use routing::routing::Routing;
-use routing::types;
-use routing::id::Id;
 use routing::authority::Authority;
 use routing::NameType;
 use routing::error::{ResponseError, RoutingError};
 use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
-use routing::utils::{encode, decode, public_key_to_client_name};
+use routing::utils::{encode};
 use routing::{ExternalRequest, SignedToken};
 
 // ==========================   Program Options   =================================
@@ -167,7 +164,7 @@ impl Node {
         loop {
             let event = match self.receiver.recv() {
                 Ok(event) => event,
-                Err(err)  => {
+                Err(_)  => {
                     println!("Node: Routing closed the event channel");
                     return;
                 }
@@ -207,17 +204,17 @@ impl Node {
                                         from_authority,
                                         response_token);
             },
-            ExternalRequest::Post(Data) => {
+            ExternalRequest::Post(_) => {
                 println!("Node: Post is not implemented, ignoring.");
             },
-            ExternalRequest::Delete(DataRequest) => {
+            ExternalRequest::Delete(_) => {
                 println!("Node: Delete is not implemented, ignoring.");
             },
         }
     }
 
     fn handle_get_request(&mut self, data_request   : DataRequest,
-                                     our_authority  : Authority,
+                                     _our_authority  : Authority,
                                      from_authority : Authority,
                                      response_token : SignedToken) {
         let name = match data_request {
@@ -234,10 +231,10 @@ impl Node {
         self.routing.get_response(from_authority, Data::PlainData(data), response_token);
     }
 
-    fn handle_put_request(&mut self, data           : Data,
-                                     our_authority  : Authority,
-                                     from_authority : Authority,
-                                     response_token : SignedToken) {
+    fn handle_put_request(&mut self, data            : Data,
+                                     _our_authority  : Authority,
+                                     _from_authority : Authority,
+                                     _response_token : SignedToken) {
         let plain_data = match data {
             Data::PlainData(plain_data) => plain_data,
             _ => { println!("Only storing plain data in this example"); return; }
@@ -329,13 +326,13 @@ impl Client {
             let mut stdin = io::stdin();
 
             print!("Enter command (exit | put <key> <value> | get <key>)\n> ");
-            io::stdout().flush();
+            let _ = io::stdout().flush();
 
             let _ = stdin.read_line(&mut command);
 
             match parse_user_command(command) {
                 Some(cmd) => {
-                    command_sender.send(cmd.clone());
+                    let _ = command_sender.send(cmd.clone());
                     if cmd == UserCommand::Exit {
                         break;
                     }
