@@ -35,7 +35,6 @@ extern crate log;
 extern crate env_logger;
 
 extern crate cbor;
-//extern crate core;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate maidsafe_sodiumoxide as sodiumoxide;
@@ -43,7 +42,6 @@ extern crate maidsafe_sodiumoxide as sodiumoxide;
 extern crate crust;
 extern crate routing;
 
-//use core::iter::FromIterator;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -296,7 +294,7 @@ impl Client {
         thread::spawn(move || { Client::read_user_commands(command_sender); });
 
         Ok(Client {
-            //routing          : routing,
+            routing          : routing,
             event_receiver   : event_receiver,
             command_receiver : command_receiver,
             is_done          : false,
@@ -428,14 +426,6 @@ fn main() {
 //    pub key_reverse_lookup : BTreeMap<NameType, String>
 //}
 //
-//impl TestClient {
-//    pub fn new() -> TestClient {
-//        TestClient {
-//            key_reverse_lookup: BTreeMap::new()
-//        }
-//    }
-//}
-//
 //impl routing::client_interface::Interface for TestClient {
 //    fn handle_get_response(&mut self, data_location : NameType, data : Data) {
 //        println!("Testing client received get_response from {:?} with testdata {:?}",
@@ -469,26 +459,10 @@ fn main() {
 //                println!("Testing client received put_response with error FailedToStoreData for {}", data.name()),
 //        }
 //    }
-//
-//    fn handle_post_response(&mut self, _response_error: ResponseError, _request_data: Data) {
-//         unimplemented!();
-//    }
-//
-//    fn handle_delete_response(&mut self, _response_error: ResponseError, _request_data: Data) {
-//        unimplemented!();
-//    }
 //}
 //
 //struct TestNode {
 //  db: BTreeMap<NameType, PlainData>
-//}
-//
-//impl TestNode {
-//    pub fn new() -> TestNode {
-//        TestNode {
-//            db : BTreeMap::new()
-//        }
-//    }
 //}
 //
 //impl Interface for TestNode {
@@ -550,150 +524,4 @@ fn main() {
 //        };
 //        return Ok(vec![]);
 //    }
-//
-//    fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
-//        _from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
-//        _data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
-//        Err(InterfaceError::Abort)
-//    }
-//
-//    fn handle_refresh(&mut self, _type_tag: u64, _from_group: NameType, _payloads: Vec<Vec<u8>>) {
-//        unimplemented!()
-//    }
-//
-//    fn handle_get_response(&mut self, from_address: NameType, response: Data) -> Vec<MethodCall> {
-//        println!("testing node received get_response from {} with data {:?}", from_address, response);
-//        vec![]
-//    }
-//
-//    fn handle_put_response(&mut self, _from_authority : Authority, _from_address: types::SourceAddress,
-//                                      response: ResponseError) -> Vec<MethodCall> {
-//        println!("testing node received error put_response {}", response);
-//        vec![]
-//    }
-//
-//    fn handle_post_response(&mut self, _from_authority: Authority,
-//        _from_address: types::SourceAddress, _response: ResponseError)
-//        -> Vec<MethodCall> {
-//        unimplemented!();
-//    }
-//
-//    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<MethodCall> {
-//        for name in close_group {
-//          println!("RT: {:?}", name);
-//        }
-//        vec![]
-//    }
-//
-//    fn handle_cache_get(&mut self, _data_request: DataRequest, _data_location: NameType,
-//                                   _from_address: NameType) -> Result<MethodCall, InterfaceError> {
-//        // FIXME(ben): 17/7/2015 implement a proper caching mechanism;
-//        // separate from the key-value store
-//        Err(InterfaceError::Abort)
-//    }
-//
-//    fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
-//                        _data: Data) -> Result<MethodCall, InterfaceError> {
-//        // FIXME(ben): 17/7/2015 implement a proper caching mechanism;
-//        // separate from the key-value store
-//        Err(InterfaceError::Abort)
-//    }
 //}
-//
-//struct TestNodeGenerator;
-//
-//impl CreatePersonas<TestNode> for TestNodeGenerator {
-//    fn create_personas(&mut self) -> TestNode {
-//        TestNode::new()
-//    }
-//}
-//
-//fn calculate_key_name(key: &String) -> NameType {
-//    NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
-//}
-//
-//#[allow(dead_code)]
-//fn encode_key_value(key : String, value : String) -> Result<Vec<u8>, CborError> {
-//    encode(&(key, value))
-//}
-//
-//#[allow(dead_code)]
-//fn decode_key_value(data : &Vec<u8>) -> Result<(String, String), CborError> {
-//    decode(data)
-//}
-//
-//fn run_passive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
-//}
-//
-//fn run_interactive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
-//    let our_id = Id::new();
-//    let our_client_name : NameType = public_key_to_client_name(&our_id.signing_public_key());
-//    let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), our_id);
-//    let mutate_client = Arc::new(Mutex::new(test_client));
-//    let copied_client = mutate_client.clone();
-//    let _ = spawn(move || {
-//        let _ = copied_client.lock().unwrap().bootstrap();
-//        thread::sleep_ms(100);
-//        loop {
-//            thread::sleep_ms(10);
-//            copied_client.lock().unwrap().poll_one();
-//        }
-//    });
-//    let ref mut command = String::new();
-//    let docopt: Docopt = Docopt::new(CLI_USAGE).unwrap_or_else(|error| error.exit());
-//    let stdin = io::stdin();
-//    loop {
-//        command.clear();
-//        println!("Enter command (stop | put <key> <value> | get <key>)>");
-//        let _ = stdin.read_line(command);
-//        let x: &[_] = &['\r', '\n'];
-//        let mut raw_args: Vec<&str> = command.trim_right_matches(x).split(' ').collect();
-//        raw_args.insert(0, "cli");
-//        let args: CliArgs = match docopt.clone().argv(raw_args.into_iter()).decode() {
-//            Ok(args) => args,
-//            Err(error) => {
-//                match error {
-//                    docopt::Error::Decode(what) => println!("{}", what),
-//                    _ => println!("Invalid command."),
-//                };
-//                continue
-//            },
-//        };
-//
-//        if args.cmd_put {
-//            // docopt should ensure arg_key and arg_value are valid
-//            assert!(args.arg_key.is_some() && !args.arg_value.is_empty());
-//            match args.arg_key {
-//                Some(key) => {
-//                    let key_name : NameType = calculate_key_name(&key);
-//                    println!("Putting value \"{}\" to network under key \"{}\" at location {}.",
-//                        args.arg_value, key, key_name);
-//                    match encode_key_value(key, args.arg_value) {
-//                        Ok(serialised_key_value) => {
-//                            let data = PlainData::new(key_name, serialised_key_value);
-//                            let _ = mutate_client.lock().unwrap()
-//                                .put(our_client_name, Data::PlainData(data));
-//                        },
-//                        Err(_) => { println!("Failed to encode key and value."); }
-//                    }
-//                },
-//                None => ()
-//            }
-//        } else if args.cmd_get {
-//            // docopt should ensure arg_key is valid
-//            assert!(args.arg_key.is_some());
-//            match args.arg_key {
-//                Some(key) => {
-//                    let key_name : NameType = calculate_key_name(&key);
-//                    println!("Getting value for key \"{}\" from network at location {}.",
-//                        key, key_name);
-//                    let _ = mutate_client.lock().unwrap().get(key_name, DataRequest::PlainData);
-//                },
-//                None => ()
-//            }
-//        } else if args.cmd_stop {
-//            break;
-//        }
-//    }
-//}
-
