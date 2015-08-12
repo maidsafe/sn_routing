@@ -364,7 +364,8 @@ impl RoutingNode {
         //
         // pre-sentinel message handling
 
-        if self.our_authority(&message)
+        // check if our calculated authority matches the destination authority of the message
+        if self.core.our_authority(&message)
             .map(|our_auth| message.to_authority == our_auth).unwrap_or(false) {
             return Err(RoutingError::BadAuthority);
         }
@@ -530,10 +531,6 @@ impl RoutingNode {
     }
 
     fn name(&self) -> &Address {
-        unimplemented!()
-    }
-
-    fn our_authority(&self, message: &RoutingMessage) -> Option<Authority> {
         unimplemented!()
     }
 
