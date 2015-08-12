@@ -311,7 +311,7 @@ impl RoutingNode {
         let message = message_wrap.get_routing_message().clone();
 
         // filter check
-        if self.filter.check(&message.get_filter()) {
+        if self.filter.check(message_wrap.signature()) {
             // should just return quietly
             debug!("FILTER BLOCKED message {:?} from {:?} to {:?}", message.content,
                 message.source(), message.destination());
@@ -320,7 +320,7 @@ impl RoutingNode {
         debug!("message {:?} from {:?} to {:?}", message.content,
             message.source(), message.destination());
         // add to filter
-        self.filter.add(message.get_filter());
+        self.filter.add(message_wrap.signature().clone());
 
         // Forward
         ignore(self.send(message_wrap.clone()));
