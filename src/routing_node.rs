@@ -34,7 +34,7 @@ use name_type::{closer_to_target_or_equal};
 use routing_core::{RoutingCore, ConnectionName};
 use id::Id;
 use public_id::PublicId;
-use who_are_you::Hello;
+use hello::Hello;
 use types;
 use types::{MessageId, Bytes, Address};
 use utils::{encode, decode};
