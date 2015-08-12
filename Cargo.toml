@@ -22,7 +22,6 @@ itertools = "*"
 log = "*"
 sodiumoxide = "*"
 crust = "0.2.*"
-sentinel = "0.1.*"
 
 [dev-dependencies]
 bit-vec = "*"
