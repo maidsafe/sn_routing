@@ -216,27 +216,6 @@ impl RoutingNode {
         ignore(self.send_hello(endpoint));
     }
 
-    // ---- Request Network Name ------------------------------------------------------------------
-
-    fn request_network_name(&mut self, bootstrap_name : &NameType,
-        bootstrap_endpoint : &Endpoint) -> RoutingResult {
-        if self.core.is_node() { return Err(RoutingError::AlreadyConnected); };
-        let core_id = self.core.id();
-        let routing_message = RoutingMessage {
-            from_authority : Authority::Client(bootstrap_name.clone(),
-                core_id.signing_public_key()),
-            to_authority   : Authority::NaeManager(core_id.name()),
-            content        : Content::InternalRequest(InternalRequest::RequestNetworkName(
-                PublicId::new(core_id))),
-        };
-        match SignedMessage::new(Address::Client(core_id.signing_public_key()),
-            routing_message, core_id.signing_private_key()) {
-            Ok(signed_message) => ignore(self.send(signed_message)),
-            Err(e) => return Err(RoutingError::Cbor(e)),
-        };
-        Ok(())
-    }
-
     // ---- Hello connection identification -------------------------------------------------------
 
     fn send_hello(&mut self, endpoint: Endpoint) -> RoutingResult {
@@ -435,6 +414,55 @@ impl RoutingNode {
         }
         Ok(())
     }
+
+    // ---- Request Network Name ------------------------------------------------------------------
+
+    fn request_network_name(&mut self, bootstrap_name : &NameType,
+        bootstrap_endpoint : &Endpoint) -> RoutingResult {
+        if self.core.is_node() { return Err(RoutingError::AlreadyConnected); };
+        let core_id = self.core.id();
+        let routing_message = RoutingMessage {
+            from_authority : Authority::Client(bootstrap_name.clone(),
+                core_id.signing_public_key()),
+            to_authority   : Authority::NaeManager(core_id.name()),
+            content        : Content::InternalRequest(InternalRequest::RequestNetworkName(
+                PublicId::new(core_id))),
+        };
+        match SignedMessage::new(Address::Client(core_id.signing_public_key()),
+            routing_message, core_id.signing_private_key()) {
+            Ok(signed_message) => ignore(self.send(signed_message)),
+            Err(e) => return Err(RoutingError::Cbor(e)),
+        };
+        Ok(())
+    }
+
+    fn handle_request_network_name(&self, request        : InternalRequest,
+                                          from_authority : Authority,
+                                          to_authority   : Authority,
+                                          response_token : SignedToken) -> RoutingResult {
+        match request {
+            InternalRequest::RequestNetworkName(public_id) => {
+
+            },
+            _ => {},
+        }
+        unimplemented!()
+    }
+
+    fn handle_cache_network_name(&mut self, request        : InternalRequest,
+                                            from_authority : Authority,
+                                            to_authority   : Authority) -> RoutingResult {
+        unimplemented!()
+    }
+
+    fn handle_cache_network_name_response(&mut self,
+                                          response       : InternalResponse,
+                                          from_authority : Authority,
+                                          to_authority   : Authority) -> RoutingResult {
+        unimplemented!()
+    }
+
+    // ---- Other Handlers ------------------------------------------------------------------
 
     fn handle_external_response(&self, response       : ExternalResponse,
                                        to_authority   : Authority,
