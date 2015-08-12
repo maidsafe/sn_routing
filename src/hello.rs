@@ -20,9 +20,9 @@ use public_id::PublicId;
 use types::Address;
 
 #[derive(Debug, Eq, PartialEq, RustcEncodable, RustcDecodable)]
-pub struct IAm {
-    pub address: Address,
-    pub public_id: PublicId,
+pub struct Hello {
+    pub address   : Address,
+    pub public_id : PublicId,
 }
 
 #[cfg(test)]

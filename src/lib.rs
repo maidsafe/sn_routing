@@ -61,7 +61,7 @@ mod routing_table;
 mod routing_node;
 mod routing_core;
 mod relay;
-mod who_are_you;
+mod hello;
 
 pub mod routing;
 pub mod refresh_accumulator;
@@ -80,4 +80,4 @@ pub mod data;
 pub mod event;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
-pub use messages::SignedToken;
+pub use messages::{SignedToken, ExternalRequest};

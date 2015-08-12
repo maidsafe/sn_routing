@@ -45,11 +45,12 @@ pub struct Peer {
 }
 
 impl Peer {
-    pub fn new(identity : ConnectionName, endpoint : crust::Endpoint) -> Peer {
+    pub fn new(identity : ConnectionName, endpoint : crust::Endpoint,
+        public_id : Option<PublicId>) -> Peer {
         Peer {
             identity            : identity,
             endpoint            : endpoint,
-            public_id           : None,
+            public_id           : public_id,
             connected_timestamp : SteadyTime::now(),
         }
     }
@@ -74,4 +75,15 @@ impl Peer {
         self.public_id = Some(public_id);
     }
 
+    /// Returns a new Peer with the changed identity.
+    /// No checks are performed on the consistency of the new identity
+    /// with the previous information.
+    pub fn change_identity(&mut self, identity : ConnectionName) -> Peer {
+        Peer {
+            identity            : identity,
+            endpoint            : self.endpoint.clone(),
+            public_id           : self.public_id.clone(),
+            connected_timestamp : self.connected_timestamp.clone(),
+        }
+    }
 }

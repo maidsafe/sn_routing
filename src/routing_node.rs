@@ -21,6 +21,7 @@ use std::thread::spawn;
 use std::collections::BTreeMap;
 use sodiumoxide::crypto::sign::{verify_detached, Signature};
 use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto;
 use time::{Duration, SteadyTime};
 
 use crust;
@@ -33,7 +34,7 @@ use name_type::{closer_to_target_or_equal};
 use routing_core::{RoutingCore, ConnectionName};
 use id::Id;
 use public_id::PublicId;
-use who_are_you::IAm;
+use hello::Hello;
 use types;
 use types::{MessageId, Bytes, Address};
 use utils::{encode, decode};
@@ -64,7 +65,6 @@ use message_filter::MessageFilter;
 //use types;
 //use types::{MessageId, Bytes, DestinationAddress, SourceAddress, Address};
 //use authority::{Authority, our_authority};
-//use who_are_you::IAm;
 //use messages::{RoutingMessage, SignedMessage, MessageType,
 //               ConnectRequest, ConnectResponse, GetDataResponse};
 
@@ -80,8 +80,6 @@ use message_filter::MessageFilter;
 
 type RoutingResult = Result<(), RoutingError>;
 
-
-
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 
 /// Routing Node
@@ -94,6 +92,7 @@ pub struct RoutingNode {
     // for RoutingNode
     action_sender       : mpsc::Sender<Action>,
     action_receiver     : mpsc::Receiver<Action>,
+    event_sender        : mpsc::Sender<Event>,
     filter              : MessageFilter<types::FilterType>,
     core                : RoutingCore,
     // public_id_cache     : LruCache<NameType, PublicId>,
@@ -118,26 +117,57 @@ impl RoutingNode {
             bootstraps          : BTreeMap::new(),
             action_sender       : action_sender,
             action_receiver     : action_receiver,
+            event_sender        : event_sender.clone(),
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
-            core                : RoutingCore::new(),
+            core                : RoutingCore::new(event_sender),
             connection_cache    : BTreeMap::new(),
         })
     }
 
-    pub fn bootstrap(&mut self) {
-        // TODO (ben 05/08/2015) To be continued
-        // cm.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
-        // let bootstraps : BTreeMap<Endpoint, Option<NameType>>
-        //     = match crust_receiver.recv() {
-        //     Ok(crust::Event::NewConnection(endpoint)) => BTreeMap::new(),
-        //     Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-        //         RoutingNode::bootstrap(cm)
-        //     },
-        //     _ => {
-        //         error!("The first event received from Crust is not a new connection.");
-        //         return Err(RoutingError::FailedToBootstrap)
-        //     }
-        // };
+    pub fn run(&mut self, _restricted_to_client : bool) {
+        loop {
+            match self.crust_receiver.recv() {
+                Err(_) => {},
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    match decode::<SignedMessage>(&bytes) {
+                        Ok(message) => {
+                            // handle SignedMessage for any identified endpoint
+                            match self.core.lookup_endpoint(&endpoint) {
+                                Some(ConnectionName::Unidentified(_, _)) => {},
+                                None => {},
+                                _ => ignore(self.message_received(message)),
+                            };
+                        },
+                        // The message received is not a Signed Routing Message,
+                        // expect it to be an Hello message to identify a connection
+                        Err(_) => {
+                            let _ = self.handle_hello(&endpoint, bytes);
+                        },
+                    }
+                },
+                Ok(crust::Event::NewConnection(endpoint)) => {
+                    self.handle_new_connection(endpoint);
+                },
+                Ok(crust::Event::LostConnection(endpoint)) => {
+                    self.handle_lost_connection(endpoint);
+                },
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    self.handle_new_bootstrap_connection(endpoint);
+                }
+            };
+            match self.action_receiver.try_recv() {
+                Err(_) => {},
+                Ok(Action::SendMessage(signed_message)) => {
+
+                },
+                Ok(Action::SendContent(to_authority, content)) => {
+
+                },
+                Ok(Action::Terminate) => {
+
+                },
+            }
+        }
     }
 
     fn request_network_name(&mut self) -> Result<NameType, RoutingError>  {
@@ -147,13 +177,127 @@ impl RoutingNode {
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
-        unimplemented!()
+        // only accept new connections if we are a full node
+        let has_bootstrap_endpoints = self.core.has_bootstrap_endpoints();
+        if !self.core.is_node() {
+            if has_bootstrap_endpoints {
+                // we are bootstrapping, refuse all normal connections
+                self.connection_manager.drop_node(endpoint);
+                return;
+            } else {
+                let assigned_name = NameType::new(crypto::hash::sha512::hash(
+                    &self.core.id().name().0).0);
+                let _ = self.core.assign_name(&assigned_name);
+            }
+        }
+
+        if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), false),
+            endpoint.clone(), None) {
+            // only fails if relay_map is full for unidentified connections
+            self.connection_manager.drop_node(endpoint.clone());
+        }
+        ignore(self.send_hello(endpoint));
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
-        unimplemented!()
+        //unimplemented!()
     }
+
+    fn handle_new_bootstrap_connection(&mut self, endpoint : Endpoint) {
+        if !self.core.is_node() {
+            if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), true),
+                endpoint.clone(), None) {
+                // only fails if relay_map is full for unidentified connections
+                self.connection_manager.drop_node(endpoint.clone());
+                return;
+            }
+        } else {
+            // if core is a full node, don't accept new bootstrap connections
+            self.connection_manager.drop_node(endpoint);
+            return;
+        }
+        ignore(self.send_hello(endpoint));
+    }
+
+    // ---- Hello connection identification -------------------------------------------------------
+
+    fn send_hello(&mut self, endpoint: Endpoint) -> RoutingResult {
+        let message = try!(encode(&Hello {
+            address   : self.core.our_address(),
+            public_id : PublicId::new(self.core.id())}));
+        ignore(self.connection_manager.send(endpoint, message));
+        Ok(())
+    }
+
+    fn handle_hello(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
+        -> RoutingResult {
+        match decode::<Hello>(&serialised_message) {
+            Ok(hello) => {
+                let old_identity = match self.core.lookup_endpoint(&endpoint) {
+                    // if already connected through the routing table, just confirm or destroy
+                    Some(ConnectionName::Routing(known_name)) => {
+                        match hello.address {
+                            // FIXME (ben 11/08/2015) Hello messages need to be signed and
+                            // we also need to check the match with the PublicId stored in RT
+                            Address::Node(known_name) =>
+                                return Ok(()),
+                            _ => {
+                                // the endpoint does not match with the routing information
+                                // we know about it; drop it
+                                let _ = self.core.drop_peer(&ConnectionName::Routing(known_name));
+                                self.connection_manager.drop_node(endpoint.clone());
+                                return Err(RoutingError::RejectedPublicId);
+                            },
+                        }
+                    },
+                    // a connection should have been labeled as Unidentified
+                    None => None,
+                    Some(relay_connection_name) => Some(relay_connection_name),
+                };
+                let new_identity = match (hello.address, self.core.our_address()) {
+                    (Address::Node(his_name), Address::Node(our_name)) => {
+                    // He is a node, and we are a node, establish a routing table connection
+                    // FIXME (ben 11/08/2015) we need to check his PublicId against the network
+                    // but this requires an additional RFC so currently leave out such check
+                    // refer to https://github.com/maidsafe/routing/issues/387
+                        ConnectionName::Routing(his_name)
+                    },
+                    (Address::Client(his_public_key), Address::Node(our_name)) => {
+                    // He is a client, we are a node, establish a relay connection
+                        ConnectionName::Relay(Address::Client(his_public_key))
+                    },
+                    (Address::Node(his_name), Address::Client(our_public_key)) => {
+                    // He is a node, we are a client, establish a bootstrap connection
+                        ConnectionName::Bootstrap(his_name)
+                    },
+                    (Address::Client(his_public_key), Address::Client(our_public_key)) => {
+                    // He is a client, we are a client, no-go
+                        match old_identity {
+                            Some(old_connection_name) => {
+                                let _ = self.core.drop_peer(&old_connection_name); },
+                            None => {},
+                        };
+                        self.connection_manager.drop_node(endpoint.clone());
+                        return Err(RoutingError::BadAuthority);
+                    },
+                };
+                let added = self.core.add_peer(new_identity, endpoint.clone(),
+                    Some(hello.public_id));
+                match old_identity {
+                    Some(ConnectionName::Routing(_)) => unreachable!(),
+                    // drop any relay connection in favour of the routing connection
+                    Some(old_connection_name) => {
+                        let _ = self.core.drop_peer(&old_connection_name); },
+                    None => {},
+                };
+                if !added { self.connection_manager.drop_node(endpoint.clone()); }
+                Ok(())
+            },
+            Err(_) => Err(RoutingError::UnknownMessageType)
+        }
+    }
+
 
     /// This the fundamental functional function in routing.
     /// It only handles messages received from connections in our routing table;
@@ -404,13 +548,6 @@ impl RoutingNode {
         // };
         //
         // self.send_swarm_or_parallel(&message)
-    }
-
-    // ---- I Am connection identification --------------------------------------------------------
-
-    fn handle_i_am(&mut self, endpoint: &Endpoint, serialised_message: Bytes)
-        -> RoutingResult {
-            unimplemented!()
     }
 
     // -----Address and various functions----------------------------------------

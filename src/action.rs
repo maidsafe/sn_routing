@@ -15,7 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use messages::SignedMessage;
+use messages::{SignedMessage, Content};
+use authority::Authority;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
@@ -26,5 +27,12 @@ use messages::SignedMessage;
 #[derive(Clone, Eq, PartialEq)]
 pub enum Action {
     SendMessage(SignedMessage),
+    //          ~~|~~~~~~~~~~
+    //            | a fully signed message with a given claimant
+    SendContent(Authority, Content),
+    //          ~~|~~~~~~  ~~|~~~~
+    //            |          | the bare content for a message to be formed
+    //            | the destination authority
+    // RoutingNode will form the RoutingMessage and sign it as its own identity
     Terminate,
 }

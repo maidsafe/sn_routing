@@ -79,7 +79,7 @@ impl Routing {
     /// achieve full routing node status.
     // TODO(dirvine) take an Id as a param to sign messages ???? (or amend put etc. for a client put_request to take reference to a particular ID for sign/encryt, we should be already bootstrapped anyway with the new() call :09/08/2015
     // FIXME(dirvine) discussion required :09/08/2015
-    pub fn new_client(event_receiver : mpsc::Receiver<Event>)
+    pub fn new_client(event_receiver : mpsc::Sender<Event>)
         -> Result<Routing, RoutingError> {
         unimplemented!()
     }
@@ -103,6 +103,7 @@ impl Routing {
     pub fn post_request(&self, location : Authority, data : Data) {
         unimplemented!()
     }
+
     /// Remove something from the network
     pub fn delete_request(&self, location : Authority, data_request : DataRequest) {
         unimplemented!()
