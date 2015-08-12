@@ -65,6 +65,7 @@ mod hello;
 
 pub mod routing;
 pub mod refresh_accumulator;
+pub mod message_accumulator;
 pub mod test_utils;
 pub mod types;
 pub mod peer;
