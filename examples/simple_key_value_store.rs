@@ -352,16 +352,35 @@ impl Client {
                 self.is_done = true;
             }
             UserCommand::Get(what) => {
-                println!("TODO: send Get('{}')", what);
+                self.send_get_request(what);
             }
-            UserCommand::Put(put_where, what) => {
-                println!("TODO: send Put('{}', '{}')", put_where, what);
+            UserCommand::Put(put_where, put_what) => {
+                self.send_put_request(put_where, put_what);
             }
         }
     }
 
     fn handle_routing_event(&mut self, event : Event) {
         println!("Client received routing event: {:?}", event);
+    }
+
+    fn send_get_request(&self, what: String) {
+        let name = Client::calculate_key_name(&what);
+
+        self.routing.get_request(Authority::NaeManager(name.clone()),
+                                 DataRequest::PlainData(name));
+    }
+
+    fn send_put_request(&self, put_where: String, put_what: String) {
+        let name = Client::calculate_key_name(&put_where);
+        let data = encode(&put_what).unwrap();
+
+        self.routing.put_request(Authority::NaeManager(name.clone()),
+                                 Data::PlainData(PlainData::new(name, data)));
+    }
+
+    fn calculate_key_name(key: &String) -> NameType {
+        NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
     }
 }
 
