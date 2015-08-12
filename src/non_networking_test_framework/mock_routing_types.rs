@@ -39,7 +39,7 @@ use sodiumoxide::crypto::sign;
 pub use crust::Endpoint;
 
 pub const NAME_TYPE_LEN : usize = 64;
-
+pub const POLL_DURATION_IN_MILLISEC: u32 = 1;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -950,17 +950,53 @@ pub enum MethodCall {
     /// request to forward on the request to destination for further handling
     Forward { destination: NameType },
     /// reply
-    Reply { data: Data }
+    Reply { data: Data },
+    /// terminate
+    Terminate
 }
 
-pub trait CreatePersonas<F : Interface> : Sync + Send  {
-    fn create_personas(&mut self) -> F;
+
+
+// TODO: the following definition is just temporary, needs to be replaced with new routing API
+pub enum RoutingMessage {
+    HandleGet ( DataRequest,            // data_request
+                Authority,              // our_authority
+                Authority,              // from_authority
+                SourceAddress ),        // from_address
+    // HandlePut { our_authority  : Authority,
+    //             from_authority : Authority,
+    //             from_address   : SourceAddress,
+    //             dest_address   : DestinationAddress,
+    //             data           : Data },
+    // HandlePost { our_authority : Authority,
+    //              from_authority: Authority,
+    //              from_address  : SourceAddress,
+    //              dest_address  : DestinationAddress,
+    //              data          : Data },
+    // HandleRefresh { type_tag   : u64,
+    //                 from_group : NameType,
+    //                 payloads   : Vec<Vec<u8>> },
+    // HandleChurn { close_group  : Vec<NameType> },
+    // HandleGetResponse { from_address    : NameType,
+    //                        response     : Data},
+    // HandlePutResponse { from_authority  : Authority,
+    //                     from_address    : SourceAddress,
+    //                     response        : ResponseError },
+    // HandlePostResponse { from_authority : Authority,
+    //                      from_address   : SourceAddress,
+    //                      response       : ResponseError },
+    // HandleCacheGet { data_request       : DataRequest,
+    //                  data_location      : NameType,
+    //                  from_address       : NameType },
+    // HandleCachePut { from_authority     : Authority,
+    //                  from_address       : NameType,
+    //                  data               : Data },
+    ShutDown
 }
 
 
 #[deny(missing_docs)]
 /// The Interface trait introduces the methods expected to be implemented by the user
-/// of RoutingNode
 pub trait Interface : Sync + Send {
     /// depending on our_authority and from_authority, data or address of the node
     /// potentially storing data with specified name and type_id is returned, on success.
@@ -1126,43 +1162,4 @@ impl Id {
     pub fn is_relocated(&self) -> bool {
         self.name != NameType::new(crypto::hash::sha512::hash(&self.sign_keys.0[..]).0)
     }
-}
-
-
-/// DHT node
-pub struct RoutingNode<F, G> where F : Interface + 'static,
-                                   G : CreatePersonas<F> {
-    genesis         : Box<G>,
-    phantom_data    : PhantomData<F>,
-    id              : Id,
-    next_message_id : MessageId,
-    bootstraps      : BTreeMap<Endpoint, Option<NameType>>,
-}
-
-impl<F, G> RoutingNode<F, G> where F : Interface + 'static,
-                                   G : CreatePersonas<F> {
-    pub fn new(genesis: G) -> RoutingNode<F, G> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-
-        RoutingNode { genesis         : Box::new(genesis),
-                      phantom_data    : PhantomData,
-                      id              : Id::new(),
-                      next_message_id : random::<MessageId>(),
-                      bootstraps      : BTreeMap::new(),
-                    }
-    }
-
-    /// Run the Routing Node.
-    /// This is a blocking call which will start a CRUST connection
-    /// manager and the CRUST bootstrapping procedures.
-    /// If CRUST finds a bootstrap connection, the routing node will
-    /// attempt to request a name from the network and connect to its close group.
-    /// If CRUST reports a new connection on the listening port, before bootstrapping,
-    /// routing node will consider itself the first node.
-    //  This might be moved into the constructor new
-    //  For an initial draft, kept it as a separate function call.
-    pub fn run(&mut self) -> Result<(), RoutingError> {
-        Err(RoutingError::NotBootstrapped)
-    }
-
 }

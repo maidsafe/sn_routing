@@ -26,12 +26,6 @@ use rustc_serialize::{Decodable, Encodable};
 use lru_time_cache::LruCache;
 
 use routing_types::*;
-// #[cfg(not(feature = "USE_ACTUAL_ROUTING"))]
-use non_networking_test_framework::RoutingVaultMock;
-// #[cfg(not(feature = "USE_ACTUAL_ROUTING"))]
-type RoutingVault = ::std::sync::Arc<::std::sync::Mutex<RoutingVaultMock>>;
-// #[cfg(not(feature = "USE_ACTUAL_ROUTING"))]
-
 
 use data_manager::{DataManager, DataManagerSendable, DataManagerStatsSendable};
 use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
@@ -50,12 +44,6 @@ pub struct VaultFacade {
     sd_manager : StructuredDataManager,
     nodes_in_table : Vec<NameType>,
     data_cache: LruCache<NameType, Data>
-}
-
-impl Clone for VaultFacade {
-    fn clone(&self) -> VaultFacade {
-        VaultFacade::new()
-    }
 }
 
 fn merge_refreshable<T>(empty_entry: T, payloads: Vec<Vec<u8>>) ->
@@ -265,27 +253,78 @@ impl Interface for VaultFacade {
     }
 }
 
+pub type ResponseNotifier = ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<MethodCall>, InterfaceError>>,
+                                              ::std::sync::Condvar)>;
+
 impl VaultFacade {
-    /// Initialise all the personas in the Vault interface.
-    pub fn new() -> VaultFacade {
-        VaultFacade {
+    pub fn new(notifier: ResponseNotifier,
+               receiver: ::std::sync::mpsc::Receiver<RoutingMessage>) -> (::std::sync::Arc<::std::sync::Mutex<VaultFacade>>, ::std::thread::JoinHandle<()>) {
+        let vault_facade = ::std::sync::Arc::new(::std::sync::Mutex::new(VaultFacade {
             data_manager: DataManager::new(), maid_manager: MaidManager::new(),
             pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
             sd_manager: StructuredDataManager::new(), nodes_in_table: Vec::new(),
             data_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(10), 100),
-        }
+        }));
+
+        let vault_facade_cloned = vault_facade.clone();
+        let receiver_joiner = ::std::thread::Builder::new().name("VaultReceiverThread".to_string()).spawn(move || {
+            for it in receiver.iter() {
+                let (routing_acting, actions) = match it {
+                    RoutingMessage::ShutDown => break,
+                    RoutingMessage::HandleGet(data_request, our_authority,
+                                              from_authority, from_address) =>
+                        (true, vault_facade_cloned.lock().unwrap().handle_get(data_request, our_authority,
+                                                                              from_authority, from_address)),
+                    // _ => (false, Ok(vec![MethodCall::Terminate])),
+                };
+                // pub enum RoutingMessage {
+                //     HandleGet { data_request   : DataRequest,
+                //                 our_authority  : Authority,
+                //                 from_authority : Authority,
+                //                 from_address   : SourceAddress },
+                //     HandlePut { our_authority  : Authority,
+                //                 from_authority : Authority,
+                //                 from_address   : SourceAddress,
+                //                 dest_address   : DestinationAddress,
+                //                 data           : Data },
+                //     HandlePost { our_authority : Authority,
+                //                  from_authority: Authority,
+                //                  from_address  : SourceAddress,
+                //                  dest_address  : DestinationAddress,
+                //                  data          : Data },
+                //     HandleRefresh { type_tag   : u64,
+                //                     from_group : NameType,
+                //                     payloads   : Vec<Vec<u8>> },
+                //     HandleChurn { close_group  : Vec<NameType> },
+                //     HandleGetResponse { from_address    : NameType,
+                //                            response     : Data},
+                //     HandlePutResponse { from_authority  : Authority,
+                //                         from_address    : SourceAddress,
+                //                         response        : ResponseError },
+                //     HandlePostResponse { from_authority : Authority,
+                //                          from_address   : SourceAddress,
+                //                          response       : ResponseError },
+                //     HandleCacheGet { data_request       : DataRequest,
+                //                      data_location      : NameType,
+                //                      from_address       : NameType },
+                //     HandleCachePut { from_authority     : Authority,
+                //                      from_address       : NameType,
+                //                      data               : Data }
+
+                if routing_acting {
+                    let &(ref lock, ref condition_var) = &*notifier;
+                    // let mut routing_action = eval_result!(lock.lock());
+                    let mut routing_action = lock.lock().unwrap();
+                    *routing_action = actions;
+                    condition_var.notify_all();
+                }
+            }
+        }).unwrap();
+
+        (vault_facade, receiver_joiner)
     }
 
 }
-
-pub struct VaultGenerator;
-
-impl CreatePersonas<VaultFacade> for VaultGenerator {
-    fn create_personas(&mut self) -> VaultFacade {
-        VaultFacade::new()
-    }
-}
-
 
 #[cfg(test)]
  mod test {

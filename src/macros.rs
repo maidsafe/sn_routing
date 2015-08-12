@@ -47,3 +47,29 @@ macro_rules! container_of_u8_to_array {
         }
     }};
 }
+
+
+/// This macro is intended to be used in all cases where we unwrap() a result to delebrately panic
+/// in case of error - eg., in test-cases. Such unwraps don't give a precise point of failure in
+/// our code and instead indicate some line number in core library. This macro will provide a
+/// precise point of failure and will decorate the failure for easy viewing.
+///
+/// #Examples
+///
+/// ```
+/// # #[macro_use] extern crate safe_client;
+/// # fn main() {
+/// let some_result: Result<String, safe_client::errors::ClientError> = Ok("Hello".to_string());
+/// let string_length = eval_result!(some_result).len();
+/// assert_eq!(string_length, 5);
+/// # }
+/// ```
+#[macro_export]
+macro_rules! eval_result {
+    ($result:expr) => {
+        $result.unwrap_or_else(|error| {
+            let decorator = (0..50).map(|_| "-").collect::<String>();
+            panic!("\n\n {}\n| {:?}\n {}\n\n", decorator, error, decorator)
+        })
+    }
+}

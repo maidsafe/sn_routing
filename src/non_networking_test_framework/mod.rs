@@ -17,7 +17,6 @@
 
 #![allow(unsafe_code, unused)] // TODO Remove the unused attribute later
 
-mod macros;
 pub mod mock_routing_types;
 
 use std::io::{Read, Write};
@@ -85,12 +84,12 @@ fn sync_disk_storage(memory_storage: &::std::collections::HashMap<NameType, Vec<
 }
 
 pub struct RoutingVaultMock {
-    sender          : ::std::sync::mpsc::Sender<(NameType, Data)>,
+    sender          : ::std::sync::mpsc::Sender<RoutingMessage>,
     network_delay_ms: u32,
 }
 
 impl RoutingVaultMock {
-    pub fn new() -> (RoutingVaultMock, ::std::sync::mpsc::Receiver<(NameType, Data)>) {
+    pub fn new() -> (RoutingVaultMock, ::std::sync::mpsc::Receiver<RoutingMessage>) {
         let (sender, receiver) = ::std::sync::mpsc::channel();
 
         let mock_routing = RoutingVaultMock {
@@ -106,150 +105,150 @@ impl RoutingVaultMock {
         self.network_delay_ms = delay_ms;
     }
 
-    pub fn get(&mut self, location: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
-        let delay_ms = self.network_delay_ms;
-        let data_store = get_storage();
-        let cloned_sender = self.sender.clone();
+    // pub fn get(&mut self, location: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
+    //     let delay_ms = self.network_delay_ms;
+    //     let data_store = get_storage();
+    //     let cloned_sender = self.sender.clone();
 
-        ::std::thread::spawn(move || {
-            ::std::thread::sleep_ms(delay_ms);
-            match data_store.lock().unwrap().get(&location) {
-                Some(raw_data) => {
-                    if let Ok(data) = deserialise::<Data>(raw_data) {
-                        if match (&data, request_for) {
-                            (&Data::ImmutableData(ref immut_data), DataRequest::ImmutableData(ref tag)) => immut_data.get_type_tag() == tag,
-                            (&Data::StructuredData(ref struct_data), DataRequest::StructuredData(ref tag)) => struct_data.get_type_tag() == *tag,
-                            _ => false,
-                        } {
-                            let _ = cloned_sender.send((location, data)); // TODO Handle the error case by printing it maybe
-                        }
-                    }
-                },
-                None => (),
-            };
-        });
+    //     ::std::thread::spawn(move || {
+    //         ::std::thread::sleep_ms(delay_ms);
+    //         match data_store.lock().unwrap().get(&location) {
+    //             Some(raw_data) => {
+    //                 if let Ok(data) = deserialise::<Data>(raw_data) {
+    //                     if match (&data, request_for) {
+    //                         (&Data::ImmutableData(ref immut_data), DataRequest::ImmutableData(ref tag)) => immut_data.get_type_tag() == tag,
+    //                         (&Data::StructuredData(ref struct_data), DataRequest::StructuredData(ref tag)) => struct_data.get_type_tag() == *tag,
+    //                         _ => false,
+    //                     } {
+    //                         let _ = cloned_sender.send((location, data)); // TODO Handle the error case by printing it maybe
+    //                     }
+    //                 }
+    //             },
+    //             None => (),
+    //         };
+    //     });
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    pub fn put(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
-        let delay_ms = self.network_delay_ms;
-        let data_store = get_storage();
+    // pub fn put(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
+    //     let delay_ms = self.network_delay_ms;
+    //     let data_store = get_storage();
 
-        let mut data_store_mutex_guard = data_store.lock().unwrap();
-        let success = if data_store_mutex_guard.contains_key(&location) {
-            if let Data::ImmutableData(immut_data) = data {
-                match deserialise(data_store_mutex_guard.get(&location).unwrap()) {
-                    Ok(Data::ImmutableData(immut_data_stored)) => immut_data_stored.get_type_tag() == immut_data.get_type_tag(), // Immutable data is de-duplicated so always allowed
-                    _ => false
-                }
-            } else {
-                false
-            }
-        } else if let Ok(raw_data) = serialise(&data) {
-            data_store_mutex_guard.insert(location, raw_data);
-            sync_disk_storage(&*data_store_mutex_guard);
-            true
-        } else {
-            false
-        };
+    //     let mut data_store_mutex_guard = data_store.lock().unwrap();
+    //     let success = if data_store_mutex_guard.contains_key(&location) {
+    //         if let Data::ImmutableData(immut_data) = data {
+    //             match deserialise(data_store_mutex_guard.get(&location).unwrap()) {
+    //                 Ok(Data::ImmutableData(immut_data_stored)) => immut_data_stored.get_type_tag() == immut_data.get_type_tag(), // Immutable data is de-duplicated so always allowed
+    //                 _ => false
+    //             }
+    //         } else {
+    //             false
+    //         }
+    //     } else if let Ok(raw_data) = serialise(&data) {
+    //         data_store_mutex_guard.insert(location, raw_data);
+    //         sync_disk_storage(&*data_store_mutex_guard);
+    //         true
+    //     } else {
+    //         false
+    //     };
 
-        // ::std::thread::spawn(move || {
-        //     ::std::thread::sleep_ms(delay_ms);
-        //     if !success { // TODO Check how routing is going to handle PUT errors
-        //     }
-        // });
+    //     // ::std::thread::spawn(move || {
+    //     //     ::std::thread::sleep_ms(delay_ms);
+    //     //     if !success { // TODO Check how routing is going to handle PUT errors
+    //     //     }
+    //     // });
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    pub fn post(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
-        let delay_ms = self.network_delay_ms;
-        let data_store = get_storage();
+    // pub fn post(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
+    //     let delay_ms = self.network_delay_ms;
+    //     let data_store = get_storage();
 
-        let mut data_store_mutex_guard = data_store.lock().unwrap();
-        let success = if data_store_mutex_guard.contains_key(&location) {
-            match (&data, deserialise(data_store_mutex_guard.get(&location).unwrap())) {
-                (&Data::StructuredData(ref struct_data_new), Ok(Data::StructuredData(ref struct_data_stored))) => {
-                    if struct_data_new.get_version() != struct_data_stored.get_version() + 1 {
-                        false
-                    } else {
-                        let mut count = 0usize;
-                        if struct_data_stored.get_owners().iter().any(|key| { // This is more efficient than filter as it will stop whenever sign count reaches >= 50%
-                            if struct_data_new.get_signatures().iter().any(|sig| ::sodiumoxide::crypto::sign::verify_detached(sig, &struct_data_new.data_to_sign().unwrap(), key)) {
-                                count += 1;
-                            }
+    //     let mut data_store_mutex_guard = data_store.lock().unwrap();
+    //     let success = if data_store_mutex_guard.contains_key(&location) {
+    //         match (&data, deserialise(data_store_mutex_guard.get(&location).unwrap())) {
+    //             (&Data::StructuredData(ref struct_data_new), Ok(Data::StructuredData(ref struct_data_stored))) => {
+    //                 if struct_data_new.get_version() != struct_data_stored.get_version() + 1 {
+    //                     false
+    //                 } else {
+    //                     let mut count = 0usize;
+    //                     if struct_data_stored.get_owners().iter().any(|key| { // This is more efficient than filter as it will stop whenever sign count reaches >= 50%
+    //                         if struct_data_new.get_signatures().iter().any(|sig| ::sodiumoxide::crypto::sign::verify_detached(sig, &struct_data_new.data_to_sign().unwrap(), key)) {
+    //                             count += 1;
+    //                         }
 
-                            count >= struct_data_stored.get_owners().len() / 2 + struct_data_stored.get_owners().len() % 2
-                        }) {
-                            if let Ok(raw_data) = serialise(&data) {
-                                data_store_mutex_guard.insert(location, raw_data);
-                                sync_disk_storage(&*data_store_mutex_guard);
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        }
-                    }
-                },
-                _ => false,
-            }
-        } else {
-            false
-        };
+    //                         count >= struct_data_stored.get_owners().len() / 2 + struct_data_stored.get_owners().len() % 2
+    //                     }) {
+    //                         if let Ok(raw_data) = serialise(&data) {
+    //                             data_store_mutex_guard.insert(location, raw_data);
+    //                             sync_disk_storage(&*data_store_mutex_guard);
+    //                             true
+    //                         } else {
+    //                             false
+    //                         }
+    //                     } else {
+    //                         false
+    //                     }
+    //                 }
+    //             },
+    //             _ => false,
+    //         }
+    //     } else {
+    //         false
+    //     };
 
-        // ::std::thread::spawn(move || {
-        //     ::std::thread::sleep_ms(delay_ms);
-        //     if !success { // TODO Check how routing is going to handle POST errors
-        //     }
-        // });
+    //     // ::std::thread::spawn(move || {
+    //     //     ::std::thread::sleep_ms(delay_ms);
+    //     //     if !success { // TODO Check how routing is going to handle POST errors
+    //     //     }
+    //     // });
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    pub fn delete(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
-        let delay_ms = self.network_delay_ms;
-        let data_store = get_storage();
+    // pub fn delete(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
+    //     let delay_ms = self.network_delay_ms;
+    //     let data_store = get_storage();
 
-        let mut data_store_mutex_guard = data_store.lock().unwrap();
-        let success = if data_store_mutex_guard.contains_key(&location) {
-            match (&data, deserialise(data_store_mutex_guard.get(&location).unwrap())) {
-                (&Data::StructuredData(ref struct_data_new), Ok(Data::StructuredData(ref struct_data_stored))) => {
-                    if struct_data_new.get_version() != struct_data_stored.get_version() + 1 {
-                        false
-                    } else {
-                        let mut count = 0usize;
-                        if struct_data_stored.get_owners().iter().any(|key| { // This is more efficient than filter as it will stop whenever sign count reaches >= 50%
-                            if struct_data_new.get_signatures().iter().any(|sig| ::sodiumoxide::crypto::sign::verify_detached(sig, &struct_data_new.data_to_sign().unwrap(), key)) {
-                                count += 1;
-                            }
+    //     let mut data_store_mutex_guard = data_store.lock().unwrap();
+    //     let success = if data_store_mutex_guard.contains_key(&location) {
+    //         match (&data, deserialise(data_store_mutex_guard.get(&location).unwrap())) {
+    //             (&Data::StructuredData(ref struct_data_new), Ok(Data::StructuredData(ref struct_data_stored))) => {
+    //                 if struct_data_new.get_version() != struct_data_stored.get_version() + 1 {
+    //                     false
+    //                 } else {
+    //                     let mut count = 0usize;
+    //                     if struct_data_stored.get_owners().iter().any(|key| { // This is more efficient than filter as it will stop whenever sign count reaches >= 50%
+    //                         if struct_data_new.get_signatures().iter().any(|sig| ::sodiumoxide::crypto::sign::verify_detached(sig, &struct_data_new.data_to_sign().unwrap(), key)) {
+    //                             count += 1;
+    //                         }
 
-                            count >= struct_data_stored.get_owners().len() / 2 + struct_data_stored.get_owners().len() % 2
-                        }) {
-                            let _ = data_store_mutex_guard.remove(&location);
-                            sync_disk_storage(&*data_store_mutex_guard);
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                },
-                _ => false,
-            }
-        } else {
-            false
-        };
+    //                         count >= struct_data_stored.get_owners().len() / 2 + struct_data_stored.get_owners().len() % 2
+    //                     }) {
+    //                         let _ = data_store_mutex_guard.remove(&location);
+    //                         sync_disk_storage(&*data_store_mutex_guard);
+    //                         true
+    //                     } else {
+    //                         false
+    //                     }
+    //                 }
+    //             },
+    //             _ => false,
+    //         }
+    //     } else {
+    //         false
+    //     };
 
-        // ::std::thread::spawn(move || {
-        //     ::std::thread::sleep_ms(delay_ms);
-        //     if !success { // TODO Check how routing is going to handle DELETE errors
-        //     }
-        // });
+    //     // ::std::thread::spawn(move || {
+    //     //     ::std::thread::sleep_ms(delay_ms);
+    //     //     if !success { // TODO Check how routing is going to handle DELETE errors
+    //     //     }
+    //     // });
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     pub fn run(&mut self) {
         // let data_store = get_storage();
@@ -269,7 +268,7 @@ impl RoutingVaultMock {
     }
 
     pub fn close(&self) {
-        let _ = self.sender.send((NameType::new([0; 64]), Data::ShutDown));
+        let _ = self.sender.send(RoutingMessage::ShutDown);
     }
 }
 
