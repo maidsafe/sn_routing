@@ -38,6 +38,7 @@ use hello::Hello;
 use types;
 use types::{MessageId, Bytes, Address};
 use utils::{encode, decode};
+use utils;
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
 
@@ -309,8 +310,7 @@ impl RoutingNode {
     /// If we are the relay node for a message from the SAFE network to a node we relay for,
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
-    fn message_received(&mut self, message_wrap : SignedMessage,
-                       ) -> RoutingResult {
+    fn message_received(&mut self, message_wrap : SignedMessage) -> RoutingResult {
 
         let message = message_wrap.get_routing_message().clone();
 
@@ -443,9 +443,21 @@ impl RoutingNode {
                                           response_token : SignedToken) -> RoutingResult {
         match request {
             InternalRequest::RequestNetworkName(public_id) => {
-
+                match (from_authority, to_authority) {
+                    (Authority::Client(_, public_key), Authority::NaeManager(name)) => {
+                        let network_public_id = public_id.clone();
+                        match self.core.our_close_group() {
+                            Some(close_group) => {
+                                let relocated_name = try!(utils::calculate_relocated_name(
+                                    close_group, &public_id.name()));
+                            },
+                            None => return Err(RoutingError::BadAuthority),
+                        }
+                    },
+                    _ => return Err(RoutingError::BadAuthority),
+                }
             },
-            _ => {},
+            _ => return Err(RoutingError::BadAuthority),
         }
         unimplemented!()
     }
