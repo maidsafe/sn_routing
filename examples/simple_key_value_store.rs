@@ -60,11 +60,11 @@ use crust::Endpoint;
 use routing::routing::Routing;
 use routing::authority::Authority;
 use routing::NameType;
-use routing::error::{ResponseError, RoutingError};
+use routing::error::RoutingError;
 use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
-use routing::utils::{encode};
+use routing::utils::{encode, public_key_to_client_name};
 use routing::{ExternalRequest, SignedToken};
 
 // ==========================   Program Options   =================================
@@ -122,23 +122,6 @@ impl Decodable for PeerEndpoint {
         };
         Ok(PeerEndpoint::Tcp(address))
     }
-}
-
-// We'll use docopt to help parse the ongoing CLI commands entered by the user.
-static CLI_USAGE: &'static str = "
-Usage:
-  cli put <key> <value>
-  cli get <key>
-  cli stop
-";
-
-#[derive(RustcDecodable, Debug)]
-struct CliArgs {
-    cmd_put: bool,
-    cmd_get: bool,
-    cmd_stop: bool,
-    arg_key: Option<String>,
-    arg_value: String,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -219,9 +202,8 @@ impl Node {
                                      response_token : SignedToken) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
-            _ => { println!("Only serving plain data in this example"); return; }
+            _ => { println!("Node: Only serving plain data in this example"); return; }
         };
-
 
         let data = match self.db.get(&name) {
             Some(data) => data.clone(),
@@ -231,16 +213,29 @@ impl Node {
         self.routing.get_response(from_authority, Data::PlainData(data), response_token);
     }
 
-    fn handle_put_request(&mut self, data            : Data,
-                                     _our_authority  : Authority,
+    fn handle_put_request(&mut self, data           : Data,
+                                     our_authority  : Authority,
                                      _from_authority : Authority,
                                      _response_token : SignedToken) {
         let plain_data = match data {
             Data::PlainData(plain_data) => plain_data,
-            _ => { println!("Only storing plain data in this example"); return; }
+            _ => { println!("Node: Only storing plain data in this example"); return; }
         };
 
-        self.db.insert(plain_data.name(), plain_data);
+        match our_authority {
+            Authority::ClientManager(_) => {
+                self.routing.put_request(Authority::NaeManager(plain_data.name()),
+                                         Data::PlainData(plain_data));
+            },
+            Authority::NaeManager(_) => {
+                self.db.insert(plain_data.name(), plain_data);
+            },
+            _ => {
+                println!("Node: Unexpected our_authority ({:?})", our_authority);
+                assert!(false);
+            }
+        }
+
     }
 }
 
@@ -371,10 +366,11 @@ impl Client {
     }
 
     fn send_put_request(&self, put_where: String, put_what: String) {
+        let mngr = public_key_to_client_name(&self.routing.signing_public_key());
         let name = Client::calculate_key_name(&put_where);
         let data = encode(&put_what).unwrap();
 
-        self.routing.put_request(Authority::NaeManager(name.clone()),
+        self.routing.put_request(Authority::ClientManager(mngr),
                                  Data::PlainData(PlainData::new(name, data)));
     }
 
@@ -415,110 +411,3 @@ fn main() {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Old code for reference, will be slowly disappearing.
-// ==========================   Implement traits   =================================
-//
-//struct TestClient {
-//    pub key_reverse_lookup : BTreeMap<NameType, String>
-//}
-//
-//impl routing::client_interface::Interface for TestClient {
-//    fn handle_get_response(&mut self, data_location : NameType, data : Data) {
-//        println!("Testing client received get_response from {:?} with testdata {:?}",
-//                    data_location, data);
-//        match data {
-//            Data::PlainData(plain_data) => {
-//                match decode_key_value(plain_data.value()) {
-//                    Ok((key, value)) => {
-//                        println!("Client received {} under key {} from {}",
-//                            value, key, data_location);
-//                    },
-//                    Err(_) => {
-//                        println!("Client received get response from {} but failed to decode",
-//                            data_location);
-//                    }
-//                }
-//            },
-//            _ => {
-//                println!("Client received get response from {} but it is not PlainData.",
-//                    data_location);}
-//        }
-//    }
-//
-//    fn handle_put_response(&mut self, response_error: ResponseError, _request_data: Data) {
-//        match response_error {
-//            ResponseError::NoData =>
-//                println!("Testing client received put_response with error NoData"),
-//            ResponseError::InvalidRequest =>
-//                println!("Testing client received put_response with error InvalidRequest"),
-//            ResponseError::FailedToStoreData(data) =>
-//                println!("Testing client received put_response with error FailedToStoreData for {}", data.name()),
-//        }
-//    }
-//}
-//
-//struct TestNode {
-//  db: BTreeMap<NameType, PlainData>
-//}
-//
-//impl Interface for TestNode {
-//    fn handle_get(&mut self,
-//                  data_request: DataRequest, our_authority: Authority,
-//                  _from_authority: Authority, _from_address: types::SourceAddress)
-//                   -> Result<Vec<MethodCall>, InterfaceError> {
-//        match data_request {
-//              DataRequest::PlainData => {
-//                  match our_authority {
-//                      Authority::NaeManager(group_name) => {
-//                          match self.db.get(&group_name) {
-//                              Some(plain_data) => {
-//                                  info!("node replied to get request for chunk {}",
-//                                      group_name);
-//                                  return Ok(vec![MethodCall::Reply {
-//                                      data : Data::PlainData(plain_data.clone()) }]);
-//                              },
-//                              None => {
-//                                  info!("node didn't have chunk {}",
-//                                      group_name);
-//                              }
-//                          }
-//                      },
-//                      _ => {}
-//                  };
-//              },
-//              _ => {}
-//        };
-//        Err(InterfaceError::Response(ResponseError::NoData))
-//    }
-//
-//    fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
-//                _from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
-//                data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
-//        match data {
-//            Data::PlainData(plain_data) => {
-//                match our_authority {
-//                    Authority::ClientManager(client_name) => {
-//                        info!("ClientManager of {:?} forwarding data to DataManager around {:?}",
-//                            client_name, plain_data.name());
-//                        return Ok(vec![MethodCall::Put {
-//                            destination: plain_data.name(),
-//                            content: Data::PlainData(plain_data) }]);
-//                    },
-//                    Authority::NaeManager(group_name) => {
-//                        info!("DataManager of {:?} asked to put plain data named {:?}",
-//                            group_name, plain_data.name());
-//                        assert_eq!(group_name, plain_data.name());
-//                        let data_name = plain_data.name();
-//                        let _ = self.db.entry(plain_data.name())
-//                            .or_insert(plain_data);
-//                        assert!(self.db.contains_key(&data_name));
-//                    },
-//                    _ => {}
-//                }
-//            },
-//            _ => {}
-//        };
-//        return Ok(vec![]);
-//    }
-//}
