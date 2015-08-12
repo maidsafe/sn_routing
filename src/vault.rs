@@ -257,8 +257,18 @@ pub type ResponseNotifier = ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<Meth
                                               ::std::sync::Condvar)>;
 
 impl VaultFacade {
-    pub fn new(notifier: ResponseNotifier,
-               receiver: ::std::sync::mpsc::Receiver<RoutingMessage>) -> (::std::sync::Arc<::std::sync::Mutex<VaultFacade>>, ::std::thread::JoinHandle<()>) {
+    pub fn new() -> VaultFacade {
+        VaultFacade {
+            data_manager: DataManager::new(), maid_manager: MaidManager::new(),
+            pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
+            sd_manager: StructuredDataManager::new(), nodes_in_table: Vec::new(),
+            data_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(10), 100),
+        }
+    }
+
+    pub fn mutex_new(notifier: ResponseNotifier,
+                     receiver: ::std::sync::mpsc::Receiver<RoutingMessage>)
+      -> (::std::sync::Arc<::std::sync::Mutex<VaultFacade>>, ::std::thread::JoinHandle<()>) {
         let vault_facade = ::std::sync::Arc::new(::std::sync::Mutex::new(VaultFacade {
             data_manager: DataManager::new(), maid_manager: MaidManager::new(),
             pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
