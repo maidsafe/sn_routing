@@ -52,6 +52,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::thread::spawn;
 use std::collections::BTreeMap;
+use std::io::Write;
 
 use cbor::CborError;
 use docopt::Docopt;
@@ -295,7 +296,7 @@ impl Client {
         thread::spawn(move || { Client::read_user_commands(command_sender); });
 
         Ok(Client {
-            routing          : routing,
+            //routing          : routing,
             event_receiver   : event_receiver,
             command_receiver : command_receiver,
             is_done          : false,
@@ -328,7 +329,10 @@ impl Client {
         loop {
             let mut command = String::new();
             let mut stdin = io::stdin();
-            println!("Type command:");
+
+            print!("Enter command (exit | put <key> <value> | get <key>)\n> ");
+            io::stdout().flush();
+
             let _ = stdin.read_line(&mut command);
 
             match parse_user_command(command) {
