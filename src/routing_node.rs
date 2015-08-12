@@ -170,10 +170,6 @@ impl RoutingNode {
         }
     }
 
-    fn request_network_name(&mut self, bootstrap_endpoint : &Endpoint) -> RoutingResult {
-        unimplemented!()
-    }
-
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
@@ -220,6 +216,27 @@ impl RoutingNode {
         ignore(self.send_hello(endpoint));
     }
 
+    // ---- Request Network Name ------------------------------------------------------------------
+
+    fn request_network_name(&mut self, bootstrap_name : &NameType,
+        bootstrap_endpoint : &Endpoint) -> RoutingResult {
+        if self.core.is_node() { return Err(RoutingError::AlreadyConnected); };
+        let core_id = self.core.id();
+        let routing_message = RoutingMessage {
+            from_authority : Authority::Client(bootstrap_name.clone(),
+                core_id.signing_public_key()),
+            to_authority   : Authority::NaeManager(core_id.name()),
+            content        : Content::InternalRequest(InternalRequest::RequestNetworkName(
+                PublicId::new(core_id))),
+        };
+        match SignedMessage::new(Address::Client(core_id.signing_public_key()),
+            routing_message, core_id.signing_private_key()) {
+            Ok(signed_message) => ignore(self.send(signed_message)),
+            Err(e) => return Err(RoutingError::Cbor(e)),
+        };
+        Ok(())
+    }
+
     // ---- Hello connection identification -------------------------------------------------------
 
     fn send_hello(&mut self, endpoint: Endpoint) -> RoutingResult {
@@ -255,7 +272,6 @@ impl RoutingNode {
                     None => None,
                     Some(relay_connection_name) => Some(relay_connection_name),
                 };
-                let mut request_network_name = false;
                 let new_identity = match (hello.address, self.core.our_address()) {
                     (Address::Node(his_name), Address::Node(our_name)) => {
                     // He is a node, and we are a node, establish a routing table connection
@@ -270,9 +286,6 @@ impl RoutingNode {
                     },
                     (Address::Node(his_name), Address::Client(our_public_key)) => {
                     // He is a node, we are a client, establish a bootstrap connection
-                        // if we are not a full node, and this bootstrap endpoint is accepted,
-                        // request the network for a name.
-                        request_network_name = true && !self.core.is_node();
                         ConnectionName::Bootstrap(his_name)
                     },
                     (Address::Client(his_public_key), Address::Client(our_public_key)) => {
@@ -286,11 +299,17 @@ impl RoutingNode {
                         return Err(RoutingError::BadAuthority);
                     },
                 };
-                let added = self.core.add_peer(new_identity, endpoint.clone(),
-                    Some(hello.public_id));
-                if added && request_network_name {
-                    ignore(self.request_network_name(endpoint));
-                }
+                if self.core.add_peer(new_identity.clone(), endpoint.clone(),
+                    Some(hello.public_id)) {
+                    match new_identity {
+                        ConnectionName::Bootstrap(bootstrap_name) => {
+                            ignore(self.request_network_name(&bootstrap_name, endpoint));
+                        },
+                        _ => {},
+                    };
+                } else {
+                    self.connection_manager.drop_node(endpoint.clone());
+                };
                 match old_identity {
                     Some(ConnectionName::Routing(_)) => unreachable!(),
                     // drop any relay connection in favour of the routing connection
@@ -298,7 +317,6 @@ impl RoutingNode {
                         let _ = self.core.drop_peer(&old_connection_name); },
                     None => {},
                 };
-                if !added { self.connection_manager.drop_node(endpoint.clone()); }
                 Ok(())
             },
             Err(_) => Err(RoutingError::UnknownMessageType)
