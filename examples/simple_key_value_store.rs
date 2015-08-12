@@ -149,6 +149,7 @@ struct CliArgs {
 struct Node {
     routing  : Routing,
     receiver : Receiver<Event>,
+    db       : BTreeMap<NameType, PlainData>,
 }
 
 impl Node {
@@ -159,6 +160,7 @@ impl Node {
         Ok(Node {
             routing  : routing,
             receiver : receiver,
+            db       : BTreeMap::new(),
         })
     }
 
@@ -167,7 +169,7 @@ impl Node {
             let event = match self.receiver.recv() {
                 Ok(event) => event,
                 Err(err)  => {
-                    println!("Got error from node: {:?}", err);
+                    println!("Node: Routing closed the event channel");
                     return;
                 }
             };
@@ -224,7 +226,13 @@ impl Node {
             _ => { println!("Only serving plain data in this example"); return; }
         };
 
-        // TODO: Send back response.
+
+        let data = match self.db.get(&name) {
+            Some(data) => data.clone(),
+            None => return,
+        };
+
+        self.routing.get_response(from_authority, Data::PlainData(data), response_token);
     }
 
     fn handle_put_request(&mut self, data           : Data,
@@ -236,7 +244,7 @@ impl Node {
             _ => { println!("Only storing plain data in this example"); return; }
         };
 
-        // TODO: Store the plain data.
+        self.db.insert(plain_data.name(), plain_data);
     }
 }
 
