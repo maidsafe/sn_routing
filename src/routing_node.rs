@@ -170,7 +170,7 @@ impl RoutingNode {
         }
     }
 
-    fn request_network_name(&mut self) -> Result<NameType, RoutingError>  {
+    fn request_network_name(&mut self, bootstrap_endpoint : &Endpoint) -> RoutingResult {
         unimplemented!()
     }
 
@@ -255,6 +255,7 @@ impl RoutingNode {
                     None => None,
                     Some(relay_connection_name) => Some(relay_connection_name),
                 };
+                let mut request_network_name = false;
                 let new_identity = match (hello.address, self.core.our_address()) {
                     (Address::Node(his_name), Address::Node(our_name)) => {
                     // He is a node, and we are a node, establish a routing table connection
@@ -269,6 +270,9 @@ impl RoutingNode {
                     },
                     (Address::Node(his_name), Address::Client(our_public_key)) => {
                     // He is a node, we are a client, establish a bootstrap connection
+                        // if we are not a full node, and this bootstrap endpoint is accepted,
+                        // request the network for a name.
+                        request_network_name = true && !self.core.is_node();
                         ConnectionName::Bootstrap(his_name)
                     },
                     (Address::Client(his_public_key), Address::Client(our_public_key)) => {
@@ -284,6 +288,9 @@ impl RoutingNode {
                 };
                 let added = self.core.add_peer(new_identity, endpoint.clone(),
                     Some(hello.public_id));
+                if added && request_network_name {
+                    ignore(self.request_network_name(endpoint));
+                }
                 match old_identity {
                     Some(ConnectionName::Routing(_)) => unreachable!(),
                     // drop any relay connection in favour of the routing connection

@@ -108,7 +108,15 @@ pub enum InternalRequest {
     Connect(ConnectRequest),
     FindGroup,
     GetGroupKey,
-    PutPublicId(PublicId),
+    RequestNetworkName(PublicId),
+    // a client can send RequestNetworkName
+    CacheNetworkName(PublicId, SignedToken),
+    //               ~~|~~~~~  ~~|~~~~~~
+    //                 |         | SignedToken contains Request::RequestNetworkName and needs to
+    //                 |         | be forwarded in the Request::CacheNetworkName;
+    //                 |         | from it the original reply to authority can be read.
+    //                 | contains the PublicId from RequestNetworkName, but mutated with
+    //                 | the network assigned name
     Refresh(u64, Vec<u8>),
 }
 
@@ -117,7 +125,11 @@ pub enum InternalResponse {
     Connect(ConnectResponse),
     FindGroup(Vec<PublicId>),
     GetGroupKey(BTreeMap<NameType, sign::PublicKey>),
-    PutPublicId(PublicId, SignedToken),
+    CacheNetworkName(PublicId, Vec<PublicId>, SignedToken),
+    //               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
+    //                 |         |              | the original Request::RequestNetworkName
+    //                 |         | the group public keys to combine FindGroup in this response
+    //                 | the cached PublicId in the group
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
