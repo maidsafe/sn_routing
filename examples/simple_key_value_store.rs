@@ -318,7 +318,7 @@ impl Client {
     fn read_user_commands(command_sender: Sender<UserCommand>) {
         loop {
             let mut command = String::new();
-            let mut stdin = io::stdin();
+            let stdin = io::stdin();
 
             print!("Enter command (exit | put <key> <value> | get <key>)\n> ");
             let _ = io::stdout().flush();
