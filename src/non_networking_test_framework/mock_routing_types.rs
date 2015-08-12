@@ -635,7 +635,7 @@ impl ::rustc_serialize::Decodable for StructuredData {
 }
 
 
-#[derive(Clone, RustcEncodable, RustcDecodable)]
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum DataRequest {
     StructuredData(u64),
     ImmutableData(ImmutableDataType),
@@ -936,6 +936,7 @@ pub trait Sendable {
 
 
 /// MethodCall denotes a specific request to be carried out by routing.
+#[derive(PartialEq, Eq, Clone)]
 pub enum MethodCall {
     /// request to have `destination` to handle put for the `content`
     Put { destination: NameType, content: Data },
@@ -952,7 +953,9 @@ pub enum MethodCall {
     /// reply
     Reply { data: Data },
     /// terminate
-    Terminate
+    Terminate,
+    /// shutdown
+    ShutDown
 }
 
 

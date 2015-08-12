@@ -92,6 +92,7 @@ pub struct Vault {
 
 
 impl Vault {
+    /// starts-up a vault with initialized routing and personas
     fn new() -> Vault {
         let notifier = ::std::sync::Arc::new((::std::sync::Mutex::new(Ok(vec![MethodCall::Terminate])),
                                               ::std::sync::Condvar::new()));
@@ -118,6 +119,30 @@ impl Vault {
             routing_stop_flag  : routing_stop_flag,
         }
     }
+
+    /// vault listening messages from routing
+    pub fn run(&mut self) {
+        let (ref lock, ref condition_var) = *self.response_notifier;
+        let mut mutex_guard : _;
+        let valid_condition = Ok(vec![MethodCall::ShutDown]);
+        mutex_guard = lock.lock().unwrap();
+        while *mutex_guard != valid_condition {
+            mutex_guard = condition_var.wait(mutex_guard).unwrap();
+            match mutex_guard.clone() {
+                Ok(actions) => {
+                    for i in 0..actions.len() {
+                        match actions[i].clone() {
+                            MethodCall::Get { name, data_request } => {
+                                let _ = self.routing.lock().unwrap().get(name, data_request);
+                            },
+                            _ => {}
+                        }
+                    }
+                },
+                Err(_) => {}
+            }
+        }
+    }
 }
 
 /// Main entry for start up a vault node
@@ -125,16 +150,8 @@ pub fn main () {
     // routing changed to eliminate the difference of the first and later on nodes on network
     // the routing_node.run() replaces the previous run_zero_membrance() and bootstrap() function
     let mut vault = Vault::new();
-    // match vault.routing_node.run() {
-    //     Err(err) => panic!("Could not connect to the network with error : {:?}", err),
-    //     _ => {}
-    // }
-    let thread_guard = spawn(move || {
-        loop {
-            thread::sleep_ms(10000);
-        }
-    });
-    let _ = thread_guard.join();
+    // a blocking call to vault's run method
+    vault.run();
 }
 
 // #[cfg(test)]

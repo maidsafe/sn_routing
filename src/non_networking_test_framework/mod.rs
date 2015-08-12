@@ -105,31 +105,31 @@ impl RoutingVaultMock {
         self.network_delay_ms = delay_ms;
     }
 
-    // pub fn get(&mut self, location: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
-    //     let delay_ms = self.network_delay_ms;
-    //     let data_store = get_storage();
-    //     let cloned_sender = self.sender.clone();
+    pub fn get(&mut self, location: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
+        let delay_ms = self.network_delay_ms;
+        let data_store = get_storage();
+        let cloned_sender = self.sender.clone();
 
-    //     ::std::thread::spawn(move || {
-    //         ::std::thread::sleep_ms(delay_ms);
-    //         match data_store.lock().unwrap().get(&location) {
-    //             Some(raw_data) => {
-    //                 if let Ok(data) = deserialise::<Data>(raw_data) {
-    //                     if match (&data, request_for) {
-    //                         (&Data::ImmutableData(ref immut_data), DataRequest::ImmutableData(ref tag)) => immut_data.get_type_tag() == tag,
-    //                         (&Data::StructuredData(ref struct_data), DataRequest::StructuredData(ref tag)) => struct_data.get_type_tag() == *tag,
-    //                         _ => false,
-    //                     } {
-    //                         let _ = cloned_sender.send((location, data)); // TODO Handle the error case by printing it maybe
-    //                     }
-    //                 }
-    //             },
-    //             None => (),
-    //         };
-    //     });
+        ::std::thread::spawn(move || {
+            ::std::thread::sleep_ms(delay_ms);
+            match data_store.lock().unwrap().get(&location) {
+                Some(raw_data) => {
+                    if let Ok(data) = deserialise::<Data>(raw_data) {
+                        if match (&data, request_for) {
+                            (&Data::ImmutableData(ref immut_data), DataRequest::ImmutableData(ref tag)) => immut_data.get_type_tag() == tag,
+                            (&Data::StructuredData(ref struct_data), DataRequest::StructuredData(ref tag)) => struct_data.get_type_tag() == *tag,
+                            _ => false,
+                        } {
+                            let _ = cloned_sender.send(RoutingMessage::ShutDown); // TODO Handle the error case by printing it maybe
+                        }
+                    }
+                },
+                None => (),
+            };
+        });
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     // pub fn put(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
     //     let delay_ms = self.network_delay_ms;

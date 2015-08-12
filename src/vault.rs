@@ -280,7 +280,7 @@ impl VaultFacade {
         let receiver_joiner = ::std::thread::Builder::new().name("VaultReceiverThread".to_string()).spawn(move || {
             for it in receiver.iter() {
                 let (routing_acting, actions) = match it {
-                    RoutingMessage::ShutDown => break,
+                    RoutingMessage::ShutDown => (true, Ok(vec![MethodCall::ShutDown])),
                     RoutingMessage::HandleGet(data_request, our_authority,
                                               from_authority, from_address) =>
                         (true, vault_facade_cloned.lock().unwrap().handle_get(data_request, our_authority,
@@ -325,8 +325,11 @@ impl VaultFacade {
                     let &(ref lock, ref condition_var) = &*notifier;
                     // let mut routing_action = eval_result!(lock.lock());
                     let mut routing_action = lock.lock().unwrap();
-                    *routing_action = actions;
+                    *routing_action = actions.clone();
                     condition_var.notify_all();
+                    if actions.unwrap() == vec![MethodCall::ShutDown] {
+                        break;
+                    }
                 }
             }
         }).unwrap();
