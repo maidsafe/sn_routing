@@ -147,15 +147,9 @@ pub struct RoutingMessage {
     pub from_authority : Authority,
     pub to_authority   : Authority,
     pub content        : Content,
-    pub message_id     : types::MessageId,
 }
 
 impl RoutingMessage {
-
-    #[allow(dead_code)]
-    pub fn message_id(&self) -> types::MessageId {
-        self.message_id.clone()
-    }
 
     #[allow(dead_code)]
     pub fn source(&self) -> Authority {
@@ -164,12 +158,6 @@ impl RoutingMessage {
 
     pub fn destination(&self) -> Authority {
         self.to_authority.clone()
-    }
-
-    /// Return the filter value for this message,
-    /// defined as (from_authority, message_id, to_authority)
-    pub fn get_filter(&self) -> types::FilterType {
-       (self.from_authority.clone(), self.message_id, self.to_authority.clone())
     }
 
     pub fn client_key(&self) -> Option<sign::PublicKey> {
