@@ -199,10 +199,20 @@ impl RoutingCore {
                             None => return false,
                             Some(given_public_id) => {
                                 if given_public_id.name() != routing_name { return false; }
-                                let node_info = NodeInfo::new(given_public_id, vec![endpoint.clone()],
-                                    Some(endpoint));
+                                let trigger_churn = routing_table
+                                    .address_in_our_close_group_range(&routing_name);
+                                let node_info = NodeInfo::new(given_public_id,
+                                    vec![endpoint.clone()], Some(endpoint));
                                 // TODO (ben 10/08/2015) drop connection of dropped node
                                 let (added, _) = routing_table.add_node(node_info);
+                                if added && trigger_churn {
+                                    let mut close_group : Vec<NameType> = routing_table
+                                            .our_close_group().iter()
+                                            .map(|node_info| node_info.fob.name())
+                                            .collect::<Vec<NameType>>();
+                                    close_group.insert(0, self.id.name());
+                                    let _ = self.event_sender.send(Event::Churn(close_group));
+                                };
                                 added
                             },
                         }
