@@ -234,7 +234,7 @@ impl RoutingNode {
         -> RoutingResult {
         match decode::<Hello>(&serialised_message) {
             Ok(hello) => {
-                let peer = match self.core.lookup_endpoint(&endpoint) {
+                let old_identity = match self.core.lookup_endpoint(&endpoint) {
                     // if already connected through the routing table, just confirm or destroy
                     Some(ConnectionName::Routing(known_name)) => {
                         match hello.address {
@@ -255,25 +255,43 @@ impl RoutingNode {
                     None => None,
                     Some(relay_connection_name) => Some(relay_connection_name),
                 };
-                match (hello.address, self.core.our_address()) {
+                let new_identity = match (hello.address, self.core.our_address()) {
                     (Address::Node(his_name), Address::Node(our_name)) => {
                     // He is a node, and we are a node, establish a routing table connection
                     // FIXME (ben 11/08/2015) we need to check his PublicId against the network
                     // but this requires an additional RFC so currently leave out such check
                     // refer to https://github.com/maidsafe/routing/issues/387
-                        // self.core.add_peer()
+                        ConnectionName::Routing(his_name)
                     },
                     (Address::Client(his_public_key), Address::Node(our_name)) => {
                     // He is a client, we are a node, establish a relay connection
+                        ConnectionName::Relay(Address::Client(his_public_key))
                     },
                     (Address::Node(his_name), Address::Client(our_public_key)) => {
                     // He is a node, we are a client, establish a bootstrap connection
+                        ConnectionName::Bootstrap(his_name)
                     },
                     (Address::Client(his_public_key), Address::Client(our_public_key)) => {
                     // He is a client, we are a client, no-go
-
-                    }
-                }
+                        match old_identity {
+                            Some(old_connection_name) => {
+                                let _ = self.core.drop_peer(&old_connection_name); },
+                            None => {},
+                        };
+                        self.connection_manager.drop_node(endpoint.clone());
+                        return Err(RoutingError::BadAuthority);
+                    },
+                };
+                let added = self.core.add_peer(new_identity, endpoint.clone(),
+                    Some(hello.public_id));
+                match old_identity {
+                    Some(ConnectionName::Routing(_)) => unreachable!(),
+                    // drop any relay connection in favour of the routing connection
+                    Some(old_connection_name) => {
+                        let _ = self.core.drop_peer(&old_connection_name); },
+                    None => {},
+                };
+                if !added { self.connection_manager.drop_node(endpoint.clone()); }
                 Ok(())
             },
             Err(_) => Err(RoutingError::UnknownMessageType)
