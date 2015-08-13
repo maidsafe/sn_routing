@@ -406,6 +406,10 @@ impl RoutingNode {
     fn accumulate(&mut self, signed_message: SignedMessage) -> Option<(RoutingMessage, Option<SignedToken>)> {
         let message = signed_message.get_routing_message().clone();
 
+        if let Content::InternalRequest(InternalRequest::CacheNetworkName(_)) = message.content() {
+            return Some((message, None));
+        }
+
         if !message.from_authority.is_group() {
             // TODO: If not from a group, then use client's public key to check
             // the signature.
