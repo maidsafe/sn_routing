@@ -764,16 +764,6 @@ impl RoutingNode {
     fn handle_refresh(&mut self, message: RoutingMessage, tag: u64, payload: Vec<u8>) -> RoutingResult {
         unimplemented!()
     }
-
-    fn handle_find_group(&mut self, original_message: RoutingMessage) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_find_group_response(&mut self,
-                                  find_group_response: Vec<PublicId>,
-                                  refresh_our_own_group: bool) -> RoutingResult {
-        unimplemented!()
-    }
 }
 
 fn ignore<R,E>(_result: Result<R,E>) {}
