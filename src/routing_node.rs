@@ -327,57 +327,39 @@ impl RoutingNode {
         };
 
         match message.content {
-            //MessageType::GetKey => self.handle_get_key(header, body),
-            //MessageType::GetGroupKey => self.handle_get_group_key(header, body),
-            //Content::InternalRequest(InternalRequest::Connect(request)) =>
-            //    self.handle_connect_request(request, message_wrap),
-            //_ => {
-            //    // Sentinel check
-
-            //    // TODO:
-            //    // switch message type
-            //    //match message.message_type {
-            //    //    MessageType::ConnectResponse(response) =>
-            //    //        self.handle_connect_response(response),
-            //    //    MessageType::FindGroup =>
-            //    //         self.handle_find_group(message),
-            //    //    MessageType::PutPublicId(ref id) =>
-            //    //        self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
-            //    //    MessageType::Refresh(ref tag, ref data) =>
-            //    //        self.handle_refresh(message.clone(), tag.clone(), data.clone()),
-            //    //    _ => {
-            //    //        Err(RoutingError::UnknownMessageType)
-            //    //    }
-            //    //}
-            //    Ok(())
-            //}
             Content::InternalRequest(request) => {
-            }
+                match request {
+                    InternalRequest::Connect(_) => {
+                        match opt_token {
+                            Some(response_token) => self.handle_connect_request(request,
+                                message.from_authority, message.to_authority, response_token),
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
+                    _ => Ok(()),
+                }
+            },
             Content::InternalResponse(response) => {
-            }
+                Ok(())
+            },
             Content::ExternalRequest(request) => {
                 self.send_to_user(Event::Request {
                     request        : request,
                     our_authority  : message.to_authority,
                     from_authority : message.from_authority,
                     response_token : opt_token,
-                })
+                });
+                Ok(())
             }
             Content::ExternalResponse(response) => {
-                try!(self.handle_external_response(response,
-                                                   message.to_authority,
-                                                   message.from_authority))
+                self.handle_external_response(response, message.to_authority,
+                    message.from_authority)
             }
         }
-        Ok(())
     }
 
     fn accumulate(&mut self, signed_message: SignedMessage) -> Option<(RoutingMessage, Option<SignedToken>)> {
         let message = signed_message.get_routing_message().clone();
-
-        if let Content::InternalRequest(InternalRequest::CacheNetworkName(_)) = message.content() {
-            return Some((message, None));
-        }
 
         if !message.from_authority.is_group() {
             // TODO: If not from a group, then use client's public key to check
