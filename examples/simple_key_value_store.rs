@@ -173,7 +173,7 @@ impl Node {
     fn handle_request(&mut self, request        : ExternalRequest,
                                  our_authority  : Authority,
                                  from_authority : Authority,
-                                 response_token : SignedToken) {
+                                 response_token : Option<SignedToken>) {
         match request {
             ExternalRequest::Get(data_request) => {
                 self.handle_get_request(data_request,
@@ -197,9 +197,9 @@ impl Node {
     }
 
     fn handle_get_request(&mut self, data_request   : DataRequest,
-                                     _our_authority  : Authority,
+                                     _our_authority : Authority,
                                      from_authority : Authority,
-                                     response_token : SignedToken) {
+                                     response_token : Option<SignedToken>) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
             _ => { println!("Node: Only serving plain data in this example"); return; }
@@ -216,7 +216,7 @@ impl Node {
     fn handle_put_request(&mut self, data           : Data,
                                      our_authority  : Authority,
                                      _from_authority : Authority,
-                                     _response_token : SignedToken) {
+                                     _response_token : Option<SignedToken>) {
         let plain_data = match data {
             Data::PlainData(plain_data) => plain_data,
             _ => { println!("Node: Only storing plain data in this example"); return; }

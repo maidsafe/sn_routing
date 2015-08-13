@@ -415,4 +415,8 @@ impl RoutingCore {
             None => None,
         }
     }
+
+    pub fn routing_table_size(&self) -> usize {
+        if let Some(ref rt) = self.routing_table { rt.size() } else { 0 }
+    }
 }

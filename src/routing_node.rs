@@ -42,6 +42,7 @@ use utils::{encode, decode};
 use utils;
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
+use std::cmp::min;
 
 use messages::{RoutingMessage,
                SignedMessage, SignedToken,
@@ -54,6 +55,7 @@ use messages::{RoutingMessage,
 use error::{RoutingError, ResponseError};
 use refresh_accumulator::RefreshAccumulator;
 use message_filter::MessageFilter;
+use message_accumulator::MessageAccumulator;
 
 
 type RoutingResult = Result<(), RoutingError>;
@@ -75,6 +77,7 @@ pub struct RoutingNode {
     core                : RoutingCore,
     public_id_cache     : LruCache<NameType, PublicId>,
     connection_cache    : BTreeMap<NameType, SteadyTime>,
+    accumulator         : MessageAccumulator,
     // refresh_accumulator : RefreshAccumulator,
 }
 
@@ -100,6 +103,7 @@ impl RoutingNode {
             core                : RoutingCore::new(event_sender),
             public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_cache    : BTreeMap::new(),
+            accumulator         : MessageAccumulator::new(),
         })
     }
 
@@ -348,6 +352,11 @@ impl RoutingNode {
             return Err(RoutingError::BadAuthority);
         }
 
+        let (message, opt_token) = match self.accumulate(message_wrap) {
+            Some((message, opt_token)) => (message, opt_token),
+            None => return Ok(()),
+        };
+
         match message.content {
             //MessageType::GetKey => self.handle_get_key(header, body),
             //MessageType::GetGroupKey => self.handle_get_group_key(header, body),
@@ -382,7 +391,7 @@ impl RoutingNode {
                     request        : request,
                     our_authority  : message.to_authority,
                     from_authority : message.from_authority,
-                    response_token : try!(message_wrap.as_token()),
+                    response_token : opt_token,
                 })
             }
             Content::ExternalResponse(response) => {
@@ -392,6 +401,34 @@ impl RoutingNode {
             }
         }
         Ok(())
+    }
+
+    fn accumulate(&mut self, signed_message: SignedMessage) -> Option<(RoutingMessage, Option<SignedToken>)> {
+        let message = signed_message.get_routing_message().clone();
+
+        if !message.from_authority.is_group() {
+            // TODO: If not from a group, then use client's public key to check
+            // the signature.
+            let token = match signed_message.as_token() {
+                Ok(token) => token,
+                Err(_)    => return None
+            };
+            return Some((message, Some(token)));
+        }
+
+        let threshold = min(types::GROUP_SIZE,
+                            (self.core.routing_table_size() as f32 * 0.8) as usize);
+
+        let claimant : NameType = match *signed_message.claimant() {
+            Address::Node(ref claimant) => claimant.clone(),
+            Address::Client(_) => {
+                debug_assert!(false);
+                return None;
+            }
+        };
+
+        self.accumulator.add_message(threshold as usize, claimant, message)
+                        .map(|msg| (msg, None))
     }
 
     // ---- Request Network Name ------------------------------------------------------------------
