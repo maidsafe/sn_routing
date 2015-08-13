@@ -100,12 +100,13 @@ pub fn our_authority(message       : &RoutingMessage,
                 InternalRequest::Connect(_)                 => None,
                 InternalRequest::FindGroup                  => None,
                 InternalRequest::GetGroupKey                => None,
-                InternalRequest::PutPublicId(ref public_id) => Some(public_id.name()),
+                InternalRequest::RequestNetworkName(ref public_id) => Some(public_id.name()),
+                InternalRequest::CacheNetworkName(ref public_id, _) => Some(public_id.name()),
                 InternalRequest::Refresh(_, _)              => None,
             }
         },
         Content::ExternalResponse(_)    => None,
-        Content::InternalResponse(_, _) => None,
+        Content::InternalResponse(_)    => None,
     };
 
     let element = match element {
