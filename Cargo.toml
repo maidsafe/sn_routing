@@ -20,7 +20,7 @@ accumulator = "0.0.*"
 docopt = "*"
 itertools = "*"
 log = "*"
-maidsafe_sodiumoxide = "*"
+sodiumoxide = "*"
 crust = "0.2.*"
 sentinel = "0.1.*"
 

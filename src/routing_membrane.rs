@@ -39,11 +39,13 @@ use time::{Duration, SteadyTime};
 
 use crust;
 use crust::{ConnectionManager, Event, Endpoint};
+use immutable_data::{ImmutableData, ImmutableDataType};
 use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use NameType;
 use name_type::{closer_to_target_or_equal};
 use node_interface::Interface;
+use plain_data::PlainData;
 use routing_table::{RoutingTable, NodeInfo};
 use relay::{RelayMap, IdType};
 use sendable::Sendable;
@@ -104,7 +106,8 @@ pub struct RoutingMembrane<F : Interface> {
     interface: Box<F>,
     put_response_sentinel: PureSentinel<SentinelPutResponse, NameType>,
     get_data_response_sentinel: PureSentinel<SentinelGetDataResponse, NameType>,
-    put_sentinel: PureSentinel<SentinelPutRequest, NameType>
+    put_sentinel: PureSentinel<SentinelPutRequest, NameType>,
+    data_cache: LruCache<NameType, Vec<u8>>
 }
 
 impl<F> RoutingMembrane<F> where F: Interface {
@@ -134,7 +137,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
             interface : Box::new(personas),
             put_response_sentinel: PureSentinel::new(),
             get_data_response_sentinel: PureSentinel::new(),
-            put_sentinel: PureSentinel::new()
+            put_sentinel: PureSentinel::new(),
+            data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
         }
     }
 
@@ -995,7 +999,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
 
     // Routing handle put_data
     fn handle_group_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
-                       data: Data, source: NameType) -> RoutingResult {
+                             data: Data, source: NameType) -> RoutingResult {
         let our_authority = our_authority(&message, &self.routing_table);
         let from_authority = message.from_authority();
         let from = message.source_address();
@@ -1022,7 +1026,8 @@ impl<F> RoutingMembrane<F> where F: Interface {
         let resolved = (SentinelPutRequest::new(message.clone(), signed_message.clone(),
                         data.clone(), our_authority.clone(), source_authority), true);
 
-        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to, data.clone()) {
+        match self.mut_interface().handle_put(our_authority.clone(), from_authority, from, to,
+                                              data.clone()) {
             Ok(method_calls) => {
                 for method_call in method_calls {
                     match method_call {
@@ -1655,6 +1660,67 @@ impl<F> RoutingMembrane<F> where F: Interface {
                           .map(name_and_key_from_info)
                           .chain(Some(ourselves).into_iter())
                           .collect()
+    }
+
+    fn handle_cache_get(&mut self, orig_message : SignedMessage, message: RoutingMessage,
+                        data_request: DataRequest) -> RoutingResult {
+        let our_authority  = our_authority(&message, &self.routing_table);
+        let name = message.non_relayed_destination();
+        let group_pub_keys = if our_authority.is_group() {
+            self.group_pub_keys()
+        }
+        else {
+            BTreeMap::new()
+        };
+
+        match data_request {
+            DataRequest::StructuredData(_) => return Err(From::from(ResponseError::NoData)),
+            _ => {}
+        }
+
+        let response : GetDataResponse;
+        match self.data_cache.get(&name) {
+            Some(data) => {
+                response = GetDataResponse {
+                    data : match data_request {
+                                DataRequest::ImmutableData(data_type) =>
+                                    Data::ImmutableData(
+                                            ImmutableData::new(
+                                                data_type,
+                                                data.iter().map(|&x|x).collect::<Vec<_>>())),
+                                DataRequest::PlainData =>
+                                    Data::PlainData(
+                                        PlainData::new(
+                                            name, data.iter().map(|&x|x).collect::<Vec<_>>())),
+                                _ => return Err(From::from(ResponseError::NoData))
+                    },
+                    orig_request   : orig_message.clone(),
+                    group_pub_keys : group_pub_keys
+                };
+            },
+            None => return Err(From::from(ResponseError::NoData))
+        }
+        ignore(self.send_reply(&message, our_authority.clone(),
+                               MessageType::GetDataResponse(response)));
+        Ok(())
+    }
+
+    fn handle_cache_put(&mut self, data: Data) -> RoutingResult {
+        let data_name : NameType;
+        let data_vec : Vec<u8>;
+        match data {
+            Data::ImmutableData(immutable_data) => {
+                data_name = immutable_data.name();
+                data_vec = immutable_data.value().clone();
+            },
+            Data::PlainData(plain_data) => {
+                data_name = plain_data.name();
+                data_vec = plain_data.value().clone();
+            }
+            _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
+        }
+        self.data_cache.add(data_name, data_vec);
+        Ok(())
     }
 
     fn mut_interface(&mut self) -> &mut F { self.interface.deref_mut() }
