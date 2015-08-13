@@ -70,14 +70,14 @@ pub enum ExternalRequest {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalResponse {
-    Get   (Data,          SignedToken),
-    Put   (ResponseError, SignedToken),
-    Post  (ResponseError, SignedToken),
-    Delete(ResponseError, SignedToken),
+    Get   (Data,          Option<SignedToken>),
+    Put   (ResponseError, Option<SignedToken>),
+    Post  (ResponseError, Option<SignedToken>),
+    Delete(ResponseError, Option<SignedToken>),
 }
 
 impl ExternalResponse {
-    pub fn get_signed_token(&self) -> &SignedToken {
+    pub fn get_signed_token(&self) -> &Option<SignedToken> {
         match *self {
             ExternalResponse::Get(_, ref r)    => r,
             ExternalResponse::Put(_, ref r)    => r,
