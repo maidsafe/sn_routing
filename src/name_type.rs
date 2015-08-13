@@ -176,21 +176,67 @@ impl Clone for NameType {
     }
 }
 
-impl Encodable for NameType {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_000, &(self.0.as_ref())).encode(e)
+impl ::std::ops::Index<::std::ops::Range<usize>> for NameType {
+    type Output = [u8];
+    fn index(&self, _index: ::std::ops::Range<usize>) -> &[u8] {
+        let &NameType(ref b) = self;
+        b.index(_index)
     }
+}
+impl ::std::ops::Index<::std::ops::RangeTo<usize>> for NameType {
+    type Output = [u8];
+    fn index(&self, _index: ::std::ops::RangeTo<usize>) -> &[u8] {
+        let &NameType(ref b) = self;
+        b.index(_index)
+    }
+}
+impl ::std::ops::Index<::std::ops::RangeFrom<usize>> for NameType {
+    type Output = [u8];
+    fn index(&self, _index: ::std::ops::RangeFrom<usize>) -> &[u8] {
+        let &NameType(ref b) = self;
+        b.index(_index)
+    }
+}
+impl ::std::ops::Index<::std::ops::RangeFull> for NameType {
+    type Output = [u8];
+    fn index(&self, _index: ::std::ops::RangeFull) -> &[u8] {
+        let &NameType(ref b) = self;
+        b.index(_index)
+    }
+}
+    
+
+impl Encodable for NameType {
+    fn encode<E: Encoder>(&self, encoder: &mut E)
+                -> Result<(), E::Error> {
+            encoder.emit_seq(NAME_TYPE_LEN, |encoder| {
+                for (i, e) in self[..].iter().enumerate() {
+                    try!(encoder.emit_seq_elt(i, |encoder| e.encode(encoder)))
+                }
+                Ok(())
+            })
+        }
 }
 
 impl Decodable for NameType {
-    fn decode<D: Decoder>(d: &mut D)->Result<NameType, D::Error> {
-        try!(d.read_u64());
-        let id : Vec<u8> = try!(Decodable::decode(d));
-
-        match container_of_u8_to_array!(id, NAME_TYPE_LEN) {
-            Some(id_arr) => Ok(NameType(id_arr)),
-            None => Err(d.error("Bad NameType size"))
-        }
+    fn decode<D: Decoder>(decoder: &mut D)
+                    -> Result<NameType, D::Error> {
+            decoder.read_seq(|decoder, len| {
+                if len != NAME_TYPE_LEN {
+                    return Err(decoder.error(
+                        &format!("Expecting array of length: {}, but found {}",
+                                 NAME_TYPE_LEN, len)));
+                }
+                let mut res = NameType([0; NAME_TYPE_LEN]);
+                {
+                    let NameType(ref mut arr) = res;
+                    for (i, val) in arr.iter_mut().enumerate() {
+                        *val = try!(decoder.read_seq_elt(i,
+                            |decoder| Decodable::decode(decoder)));
+                    }
+                }
+                Ok(res)
+            })
     }
 }
 

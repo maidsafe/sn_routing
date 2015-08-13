@@ -15,4 +15,17 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use rustc_serialize::{Decoder, Encodable, Encoder};
+use public_id::PublicId;
+use types::Address;
 
+#[derive(Debug, Eq, PartialEq, RustcEncodable, RustcDecodable)]
+pub struct Hello {
+    pub address   : Address,
+    pub public_id : PublicId,
+}
+
+#[cfg(test)]
+mod test {
+    // TODO: add validation test
+}

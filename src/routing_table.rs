@@ -151,6 +151,7 @@ impl RoutingTable {
     /// This changes the connected status of the peer from false to true.  Only one connection is
     /// allowed per node, so this returns None if the endpoint doesn't exist anywhere in the table
     /// or if the peer already has a connected endpoint.  Otherwise it returns the peer's ID.
+    #[allow(dead_code)]
     pub fn mark_as_connected(&mut self, endpoint: &Endpoint) -> Option<NameType> {
         let has_endpoint = |ref node_info: &NodeInfo| {
             for ref candidate_endpoint in &node_info.endpoints {
@@ -369,7 +370,7 @@ impl RoutingTable {
         8 * index_of_mismatch + common_bits as usize
     }
 
-    fn has_node(&self, node_id: &NameType) -> bool {
+    pub fn has_node(&self, node_id: &NameType) -> bool {
         for node_info in &self.routing_table {
             if node_info.id() == *node_id {
                 return true;

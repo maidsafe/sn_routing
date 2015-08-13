@@ -19,56 +19,53 @@
 //!      starting a passive node:       simple_key_value_store --node
 //!      starting an interactive node:  simple_key_value_store
 
-#![forbid(bad_style, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
-        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-        private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
-        unconditional_recursion, unknown_lints, unsafe_code, unsigned_negation, unused,
-        unused_allocation, unused_attributes, unused_comparisons, unused_features, unused_parens,
-        while_true)]
-#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results, variant_size_differences)]
-#![feature(convert, core)]
+//#![forbid(bad_style, warnings)]
+//#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+//        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
+//        private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
+//        unconditional_recursion, unknown_lints, unsafe_code, unused,
+//        unused_allocation, unused_attributes, unused_comparisons, unused_features, unused_parens,
+//        while_true)]
+//#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+//        unused_qualifications, unused_results, variant_size_differences)]
+//#![feature(convert, core)]
+
+#[macro_use]
+extern crate log;
+extern crate env_logger;
 
 extern crate cbor;
-extern crate core;
 extern crate docopt;
 extern crate rustc_serialize;
-extern crate maidsafe_sodiumoxide as sodiumoxide;
+extern crate sodiumoxide;
 
 extern crate crust;
 extern crate routing;
 
-use core::iter::FromIterator;
-// use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::thread::spawn;
 use std::collections::BTreeMap;
+use std::io::Write;
 
-// use cbor::CborTagEncode;
-use cbor::CborError;
 use docopt::Docopt;
-// use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
 use crust::Endpoint;
-use routing::node_interface::{CreatePersonas, Interface, MethodCall};
-use routing::routing_client::RoutingClient;
-use routing::routing_node::RoutingNode;
-use routing::sendable::Sendable;
-use routing::types;
-use routing::id::Id;
+use routing::routing::Routing;
 use routing::authority::Authority;
 use routing::NameType;
-use routing::error::{ResponseError, InterfaceError};
+use routing::error::RoutingError;
+use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
-use routing::utils::{encode, decode, public_key_to_client_name};
+use routing::utils::{encode};
+use routing::{ExternalRequest, SignedToken};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -107,338 +104,305 @@ enum PeerEndpoint {
     Tcp(SocketAddr),
 }
 
+impl PeerEndpoint {
+    fn to_crust_endpoint(self) -> Endpoint {
+        Endpoint::Tcp(match self { PeerEndpoint::Tcp(address) => address })
+    }
+}
+
 impl Decodable for PeerEndpoint {
     fn decode<D: Decoder>(decoder: &mut D)->Result<PeerEndpoint, D::Error> {
         let str = try!(decoder.read_str());
         let address = match SocketAddr::from_str(&str) {
             Ok(addr) => addr,
             Err(_) => {
-                return Err(decoder.error(format!(
-                    "Could not decode {} as valid IPv4 or IPv6 address.", str).as_str()));
+                return Err(decoder.error(&format!(
+                    "Could not decode {} as valid IPv4 or IPv6 address.", str)[..]));
             },
         };
         Ok(PeerEndpoint::Tcp(address))
     }
 }
 
-// We'll use docopt to help parse the ongoing CLI commands entered by the user.
-static CLI_USAGE: &'static str = "
-Usage:
-  cli put <key> <value>
-  cli get <key>
-  cli stop
-";
-
-#[derive(RustcDecodable, Debug)]
-struct CliArgs {
-    cmd_put: bool,
-    cmd_get: bool,
-    cmd_stop: bool,
-    arg_key: Option<String>,
-    arg_value: String,
+////////////////////////////////////////////////////////////////////////////////
+struct Node {
+    routing  : Routing,
+    receiver : Receiver<Event>,
+    db       : BTreeMap<NameType, PlainData>,
 }
 
-// ==========================   Implement traits   =================================
+impl Node {
+    fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Node, RoutingError> {
+        let (sender, receiver) = mpsc::channel::<Event>();
+        let routing = try!(Routing::new(sender));
 
-struct TestClient {
-    pub key_reverse_lookup : BTreeMap<NameType, String>
-}
+        Ok(Node {
+            routing  : routing,
+            receiver : receiver,
+            db       : BTreeMap::new(),
+        })
+    }
 
-impl TestClient {
-    pub fn new() -> TestClient {
-        TestClient {
-            key_reverse_lookup: BTreeMap::new()
+    fn run(&mut self) {
+        loop {
+            let event = match self.receiver.recv() {
+                Ok(event) => event,
+                Err(_)  => {
+                    println!("Node: Routing closed the event channel");
+                    return;
+                }
+            };
+
+            println!("Node: Receied event {:?}", event);
+
+            match event {
+                Event::Request{request,
+                               our_authority,
+                               from_authority,
+                               response_token} => {
+                    self.handle_request(request,
+                                        our_authority,
+                                        from_authority,
+                                        response_token);
+                },
+                _ => {}
+            }
         }
     }
-}
 
-impl routing::client_interface::Interface for TestClient {
-    fn handle_get_response(&mut self, data_location : NameType, data : Data) {
-        println!("Testing client received get_response from {:?} with testdata {:?}",
-                    data_location, data);
-        match data {
-            Data::PlainData(plain_data) => {
-                match decode_key_value(plain_data.value()) {
-                    Ok((key, value)) => {
-                        println!("Client received {} under key {} from {}",
-                            value, key, data_location);
-                    },
-                    Err(_) => {
-                        println!("Client received get response from {} but failed to decode",
-                            data_location);
-                    }
-                }
+    fn handle_request(&mut self, request        : ExternalRequest,
+                                 our_authority  : Authority,
+                                 from_authority : Authority,
+                                 response_token : Option<SignedToken>) {
+        match request {
+            ExternalRequest::Get(data_request) => {
+                self.handle_get_request(data_request,
+                                        our_authority,
+                                        from_authority,
+                                        response_token);
+            },
+            ExternalRequest::Put(data) => {
+                self.handle_put_request(data,
+                                        our_authority,
+                                        from_authority,
+                                        response_token);
+            },
+            ExternalRequest::Post(_) => {
+                println!("Node: Post is not implemented, ignoring.");
+            },
+            ExternalRequest::Delete(_) => {
+                println!("Node: Delete is not implemented, ignoring.");
+            },
+        }
+    }
+
+    fn handle_get_request(&mut self, data_request   : DataRequest,
+                                     _our_authority : Authority,
+                                     from_authority : Authority,
+                                     response_token : Option<SignedToken>) {
+        let name = match data_request {
+            DataRequest::PlainData(name) => name,
+            _ => { println!("Node: Only serving plain data in this example"); return; }
+        };
+
+        let data = match self.db.get(&name) {
+            Some(data) => data.clone(),
+            None => return,
+        };
+
+        self.routing.get_response(from_authority, Data::PlainData(data), response_token);
+    }
+
+    fn handle_put_request(&mut self, data           : Data,
+                                     our_authority  : Authority,
+                                     _from_authority : Authority,
+                                     _response_token : Option<SignedToken>) {
+        let plain_data = match data {
+            Data::PlainData(plain_data) => plain_data,
+            _ => { println!("Node: Only storing plain data in this example"); return; }
+        };
+
+        match our_authority {
+            Authority::NaeManager(_) => {
+                self.db.insert(plain_data.name(), plain_data);
             },
             _ => {
-                println!("Client received get response from {} but it is not PlainData.",
-                    data_location);}
+                println!("Node: Unexpected our_authority ({:?})", our_authority);
+                assert!(false);
+            }
         }
-    }
 
-    fn handle_put_response(&mut self, response_error: ResponseError, _request_data: Data) {
-        match response_error {
-            ResponseError::NoData =>
-                println!("Testing client received put_response with error NoData"),
-            ResponseError::InvalidRequest =>
-                println!("Testing client received put_response with error InvalidRequest"),
-            ResponseError::FailedToStoreData(data) =>
-                println!("Testing client received put_response with error FailedToStoreData for {}", data.name()),
-        }
-    }
-
-    fn handle_post_response(&mut self, _response_error: ResponseError, _request_data: Data) {
-         unimplemented!();
-    }
-
-    fn handle_delete_response(&mut self, _response_error: ResponseError, _request_data: Data) {
-        unimplemented!();
     }
 }
 
-struct TestNode {
-  db: BTreeMap<NameType, PlainData>
+////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Eq, Debug, Clone)]
+enum UserCommand {
+    Exit,
+    Get(String),
+    Put(String, String),
 }
 
-impl TestNode {
-    pub fn new() -> TestNode {
-        TestNode {
-            db : BTreeMap::new()
-        }
+fn parse_user_command(cmd : String) -> Option<UserCommand> {
+    let cmds = cmd.trim_right_matches(|c| c == '\r' || c == '\n')
+                  .split(' ')
+                  .collect::<Vec<_>>();
+
+    if cmds.is_empty() {
+        return None;
     }
+    else if cmds.len() == 1 && cmds[0] == "exit" {
+        return Some(UserCommand::Exit);
+    }
+    else if cmds.len() == 2 && cmds[0] == "get" {
+        return Some(UserCommand::Get(cmds[1].to_string()));
+    }
+    else if cmds.len() == 3 && cmds[0] == "put" {
+        return Some(UserCommand::Put(cmds[1].to_string(), cmds[2].to_string()));
+    }
+
+    None
 }
 
-impl Interface for TestNode {
-    fn handle_get(&mut self,
-                  data_request: DataRequest, our_authority: Authority,
-                  _from_authority: Authority, _from_address: types::SourceAddress)
-                   -> Result<Vec<MethodCall>, InterfaceError> {
-        match data_request {
-              DataRequest::PlainData => {
-                  match our_authority {
-                      Authority::NaeManager(group_name) => {
-                          match self.db.get(&group_name) {
-                              Some(plain_data) => {
-                                  println!("node replied to get request for chunk {}",
-                                      group_name);
-                                  return Ok(vec![MethodCall::Reply {
-                                      data : Data::PlainData(plain_data.clone()) }]);
-                              },
-                              None => {
-                                  println!("node didn't have chunk {}",
-                                      group_name);
-                              }
-                          }
-                      },
-                      _ => {}
-                  };
-              },
-              _ => {}
-        };
-        Err(InterfaceError::Response(ResponseError::NoData))
-    }
-
-    fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
-                _from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
-                data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
-        match data {
-            Data::PlainData(plain_data) => {
-                match our_authority {
-                    Authority::ClientManager(client_name) => {
-                        println!("ClientManager of {:?} forwarding data to DataManager around {:?}",
-                            client_name, plain_data.name());
-                        return Ok(vec![MethodCall::Put {
-                            destination: plain_data.name(),
-                            content: Data::PlainData(plain_data) }]);
-                    },
-                    Authority::NaeManager(group_name) => {
-                        assert_eq!(group_name, plain_data.name());
-                        let _ = self.db.entry(plain_data.name())
-                            .or_insert(plain_data);
-                    },
-                    _ => {}
-                }
-            },
-            _ => {}
-        };
-        return Ok(vec![]);
-    }
-
-    fn handle_post(&mut self, _our_authority: Authority, _from_authority: Authority,
-        _from_address: types::SourceAddress, _dest_address: types::DestinationAddress,
-        _data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
-        Err(InterfaceError::Abort)
-    }
-
-    fn handle_refresh(&mut self, _type_tag: u64, _from_group: NameType, _payloads: Vec<Vec<u8>>) {
-        unimplemented!()
-    }
-
-    fn handle_get_response(&mut self, from_address: NameType, response: Data) -> Vec<MethodCall> {
-        println!("testing node received get_response from {} with data {:?}", from_address, response);
-        vec![]
-    }
-
-    fn handle_put_response(&mut self, _from_authority : Authority, _from_address: types::SourceAddress,
-                                      response: ResponseError) -> Vec<MethodCall> {
-        println!("testing node received error put_response {}", response);
-        vec![]
-    }
-
-    fn handle_post_response(&mut self, _from_authority: Authority,
-        _from_address: types::SourceAddress, _response: ResponseError)
-        -> Vec<MethodCall> {
-        unimplemented!();
-    }
-
-    fn handle_churn(&mut self, close_group: Vec<NameType>) -> Vec<MethodCall> {
-        for name in close_group {
-          println!("RT: {:?}", name);
-        }
-        vec![]
-    }
-
-    fn handle_cache_get(&mut self, _data_request: DataRequest, _data_location: NameType,
-                                   _from_address: NameType) -> Result<MethodCall, InterfaceError> {
-        // FIXME(ben): 17/7/2015 implement a proper caching mechanism;
-        // separate from the key-value store
-        Err(InterfaceError::Abort)
-    }
-
-    fn handle_cache_put(&mut self, _from_authority: Authority, _from_address: NameType,
-                        _data: Data) -> Result<MethodCall, InterfaceError> {
-        // FIXME(ben): 17/7/2015 implement a proper caching mechanism;
-        // separate from the key-value store
-        Err(InterfaceError::Abort)
-    }
+////////////////////////////////////////////////////////////////////////////////
+struct Client {
+    routing          : Routing,
+    event_receiver   : Receiver<Event>,
+    command_receiver : Receiver<UserCommand>,
+    is_done          : bool,
 }
 
-struct TestNodeGenerator;
+impl Client {
+    fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
+        let (event_sender, event_receiver) = mpsc::channel::<Event>();
+        let routing = try!(Routing::new_client(event_sender));
 
-impl CreatePersonas<TestNode> for TestNodeGenerator {
-    fn create_personas(&mut self) -> TestNode {
-        TestNode::new()
+        let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
+
+        thread::spawn(move || { Client::read_user_commands(command_sender); });
+
+        Ok(Client {
+            routing          : routing,
+            event_receiver   : event_receiver,
+            command_receiver : command_receiver,
+            is_done          : false,
+        })
     }
-}
 
-fn calculate_key_name(key: &String) -> NameType {
-    NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
-}
-
-#[allow(dead_code)]
-fn encode_key_value(key : String, value : String) -> Result<Vec<u8>, CborError> {
-    encode(&(key, value))
-}
-
-#[allow(dead_code)]
-fn decode_key_value(data : &Vec<u8>) -> Result<(String, String), CborError> {
-    decode(data)
-}
-
-fn run_passive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
-    let mut test_node = RoutingNode::<TestNode, TestNodeGenerator>::new(TestNodeGenerator);
-    let _ = test_node.run();
-    let ref mut command = String::new();
-    loop {
-        command.clear();
-        println!("Enter command (stop)>");
-        let _ = io::stdin().read_line(command);
-        let x: &[_] = &['\r', '\n'];
-        match command.trim_right_matches(x) {
-            "stop" => break,
-            _ => println!("Invalid command.")
-        }
-    }
-}
-
-fn run_interactive_node(_bootstrap_peers: Option<Vec<Endpoint>>) {
-    let our_id = Id::new();
-    let our_client_name : NameType = public_key_to_client_name(&our_id.signing_public_key());
-    let test_client = RoutingClient::new(Arc::new(Mutex::new(TestClient::new())), our_id);
-    let mutate_client = Arc::new(Mutex::new(test_client));
-    let copied_client = mutate_client.clone();
-    let _ = spawn(move || {
-        let _ = copied_client.lock().unwrap().bootstrap();
-        thread::sleep_ms(100);
+    fn run(&mut self) {
+        // Need to do poll as Select is not yet stable in the current
+        // rust implementation.
         loop {
-            thread::sleep_ms(10);
-            copied_client.lock().unwrap().run();
-        }
-    });
-    let ref mut command = String::new();
-    let docopt: Docopt = Docopt::new(CLI_USAGE).unwrap_or_else(|error| error.exit());
-    let mut stdin = io::stdin();
-    loop {
-        command.clear();
-        println!("Enter command (stop | put <key> <value> | get <key>)>");
-        let _ = stdin.read_line(command);
-        let x: &[_] = &['\r', '\n'];
-        let mut raw_args: Vec<&str> = command.trim_right_matches(x).split(' ').collect();
-        raw_args.insert(0, "cli");
-        let args: CliArgs = match docopt.clone().argv(raw_args.into_iter()).decode() {
-            Ok(args) => args,
-            Err(error) => {
-                match error {
-                    docopt::Error::Decode(what) => println!("{}", what),
-                    _ => println!("Invalid command."),
-                };
-                continue
-            },
-        };
+            while let Ok(command) = self.command_receiver.try_recv() {
+                self.handle_user_command(command);
+            }
 
-        if args.cmd_put {
-            // docopt should ensure arg_key and arg_value are valid
-            assert!(args.arg_key.is_some() && !args.arg_value.is_empty());
-            match args.arg_key {
-                Some(key) => {
-                    let key_name : NameType = calculate_key_name(&key);
-                    println!("Putting value \"{}\" to network under key \"{}\" at location {}.",
-                        args.arg_value, key, key_name);
-                    match encode_key_value(key, args.arg_value) {
-                        Ok(serialised_key_value) => {
-                            let data = PlainData::new(key_name, serialised_key_value);
-                            let _ = mutate_client.lock().unwrap()
-                                .put(our_client_name, Data::PlainData(data));
-                        },
-                        Err(_) => { println!("Failed to encode key and value."); }
+            if self.is_done { break; }
+
+            while let Ok(event) = self.event_receiver.try_recv() {
+                self.handle_routing_event(event);
+            }
+
+            if self.is_done { break; }
+
+            thread::sleep_ms(10);
+        }
+
+        println!("Bye");
+    }
+
+    fn read_user_commands(command_sender: Sender<UserCommand>) {
+        loop {
+            let mut command = String::new();
+            let stdin = io::stdin();
+
+            print!("Enter command (exit | put <key> <value> | get <key>)\n> ");
+            let _ = io::stdout().flush();
+
+            let _ = stdin.read_line(&mut command);
+
+            match parse_user_command(command) {
+                Some(cmd) => {
+                    let _ = command_sender.send(cmd.clone());
+                    if cmd == UserCommand::Exit {
+                        break;
                     }
                 },
-                None => ()
+                None => {
+                    println!("Unrecognised command");
+                    continue;
+                }
             }
-        } else if args.cmd_get {
-            // docopt should ensure arg_key is valid
-            assert!(args.arg_key.is_some());
-            match args.arg_key {
-                Some(key) => {
-                    let key_name : NameType = calculate_key_name(&key);
-                    println!("Getting value for key \"{}\" from network at location {}.",
-                        key, key_name);
-                    let _ = mutate_client.lock().unwrap().get(key_name, DataRequest::PlainData);
-                },
-                None => ()
-            }
-        } else if args.cmd_stop {
-            break;
         }
+    }
+
+    fn handle_user_command(&mut self, cmd : UserCommand) {
+        match cmd {
+            UserCommand::Exit => {
+                self.is_done = true;
+            }
+            UserCommand::Get(what) => {
+                self.send_get_request(what);
+            }
+            UserCommand::Put(put_where, put_what) => {
+                self.send_put_request(put_where, put_what);
+            }
+        }
+    }
+
+    fn handle_routing_event(&mut self, event : Event) {
+        println!("Client received routing event: {:?}", event);
+    }
+
+    fn send_get_request(&self, what: String) {
+        let name = Client::calculate_key_name(&what);
+
+        self.routing.get_request(Authority::NaeManager(name.clone()),
+                                 DataRequest::PlainData(name));
+    }
+
+    fn send_put_request(&self, put_where: String, put_what: String) {
+        let name = Client::calculate_key_name(&put_where);
+        let data = encode(&put_what).unwrap();
+
+        self.routing.put_request(Authority::NaeManager(name.clone()),
+                                 Data::PlainData(PlainData::new(name, data)));
+    }
+
+    fn calculate_key_name(key: &String) -> NameType {
+        NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
 fn main() {
+    match env_logger::init() {
+        Ok(()) => {},
+        Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
+    }
+
     let args: Args = Docopt::new(USAGE)
                             .and_then(|docopt| docopt.decode())
                             .unwrap_or_else(|error| error.exit());
 
-    // Convert peer endpoints to usable bootstrap list.
-    let bootstrap_peers = if args.arg_peer.is_empty() {
-        None
-    } else {
-        Some(Vec::<Endpoint>::from_iter(args.arg_peer.iter().map(|endpoint| {
-            Endpoint::Tcp(match *endpoint { PeerEndpoint::Tcp(address) => address, })
-        })))
-    };
+    let bootstrap_peers = args.arg_peer.into_iter()
+                                       .map(|ep| ep.to_crust_endpoint())
+                                       .collect::<Vec<_>>();
 
     if args.flag_node {
-        run_passive_node(bootstrap_peers);
+        let mut node = match Node::new(bootstrap_peers) {
+            Ok(node) => node,
+            Err(err) => { println!("Failed to create Node: {:?}", err); return; }
+        };
+
+        node.run();
     } else {
-        run_interactive_node(bootstrap_peers);
+        let mut client = match Client::new(bootstrap_peers) {
+            Ok(client) => client,
+            Err(err) => { println!("Failed to create Client: {:?}", err); return; }
+        };
+
+        client.run();
     }
 }
+

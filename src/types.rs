@@ -16,10 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide::crypto;
+use sodiumoxide::crypto::sign::Signature;
+use sodiumoxide::crypto::sign;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use rand::random;
-use sodiumoxide::crypto::sign;
+
 use NameType;
+use authority::Authority;
 
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
   let mut vector = Vec::new();
@@ -76,22 +79,16 @@ struct SignedKey {
   encrypt_public_key: crypto::box_::PublicKey,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct NameAndTypeId {
-  pub name : NameType,
-  pub type_id : u64
-}
+// TODO (ben 12/08/2015) Discussion point, message_id from RoutingMessage has been removed
+// in favour the signature of the signed message.  There is an unresolved question on
+// how to handle an explicit double identical request (eg for a network based reference
+// counter).
+pub type FilterType = Signature;
 
-
-//                        +-> from_node name
-//                        |           +-> preserve the message_id when sending on
-//                        |           |         +-> destination name
-//                        |           |         |
-pub type FilterType = (SourceAddress, MessageId, DestinationAddress);
-
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum Address {
-Client(crypto::sign::PublicKey),
-Node(NameType),
+    Client(crypto::sign::PublicKey),
+    Node(NameType),
 }
 
 /// Address of the source of the message
