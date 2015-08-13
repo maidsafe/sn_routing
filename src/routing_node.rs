@@ -632,7 +632,7 @@ impl RoutingNode {
                 // TODO (ben 13/08/2015) use public_id_cache or result of future RFC
                 // to validate the public_id from the network
                 self.connection_manager.connect(connect_request.local_endpoints.clone());
-                // self.connection_manager.connect(connect_request.external_endpoints.clone());
+                self.connection_manager.connect(connect_request.external_endpoints.clone());
                 self.connection_cache.entry(connect_request.requester_fob.name())
                     .or_insert(SteadyTime::now());
                 let routing_message = RoutingMessage {
@@ -657,8 +657,28 @@ impl RoutingNode {
         }
     }
 
-    fn handle_connect_response(&mut self, connect_response: ConnectResponse) -> RoutingResult {
-        unimplemented!()
+    fn handle_connect_response(&mut self,
+                               response       : InternalResponse,
+                               from_authority : Authority,
+                               to_authority   : Authority) -> RoutingResult {
+        match response {
+            InternalResponse::Connect(connect_response, signed_token) => {
+                if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
+                    return Err(RoutingError::FailedSignature); };
+                let connect_request = try!(SignedMessage::new_from_token(signed_token));
+                if connect_request.get_routing_message().from_authority.get_location()
+                    != &self.core.id().name() { return Err(RoutingError::BadAuthority); };
+                if !self.core.check_node(&ConnectionName::Routing(
+                    connect_response.receiver_fob.name())) {
+                    return Err(RoutingError::RefusedFromRoutingTable); };
+                self.connection_manager.connect(connect_response.local_endpoints.clone());
+                self.connection_manager.connect(connect_response.external_endpoints.clone());
+                self.connection_cache.entry(connect_response.receiver_fob.name())
+                    .or_insert(SteadyTime::now());
+                Ok(())
+            },
+            _ => return Err(RoutingError::BadAuthority),
+        }
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
