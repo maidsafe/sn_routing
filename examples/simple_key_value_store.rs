@@ -64,7 +64,7 @@ use routing::error::RoutingError;
 use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
-use routing::utils::{encode, public_key_to_client_name};
+use routing::utils::{encode};
 use routing::{ExternalRequest, SignedToken};
 
 // ==========================   Program Options   =================================
@@ -223,10 +223,6 @@ impl Node {
         };
 
         match our_authority {
-            Authority::ClientManager(_) => {
-                self.routing.put_request(Authority::NaeManager(plain_data.name()),
-                                         Data::PlainData(plain_data));
-            },
             Authority::NaeManager(_) => {
                 self.db.insert(plain_data.name(), plain_data);
             },
@@ -318,7 +314,7 @@ impl Client {
     fn read_user_commands(command_sender: Sender<UserCommand>) {
         loop {
             let mut command = String::new();
-            let mut stdin = io::stdin();
+            let stdin = io::stdin();
 
             print!("Enter command (exit | put <key> <value> | get <key>)\n> ");
             let _ = io::stdout().flush();
@@ -366,11 +362,10 @@ impl Client {
     }
 
     fn send_put_request(&self, put_where: String, put_what: String) {
-        let mngr = public_key_to_client_name(&self.routing.signing_public_key());
         let name = Client::calculate_key_name(&put_where);
         let data = encode(&put_what).unwrap();
 
-        self.routing.put_request(Authority::ClientManager(mngr),
+        self.routing.put_request(Authority::NaeManager(name.clone()),
                                  Data::PlainData(PlainData::new(name, data)));
     }
 
