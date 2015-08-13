@@ -98,8 +98,6 @@ pub fn our_authority(message       : &RoutingMessage,
         Content::InternalRequest(ref request) => {
             match *request {
                 InternalRequest::Connect(_)                 => None,
-                InternalRequest::FindGroup                  => None,
-                InternalRequest::GetGroupKey                => None,
                 InternalRequest::RequestNetworkName(ref public_id) => Some(public_id.name()),
                 InternalRequest::CacheNetworkName(ref public_id, _) => Some(public_id.name()),
                 InternalRequest::Refresh(_, _)              => None,

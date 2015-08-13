@@ -98,8 +98,8 @@ impl ExternalResponse {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
     Connect(ConnectRequest),
-    FindGroup,
-    GetGroupKey,
+    // FindGroup,
+    // GetGroupKey,
     RequestNetworkName(PublicId),
     // a client can send RequestNetworkName
     CacheNetworkName(PublicId, SignedToken),
@@ -115,8 +115,8 @@ pub enum InternalRequest {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
     Connect(ConnectResponse, SignedToken),
-    FindGroup(Vec<PublicId>, SignedToken),
-    GetGroupKey(BTreeMap<NameType, sign::PublicKey>, SignedToken),
+    // FindGroup(Vec<PublicId>, SignedToken),
+    // GetGroupKey(BTreeMap<NameType, sign::PublicKey>, SignedToken),
     CacheNetworkName(PublicId, Vec<PublicId>, SignedToken),
     //               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
     //                 |         |              | the original Request::RequestNetworkName
