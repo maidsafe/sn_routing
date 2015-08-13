@@ -388,13 +388,31 @@ impl RoutingCore {
     pub fn our_close_group(&self) -> Option<Vec<NameType>> {
         match self.routing_table {
             Some(ref routing_table) => {
-                Some(routing_table.our_close_group().into_iter()
-                    .map(|node_info| node_info.id())
-                    .chain(Some(self.id.name().clone()).into_iter())
-                    .collect::<Vec<NameType>>())
+                let mut close_group : Vec<NameType> = routing_table
+                        .our_close_group().iter()
+                        .map(|node_info| node_info.fob.name())
+                        .collect::<Vec<NameType>>();
+                close_group.insert(0, self.id.name());
+                Some(close_group)
             },
             None => None,
         }
     }
 
+    /// Returns our close group as a vector of PublicIds, sorted from our own name;
+    /// Our own PublicId is always included, and the first member of the result.
+    /// If we are not a full node None is returned.
+    pub fn our_close_group_with_public_ids(&self) -> Option<Vec<PublicId>> {
+        match self.routing_table {
+            Some(ref routing_table) => {
+                let mut close_group : Vec<PublicId> = routing_table
+                        .our_close_group().iter()
+                        .map(|node_info| node_info.fob.clone())
+                        .collect::<Vec<PublicId>>();
+                close_group.insert(0, PublicId::new(&self.id));
+                Some(close_group)
+            },
+            None => None,
+        }
+    }
 }

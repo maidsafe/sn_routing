@@ -111,7 +111,7 @@ pub enum InternalRequest {
     RequestNetworkName(PublicId),
     // a client can send RequestNetworkName
     CacheNetworkName(PublicId, SignedToken),
-    //               ~~|~~~~~  ~~|~~~~~~
+    //               ~~|~~~~~  ~~|~~~~~~~~
     //                 |         | SignedToken contains Request::RequestNetworkName and needs to
     //                 |         | be forwarded in the Request::CacheNetworkName;
     //                 |         | from it the original reply to authority can be read.
