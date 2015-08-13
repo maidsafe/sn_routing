@@ -389,6 +389,18 @@ impl RoutingNode {
             return Some((message, Some(token)));
         }
 
+        let skip_accumulator = match message.content {
+            Content::InternalResponse(ref response) => {
+                match *response {
+                    InternalResponse::CacheNetworkName(_,_,_) => true,
+                    _ => false,
+                }
+            },
+            _ => false
+        };
+
+        if skip_accumulator { return Some((message, None)); }
+
         let threshold = min(types::GROUP_SIZE,
                             (self.core.routing_table_size() as f32 * 0.8) as usize);
 
