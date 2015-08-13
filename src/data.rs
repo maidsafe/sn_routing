@@ -47,7 +47,7 @@ impl Data {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum DataRequest {
     StructuredData(NameType, u64),
     ImmutableData(NameType, ImmutableDataType),

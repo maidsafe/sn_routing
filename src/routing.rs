@@ -110,7 +110,8 @@ impl Routing {
         unimplemented!()
     }
     /// Respond to a get_request (no error can be sent)
-    pub fn get_response(&self, location : Authority, data: Data, signed_token : SignedToken) {
+    /// If we received the request from a group, we'll not get the signed_token.
+    pub fn get_response(&self, location : Authority, data: Data, signed_token : Option<SignedToken>) {
         unimplemented!()
     }
     // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error fn instead 

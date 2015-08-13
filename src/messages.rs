@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 
 pub static VERSION_NUMBER : u8 = 0;
 
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectRequest {
     pub local_endpoints: Vec<Endpoint>,
     pub external_endpoints: Vec<Endpoint>,
@@ -42,7 +42,7 @@ pub struct ConnectRequest {
     pub requester_fob: PublicId
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectResponse {
     pub requester_local_endpoints: Vec<Endpoint>,
     pub requester_external_endpoints: Vec<Endpoint>,
@@ -68,7 +68,7 @@ impl SignedToken {
 }
 
 /// These are the messageTypes routing provides
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalRequest {
     Get(DataRequest),
     Put(Data),
@@ -76,7 +76,7 @@ pub enum ExternalRequest {
     Delete(DataRequest),
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalResponse {
     Get   (Data,          SignedToken),
     Put   (ResponseError, SignedToken),
@@ -103,7 +103,7 @@ impl ExternalResponse {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
     Connect(ConnectRequest),
     FindGroup,
@@ -120,7 +120,7 @@ pub enum InternalRequest {
     Refresh(u64, Vec<u8>),
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
     Connect(ConnectResponse, SignedToken),
     FindGroup(Vec<PublicId>, SignedToken),
@@ -132,7 +132,7 @@ pub enum InternalResponse {
     //                 | the cached PublicId in the group
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum Content {
     ExternalRequest(ExternalRequest),
     InternalRequest(InternalRequest),
@@ -141,7 +141,7 @@ pub enum Content {
 }
 
 /// the bare (unsigned) routing message
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
     // version_number     : u8
     pub from_authority : Authority,
