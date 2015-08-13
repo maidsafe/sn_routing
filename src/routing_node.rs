@@ -311,12 +311,12 @@ impl RoutingNode {
             self.core.name_in_range(&message.destination().get_location());
 
         // Handle FindGroupResponse
-        if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids, _))
-                = message.content {
-            ignore(self.handle_find_group_response(
-                        vec_of_public_ids.clone(),
-                        address_in_close_group_range.clone()));
-        }
+        // if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids, _))
+        //         = message.content {
+        //     ignore(self.handle_find_group_response(
+        //                 vec_of_public_ids.clone(),
+        //                 address_in_close_group_range.clone()));
+        // }
 
         if !address_in_close_group_range {
             return Ok(());
