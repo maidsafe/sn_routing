@@ -314,32 +314,13 @@ impl RoutingNode {
         if !self.core.name_in_range(&message.destination().get_location()) {
             return Ok(()); };
 
-        // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
-        // and this node is in the group but the message destination is another group member node.
-        match message.content {
-            Content::InternalRequest(InternalRequest::Connect(_)) |
-            Content::InternalResponse(InternalResponse::Connect(_, _)) => {
-                match message.destination() {
-                    Authority::ClientManager(_)  => return Ok(()), // TODO: Should be error
-                    Authority::NaeManager(_)     => return Ok(()), // TODO: Should be error
-                    Authority::NodeManager(_)    => return Ok(()), // TODO: Should be error
-                    Authority::ManagedNode(name) => if name != self.core.id().name() {
-                        return Ok(())
-                    },
-                    Authority::Client(_, _)      => return Ok(()), // TODO: Should be error
-                }
-            }
-            _ => (),
-        }
-        //
-        // pre-sentinel message handling
-
         // check if our calculated authority matches the destination authority of the message
         if self.core.our_authority(&message)
             .map(|our_auth| message.to_authority == our_auth).unwrap_or(false) {
             return Err(RoutingError::BadAuthority);
         }
 
+        // Accumulate message
         let (message, opt_token) = match self.accumulate(message_wrap) {
             Some((message, opt_token)) => (message, opt_token),
             None => return Ok(()),
