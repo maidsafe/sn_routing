@@ -23,12 +23,14 @@ use crust;
 use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
 use types::Address;
-use authority::Authority;
+use authority;
+use authority::{Authority};
 use id::Id;
 use public_id::PublicId;
 use NameType;
 use peer::Peer;
 use event::Event;
+use messages::RoutingMessage;
 
 /// ConnectionName labels the counterparty on a connection in relation to us
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -363,6 +365,54 @@ impl RoutingCore {
             Some(ref routing_table) =>
                 routing_table.address_in_our_close_group_range(name),
             None => false,
+        }
+    }
+
+    /// Our authority is defined by the routing message
+    /// if we are a full node;  if we are a client, this always returns
+    /// Client authority (where the relay name is taken from the routing message destination)
+    pub fn our_authority(&self, message : &RoutingMessage) -> Option<Authority> {
+        match self.routing_table {
+            Some(ref routing_table) => {
+                authority::our_authority(message, routing_table)},
+            // if the message reached us as a client, then destination.get_location()
+            // was our relay name
+            None => Some(Authority::Client(message.destination().get_location().clone(),
+                self.id.signing_public_key())),
+        }
+    }
+
+    /// Returns our close group as a vector of NameTypes, sorted from our own name;
+    /// Our own name is always included, and the first member of the result.
+    /// If we are not a full node None is returned.
+    pub fn our_close_group(&self) -> Option<Vec<NameType>> {
+        match self.routing_table {
+            Some(ref routing_table) => {
+                let mut close_group : Vec<NameType> = routing_table
+                        .our_close_group().iter()
+                        .map(|node_info| node_info.fob.name())
+                        .collect::<Vec<NameType>>();
+                close_group.insert(0, self.id.name());
+                Some(close_group)
+            },
+            None => None,
+        }
+    }
+
+    /// Returns our close group as a vector of PublicIds, sorted from our own name;
+    /// Our own PublicId is always included, and the first member of the result.
+    /// If we are not a full node None is returned.
+    pub fn our_close_group_with_public_ids(&self) -> Option<Vec<PublicId>> {
+        match self.routing_table {
+            Some(ref routing_table) => {
+                let mut close_group : Vec<PublicId> = routing_table
+                        .our_close_group().iter()
+                        .map(|node_info| node_info.fob.clone())
+                        .collect::<Vec<PublicId>>();
+                close_group.insert(0, PublicId::new(&self.id));
+                Some(close_group)
+            },
+            None => None,
         }
     }
 }
