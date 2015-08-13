@@ -40,12 +40,8 @@ pub struct ConnectRequest {
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectResponse {
-    pub requester_local_endpoints: Vec<Endpoint>,
-    pub requester_external_endpoints: Vec<Endpoint>,
-    pub receiver_local_endpoints: Vec<Endpoint>,
-    pub receiver_external_endpoints: Vec<Endpoint>,
-    pub requester_id: NameType,
-    pub receiver_id: NameType,
+    pub local_endpoints: Vec<Endpoint>,
+    pub external_endpoints: Vec<Endpoint>,
     pub receiver_fob: PublicId,
 }
 
