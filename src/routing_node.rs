@@ -486,7 +486,6 @@ impl RoutingNode {
                     (Authority::NaeManager(from_name), &Authority::NaeManager(name)) => {
                         let request_network_name = try!(SignedMessage::new_from_token(
                             response_token.clone()));
-
                         let _ = self.public_id_cache.insert(network_public_id.name(),
                             network_public_id.clone());
                         match self.core.our_close_group_with_public_ids() {
@@ -519,7 +518,30 @@ impl RoutingNode {
                                           response       : InternalResponse,
                                           from_authority : Authority,
                                           to_authority   : Authority) -> RoutingResult {
-        unimplemented!()
+        match response {
+            InternalResponse::CacheNetworkName(network_public_id, group, signed_token) => {
+                if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
+                    return Err(RoutingError::FailedSignature)};
+                let request = try!(SignedMessage::new_from_token(signed_token));
+                match request.get_routing_message().content {
+                    Content::InternalRequest(InternalRequest::RequestNetworkName(ref original_public_id)) => {
+                        let mut our_public_id = PublicId::new(self.core.id());
+                        if &our_public_id != original_public_id { return Err(RoutingError::BadAuthority); };
+                        our_public_id.set_name(network_public_id.name());
+                        if our_public_id != network_public_id { return Err(RoutingError::BadAuthority); };
+                        let _ = self.core.assign_network_name(&network_public_id.name());
+                        for peer in group {
+                            // TODO (ben 12/08/2015) self.public_id_cache.insert()
+                            // or hold off till RFC on removing public_id_cache
+                            self.refresh_routing_table(peer.name());
+                        }
+                        Ok(())
+                    },
+                    _ => return Err(RoutingError::UnknownMessageType),
+                }
+            },
+            _ => return Err(RoutingError::BadAuthority),
+        }
     }
 
     // ---- Other Handlers ------------------------------------------------------------------
