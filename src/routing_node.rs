@@ -30,8 +30,10 @@ use lru_time_cache::LruCache;
 
 use action::Action;
 use event::Event;
+use immutable_data::{ImmutableData, ImmutableDataType};
 use NameType;
 use name_type::{closer_to_target_or_equal};
+use plain_data::PlainData;
 use routing_core::{RoutingCore, ConnectionName};
 use id::Id;
 use public_id::PublicId;
@@ -78,6 +80,7 @@ pub struct RoutingNode {
     public_id_cache     : LruCache<NameType, PublicId>,
     connection_cache    : BTreeMap<NameType, SteadyTime>,
     accumulator         : MessageAccumulator,
+    data_cache          : LruCache<NameType, Vec<u8>>,
     // refresh_accumulator : RefreshAccumulator,
 }
 
@@ -104,6 +107,7 @@ impl RoutingNode {
             public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_cache    : BTreeMap::new(),
             accumulator         : MessageAccumulator::new(),
+            data_cache     : LruCache::with_expiry_duration(Duration::minutes(10))
         })
     }
 
@@ -836,6 +840,87 @@ impl RoutingNode {
                                   refresh_our_own_group: bool) -> RoutingResult {
         unimplemented!()
     }
+
+    fn handle_cache_get(&mut self, request : ExternalRequest,
+                        from_authority : Authority, to_authority : Authority,
+                        response_token : SignedToken) -> RoutingResult {
+       let name = match request.clone() {
+          ExternalRequest::Get(data_request) => {
+              match data_request {
+                  DataRequest::StructuredData(_, _) =>
+                        return Err(From::from(ResponseError::NoData)),
+                  DataRequest::ImmutableData(data_name, _) => { data_name },
+                  DataRequest::PlainData(data_name) => {data_name}
+              }
+          },
+          _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
+      };
+
+      let response_data: Data;
+      match self.data_cache.get(&name) {
+          Some(data) => {
+              match request {
+                 ExternalRequest::Get(data_request) => {
+                     match data_request {
+                         DataRequest::StructuredData(_, _) =>
+                               return Err(From::from(ResponseError::NoData)),
+                         DataRequest::ImmutableData(data_name, data_type) => {
+                             response_data = Data::ImmutableData(
+                                 ImmutableData::new(data_type,
+                                                   data.iter().map(|&x|x).collect::<Vec<_>>()))
+                         },
+                         DataRequest::PlainData(data_name) => {
+                             response_data = Data::PlainData(
+                                 PlainData::new(data_name,
+                                                data.iter().map(|&x|x).collect::<Vec<_>>()))
+                         }
+                     }
+                 },
+                 _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
+             };
+          },
+          None => return Err(From::from(ResponseError::NoData))
+      };
+      let routing_message = RoutingMessage {
+          from_authority : Authority::ManagedNode(self.core.id().name()),
+          to_authority   : Authority::ManagedNode(from_authority.get_location().clone()),
+          content        : Content::ExternalResponse(
+              ExternalResponse::Get(response_data, response_token)
+          ),
+      };
+
+      match SignedMessage::new(Address::Node(self.core.id().name()),
+          routing_message, self.core.id().signing_private_key()) {
+          Ok(signed_message) => ignore(self.send(signed_message)),
+          Err(e) => return Err(RoutingError::Cbor(e)),
+      };
+      Ok(())
+  }
+
+  fn handle_cache_put(&mut self, request : ExternalRequest,
+                      from_authority : Authority, to_authority : Authority,
+                      response_token : SignedToken) -> RoutingResult {
+      let data_name : NameType;
+      let data_vec : Vec<u8>;
+      match request.clone() {
+         ExternalRequest::Put(data) => {
+             match data {
+                 Data::ImmutableData(immutable_data) => {
+                     data_name = immutable_data.name();
+                     data_vec = immutable_data.value().clone();
+                 },
+                 Data::PlainData(plain_data) => {
+                     data_name = plain_data.name();
+                     data_vec = plain_data.value().clone();
+                 },
+                 _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
+             }
+         },
+         _ => return Err(RoutingError::Response(ResponseError::InvalidRequest))
+     };
+     self.data_cache.add(data_name, data_vec);
+     Ok(())
+  }
 }
 
 fn ignore<R,E>(_result: Result<R,E>) {}
