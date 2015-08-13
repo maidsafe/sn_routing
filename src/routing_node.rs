@@ -614,10 +614,47 @@ impl RoutingNode {
     }
 
     fn handle_connect_request(&mut self,
-                              connect_request: ConnectRequest,
-                              message:         SignedMessage
-                             ) -> RoutingResult {
-        unimplemented!()
+                              request        : InternalRequest,
+                              from_authority : Authority,
+                              to_authority   : Authority,
+                              response_token : SignedToken) -> RoutingResult {
+        match request {
+            InternalRequest::Connect(connect_request) => {
+                if !connect_request.requester_fob.is_relocated() {
+                    return Err(RoutingError::RejectedPublicId); };
+                // first verify that the message is correctly self-signed
+                if !response_token.verify_signature(&connect_request.requester_fob
+                    .signing_public_key()) {
+                    return Err(RoutingError::FailedSignature); };
+                if !self.core.check_node(&ConnectionName::Routing(
+                    connect_request.requester_fob.name())) {
+                    return Err(RoutingError::RefusedFromRoutingTable); };
+                // TODO (ben 13/08/2015) use public_id_cache or result of future RFC
+                // to validate the public_id from the network
+                self.connection_manager.connect(connect_request.local_endpoints.clone());
+                // self.connection_manager.connect(connect_request.external_endpoints.clone());
+                self.connection_cache.entry(connect_request.requester_fob.name())
+                    .or_insert(SteadyTime::now());
+                let routing_message = RoutingMessage {
+                    from_authority : Authority::ManagedNode(self.core.id().name()),
+                    to_authority   : Authority::ManagedNode(from_authority.get_location().clone()),
+                    content        : Content::InternalResponse(
+                        InternalResponse::Connect(ConnectResponse {
+                            local_endpoints    : self.accepting_on.clone(),
+                            external_endpoints : vec![],
+                            receiver_fob       : PublicId::new(self.core.id()),
+                        }, response_token)
+                    ),
+                };
+                match SignedMessage::new(Address::Node(self.core.id().name()),
+                    routing_message, self.core.id().signing_private_key()) {
+                    Ok(signed_message) => ignore(self.send(signed_message)),
+                    Err(e) => return Err(RoutingError::Cbor(e)),
+                };
+                Ok(())
+            },
+            _ => return Err(RoutingError::BadAuthority),
+        }
     }
 
     fn handle_connect_response(&mut self, connect_response: ConnectResponse) -> RoutingResult {
