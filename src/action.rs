@@ -15,17 +15,24 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use name_type;
+use messages::{SignedMessage, Content};
+use authority::Authority;
 
-/// This trait is required for any type of message to be
-/// passed to routing, refresh / account transfer is optional
-/// The name will let routing know its a NaeManager and the owner will allow routing to hash
-/// the requesters ID with this name (by hashing the requesters ID) for put and post messages
-pub trait Sendable {
-    fn name(&self)->name_type::NameType;
-    fn type_tag(&self)->u64;
-    fn serialised_contents(&self)->Vec<u8>;
-    fn owner(&self)->Option<name_type::NameType> { Option::None }
-    fn refresh(&self)->bool; // is this an account transfer type
-    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>>;
+/// An Action initiates a message flow < A | B > where we are (a part of) A.
+///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
+///       for it to be sent on across the network.
+///    2. Terminate indicates to RoutingNode that no new actions should be taken and all
+///       pending events should be handled.
+///       After completion RoutingNode will send Event::Terminated.
+#[derive(Clone, Eq, PartialEq)]
+pub enum Action {
+    SendMessage(SignedMessage),
+    //          ~~|~~~~~~~~~~
+    //            | a fully signed message with a given claimant
+    SendContent(Authority, Content),
+    //          ~~|~~~~~~  ~~|~~~~
+    //            |          | the bare content for a message to be formed
+    //            | the destination authority
+    // RoutingNode will form the RoutingMessage and sign it as its own identity
+    Terminate,
 }

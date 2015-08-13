@@ -22,7 +22,6 @@ use NameType;
 // Note: name field is initially same as original_name, this should be later overwritten by
 // relocated name provided by the network using assign_relocated_name method
 // TODO (ben 2015-04-01) : implement order based on name
-#[derive(Clone)]
 pub struct Id {
   sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
   encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey),
@@ -72,12 +71,6 @@ impl Id {
         // This function should not exist, it is here only temporarily
         // to fix compilation.
         self.name = name;
-    }
-
-    pub fn is_self_relocated(&self) -> bool {
-        // This function should not exist, it is here only temporarily
-        // to fix compilation.
-        self.name == NameType::new(crypto::hash::sha512::hash(&self.sign_keys.0[..]).0)
     }
 
     // name field is initially same as original_name, this should be later overwritten by
