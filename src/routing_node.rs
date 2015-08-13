@@ -521,32 +521,7 @@ impl RoutingNode {
         }
     }
 
-    // ---- Other Handlers ------------------------------------------------------------------
-
-    fn handle_external_response(&self, response       : ExternalResponse,
-                                       to_authority   : Authority,
-                                       from_authority : Authority) -> RoutingResult {
-
-        let orig_request_msg = try!(response.get_orig_request());
-
-        if !orig_request_msg.verify_signature(&self.core.id().signing_public_key()) {
-            return Err(RoutingError::FailedSignature)
-        }
-
-        let orig_request = match orig_request_msg.get_routing_message().content {
-            Content::ExternalRequest(ref request) => request.clone(),
-            _ => return Err(RoutingError::UnknownMessageType)
-        };
-
-        self.send_to_user(Event::Response {
-            response       : response,
-            our_authority  : to_authority,
-            from_authority : from_authority,
-            orig_request   : orig_request,
-        });
-
-        Ok(())
-    }
+    // ---- Connect Requests and Responses --------------------------------------------------------
 
     /// Scan all passing messages for the existance of nodes in the address space.
     /// If a node is detected with a name that would improve our routing table,
@@ -575,55 +550,6 @@ impl RoutingNode {
        for prune_name in prune_blockage {
            self.connection_cache.remove(&prune_name);
        }
-    }
-
-    // ----- Send Functions -----------------------------------------------------------------------
-
-    fn send_to_user(&self, event: Event) {
-        if self.event_sender.send(event).is_err() {
-            let _ = self.action_sender.send(Action::Terminate);
-        }
-    }
-
-    /// Send a SignedMessage out to the destination
-    /// 1. if it can be directly relayed to a Client, then it will
-    /// 2. if we can forward it to nodes closer to the destination, it will be sent in parallel
-    /// 3. if the destination is in range for us, then send it to all our close group nodes
-    /// 4. if all the above failed, try sending it over all available bootstrap connections
-    /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
-    fn send(&self, signed_message : SignedMessage) -> RoutingResult {
-        let destination = signed_message.get_routing_message().destination();
-        let bytes = try!(encode(&signed_message));
-        // query the routing table for parallel or swarm
-        let endpoints = self.core.target_endpoints(&destination);
-        if !endpoints.is_empty() {
-            for endpoint in endpoints {
-                // TODO(ben 10/08/2015) drop endpoints that fail to send
-                ignore(self.connection_manager.send(endpoint, bytes.clone()));
-            }
-        }
-
-        match self.core.bootstrap_endpoints() {
-            Some(bootstrap_peers) => {
-                // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
-                // the relay_name in from_authority Client(relay_name, client_public_key) is
-                // the name of the bootstrap connection we're sending it on.  Although this might
-                // open a window for attacking a node, in v0.3.* we can leave this unresolved.
-                for bootstrap_peer in bootstrap_peers {
-                    // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
-                    ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
-                        bytes.clone()));
-                }
-                return Ok(());
-            },
-            None => {},
-        }
-
-        // If we need handle this message, move this copy into the channel for later processing.
-        if self.core.name_in_range(&destination.get_location()) {
-            ignore(self.action_sender.send(Action::SendMessage(signed_message)));
-        }
-        Ok(())
     }
 
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
@@ -687,6 +613,55 @@ impl RoutingNode {
         }
     }
 
+    // ----- Send Functions -----------------------------------------------------------------------
+
+    fn send_to_user(&self, event: Event) {
+        if self.event_sender.send(event).is_err() {
+            let _ = self.action_sender.send(Action::Terminate);
+        }
+    }
+
+    /// Send a SignedMessage out to the destination
+    /// 1. if it can be directly relayed to a Client, then it will
+    /// 2. if we can forward it to nodes closer to the destination, it will be sent in parallel
+    /// 3. if the destination is in range for us, then send it to all our close group nodes
+    /// 4. if all the above failed, try sending it over all available bootstrap connections
+    /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
+    fn send(&self, signed_message : SignedMessage) -> RoutingResult {
+        let destination = signed_message.get_routing_message().destination();
+        let bytes = try!(encode(&signed_message));
+        // query the routing table for parallel or swarm
+        let endpoints = self.core.target_endpoints(&destination);
+        if !endpoints.is_empty() {
+            for endpoint in endpoints {
+                // TODO(ben 10/08/2015) drop endpoints that fail to send
+                ignore(self.connection_manager.send(endpoint, bytes.clone()));
+            }
+        }
+
+        match self.core.bootstrap_endpoints() {
+            Some(bootstrap_peers) => {
+                // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
+                // the relay_name in from_authority Client(relay_name, client_public_key) is
+                // the name of the bootstrap connection we're sending it on.  Although this might
+                // open a window for attacking a node, in v0.3.* we can leave this unresolved.
+                for bootstrap_peer in bootstrap_peers {
+                    // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
+                    ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
+                        bytes.clone()));
+                }
+                return Ok(());
+            },
+            None => {},
+        }
+
+        // If we need handle this message, move this copy into the channel for later processing.
+        if self.core.name_in_range(&destination.get_location()) {
+            ignore(self.action_sender.send(Action::SendMessage(signed_message)));
+        }
+        Ok(())
+    }
+
     // -----Address and various functions----------------------------------------
 
     fn drop_bootstrap(&mut self) {
@@ -705,6 +680,31 @@ impl RoutingNode {
     }
 
     // -----Message Handlers from Routing Table connections----------------------------------------
+
+    fn handle_external_response(&self, response       : ExternalResponse,
+                                       to_authority   : Authority,
+                                       from_authority : Authority) -> RoutingResult {
+
+        let orig_request_msg = try!(response.get_orig_request());
+
+        if !orig_request_msg.verify_signature(&self.core.id().signing_public_key()) {
+            return Err(RoutingError::FailedSignature)
+        }
+
+        let orig_request = match orig_request_msg.get_routing_message().content {
+            Content::ExternalRequest(ref request) => request.clone(),
+            _ => return Err(RoutingError::UnknownMessageType)
+        };
+
+        self.send_to_user(Event::Response {
+            response       : response,
+            our_authority  : to_authority,
+            from_authority : from_authority,
+            orig_request   : orig_request,
+        });
+
+        Ok(())
+    }
 
     // Routing handle put_data
     fn handle_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
