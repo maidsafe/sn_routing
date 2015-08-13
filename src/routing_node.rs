@@ -587,7 +587,7 @@ impl RoutingNode {
       let time_now = SteadyTime::now();
       if !self.connection_cache.contains_key(&from_node) {
           if self.core.check_node(&ConnectionName::Routing(from_node)) {
-              ignore(self.send_connect_request_msg(&from_node));
+              ignore(self.send_connect_request(&from_node));
           }
           self.connection_cache.entry(from_node.clone())
               .or_insert(time_now);
@@ -660,17 +660,20 @@ impl RoutingNode {
         Ok(())
     }
 
-    fn send_connect_request_msg(&mut self, peer_name: &NameType) -> RoutingResult {
-        // FIXME: We're sending all accepting connections as local since we don't differentiate
+    fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
+        // FIXME (ben) We're sending all accepting connections as local since we don't differentiate
         // between local and external yet.
-        let routing_message = match self.core.bootstrap_endpoints() {
+        // FIXME (ben 13/08/2015) We are forced to make this split as the routing message
+        // needs to contain a relay name if we are not yet connected to routing nodes
+        // under our own name.
+        match self.core.bootstrap_endpoints() {
             Some(bootstrap_peers) => {
                 // TODO (ben 13/08/2015) for now just take the first bootstrap peer as our relay
                 match bootstrap_peers.first() {
                     Some(bootstrap_peer) => {
                         match *bootstrap_peer.identity() {
                             ConnectionName::Bootstrap(bootstrap_name) => {
-                                RoutingMessage {
+                                let routing_message = RoutingMessage {
                                     from_authority : Authority::Client(bootstrap_name,
                                         self.core.id().signing_public_key()),
                                     to_authority   : Authority::ManagedNode(peer_name.clone()),
@@ -681,7 +684,14 @@ impl RoutingNode {
                                             requester_fob      : PublicId::new(self.core.id()),
                                         }
                                     )),
-                                }
+                                };
+                                match SignedMessage::new(Address::Client(
+                                    self.core.id().signing_public_key()), routing_message,
+                                    self.core.id().signing_private_key()) {
+                                    Ok(signed_message) => ignore(self.send(signed_message)),
+                                    Err(e) => return Err(RoutingError::Cbor(e)),
+                                };
+                                Ok(())
                             },
                             _ => return Err(RoutingError::NotBootstrapped),
                         }
@@ -690,7 +700,7 @@ impl RoutingNode {
                 }
             },
             None => {
-                RoutingMessage {
+                let routing_message = RoutingMessage {
                     from_authority : Authority::ManagedNode(self.core.id().name()),
                     to_authority   : Authority::ManagedNode(peer_name.clone()),
                     content        : Content::InternalRequest(
@@ -700,29 +710,15 @@ impl RoutingNode {
                             requester_fob      : PublicId::new(self.core.id()),
                         }
                     )),
-                }
+                };
+                match SignedMessage::new(Address::Node(self.core.id().name()),
+                    routing_message, self.core.id().signing_private_key()) {
+                    Ok(signed_message) => ignore(self.send(signed_message)),
+                    Err(e) => return Err(RoutingError::Cbor(e)),
+                };
+                Ok(())
             },
-        };
-        unimplemented!()
-
-        // let connect_request = ConnectRequest {
-        //     local_endpoints: self.accepting_on.clone(),
-        //     external_endpoints: vec![],
-        //     requester_id: self.core.id().name(),
-        //     receiver_id: peer_id.clone(),
-        //     requester_fob: PublicId::new(&self.core.id()),
-        // };
-        //
-        // let message =  RoutingMessage {
-        //     destination  : peer_id,
-        //     source       : self.my_source_address(),
-        //     orig_message : None,
-        //     message_type : MessageType::ConnectRequest(connect_request),
-        //     message_id   : self.get_next_message_id(),
-        //     authority    : Authority::ManagedNode
-        // };
-        //
-        // self.send_swarm_or_parallel(&message)
+        }
     }
 
     // -----Address and various functions----------------------------------------
