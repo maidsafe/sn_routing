@@ -336,11 +336,34 @@ impl RoutingNode {
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     },
-                    _ => Ok(()),
+                    InternalRequest::RequestNetworkName(_) => {
+                        match opt_token {
+                            Some(response_token) => self.handle_request_network_name(request,
+                                message.from_authority, message.to_authority, response_token),
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
+                    InternalRequest::CacheNetworkName(_, _) => {
+                        self.handle_cache_network_name(request, message.from_authority,
+                            message.to_authority)
+                    },
+                    InternalRequest::Refresh(_, _) => {
+                        Ok(())
+                        // TODO (ben 13/08/2015) implement self.handle_refresh()
+                    },
                 }
             },
             Content::InternalResponse(response) => {
-                Ok(())
+                match response {
+                    InternalResponse::Connect(_, _) => {
+                        self.handle_connect_response(response, message.from_authority,
+                            message.to_authority)
+                    },
+                    InternalResponse::CacheNetworkName(_, _, _) => {
+                        self.handle_cache_network_name_response(response, message.from_authority,
+                            message.to_authority)
+                    }
+                }
             },
             Content::ExternalRequest(request) => {
                 self.send_to_user(Event::Request {
