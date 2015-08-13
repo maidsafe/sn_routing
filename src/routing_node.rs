@@ -637,17 +637,20 @@ impl RoutingNode {
             }
         }
 
-        if !self.core.is_connected_node() {
-            // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
-            // the relay_name in from_authority Client(relay_name, client_public_key) is
-            // the name of the bootstrap connection we're sending it on.  Although this might
-            // open a window for attacking a node, in v0.3.* we can leave this unresolved.
-            for bootstrap_peer in self.core.bootstrap_endpoints() {
-                // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
-                ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
-                    bytes.clone()));
-            }
-            return Ok(());
+        match self.core.bootstrap_endpoints() {
+            Some(bootstrap_peers) => {
+                // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
+                // the relay_name in from_authority Client(relay_name, client_public_key) is
+                // the name of the bootstrap connection we're sending it on.  Although this might
+                // open a window for attacking a node, in v0.3.* we can leave this unresolved.
+                for bootstrap_peer in bootstrap_peers {
+                    // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
+                    ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
+                        bytes.clone()));
+                }
+                return Ok(());
+            },
+            None => {},
         }
 
         // If we need handle this message, move this copy into the channel for later processing.
@@ -657,10 +660,51 @@ impl RoutingNode {
         Ok(())
     }
 
-    fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
+    fn send_connect_request_msg(&mut self, peer_name: &NameType) -> RoutingResult {
+        // FIXME: We're sending all accepting connections as local since we don't differentiate
+        // between local and external yet.
+        let routing_message = match self.core.bootstrap_endpoints() {
+            Some(bootstrap_peers) => {
+                // TODO (ben 13/08/2015) for now just take the first bootstrap peer as our relay
+                match bootstrap_peers.first() {
+                    Some(bootstrap_peer) => {
+                        match *bootstrap_peer.identity() {
+                            ConnectionName::Bootstrap(bootstrap_name) => {
+                                RoutingMessage {
+                                    from_authority : Authority::Client(bootstrap_name,
+                                        self.core.id().signing_public_key()),
+                                    to_authority   : Authority::ManagedNode(peer_name.clone()),
+                                    content        : Content::InternalRequest(
+                                        InternalRequest::Connect(ConnectRequest {
+                                            local_endpoints    : self.accepting_on.clone(),
+                                            external_endpoints : vec![],
+                                            requester_fob      : PublicId::new(self.core.id()),
+                                        }
+                                    )),
+                                }
+                            },
+                            _ => return Err(RoutingError::NotBootstrapped),
+                        }
+                    },
+                    None => return Err(RoutingError::NotBootstrapped),
+                }
+            },
+            None => {
+                RoutingMessage {
+                    from_authority : Authority::ManagedNode(self.core.id().name()),
+                    to_authority   : Authority::ManagedNode(peer_name.clone()),
+                    content        : Content::InternalRequest(
+                        InternalRequest::Connect(ConnectRequest {
+                            local_endpoints    : self.accepting_on.clone(),
+                            external_endpoints : vec![],
+                            requester_fob      : PublicId::new(self.core.id()),
+                        }
+                    )),
+                }
+            },
+        };
         unimplemented!()
-        // // FIXME: We're sending all accepting connections as local since we don't differentiate
-        // // between local and external yet.
+
         // let connect_request = ConnectRequest {
         //     local_endpoints: self.accepting_on.clone(),
         //     external_endpoints: vec![],

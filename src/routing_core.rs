@@ -324,10 +324,10 @@ impl RoutingCore {
     /// Returns the available Boostrap connections as Peers. If we are a connected node,
     /// then access to the bootstrap connections will be blocked, and an empty
     /// vector is returned.
-    pub fn bootstrap_endpoints(&self) -> Vec<Peer> {
+    pub fn bootstrap_endpoints(&self) -> Option<Vec<Peer>> {
         // block explicitly if we are a connected node
-        if self.is_connected_node() { return vec![] };
-        self.relay_map.bootstrap_connections()
+        if self.is_connected_node() { return None };
+        Some(self.relay_map.bootstrap_connections())
     }
 
     /// Returns true if bootstrap connections are available. If we are a connected node,
