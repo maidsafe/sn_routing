@@ -570,32 +570,7 @@ impl RoutingNode {
         }
     }
 
-    // ---- Other Handlers ------------------------------------------------------------------
-
-    fn handle_external_response(&self, response       : ExternalResponse,
-                                       to_authority   : Authority,
-                                       from_authority : Authority) -> RoutingResult {
-
-        let orig_request_msg = try!(response.get_orig_request());
-
-        if !orig_request_msg.verify_signature(&self.core.id().signing_public_key()) {
-            return Err(RoutingError::FailedSignature)
-        }
-
-        let orig_request = match orig_request_msg.get_routing_message().content {
-            Content::ExternalRequest(ref request) => request.clone(),
-            _ => return Err(RoutingError::UnknownMessageType)
-        };
-
-        self.send_to_user(Event::Response {
-            response       : response,
-            our_authority  : to_authority,
-            from_authority : from_authority,
-            orig_request   : orig_request,
-        });
-
-        Ok(())
-    }
+    // ---- Connect Requests and Responses --------------------------------------------------------
 
     /// Scan all passing messages for the existance of nodes in the address space.
     /// If a node is detected with a name that would improve our routing table,
@@ -608,7 +583,7 @@ impl RoutingNode {
       let time_now = SteadyTime::now();
       if !self.connection_cache.contains_key(&from_node) {
           if self.core.check_node(&ConnectionName::Routing(from_node)) {
-              ignore(self.send_connect_request_msg(&from_node));
+              ignore(self.send_connect_request(&from_node));
           }
           self.connection_cache.entry(from_node.clone())
               .or_insert(time_now);
@@ -624,6 +599,135 @@ impl RoutingNode {
        for prune_name in prune_blockage {
            self.connection_cache.remove(&prune_name);
        }
+    }
+
+    fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
+        // FIXME (ben) We're sending all accepting connections as local since we don't differentiate
+        // between local and external yet.
+        // FIXME (ben 13/08/2015) We are forced to make this split as the routing message
+        // needs to contain a relay name if we are not yet connected to routing nodes
+        // under our own name.
+        match self.core.bootstrap_endpoints() {
+            Some(bootstrap_peers) => {
+                // TODO (ben 13/08/2015) for now just take the first bootstrap peer as our relay
+                match bootstrap_peers.first() {
+                    Some(bootstrap_peer) => {
+                        match *bootstrap_peer.identity() {
+                            ConnectionName::Bootstrap(bootstrap_name) => {
+                                let routing_message = RoutingMessage {
+                                    from_authority : Authority::Client(bootstrap_name,
+                                        self.core.id().signing_public_key()),
+                                    to_authority   : Authority::ManagedNode(peer_name.clone()),
+                                    content        : Content::InternalRequest(
+                                        InternalRequest::Connect(ConnectRequest {
+                                            local_endpoints    : self.accepting_on.clone(),
+                                            external_endpoints : vec![],
+                                            requester_fob      : PublicId::new(self.core.id()),
+                                        }
+                                    )),
+                                };
+                                match SignedMessage::new(Address::Client(
+                                    self.core.id().signing_public_key()), routing_message,
+                                    self.core.id().signing_private_key()) {
+                                    Ok(signed_message) => ignore(self.send(signed_message)),
+                                    Err(e) => return Err(RoutingError::Cbor(e)),
+                                };
+                                Ok(())
+                            },
+                            _ => return Err(RoutingError::NotBootstrapped),
+                        }
+                    },
+                    None => return Err(RoutingError::NotBootstrapped),
+                }
+            },
+            None => {
+                let routing_message = RoutingMessage {
+                    from_authority : Authority::ManagedNode(self.core.id().name()),
+                    to_authority   : Authority::ManagedNode(peer_name.clone()),
+                    content        : Content::InternalRequest(
+                        InternalRequest::Connect(ConnectRequest {
+                            local_endpoints    : self.accepting_on.clone(),
+                            external_endpoints : vec![],
+                            requester_fob      : PublicId::new(self.core.id()),
+                        }
+                    )),
+                };
+                match SignedMessage::new(Address::Node(self.core.id().name()),
+                    routing_message, self.core.id().signing_private_key()) {
+                    Ok(signed_message) => ignore(self.send(signed_message)),
+                    Err(e) => return Err(RoutingError::Cbor(e)),
+                };
+                Ok(())
+            },
+        }
+    }
+
+    fn handle_connect_request(&mut self,
+                              request        : InternalRequest,
+                              from_authority : Authority,
+                              to_authority   : Authority,
+                              response_token : SignedToken) -> RoutingResult {
+        match request {
+            InternalRequest::Connect(connect_request) => {
+                if !connect_request.requester_fob.is_relocated() {
+                    return Err(RoutingError::RejectedPublicId); };
+                // first verify that the message is correctly self-signed
+                if !response_token.verify_signature(&connect_request.requester_fob
+                    .signing_public_key()) {
+                    return Err(RoutingError::FailedSignature); };
+                if !self.core.check_node(&ConnectionName::Routing(
+                    connect_request.requester_fob.name())) {
+                    return Err(RoutingError::RefusedFromRoutingTable); };
+                // TODO (ben 13/08/2015) use public_id_cache or result of future RFC
+                // to validate the public_id from the network
+                self.connection_manager.connect(connect_request.local_endpoints.clone());
+                self.connection_manager.connect(connect_request.external_endpoints.clone());
+                self.connection_cache.entry(connect_request.requester_fob.name())
+                    .or_insert(SteadyTime::now());
+                let routing_message = RoutingMessage {
+                    from_authority : Authority::ManagedNode(self.core.id().name()),
+                    to_authority   : Authority::ManagedNode(from_authority.get_location().clone()),
+                    content        : Content::InternalResponse(
+                        InternalResponse::Connect(ConnectResponse {
+                            local_endpoints    : self.accepting_on.clone(),
+                            external_endpoints : vec![],
+                            receiver_fob       : PublicId::new(self.core.id()),
+                        }, response_token)
+                    ),
+                };
+                match SignedMessage::new(Address::Node(self.core.id().name()),
+                    routing_message, self.core.id().signing_private_key()) {
+                    Ok(signed_message) => ignore(self.send(signed_message)),
+                    Err(e) => return Err(RoutingError::Cbor(e)),
+                };
+                Ok(())
+            },
+            _ => return Err(RoutingError::BadAuthority),
+        }
+    }
+
+    fn handle_connect_response(&mut self,
+                               response       : InternalResponse,
+                               from_authority : Authority,
+                               to_authority   : Authority) -> RoutingResult {
+        match response {
+            InternalResponse::Connect(connect_response, signed_token) => {
+                if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
+                    return Err(RoutingError::FailedSignature); };
+                let connect_request = try!(SignedMessage::new_from_token(signed_token));
+                if connect_request.get_routing_message().from_authority.get_location()
+                    != &self.core.id().name() { return Err(RoutingError::BadAuthority); };
+                if !self.core.check_node(&ConnectionName::Routing(
+                    connect_response.receiver_fob.name())) {
+                    return Err(RoutingError::RefusedFromRoutingTable); };
+                self.connection_manager.connect(connect_response.local_endpoints.clone());
+                self.connection_manager.connect(connect_response.external_endpoints.clone());
+                self.connection_cache.entry(connect_response.receiver_fob.name())
+                    .or_insert(SteadyTime::now());
+                Ok(())
+            },
+            _ => return Err(RoutingError::BadAuthority),
+        }
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
@@ -652,17 +756,20 @@ impl RoutingNode {
             }
         }
 
-        if !self.core.is_connected_node() {
-            // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
-            // the relay_name in from_authority Client(relay_name, client_public_key) is
-            // the name of the bootstrap connection we're sending it on.  Although this might
-            // open a window for attacking a node, in v0.3.* we can leave this unresolved.
-            for bootstrap_peer in self.core.bootstrap_endpoints() {
-                // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
-                ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
-                    bytes.clone()));
-            }
-            return Ok(());
+        match self.core.bootstrap_endpoints() {
+            Some(bootstrap_peers) => {
+                // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
+                // the relay_name in from_authority Client(relay_name, client_public_key) is
+                // the name of the bootstrap connection we're sending it on.  Although this might
+                // open a window for attacking a node, in v0.3.* we can leave this unresolved.
+                for bootstrap_peer in bootstrap_peers {
+                    // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
+                    ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
+                        bytes.clone()));
+                }
+                return Ok(());
+            },
+            None => {},
         }
 
         // If we need handle this message, move this copy into the channel for later processing.
@@ -670,30 +777,6 @@ impl RoutingNode {
             ignore(self.action_sender.send(Action::SendMessage(signed_message)));
         }
         Ok(())
-    }
-
-    fn send_connect_request_msg(&mut self, peer_id: &NameType) -> RoutingResult {
-        unimplemented!()
-        // // FIXME: We're sending all accepting connections as local since we don't differentiate
-        // // between local and external yet.
-        // let connect_request = ConnectRequest {
-        //     local_endpoints: self.accepting_on.clone(),
-        //     external_endpoints: vec![],
-        //     requester_id: self.core.id().name(),
-        //     receiver_id: peer_id.clone(),
-        //     requester_fob: PublicId::new(&self.core.id()),
-        // };
-        //
-        // let message =  RoutingMessage {
-        //     destination  : peer_id,
-        //     source       : self.my_source_address(),
-        //     orig_message : None,
-        //     message_type : MessageType::ConnectRequest(connect_request),
-        //     message_id   : self.get_next_message_id(),
-        //     authority    : Authority::ManagedNode
-        // };
-        //
-        // self.send_swarm_or_parallel(&message)
     }
 
     // -----Address and various functions----------------------------------------
@@ -715,48 +798,32 @@ impl RoutingNode {
 
     // -----Message Handlers from Routing Table connections----------------------------------------
 
-    // Routing handle put_data
-    fn handle_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
-                       data: Data) -> RoutingResult {
-        unimplemented!()
-    }
+    fn handle_external_response(&self, response       : ExternalResponse,
+                                       to_authority   : Authority,
+                                       from_authority : Authority) -> RoutingResult {
 
-    fn handle_post(&mut self, signed_message: SignedMessage, message: RoutingMessage, data: Data)
-            -> RoutingResult {
-        unimplemented!()
-    }
+        let orig_request_msg = try!(response.get_orig_request());
 
-    fn handle_put_data_response(&mut self, _signed_message: SignedMessage)
-        -> RoutingResult {
-        unimplemented!()
-    }
+        if !orig_request_msg.verify_signature(&self.core.id().signing_public_key()) {
+            return Err(RoutingError::FailedSignature)
+        }
 
-    fn handle_post_response(&mut self, signed_message: SignedMessage) -> RoutingResult {
-        unimplemented!()
-    }
+        let orig_request = match orig_request_msg.get_routing_message().content {
+            Content::ExternalRequest(ref request) => request.clone(),
+            _ => return Err(RoutingError::UnknownMessageType)
+        };
 
-    fn handle_connect_request(&mut self,
-                              connect_request: ConnectRequest,
-                              message:         SignedMessage
-                             ) -> RoutingResult {
-        unimplemented!()
+        self.send_to_user(Event::Response {
+            response       : response,
+            our_authority  : to_authority,
+            from_authority : from_authority,
+            orig_request   : orig_request,
+        });
+
+        Ok(())
     }
 
     fn handle_refresh(&mut self, message: RoutingMessage, tag: u64, payload: Vec<u8>) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_connect_response(&mut self, connect_response: ConnectResponse) -> RoutingResult {
-        unimplemented!()
-    }
-
-    /// On bootstrapping a node can temporarily publish its PublicId in the group.
-    /// No handle_get_public_id is needed - this is handled by routing_node
-    /// before the membrane instantiates.
-    // TODO (Ben): check whether to accept id into group;
-    // restrict on minimal similar number of leading bits.
-    fn handle_put_public_id(&mut self, signed_message: SignedMessage, message: RoutingMessage,
-        public_id: PublicId) -> RoutingResult {
         unimplemented!()
     }
 
@@ -767,22 +834,6 @@ impl RoutingNode {
     fn handle_find_group_response(&mut self,
                                   find_group_response: Vec<PublicId>,
                                   refresh_our_own_group: bool) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_get_data(&mut self, orig_message: SignedMessage,
-                                  message: RoutingMessage,
-                                  data_request: DataRequest) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_node_get_data_response(&mut self, _signed_message : SignedMessage,
-            message: RoutingMessage, response: Data) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_client_get_data_response(&mut self, _orig_message : SignedMessage,
-            message: RoutingMessage, response: Data) -> RoutingResult {
         unimplemented!()
     }
 }

@@ -35,21 +35,13 @@ pub static VERSION_NUMBER : u8 = 0;
 pub struct ConnectRequest {
     pub local_endpoints: Vec<Endpoint>,
     pub external_endpoints: Vec<Endpoint>,
-    // TODO: redundant, already in fob
-    pub requester_id: NameType,
-    // TODO: make optional, for now simply ignore if requester_fob is not relocated
-    pub receiver_id: NameType,
-    pub requester_fob: PublicId
+    pub requester_fob: PublicId,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectResponse {
-    pub requester_local_endpoints: Vec<Endpoint>,
-    pub requester_external_endpoints: Vec<Endpoint>,
-    pub receiver_local_endpoints: Vec<Endpoint>,
-    pub receiver_external_endpoints: Vec<Endpoint>,
-    pub requester_id: NameType,
-    pub receiver_id: NameType,
+    pub local_endpoints: Vec<Endpoint>,
+    pub external_endpoints: Vec<Endpoint>,
     pub receiver_fob: PublicId,
 }
 
