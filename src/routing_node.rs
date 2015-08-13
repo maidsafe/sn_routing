@@ -26,6 +26,7 @@ use time::{Duration, SteadyTime};
 
 use crust;
 use crust::{ConnectionManager, Endpoint};
+use lru_time_cache::LruCache;
 
 use action::Action;
 use event::Event;
@@ -55,7 +56,6 @@ use refresh_accumulator::RefreshAccumulator;
 use message_filter::MessageFilter;
 
 
-//use lru_time_cache::LruCache;
 //use message_filter::MessageFilter;
 //use NameType;
 //use name_type::{closer_to_target_or_equal};
@@ -96,7 +96,7 @@ pub struct RoutingNode {
     event_sender        : mpsc::Sender<Event>,
     filter              : MessageFilter<types::FilterType>,
     core                : RoutingCore,
-    // public_id_cache     : LruCache<NameType, PublicId>,
+    public_id_cache     : LruCache<NameType, PublicId>,
     connection_cache    : BTreeMap<NameType, SteadyTime>,
     // refresh_accumulator : RefreshAccumulator,
 }
@@ -121,6 +121,7 @@ impl RoutingNode {
             event_sender        : event_sender.clone(),
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
             core                : RoutingCore::new(event_sender),
+            public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_cache    : BTreeMap::new(),
         })
     }
@@ -477,8 +478,41 @@ impl RoutingNode {
 
     fn handle_cache_network_name(&mut self, request        : InternalRequest,
                                             from_authority : Authority,
-                                            to_authority   : Authority) -> RoutingResult {
-        unimplemented!()
+                                            to_authority   : Authority,
+                                            ) -> RoutingResult {
+        match request {
+            InternalRequest::CacheNetworkName(network_public_id, response_token) => {
+                match (from_authority, &to_authority) {
+                    (Authority::NaeManager(from_name), &Authority::NaeManager(name)) => {
+                        let request_network_name = try!(SignedMessage::new_from_token(
+                            response_token.clone()));
+
+                        let _ = self.public_id_cache.insert(network_public_id.name(),
+                            network_public_id.clone());
+                        match self.core.our_close_group_with_public_ids() {
+                            Some(close_group) => {
+                                let routing_message = RoutingMessage {
+                                    from_authority : to_authority,
+                                    to_authority   : request_network_name.get_routing_message().destination(),
+                                    content        : Content::InternalResponse(
+                                        InternalResponse::CacheNetworkName(network_public_id,
+                                        close_group, response_token)),
+                                };
+                                match SignedMessage::new(Address::Node(self.core.id().name()),
+                                    routing_message, self.core.id().signing_private_key()) {
+                                    Ok(signed_message) => ignore(self.send(signed_message)),
+                                    Err(e) => return Err(RoutingError::Cbor(e)),
+                                };
+                                Ok(())
+                            },
+                            None => return Err(RoutingError::BadAuthority),
+                        }
+                    },
+                    _ => return Err(RoutingError::BadAuthority),
+                }
+            },
+            _ => return Err(RoutingError::BadAuthority),
+        }
     }
 
     fn handle_cache_network_name_response(&mut self,
