@@ -613,6 +613,17 @@ impl RoutingNode {
         }
     }
 
+    fn handle_connect_request(&mut self,
+                              connect_request: ConnectRequest,
+                              message:         SignedMessage
+                             ) -> RoutingResult {
+        unimplemented!()
+    }
+
+    fn handle_connect_response(&mut self, connect_response: ConnectResponse) -> RoutingResult {
+        unimplemented!()
+    }
+
     // ----- Send Functions -----------------------------------------------------------------------
 
     fn send_to_user(&self, event: Event) {
@@ -706,48 +717,7 @@ impl RoutingNode {
         Ok(())
     }
 
-    // Routing handle put_data
-    fn handle_put_data(&mut self, signed_message: SignedMessage, message: RoutingMessage,
-                       data: Data) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_post(&mut self, signed_message: SignedMessage, message: RoutingMessage, data: Data)
-            -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_put_data_response(&mut self, _signed_message: SignedMessage)
-        -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_post_response(&mut self, signed_message: SignedMessage) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_connect_request(&mut self,
-                              connect_request: ConnectRequest,
-                              message:         SignedMessage
-                             ) -> RoutingResult {
-        unimplemented!()
-    }
-
     fn handle_refresh(&mut self, message: RoutingMessage, tag: u64, payload: Vec<u8>) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_connect_response(&mut self, connect_response: ConnectResponse) -> RoutingResult {
-        unimplemented!()
-    }
-
-    /// On bootstrapping a node can temporarily publish its PublicId in the group.
-    /// No handle_get_public_id is needed - this is handled by routing_node
-    /// before the membrane instantiates.
-    // TODO (Ben): check whether to accept id into group;
-    // restrict on minimal similar number of leading bits.
-    fn handle_put_public_id(&mut self, signed_message: SignedMessage, message: RoutingMessage,
-        public_id: PublicId) -> RoutingResult {
         unimplemented!()
     }
 
@@ -758,22 +728,6 @@ impl RoutingNode {
     fn handle_find_group_response(&mut self,
                                   find_group_response: Vec<PublicId>,
                                   refresh_our_own_group: bool) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_get_data(&mut self, orig_message: SignedMessage,
-                                  message: RoutingMessage,
-                                  data_request: DataRequest) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_node_get_data_response(&mut self, _signed_message : SignedMessage,
-            message: RoutingMessage, response: Data) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_client_get_data_response(&mut self, _orig_message : SignedMessage,
-            message: RoutingMessage, response: Data) -> RoutingResult {
         unimplemented!()
     }
 }
