@@ -734,23 +734,6 @@ impl RoutingNode {
         Ok(())
     }
 
-    // -----Address and various functions----------------------------------------
-
-    fn drop_bootstrap(&mut self) {
-        unimplemented!()
-        // TODO (ben 5/08/2015) needs to moved to core
-        // match self.bootstrap {
-        //     Some((ref endpoint, name)) => {
-        //         if self.routing_table.size() > 0 {
-        //             info!("Dropped bootstrap on {:?} {:?}", endpoint, name);
-        //             self.connection_manager.drop_node(endpoint.clone());
-        //         }
-        //     },
-        //     None => {}
-        // };
-        // self.bootstrap = None;
-    }
-
     // -----Message Handlers from Routing Table connections----------------------------------------
 
     fn handle_external_response(&self, response       : ExternalResponse,
