@@ -56,29 +56,6 @@ use refresh_accumulator::RefreshAccumulator;
 use message_filter::MessageFilter;
 
 
-//use message_filter::MessageFilter;
-//use NameType;
-//use name_type::{closer_to_target_or_equal};
-//use node_interface::Interface;
-//use routing_table::{RoutingTable, NodeInfo};
-//use relay::{RelayMap};
-//use sendable::Sendable;
-//use types;
-//use types::{MessageId, Bytes, DestinationAddress, SourceAddress, Address};
-//use authority::{Authority, our_authority};
-//use messages::{RoutingMessage, SignedMessage, MessageType,
-//               ConnectRequest, ConnectResponse, GetDataResponse};
-
-//use node_interface::MethodCall;
-
-//use id::Id;
-//use public_id::PublicId;
-//use utils;
-//use utils::{encode, decode};
-//use sentinel::pure_sentinel::PureSentinel;
-//use event::Event;
-//
-
 type RoutingResult = Result<(), RoutingError>;
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
@@ -552,12 +529,7 @@ impl RoutingNode {
 
         let orig_request_msg = try!(response.get_orig_request());
 
-        // Have we sent the request?
-        if *orig_request_msg.claimant() != *self.name() {
-            return Err(RoutingError::UnknownMessageType)
-        }
-
-        if !orig_request_msg.verify_signature(self.public_sign_key()) {
+        if !orig_request_msg.verify_signature(&self.core.id().signing_public_key()) {
             return Err(RoutingError::FailedSignature)
         }
 
@@ -607,16 +579,10 @@ impl RoutingNode {
 
     // ----- Send Functions -----------------------------------------------------------------------
 
-    fn send_to_user(&self, _event: Event) {
-        unimplemented!()
-    }
-
-    fn name(&self) -> &Address {
-        unimplemented!()
-    }
-
-    fn public_sign_key(&self) -> &sign::PublicKey {
-        unimplemented!()
+    fn send_to_user(&self, event: Event) {
+        if self.event_sender.send(event).is_err() {
+            let _ = self.action_sender.send(Action::Terminate);
+        }
     }
 
     /// Send a SignedMessage out to the destination
