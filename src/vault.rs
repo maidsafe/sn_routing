@@ -285,6 +285,10 @@ impl VaultFacade {
                                               from_authority, from_address) =>
                         (true, vault_facade_cloned.lock().unwrap().handle_get(data_request, our_authority,
                                                                               from_authority, from_address)),
+                    RoutingMessage::HandlePut(our_authority, from_authority,
+                                              from_address, dest_address, data) =>
+                        (true, vault_facade_cloned.lock().unwrap().handle_put(our_authority, from_authority,
+                                                                              from_address, dest_address, data)),
                     // _ => (false, Ok(vec![MethodCall::Terminate])),
                 };
                 // pub enum RoutingMessage {

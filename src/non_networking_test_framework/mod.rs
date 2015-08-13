@@ -120,7 +120,8 @@ impl RoutingVaultMock {
                             (&Data::StructuredData(ref struct_data), DataRequest::StructuredData(ref tag)) => struct_data.get_type_tag() == *tag,
                             _ => false,
                         } {
-                            let _ = cloned_sender.send(RoutingMessage::ShutDown); // TODO Handle the error case by printing it maybe
+                            // TODO: how to simulate the authorities? Here terminate the flow directly
+                            let _ = cloned_sender.send(RoutingMessage::ShutDown);
                         }
                     }
                 },
@@ -131,36 +132,36 @@ impl RoutingVaultMock {
         Ok(())
     }
 
-    // pub fn put(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
-    //     let delay_ms = self.network_delay_ms;
-    //     let data_store = get_storage();
+    pub fn put(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
+        let delay_ms = self.network_delay_ms;
+        let data_store = get_storage();
+        let cloned_sender = self.sender.clone();
 
-    //     let mut data_store_mutex_guard = data_store.lock().unwrap();
-    //     let success = if data_store_mutex_guard.contains_key(&location) {
-    //         if let Data::ImmutableData(immut_data) = data {
-    //             match deserialise(data_store_mutex_guard.get(&location).unwrap()) {
-    //                 Ok(Data::ImmutableData(immut_data_stored)) => immut_data_stored.get_type_tag() == immut_data.get_type_tag(), // Immutable data is de-duplicated so always allowed
-    //                 _ => false
-    //             }
-    //         } else {
-    //             false
-    //         }
-    //     } else if let Ok(raw_data) = serialise(&data) {
-    //         data_store_mutex_guard.insert(location, raw_data);
-    //         sync_disk_storage(&*data_store_mutex_guard);
-    //         true
-    //     } else {
-    //         false
-    //     };
+        ::std::thread::spawn(move || {
+            ::std::thread::sleep_ms(delay_ms);
+            let mut data_store_mutex_guard = data_store.lock().unwrap();
+            let success = if data_store_mutex_guard.contains_key(&location) {
+                if let Data::ImmutableData(immut_data) = data {
+                    match deserialise(data_store_mutex_guard.get(&location).unwrap()) {
+                        Ok(Data::ImmutableData(immut_data_stored)) => immut_data_stored.get_type_tag() == immut_data.get_type_tag(), // Immutable data is de-duplicated so always allowed
+                        _ => false
+                    }
+                } else {
+                    false
+                }
+            } else if let Ok(raw_data) = serialise(&data) {
+                data_store_mutex_guard.insert(location, raw_data);
+                sync_disk_storage(&*data_store_mutex_guard);
+                true
+            } else {
+                false
+            };
+            // TODO: how to simulate the authorities? Here terminate the flow directly
+            let _ = cloned_sender.send(RoutingMessage::ShutDown);
+        });
 
-    //     // ::std::thread::spawn(move || {
-    //     //     ::std::thread::sleep_ms(delay_ms);
-    //     //     if !success { // TODO Check how routing is going to handle PUT errors
-    //     //     }
-    //     // });
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     // pub fn post(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
     //     let delay_ms = self.network_delay_ms;

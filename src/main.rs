@@ -135,6 +135,9 @@ impl Vault {
                             MethodCall::Get { name, data_request } => {
                                 let _ = self.routing.lock().unwrap().get(name, data_request);
                             },
+                            MethodCall::Put { destination, content } => {
+                                let _ = self.routing.lock().unwrap().put(destination, content);
+                            },
                             _ => {}
                         }
                     }

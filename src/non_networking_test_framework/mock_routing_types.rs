@@ -966,11 +966,11 @@ pub enum RoutingMessage {
                 Authority,              // our_authority
                 Authority,              // from_authority
                 SourceAddress ),        // from_address
-    // HandlePut { our_authority  : Authority,
-    //             from_authority : Authority,
-    //             from_address   : SourceAddress,
-    //             dest_address   : DestinationAddress,
-    //             data           : Data },
+    HandlePut ( Authority,              // our_authority
+                Authority,              // from_authority
+                SourceAddress,          // from_address
+                DestinationAddress,     // dest_address
+                Data ),                 // data
     // HandlePost { our_authority : Authority,
     //              from_authority: Authority,
     //              from_address  : SourceAddress,
