@@ -10,7 +10,7 @@ trap 'exit' ERR
 RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
 VaultName=$(sed -n 's/[ \t]*name[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
-VaultPath=/usr/local/bin/
+VaultPath=/usr/bin/
 BootstrapFilePath=/var/cache/safe/
 Platform=$1
 Description="SAFE Network vault"
