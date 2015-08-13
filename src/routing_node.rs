@@ -443,13 +443,27 @@ impl RoutingNode {
                                           response_token : SignedToken) -> RoutingResult {
         match request {
             InternalRequest::RequestNetworkName(public_id) => {
-                match (from_authority, to_authority) {
-                    (Authority::Client(_, public_key), Authority::NaeManager(name)) => {
-                        let network_public_id = public_id.clone();
+                match (from_authority, &to_authority) {
+                    (Authority::Client(_, public_key), &Authority::NaeManager(name)) => {
+                        let mut network_public_id = public_id.clone();
                         match self.core.our_close_group() {
                             Some(close_group) => {
                                 let relocated_name = try!(utils::calculate_relocated_name(
                                     close_group, &public_id.name()));
+                                network_public_id.assign_relocated_name(relocated_name.clone());
+                                let routing_message = RoutingMessage {
+                                    from_authority : to_authority,
+                                    to_authority   : Authority::NaeManager(relocated_name.clone()),
+                                    content        : Content::InternalRequest(
+                                        InternalRequest::CacheNetworkName(network_public_id,
+                                        response_token)),
+                                };
+                                match SignedMessage::new(Address::Node(self.core.id().name()),
+                                    routing_message, self.core.id().signing_private_key()) {
+                                    Ok(signed_message) => ignore(self.send(signed_message)),
+                                    Err(e) => return Err(RoutingError::Cbor(e)),
+                                };
+                                Ok(())
                             },
                             None => return Err(RoutingError::BadAuthority),
                         }
@@ -459,7 +473,6 @@ impl RoutingNode {
             },
             _ => return Err(RoutingError::BadAuthority),
         }
-        unimplemented!()
     }
 
     fn handle_cache_network_name(&mut self, request        : InternalRequest,
