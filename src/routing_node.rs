@@ -307,20 +307,8 @@ impl RoutingNode {
         // Forward
         ignore(self.send(message_wrap.clone()));
 
-        let address_in_close_group_range =
-            self.core.name_in_range(&message.destination().get_location());
-
-        // Handle FindGroupResponse
-        // if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids, _))
-        //         = message.content {
-        //     ignore(self.handle_find_group_response(
-        //                 vec_of_public_ids.clone(),
-        //                 address_in_close_group_range.clone()));
-        // }
-
-        if !address_in_close_group_range {
-            return Ok(());
-        }
+        if !self.core.name_in_range(&message.destination().get_location()) {
+            return Ok(()); };
 
         // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
         // and this node is in the group but the message destination is another group member node.
