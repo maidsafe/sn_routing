@@ -38,7 +38,7 @@ pub enum Event {
         request        : ExternalRequest,
         our_authority  : Authority,
         from_authority : Authority,
-        response_token : SignedToken,
+        response_token : Option<SignedToken>, // Not set when the request came from a group
     },
     Response {
         response       : ExternalResponse,
