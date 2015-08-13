@@ -106,7 +106,7 @@ pub fn our_authority(message       : &RoutingMessage,
             }
         },
         Content::ExternalResponse(_)    => None,
-        Content::InternalResponse(_, _) => None,
+        Content::InternalResponse(_)    => None,
     };
 
     let element = match element {

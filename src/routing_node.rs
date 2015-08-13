@@ -333,7 +333,7 @@ impl RoutingNode {
             self.core.name_in_range(&message.destination().get_location());
 
         // Handle FindGroupResponse
-        if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids), _)
+        if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids, _))
                 = message.content {
             ignore(self.handle_find_group_response(
                         vec_of_public_ids.clone(),
@@ -348,7 +348,7 @@ impl RoutingNode {
         // and this node is in the group but the message destination is another group member node.
         match message.content {
             Content::InternalRequest(InternalRequest::Connect(_)) |
-            Content::InternalResponse(InternalResponse::Connect(_), _) => {
+            Content::InternalResponse(InternalResponse::Connect(_, _)) => {
                 match message.destination() {
                     Authority::ClientManager(_)  => return Ok(()), // TODO: Should be error
                     Authority::NaeManager(_)     => return Ok(()), // TODO: Should be error
@@ -397,7 +397,7 @@ impl RoutingNode {
             //}
             Content::InternalRequest(request) => {
             }
-            Content::InternalResponse(response, serialised_request) => {
+            Content::InternalResponse(response) => {
             }
             Content::ExternalRequest(request) => {
                 self.send_to_user(Event::Request {

@@ -122,9 +122,9 @@ pub enum InternalRequest {
 
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
-    Connect(ConnectResponse),
-    FindGroup(Vec<PublicId>),
-    GetGroupKey(BTreeMap<NameType, sign::PublicKey>),
+    Connect(ConnectResponse, SignedToken),
+    FindGroup(Vec<PublicId>, SignedToken),
+    GetGroupKey(BTreeMap<NameType, sign::PublicKey>, SignedToken),
     CacheNetworkName(PublicId, Vec<PublicId>, SignedToken),
     //               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
     //                 |         |              | the original Request::RequestNetworkName
@@ -137,7 +137,7 @@ pub enum Content {
     ExternalRequest(ExternalRequest),
     InternalRequest(InternalRequest),
     ExternalResponse(ExternalResponse),
-    InternalResponse(InternalResponse, Vec<u8> /* serialised request */),
+    InternalResponse(InternalResponse),
 }
 
 /// the bare (unsigned) routing message
