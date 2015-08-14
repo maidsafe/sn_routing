@@ -112,6 +112,7 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
+        self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         loop {
             match self.crust_receiver.recv() {
                 Err(_) => {},
@@ -217,6 +218,7 @@ impl RoutingNode {
         -> RoutingResult {
         match decode::<Hello>(&serialised_message) {
             Ok(hello) => {
+                debug!("Hello on {:?}, I am {:?}", endpoint, hello.address);
                 let old_identity = match self.core.lookup_endpoint(&endpoint) {
                     // if already connected through the routing table, just confirm or destroy
                     Some(ConnectionName::Routing(known_name)) => {
