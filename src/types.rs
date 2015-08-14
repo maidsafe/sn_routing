@@ -20,6 +20,7 @@ use sodiumoxide::crypto::sign::Signature;
 use sodiumoxide::crypto::sign;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use rand::random;
+use std::fmt::{Debug, Formatter, Error};
 
 use NameType;
 use authority::Authority;
@@ -85,10 +86,24 @@ struct SignedKey {
 // counter).
 pub type FilterType = Signature;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
 pub enum Address {
     Client(crypto::sign::PublicKey),
     Node(NameType),
+}
+
+impl Debug for Address {
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
+        match self {
+            &Address::Client(ref public_key) => {
+                formatter.write_str(&format!("Client({:?})", NameType::new(
+                    crypto::hash::sha512::hash(&public_key[..]).0)))
+            },
+            &Address::Node(ref name) => {
+                formatter.write_str(&format!("Node({:?})", name))
+            },
+        }
+    }
 }
 
 /// Address of the source of the message

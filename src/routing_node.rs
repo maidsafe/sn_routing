@@ -92,6 +92,9 @@ impl RoutingNode {
         let _ = cm.start_accepting(vec![]);
         let accepting_on = cm.get_own_endpoints();
 
+        let core = RoutingCore::new(event_sender.clone());
+        debug!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
+
         RoutingNode {
             crust_receiver      : crust_receiver,
             connection_manager  : cm,
@@ -99,9 +102,9 @@ impl RoutingNode {
             client_restriction  : client_restriction,
             action_sender       : action_sender,
             action_receiver     : action_receiver,
-            event_sender        : event_sender.clone(),
+            event_sender        : event_sender,
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
-            core                : RoutingCore::new(event_sender),
+            core                : core,
             public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_cache    : BTreeMap::new(),
             accumulator         : MessageAccumulator::new(),
@@ -109,6 +112,7 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
+        self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         loop {
             match self.crust_receiver.recv() {
                 Err(_) => {},
@@ -214,6 +218,7 @@ impl RoutingNode {
         -> RoutingResult {
         match decode::<Hello>(&serialised_message) {
             Ok(hello) => {
+                debug!("Hello on {:?}, I am {:?}", endpoint, hello.address);
                 let old_identity = match self.core.lookup_endpoint(&endpoint) {
                     // if already connected through the routing table, just confirm or destroy
                     Some(ConnectionName::Routing(known_name)) => {
