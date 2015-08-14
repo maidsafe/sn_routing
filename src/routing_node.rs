@@ -294,8 +294,10 @@ debug!("New CRUST event: message");
                         return Err(RoutingError::BadAuthority);
                     },
                 };
+                // add the new identity, or drop the connection
                 if self.core.add_peer(new_identity.clone(), endpoint.clone(),
                     Some(hello.public_id)) {
+                    debug!("Added {:?} to the core on {:?}", hello_address, endpoint);
                     match new_identity {
                         ConnectionName::Bootstrap(bootstrap_name) => {
                             ignore(self.request_network_name(&bootstrap_name, endpoint));
@@ -304,13 +306,6 @@ debug!("New CRUST event: message");
                     };
                 } else {
                     self.connection_manager.drop_node(endpoint.clone());
-                };
-                match old_identity {
-                    Some(ConnectionName::Routing(_)) => unreachable!(),
-                    // drop any relay connection in favour of the routing connection
-                    Some(old_connection_name) => {
-                        let _ = self.core.drop_peer(&old_connection_name); },
-                    None => {},
                 };
                 Ok(())
             },
