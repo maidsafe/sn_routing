@@ -24,8 +24,8 @@
 #![deny(deprecated, improper_ctypes, missing_docs, non_shorthand_field_patterns,
         overflowing_literals, plugin_as_library, private_no_mangle_fns, private_no_mangle_statics,
         raw_pointer_derive, stable_features, unconditional_recursion, unknown_lints, unsafe_code,
-        unsigned_negation, unused, unused_allocation, unused_attributes, unused_comparisons,
-        unused_features, unused_parens, while_true)]
+        unused, unused_allocation, unused_attributes, unused_comparisons, unused_features,
+        unused_parens, while_true)]
 
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, variant_size_differences)]
@@ -34,7 +34,7 @@
 //!
 //! The resulting executable is the Vault node for the SAFE network.
 //! Refer to https://github.com/maidsafe/safe_vault
-#![feature(convert, core)]
+#![feature(convert, core, negate_unsigned)]
 //! Refer to https://github.com/maidsafe/safe_vault
 #![feature(core)]
 
@@ -48,7 +48,7 @@ extern crate routing;
 #[cfg(test)]
 extern crate rand;
 #[cfg(test)]
-extern crate maidsafe_sodiumoxide as sodiumoxide;
+extern crate sodiumoxide;
 
 use std::thread;
 use std::thread::spawn;

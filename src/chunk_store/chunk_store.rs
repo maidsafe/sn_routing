@@ -18,18 +18,20 @@
 #![allow(dead_code)]
 #![deny(missing_docs)]
 
-use routing::NameType;
+extern crate tempdir;
 
-/// Data entry in the chunkstore network name and data.
-pub struct Entry {
-    name: NameType,
-    data: Vec<u8>
-}
+use routing_types::{NameType, vector_as_u8_64_array, NAME_TYPE_LEN};
+use std::fs::{File, read_dir, remove_file};
+use std::ffi::OsStr;
+use std::path::Path;
+use self::tempdir::TempDir;
+use std::io::{Read, Write};
+use std::error::Error;
 
 /// Chunkstore is a collection for holding all data chunks.
 /// Implements a maximum disk usage to restrict storage.
 pub struct ChunkStore {
-    entries: Vec<Entry>,
+    tempdir: TempDir,
     max_disk_usage: usize,
     current_disk_usage: usize,
 }
@@ -38,7 +40,7 @@ impl ChunkStore {
     /// Create new chunkstore with zero allowed disk usage.
     pub fn new() -> ChunkStore {
         ChunkStore {
-            entries: Vec::new(),
+            tempdir: tempdir::TempDir::new("safe_vault").unwrap(),
             max_disk_usage: 0,
             current_disk_usage: 0,
         }
@@ -46,7 +48,7 @@ impl ChunkStore {
 
     pub fn with_max_disk_usage(max_disk_usage: usize) -> ChunkStore {
         ChunkStore {
-            entries: Vec::new(),
+            tempdir: tempdir::TempDir::new("safe_vault").unwrap(),
             max_disk_usage: max_disk_usage,
             current_disk_usage: 0,
         }
@@ -56,32 +58,78 @@ impl ChunkStore {
         if !self.has_disk_space(value.len()) {
             panic!("Disk space unavailable. Not enough space");
         }
-        self.delete(name.clone()); // To remove if the data is already present
-        self.current_disk_usage += value.len();
-        self.entries.push(Entry {
-          name: name,
-          data: value,
-        });
+
+        // If a file with name 'name' already exists, delete it.
+        self.delete(name.clone());
+
+        let name = self.to_string(&name);
+        let path_name = Path::new(&name);
+        let path = self.tempdir.path();
+        let path = path.join(path_name);
+
+        let mut file = File::create(&path).unwrap();
+        match file.write(&value[..]) {
+            Ok(size) => self.current_disk_usage += size,
+            _ => (),
+        }
+        file.sync_all();
     }
 
     pub fn delete(&mut self, name: NameType) {
-        let size_removed : usize;
+        let name = self.to_string(&name);
 
-        for i in 0..self.entries.len() {
-            if self.entries[i].name == name {
-                size_removed = self.entries[i].data.len();
-                self.entries.remove(i);
-                self.current_disk_usage -= size_removed;
-                break;
-            }
+        match read_dir(&self.tempdir.path()) {
+            Ok(mut dir_entries) => {
+                for dir_entry in dir_entries {
+                    match dir_entry {
+                        Ok(entry) => {
+                            if entry.file_name().to_str() == Some(name.as_str()) {
+                                match entry.metadata() {
+                                    Ok(metadata) => {
+                                        let len = metadata.len() as usize;
+                                        remove_file(entry.path());
+                                        self.current_disk_usage -= len;
+                                    },
+                                    _ => ()
+                                }
+                                return
+                            }
+                        },
+                        _ => ()
+                    }
+                }
+            },
+            _ => ()
         }
     }
 
     pub fn get(&self, name: NameType) -> Vec<u8> {
-      match self.entries.iter().find(|&x| { x.name == name }) {
-          Some(entry) => entry.data.clone(),
-          _ => Vec::new()
-      }
+        let name = self.to_string(&name);
+
+        match read_dir(&self.tempdir.path()) {
+            Ok(mut dir_entries) => {
+                for dir_entry in dir_entries {
+                    match dir_entry {
+                        Ok(entry) => {
+                            if entry.file_name().to_str() == Some(name.as_str()) {
+                                match File::open(&entry.path()) {
+                                    Ok(mut file) => {
+                                        let mut contents = Vec::<u8>::new();
+                                        file.read_to_end(&mut contents);
+                                        return contents;
+                                    },
+                                    _ => (),
+                                }
+                            }
+                        },
+                        _ => (),
+                    }
+                }
+            },
+            _ => return Vec::new(),
+        }
+
+        Vec::new()
     }
 
     pub fn max_disk_usage(&self) -> usize {
@@ -98,23 +146,62 @@ impl ChunkStore {
     }
 
     pub fn has_chunk(&self, name: NameType) -> bool {
-        match self.entries.iter().find(|&x| { x.name == name }) {
-            Some(_) => true,
-            _ => false
+        let name = self.to_string(&name);
+
+        match read_dir(&self.tempdir.path()) {
+            Ok(mut dir_entries) => {
+                for dir_entry in dir_entries {
+                    match dir_entry {
+                        Ok(entry) => {
+                            if entry.file_name().to_str() == Some(name.as_str()) {
+                                return true;
+                            }
+                        },
+                        _ => (),
+                    }
+                }
+            },
+            _ => return false,
         }
+
+        false
     }
 
     pub fn names(&self) -> Vec<NameType> {
-        let mut name_vec: Vec<NameType> = Vec::new();
-        for it in self.entries.iter() {
-           name_vec.push(it.name.clone());
+        let mut names: Vec<NameType> = Vec::new();
+
+        match read_dir(&self.tempdir.path()) {
+            Ok(mut dir_entries) => {
+                for dir_entry in dir_entries {
+                    match dir_entry {
+                        Ok(entry) => {
+                            match entry.file_name().to_bytes() {
+                                Some(name) =>
+                                    names.push(NameType::new(vector_as_u8_64_array(name.to_vec()))),
+                                _ => (),
+                            }
+                        },
+                        _ => (),
+                    }
+                }
+            },
+            _ => ()
         }
 
-        name_vec
+        names
     }
 
     pub fn has_disk_space(&self, required_space: usize) -> bool {
        self.current_disk_usage + required_space <= self.max_disk_usage
+    }
+
+    fn to_string(&self, name: &NameType) -> String {
+        let id = name.get_id();
+        let mut name = String::with_capacity(2 * NAME_TYPE_LEN);
+        for i in id.iter() {
+            name.push_str(format!("{:02x}", i).as_str());
+        }
+        name
     }
 }
 #[test]
