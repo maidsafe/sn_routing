@@ -68,8 +68,8 @@ pub struct RoutingNode {
     crust_receiver      : mpsc::Receiver<crust::Event>,
     connection_manager  : crust::ConnectionManager,
     accepting_on        : Vec<crust::Endpoint>,
-    bootstraps          : BTreeMap<Endpoint, Option<NameType>>,
     // for RoutingNode
+    client_restriction  : bool,
     action_sender       : mpsc::Sender<Action>,
     action_receiver     : mpsc::Receiver<Action>,
     event_sender        : mpsc::Sender<Event>,
@@ -82,20 +82,21 @@ pub struct RoutingNode {
 }
 
 impl RoutingNode {
-    pub fn new(action_sender   : mpsc::Sender<Action>,
-               action_receiver : mpsc::Receiver<Action>,
-               event_sender    : mpsc::Sender<Event> ) -> Result<RoutingNode, RoutingError> {
+    pub fn new(action_sender      : mpsc::Sender<Action>,
+               action_receiver    : mpsc::Receiver<Action>,
+               event_sender       : mpsc::Sender<Event>,
+               client_restriction : bool) -> RoutingNode {
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
         let mut cm = crust::ConnectionManager::new(crust_sender);
         let _ = cm.start_accepting(vec![]);
         let accepting_on = cm.get_own_endpoints();
 
-        Ok(RoutingNode {
+        RoutingNode {
             crust_receiver      : crust_receiver,
             connection_manager  : cm,
             accepting_on        : accepting_on,
-            bootstraps          : BTreeMap::new(),
+            client_restriction  : client_restriction,
             action_sender       : action_sender,
             action_receiver     : action_receiver,
             event_sender        : event_sender.clone(),
@@ -104,10 +105,10 @@ impl RoutingNode {
             public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_cache    : BTreeMap::new(),
             accumulator         : MessageAccumulator::new(),
-        })
+        }
     }
 
-    pub fn run(&mut self, _restricted_to_client : bool) {
+    pub fn run(&mut self) {
         loop {
             match self.crust_receiver.recv() {
                 Err(_) => {},
@@ -311,40 +312,8 @@ impl RoutingNode {
         // Forward
         ignore(self.send(message_wrap.clone()));
 
-        let address_in_close_group_range =
-            self.core.name_in_range(&message.destination().get_location());
-
-        // Handle FindGroupResponse
-        if let Content::InternalResponse(InternalResponse::FindGroup(ref vec_of_public_ids, _))
-                = message.content {
-            ignore(self.handle_find_group_response(
-                        vec_of_public_ids.clone(),
-                        address_in_close_group_range.clone()));
-        }
-
-        if !address_in_close_group_range {
-            return Ok(());
-        }
-
-        // Drop message before Sentinel check if it is a direct message type (Connect, ConnectResponse)
-        // and this node is in the group but the message destination is another group member node.
-        match message.content {
-            Content::InternalRequest(InternalRequest::Connect(_)) |
-            Content::InternalResponse(InternalResponse::Connect(_, _)) => {
-                match message.destination() {
-                    Authority::ClientManager(_)  => return Ok(()), // TODO: Should be error
-                    Authority::NaeManager(_)     => return Ok(()), // TODO: Should be error
-                    Authority::NodeManager(_)    => return Ok(()), // TODO: Should be error
-                    Authority::ManagedNode(name) => if name != self.core.id().name() {
-                        return Ok(())
-                    },
-                    Authority::Client(_, _)      => return Ok(()), // TODO: Should be error
-                }
-            }
-            _ => (),
-        }
-        //
-        // pre-sentinel message handling
+        if !self.core.name_in_range(&message.destination().get_location()) {
+            return Ok(()); };
 
         // check if our calculated authority matches the destination authority of the message
         if self.core.our_authority(&message)
@@ -352,55 +321,65 @@ impl RoutingNode {
             return Err(RoutingError::BadAuthority);
         }
 
+        // Accumulate message
         let (message, opt_token) = match self.accumulate(message_wrap) {
             Some((message, opt_token)) => (message, opt_token),
             None => return Ok(()),
         };
 
         match message.content {
-            //MessageType::GetKey => self.handle_get_key(header, body),
-            //MessageType::GetGroupKey => self.handle_get_group_key(header, body),
-            //Content::InternalRequest(InternalRequest::Connect(request)) =>
-            //    self.handle_connect_request(request, message_wrap),
-            //_ => {
-            //    // Sentinel check
-
-            //    // TODO:
-            //    // switch message type
-            //    //match message.message_type {
-            //    //    MessageType::ConnectResponse(response) =>
-            //    //        self.handle_connect_response(response),
-            //    //    MessageType::FindGroup =>
-            //    //         self.handle_find_group(message),
-            //    //    MessageType::PutPublicId(ref id) =>
-            //    //        self.handle_put_public_id(message_wrap, message.clone(), id.clone()),
-            //    //    MessageType::Refresh(ref tag, ref data) =>
-            //    //        self.handle_refresh(message.clone(), tag.clone(), data.clone()),
-            //    //    _ => {
-            //    //        Err(RoutingError::UnknownMessageType)
-            //    //    }
-            //    //}
-            //    Ok(())
-            //}
             Content::InternalRequest(request) => {
-            }
+                match request {
+                    InternalRequest::Connect(_) => {
+                        match opt_token {
+                            Some(response_token) => self.handle_connect_request(request,
+                                message.from_authority, message.to_authority, response_token),
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
+                    InternalRequest::RequestNetworkName(_) => {
+                        match opt_token {
+                            Some(response_token) => self.handle_request_network_name(request,
+                                message.from_authority, message.to_authority, response_token),
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
+                    InternalRequest::CacheNetworkName(_, _) => {
+                        self.handle_cache_network_name(request, message.from_authority,
+                            message.to_authority)
+                    },
+                    InternalRequest::Refresh(_, _) => {
+                        Ok(())
+                        // TODO (ben 13/08/2015) implement self.handle_refresh()
+                    },
+                }
+            },
             Content::InternalResponse(response) => {
-            }
+                match response {
+                    InternalResponse::Connect(_, _) => {
+                        self.handle_connect_response(response, message.from_authority,
+                            message.to_authority)
+                    },
+                    InternalResponse::CacheNetworkName(_, _, _) => {
+                        self.handle_cache_network_name_response(response, message.from_authority,
+                            message.to_authority)
+                    }
+                }
+            },
             Content::ExternalRequest(request) => {
                 self.send_to_user(Event::Request {
                     request        : request,
                     our_authority  : message.to_authority,
                     from_authority : message.from_authority,
                     response_token : opt_token,
-                })
+                });
+                Ok(())
             }
             Content::ExternalResponse(response) => {
-                try!(self.handle_external_response(response,
-                                                   message.to_authority,
-                                                   message.from_authority))
+                self.handle_external_response(response, message.to_authority,
+                    message.from_authority)
             }
         }
-        Ok(())
     }
 
     fn accumulate(&mut self, signed_message: SignedMessage) -> Option<(RoutingMessage, Option<SignedToken>)> {
@@ -447,6 +426,9 @@ impl RoutingNode {
 
     fn request_network_name(&mut self, bootstrap_name : &NameType,
         bootstrap_endpoint : &Endpoint) -> RoutingResult {
+        // if RoutingNode is restricted from becoming a node,
+        // it suffices to never request a network name.
+        if self.client_restriction { return Ok(()) }
         if self.core.is_node() { return Err(RoutingError::AlreadyConnected); };
         let core_id = self.core.id();
         let routing_message = RoutingMessage {
@@ -544,6 +526,8 @@ impl RoutingNode {
                                           response       : InternalResponse,
                                           from_authority : Authority,
                                           to_authority   : Authority) -> RoutingResult {
+        // An additional blockage on acting to restrict RoutingNode from becoming a full node
+        if self.client_restriction { return Ok(()) };
         match response {
             InternalResponse::CacheNetworkName(network_public_id, group, signed_token) => {
                 if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
@@ -779,61 +763,35 @@ impl RoutingNode {
         Ok(())
     }
 
-    // -----Address and various functions----------------------------------------
-
-    fn drop_bootstrap(&mut self) {
-        unimplemented!()
-        // TODO (ben 5/08/2015) needs to moved to core
-        // match self.bootstrap {
-        //     Some((ref endpoint, name)) => {
-        //         if self.routing_table.size() > 0 {
-        //             info!("Dropped bootstrap on {:?} {:?}", endpoint, name);
-        //             self.connection_manager.drop_node(endpoint.clone());
-        //         }
-        //     },
-        //     None => {}
-        // };
-        // self.bootstrap = None;
-    }
-
     // -----Message Handlers from Routing Table connections----------------------------------------
 
     fn handle_external_response(&self, response       : ExternalResponse,
                                        to_authority   : Authority,
                                        from_authority : Authority) -> RoutingResult {
 
-        let orig_request_msg = try!(response.get_orig_request());
-
-        if !orig_request_msg.verify_signature(&self.core.id().signing_public_key()) {
-            return Err(RoutingError::FailedSignature)
-        }
-
-        let orig_request = match orig_request_msg.get_routing_message().content {
-            Content::ExternalRequest(ref request) => request.clone(),
-            _ => return Err(RoutingError::UnknownMessageType)
+        // Request token is only set if it came from a non-group entity.
+        // If it came from a group, then sentinel guarantees message validity.
+        let has_invalid_signature = {
+            if let &Some(ref token) = response.get_signed_token() {
+                !token.verify_signature(&self.core.id().signing_public_key())
+            }
+            else { false }
         };
+
+        if has_invalid_signature {
+            return Err(RoutingError::FailedSignature);
+        }
 
         self.send_to_user(Event::Response {
             response       : response,
             our_authority  : to_authority,
             from_authority : from_authority,
-            orig_request   : orig_request,
         });
 
         Ok(())
     }
 
     fn handle_refresh(&mut self, message: RoutingMessage, tag: u64, payload: Vec<u8>) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_find_group(&mut self, original_message: RoutingMessage) -> RoutingResult {
-        unimplemented!()
-    }
-
-    fn handle_find_group_response(&mut self,
-                                  find_group_response: Vec<PublicId>,
-                                  refresh_our_own_group: bool) -> RoutingResult {
         unimplemented!()
     }
 }

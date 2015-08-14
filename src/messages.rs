@@ -70,36 +70,42 @@ pub enum ExternalRequest {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalResponse {
-    Get   (Data,          SignedToken),
-    Put   (ResponseError, SignedToken),
-    Post  (ResponseError, SignedToken),
-    Delete(ResponseError, SignedToken),
+    // TODO: Technical depth: if the third param here is Some(...) then
+    // the it shares most of the data with the second argument, which
+    // needlessly increases bandwidth.
+    Get   (Data,          ExternalRequest, Option<SignedToken>),
+    Put   (ResponseError, ExternalRequest, Option<SignedToken>),
+    Post  (ResponseError, ExternalRequest, Option<SignedToken>),
+    Delete(ResponseError, ExternalRequest, Option<SignedToken>),
 }
 
 impl ExternalResponse {
-    pub fn get_signed_token(&self) -> &SignedToken {
+    // If the *request* was from a group entity, then there is
+    // no signed token.
+    pub fn get_signed_token(&self) -> &Option<SignedToken> {
         match *self {
-            ExternalResponse::Get(_, ref r)    => r,
-            ExternalResponse::Put(_, ref r)    => r,
-            ExternalResponse::Post(_, ref r)   => r,
-            ExternalResponse::Delete(_, ref r) => r,
+            ExternalResponse::Get(_, _, ref r)    => r,
+            ExternalResponse::Put(_, _, ref r)    => r,
+            ExternalResponse::Post(_, _, ref r)   => r,
+            ExternalResponse::Delete(_, _, ref r) => r,
         }
     }
 
-    pub fn get_orig_request(&self) -> Result<SignedMessage, CborError> {
-        SignedMessage::new_from_token(self.get_signed_token().clone())
-    }
-
-    pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
-        self.get_signed_token().verify_signature(requester_pub_key)
+    pub fn get_orig_request(&self) -> &ExternalRequest {
+        match *self {
+            ExternalResponse::Get(_, ref r, _)    => r,
+            ExternalResponse::Put(_, ref r, _)    => r,
+            ExternalResponse::Post(_, ref r, _)   => r,
+            ExternalResponse::Delete(_, ref r, _) => r,
+        }
     }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
     Connect(ConnectRequest),
-    FindGroup,
-    GetGroupKey,
+    // FindGroup,
+    // GetGroupKey,
     RequestNetworkName(PublicId),
     // a client can send RequestNetworkName
     CacheNetworkName(PublicId, SignedToken),
@@ -115,8 +121,8 @@ pub enum InternalRequest {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
     Connect(ConnectResponse, SignedToken),
-    FindGroup(Vec<PublicId>, SignedToken),
-    GetGroupKey(BTreeMap<NameType, sign::PublicKey>, SignedToken),
+    // FindGroup(Vec<PublicId>, SignedToken),
+    // GetGroupKey(BTreeMap<NameType, sign::PublicKey>, SignedToken),
     CacheNetworkName(PublicId, Vec<PublicId>, SignedToken),
     //               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
     //                 |         |              | the original Request::RequestNetworkName

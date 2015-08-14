@@ -174,11 +174,12 @@ impl Node {
                                  our_authority  : Authority,
                                  from_authority : Authority,
                                  response_token : Option<SignedToken>) {
-        match request {
+        match request.clone() {
             ExternalRequest::Get(data_request) => {
                 self.handle_get_request(data_request,
                                         our_authority,
                                         from_authority,
+                                        request,
                                         response_token);
             },
             ExternalRequest::Put(data) => {
@@ -199,6 +200,7 @@ impl Node {
     fn handle_get_request(&mut self, data_request   : DataRequest,
                                      _our_authority : Authority,
                                      from_authority : Authority,
+                                     orig_request   : ExternalRequest,
                                      response_token : Option<SignedToken>) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
@@ -210,11 +212,14 @@ impl Node {
             None => return,
         };
 
-        self.routing.get_response(from_authority, Data::PlainData(data), response_token);
+        self.routing.get_response(from_authority,
+                                  Data::PlainData(data),
+                                  orig_request,
+                                  response_token);
     }
 
-    fn handle_put_request(&mut self, data           : Data,
-                                     our_authority  : Authority,
+    fn handle_put_request(&mut self, data            : Data,
+                                     our_authority   : Authority,
                                      _from_authority : Authority,
                                      _response_token : Option<SignedToken>) {
         let plain_data = match data {
