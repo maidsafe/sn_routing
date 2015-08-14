@@ -321,7 +321,20 @@ debug!("New CRUST event: message");
                         _ => {},
                     };
                 } else {
-                    self.connection_manager.drop_node(endpoint.clone());
+                    // depending on the identity of the connection, follow the rules on dropping
+                    // to avoid both sides drop the other connection, possibly leaving none
+
+                    if alpha {
+                        self.connection_manager.drop_node(endpoint.clone());
+                        debug!("Core refused {:?} on {:?} and dropped the connection",
+                            hello_address, endpoint);
+                    } else {
+                        // FIXME (ben 14/08/2015) there is a risk of dangling crust connections,
+                        // that needs a clean-up strategy: as non-alpha send a good-bye message
+                        // to alpha (and disconnect after timeout as backup mechanism).
+                        debug!("Core refused {:?} on {:?}, but awaiting alpha.",
+                            hello_address, endpoint);
+                    }
                 };
                 Ok(())
             },
