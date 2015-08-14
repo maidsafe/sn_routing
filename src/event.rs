@@ -44,7 +44,6 @@ pub enum Event {
         response       : ExternalResponse,
         our_authority  : Authority,
         from_authority : Authority,
-        orig_request   : ExternalRequest,
     },
     Refresh(u64, NameType, Vec<Vec<u8>>),
     //      ~|~  ~~|~~~~~  ~~|~~~~~~~~~
