@@ -92,6 +92,9 @@ impl RoutingNode {
         let _ = cm.start_accepting(vec![]);
         let accepting_on = cm.get_own_endpoints();
 
+        let core = RoutingCore::new(event_sender.clone());
+        debug!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
+
         RoutingNode {
             crust_receiver      : crust_receiver,
             connection_manager  : cm,
@@ -99,9 +102,9 @@ impl RoutingNode {
             client_restriction  : client_restriction,
             action_sender       : action_sender,
             action_receiver     : action_receiver,
-            event_sender        : event_sender.clone(),
+            event_sender        : event_sender,
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
-            core                : RoutingCore::new(event_sender),
+            core                : core,
             public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_cache    : BTreeMap::new(),
             accumulator         : MessageAccumulator::new(),
