@@ -87,11 +87,17 @@ impl ExternalResponse {
     }
 
     pub fn get_orig_request(&self) -> Result<SignedMessage, CborError> {
-        SignedMessage::new_from_token(self.get_signed_token().clone())
+        match self.get_signed_token() {
+            &Some(ref signed_token) => SignedMessage::new_from_token(signed_token.clone()),
+            &None => panic!("Peter is fixing this"),
+        }
     }
 
     pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
-        self.get_signed_token().verify_signature(requester_pub_key)
+        match self.get_signed_token() {
+            &Some(ref signed_token) => signed_token.verify_signature(requester_pub_key),
+            &None => true, // FIXME
+        }
     }
 }
 
