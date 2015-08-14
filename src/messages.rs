@@ -65,7 +65,7 @@ pub enum ExternalRequest {
     Get(DataRequest),
     Put(Data),
     Post(Data),
-    Delete(DataRequest),
+    Delete(Data),
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
