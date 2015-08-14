@@ -18,6 +18,7 @@
 
 use sodiumoxide;
 use std::sync::mpsc;
+use std::thread::spawn;
 
 use id::Id;
 use action::Action;
@@ -36,7 +37,6 @@ use sodiumoxide::crypto;
 //use authority::{Authority};
 //use messages::{RoutingMessage, SignedMessage, MessageType};
 //use error::{RoutingError};
-//use std::thread::spawn;
 //use std::collections::BTreeMap;
 
 type RoutingResult = Result<(), RoutingError>;
@@ -46,7 +46,6 @@ type RoutingResult = Result<(), RoutingError>;
 /// Routing objects are clonable for multithreading, or a Routing object can be
 /// cloned with a new set of keys while preserving a single RoutingNode.
 pub struct Routing {
-    keys          : Id,
     action_sender : mpsc::Sender<Action>,
 }
 
@@ -54,23 +53,18 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
     /// The intial Routing object will have newly generated keys
-    // TODO(dirvine) Always start a node if possible  :09/08/2015
     pub fn new(event_sender : mpsc::Sender<Event>) -> Result<Routing, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
-        let keys = Id::new();
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
-        // TODO (ben 5/08/2015) Errors on starting RoutingNode should more aggressively
-        //      be handled internally
-        // start the handler for routing
-        let routing_node = match RoutingNode::new(action_sender.clone(), action_receiver,
-            event_sender) {
-                Ok(routing_node) => routing_node,
-                Err(e) => return Err(e),
-        };
+        // start the handler for routing without a restriction to become a full node
+        let mut routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
+            event_sender, false);
+
+        spawn(move || routing_node.run());
+
         Ok(Routing {
-            keys          : keys,
             action_sender : action_sender,
         })
     }
@@ -80,9 +74,22 @@ impl Routing {
     /// achieve full routing node status.
     // TODO(dirvine) take an Id as a param to sign messages ???? (or amend put etc. for a client put_request to take reference to a particular ID for sign/encryt, we should be already bootstrapped anyway with the new() call :09/08/2015
     // FIXME(dirvine) discussion required :09/08/2015
-    pub fn new_client(event_receiver : mpsc::Sender<Event>)
+
+    pub fn new_client(event_sender : mpsc::Sender<Event>)
         -> Result<Routing, RoutingError> {
-        unimplemented!()
+          sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
+
+          let (action_sender, action_receiver) = mpsc::channel::<Action>();
+
+          // start the handler for routing with a restriction to become a full node
+          let mut routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
+              event_sender, true);
+
+          spawn(move || routing_node.run());
+
+          Ok(Routing {
+              action_sender : action_sender,
+          })
     }
 
     /// Clone the interface while maintaining the same RoutingNode, with a given set of keys.
@@ -114,7 +121,7 @@ impl Routing {
     pub fn get_response(&self, location : Authority, data: Data, signed_token : Option<SignedToken>) {
         unimplemented!()
     }
-    // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error fn instead 
+    // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error fn instead
     // Also these shoudl return an error so if not yet a node they fail (if clients try and call for instance) :09/08/2015
     /// response error to a put request
     pub fn put_response(&self, location : Authority, response_error : ResponseError,
@@ -145,9 +152,5 @@ impl Routing {
     // TODO(dirvine) This maybe should be implementing  aDrop trait  :09/08/2015
     pub fn stop(&mut self) {
         unimplemented!()
-    }
-
-    pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
-        self.keys.signing_public_key()
     }
 }
