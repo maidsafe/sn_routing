@@ -68,8 +68,8 @@ pub struct RoutingNode {
     crust_receiver      : mpsc::Receiver<crust::Event>,
     connection_manager  : crust::ConnectionManager,
     accepting_on        : Vec<crust::Endpoint>,
-    bootstraps          : BTreeMap<Endpoint, Option<NameType>>,
     // for RoutingNode
+    client_restriction  : bool,
     action_sender       : mpsc::Sender<Action>,
     action_receiver     : mpsc::Receiver<Action>,
     event_sender        : mpsc::Sender<Event>,
@@ -82,20 +82,21 @@ pub struct RoutingNode {
 }
 
 impl RoutingNode {
-    pub fn new(action_sender   : mpsc::Sender<Action>,
-               action_receiver : mpsc::Receiver<Action>,
-               event_sender    : mpsc::Sender<Event> ) -> Result<RoutingNode, RoutingError> {
+    pub fn new(action_sender      : mpsc::Sender<Action>,
+               action_receiver    : mpsc::Receiver<Action>,
+               event_sender       : mpsc::Sender<Event>,
+               client_restriction : bool) -> RoutingNode {
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
         let mut cm = crust::ConnectionManager::new(crust_sender);
         let _ = cm.start_accepting(vec![]);
         let accepting_on = cm.get_own_endpoints();
 
-        Ok(RoutingNode {
+        RoutingNode {
             crust_receiver      : crust_receiver,
             connection_manager  : cm,
             accepting_on        : accepting_on,
-            bootstraps          : BTreeMap::new(),
+            client_restriction  : client_restriction,
             action_sender       : action_sender,
             action_receiver     : action_receiver,
             event_sender        : event_sender.clone(),
@@ -104,10 +105,10 @@ impl RoutingNode {
             public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_cache    : BTreeMap::new(),
             accumulator         : MessageAccumulator::new(),
-        })
+        }
     }
 
-    pub fn run(&mut self, _restricted_to_client : bool) {
+    pub fn run(&mut self) {
         loop {
             match self.crust_receiver.recv() {
                 Err(_) => {},
@@ -425,6 +426,9 @@ impl RoutingNode {
 
     fn request_network_name(&mut self, bootstrap_name : &NameType,
         bootstrap_endpoint : &Endpoint) -> RoutingResult {
+        // if RoutingNode is restricted from becoming a node,
+        // it suffices to never request a network name.
+        if self.client_restriction { return Ok(()) }
         if self.core.is_node() { return Err(RoutingError::AlreadyConnected); };
         let core_id = self.core.id();
         let routing_message = RoutingMessage {
@@ -522,6 +526,8 @@ impl RoutingNode {
                                           response       : InternalResponse,
                                           from_authority : Authority,
                                           to_authority   : Authority) -> RoutingResult {
+        // An additional blockage on acting to restrict RoutingNode from becoming a full node
+        if self.client_restriction { return Ok(()) };
         match response {
             InternalResponse::CacheNetworkName(network_public_id, group, signed_token) => {
                 if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
