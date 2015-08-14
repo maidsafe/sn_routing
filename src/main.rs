@@ -31,17 +31,11 @@
         unused_qualifications)]
 
 //! Safe Vault provides the interface to SAFE routing.
-//!
 //! The resulting executable is the Vault node for the SAFE network.
-//! Refer to https://github.com/maidsafe/safe_vault
-#![feature(convert, core)]
-//! Refer to https://github.com/maidsafe/safe_vault
-#![feature(core)]
 
 #![allow(unused)]
 
 extern crate cbor;
-extern crate core;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
