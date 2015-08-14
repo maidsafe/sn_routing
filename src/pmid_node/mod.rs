@@ -98,14 +98,7 @@ mod test {
             let mut calls = put_result.ok().unwrap();
             assert_eq!(calls.len(), 1);
             match calls.remove(0) {
-                MethodCall::Reply { data } => {
-                    match data {
-                        Data::ImmutableData(fetched_im_data) => {
-                            assert_eq!(fetched_im_data, im_data);
-                        }
-                        _ => panic!("Unexpected"),
-                    }
-                }
+                MethodCall::Terminate => {},
                 _ => panic!("Unexpected"),
             }
         }

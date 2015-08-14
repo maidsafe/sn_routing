@@ -72,8 +72,9 @@ mod test {
         let calls = put_result.ok().unwrap();
         assert_eq!(calls.len(), 1);
         match calls[0] {
-            MethodCall::Forward { destination } => {
+            MethodCall::Put { destination, ref content } => {
                 assert_eq!(destination, data.name());
+                assert_eq!(*content, Data::ImmutableData(data));
             }
             _ => panic!("Unexpected"),
         }
