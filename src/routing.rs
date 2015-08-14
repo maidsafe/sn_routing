@@ -31,6 +31,7 @@ use types::Bytes;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use sodiumoxide::crypto;
+use messages::{ExternalRequest, ExternalResponse, Content};
 
 //use types::{MessageId, Address};
 //use utils::{encode, decode};
@@ -99,44 +100,68 @@ impl Routing {
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
     pub fn get_request(&self, location : Authority, data_request : DataRequest) {
-        unimplemented!()
+        self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalRequest(ExternalRequest::Get(data_request))));
     }
 
     /// Add something to the network
     pub fn put_request(&self, location : Authority, data : Data) {
-        unimplemented!()
+        self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalRequest(ExternalRequest::Put(data))));
     }
 
     /// Change something already on the network
     pub fn post_request(&self, location : Authority, data : Data) {
-        unimplemented!()
+        self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalRequest(ExternalRequest::Post(data))));
     }
 
     /// Remove something from the network
     pub fn delete_request(&self, location : Authority, data_request : DataRequest) {
-        unimplemented!()
+        self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalRequest(ExternalRequest::Delete(data_request))));
     }
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_token.
-    pub fn get_response(&self, location : Authority, data: Data, signed_token : Option<SignedToken>) {
-        unimplemented!()
+    pub fn get_response(&self, location : Authority,
+                               data     : Data,
+                               signed_token : Option<SignedToken>) {
+        self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalResponse(ExternalResponse::Get(data, signed_token))));
     }
     // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error fn instead
     // Also these shoudl return an error so if not yet a node they fail (if clients try and call for instance) :09/08/2015
     /// response error to a put request
-    pub fn put_response(&self, location : Authority, response_error : ResponseError,
-        signed_token : SignedToken) {
-        unimplemented!()
+    pub fn put_response(&self, location       : Authority,
+                               response_error : ResponseError,
+                               signed_token   : Option<SignedToken>) {
+        self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalResponse(
+                    ExternalResponse::Put(response_error, signed_token))));
     }
     /// Response error to a post request
-    pub fn post_response(&self, location : Authority, response_error : ResponseError,
-        signed_token : SignedToken) {
-        unimplemented!()
+    pub fn post_response(&self, location       : Authority,
+                                response_error : ResponseError,
+                                signed_token   : Option<SignedToken>) {
+        self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalResponse(
+                    ExternalResponse::Post(response_error, signed_token))));
     }
     /// response error to a delete respons
-    pub fn delete_response(&self, location : Authority, response_error : ResponseError,
-        signed_token : SignedToken) {
-        unimplemented!()
+    pub fn delete_response(&self, location       : Authority,
+                                  response_error : ResponseError,
+                                  signed_token   : Option<SignedToken>) {
+        self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalResponse(
+                    ExternalResponse::Delete(response_error, signed_token))));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
