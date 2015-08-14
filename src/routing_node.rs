@@ -119,55 +119,19 @@ impl RoutingNode {
     /// configures lru cache associated with plain data
     pub fn set_plain_data_cache(&mut self, time_to_live: Option<Duration>,
                                            capacity: Option<usize>) {
-        match (time_to_live, capacity) {
-            (Some(lru_time_to_live), Some(lru_capacity)) => {
-                self.plain_data_cache =
-                    LruCache::with_expiry_duration_and_capacity(lru_time_to_live, lru_capacity);
-            },
-            (Some(lru_time_to_live), None) => {
-                self.plain_data_cache = LruCache::with_expiry_duration(lru_time_to_live);
-            },
-            (None, Some(lru_capacity)) => {
-                self.plain_data_cache = LruCache::with_capacity(lru_capacity);
-            },
-            (None, None) => {}
-        }
+        set_lru_cache(&mut self.plain_data_cache, time_to_live, capacity);
     }
 
     /// configures lru cache associated with immutable data
     pub fn set_immutable_data_cache(&mut self, time_to_live: Option<Duration>,
                                                capacity: Option<usize>) {
-        match (time_to_live, capacity) {
-            (Some(lru_time_to_live), Some(lru_capacity)) => {
-                self.immutable_data_cache =
-                    LruCache::with_expiry_duration_and_capacity(lru_time_to_live, lru_capacity);
-            },
-            (Some(lru_time_to_live), None) => {
-                self.immutable_data_cache = LruCache::with_expiry_duration(lru_time_to_live);
-            },
-            (None, Some(lru_capacity)) => {
-                self.immutable_data_cache = LruCache::with_capacity(lru_capacity);
-            },
-            (None, None) => {}
-        }
+        set_lru_cache(&mut self.immutable_data_cache, time_to_live, capacity);
     }
 
     /// configures lru cache associated with structured data
     pub fn set_structured_data_cache(&mut self, time_to_live: Option<Duration>,
                                                 capacity: Option<usize>) {
-        match (time_to_live, capacity) {
-            (Some(lru_time_to_live), Some(lru_capacity)) => {
-                self.structured_data_cache =
-                    LruCache::with_expiry_duration_and_capacity(lru_time_to_live, lru_capacity);
-            },
-            (Some(lru_time_to_live), None) => {
-                self.structured_data_cache = LruCache::with_expiry_duration(lru_time_to_live);
-            },
-            (None, Some(lru_capacity)) => {
-                self.structured_data_cache = LruCache::with_capacity(lru_capacity);
-            },
-            (None, None) => {}
-        }
+        set_lru_cache(&mut self.structured_data_cache, time_to_live, capacity);
     }
 
     pub fn run(&mut self, _restricted_to_client : bool) {
@@ -952,3 +916,20 @@ impl RoutingNode {
 }
 
 fn ignore<R,E>(_result: Result<R,E>) {}
+
+fn set_lru_cache<K, V>(lru_cache: &mut LruCache<K, V>, time_to_live: Option<Duration>,
+                 capacity: Option<usize>) where K: PartialOrd + Ord + Clone, V: Clone {
+     match (time_to_live, capacity) {
+         (Some(lru_time_to_live), Some(lru_capacity)) => {
+             *lru_cache =
+                LruCache::<K, V>::with_expiry_duration_and_capacity(lru_time_to_live, lru_capacity);
+         },
+         (Some(lru_time_to_live), None) => {
+             *lru_cache = LruCache::<K, V>::with_expiry_duration(lru_time_to_live);
+         },
+         (None, Some(lru_capacity)) => {
+             *lru_cache = LruCache::<K, V>::with_capacity(lru_capacity);
+         },
+         (None, None) => {}
+     }
+}
