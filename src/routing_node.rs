@@ -918,11 +918,12 @@ impl RoutingNode {
 fn ignore<R,E>(_result: Result<R,E>) {}
 
 fn set_lru_cache<K, V>(lru_cache: &mut LruCache<K, V>, time_to_live: Option<Duration>,
-                 capacity: Option<usize>) where K: PartialOrd + Ord + Clone, V: Clone {
+                       capacity: Option<usize>) where K: PartialOrd + Ord + Clone, V: Clone {
      match (time_to_live, capacity) {
          (Some(lru_time_to_live), Some(lru_capacity)) => {
              *lru_cache =
-                LruCache::<K, V>::with_expiry_duration_and_capacity(lru_time_to_live, lru_capacity);
+                LruCache::<K, V>::with_expiry_duration_and_capacity(lru_time_to_live,
+                                                                    lru_capacity);
          },
          (Some(lru_time_to_live), None) => {
              *lru_cache = LruCache::<K, V>::with_expiry_duration(lru_time_to_live);
@@ -932,4 +933,44 @@ fn set_lru_cache<K, V>(lru_cache: &mut LruCache<K, V>, time_to_live: Option<Dura
          },
          (None, None) => {}
      }
+}
+
+#[cfg(test)]
+mod test {
+    use action::Action;
+    use crust;
+    use sodiumoxide::crypto;
+    use data::{Data, DataRequest};
+    use event::Event;
+    use immutable_data::{ImmutableData, ImmutableDataType};
+    use messages::{ExternalRequest, ExternalResponse, SignedToken};
+    use rand::{thread_rng, Rng};
+    use std::sync::mpsc;
+    use super::RoutingNode;
+
+    #[test]
+    fn cache() {
+        let (action_sender, action_receiver) = mpsc::channel::<Action>();
+        let (event_sender, _) = mpsc::channel::<Event>();
+        let mut node = RoutingNode::new(action_sender, action_receiver, event_sender).unwrap();
+        let mut data = [0u8; 64];
+        thread_rng().fill_bytes(&mut data);
+        let immutable = ImmutableData::new(ImmutableDataType::Normal,
+                           data.iter().map(|&x|x).collect::<Vec<_>>());
+        let immutable_data = Data::ImmutableData(immutable.clone());
+        let key_pair = crypto::sign::gen_keypair();
+        let sig = crypto::sign::sign_detached(&data, &key_pair.1);
+        let sign_token = SignedToken {
+             serialised_request : data.iter().map(|&x|x).collect::<Vec<_>>(),
+             signature : sig
+        };
+
+        let response = ExternalResponse::Get(immutable_data, sign_token);
+        let request = ExternalRequest::Get(
+            DataRequest::ImmutableData(immutable.name().clone(), immutable.get_type_tag().clone()));
+
+        assert!(node.handle_cache_get(request.clone()).is_none());
+        node.handle_cache_put(response);
+        assert!(node.handle_cache_get(request).is_some());
+    }
 }
