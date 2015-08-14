@@ -116,6 +116,7 @@ impl RoutingNode {
         })
     }
 
+    /// configures lru cache associated with plain data
     pub fn set_plain_data_cache(&mut self, time_to_live: Option<Duration>,
                                            capacity: Option<usize>) {
         match (time_to_live, capacity) {
@@ -133,6 +134,7 @@ impl RoutingNode {
         }
     }
 
+    /// configures lru cache associated with immutable data
     pub fn set_immutable_data_cache(&mut self, time_to_live: Option<Duration>,
                                                capacity: Option<usize>) {
         match (time_to_live, capacity) {
@@ -150,6 +152,7 @@ impl RoutingNode {
         }
     }
 
+    /// configures lru cache associated with structured data
     pub fn set_structured_data_cache(&mut self, time_to_live: Option<Duration>,
                                                 capacity: Option<usize>) {
         match (time_to_live, capacity) {
