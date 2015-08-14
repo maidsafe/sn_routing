@@ -19,11 +19,7 @@
 
 mod database;
 
-use routing::data::Data;
-use routing::error::{ResponseError, InterfaceError};
-use routing::NameType;
-use routing::node_interface::MethodCall;
-use routing::sendable::Sendable;
+use routing_types::*;
 
 pub use self::database::{MaidManagerAccountWrapper, MaidManagerAccount};
 
@@ -43,7 +39,7 @@ impl MaidManager {
     pub fn handle_put(&mut self, from: &NameType,
                       data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         if self.db_.put_data(from, data.payload_size() as u64) {
-            Ok(vec![MethodCall::Forward { destination: data.name() }])
+            Ok(vec![MethodCall::Put { destination: data.name(), content: data }])
         } else {
             Err(From::from(ResponseError::InvalidRequest))
         }
@@ -63,12 +59,7 @@ impl MaidManager {
 mod test {
     use super::*;
 
-    use routing::data::Data;
-    use routing::NameType;
-    use routing::node_interface::MethodCall;
-    use routing::immutable_data::{ImmutableData, ImmutableDataType};
-    use routing::sendable::Sendable;
-    use routing::types::*;
+    use routing_types::*;
 
     #[test]
     fn handle_put() {

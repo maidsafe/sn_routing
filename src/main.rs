@@ -28,27 +28,21 @@
         unused_features, unused_parens, while_true)]
 
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, variant_size_differences)]
+        unused_qualifications)]
 
 //! Safe Vault provides the interface to SAFE routing.
-//!
 //! The resulting executable is the Vault node for the SAFE network.
-//! Refer to https://github.com/maidsafe/safe_vault
-#![feature(convert, core)]
-//! Refer to https://github.com/maidsafe/safe_vault
-#![feature(core)]
 
-extern crate core;
-extern crate rustc_serialize;
+#![allow(unused)]
+
 extern crate cbor;
-extern crate time;
-extern crate lru_time_cache;
-extern crate routing;
-
-#[cfg(test)]
 extern crate rand;
-#[cfg(test)]
-extern crate maidsafe_sodiumoxide as sodiumoxide;
+extern crate rustc_serialize;
+extern crate sodiumoxide;
+extern crate time;
+
+extern crate crust;
+extern crate lru_time_cache;
 
 use std::thread;
 use std::thread::spawn;
@@ -62,21 +56,87 @@ mod pmid_node;
 mod transfer_parser;
 mod vault;
 mod utils;
+mod routing_types;
+mod macros;
 
-use vault::{ VaultFacade, VaultGenerator };
+mod non_networking_test_framework;
+
+use vault::{VaultFacade, ResponseNotifier};
+use routing_types::{MethodCall, POLL_DURATION_IN_MILLISEC, RoutingMessage};
+use non_networking_test_framework::RoutingVaultMock;
+
+type RoutingVault = ::std::sync::Arc<::std::sync::Mutex<RoutingVaultMock>>;
+fn get_new_routing_vault() -> (RoutingVault, ::std::sync::mpsc::Receiver<RoutingMessage>) {
+    let (routing_mock, receiver) = RoutingVaultMock::new();
+    (::std::sync::Arc::new(::std::sync::Mutex::new(routing_mock)), receiver)
+}
 
 /// Placeholder doc test
 pub fn always_true() -> bool { true }
 
 /// The Vault structure to hold the logical interface to provide behavioural logic to routing.
 pub struct Vault {
-    routing_node: routing::routing_node::RoutingNode<VaultFacade, VaultGenerator>,
+    routing            : RoutingVault,
+    vault_facade       : ::std::sync::Arc<::std::sync::Mutex<VaultFacade>>,
+    join_handles       : Vec<::std::thread::JoinHandle<()>>,    
+    response_notifier  : ResponseNotifier,
+    routing_stop_flag  : ::std::sync::Arc<::std::sync::Mutex<bool>>,
 }
 
+
 impl Vault {
+    /// starts-up a vault with initialized routing and personas
     fn new() -> Vault {
+        let notifier = ::std::sync::Arc::new((::std::sync::Mutex::new(Ok(vec![MethodCall::Terminate])),
+                                              ::std::sync::Condvar::new()));
+        let (routing_vault, receiver) = get_new_routing_vault();
+        let (vault_facade, receiver_joiner) = VaultFacade::mutex_new(notifier.clone(), receiver);
+        let cloned_routing_vault = routing_vault.clone();
+        let routing_stop_flag = ::std::sync::Arc::new(::std::sync::Mutex::new(false));
+        let routing_stop_flag_clone = routing_stop_flag.clone();
+
+        let routing_joiner = ::std::thread::spawn(move || {
+            let _ = cloned_routing_vault.lock().unwrap().bootstrap(None, None);
+            while !*routing_stop_flag_clone.lock().unwrap() {
+                ::std::thread::sleep_ms(POLL_DURATION_IN_MILLISEC);
+                cloned_routing_vault.lock().unwrap().run();
+            }
+            cloned_routing_vault.lock().unwrap().close();
+        });
+
         Vault {
-            routing_node: routing::routing_node::RoutingNode::<VaultFacade, VaultGenerator>::new(VaultGenerator),
+            routing            : routing_vault,
+            vault_facade       : vault_facade,
+            join_handles       : vec![routing_joiner, receiver_joiner],
+            response_notifier  : notifier,
+            routing_stop_flag  : routing_stop_flag,
+        }
+    }
+
+    /// vault listening messages from routing
+    pub fn run(&mut self) {
+        let (ref lock, ref condition_var) = *self.response_notifier;
+        let mut mutex_guard : _;
+        let valid_condition = Ok(vec![MethodCall::ShutDown]);
+        mutex_guard = lock.lock().unwrap();
+        while *mutex_guard != valid_condition {
+            mutex_guard = condition_var.wait(mutex_guard).unwrap();
+            match mutex_guard.clone() {
+                Ok(actions) => {
+                    for i in 0..actions.len() {
+                        match actions[i].clone() {
+                            MethodCall::Get { name, data_request } => {
+                                let _ = self.routing.lock().unwrap().get(name, data_request);
+                            },
+                            MethodCall::Put { destination, content } => {
+                                let _ = self.routing.lock().unwrap().put(destination, content);
+                            },
+                            _ => {}
+                        }
+                    }
+                },
+                Err(_) => {}
+            }
         }
     }
 }
@@ -86,16 +146,8 @@ pub fn main () {
     // routing changed to eliminate the difference of the first and later on nodes on network
     // the routing_node.run() replaces the previous run_zero_membrance() and bootstrap() function
     let mut vault = Vault::new();
-    match vault.routing_node.run() {
-        Err(err) => panic!("Could not connect to the network with error : {:?}", err),
-        _ => {}
-    }
-    let thread_guard = spawn(move || {
-        loop {
-            thread::sleep_ms(10000);
-        }
-    });
-    let _ = thread_guard.join();
+    // a blocking call to vault's run method
+    vault.run();
 }
 
 #[cfg(test)]
@@ -103,32 +155,29 @@ mod test {
     use super::*;
     use std::thread;
     use std::thread::spawn;
+    use sodiumoxide::crypto;
+
+    use routing_types::*;
 
     #[test]
     fn lib_test() {
         let run_vault = |mut vault: Vault| {
-            spawn(move || {
-                match vault.routing_node.run() {
-                    Err(err) => panic!("Could not connect to the network with error : {:?}", err),
-                    _ => {}
-                }
-                let thread_guard = spawn(move || {
-                    loop {
-                        thread::sleep_ms(1);
-                    }
-                });
-                let _ = thread_guard.join();
-            })
+            let thread_guard = spawn(move || {
+                vault.run();
+            });
         };
-        // The performance of get RoutingTable fully populated among certain amount of nodes is machine dependent
-        // The stable duration needs to be increased dramatically along with the increase of the total node numbers.
-        // for example, you may need i * 1500 when increase total nodes from 8 to 9
-        // The first node must be run in membrane mode
-        for i in 0..8 {
-            let _ = run_vault(Vault::new());
-            thread::sleep_ms(1000 + i * 1000);
-        }
-        thread::sleep_ms(10000);
+        let mut vault = Vault::new();
+        let routing_mutex_clone = vault.routing.clone();
+        let _ = run_vault(vault);
+        let client_name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
+        let sign_keys =  crypto::sign::gen_keypair();
+        let value = generate_random_vec_u8(1024);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        routing_mutex_clone.lock().unwrap().client_put(client_name, sign_keys.0,
+                                                       Data::ImmutableData(im_data.clone()));
+        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), false);
+        thread::sleep_ms(5000);
+        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), true);
     }
 
 }

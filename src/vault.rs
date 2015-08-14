@@ -25,13 +25,7 @@ use rustc_serialize::{Decodable, Encodable};
 
 use lru_time_cache::LruCache;
 
-use routing::NameType;
-use routing::error::{ResponseError, InterfaceError};
-use routing::authority::Authority;
-use routing::data::{Data, DataRequest};
-use routing::node_interface::{Interface, MethodCall, CreatePersonas};
-use routing::sendable::Sendable;
-use routing::types::{DestinationAddress, SourceAddress};
+use routing_types::*;
 
 use data_manager::{DataManager, DataManagerSendable, DataManagerStatsSendable};
 use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
@@ -50,12 +44,6 @@ pub struct VaultFacade {
     sd_manager : StructuredDataManager,
     nodes_in_table : Vec<NameType>,
     data_cache: LruCache<NameType, Data>
-}
-
-impl Clone for VaultFacade {
-    fn clone(&self) -> VaultFacade {
-        VaultFacade::new()
-    }
 }
 
 fn merge_refreshable<T>(empty_entry: T, payloads: Vec<Vec<u8>>) ->
@@ -93,8 +81,7 @@ impl Interface for VaultFacade {
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to them are both from Node
                 match data_request {
                     DataRequest::ImmutableData(_) => self.data_manager.handle_get(&name),
-                    DataRequest::StructuredData(_) => self.sd_manager.handle_get(name),
-                    _ => Err(From::from(ResponseError::InvalidRequest)),
+                    DataRequest::StructuredData(_) => self.sd_manager.handle_get(name)
                 }
             }
             Authority::ManagedNode => {
@@ -248,7 +235,7 @@ impl Interface for VaultFacade {
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
     fn handle_cache_get(&mut self,
-                        _: DataRequest, // data_request 
+                        _: DataRequest, // data_request
                         data_location: NameType,
                         _: NameType) -> Result<MethodCall, InterfaceError> { // from_address
         match self.data_cache.get(&data_location) {
@@ -266,8 +253,10 @@ impl Interface for VaultFacade {
     }
 }
 
+pub type ResponseNotifier = ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<MethodCall>, InterfaceError>>,
+                                              ::std::sync::Condvar)>;
+
 impl VaultFacade {
-    /// Initialise all the personas in the Vault interface.
     pub fn new() -> VaultFacade {
         VaultFacade {
             data_manager: DataManager::new(), maid_manager: MaidManager::new(),
@@ -277,16 +266,82 @@ impl VaultFacade {
         }
     }
 
-}
+    pub fn mutex_new(notifier: ResponseNotifier,
+                     receiver: ::std::sync::mpsc::Receiver<RoutingMessage>)
+      -> (::std::sync::Arc<::std::sync::Mutex<VaultFacade>>, ::std::thread::JoinHandle<()>) {
+        let vault_facade = ::std::sync::Arc::new(::std::sync::Mutex::new(VaultFacade {
+            data_manager: DataManager::new(), maid_manager: MaidManager::new(),
+            pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
+            sd_manager: StructuredDataManager::new(), nodes_in_table: Vec::new(),
+            data_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(10), 100),
+        }));
 
-pub struct VaultGenerator;
+        let vault_facade_cloned = vault_facade.clone();
+        let receiver_joiner = ::std::thread::Builder::new().name("VaultReceiverThread".to_string()).spawn(move || {
+            for it in receiver.iter() {
+                let (routing_acting, actions) = match it {
+                    RoutingMessage::ShutDown => (true, Ok(vec![MethodCall::ShutDown])),
+                    RoutingMessage::HandleGet(data_request, our_authority,
+                                              from_authority, from_address) =>
+                        (true, vault_facade_cloned.lock().unwrap().handle_get(data_request, our_authority,
+                                                                              from_authority, from_address)),
+                    RoutingMessage::HandlePut(our_authority, from_authority,
+                                              from_address, dest_address, data) =>
+                        (true, vault_facade_cloned.lock().unwrap().handle_put(our_authority, from_authority,
+                                                                              from_address, dest_address, data)),
+                    // _ => (false, Ok(vec![MethodCall::Terminate])),
+                };
+                // pub enum RoutingMessage {
+                //     HandleGet { data_request   : DataRequest,
+                //                 our_authority  : Authority,
+                //                 from_authority : Authority,
+                //                 from_address   : SourceAddress },
+                //     HandlePut { our_authority  : Authority,
+                //                 from_authority : Authority,
+                //                 from_address   : SourceAddress,
+                //                 dest_address   : DestinationAddress,
+                //                 data           : Data },
+                //     HandlePost { our_authority : Authority,
+                //                  from_authority: Authority,
+                //                  from_address  : SourceAddress,
+                //                  dest_address  : DestinationAddress,
+                //                  data          : Data },
+                //     HandleRefresh { type_tag   : u64,
+                //                     from_group : NameType,
+                //                     payloads   : Vec<Vec<u8>> },
+                //     HandleChurn { close_group  : Vec<NameType> },
+                //     HandleGetResponse { from_address    : NameType,
+                //                            response     : Data},
+                //     HandlePutResponse { from_authority  : Authority,
+                //                         from_address    : SourceAddress,
+                //                         response        : ResponseError },
+                //     HandlePostResponse { from_authority : Authority,
+                //                          from_address   : SourceAddress,
+                //                          response       : ResponseError },
+                //     HandleCacheGet { data_request       : DataRequest,
+                //                      data_location      : NameType,
+                //                      from_address       : NameType },
+                //     HandleCachePut { from_authority     : Authority,
+                //                      from_address       : NameType,
+                //                      data               : Data }
 
-impl CreatePersonas<VaultFacade> for VaultGenerator {
-    fn create_personas(&mut self) -> VaultFacade {
-        VaultFacade::new()
+                if routing_acting {
+                    let &(ref lock, ref condition_var) = &*notifier;
+                    // let mut routing_action = eval_result!(lock.lock());
+                    let mut routing_action = lock.lock().unwrap();
+                    *routing_action = actions.clone();
+                    condition_var.notify_all();
+                    if actions.unwrap() == vec![MethodCall::ShutDown] {
+                        break;
+                    }
+                }
+            }
+        }).unwrap();
+
+        (vault_facade, receiver_joiner)
     }
-}
 
+}
 
 #[cfg(test)]
  mod test {
@@ -299,16 +354,7 @@ impl CreatePersonas<VaultFacade> for VaultGenerator {
     use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
     use utils::decode;
-
-    use routing::authority::Authority;
-    use routing::data::{Data, DataRequest};
-    use routing::error::{ResponseError, InterfaceError};
-    use routing::immutable_data::{ImmutableData, ImmutableDataType};
-    use routing::NameType;
-    use routing::node_interface::{ Interface, MethodCall };
-    use routing::sendable::Sendable;
-    use routing::structured_data::StructuredData;
-    use routing::types::*;
+    use routing_types::*;
 
     fn maid_manager_put(vault: &mut VaultFacade, from: SourceAddress,
                         dest: DestinationAddress, im_data: ImmutableData) {

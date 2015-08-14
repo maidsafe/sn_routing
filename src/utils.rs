@@ -21,7 +21,7 @@
 use cbor::{Decoder, Encoder};
 use rustc_serialize::{Decodable, Encodable};
 
-use routing::error::InterfaceError;
+use routing_types::InterfaceError;
 
 pub fn median(mut values: Vec<u64>) -> u64 {
     match values.len() {
