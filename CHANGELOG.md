@@ -1,4 +1,21 @@
 # Routing - Change Log
+### [0.3.1] Implementing internal functionality
+
+- [#582](https://github.com/maidsafe/routing/pull/582) implement routing public api channel to routing_node
+- [#580](https://github.com/maidsafe/routing/pull/580) review message_received in routing_node
+- [#579](https://github.com/maidsafe/routing/pull/579) simplify example to a pure DHT (no client_managers)
+- [#578](https://github.com/maidsafe/routing/pull/578) implement connect request and connect response
+- [#577](https://github.com/maidsafe/routing/pull/577) implement sending events to user
+- [#576](https://github.com/maidsafe/routing/pull/576) implement accumulator as stand-in for sentinel
+- [#575](https://github.com/maidsafe/routing/pull/575) temporarily remove sentinel dependency
+- [#574](https://github.com/maidsafe/routing/pull/574) fix sodiumoxide problems with Travis CI
+- [#573](https://github.com/maidsafe/routing/pull/573) use signature as filter type, deprecating message id
+- [#572](https://github.com/maidsafe/routing/pull/572) implement request network name
+- [#571](https://github.com/maidsafe/routing/pull/571) refactor example to new api
+- [#567](https://github.com/maidsafe/routing/pull/567) implement generic send for signed message
+- [#566](https://github.com/maidsafe/routing/pull/566) implement bootstrap connections in core
+- [#565](https://github.com/maidsafe/routing/pull/565) implement target nodes in core
+- [#564](https://github.com/maidsafe/routing/pull/564) pruning and clean up
 
 ### [0.3.0] Unified Data and refactor for channel interface
 - [MAID-1158](https://maidsafe.atlassian.net/browse/MAID-1158) Unified Data
