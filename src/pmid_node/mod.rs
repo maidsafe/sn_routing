@@ -52,7 +52,7 @@ impl PmidNode {
         if self.chunk_store_.has_disk_space(data.len()) {
             // the type_tag needs to be stored as well
             self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
-            return Ok(vec![MethodCall::Reply { data: Data::ImmutableData(immutable_data) }]);
+            return Ok(vec![MethodCall::Terminate]);
         }
         // TODO: keeps removing sacrificial copies till enough space emptied
         //       if all sacrificial copies removed but still can not satisfy, do not restore

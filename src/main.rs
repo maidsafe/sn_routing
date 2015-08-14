@@ -130,6 +130,9 @@ impl Vault {
                             },
                             MethodCall::Put { destination, content } => {
                                 let _ = self.routing.lock().unwrap().put(destination, content);
+                             },
+                            MethodCall::Reply { data } => {
+                                let _ = self.routing.lock().unwrap().get_response(data);
                             },
                             _ => {}
                         }
@@ -178,6 +181,12 @@ mod test {
         assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), false);
         thread::sleep_ms(5000);
         assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), true);
+
+        let receiver = routing_mutex_clone.lock().unwrap().client_get(im_data.name());
+        for it in receiver.iter() {
+            assert_eq!(it, Data::ImmutableData(im_data));
+            break;
+        }
     }
 
 }
