@@ -145,7 +145,7 @@ impl RoutingNode {
 
                 },
                 Ok(Action::SendContent(to_authority, content)) => {
-                    self.send_content(to_authority, content);
+                    let _ = self.send_content(to_authority, content);
                 },
                 Ok(Action::Terminate) => {
 

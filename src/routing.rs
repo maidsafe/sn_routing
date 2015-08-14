@@ -102,28 +102,28 @@ impl Routing {
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
     pub fn get_request(&self, location : Authority, data_request : DataRequest) {
-        self.action_sender.send(Action::SendContent(
+        let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalRequest(ExternalRequest::Get(data_request))));
     }
 
     /// Add something to the network
     pub fn put_request(&self, location : Authority, data : Data) {
-        self.action_sender.send(Action::SendContent(
+        let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalRequest(ExternalRequest::Put(data))));
     }
 
     /// Change something already on the network
     pub fn post_request(&self, location : Authority, data : Data) {
-        self.action_sender.send(Action::SendContent(
+        let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalRequest(ExternalRequest::Post(data))));
     }
 
     /// Remove something from the network
     pub fn delete_request(&self, location : Authority, data_request : DataRequest) {
-        self.action_sender.send(Action::SendContent(
+        let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalRequest(ExternalRequest::Delete(data_request))));
     }
@@ -132,7 +132,7 @@ impl Routing {
     pub fn get_response(&self, location : Authority,
                                data     : Data,
                                signed_token : Option<SignedToken>) {
-        self.action_sender.send(Action::SendContent(
+        let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(ExternalResponse::Get(data, signed_token))));
     }
@@ -142,7 +142,7 @@ impl Routing {
     pub fn put_response(&self, location       : Authority,
                                response_error : ResponseError,
                                signed_token   : Option<SignedToken>) {
-        self.action_sender.send(Action::SendContent(
+        let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(
                     ExternalResponse::Put(response_error, signed_token))));
@@ -151,7 +151,7 @@ impl Routing {
     pub fn post_response(&self, location       : Authority,
                                 response_error : ResponseError,
                                 signed_token   : Option<SignedToken>) {
-        self.action_sender.send(Action::SendContent(
+        let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(
                     ExternalResponse::Post(response_error, signed_token))));
@@ -160,7 +160,7 @@ impl Routing {
     pub fn delete_response(&self, location       : Authority,
                                   response_error : ResponseError,
                                   signed_token   : Option<SignedToken>) {
-        self.action_sender.send(Action::SendContent(
+        let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(
                     ExternalResponse::Delete(response_error, signed_token))));
