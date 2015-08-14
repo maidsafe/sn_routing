@@ -145,7 +145,7 @@ impl RoutingNode {
 
                 },
                 Ok(Action::SendContent(to_authority, content)) => {
-
+                    let _ = self.send_content(to_authority, content);
                 },
                 Ok(Action::Terminate) => {
 
@@ -722,6 +722,52 @@ impl RoutingNode {
         }
     }
 
+    fn send_content(&self, to_authority : Authority, content : Content) -> RoutingResult {
+        match self.core.our_address() {
+            Address::Node(name) => {
+                let our_authority = {
+                    match self.core.our_authority(& RoutingMessage {
+                        from_authority : Authority::ManagedNode(name),
+                        to_authority   : to_authority.clone(),
+                        content        : content.clone(),
+                        }) {
+                        Some(authority) => authority,
+                        None => Authority::ManagedNode(name),
+                    }
+                };
+                let routing_message = RoutingMessage {
+                    from_authority : our_authority,
+                    to_authority   : to_authority,
+                    content        : content,
+                };
+                match SignedMessage::new(Address::Node(self.core.id().name()),
+                    routing_message, self.core.id().signing_private_key()) {
+                    Ok(signed_message) => ignore(self.send(signed_message)),
+                    Err(e) => return Err(RoutingError::Cbor(e)),
+                };
+                Ok(())
+            },
+            Address::Client(public_key) => {
+                // FIXME (ben 14/08/2015) we need a proper function to retrieve a bootstrap_name
+                let bootstrap_name = match self.get_a_bootstrap_name() {
+                    Some(name) => name,
+                    None => return Err(RoutingError::NotBootstrapped),
+                };
+                let routing_message = RoutingMessage {
+                    from_authority : Authority::Client(bootstrap_name, public_key),
+                    to_authority   : to_authority,
+                    content        : content,
+                };
+                match SignedMessage::new(Address::Client(self.core.id().signing_public_key()),
+                    routing_message, self.core.id().signing_private_key()) {
+                    Ok(signed_message) => ignore(self.send(signed_message)),
+                    Err(e) => return Err(RoutingError::Cbor(e)),
+                };
+                Ok(())
+            },
+        }
+    }
+
     /// Send a SignedMessage out to the destination
     /// 1. if it can be directly relayed to a Client, then it will
     /// 2. if we can forward it to nodes closer to the destination, it will be sent in parallel
@@ -793,6 +839,26 @@ impl RoutingNode {
 
     fn handle_refresh(&mut self, message: RoutingMessage, tag: u64, payload: Vec<u8>) -> RoutingResult {
         unimplemented!()
+    }
+
+    // ------ FIXME -------------------------------------------------------------------------------
+
+    fn get_a_bootstrap_name(&self) -> Option<NameType> {
+        match self.core.bootstrap_endpoints() {
+            Some(bootstrap_peers) => {
+                // TODO (ben 13/08/2015) for now just take the first bootstrap peer as our relay
+                match bootstrap_peers.first() {
+                    Some(bootstrap_peer) => {
+                        match *bootstrap_peer.identity() {
+                            ConnectionName::Bootstrap(bootstrap_name) => Some(bootstrap_name),
+                            _ => None,
+                        }
+                    },
+                    None => None,
+                }
+            },
+            None => None,
+        }
     }
 }
 
