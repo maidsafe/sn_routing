@@ -129,41 +129,48 @@ impl Routing {
     }
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_token.
-    pub fn get_response(&self, location : Authority,
-                               data     : Data,
+    pub fn get_response(&self, location     : Authority,
+                               data         : Data,
+                               orig_request : ExternalRequest,
                                signed_token : Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
-                Content::ExternalResponse(ExternalResponse::Get(data, signed_token))));
+                Content::ExternalResponse(
+                    ExternalResponse::Get(data, orig_request, signed_token))));
     }
     // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error fn instead
     // Also these shoudl return an error so if not yet a node they fail (if clients try and call for instance) :09/08/2015
     /// response error to a put request
     pub fn put_response(&self, location       : Authority,
                                response_error : ResponseError,
+                               orig_request   : ExternalRequest,
                                signed_token   : Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(
-                    ExternalResponse::Put(response_error, signed_token))));
+                    ExternalResponse::Put(response_error, orig_request, signed_token))));
     }
     /// Response error to a post request
     pub fn post_response(&self, location       : Authority,
                                 response_error : ResponseError,
+                                orig_request   : ExternalRequest,
                                 signed_token   : Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(
-                    ExternalResponse::Post(response_error, signed_token))));
+                    ExternalResponse::Post(response_error, orig_request, signed_token))));
     }
     /// response error to a delete respons
     pub fn delete_response(&self, location       : Authority,
                                   response_error : ResponseError,
+                                  orig_request   : ExternalRequest,
                                   signed_token   : Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(
-                    ExternalResponse::Delete(response_error, signed_token))));
+                    ExternalResponse::Delete(response_error,
+                                             orig_request,
+                                             signed_token))));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
