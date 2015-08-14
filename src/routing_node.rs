@@ -113,10 +113,14 @@ impl RoutingNode {
 
     pub fn run(&mut self) {
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+        debug!("RoutingNode started running and started bootstrap");
         loop {
             match self.crust_receiver.recv() {
-                Err(_) => {},
+                Err(_) => {
+debug!("New CRUST event: error");
+                  },
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+debug!("New CRUST event: message");
                     match decode::<SignedMessage>(&bytes) {
                         Ok(message) => {
                             // handle SignedMessage for any identified endpoint
@@ -152,7 +156,7 @@ impl RoutingNode {
                     let _ = self.send_content(to_authority, content);
                 },
                 Ok(Action::Terminate) => {
-
+                    unimplemented!()
                 },
             }
         }
@@ -161,6 +165,7 @@ impl RoutingNode {
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, endpoint : Endpoint) {
+        debug!("New connection on {:?}", endpoint);
         // only accept new connections if we are a full node
         let has_bootstrap_endpoints = self.core.has_bootstrap_endpoints();
         if !self.core.is_node() {
@@ -189,10 +194,13 @@ impl RoutingNode {
     }
 
     fn handle_new_bootstrap_connection(&mut self, endpoint : Endpoint) {
+        debug!("New bootstrap connection on {:?}", endpoint);
         if !self.core.is_node() {
             if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), true),
                 endpoint.clone(), None) {
                 // only fails if relay_map is full for unidentified connections
+                error!("New bootstrap connection on {:?} failed to be labeled as unidentified",
+                    endpoint);
                 self.connection_manager.drop_node(endpoint.clone());
                 return;
             }
@@ -210,6 +218,8 @@ impl RoutingNode {
         let message = try!(encode(&Hello {
             address   : self.core.our_address(),
             public_id : PublicId::new(self.core.id())}));
+        debug!("Said hello I am {:?} with {:?}", self.core.our_address(),
+            PublicId::new(self.core.id()));
         ignore(self.connection_manager.send(endpoint, message));
         Ok(())
     }
