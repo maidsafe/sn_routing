@@ -30,8 +30,10 @@ use lru_time_cache::LruCache;
 
 use action::Action;
 use event::Event;
+use immutable_data::{ImmutableData, ImmutableDataType};
 use NameType;
 use name_type::{closer_to_target_or_equal};
+use plain_data::PlainData;
 use routing_core::{RoutingCore, ConnectionName};
 use id::Id;
 use public_id::PublicId;
@@ -65,19 +67,21 @@ static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 /// Routing Node
 pub struct RoutingNode {
     // for CRUST
-    crust_receiver      : mpsc::Receiver<crust::Event>,
-    connection_manager  : crust::ConnectionManager,
-    accepting_on        : Vec<crust::Endpoint>,
-    bootstraps          : BTreeMap<Endpoint, Option<NameType>>,
+    crust_receiver       : mpsc::Receiver<crust::Event>,
+    connection_manager   : crust::ConnectionManager,
+    accepting_on         : Vec<crust::Endpoint>,
+    bootstraps           : BTreeMap<Endpoint, Option<NameType>>,
     // for RoutingNode
-    action_sender       : mpsc::Sender<Action>,
-    action_receiver     : mpsc::Receiver<Action>,
-    event_sender        : mpsc::Sender<Event>,
-    filter              : MessageFilter<types::FilterType>,
-    core                : RoutingCore,
-    public_id_cache     : LruCache<NameType, PublicId>,
-    connection_cache    : BTreeMap<NameType, SteadyTime>,
-    accumulator         : MessageAccumulator,
+    action_sender        : mpsc::Sender<Action>,
+    action_receiver      : mpsc::Receiver<Action>,
+    event_sender         : mpsc::Sender<Event>,
+    filter               : MessageFilter<types::FilterType>,
+    core                 : RoutingCore,
+    public_id_cache      : LruCache<NameType, PublicId>,
+    connection_cache     : BTreeMap<NameType, SteadyTime>,
+    accumulator          : MessageAccumulator,
+    immutable_data_cache : LruCache<NameType, Data>,
+    plain_data_cache     : LruCache<NameType, Data>,
     // refresh_accumulator : RefreshAccumulator,
 }
 
@@ -92,18 +96,20 @@ impl RoutingNode {
         let accepting_on = cm.get_own_endpoints();
 
         Ok(RoutingNode {
-            crust_receiver      : crust_receiver,
-            connection_manager  : cm,
-            accepting_on        : accepting_on,
-            bootstraps          : BTreeMap::new(),
-            action_sender       : action_sender,
-            action_receiver     : action_receiver,
-            event_sender        : event_sender.clone(),
-            filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
-            core                : RoutingCore::new(event_sender),
-            public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
-            connection_cache    : BTreeMap::new(),
-            accumulator         : MessageAccumulator::new(),
+            crust_receiver       : crust_receiver,
+            connection_manager   : cm,
+            accepting_on         : accepting_on,
+            bootstraps           : BTreeMap::new(),
+            action_sender        : action_sender,
+            action_receiver      : action_receiver,
+            event_sender         : event_sender.clone(),
+            filter               : MessageFilter::with_expiry_duration(Duration::minutes(20)),
+            core                 : RoutingCore::new(event_sender),
+            public_id_cache      : LruCache::with_expiry_duration(Duration::minutes(10)),
+            connection_cache     : BTreeMap::new(),
+            accumulator          : MessageAccumulator::new(),
+            immutable_data_cache : LruCache::with_expiry_duration(Duration::minutes(10)),
+            plain_data_cache     : LruCache::with_expiry_duration(Duration::minutes(10))
         })
     }
 
@@ -835,6 +841,64 @@ impl RoutingNode {
                                   find_group_response: Vec<PublicId>,
                                   refresh_our_own_group: bool) -> RoutingResult {
         unimplemented!()
+    }
+
+    fn handle_cache_get(&mut self, request : ExternalRequest,
+                                   from_authority : Authority, response_token : SignedToken)
+         -> RoutingResult {
+        let response_data = match request {
+            ExternalRequest::Get(data_request) => {
+                match data_request {
+                    DataRequest::StructuredData(_, _) =>
+                        return Err(From::from(ResponseError::NoData)),
+                    DataRequest::ImmutableData(data_name, _) => {
+                        match self.immutable_data_cache.get(&data_name) {
+                            Some(ref data) => (*data).clone(),
+                            _ => return Err(From::from(ResponseError::NoData)),
+                        }
+                    }
+                    DataRequest::PlainData(data_name) =>
+                    match self.plain_data_cache.get(&data_name) {
+                        Some(ref data) => (*data).clone(),
+                        _ => return Err(From::from(ResponseError::NoData)),
+                    }
+                }
+            },
+            _ => return Err(From::from(ResponseError::NoData)),
+        };
+
+        let routing_message = RoutingMessage {
+            from_authority : Authority::ManagedNode(self.core.id().name()),
+            to_authority   : Authority::ManagedNode(from_authority.get_location().clone()),
+            content        : Content::ExternalResponse(
+                ExternalResponse::Get(response_data, response_token)
+            ),
+        };
+
+        match SignedMessage::new(Address::Node(self.core.id().name()),
+            routing_message, self.core.id().signing_private_key()) {
+                Ok(signed_message) => ignore(self.send(signed_message)),
+                Err(e) => return Err(RoutingError::Cbor(e)),
+            };
+        Ok(())
+    }
+
+    fn handle_cache_put(&mut self, request : ExternalRequest) -> RoutingResult {
+        match request {
+            ExternalRequest::Put(data) => {
+                match data {
+                    Data::ImmutableData(ref immutable_data) => {
+                        self.immutable_data_cache.add(immutable_data.name(), data.clone());
+                    },
+                    Data::PlainData(ref plain_data) => {
+                        self.plain_data_cache.add(plain_data.name(), data.clone());
+                    },
+                    _ => {}
+                }
+            },
+            _ => {}
+        };
+        Ok(())
     }
 }
 
