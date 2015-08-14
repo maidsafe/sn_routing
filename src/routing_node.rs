@@ -820,22 +820,23 @@ impl RoutingNode {
                                        to_authority   : Authority,
                                        from_authority : Authority) -> RoutingResult {
 
-        let orig_request_msg = try!(response.get_orig_request());
-
-        if !orig_request_msg.verify_signature(&self.core.id().signing_public_key()) {
-            return Err(RoutingError::FailedSignature)
-        }
-
-        let orig_request = match orig_request_msg.get_routing_message().content {
-            Content::ExternalRequest(ref request) => request.clone(),
-            _ => return Err(RoutingError::UnknownMessageType)
+        // Request token is only set if it came from a non-group entity.
+        // If it came from a group, then sentinel guarantees message validity.
+        let has_invalid_signature = {
+            if let &Some(ref token) = response.get_signed_token() {
+                !token.verify_signature(&self.core.id().signing_public_key())
+            }
+            else { false }
         };
+
+        if has_invalid_signature {
+            return Err(RoutingError::FailedSignature);
+        }
 
         self.send_to_user(Event::Response {
             response       : response,
             our_authority  : to_authority,
             from_authority : from_authority,
-            orig_request   : orig_request,
         });
 
         Ok(())
