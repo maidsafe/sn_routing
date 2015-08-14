@@ -20,6 +20,7 @@
 pub mod mock_routing_types;
 
 use std::io::{Read, Write};
+use sodiumoxide::crypto;
 
 use self::mock_routing_types::*;
 
@@ -103,6 +104,29 @@ impl RoutingVaultMock {
     #[allow(dead_code)]
     pub fn set_network_delay_for_delay_simulation(&mut self, delay_ms: u32) {
         self.network_delay_ms = delay_ms;
+    }
+
+    pub fn client_put(&mut self, client_address: NameType,
+                      client_pub_key: crypto::sign::PublicKey, data: Data) {
+        let delay_ms = self.network_delay_ms;
+        let cloned_sender = self.sender.clone();
+        ::std::thread::spawn(move || {
+            ::std::thread::sleep_ms(delay_ms);
+            let _ = cloned_sender.send(RoutingMessage::HandlePut(Authority::ClientManager(client_address),
+                                                                 Authority::ManagedClient(client_pub_key),
+                                                                 SourceAddress::RelayedForClient(client_address, client_pub_key),
+                                                                 DestinationAddress::Direct(data.name()),
+                                                                 data));
+        });
+    }
+
+    pub fn has_chunk(&mut self, name: NameType) -> bool {
+        let data_store_wrapped = get_storage();
+        let data_store = data_store_wrapped.lock().unwrap();
+        match data_store.get(&name) {
+            Some(raw_data) => true,
+            None => false,
+        }
     }
 
     pub fn get(&mut self, location: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
