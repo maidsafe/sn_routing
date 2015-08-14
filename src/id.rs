@@ -54,7 +54,7 @@ impl Id {
     }
 
     pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
-                     encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey))-> Id {
+                     encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey)) -> Id {
         let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0);
         Id {
           sign_keys : sign_keys,
