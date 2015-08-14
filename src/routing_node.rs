@@ -240,6 +240,19 @@ impl RoutingNode {
                     None => None,
                     Some(relay_connection_name) => Some(relay_connection_name),
                 };
+                // now that it's not a routing connection, remove it from the relay map
+                let dropped_peer = match &old_identity {
+                    &Some(ConnectionName::Routing(_)) => unreachable!(),
+                    // drop any relay connection in favour of the routing connection
+                    &Some(ref old_connection_name) => {
+                        self.core.drop_peer(old_connection_name)
+                    },
+                    &None => None,
+                };
+                // construct the new identity from Hello
+                // FIXME (ben 14/08/2015) temporary copy until Debug is
+                // implemented for ConnectionName
+                let hello_address = hello.address.clone();
                 let new_identity = match (hello.address, self.core.our_address()) {
                     (Address::Node(his_name), Address::Node(our_name)) => {
                     // He is a node, and we are a node, establish a routing table connection
@@ -250,10 +263,14 @@ impl RoutingNode {
                     },
                     (Address::Client(his_public_key), Address::Node(our_name)) => {
                     // He is a client, we are a node, establish a relay connection
+                        debug!("Connection {:?} will be labeled as a relay to {:?}",
+                            endpoint, Address::Client(his_public_key));
                         ConnectionName::Relay(Address::Client(his_public_key))
                     },
                     (Address::Node(his_name), Address::Client(our_public_key)) => {
                     // He is a node, we are a client, establish a bootstrap connection
+                        debug!("Connection {:?} will be labeled as a bootstrap node name {:?}",
+                            endpoint, his_name);
                         ConnectionName::Bootstrap(his_name)
                     },
                     (Address::Client(his_public_key), Address::Client(our_public_key)) => {
