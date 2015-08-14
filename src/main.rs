@@ -150,37 +150,34 @@ pub fn main () {
     vault.run();
 }
 
-// #[cfg(test)]
-// mod test {
-//     use super::*;
-//     use std::thread;
-//     use std::thread::spawn;
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::thread;
+    use std::thread::spawn;
+    use sodiumoxide::crypto;
 
-//     #[test]
-//     fn lib_test() {
-//         let run_vault = |mut vault: Vault| {
-//             spawn(move || {
-//                 match vault.routing_node.run() {
-//                     Err(err) => panic!("Could not connect to the network with error : {:?}", err),
-//                     _ => {}
-//                 }
-//                 let thread_guard = spawn(move || {
-//                     loop {
-//                         thread::sleep_ms(1);
-//                     }
-//                 });
-//                 let _ = thread_guard.join();
-//             })
-//         };
-//         // The performance of get RoutingTable fully populated among certain amount of nodes is machine dependent
-//         // The stable duration needs to be increased dramatically along with the increase of the total node numbers.
-//         // for example, you may need i * 1500 when increase total nodes from 8 to 9
-//         // The first node must be run in membrane mode
-//         for i in 0..8 {
-//             let _ = run_vault(Vault::new());
-//             thread::sleep_ms(1000 + i * 1000);
-//         }
-//         thread::sleep_ms(10000);
-//     }
+    use routing_types::*;
 
-// }
+    #[test]
+    fn lib_test() {
+        let run_vault = |mut vault: Vault| {
+            let thread_guard = spawn(move || {
+                vault.run();
+            });
+        };
+        let mut vault = Vault::new();
+        let routing_mutex_clone = vault.routing.clone();
+        let _ = run_vault(vault);
+        let client_name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
+        let sign_keys =  crypto::sign::gen_keypair();
+        let value = generate_random_vec_u8(1024);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        routing_mutex_clone.lock().unwrap().client_put(client_name, sign_keys.0,
+                                                       Data::ImmutableData(im_data.clone()));
+        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), false);
+        thread::sleep_ms(5000);
+        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), true);
+    }
+
+}

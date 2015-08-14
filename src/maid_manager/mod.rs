@@ -39,7 +39,7 @@ impl MaidManager {
     pub fn handle_put(&mut self, from: &NameType,
                       data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
         if self.db_.put_data(from, data.payload_size() as u64) {
-            Ok(vec![MethodCall::Forward { destination: data.name() }])
+            Ok(vec![MethodCall::Put { destination: data.name(), content: data }])
         } else {
             Err(From::from(ResponseError::InvalidRequest))
         }
