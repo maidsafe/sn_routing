@@ -150,7 +150,7 @@ debug!("New CRUST event: message");
             match self.action_receiver.try_recv() {
                 Err(_) => {},
                 Ok(Action::SendMessage(signed_message)) => {
-
+                    ignore(self.message_received(signed_message));
                 },
                 Ok(Action::SendContent(to_authority, content)) => {
                     let _ = self.send_content(to_authority, content);
@@ -158,7 +158,7 @@ debug!("New CRUST event: message");
                 Ok(Action::Terminate) => {
                     unimplemented!()
                 },
-            }
+            };
         }
     }
 
@@ -190,6 +190,7 @@ debug!("New CRUST event: message");
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
+        error!("Lost connection on {:?}, but CORE IS NOT UPDATED!", endpoint);
         //unimplemented!()
     }
 
@@ -206,6 +207,8 @@ debug!("New CRUST event: message");
             }
         } else {
             // if core is a full node, don't accept new bootstrap connections
+            error!("New bootstrap connection on {:?} but we are a node",
+                endpoint);
             self.connection_manager.drop_node(endpoint);
             return;
         }
@@ -218,8 +221,7 @@ debug!("New CRUST event: message");
         let message = try!(encode(&Hello {
             address   : self.core.our_address(),
             public_id : PublicId::new(self.core.id())}));
-        debug!("Said hello I am {:?} with {:?}", self.core.our_address(),
-            PublicId::new(self.core.id()));
+        debug!("Saying hello I am {:?} on {:?}", self.core.our_address(), endpoint);
         ignore(self.connection_manager.send(endpoint, message));
         Ok(())
     }
@@ -228,7 +230,7 @@ debug!("New CRUST event: message");
         -> RoutingResult {
         match decode::<Hello>(&serialised_message) {
             Ok(hello) => {
-                debug!("Hello on {:?}, I am {:?}", endpoint, hello.address);
+                debug!("Hello, it is {:?} on {:?}", hello.address, endpoint);
                 let old_identity = match self.core.lookup_endpoint(&endpoint) {
                     // if already connected through the routing table, just confirm or destroy
                     Some(ConnectionName::Routing(known_name)) => {
@@ -253,7 +255,7 @@ debug!("New CRUST event: message");
                 // now that it's not a routing connection, remove it from the relay map
                 let dropped_peer = match &old_identity {
                     &Some(ConnectionName::Routing(_)) => unreachable!(),
-                    // drop any relay connection in favour of the routing connection
+                    // drop any relay connection in favour of new to-be-determined identity
                     &Some(ref old_connection_name) => {
                         self.core.drop_peer(old_connection_name)
                     },
@@ -263,18 +265,32 @@ debug!("New CRUST event: message");
                 // FIXME (ben 14/08/2015) temporary copy until Debug is
                 // implemented for ConnectionName
                 let hello_address = hello.address.clone();
+                // if set to true we will take the initiative to drop the connection,
+                // if refused from core
+                let mut alpha = false;
                 let new_identity = match (hello.address, self.core.our_address()) {
                     (Address::Node(his_name), Address::Node(our_name)) => {
                     // He is a node, and we are a node, establish a routing table connection
                     // FIXME (ben 11/08/2015) we need to check his PublicId against the network
                     // but this requires an additional RFC so currently leave out such check
                     // refer to https://github.com/maidsafe/routing/issues/387
+                        alpha = match self.core.lookup_name(&his_name) {
+                            Some(ConnectionName::Routing(_)) => {
+                                // the new identity will be refused from core
+                                // as he is already present in the routing_table
+                                // with a different endpoint.  The closest name to zero is alpha
+                                &self.core.id().name() < &his_name
+                            },
+                            _ => false,
+                        };
                         ConnectionName::Routing(his_name)
+
                     },
                     (Address::Client(his_public_key), Address::Node(our_name)) => {
                     // He is a client, we are a node, establish a relay connection
                         debug!("Connection {:?} will be labeled as a relay to {:?}",
                             endpoint, Address::Client(his_public_key));
+                        alpha = true;
                         ConnectionName::Relay(Address::Client(his_public_key))
                     },
                     (Address::Node(his_name), Address::Client(our_public_key)) => {
@@ -453,6 +469,8 @@ debug!("New CRUST event: message");
 
     fn request_network_name(&mut self, bootstrap_name : &NameType,
         bootstrap_endpoint : &Endpoint) -> RoutingResult {
+        debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
+            bootstrap_endpoint);
         // if RoutingNode is restricted from becoming a node,
         // it suffices to never request a network name.
         if self.client_restriction { return Ok(()) }
@@ -481,6 +499,7 @@ debug!("New CRUST event: message");
             InternalRequest::RequestNetworkName(public_id) => {
                 match (from_authority, &to_authority) {
                     (Authority::Client(_, public_key), &Authority::NaeManager(name)) => {
+                        debug!("Got a request for a network name ");
                         let mut network_public_id = public_id.clone();
                         match self.core.our_close_group() {
                             Some(close_group) => {

@@ -63,7 +63,10 @@ impl Routing {
         let mut routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
             event_sender, false);
 
-        spawn(move || routing_node.run());
+        spawn(move || {
+            routing_node.run();
+            debug!("Routing node terminated running.");
+        });
 
         Ok(Routing {
             action_sender : action_sender,
@@ -88,7 +91,10 @@ impl Routing {
           let mut routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
               event_sender, true);
 
-          spawn(move || routing_node.run());
+          spawn(move || {
+              routing_node.run();
+              debug!("Routing node terminated running.");
+          });
 
           Ok(Routing {
               action_sender : action_sender,
