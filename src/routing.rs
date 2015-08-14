@@ -73,7 +73,9 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will only bootstrap to the network and not attempt to
     /// achieve full routing node status.
-    // TODO(dirvine) take an Id as a param to sign messages ???? (or amend put etc. for a client put_request to take reference to a particular ID for sign/encryt, we should be already bootstrapped anyway with the new() call :09/08/2015
+    // TODO(dirvine) take an Id as a param to sign messages ???? (or amend put etc. for a client
+    // put_request to take reference to a particular ID for sign/encryt, we should be already
+    // bootstrapped anyway with the new() call :09/08/2015
     // FIXME(dirvine) discussion required :09/08/2015
 
     pub fn new_client(event_sender : mpsc::Sender<Event>)
@@ -169,7 +171,8 @@ impl Routing {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
     pub fn refresh_request(&self, type_tag: u64, from_group: NameType, content: Bytes) {
-        unimplemented!()
+        // unimplemented!()
+        // TODO (ben 14/08/2015) ignore refresh calls for now
     }
 
     /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
