@@ -117,10 +117,8 @@ impl RoutingNode {
         loop {
             match self.crust_receiver.recv() {
                 Err(_) => {
-debug!("New CRUST event: error");
-                  },
+                },
                 Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-debug!("New CRUST event: message");
                     match decode::<SignedMessage>(&bytes) {
                         Ok(message) => {
                             // handle SignedMessage for any identified endpoint
