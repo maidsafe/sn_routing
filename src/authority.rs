@@ -19,11 +19,13 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use routing_table::RoutingTable;
 use NameType;
 use sodiumoxide::crypto;
+use std::fmt::{Debug, Formatter, Error};
+
 use messages::{RoutingMessage, Content,
                ExternalRequest, ExternalResponse,
                InternalRequest, InternalResponse};
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Hash)]
+#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
 pub enum Authority {
     ClientManager(NameType),  // signed by a client and corresponding ClientName is in our range
     NaeManager(NameType),     // we are responsible for this element
@@ -53,6 +55,24 @@ impl Authority {
             &Authority::NodeManager(ref loc)   => loc,
             &Authority::ManagedNode(ref loc)   => loc,
             &Authority::Client(ref loc, _)     => loc,
+        }
+    }
+}
+
+impl Debug for Authority {
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
+        match self {
+            &Authority::ClientManager(ref name) => {
+                formatter.write_str(&format!("ClientManager(name:{:?})", name))},
+            &Authority::NaeManager(ref name)    => {
+                formatter.write_str(&format!("NaeManager(name:{:?})", name))},
+            &Authority::NodeManager(ref name)   => {
+                formatter.write_str(&format!("NodeManager(name:{:?})", name))},
+            &Authority::ManagedNode(ref name)   => {
+                formatter.write_str(&format!("ManagedNode(name:{:?})", name))},
+            &Authority::Client(ref relay, ref public_key)  => {
+                formatter.write_str(&format!("Client(relay:{:?}, public_key:{:?})",
+                relay, NameType::new(crypto::hash::sha512::hash(&public_key[..]).0)))},
         }
     }
 }
