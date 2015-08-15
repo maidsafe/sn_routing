@@ -128,10 +128,10 @@ impl Routing {
     }
 
     /// Remove something from the network
-    pub fn delete_request(&self, location : Authority, data_request : DataRequest) {
+    pub fn delete_request(&self, location : Authority, data : Data) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
-                Content::ExternalRequest(ExternalRequest::Delete(data_request))));
+                Content::ExternalRequest(ExternalRequest::Delete(data))));
     }
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_token.
