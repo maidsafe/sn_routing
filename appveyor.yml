@@ -1,0 +1,35 @@
+install:
+  - ps: Start-FileDownload "https://raw.githubusercontent.com/carllerche/travis-rust-matrix/master/install.ps1"; . .\install.ps1
+  - ps: if($PLATFORM -eq 'x86') {
+          Start-FileDownload "https://gitlab.com/Fraser999/Dependencies/raw/master/bin/i686-pc-windows-gnu/libsodium.a";
+          mkdir .\bin\i686-pc-windows-gnu;
+          move libsodium.a .\bin\i686-pc-windows-gnu;
+        }
+  - ps: if($PLATFORM -eq 'x64') {
+          Start-FileDownload "https://gitlab.com/Fraser999/Dependencies/raw/master/bin/x86_64-pc-windows-gnu/libsodium.a";
+          mkdir .\bin\x86_64-pc-windows-gnu;
+          move libsodium.a .\bin\x86_64-pc-windows-gnu;
+        }
+
+platform:
+  - x86
+  - x64
+
+configuration:
+#  - Debug
+  - Release
+
+environment:
+  matrix:
+#    - RUST_VERSION: 1.1.0
+#    - RUST_VERSION: beta
+    - RUST_VERSION: nightly
+
+build: false
+
+test_script:
+  - ps: if ($env:CONFIGURATION -eq "Release") {
+          $env:config_flags = "--release"
+        }
+  - cargo build --verbose %config_flags%
+  - cargo test --verbose

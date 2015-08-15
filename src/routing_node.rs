@@ -61,7 +61,6 @@ use message_accumulator::MessageAccumulator;
 type RoutingResult = Result<(), RoutingError>;
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
-
 /// Routing Node
 pub struct RoutingNode {
     // for CRUST
@@ -123,8 +122,9 @@ impl RoutingNode {
                         Ok(message) => {
                             // handle SignedMessage for any identified endpoint
                             match self.core.lookup_endpoint(&endpoint) {
-                                Some(ConnectionName::Unidentified(_, _)) => {},
-                                None => {},
+                                Some(ConnectionName::Unidentified(_, _)) => debug!("message
+                                from unidentified connection"),
+                                None => debug!("message from unknown endpoint"),
                                 _ => ignore(self.message_received(message)),
                             };
                         },
@@ -154,7 +154,9 @@ impl RoutingNode {
                     let _ = self.send_content(to_authority, content);
                 },
                 Ok(Action::Terminate) => {
-                    unimplemented!()
+                    debug!("routing node termianted");
+                    self.connection_manager.stop();
+                    break;
                 },
             };
         }
