@@ -179,8 +179,7 @@ impl Routing {
 
     /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
     /// messages.  After handling all messages it will send an Event::Terminated to the user.
-    // TODO(dirvine) This maybe should be implementing  aDrop trait  :09/08/2015
     pub fn stop(&mut self) {
-        unimplemented!()
+        let _ = self.action_sender.send(Action::Terminate);
     }
 }
