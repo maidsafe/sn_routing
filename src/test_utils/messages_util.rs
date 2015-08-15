@@ -49,8 +49,6 @@ impl Random for messages::ConnectRequest {
         messages::ConnectRequest {
             local_endpoints: random_endpoints(),
             external_endpoints: random_endpoints(),
-            requester_id: Random::generate_random(),
-            receiver_id: Random::generate_random(),
             requester_fob: Random::generate_random(),
         }
     }
@@ -60,15 +58,9 @@ impl Random for messages::ConnectResponse {
     fn generate_random() -> messages::ConnectResponse {
 
         messages::ConnectResponse {
-            requester_local_endpoints: random_endpoints(),
-            requester_external_endpoints: random_endpoints(),
-            receiver_local_endpoints: random_endpoints(),
-            receiver_external_endpoints: random_endpoints(),
-            requester_id: Random::generate_random(),
-            receiver_id: Random::generate_random(),
+            local_endpoints: random_endpoints(),
+            external_endpoints: random_endpoints(),
             receiver_fob: Random::generate_random(),
-            serialised_connect_request: types::generate_random_vec_u8(64),
-            connect_request_signature: crypto::sign::Signature([0; 64]),
         }
     }
 }
