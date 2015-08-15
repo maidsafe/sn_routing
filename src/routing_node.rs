@@ -154,7 +154,8 @@ impl RoutingNode {
                     let _ = self.send_content(to_authority, content);
                 },
                 Ok(Action::Terminate) => {
-                    unimplemented!()
+                    self.connection_manager.stop();
+                    break;
                 },
             };
         }
