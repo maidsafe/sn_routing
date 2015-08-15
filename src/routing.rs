@@ -31,14 +31,7 @@ use types::Bytes;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use sodiumoxide::crypto;
-use messages::{ExternalRequest, ExternalResponse, Content};
-
-//use types::{MessageId, Address};
-//use utils::{encode, decode};
-//use authority::{Authority};
-//use messages::{RoutingMessage, SignedMessage, MessageType};
-//use error::{RoutingError};
-//use std::collections::BTreeMap;
+use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -64,6 +57,7 @@ impl Routing {
             event_sender, false);
 
         spawn(move || {
+            debug!("started routing run()");
             routing_node.run();
             debug!("Routing node terminated running.");
         });
@@ -76,11 +70,6 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will only bootstrap to the network and not attempt to
     /// achieve full routing node status.
-    // TODO(dirvine) take an Id as a param to sign messages ???? (or amend put etc. for a client
-    // put_request to take reference to a particular ID for sign/encryt, we should be already
-    // bootstrapped anyway with the new() call :09/08/2015
-    // FIXME(dirvine) discussion required :09/08/2015
-
     pub fn new_client(event_sender : mpsc::Sender<Event>)
         -> Result<Routing, RoutingError> {
           sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
@@ -144,8 +133,6 @@ impl Routing {
                 Content::ExternalResponse(
                     ExternalResponse::Get(data, orig_request, signed_token))));
     }
-    // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error fn instead
-    // Also these shoudl return an error so if not yet a node they fail (if clients try and call for instance) :09/08/2015
     /// response error to a put request
     pub fn put_response(&self, location       : Authority,
                                response_error : ResponseError,
@@ -184,8 +171,10 @@ impl Routing {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
     pub fn refresh_request(&self, type_tag: u64, from_group: NameType, content: Bytes) {
-        // unimplemented!()
-        // TODO (ben 14/08/2015) ignore refresh calls for now
+        let _ = self.action_sender.send(Action::SendContent(
+                Authority::ManagedNode(from_group),
+                Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
+
     }
 
     /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
