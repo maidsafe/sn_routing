@@ -60,10 +60,6 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 pub static GROUP_SIZE: usize = 8;
 pub static QUORUM_SIZE: usize = 6;
 
-pub trait Mergeable {
-    fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
-}
-
 pub type MessageId = u32;
 pub type NodeAddress = NameType; // (Address, NodeTag)
 pub type FromAddress = NameType; // (Address, NodeTag)
