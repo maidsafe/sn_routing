@@ -168,18 +168,18 @@ impl RoutingNode {
         debug!("New connection on {:?}", endpoint);
         // only accept new connections if we are a full node
         // FIXME(dirvine) I am not sure we should not accept connections here :16/08/2015
-        // let has_bootstrap_endpoints = self.core.has_bootstrap_endpoints();
-        // if !self.core.is_node() {
-        //     if has_bootstrap_endpoints {
-        //         // we are bootstrapping, refuse all normal connections
-        //         self.connection_manager.drop_node(endpoint);
-        //         return;
-        //     } else {
-        //         let assigned_name = NameType::new(crypto::hash::sha512::hash(
-        //             &self.core.id().name().0).0);
-        //         let _ = self.core.assign_name(&assigned_name);
-        //     }
-        // }
+        let has_bootstrap_endpoints = self.core.has_bootstrap_endpoints();
+        if !self.core.is_node() {
+            if has_bootstrap_endpoints {
+                // we are bootstrapping, refuse all normal connections
+                self.connection_manager.drop_node(endpoint);
+                return;
+            } else {
+                let assigned_name = NameType::new(crypto::hash::sha512::hash(
+                    &self.core.id().name().0).0);
+                let _ = self.core.assign_name(&assigned_name);
+            }
+        }
 
         if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), false),
             endpoint.clone(), None) {
@@ -193,9 +193,7 @@ impl RoutingNode {
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
         error!("Lost connection on {:?}", endpoint);
         let connection_name = self.core.lookup_endpoint(&endpoint); 
-          match connection_name {
-          Some(ref name)  => self.core.drop_peer(&name),
-          _ => () };
+          if connection_name.is_some() { self.core.drop_peer(&connection_name.unwrap()); }
     }
 
     fn handle_new_bootstrap_connection(&mut self, endpoint : Endpoint) {
