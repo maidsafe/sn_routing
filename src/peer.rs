@@ -27,7 +27,7 @@ use public_id::PublicId;
 /// Peer enables multiple endpoints per peer in the network.
 /// It currently wraps around crust::endpoint, and will be extended to enable multiple
 /// endpoints, merging, comparing and other functionality.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub struct Peer {
     identity            : ConnectionName,
     //                    ~~|~~~~~~~~~~~
