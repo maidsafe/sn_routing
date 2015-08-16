@@ -396,8 +396,8 @@ impl RoutingNode {
         // filter check
         if self.filter.check(message_wrap.signature()) {
             // should just return quietly
-            debug!("FILTER BLOCKED message {:?} from {:?} to {:?}", message.content,
-                message.source(), message.destination());
+            debug!("FILTER BLOCKED message {:?} from {:?} to {:?}",
+                message, message.source(), message.destination());
             return Err(RoutingError::FilterCheckFailed);
         }
         debug!("message {:?} from {:?} to {:?}", message.content,
@@ -657,6 +657,8 @@ impl RoutingNode {
                         our_public_id.set_name(network_public_id.name());
                         if our_public_id != network_public_id { return Err(RoutingError::BadAuthority); };
                         let _ = self.core.assign_network_name(&network_public_id.name());
+                        debug!("Assigned network name {:?} and our address now is {:?}",
+                            network_public_id.name(), self.core.our_address());
                         for peer in group {
                             // TODO (ben 12/08/2015) self.public_id_cache.insert()
                             // or hold off till RFC on removing public_id_cache
@@ -897,7 +899,7 @@ impl RoutingNode {
         let bytes = try!(encode(&signed_message));
         // query the routing table for parallel or swarm
         let endpoints = self.core.target_endpoints(&destination);
-        debug!("Sending to {:?} routing table connections", endpoints.len());
+        debug!("Sending to {:?} target connection(s)", endpoints.len());
         if !endpoints.is_empty() {
             for endpoint in endpoints {
                 // TODO(ben 10/08/2015) drop endpoints that fail to send
