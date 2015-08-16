@@ -307,6 +307,8 @@ impl RoutingNode {
                 let confirmed = match hello.confirmed_you {
                     Some(address) => {
                         if self.core.is_us(&address) {
+                            debug!("This hello message successfully confirmed our address, {:?}",
+                                address);
                             true
                         } else {
                             self.connection_manager.drop_node(endpoint.clone());
@@ -333,6 +335,12 @@ impl RoutingNode {
                         debug!("Added {:?} to the core on {:?}", hello_address, endpoint);
                         if alpha {
                             ignore(self.send_hello(endpoint.clone(), Some(hello_address)));
+                        };
+                        match new_identity {
+                            ConnectionName::Bootstrap(bootstrap_name) => {
+                                ignore(self.request_network_name(&bootstrap_name, endpoint));
+                            },
+                            _ => {},
                         };
                     } else {
                         // depending on the identity of the connection, follow the rules on dropping
