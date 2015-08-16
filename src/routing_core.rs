@@ -184,6 +184,7 @@ impl RoutingCore {
                         let trigger_churn = routing_table
                             .address_in_our_close_group_range(&name);
                         routing_table.drop_node(&name);
+                        info!("RT({:?}) dropped node {:?}", routing_table.size(), name);
                         if trigger_churn {
                             let mut close_group : Vec<NameType> = routing_table
                                     .our_close_group().iter()
@@ -218,6 +219,8 @@ impl RoutingCore {
                                     vec![endpoint.clone()], Some(endpoint));
                                 // TODO (ben 10/08/2015) drop connection of dropped node
                                 let (added, _) = routing_table.add_node(node_info);
+                                if added { info!("RT({:?}) added {:?}", routing_table.size(),
+                                      routing_name); };
                                 if added && trigger_churn {
                                     let mut close_group : Vec<NameType> = routing_table
                                             .our_close_group().iter()

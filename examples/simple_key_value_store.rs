@@ -153,7 +153,7 @@ impl Node {
                 }
             };
 
-            println!("Node: Receied event {:?}", event);
+            println!("Node: Received event {:?}", event);
 
             match event {
                 Event::Request{request,
@@ -410,4 +410,3 @@ fn main() {
         client.run();
     }
 }
-

@@ -259,6 +259,8 @@ impl RoutingNode {
                 let old_identity = match self.core.lookup_endpoint(&endpoint) {
                     // if already connected through the routing table, just confirm or destroy
                     Some(ConnectionName::Routing(known_name)) => {
+                        debug!("Endpoint {:?} registered to routing node {:?}", endpoint,
+                            known_name);
                         match hello.address {
                             // FIXME (ben 11/08/2015) Hello messages need to be signed and
                             // we also need to check the match with the PublicId stored in RT
@@ -762,6 +764,7 @@ impl RoutingNode {
                               from_authority : Authority,
                               to_authority   : Authority,
                               response_token : SignedToken) -> RoutingResult {
+        debug!("handle ConnectRequest");
         match request {
             InternalRequest::Connect(connect_request) => {
                 if !connect_request.requester_fob.is_relocated() {
@@ -805,6 +808,7 @@ impl RoutingNode {
                                response       : InternalResponse,
                                from_authority : Authority,
                                to_authority   : Authority) -> RoutingResult {
+        debug!("handle ConnectResponse");
         match response {
             InternalResponse::Connect(connect_response, signed_token) => {
                 if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
