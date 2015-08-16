@@ -295,15 +295,7 @@ impl RoutingNode {
                     // FIXME (ben 11/08/2015) we need to check his PublicId against the network
                     // but this requires an additional RFC so currently leave out such check
                     // refer to https://github.com/maidsafe/routing/issues/387
-                        alpha = match self.core.lookup_name(&his_name) {
-                            Some(ConnectionName::Routing(_)) => {
-                                // the new identity will be refused from core
-                                // as he is already present in the routing_table
-                                // with a different endpoint.  The closest name to zero is alpha
-                                &self.core.id().name() < &his_name
-                            },
-                            _ => false,
-                        };
+                        alpha = &self.core.id().name() < &his_name;
                         ConnectionName::Routing(his_name)
                     },
                     (Address::Client(his_public_key), Address::Node(our_name)) => {
