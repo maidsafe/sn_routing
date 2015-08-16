@@ -781,7 +781,7 @@ impl RoutingNode {
                     .or_insert(SteadyTime::now());
                 let routing_message = RoutingMessage {
                     from_authority : Authority::ManagedNode(self.core.id().name()),
-                    to_authority   : Authority::ManagedNode(from_authority.get_location().clone()),
+                    to_authority   : from_authority,
                     content        : Content::InternalResponse(
                         InternalResponse::Connect(ConnectResponse {
                             local_endpoints    : self.accepting_on.clone(),
