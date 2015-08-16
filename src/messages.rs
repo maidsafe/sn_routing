@@ -17,7 +17,12 @@
 
 use sodiumoxide::crypto::sign::Signature;
 use sodiumoxide::crypto::sign;
+use std::fmt::{Debug, Formatter, Error};
+use cbor::{CborError};
+use std::collections::BTreeMap;
+
 use crust::Endpoint;
+
 use authority::Authority;
 use data::{Data, DataRequest};
 use types;
@@ -26,8 +31,6 @@ use types::{DestinationAddress, SourceAddress};
 use error::{ResponseError};
 use NameType;
 use utils;
-use cbor::{CborError};
-use std::collections::BTreeMap;
 
 pub static VERSION_NUMBER : u8 = 0;
 
@@ -45,7 +48,7 @@ pub struct ConnectResponse {
     pub receiver_fob: PublicId,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub struct SignedToken {
     pub serialised_request : Vec<u8>,
     pub signature          : Signature,
@@ -59,6 +62,11 @@ impl SignedToken {
     }
 }
 
+impl Debug for SignedToken {
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
+        formatter.write_str(&format!("SignedToken"))
+    }
+}
 /// These are the messageTypes routing provides
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalRequest {
