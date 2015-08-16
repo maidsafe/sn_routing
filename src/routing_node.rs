@@ -23,6 +23,7 @@ use sodiumoxide::crypto::sign::{verify_detached, Signature};
 use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto;
 use time::{Duration, SteadyTime};
+use std::cmp::min;
 
 use crust;
 use crust::{ConnectionManager, Endpoint};
@@ -42,7 +43,7 @@ use utils::{encode, decode};
 use utils;
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
-use std::cmp::min;
+use wake_up::WakeUpCaller;
 
 use messages::{RoutingMessage,
                SignedMessage, SignedToken,
@@ -61,6 +62,7 @@ use message_accumulator::MessageAccumulator;
 type RoutingResult = Result<(), RoutingError>;
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
+static MAX_CRUST_EVENT_COUNTER : u8 = 10;
 /// Routing Node
 pub struct RoutingNode {
     // for CRUST
@@ -72,6 +74,7 @@ pub struct RoutingNode {
     action_sender       : mpsc::Sender<Action>,
     action_receiver     : mpsc::Receiver<Action>,
     event_sender        : mpsc::Sender<Event>,
+    wakeup              : WakeUpCaller,
     filter              : MessageFilter<types::FilterType>,
     core                : RoutingCore,
     public_id_cache     : LruCache<NameType, PublicId>,
@@ -99,9 +102,10 @@ impl RoutingNode {
             connection_manager  : cm,
             accepting_on        : accepting_on,
             client_restriction  : client_restriction,
-            action_sender       : action_sender,
+            action_sender       : action_sender.clone(),
             action_receiver     : action_receiver,
             event_sender        : event_sender,
+            wakeup              : WakeUpCaller::new(action_sender),
             filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
             core                : core,
             public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
@@ -110,42 +114,14 @@ impl RoutingNode {
         }
     }
 
+    #[allow(unused_assignments)]
     pub fn run(&mut self) {
+        let mut crust_event_counter : u8 = 0;
+        self.wakeup.start(10);
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         debug!("RoutingNode started running and started bootstrap");
         loop {
-            match self.crust_receiver.recv() {
-                Err(_) => {
-                },
-                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                    match decode::<SignedMessage>(&bytes) {
-                        Ok(message) => {
-                            // handle SignedMessage for any identified endpoint
-                            match self.core.lookup_endpoint(&endpoint) {
-                                Some(ConnectionName::Unidentified(_, _)) => debug!("message
-                                from unidentified connection"),
-                                None => debug!("message from unknown endpoint"),
-                                _ => ignore(self.message_received(message)),
-                            };
-                        },
-                        // The message received is not a Signed Routing Message,
-                        // expect it to be an Hello message to identify a connection
-                        Err(_) => {
-                            let _ = self.handle_hello(&endpoint, bytes);
-                        },
-                    }
-                },
-                Ok(crust::Event::NewConnection(endpoint)) => {
-                    self.handle_new_connection(endpoint);
-                },
-                Ok(crust::Event::LostConnection(endpoint)) => {
-                    self.handle_lost_connection(endpoint);
-                },
-                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                    self.handle_new_bootstrap_connection(endpoint);
-                }
-            };
-            match self.action_receiver.try_recv() {
+            match self.action_receiver.recv() {
                 Err(_) => {},
                 Ok(Action::SendMessage(signed_message)) => {
                     ignore(self.message_received(signed_message));
@@ -153,12 +129,56 @@ impl RoutingNode {
                 Ok(Action::SendContent(to_authority, content)) => {
                     let _ = self.send_content(to_authority, content);
                 },
+                Ok(Action::WakeUp) => {
+                    // ensure that the loop is blocked for maximally 10ms
+                },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
                     self.connection_manager.stop();
                     break;
                 },
             };
+            loop {
+                crust_event_counter = 0;
+                match self.crust_receiver.try_recv() {
+                    Err(_) => {
+                        // FIXME (ben 16/08/2015) other reasons could induce an error
+                        // main error assumed now to be no new crust events
+                        break;
+                    },
+                    Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                        match decode::<SignedMessage>(&bytes) {
+                            Ok(message) => {
+                                // handle SignedMessage for any identified endpoint
+                                match self.core.lookup_endpoint(&endpoint) {
+                                    Some(ConnectionName::Unidentified(_, _)) => debug!("message
+                                    from unidentified connection"),
+                                    None => debug!("message from unknown endpoint"),
+                                    _ => ignore(self.message_received(message)),
+                                };
+                            },
+                            // The message received is not a Signed Routing Message,
+                            // expect it to be an Hello message to identify a connection
+                            Err(_) => {
+                                let _ = self.handle_hello(&endpoint, bytes);
+                            },
+                        };
+                    },
+                    Ok(crust::Event::NewConnection(endpoint)) => {
+                        self.handle_new_connection(endpoint);
+                    },
+                    Ok(crust::Event::LostConnection(endpoint)) => {
+                        self.handle_lost_connection(endpoint);
+                    },
+                    Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                        self.handle_new_bootstrap_connection(endpoint);
+                    }
+                };
+                crust_event_counter += 1;
+                if crust_event_counter >= MAX_CRUST_EVENT_COUNTER {
+                    debug!("Breaking to yield to Actions.");
+                    break; };
+            }
         }
     }
 
@@ -389,11 +409,15 @@ impl RoutingNode {
         ignore(self.send(message_wrap.clone()));
 
         if !self.core.name_in_range(&message.destination().get_location()) {
+            debug!("Not for us, destination {:?} out of range",
+                message.destination().get_location());
             return Ok(()); };
 
         // check if our calculated authority matches the destination authority of the message
         if self.core.our_authority(&message)
-            .map(|our_auth| message.to_authority == our_auth).unwrap_or(false) {
+            .map(|our_auth| message.to_authority != our_auth).unwrap_or(false) {
+            debug!("Destination authority {:?} is while our authority is {:?}",
+                message.to_authority, self.core.our_authority(&message));
             return Err(RoutingError::BadAuthority);
         }
 
@@ -458,15 +482,21 @@ impl RoutingNode {
         }
     }
 
-    fn accumulate(&mut self, signed_message: SignedMessage) -> Option<(RoutingMessage, Option<SignedToken>)> {
+    fn accumulate(&mut self, signed_message: SignedMessage)
+        -> Option<(RoutingMessage, Option<SignedToken>)> {
         let message = signed_message.get_routing_message().clone();
 
         if !message.from_authority.is_group() {
+            debug!("Message didn't come from a group ({:?}), returning with SignedToken",
+                message.from_authority);
             // TODO: If not from a group, then use client's public key to check
             // the signature.
             let token = match signed_message.as_token() {
                 Ok(token) => token,
-                Err(_)    => return None
+                Err(_)    => {
+                  error!("Failed to generate signed token, message {:?} is dropped.",
+                      message);
+                  return None; },
             };
             return Some((message, Some(token)));
         }
@@ -481,14 +511,18 @@ impl RoutingNode {
             _ => false
         };
 
-        if skip_accumulator { return Some((message, None)); }
+        if skip_accumulator {
+            debug!("Skipping accumulator for message {:?}", message);
+            return Some((message, None)); }
 
         let threshold = min(types::GROUP_SIZE,
                             (self.core.routing_table_size() as f32 * 0.8) as usize);
+        debug!("Accumulator threshold is at {:?}", threshold);
 
         let claimant : NameType = match *signed_message.claimant() {
             Address::Node(ref claimant) => claimant.clone(),
             Address::Client(_) => {
+                error!("Claimant is a Client, but passed into accumulator for a group. dropped.");
                 debug_assert!(false);
                 return None;
             }
@@ -885,7 +919,7 @@ impl RoutingNode {
             },
             None => {},
         }
-        
+
         // If we need handle this message, move this copy into the channel for later processing.
         if self.core.name_in_range(&destination.get_location()) {
             debug!("Queuing message for processing ourselves");
