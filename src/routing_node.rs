@@ -564,14 +564,15 @@ impl RoutingNode {
                                           response_token : SignedToken) -> RoutingResult {
         match request {
             InternalRequest::RequestNetworkName(public_id) => {
-                match (from_authority, &to_authority) {
-                    (Authority::Client(_, public_key), &Authority::NaeManager(name)) => {
-                        debug!("Got a request for a network name ");
+                match (&from_authority, &to_authority) {
+                    (&Authority::Client(_, ref public_key), &Authority::NaeManager(name)) => {
                         let mut network_public_id = public_id.clone();
                         match self.core.our_close_group() {
                             Some(close_group) => {
                                 let relocated_name = try!(utils::calculate_relocated_name(
                                     close_group, &public_id.name()));
+                                debug!("Got a request for a network name from {:?}, assigning {:?}",
+                                    from_authority, relocated_name);
                                 network_public_id.assign_relocated_name(relocated_name.clone());
                                 let routing_message = RoutingMessage {
                                     from_authority : to_authority,
@@ -611,9 +612,12 @@ impl RoutingNode {
                             network_public_id.clone());
                         match self.core.our_close_group_with_public_ids() {
                             Some(close_group) => {
+                                debug!("Network request to accept name {:?},
+                                    responding with our close group to {:?}", network_public_id.name(),
+                                    request_network_name.get_routing_message().source());
                                 let routing_message = RoutingMessage {
                                     from_authority : to_authority,
-                                    to_authority   : request_network_name.get_routing_message().destination(),
+                                    to_authority   : request_network_name.get_routing_message().source(),
                                     content        : Content::InternalResponse(
                                         InternalResponse::CacheNetworkName(network_public_id,
                                         close_group, response_token)),
