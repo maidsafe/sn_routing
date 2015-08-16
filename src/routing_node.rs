@@ -193,7 +193,9 @@ impl RoutingNode {
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
         error!("Lost connection on {:?}", endpoint);
         let connection_name = self.core.lookup_endpoint(&endpoint); 
-          if connection_name.is_some() { self.core.drop_peer(&connection_name.unwrap()); }
+          match connection_name {
+          Some(ref name)  => self.core.drop_peer(&name),
+          _ => () };
     }
 
     fn handle_new_bootstrap_connection(&mut self, endpoint : Endpoint) {
