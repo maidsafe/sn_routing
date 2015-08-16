@@ -186,7 +186,7 @@ impl RoutingNode {
             // only fails if relay_map is full for unidentified connections
             self.connection_manager.drop_node(endpoint.clone());
         }
-        ignore(self.send_hello(endpoint));
+        ignore(self.send_hello(endpoint, None));
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
@@ -214,16 +214,19 @@ impl RoutingNode {
             self.connection_manager.drop_node(endpoint);
             return;
         }
-        ignore(self.send_hello(endpoint));
+        ignore(self.send_hello(endpoint, None));
     }
 
     // ---- Hello connection identification -------------------------------------------------------
 
-    fn send_hello(&mut self, endpoint: Endpoint) -> RoutingResult {
+    fn send_hello(&mut self, endpoint: Endpoint, confirmed_address : Option<Address>)
+        -> RoutingResult {
         let message = try!(encode(&Hello {
-            address   : self.core.our_address(),
-            public_id : PublicId::new(self.core.id())}));
-        debug!("Saying hello I am {:?} on {:?}", self.core.our_address(), endpoint);
+            address       : self.core.our_address(),
+            public_id     : PublicId::new(self.core.id()),
+            confirmed_you : confirmed_address.clone()}));
+        debug!("Saying hello I am {:?} on {:?}, confirming {:?}", self.core.our_address(),
+            endpoint, confirmed_address);
         ignore(self.connection_manager.send(endpoint, message));
         Ok(())
     }
@@ -254,22 +257,16 @@ impl RoutingNode {
                     None => None,
                     Some(relay_connection_name) => Some(relay_connection_name),
                 };
-                // now that it's not a routing connection, remove it from the relay map
-                let dropped_peer = match &old_identity {
-                    &Some(ConnectionName::Routing(_)) => unreachable!(),
-                    // drop any relay connection in favour of new to-be-determined identity
-                    &Some(ref old_connection_name) => {
-                        self.core.drop_peer(old_connection_name)
-                    },
-                    &None => None,
-                };
-                // construct the new identity from Hello
                 // FIXME (ben 14/08/2015) temporary copy until Debug is
                 // implemented for ConnectionName
                 let hello_address = hello.address.clone();
                 // if set to true we will take the initiative to drop the connection,
-                // if refused from core
+                // if refused from core;
+                // if alpha is false we will leave the connection unidentified,
+                // only adding the new identity when it is confirmed by the other side
+                // (hello.confirmed_you set to our address), which has to send a confirmed hello
                 let mut alpha = false;
+                // construct the new identity from Hello
                 let new_identity = match (hello.address, self.core.our_address()) {
                     (Address::Node(his_name), Address::Node(our_name)) => {
                     // He is a node, and we are a node, establish a routing table connection
@@ -286,7 +283,6 @@ impl RoutingNode {
                             _ => false,
                         };
                         ConnectionName::Routing(his_name)
-
                     },
                     (Address::Client(his_public_key), Address::Node(our_name)) => {
                     // He is a client, we are a node, establish a relay connection
@@ -312,32 +308,54 @@ impl RoutingNode {
                         return Err(RoutingError::BadAuthority);
                     },
                 };
-                // add the new identity, or drop the connection
-                if self.core.add_peer(new_identity.clone(), endpoint.clone(),
-                    Some(hello.public_id)) {
-                    debug!("Added {:?} to the core on {:?}", hello_address, endpoint);
-                    match new_identity {
-                        ConnectionName::Bootstrap(bootstrap_name) => {
-                            ignore(self.request_network_name(&bootstrap_name, endpoint));
+                let confirmed = match hello.confirmed_you {
+                    Some(address) => {
+                        if self.core.is_us(&address) {
+                            debug!("This hello message successfully confirmed our address, {:?}",
+                                address);
+                            true
+                        } else {
+                            self.connection_manager.drop_node(endpoint.clone());
+                            error!("Wrongfully confirmed as {:?} on {:?} and dropped the connection",
+                                address, endpoint);
+                            return Err(RoutingError::RejectedPublicId);
+                        }
+                    },
+                    None => false,
+                };
+                if alpha || confirmed {
+                    // we know it's not a routing connection, remove it from the relay map
+                    let dropped_peer = match &old_identity {
+                        &Some(ConnectionName::Routing(_)) => unreachable!(),
+                        // drop any relay connection in favour of new to-be-determined identity
+                        &Some(ref old_connection_name) => {
+                            self.core.drop_peer(old_connection_name)
                         },
-                        _ => {},
+                        &None => None,
                     };
-                } else {
-                    // depending on the identity of the connection, follow the rules on dropping
-                    // to avoid both sides drop the other connection, possibly leaving none
-
-                    if alpha {
+                    // add the new identity, or drop the connection
+                    if self.core.add_peer(new_identity.clone(), endpoint.clone(),
+                        Some(hello.public_id)) {
+                        debug!("Added {:?} to the core on {:?}", hello_address, endpoint);
+                        if alpha {
+                            ignore(self.send_hello(endpoint.clone(), Some(hello_address)));
+                        };
+                        match new_identity {
+                            ConnectionName::Bootstrap(bootstrap_name) => {
+                                ignore(self.request_network_name(&bootstrap_name, endpoint));
+                            },
+                            _ => {},
+                        };
+                    } else {
+                        // depending on the identity of the connection, follow the rules on dropping
+                        // to avoid both sides drop the other connection, possibly leaving none
                         self.connection_manager.drop_node(endpoint.clone());
                         debug!("Core refused {:?} on {:?} and dropped the connection",
                             hello_address, endpoint);
-                    } else {
-                        // FIXME (ben 14/08/2015) there is a risk of dangling crust connections,
-                        // that needs a clean-up strategy: as non-alpha send a good-bye message
-                        // to alpha (and disconnect after timeout as backup mechanism).
-                        debug!("Core refused {:?} on {:?}, but awaiting alpha.",
-                            hello_address, endpoint);
-                    }
-                };
+                    };
+                } else {
+                    debug!("We are not alpha and the hello was not confirmed yet, awaiting alpha.");
+                }
                 Ok(())
             },
             Err(_) => Err(RoutingError::UnknownMessageType)
