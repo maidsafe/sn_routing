@@ -408,10 +408,10 @@ impl RoutingNode {
         // Forward
         if self.core.is_connected_node() { ignore(self.send(message_wrap.clone())); }
 
-        if !self.core.name_in_range(&message.destination().get_location()) {
-            debug!("Not for us, destination {:?} out of range",
-                message.destination().get_location());
-            return Ok(()); };
+        // if !self.core.name_in_range(&message.destination().get_location()) {
+        //     debug!("Not for us, destination {:?} out of range",
+        //         message.destination().get_location());
+        //     return Ok(()); };
 
         // check if our calculated authority matches the destination authority of the message
         if self.core.our_authority(&message)
