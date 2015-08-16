@@ -81,6 +81,17 @@ impl RoutingCore {
         }
     }
 
+    /// Returns true if Client(public_key) matches our public signing key,
+    /// even if we are a full node; or returns true if Node(name) is our current name.
+    /// Note that there is a difference to using core::our_address, as that would
+    /// fail to assert an (old) Client identification after we were assigned a network name.
+    pub fn is_us(&self, address : &Address) -> bool {
+        match *address {
+            Address::Client(public_key) => public_key == self.id.signing_public_key(),
+            Address::Node(name) => name == self.id().name()
+        }
+    }
+
     /// Assigning a network received name to the core.
     /// If a name is already assigned, the function returns false and no action is taken.
     /// After a name is assigned, Routing connections can be accepted.
