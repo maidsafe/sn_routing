@@ -61,6 +61,7 @@ mod routing_node;
 mod routing_core;
 mod relay;
 mod hello;
+mod wake_up;
 
 pub mod routing;
 pub mod refresh_accumulator;

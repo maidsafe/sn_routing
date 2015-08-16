@@ -15,25 +15,37 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use messages::{SignedMessage, Content};
-use authority::Authority;
+use std::sync::mpsc;
+use std::thread::spawn;
+use std::thread;
 
-/// An Action initiates a message flow < A | B > where we are (a part of) A.
-///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
-///       for it to be sent on across the network.
-///    2. Terminate indicates to RoutingNode that no new actions should be taken and all
-///       pending events should be handled.
-///       After completion RoutingNode will send Event::Terminated.
-#[derive(Clone, Eq, PartialEq)]
-pub enum Action {
-    SendMessage(SignedMessage),
-    //          ~~|~~~~~~~~~~
-    //            | a fully signed message with a given claimant
-    SendContent(Authority, Content),
-    //          ~~|~~~~~~  ~~|~~~~
-    //            |          | the bare content for a message to be formed
-    //            | the destination authority
-    // RoutingNode will form the RoutingMessage and sign it as its own identity
-    WakeUp,
-    Terminate,
+use action::Action;
+
+pub struct WakeUpCaller {
+    action_sender : mpsc::Sender<Action>,
+}
+
+impl WakeUpCaller {
+    pub fn new(action_sender : mpsc::Sender<Action>, ) -> WakeUpCaller {
+        WakeUpCaller {
+            action_sender : action_sender,
+        }
+    }
+
+    pub fn start(&self, sleep_duration : u32) {
+        let action_sender_clone = self.action_sender.clone();
+        spawn(move || {
+            loop {
+                thread::sleep_ms(sleep_duration);
+                match action_sender_clone.send(Action::WakeUp) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        debug!("Failed to send Action::WakeUp. Stopped WakeUpCaller.");
+                        break; },
+                };
+            }
+        });
+    }
+
+    // TODO (ben 16/08/2015) implement stop
 }
