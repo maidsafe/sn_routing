@@ -406,7 +406,7 @@ impl RoutingNode {
         self.filter.add(message_wrap.signature().clone());
 
         // Forward
-        ignore(self.send(message_wrap.clone()));
+        if self.core.is_connected_node() { ignore(self.send(message_wrap.clone())); }
 
         if !self.core.name_in_range(&message.destination().get_location()) {
             debug!("Not for us, destination {:?} out of range",
