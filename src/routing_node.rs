@@ -919,13 +919,13 @@ impl RoutingNode {
                     ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
                         bytes.clone()));
                 }
-                return Ok(());
             },
             None => {},
         }
 
         // If we need handle this message, move this copy into the channel for later processing.
         if self.core.name_in_range(&destination.get_location()) {
+            if let Authority::Client(relay, public_key) = destination { return Ok(()); };
             debug!("Queuing message for processing ourselves");
             ignore(self.action_sender.send(Action::SendMessage(signed_message)));
         }
