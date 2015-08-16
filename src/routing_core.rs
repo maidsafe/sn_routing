@@ -33,7 +33,7 @@ use event::Event;
 use messages::RoutingMessage;
 
 /// ConnectionName labels the counterparty on a connection in relation to us
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum ConnectionName {
    Relay(Address),
    Routing(NameType),

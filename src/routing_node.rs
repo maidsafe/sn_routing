@@ -154,7 +154,7 @@ impl RoutingNode {
                     let _ = self.send_content(to_authority, content);
                 },
                 Ok(Action::Terminate) => {
-                    debug!("routing node termianted");
+                    debug!("routing node terminated");
                     self.connection_manager.stop();
                     break;
                 },
@@ -192,7 +192,7 @@ impl RoutingNode {
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
         error!("Lost connection on {:?}", endpoint);
-        let connection_name = self.core.lookup_endpoint(&endpoint); 
+        let connection_name = self.core.lookup_endpoint(&endpoint);
           if connection_name.is_some() { self.core.drop_peer(&connection_name.unwrap()); }
     }
 
@@ -855,9 +855,11 @@ impl RoutingNode {
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&self, signed_message : SignedMessage) -> RoutingResult {
         let destination = signed_message.get_routing_message().destination();
+        debug!("Sending signed message to {:?}", destination);
         let bytes = try!(encode(&signed_message));
         // query the routing table for parallel or swarm
         let endpoints = self.core.target_endpoints(&destination);
+        debug!("Sending to {:?} routing table connections", endpoints.len());
         if !endpoints.is_empty() {
             for endpoint in endpoints {
                 // TODO(ben 10/08/2015) drop endpoints that fail to send
@@ -867,12 +869,15 @@ impl RoutingNode {
 
         match self.core.bootstrap_endpoints() {
             Some(bootstrap_peers) => {
+                debug!("Falling back to {:?} bootstrap connections to send.",
+                    bootstrap_peers.len());
                 // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
                 // the relay_name in from_authority Client(relay_name, client_public_key) is
                 // the name of the bootstrap connection we're sending it on.  Although this might
                 // open a window for attacking a node, in v0.3.* we can leave this unresolved.
                 for bootstrap_peer in bootstrap_peers {
                     // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
+                    debug!("Sending to bootstrap node {:?}", bootstrap_peer.identity());
                     ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
                         bytes.clone()));
                 }
@@ -880,9 +885,10 @@ impl RoutingNode {
             },
             None => {},
         }
-
+        
         // If we need handle this message, move this copy into the channel for later processing.
         if self.core.name_in_range(&destination.get_location()) {
+            debug!("Queuing message for processing ourselves");
             ignore(self.action_sender.send(Action::SendMessage(signed_message)));
         }
         Ok(())
