@@ -86,15 +86,18 @@ fn sync_disk_storage(memory_storage: &::std::collections::HashMap<NameType, Vec<
 
 pub struct RoutingVaultMock {
     sender          : ::std::sync::mpsc::Sender<RoutingMessage>,
-    network_delay_ms: u32,
+    client_sender   : ::std::sync::mpsc::Sender<Data>,  // for testing only
+    network_delay_ms: u32,  // for testing only
 }
 
 impl RoutingVaultMock {
     pub fn new() -> (RoutingVaultMock, ::std::sync::mpsc::Receiver<RoutingMessage>) {
         let (sender, receiver) = ::std::sync::mpsc::channel();
+        let (client_sender, _) = ::std::sync::mpsc::channel();
 
         let mock_routing = RoutingVaultMock {
             sender          : sender,
+            client_sender   : client_sender,
             network_delay_ms: 1000,
         };
 
@@ -104,6 +107,23 @@ impl RoutingVaultMock {
     #[allow(dead_code)]
     pub fn set_network_delay_for_delay_simulation(&mut self, delay_ms: u32) {
         self.network_delay_ms = delay_ms;
+    }
+
+    // -----------  the following methods are for testing purpose only   ------------- //
+
+    pub fn client_get(&mut self, name: NameType) -> ::std::sync::mpsc::Receiver<Data> {
+        let cloned_sender = self.sender.clone();
+        ::std::thread::spawn(move || {
+            // TODO: how to simulate the authorities?
+            //       Here throwing the request to PmidNode directly
+            let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(ImmutableDataType::Normal),
+                                                                 Authority::ManagedNode,
+                                                                 Authority::NaeManager(name),
+                                                                 SourceAddress::Direct(name)));
+        });
+        let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
+        self.client_sender = client_sender;
+        client_receiver
     }
 
     pub fn client_put(&mut self, client_address: NameType,
@@ -129,24 +149,34 @@ impl RoutingVaultMock {
         }
     }
 
-    pub fn get(&mut self, location: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
+    // -----------  the above methods are for testing purpose only   ------------- //
+
+    // -----------  the following methods are expected to be API functions   ------------- //
+
+    pub fn get_response(&mut self, data: Data) {
+        let delay_ms = self.network_delay_ms;
+        let cloned_client_sender = self.client_sender.clone();
+        ::std::thread::spawn(move || {
+            let _ = cloned_client_sender.send(data);
+        });
+    }
+
+    pub fn get(&mut self, name: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
         let delay_ms = self.network_delay_ms;
         let data_store = get_storage();
         let cloned_sender = self.sender.clone();
 
         ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            match data_store.lock().unwrap().get(&location) {
+            match data_store.lock().unwrap().get(&name) {
                 Some(raw_data) => {
                     if let Ok(data) = deserialise::<Data>(raw_data) {
-                        if match (&data, request_for) {
-                            (&Data::ImmutableData(ref immut_data), DataRequest::ImmutableData(ref tag)) => immut_data.get_type_tag() == tag,
-                            (&Data::StructuredData(ref struct_data), DataRequest::StructuredData(ref tag)) => struct_data.get_type_tag() == *tag,
-                            _ => false,
-                        } {
-                            // TODO: how to simulate the authorities? Here terminate the flow directly
-                            let _ = cloned_sender.send(RoutingMessage::ShutDown);
-                        }
+                        // TODO: how to simulate the authorities?
+                        //       Here throwing the request to PmidNode directly
+                        let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(ImmutableDataType::Normal),
+                                                                             Authority::ManagedNode,
+                                                                             Authority::NaeManager(data.name()),
+                                                                             SourceAddress::Direct(data.name())));
                     }
                 },
                 None => (),
@@ -165,14 +195,7 @@ impl RoutingVaultMock {
             ::std::thread::sleep_ms(delay_ms);
             let mut data_store_mutex_guard = data_store.lock().unwrap();
             let success = if data_store_mutex_guard.contains_key(&location) {
-                if let Data::ImmutableData(immut_data) = data {
-                    match deserialise(data_store_mutex_guard.get(&location).unwrap()) {
-                        Ok(Data::ImmutableData(immut_data_stored)) => immut_data_stored.get_type_tag() == immut_data.get_type_tag(), // Immutable data is de-duplicated so always allowed
-                        _ => false
-                    }
-                } else {
-                    false
-                }
+                false
             } else if let Ok(raw_data) = serialise(&data) {
                 data_store_mutex_guard.insert(location, raw_data);
                 sync_disk_storage(&*data_store_mutex_guard);
@@ -180,8 +203,18 @@ impl RoutingVaultMock {
             } else {
                 false
             };
-            // TODO: how to simulate the authorities? Here terminate the flow directly
-            let _ = cloned_sender.send(RoutingMessage::ShutDown);
+            // TODO: how to simulate the authorities?
+            //       here we assume if data is not present in cache previously, then forward to PmidNode
+            //       otherwise terminate the flow directly
+            if success {
+                let _ = cloned_sender.send(RoutingMessage::HandlePut(Authority::ManagedNode,
+                                                                     Authority::NaeManager(data.name()),
+                                                                     SourceAddress::Direct(data.name()),
+                                                                     DestinationAddress::Direct(data.name()),
+                                                                     data));
+            } else {
+                let _ = cloned_sender.send(RoutingMessage::ShutDown);
+            };            
         });
 
         Ok(())

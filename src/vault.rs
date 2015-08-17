@@ -370,8 +370,9 @@ impl VaultFacade {
         let calls = put_result.ok().unwrap();
         assert_eq!(calls.len(), 1);
         match calls[0] {
-            MethodCall::Forward { destination } => {
+            MethodCall::Put { destination, ref content } => {
                 assert_eq!(destination, im_data.name());
+                assert_eq!(*content,  Data::ImmutableData(im_data.clone()));
             }
             _ => panic!("Unexpected"),
         }
@@ -504,14 +505,7 @@ impl VaultFacade {
             let mut put_calls = put_result.ok().unwrap();
             assert_eq!(put_calls.len(), 1);
             match put_calls.remove(0) {
-                MethodCall::Reply { data } => {
-                    match data {
-                        Data::ImmutableData(fetched_im_data) => {
-                            assert_eq!(fetched_im_data, im_data);
-                        }
-                        _ => panic!("Unexpected"),
-                    }
-                }
+                MethodCall::Terminate => {},
                 _ => panic!("Unexpected"),
             }
 
