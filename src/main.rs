@@ -24,8 +24,8 @@
 #![deny(deprecated, improper_ctypes, missing_docs, non_shorthand_field_patterns,
         overflowing_literals, plugin_as_library, private_no_mangle_fns, private_no_mangle_statics,
         raw_pointer_derive, stable_features, unconditional_recursion, unknown_lints, unsafe_code,
-        unused, unused_allocation, unused_attributes, unused_comparisons,
-        unused_features, unused_parens, while_true)]
+        unused, unused_allocation, unused_attributes, unused_comparisons, unused_features,
+        unused_parens, while_true)]
 
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications)]
@@ -40,7 +40,6 @@ extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
-
 extern crate lru_time_cache;
 
 use std::thread;
