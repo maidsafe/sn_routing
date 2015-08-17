@@ -65,7 +65,7 @@ use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode};
-use routing::{ExternalRequest, SignedToken};
+use routing::{ExternalRequest, ExternalResponse, SignedToken};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -357,6 +357,21 @@ impl Client {
 
     fn handle_routing_event(&mut self, event : Event) {
         println!("Client received routing event: {:?}", event);
+        match event {
+            Event::Response{response, our_authority, from_authority} => {
+                match response {
+                    ExternalResponse::Get(data, external_request, opt_signed_token) => {
+
+                    },
+                    ExternalResponse::Put(response_error, external_request, opt_signed_token) => {
+
+                    },
+                    _ => error!("Received external response {:?}, but not handled in example",
+                        response),
+                }
+            },
+            _ => {},
+        }
     }
 
     fn send_get_request(&self, what: String) {

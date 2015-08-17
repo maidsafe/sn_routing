@@ -26,7 +26,7 @@ use time::{Duration, SteadyTime};
 use std::cmp::min;
 
 use crust;
-use crust::{ConnectionManager, Endpoint};
+use crust::{ConnectionManager, Endpoint, Port};
 use lru_time_cache::LruCache;
 
 use action::Action;
@@ -91,7 +91,7 @@ impl RoutingNode {
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
         let mut cm = crust::ConnectionManager::new(crust_sender);
-        let _ = cm.start_accepting(vec![]);
+        let _ = cm.start_accepting(vec![Port::Tcp(5483u16)]);
         let accepting_on = cm.get_own_endpoints();
 
         let core = RoutingCore::new(event_sender.clone());
@@ -211,7 +211,7 @@ impl RoutingNode {
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
-        error!("Lost connection on {:?}", endpoint);
+        debug!("Lost connection on {:?}", endpoint);
         let connection_name = self.core.lookup_endpoint(&endpoint);
           if connection_name.is_some() { self.core.drop_peer(&connection_name.unwrap()); }
     }
@@ -390,8 +390,6 @@ impl RoutingNode {
         // filter check
         if self.filter.check(message_wrap.signature()) {
             // should just return quietly
-            debug!("FILTER BLOCKED message {:?} from {:?} to {:?}",
-                message, message.source(), message.destination());
             return Err(RoutingError::FilterCheckFailed);
         }
         debug!("message {:?} from {:?} to {:?}", message.content,
