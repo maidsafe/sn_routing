@@ -21,12 +21,8 @@ use cbor;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
 
-use routing::NameType;
-use routing::node_interface::MethodCall;
-use routing::types::GROUP_SIZE;
-use routing::sendable::Sendable;
-
 use transfer_parser::transfer_tags::PMID_MANAGER_ACCOUNT_TAG;
+use routing_types::*;
 use utils::{median, encode, decode};
 
 type Identity = NameType; // pmidnode address
@@ -234,8 +230,7 @@ mod test {
 
     use super::{PmidManagerDatabase, PmidManagerAccount, PmidManagerAccountWrapper};
 
-    use routing::NameType;
-    use routing::types::*;
+    use routing_types::*;
 
     #[test]
     fn exist() {

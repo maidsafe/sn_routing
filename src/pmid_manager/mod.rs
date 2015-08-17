@@ -19,11 +19,7 @@
 
 mod database;
 
-use routing::data::Data;
-use routing::error::{ResponseError, InterfaceError};
-use routing::NameType;
-use routing::node_interface::MethodCall;
-use routing::sendable::Sendable;
+use routing_types::*;
 
 pub use self::database::{PmidManagerAccountWrapper, PmidManagerAccount};
 
@@ -73,11 +69,7 @@ mod test {
   use super::database::{PmidManagerAccount, PmidManagerAccountWrapper};
   use super::PmidManager;
 
-  use routing::data::Data;
-  use routing::immutable_data::{ImmutableData, ImmutableDataType};
-  use routing::NameType;
-  use routing::node_interface::MethodCall;
-  use routing::types::*;
+  use routing_types::*;
 
   #[test]
   fn handle_put() {
