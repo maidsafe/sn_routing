@@ -21,15 +21,8 @@ use cbor;
 use rustc_serialize::Encodable;
 use std::collections::HashMap;
 
-use routing::NameType;
-use routing::node_interface::MethodCall;
-use routing::sendable::Sendable;
-use routing::types::GROUP_SIZE;
-use routing::immutable_data::ImmutableDataType;
-use routing::data::DataRequest;
-
+use routing_types::*;
 use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
-
 use utils::{encode, decode};
 
 type Identity = NameType; // name of the chunk
@@ -229,10 +222,7 @@ impl DataManagerDatabase {
 #[cfg(test)]
 mod test {
   use super::*;
-  use routing::immutable_data::{ImmutableData, ImmutableDataType};
-  use routing::NameType;
-  use routing::types::*;
-  use routing::sendable::Sendable;
+  use routing_types::*;
 
   #[test]
   fn exist() {

@@ -66,8 +66,8 @@ impl ChunkStore {
         let path_name = Path::new(&name);
         let path = self.tempdir.path();
         let path = path.join(path_name);
-
         let mut file = File::create(&path).unwrap();
+
         match file.write(&value[..]) {
             Ok(size) => self.current_disk_usage += size,
             _ => (),
@@ -83,7 +83,7 @@ impl ChunkStore {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
-                            if entry.file_name().to_str() == Some(name.as_str()) {
+                            if entry.file_name().to_str() == OsStr::new(&name).to_str() {
                                 match entry.metadata() {
                                     Ok(metadata) => {
                                         let len = metadata.len() as usize;
@@ -111,7 +111,7 @@ impl ChunkStore {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
-                            if entry.file_name().to_str() == Some(name.as_str()) {
+                            if entry.file_name().to_str() == OsStr::new(&name).to_str() {
                                 match File::open(&entry.path()) {
                                     Ok(mut file) => {
                                         let mut contents = Vec::<u8>::new();
@@ -153,7 +153,7 @@ impl ChunkStore {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
-                            if entry.file_name().to_str() == Some(name.as_str()) {
+                            if entry.file_name().to_str() == OsStr::new(&name).to_str() {
                                 return true;
                             }
                         },
@@ -175,9 +175,9 @@ impl ChunkStore {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
-                            match entry.file_name().to_bytes() {
+                            match entry.file_name().to_str() {
                                 Some(name) =>
-                                    names.push(NameType::new(vector_as_u8_64_array(name.to_vec()))),
+                                    names.push(NameType::new(vector_as_u8_64_array(name.as_bytes().to_vec()))),
                                 _ => (),
                             }
                         },

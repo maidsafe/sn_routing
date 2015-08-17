@@ -17,14 +17,8 @@
 
 #![allow(dead_code)]
 
-use routing::data::Data;
-use routing::immutable_data::{ImmutableData, ImmutableDataType};
-use routing::NameType;
-use routing::node_interface::MethodCall;
-use routing::error::{ResponseError, InterfaceError};
-use routing::sendable::Sendable;
-
 use chunk_store::ChunkStore;
+use routing_types::*;
 use utils::{encode, decode};
 
 pub struct PmidNode {
@@ -58,7 +52,7 @@ impl PmidNode {
         if self.chunk_store_.has_disk_space(data.len()) {
             // the type_tag needs to be stored as well
             self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
-            return Ok(vec![MethodCall::Reply { data: Data::ImmutableData(immutable_data) }]);
+            return Ok(vec![MethodCall::Terminate]);
         }
         // TODO: keeps removing sacrificial copies till enough space emptied
         //       if all sacrificial copies removed but still can not satisfy, do not restore
@@ -91,16 +85,12 @@ impl PmidNode {
 mod test {
     use super::*;
 
-    use routing;
-    use routing::data::Data;
-    use routing::immutable_data::{ImmutableData, ImmutableDataType};
-    use routing::node_interface::MethodCall;
-    use routing::sendable::Sendable;
+    use routing_types::*;
 
     #[test]
     fn handle_put_get() {
         let mut pmid_node = PmidNode::new();
-        let value = routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         {
             let put_result = pmid_node.handle_put(Data::ImmutableData(im_data.clone()));
@@ -108,14 +98,7 @@ mod test {
             let mut calls = put_result.ok().unwrap();
             assert_eq!(calls.len(), 1);
             match calls.remove(0) {
-                MethodCall::Reply { data } => {
-                    match data {
-                        Data::ImmutableData(fetched_im_data) => {
-                            assert_eq!(fetched_im_data, im_data);
-                        }
-                        _ => panic!("Unexpected"),
-                    }
-                }
+                MethodCall::Terminate => {},
                 _ => panic!("Unexpected"),
             }
         }
