@@ -67,27 +67,18 @@ impl fmt::Display for ResponseError {
 //------------------------------------------------------------------------------
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum InterfaceError {
-    Abort,
-    Response(ResponseError),
-}
-
-impl From<ResponseError> for InterfaceError {
-    fn from(e: ResponseError) -> InterfaceError {
-        InterfaceError::Response(e)
-    }
+    NotConnected,
 }
 
 impl error::Error for InterfaceError {
     fn description(&self) -> &str {
         match *self {
-            InterfaceError::Abort => "Aborted",
-            InterfaceError::Response(_) => "Invalid response",
+            InterfaceError::NotConnected => "Not Connected",
         }
     }
 
     fn cause(&self) -> Option<&error::Error> {
         match *self {
-            InterfaceError::Response(ref err) => Some(err as &error::Error),
             _ => None,
         }
     }
@@ -96,8 +87,7 @@ impl error::Error for InterfaceError {
 impl fmt::Display for InterfaceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            InterfaceError::Abort => fmt::Display::fmt("InterfaceError::Abort", f),
-            InterfaceError::Response(ref err) => fmt::Display::fmt(err, f)
+            InterfaceError::NotConnected => fmt::Display::fmt("InterfaceError::NotConnected", f),
         }
     }
 }
