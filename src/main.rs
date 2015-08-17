@@ -32,7 +32,7 @@
 
 //! Safe Vault provides the interface to SAFE routing.
 //! The resulting executable is the Vault node for the SAFE network.
-#![feature(convert, negate_unsigned)]
+#![feature(negate_unsigned)]
 #![allow(unused)]
 
 extern crate cbor;
