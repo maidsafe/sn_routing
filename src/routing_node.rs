@@ -479,7 +479,7 @@ impl RoutingNode {
         let message = signed_message.get_routing_message().clone();
 
         if !message.from_authority.is_group() {
-            debug!("Message didn't come from a group ({:?}), returning with SignedToken",
+            debug!("Message from {:?}, returning with SignedToken",
                 message.from_authority);
             // TODO: If not from a group, then use client's public key to check
             // the signature.
@@ -802,13 +802,22 @@ impl RoutingNode {
         match response {
             InternalResponse::Connect(connect_response, signed_token) => {
                 if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
+                    error!("ConnectResponse from {:?} failed our signature for the signed token.",
+                        from_authority);
                     return Err(RoutingError::FailedSignature); };
                 let connect_request = try!(SignedMessage::new_from_token(signed_token));
-                if connect_request.get_routing_message().from_authority.get_location()
-                    != &self.core.id().name() { return Err(RoutingError::BadAuthority); };
+                match connect_request.get_routing_message().from_authority.get_address() {
+                    Some(address) => if !self.core.is_us(&address) {
+                        error!("Connect response contains request that was not from us.");
+                        return Err(RoutingError::BadAuthority);
+                    },
+                    None => return Err(RoutingError::BadAuthority),
+                }
+                // are we already connected (returns false), or still interested ?s
                 if !self.core.check_node(&ConnectionName::Routing(
                     connect_response.receiver_fob.name())) {
                     return Err(RoutingError::RefusedFromRoutingTable); };
+                debug!("Passed checks for ConnectResponse");
                 self.connection_manager.connect(connect_response.local_endpoints.clone());
                 self.connection_manager.connect(connect_response.external_endpoints.clone());
                 self.connection_cache.entry(connect_response.receiver_fob.name())

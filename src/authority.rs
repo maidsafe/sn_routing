@@ -24,6 +24,7 @@ use std::fmt::{Debug, Formatter, Error};
 use messages::{RoutingMessage, Content,
                ExternalRequest, ExternalResponse,
                InternalRequest, InternalResponse};
+use types::Address;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
 pub enum Authority {
@@ -55,6 +56,16 @@ impl Authority {
             &Authority::NodeManager(ref loc)   => loc,
             &Authority::ManagedNode(ref loc)   => loc,
             &Authority::Client(ref loc, _)     => loc,
+        }
+    }
+
+    pub fn get_address(&self) -> Option<Address> {
+        match self {
+          &Authority::ClientManager(_)          => None,
+          &Authority::NaeManager(_)             => None,
+          &Authority::NodeManager(_)            => None,
+          &Authority::ManagedNode(ref name)     => Some(Address::Node(name.clone())),
+          &Authority::Client(_, ref public_key) => Some(Address::Client(public_key.clone())),
         }
     }
 }
