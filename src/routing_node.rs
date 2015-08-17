@@ -53,7 +53,7 @@ use messages::{RoutingMessage,
                ExternalRequest, ExternalResponse,
                InternalRequest, InternalResponse };
 
-use error::{RoutingError, ResponseError};
+use error::{RoutingError, ResponseError, InterfaceError};
 use refresh_accumulator::RefreshAccumulator;
 use message_filter::MessageFilter;
 use message_accumulator::MessageAccumulator;
@@ -95,7 +95,7 @@ impl RoutingNode {
         let accepting_on = cm.get_own_endpoints();
 
         let core = RoutingCore::new(event_sender.clone());
-        debug!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
+        info!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
 
         RoutingNode {
             crust_receiver      : crust_receiver,
@@ -127,7 +127,23 @@ impl RoutingNode {
                     ignore(self.message_received(signed_message));
                 },
                 Ok(Action::SendContent(to_authority, content)) => {
-                    let _ = self.send_content(to_authority, content);
+                    if self.core.is_connected_node() {
+                        let _ = self.send_content(to_authority, content);
+                    } else {
+                        match content {
+                            Content::ExternalRequest(external_request) => {
+                                self.send_to_user(Event::FailedRequest(to_authority,
+                                    external_request, InterfaceError::NotConnected));
+                            },
+                            Content::ExternalResponse(external_response) => {
+                                self.send_to_user(Event::FailedResponse(to_authority,
+                                    external_response, InterfaceError::NotConnected));
+                            },
+                            _ => error!("InternalRequest/Response was sent over ActionChannel {:?}",
+                                content),
+                        }
+
+                    }
                 },
                 Ok(Action::WakeUp) => {
                     // ensure that the loop is blocked for maximally 10ms
@@ -817,7 +833,7 @@ impl RoutingNode {
                 if !self.core.check_node(&ConnectionName::Routing(
                     connect_response.receiver_fob.name())) {
                     return Err(RoutingError::RefusedFromRoutingTable); };
-                debug!("Passed checks for ConnectResponse");
+                debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
                 self.connection_manager.connect(connect_response.local_endpoints.clone());
                 self.connection_manager.connect(connect_response.external_endpoints.clone());
                 self.connection_cache.entry(connect_response.receiver_fob.name())
@@ -832,6 +848,7 @@ impl RoutingNode {
 
     fn send_to_user(&self, event: Event) {
         if self.event_sender.send(event).is_err() {
+            error!("Channel to user is broken. Terminating.");
             let _ = self.action_sender.send(Action::Terminate);
         }
     }
