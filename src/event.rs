@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use messages::{RoutingMessage, ExternalRequest, ExternalResponse, Content, SignedToken};
+use messages::{RoutingMessage, ExternalRequest, ExternalResponse, SignedToken};
 use name_type::NameType;
 use error::InterfaceError;
 use sodiumoxide::crypto::sign;
@@ -55,7 +55,8 @@ pub enum Event {
     Churn(Vec<NameType>),
     Connected,
     Disconnected,
-    FailedAction(Authority, Content, InterfaceError),
+    FailedRequest(Authority, ExternalRequest, InterfaceError),
+    FailedResponse(Authority, ExternalResponse, InterfaceError),
     //    ~~|~~~~~~~~~~
     //      | our close group sorted from our name; always including our name
     //      | if size > 1, we are connected to the network
