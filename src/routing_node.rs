@@ -211,7 +211,7 @@ impl RoutingNode {
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, endpoint : Endpoint) {
-        error!("Lost connection on {:?}", endpoint);
+        debug!("Lost connection on {:?}", endpoint);
         let connection_name = self.core.lookup_endpoint(&endpoint);
           if connection_name.is_some() { self.core.drop_peer(&connection_name.unwrap()); }
     }
@@ -390,8 +390,6 @@ impl RoutingNode {
         // filter check
         if self.filter.check(message_wrap.signature()) {
             // should just return quietly
-            debug!("FILTER BLOCKED message {:?} from {:?} to {:?}",
-                message, message.source(), message.destination());
             return Err(RoutingError::FilterCheckFailed);
         }
         debug!("message {:?} from {:?} to {:?}", message.content,

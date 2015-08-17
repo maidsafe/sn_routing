@@ -31,7 +31,7 @@ use types::Bytes;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use sodiumoxide::crypto;
-use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
+use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content, Cause};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -96,31 +96,31 @@ impl Routing {
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn get_request(&self, location : Authority, data_request : DataRequest) {
+    pub fn get_request(&self, location : Authority, data_request : DataRequest, cause : Cause) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
-                Content::ExternalRequest(ExternalRequest::Get(data_request))));
+                Content::ExternalRequest(ExternalRequest::Get(data_request, cause))));
     }
 
     /// Add something to the network
-    pub fn put_request(&self, location : Authority, data : Data) {
+    pub fn put_request(&self, location : Authority, data : Data, cause : Cause) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
-                Content::ExternalRequest(ExternalRequest::Put(data))));
+                Content::ExternalRequest(ExternalRequest::Put(data, cause))));
     }
 
     /// Change something already on the network
-    pub fn post_request(&self, location : Authority, data : Data) {
+    pub fn post_request(&self, location : Authority, data : Data, cause : Cause) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
-                Content::ExternalRequest(ExternalRequest::Post(data))));
+                Content::ExternalRequest(ExternalRequest::Post(data, cause))));
     }
 
     /// Remove something from the network
-    pub fn delete_request(&self, location : Authority, data : Data) {
+    pub fn delete_request(&self, location : Authority, data : Data, cause : Cause) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
-                Content::ExternalRequest(ExternalRequest::Delete(data))));
+                Content::ExternalRequest(ExternalRequest::Delete(data, cause))));
     }
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_token.
