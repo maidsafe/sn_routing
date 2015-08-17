@@ -27,6 +27,8 @@ use std::path::Path;
 use self::tempdir::TempDir;
 use std::io::{Read, Write};
 use std::error::Error;
+use rustc_serialize::hex::{ToHex, FromHex};
+
 
 /// Chunkstore is a collection for holding all data chunks.
 /// Implements a maximum disk usage to restrict storage.
@@ -62,7 +64,7 @@ impl ChunkStore {
         // If a file with name 'name' already exists, delete it.
         self.delete(name.clone());
 
-        let name = self.to_string(&name);
+        let name = self.to_hex_string(&name);
         let path_name = Path::new(&name);
         let path = self.tempdir.path();
         let path = path.join(path_name);
@@ -76,7 +78,7 @@ impl ChunkStore {
     }
 
     pub fn delete(&mut self, name: NameType) {
-        let name = self.to_string(&name);
+        let name = self.to_hex_string(&name);
 
         match read_dir(&self.tempdir.path()) {
             Ok(mut dir_entries) => {
@@ -104,7 +106,7 @@ impl ChunkStore {
     }
 
     pub fn get(&self, name: NameType) -> Vec<u8> {
-        let name = self.to_string(&name);
+        let name = self.to_hex_string(&name);
 
         match read_dir(&self.tempdir.path()) {
             Ok(mut dir_entries) => {
@@ -146,7 +148,7 @@ impl ChunkStore {
     }
 
     pub fn has_chunk(&self, name: NameType) -> bool {
-        let name = self.to_string(&name);
+        let name = self.to_hex_string(&name);
 
         match read_dir(&self.tempdir.path()) {
             Ok(mut dir_entries) => {
@@ -176,8 +178,13 @@ impl ChunkStore {
                     match dir_entry {
                         Ok(entry) => {
                             match entry.file_name().to_str() {
-                                Some(name) =>
-                                    names.push(NameType::new(vector_as_u8_64_array(name.as_bytes().to_vec()))),
+                                Some(hex_name) => {
+                                    match hex_name.from_hex() {
+                                        Ok(name) =>
+                                            names.push(NameType::new(vector_as_u8_64_array(name))),
+                                        _ => (),
+                                    }
+                                },
                                 _ => (),
                             }
                         },
@@ -195,13 +202,8 @@ impl ChunkStore {
        self.current_disk_usage + required_space <= self.max_disk_usage
     }
 
-    fn to_string(&self, name: &NameType) -> String {
-        let id = name.get_id();
-        let mut name = String::with_capacity(2 * NAME_TYPE_LEN);
-        for i in id.iter() {
-            name.push_str(format!("{:02x}", i).as_str());
-        }
-        name
+    fn to_hex_string(&self, name: &NameType) -> String {
+        name.get_id().to_hex()
     }
 }
 #[test]
