@@ -53,12 +53,13 @@ pub enum Event {
     //       |     | from group
     //       | type tag
     Churn(Vec<NameType>),
+    //    ~~|~~~~~~~~~~
+    //      | our close group sorted from our name; always including our name
+    //      | if size > 1, we are connected to the network
     Connected,
     Disconnected,
     FailedRequest(Authority, ExternalRequest, InterfaceError),
     FailedResponse(Authority, ExternalResponse, InterfaceError),
-    //    ~~|~~~~~~~~~~
-    //      | our close group sorted from our name; always including our name
-    //      | if size > 1, we are connected to the network
+
     Terminated,
 }
