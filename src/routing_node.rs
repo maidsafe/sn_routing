@@ -259,6 +259,8 @@ impl RoutingNode {
                 let old_identity = match self.core.lookup_endpoint(&endpoint) {
                     // if already connected through the routing table, just confirm or destroy
                     Some(ConnectionName::Routing(known_name)) => {
+                        debug!("Endpoint {:?} registered to routing node {:?}", endpoint,
+                            known_name);
                         match hello.address {
                             // FIXME (ben 11/08/2015) Hello messages need to be signed and
                             // we also need to check the match with the PublicId stored in RT
@@ -293,15 +295,7 @@ impl RoutingNode {
                     // FIXME (ben 11/08/2015) we need to check his PublicId against the network
                     // but this requires an additional RFC so currently leave out such check
                     // refer to https://github.com/maidsafe/routing/issues/387
-                        alpha = match self.core.lookup_name(&his_name) {
-                            Some(ConnectionName::Routing(_)) => {
-                                // the new identity will be refused from core
-                                // as he is already present in the routing_table
-                                // with a different endpoint.  The closest name to zero is alpha
-                                &self.core.id().name() < &his_name
-                            },
-                            _ => false,
-                        };
+                        alpha = &self.core.id().name() < &his_name;
                         ConnectionName::Routing(his_name)
                     },
                     (Address::Client(his_public_key), Address::Node(our_name)) => {
@@ -762,6 +756,7 @@ impl RoutingNode {
                               from_authority : Authority,
                               to_authority   : Authority,
                               response_token : SignedToken) -> RoutingResult {
+        debug!("handle ConnectRequest");
         match request {
             InternalRequest::Connect(connect_request) => {
                 if !connect_request.requester_fob.is_relocated() {
@@ -805,6 +800,7 @@ impl RoutingNode {
                                response       : InternalResponse,
                                from_authority : Authority,
                                to_authority   : Authority) -> RoutingResult {
+        debug!("handle ConnectResponse");
         match response {
             InternalResponse::Connect(connect_response, signed_token) => {
                 if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
