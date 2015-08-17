@@ -55,11 +55,11 @@ pub enum DataRequest {
 }
 
 impl DataRequest {
-    pub fn name(&self) -> &NameType {
+    pub fn name(&self) -> NameType {
         match *self {
-            DataRequest::StructuredData(ref name, _) => name,
-            DataRequest::ImmutableData(ref name, _)  => name,
-            DataRequest::PlainData(ref name)         => name,
+            DataRequest::StructuredData(ref name, tag) => StructuredData::compute_name(tag, name),
+            DataRequest::ImmutableData(ref name, _)  => name.clone(),
+            DataRequest::PlainData(ref name)         => name.clone(),
         }
     }
 }
