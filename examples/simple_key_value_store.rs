@@ -65,7 +65,7 @@ use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode};
-use routing::{ExternalRequest, SignedToken};
+use routing::{ExternalRequest, SignedToken, Cause};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -175,23 +175,23 @@ impl Node {
                                  from_authority : Authority,
                                  response_token : Option<SignedToken>) {
         match request.clone() {
-            ExternalRequest::Get(data_request) => {
+            ExternalRequest::Get(data_request, _) => {
                 self.handle_get_request(data_request,
                                         our_authority,
                                         from_authority,
                                         request,
                                         response_token);
             },
-            ExternalRequest::Put(data) => {
+            ExternalRequest::Put(data, _) => {
                 self.handle_put_request(data,
                                         our_authority,
                                         from_authority,
                                         response_token);
             },
-            ExternalRequest::Post(_) => {
+            ExternalRequest::Post(_, _) => {
                 println!("Node: Post is not implemented, ignoring.");
             },
-            ExternalRequest::Delete(_) => {
+            ExternalRequest::Delete(_, _) => {
                 println!("Node: Delete is not implemented, ignoring.");
             },
         }
@@ -275,6 +275,7 @@ struct Client {
     event_receiver   : Receiver<Event>,
     command_receiver : Receiver<UserCommand>,
     is_done          : bool,
+    request_counter  : u32,
 }
 
 impl Client {
@@ -291,6 +292,7 @@ impl Client {
             event_receiver   : event_receiver,
             command_receiver : command_receiver,
             is_done          : false,
+            request_counter  : 0u32,
         })
     }
 
@@ -359,23 +361,32 @@ impl Client {
         println!("Client received routing event: {:?}", event);
     }
 
-    fn send_get_request(&self, what: String) {
+    fn send_get_request(&mut self, what: String) {
         let name = Client::calculate_key_name(&what);
+        let cause = self.get_cause();
 
         self.routing.get_request(Authority::NaeManager(name.clone()),
-                                 DataRequest::PlainData(name));
+                                 DataRequest::PlainData(name),
+                                 cause);
     }
 
-    fn send_put_request(&self, put_where: String, put_what: String) {
+    fn send_put_request(&mut self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
         let data = encode(&put_what).unwrap();
+        let cause = self.get_cause();
 
         self.routing.put_request(Authority::NaeManager(name.clone()),
-                                 Data::PlainData(PlainData::new(name, data)));
+                                 Data::PlainData(PlainData::new(name, data)),
+                                 cause);
     }
 
     fn calculate_key_name(key: &String) -> NameType {
         NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
+    }
+
+    fn get_cause(&mut self) -> Cause {
+        self.request_counter.wrapping_add(1);
+        crypto::hash::sha256::hash(&encode(&self.request_counter).unwrap()[..])
     }
 }
 

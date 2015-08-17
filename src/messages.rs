@@ -17,6 +17,7 @@
 
 use sodiumoxide::crypto::sign::Signature;
 use sodiumoxide::crypto::sign;
+use sodiumoxide::crypto;
 use std::fmt::{Debug, Formatter, Error};
 use cbor::{CborError};
 use std::collections::BTreeMap;
@@ -33,6 +34,8 @@ use NameType;
 use utils;
 
 pub static VERSION_NUMBER : u8 = 0;
+
+pub type Cause = crypto::hash::sha256::Digest;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectRequest {
@@ -67,13 +70,18 @@ impl Debug for SignedToken {
         formatter.write_str(&format!("SignedToken"))
     }
 }
+
 /// These are the messageTypes routing provides
+/// The Cause of a new ExternalRequest is the sha256 hash of a previous message, or
+/// external event (eg churn in the network, or a user action in clients) that caused this
+/// ExternalRequest.  This is solely to make identical requests different, as the filter
+/// will block a repeated appearance of an identical event (roughly within a 10 minute time frame).
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalRequest {
-    Get(DataRequest),
-    Put(Data),
-    Post(Data),
-    Delete(Data),
+    Get(DataRequest, Cause),
+    Put(Data, Cause),
+    Post(Data, Cause),
+    Delete(Data, Cause),
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
