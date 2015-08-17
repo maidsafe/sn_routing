@@ -27,7 +27,6 @@ use authority::Authority;
 use data::{Data, DataRequest};
 use types;
 use public_id::PublicId;
-use types::{DestinationAddress, SourceAddress};
 use error::{ResponseError};
 use NameType;
 use utils;
