@@ -809,8 +809,8 @@ impl RoutingNode {
                 if !self.core.check_node(&ConnectionName::Routing(
                     connect_response.receiver_fob.name())) {
                     return Err(RoutingError::RefusedFromRoutingTable); };
-                // self.connection_manager.connect(connect_response.local_endpoints.clone());
-                // self.connection_manager.connect(connect_response.external_endpoints.clone());
+                self.connection_manager.connect(connect_response.local_endpoints.clone());
+                self.connection_manager.connect(connect_response.external_endpoints.clone());
                 self.connection_cache.entry(connect_response.receiver_fob.name())
                     .or_insert(SteadyTime::now());
                 Ok(())
