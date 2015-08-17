@@ -16,8 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use messages::{RoutingMessage, ExternalRequest, ExternalResponse, SignedToken};
+use messages::{RoutingMessage, ExternalRequest, ExternalResponse, Content, SignedToken};
 use name_type::NameType;
+use error::InterfaceError;
 use sodiumoxide::crypto::sign;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
@@ -52,6 +53,9 @@ pub enum Event {
     //       |     | from group
     //       | type tag
     Churn(Vec<NameType>),
+    Connected,
+    Disconnected,
+    FailedAction(Authority, Content, InterfaceError),
     //    ~~|~~~~~~~~~~
     //      | our close group sorted from our name; always including our name
     //      | if size > 1, we are connected to the network

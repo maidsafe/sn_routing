@@ -67,8 +67,7 @@ impl fmt::Display for ResponseError {
 //------------------------------------------------------------------------------
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum InterfaceError {
-    Abort,
-    Response(ResponseError),
+    NotConnected,
 }
 
 impl From<ResponseError> for InterfaceError {
@@ -80,8 +79,7 @@ impl From<ResponseError> for InterfaceError {
 impl error::Error for InterfaceError {
     fn description(&self) -> &str {
         match *self {
-            InterfaceError::Abort => "Aborted",
-            InterfaceError::Response(_) => "Invalid response",
+            InterfaceError::NotConnected => "Not Connected",
         }
     }
 
