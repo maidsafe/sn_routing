@@ -36,8 +36,6 @@ use sodiumoxide;
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::sign;
 
-pub use crust::Endpoint;
-
 pub const NAME_TYPE_LEN : usize = 64;
 pub const POLL_DURATION_IN_MILLISEC: u32 = 1;
 
