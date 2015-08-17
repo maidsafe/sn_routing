@@ -26,7 +26,7 @@ use time::{Duration, SteadyTime};
 use std::cmp::min;
 
 use crust;
-use crust::{ConnectionManager, Endpoint};
+use crust::{ConnectionManager, Endpoint, Port};
 use lru_time_cache::LruCache;
 
 use action::Action;
@@ -91,7 +91,7 @@ impl RoutingNode {
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
         let mut cm = crust::ConnectionManager::new(crust_sender);
-        let _ = cm.start_accepting(vec![]);
+        let _ = cm.start_accepting(vec![Port::Tcp(5483u16)]);
         let accepting_on = cm.get_own_endpoints();
 
         let core = RoutingCore::new(event_sender.clone());
