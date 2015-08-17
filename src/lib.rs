@@ -62,13 +62,16 @@ mod routing_core;
 mod relay;
 mod hello;
 mod wake_up;
+mod peer;
+mod refresh_accumulator;
+mod message_accumulator;
 
+/// Routing provides an actionable interface to routing.
 pub mod routing;
-pub mod refresh_accumulator;
-pub mod message_accumulator;
+/// Event provides the events the user can expect to receive from routing
+pub mod event;
 pub mod test_utils;
 pub mod types;
-pub mod peer;
 pub mod id;
 pub mod utils;
 pub mod public_id;
@@ -78,7 +81,7 @@ pub mod structured_data;
 pub mod immutable_data;
 pub mod plain_data;
 pub mod data;
-pub mod event;
+
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
 pub use messages::{SignedToken, ExternalRequest, ExternalResponse};
