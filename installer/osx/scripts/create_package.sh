@@ -21,7 +21,7 @@ hash gtar 2>/dev/null || hash gnutar 2>/dev/null || {
 You need gnu-tar.  Run:
     brew install gnu-tar
 
-";  	
+";
   else
     echo >&2 '
 You need gnu-tar.  This is best installed via brew.  Run:
@@ -35,4 +35,4 @@ You need gnu-tar.  This is best installed via brew.  Run:
 
 Platform=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-${0%/*}/../../common/scripts/invoke_fpm.sh ${Platform##*/}
+"${0%/*}/../../common/scripts/invoke_fpm.sh" ${Platform##*/}
