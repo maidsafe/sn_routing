@@ -313,15 +313,7 @@ impl RoutingVaultMock {
         // println!("Amount Of Chunks Stored: {:?}", data_store.lock().unwrap().len());
     }
 
-    pub fn bootstrap(&mut self,
-                     endpoints: Option<Vec<Endpoint>>,
-                     _: Option<u16>) -> Result<(), RoutingError> {
-        if let Some(vec_endpoints) = endpoints {
-            for endpoint in vec_endpoints {
-                println!("Endpoint: {:?}", endpoint);
-            }
-        }
-
+    pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
         Ok(())
     }
 

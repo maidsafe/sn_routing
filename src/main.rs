@@ -41,7 +41,6 @@ extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
 
-extern crate crust;
 extern crate lru_time_cache;
 
 use std::thread;
@@ -96,7 +95,7 @@ impl Vault {
         let routing_stop_flag_clone = routing_stop_flag.clone();
 
         let routing_joiner = ::std::thread::spawn(move || {
-            let _ = cloned_routing_vault.lock().unwrap().bootstrap(None, None);
+            let _ = cloned_routing_vault.lock().unwrap().bootstrap();
             while !*routing_stop_flag_clone.lock().unwrap() {
                 ::std::thread::sleep_ms(POLL_DURATION_IN_MILLISEC);
                 cloned_routing_vault.lock().unwrap().run();
