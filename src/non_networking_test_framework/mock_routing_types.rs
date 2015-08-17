@@ -495,14 +495,14 @@ impl StructuredData {
         }
         try!(other.verify_previous_owner_signatures());
 
-                   self.type_tag = other.type_tag;
-                   self.identifier = other.identifier;
-                   self.data = other.data;
-                   self.previous_owner_keys = other.previous_owner_keys;
-                   self.version = other.version;
-                   self.current_owner_keys  = other.current_owner_keys;
-                   self.previous_owner_signatures = other.previous_owner_signatures;
-                   Ok(())
+        self.type_tag = other.type_tag;
+        self.identifier = other.identifier;
+        self.data = other.data;
+        self.previous_owner_keys = other.previous_owner_keys;
+        self.version = other.version;
+        self.current_owner_keys  = other.current_owner_keys;
+        self.previous_owner_signatures = other.previous_owner_signatures;
+        Ok(())
     }
 
     pub fn replace_signatures(&mut self, new_signatures: Vec<::sodiumoxide::crypto::sign::Signature>) {
@@ -515,31 +515,32 @@ impl StructuredData {
 
     /// Confirms *unique and valid* previous_owner_signatures are at least 50% of total owners
     fn verify_previous_owner_signatures(&self) -> Result<(), RoutingError> {
-         // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
-         // Any duplicates invalidates this type
-         if self.previous_owner_signatures.iter().filter(|&sig| self.previous_owner_signatures.iter()
-                                  .any(|ref sig_check| NameType(sig.0) == NameType(sig_check.0)))
-                                  .count() > (self.previous_owner_keys.len() + 1) /2 {
-
+        // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
+        // Any duplicates invalidates this type
+        if self.previous_owner_signatures.iter().filter(|&sig| self.previous_owner_signatures.iter()
+                .any(|ref sig_check| NameType(sig.0) == NameType(sig_check.0)))
+                .count() > (self.previous_owner_keys.len() + 1) /2 {
             return Err(RoutingError::DuplicateSignatures);
-         }
+        }
 
-
-         // Refuse when not enough previous_owner_signatures found
-         if self.previous_owner_signatures.len() < (self.previous_owner_keys.len()  + 1 ) / 2 {
-             return Err(RoutingError::NotEnoughSignatures);
-         }
-
-         let data = try!(self.data_to_sign());
-         // Count valid previous_owner_signatures and refuse if quantity is not enough
-         if self.previous_owner_signatures.iter()
-                        .filter(|&sig| self.previous_owner_keys
-                          .iter()
-                          .any(|ref pub_key| crypto::sign::verify_detached(&sig, &data, &pub_key)))
-                            .count() < self.previous_owner_keys.len() / 2 {
+        // Refuse when not enough previous_owner_signatures found
+        if self.previous_owner_signatures.len() < (self.previous_owner_keys.len()  + 1 ) / 2 {
             return Err(RoutingError::NotEnoughSignatures);
-         }
-         Ok(())
+        }
+
+        let data = try!(self.data_to_sign());
+        // Count valid previous_owner_signatures and refuse if quantity is not enough
+        let threshold = match self.previous_owner_keys.len() {
+            0 => 0,  // When there is no previous owner, signature doens't matter
+            1 => 1,  // When there is just one previous owner, the signature must be valid
+            _ => self.previous_owner_keys.len() / 2,  // majority rule applies here
+        };
+        if self.previous_owner_signatures.iter().filter(
+                |&sig| self.previous_owner_keys.iter().any(
+                    |ref pub_key| crypto::sign::verify_detached(&sig, &data, &pub_key))).count() < threshold {
+            return Err(RoutingError::NotEnoughSignatures);
+        }
+        Ok(())
     }
 
 }
