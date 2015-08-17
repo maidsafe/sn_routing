@@ -70,12 +70,6 @@ pub enum InterfaceError {
     NotConnected,
 }
 
-impl From<ResponseError> for InterfaceError {
-    fn from(e: ResponseError) -> InterfaceError {
-        InterfaceError::Response(e)
-    }
-}
-
 impl error::Error for InterfaceError {
     fn description(&self) -> &str {
         match *self {
@@ -85,7 +79,6 @@ impl error::Error for InterfaceError {
 
     fn cause(&self) -> Option<&error::Error> {
         match *self {
-            InterfaceError::Response(ref err) => Some(err as &error::Error),
             _ => None,
         }
     }
@@ -94,8 +87,7 @@ impl error::Error for InterfaceError {
 impl fmt::Display for InterfaceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            InterfaceError::Abort => fmt::Display::fmt("InterfaceError::Abort", f),
-            InterfaceError::Response(ref err) => fmt::Display::fmt(err, f)
+            InterfaceError::NotConnected => fmt::Display::fmt("InterfaceError::NotConnected", f),
         }
     }
 }
