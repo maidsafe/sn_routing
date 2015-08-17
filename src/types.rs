@@ -102,49 +102,6 @@ impl Debug for Address {
     }
 }
 
-/// Address of the source of the message
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum SourceAddress {
-    RelayedForClient(FromAddress /* the relay node */, crypto::sign::PublicKey),
-    RelayedForNode(FromAddress   /* the relay node */, NodeAddress),
-    Direct(FromAddress),
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum DestinationAddress {
-    RelayToClient(ToAddress, crypto::sign::PublicKey),
-    RelayToNode(ToAddress, FromAddress),
-    Direct(ToAddress),
-}
-
-impl SourceAddress  {
-    pub fn non_relayed_source(&self) -> NameType {
-        match *self {
-            SourceAddress::RelayedForClient(addr, _) => addr,
-            SourceAddress::RelayedForNode(addr, _)   => addr,
-            SourceAddress::Direct(addr)              => addr,
-        }
-    }
-
-    pub fn actual_source(&self) -> Address {
-       match *self {
-           SourceAddress::RelayedForClient(_, addr) => Address::Client(addr),
-           SourceAddress::RelayedForNode(_, addr)   => Address::Node(addr),
-           SourceAddress::Direct(addr)              => Address::Node(addr),
-       }
-    }
-}
-
-impl DestinationAddress {
-    pub fn non_relayed_destination(&self) -> NameType {
-        match *self {
-            DestinationAddress::RelayToClient(to_address, _) => to_address,
-            DestinationAddress::RelayToNode(to_address, _)   => to_address,
-            DestinationAddress::Direct(to_address)           => to_address,
-        }
-    }
-}
-
 // #[cfg(test)]
 // #[allow(deprecated)]
 // mod test {
