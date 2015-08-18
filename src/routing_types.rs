@@ -23,7 +23,9 @@ pub use routing::immutable_data::ImmutableData;
 // pub use routing::node_interface::MethodCall;
 // pub use routing::sendable::Sendable;
 pub use routing::structured_data::StructuredData;
-pub use routing::types::GROUP_SIZE;
+pub use routing::types::{GROUP_SIZE, vector_as_u8_64_array};
 
+pub const NAME_TYPE_LEN : usize = 64;
+pub const POLL_DURATION_IN_MILLISEC: u32 = 1;
 
 pub use non_networking_test_framework::mock_routing_types::*;
