@@ -36,6 +36,8 @@ use sodiumoxide;
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::sign;
 
+pub use routing::NameType;
+
 pub const NAME_TYPE_LEN : usize = 64;
 pub const POLL_DURATION_IN_MILLISEC: u32 = 1;
 
@@ -71,7 +73,6 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-pub static GROUP_SIZE: usize = 8;
 pub static QUORUM_SIZE: usize = 6;
 
 pub trait Mergeable {
@@ -177,71 +178,6 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
 }
 
-/// NameType can be created using the new function by passing ID as it’s parameter.
-#[derive(Eq, Copy)]
-pub struct NameType(pub [u8; NAME_TYPE_LEN]);
-
-impl NameType {
-    pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
-        NameType(id)
-    }
-
-    // TODO(Ben): Resolve from_data
-    // pub fn from_data(data : &[u8]) -> NameType {
-    //     NameType::new(&crypto::hash::sha512::hash(data).0)
-    // }
-
-    pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
-        self.0
-    }
-
-    // private function exposed in fmt Debug {:?} and Display {} traits
-    fn get_debug_id(&self) -> String {
-      format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
-              self.0[0],
-              self.0[1],
-              self.0[2],
-              self.0[NAME_TYPE_LEN-3],
-              self.0[NAME_TYPE_LEN-2],
-              self.0[NAME_TYPE_LEN-1])
-    }
-
-    // // private function exposed in fmt LowerHex {:x} trait
-    // // note(ben): UpperHex explicitly not implemented to prevent mixed usage
-    // fn get_full_id(&self) -> String {
-    //   let mut full_id = String::with_capacity(2 * NAME_TYPE_LEN);
-    //   for char in self.0.iter() {
-    //     full_id.push_str(format!("{:02x}", char).as_str());
-    //   }
-    //   full_id
-    // }
-}
-
-impl fmt::Debug for NameType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      write!(f, "{}", self.get_debug_id())
-    }
-}
-
-impl fmt::Display for NameType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      write!(f, "{}", self.get_debug_id())
-    }
-}
-
-// impl fmt::LowerHex for NameType {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         write!(f, "{}", self.get_full_id())
-//     }
-// }
-
-
-impl PartialEq for NameType {
-    fn eq(&self, other: &NameType) -> bool {
-        slice_equal(&self.0, &other.0)
-    }
-}
-
 /// Returns true if `lhs` is closer to `target` than `rhs`.  "Closer" here is as per the Kademlia
 /// notion of XOR distance, i.e. the distance between two `NameType`s is the bitwise XOR of their
 /// values.
@@ -271,75 +207,6 @@ pub fn closer_to_target_or_equal(lhs: &NameType, rhs: &NameType, target: &NameTy
     }
     true
 }
-
-/// The `NameType` can be ordered from zero as a normal Euclidean number
-impl Ord for NameType {
-    #[inline]
-    fn cmp(&self, other : &NameType) -> Ordering {
-        Ord::cmp(&&self.0[..], &&other.0[..])
-    }
-}
-
-impl PartialOrd for NameType {
-    #[inline]
-    fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
-        PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
-    }
-    #[inline]
-    fn lt(&self, other : &NameType) -> bool {
-        PartialOrd::lt(&&self.0[..], &&other.0[..])
-    }
-    #[inline]
-    fn le(&self, other : &NameType) -> bool {
-        PartialOrd::le(&&self.0[..], &&other.0[..])
-    }
-    #[inline]
-    fn gt(&self, other : &NameType) -> bool {
-        PartialOrd::gt(&&self.0[..], &&other.0[..])
-    }
-    #[inline]
-    fn ge(&self, other : &NameType) -> bool {
-        PartialOrd::ge(&&self.0[..], &&other.0[..])
-    }
-}
-
-impl hash::Hash for NameType {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        state.write(&self.0[..])
-    }
-}
-
-impl Clone for NameType {
-    fn clone(&self) -> Self {
-        let mut arr_cloned = [0u8; NAME_TYPE_LEN];
-        let &NameType(arr_self) = self;
-
-        for i in 0..arr_self.len() {
-            arr_cloned[i] = arr_self[i];
-        }
-
-        NameType(arr_cloned)
-    }
-}
-
-impl Encodable for NameType {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        CborTagEncode::new(5483_000, &(self.0.as_ref())).encode(e)
-    }
-}
-
-impl Decodable for NameType {
-    fn decode<D: Decoder>(d: &mut D)->Result<NameType, D::Error> {
-        try!(d.read_u64());
-        let id : Vec<u8> = try!(Decodable::decode(d));
-
-        match container_of_u8_to_array!(id, NAME_TYPE_LEN) {
-            Some(id_arr) => Ok(NameType(id_arr)),
-            None => Err(d.error("Bad NameType size"))
-        }
-    }
-}
-
 
 pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 
