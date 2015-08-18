@@ -134,8 +134,8 @@ impl StructuredData {
          if self.previous_owner_signatures.iter()
                         .filter(|&sig| owner_keys
                           .iter()
-                          .any(|ref pub_key| crypto::sign::verify_detached(&sig, &data, &pub_key)))
-                            .count() < owner_keys.len() / 2 {
+                          .any(|ref pub_key| crypto::sign::verify_detached(&sig, &data, pub_key)))
+                            .count() < (owner_keys.len() / 2 + owner_keys.len() % 2) {
             return Err(RoutingError::NotEnoughSignatures);
          }
          Ok(())
