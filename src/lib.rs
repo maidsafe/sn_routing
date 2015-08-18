@@ -54,7 +54,6 @@ extern crate message_filter;
 
 mod common_bits;
 mod action;
-mod messages;
 mod name_type;
 mod routing_table;
 mod routing_node;
@@ -81,6 +80,7 @@ pub mod structured_data;
 pub mod immutable_data;
 pub mod plain_data;
 pub mod data;
+pub mod messages;
 
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
