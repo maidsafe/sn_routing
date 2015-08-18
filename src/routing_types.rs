@@ -17,11 +17,12 @@
 
 
 // pub use routing::{closer_to_target, NameType};
-// pub use routing::data::Data;
+// pub use routing::data::{Data, DataRequest};
 // pub use routing::error::{InterfaceError, ResponseError};
-// pub use routing::immutable_data::{ImmutableData, ImmutableDataType};
+pub use routing::immutable_data::ImmutableData;
 // pub use routing::node_interface::MethodCall;
 // pub use routing::sendable::Sendable;
+pub use routing::structured_data::StructuredData;
 pub use routing::types::GROUP_SIZE;
 
 
