@@ -60,6 +60,5 @@ pub enum Event {
     Disconnected,
     FailedRequest(Authority, ExternalRequest, InterfaceError),
     FailedResponse(Authority, ExternalResponse, InterfaceError),
-
     Terminated,
 }

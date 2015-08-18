@@ -53,7 +53,7 @@ use messages::{RoutingMessage,
                ExternalRequest, ExternalResponse,
                InternalRequest, InternalResponse };
 
-use error::{RoutingError, ResponseError};
+use error::{RoutingError, ResponseError, InterfaceError};
 use refresh_accumulator::RefreshAccumulator;
 use message_filter::MessageFilter;
 use message_accumulator::MessageAccumulator;
@@ -95,7 +95,7 @@ impl RoutingNode {
         let accepting_on = cm.get_own_endpoints();
 
         let core = RoutingCore::new(event_sender.clone());
-        debug!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
+        info!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
 
         RoutingNode {
             crust_receiver      : crust_receiver,
@@ -127,7 +127,24 @@ impl RoutingNode {
                     ignore(self.message_received(signed_message));
                 },
                 Ok(Action::SendContent(to_authority, content)) => {
-                    let _ = self.send_content(to_authority, content);
+                    if (!self.client_restriction && self.core.is_connected_node())
+                        || (self.client_restriction && self.core.has_bootstrap_endpoints()) {
+                        let _ = self.send_content(to_authority, content);
+                    } else {
+                        match content {
+                            Content::ExternalRequest(external_request) => {
+                                self.send_to_user(Event::FailedRequest(to_authority,
+                                    external_request, InterfaceError::NotConnected));
+                            },
+                            Content::ExternalResponse(external_response) => {
+                                self.send_to_user(Event::FailedResponse(to_authority,
+                                    external_response, InterfaceError::NotConnected));
+                            },
+                            _ => error!("InternalRequest/Response was sent over ActionChannel {:?}",
+                                content),
+                        }
+
+                    }
                 },
                 Ok(Action::WakeUp) => {
                     // ensure that the loop is blocked for maximally 10ms
@@ -383,38 +400,42 @@ impl RoutingNode {
     /// If we are the relay node for a message from the SAFE network to a node we relay for,
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
-    fn message_received(&mut self, message_wrap : SignedMessage) -> RoutingResult {
+    fn message_received(&mut self, signed_message : SignedMessage) -> RoutingResult {
 
-        let message = message_wrap.get_routing_message().clone();
+        let message = signed_message.get_routing_message().clone();
 
         // filter check
-        if self.filter.check(message_wrap.signature()) {
+        if self.filter.check(signed_message.signature()) {
             // should just return quietly
             return Err(RoutingError::FilterCheckFailed);
         }
-        debug!("message {:?} from {:?} to {:?}", message.content,
-            message.source(), message.destination());
+        debug!("MESSAGE {:?} from {:?} to {:?}, our authority {:?}", message.content,
+            message.source(), message.destination(), self.core.our_authority(&message));
         // add to filter
-        self.filter.add(message_wrap.signature().clone());
+        self.filter.add(signed_message.signature().clone());
 
         // Forward
-        if self.core.is_connected_node() { ignore(self.send(message_wrap.clone())); }
-
-        // if !self.core.name_in_range(&message.destination().get_location()) {
-        //     debug!("Not for us, destination {:?} out of range",
-        //         message.destination().get_location());
-        //     return Ok(()); };
+        if self.core.is_connected_node() { ignore(self.send(signed_message.clone())); }
 
         // check if our calculated authority matches the destination authority of the message
         if self.core.our_authority(&message)
-            .map(|our_auth| message.to_authority != our_auth).unwrap_or(false) {
-            debug!("Destination authority {:?} is while our authority is {:?}",
-                message.to_authority, self.core.our_authority(&message));
-            return Err(RoutingError::BadAuthority);
+            .map(|our_auth| message.to_authority != our_auth).unwrap_or(true) {
+            // Either the message is directed at a group, and the target should be in range,
+            // or it should be aimed directly at us.
+            if message.destination().is_group() {
+                if !self.core.name_in_range(message.destination().get_location()) {
+                    return Err(RoutingError::BadAuthority); };
+            } else {
+                match message.destination().get_address() {
+                    Some(ref address) => if !self.core.is_us(address) {
+                        return Err(RoutingError::BadAuthority); },
+                    None => return Err(RoutingError::BadAuthority),
+                }
+            };
         }
 
         // Accumulate message
-        let (message, opt_token) = match self.accumulate(message_wrap) {
+        let (message, opt_token) = match self.accumulate(signed_message) {
             Some((message, opt_token)) => (message, opt_token),
             None => return Ok(()),
         };
@@ -422,13 +443,6 @@ impl RoutingNode {
         match message.content {
             Content::InternalRequest(request) => {
                 match request {
-                    InternalRequest::Connect(_) => {
-                        match opt_token {
-                            Some(response_token) => self.handle_connect_request(request,
-                                message.from_authority, message.to_authority, response_token),
-                            None => return Err(RoutingError::UnknownMessageType),
-                        }
-                    },
                     InternalRequest::RequestNetworkName(_) => {
                         match opt_token {
                             Some(response_token) => self.handle_request_network_name(request,
@@ -440,22 +454,30 @@ impl RoutingNode {
                         self.handle_cache_network_name(request, message.from_authority,
                             message.to_authority)
                     },
+                    InternalRequest::Connect(_) => {
+                        match opt_token {
+                            Some(response_token) => self.handle_connect_request(request,
+                                message.from_authority, message.to_authority, response_token),
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
                     InternalRequest::Refresh(_, _) => {
+                        // TODO (ben 17/08/2015) implement handle Refresh identical to preceding
+                        // implementation
                         Ok(())
-                        // TODO (ben 13/08/2015) implement self.handle_refresh()
                     },
                 }
             },
             Content::InternalResponse(response) => {
                 match response {
+                    InternalResponse::CacheNetworkName(_, _, _) => {
+                        self.handle_cache_network_name_response(response, message.from_authority,
+                            message.to_authority)
+                    },
                     InternalResponse::Connect(_, _) => {
                         self.handle_connect_response(response, message.from_authority,
                             message.to_authority)
                     },
-                    InternalResponse::CacheNetworkName(_, _, _) => {
-                        self.handle_cache_network_name_response(response, message.from_authority,
-                            message.to_authority)
-                    }
                 }
             },
             Content::ExternalRequest(request) => {
@@ -466,11 +488,11 @@ impl RoutingNode {
                     response_token : opt_token,
                 });
                 Ok(())
-            }
+            },
             Content::ExternalResponse(response) => {
                 self.handle_external_response(response, message.to_authority,
                     message.from_authority)
-            }
+            },
         }
     }
 
@@ -479,7 +501,7 @@ impl RoutingNode {
         let message = signed_message.get_routing_message().clone();
 
         if !message.from_authority.is_group() {
-            debug!("Message didn't come from a group ({:?}), returning with SignedToken",
+            debug!("Message from {:?}, returning with SignedToken",
                 message.from_authority);
             // TODO: If not from a group, then use client's public key to check
             // the signature.
@@ -802,13 +824,22 @@ impl RoutingNode {
         match response {
             InternalResponse::Connect(connect_response, signed_token) => {
                 if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
+                    error!("ConnectResponse from {:?} failed our signature for the signed token.",
+                        from_authority);
                     return Err(RoutingError::FailedSignature); };
                 let connect_request = try!(SignedMessage::new_from_token(signed_token));
-                if connect_request.get_routing_message().from_authority.get_location()
-                    != &self.core.id().name() { return Err(RoutingError::BadAuthority); };
+                match connect_request.get_routing_message().from_authority.get_address() {
+                    Some(address) => if !self.core.is_us(&address) {
+                        error!("Connect response contains request that was not from us.");
+                        return Err(RoutingError::BadAuthority);
+                    },
+                    None => return Err(RoutingError::BadAuthority),
+                }
+                // are we already connected (returns false), or still interested ?s
                 if !self.core.check_node(&ConnectionName::Routing(
                     connect_response.receiver_fob.name())) {
                     return Err(RoutingError::RefusedFromRoutingTable); };
+                debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
                 self.connection_manager.connect(connect_response.local_endpoints.clone());
                 self.connection_manager.connect(connect_response.external_endpoints.clone());
                 self.connection_cache.entry(connect_response.receiver_fob.name())
@@ -823,6 +854,7 @@ impl RoutingNode {
 
     fn send_to_user(&self, event: Event) {
         if self.event_sender.send(event).is_err() {
+            error!("Channel to user is broken. Terminating.");
             let _ = self.action_sender.send(Action::Terminate);
         }
     }
@@ -881,12 +913,12 @@ impl RoutingNode {
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&self, signed_message : SignedMessage) -> RoutingResult {
         let destination = signed_message.get_routing_message().destination();
-        debug!("Sending signed message to {:?}", destination);
         let bytes = try!(encode(&signed_message));
         // query the routing table for parallel or swarm
         let endpoints = self.core.target_endpoints(&destination);
-        debug!("Sending to {:?} target connection(s)", endpoints.len());
         if !endpoints.is_empty() {
+            debug!("Sending {:?} to {:?} target connection(s)",
+                signed_message.get_routing_message().content, endpoints.len());
             for endpoint in endpoints {
                 // TODO(ben 10/08/2015) drop endpoints that fail to send
                 ignore(self.connection_manager.send(endpoint, bytes.clone()));
@@ -895,17 +927,18 @@ impl RoutingNode {
 
         match self.core.bootstrap_endpoints() {
             Some(bootstrap_peers) => {
-                debug!("Falling back to {:?} bootstrap connections to send.",
-                    bootstrap_peers.len());
                 // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
                 // the relay_name in from_authority Client(relay_name, client_public_key) is
                 // the name of the bootstrap connection we're sending it on.  Although this might
                 // open a window for attacking a node, in v0.3.* we can leave this unresolved.
                 for bootstrap_peer in bootstrap_peers {
                     // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
-                    debug!("Sending to bootstrap node {:?}", bootstrap_peer.identity());
-                    ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
-                        bytes.clone()));
+                    if self.connection_manager.send(bootstrap_peer.endpoint().clone(),
+                        bytes.clone()).is_ok() {
+                        debug!("Sent {:?} to bootstrap connection {:?}",
+                            signed_message.get_routing_message().content,
+                            bootstrap_peer.identity());
+                        break; };
                 }
             },
             None => {},
@@ -928,16 +961,13 @@ impl RoutingNode {
 
         // Request token is only set if it came from a non-group entity.
         // If it came from a group, then sentinel guarantees message validity.
-        let has_invalid_signature = {
-            if let &Some(ref token) = response.get_signed_token() {
-                !token.verify_signature(&self.core.id().signing_public_key())
-            }
-            else { false }
+        if let &Some(ref token) = response.get_signed_token() {
+            if !token.verify_signature(&self.core.id().signing_public_key()) {
+                return Err(RoutingError::FailedSignature); };
+        } else {
+            if !self.core.name_in_range(to_authority.get_location()) {
+                return Err(RoutingError::BadAuthority); };
         };
-
-        if has_invalid_signature {
-            return Err(RoutingError::FailedSignature);
-        }
 
         self.send_to_user(Event::Response {
             response       : response,
