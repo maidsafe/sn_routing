@@ -206,7 +206,15 @@ impl RoutingCore {
                     None => None,
                 }
             },
-            _ => self.relay_map.drop_connection_name(connection_name)
+            _ => {
+                let bootstrapped_prior = self.relay_map.has_bootstrap_connections();
+                let dropped_peer = self.relay_map.drop_connection_name(connection_name);
+                let bootstrapped_posterior = self.relay_map.has_bootstrap_connections();
+                if !bootstrapped_posterior && bootstrapped_prior && !self.is_node() {
+                    error!("Routing Client has disconnected.");
+                    let _ = self.event_sender.send(Event::Disconnected);
+                    let _ = self.action_sender.send(Action::Terminate); };
+                dropped_peer },
         }
     }
 
@@ -237,9 +245,9 @@ impl RoutingCore {
                                         routing_name); };
                                 if added && trigger_churn {
                                     let mut close_group : Vec<NameType> = routing_table
-                                            .our_close_group().iter()
-                                            .map(|node_info| node_info.fob.name())
-                                            .collect::<Vec<NameType>>();
+                                        .our_close_group().iter()
+                                        .map(|node_info| node_info.fob.name())
+                                        .collect::<Vec<NameType>>();
                                     close_group.insert(0, self.id.name());
                                     let _ = self.event_sender.send(Event::Churn(close_group));
                                 };
@@ -252,8 +260,13 @@ impl RoutingCore {
             },
             _ => {
                 let bootstrapped_prior = self.relay_map.has_bootstrap_connections();
+                let is_bootstrap_connection = match identity {
+                    ConnectionName::Bootstrap(_) => true,
+                    _ => false,
+                };
                 let added = self.relay_map.add_peer(identity, endpoint, public_id);
-                if !bootstrapped_prior && added && self.routing_table.is_none() {
+                if !bootstrapped_prior && added && is_bootstrap_connection
+                    && self.routing_table.is_none() {
                     info!("Routing Client bootstrapped.");
                     let _ = self.event_sender.send(Event::Bootstrapped);
                 };
