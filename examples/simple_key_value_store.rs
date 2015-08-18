@@ -174,12 +174,11 @@ impl Node {
                                  our_authority  : Authority,
                                  from_authority : Authority,
                                  response_token : Option<SignedToken>) {
-        match request.clone() {
+        match request {
             ExternalRequest::Get(data_request) => {
                 self.handle_get_request(data_request,
                                         our_authority,
                                         from_authority,
-                                        request,
                                         response_token);
             },
             ExternalRequest::Put(data) => {
@@ -200,7 +199,6 @@ impl Node {
     fn handle_get_request(&mut self, data_request   : DataRequest,
                                      _our_authority : Authority,
                                      from_authority : Authority,
-                                     orig_request   : ExternalRequest,
                                      response_token : Option<SignedToken>) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
@@ -214,7 +212,7 @@ impl Node {
 
         self.routing.get_response(from_authority,
                                   Data::PlainData(data),
-                                  orig_request,
+                                  data_request,
                                   response_token);
     }
 
@@ -280,7 +278,7 @@ struct Client {
 impl Client {
     fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
         let (event_sender, event_receiver) = mpsc::channel::<Event>();
-        let routing = try!(Routing::new_client(event_sender));
+        let routing = try!(Routing::new_client(event_sender, None));
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
@@ -360,10 +358,10 @@ impl Client {
         match event {
             Event::Response{response, our_authority, from_authority} => {
                 match response {
-                    ExternalResponse::Get(data, external_request, opt_signed_token) => {
+                    ExternalResponse::Get(data, data_request, opt_signed_token) => {
 
                     },
-                    ExternalResponse::Put(response_error, external_request, opt_signed_token) => {
+                    ExternalResponse::Put(response_error, opt_signed_token) => {
 
                     },
                     _ => error!("Received external response {:?}, but not handled in example",

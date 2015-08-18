@@ -30,20 +30,25 @@ use data::Data;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 /// represents response errors
 pub enum ResponseError {
-    /// data not found
-    NoData,
+    /// Abort is for user to indicate that the state can be dropped;
+    /// if received by routing, it will drop the state.
+    Abort,
     /// invalid request
-    InvalidRequest,
-    /// failure to store data
-    FailedToStoreData(Data)
+    InvalidRequest(Data),
+    /// failure to complete request for data
+    FailedRequestForData(Data),
+    /// had to clear Sacrificial Data in order to complete request
+    HadToClearSacrificial(usize),
 }
 
 impl error::Error for ResponseError {
     fn description(&self) -> &str {
         match *self {
-            ResponseError::NoData => "No Data",
-            ResponseError::InvalidRequest => "Invalid request",
-            ResponseError::FailedToStoreData(_) => "Failed to store data",
+            ResponseError::Abort => "Abort",
+            ResponseError::InvalidRequest(_) => "Invalid request",
+            ResponseError::FailedRequestForData(_) => "Failed request for data",
+            ResponseError::HadToClearSacrificial(size) => "Had to clear {:?} bytes of Sacrificial
+                data to complete request",
         }
     }
 
@@ -55,10 +60,12 @@ impl error::Error for ResponseError {
 impl fmt::Display for ResponseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ResponseError::NoData => fmt::Display::fmt("ResponsError::NoData", f),
-            ResponseError::InvalidRequest => fmt::Display::fmt("ResponsError::InvalidRequest", f),
-            ResponseError::FailedToStoreData(_) =>
+            ResponseError::Abort => fmt::Display::fmt("ResponseError:: Abort", f),
+            ResponseError::InvalidRequest(_) => fmt::Display::fmt("ResponsError::InvalidRequest", f),
+            ResponseError::FailedRequestForData(_) =>
                 fmt::Display::fmt("ResponseError::FailedToStoreData", f),
+            ResponseError::HadToClearSacrificial(_) =>
+                fmt::Display::fmt("ResponseError::HadToClearSacrificial", f),
         }
     }
 }
@@ -233,6 +240,7 @@ impl fmt::Display for RoutingError {
 
 #[cfg(test)]
 mod test {
+    //FIXME (ben 18/08/2015) Tests can be expanded
     use super::*;
     use rustc_serialize::{Decodable, Encodable};
     use cbor;
@@ -247,6 +255,6 @@ mod test {
 
     #[test]
     fn test_response_error() {
-        test_object(ResponseError::NoData)
+        test_object(ResponseError::Abort)
     }
 }

@@ -39,6 +39,7 @@ type RoutingResult = Result<(), RoutingError>;
 /// On constructing a new Routing object a RoutingNode will also be started.
 /// Routing objects are clonable for multithreading, or a Routing object can be
 /// cloned with a new set of keys while preserving a single RoutingNode.
+#[derive(Clone)]
 pub struct Routing {
     action_sender : mpsc::Sender<Action>,
 }
@@ -70,7 +71,7 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will only bootstrap to the network and not attempt to
     /// achieve full routing node status.
-    pub fn new_client(event_sender : mpsc::Sender<Event>)
+    pub fn new_client(event_sender : mpsc::Sender<Event>, keys : Option<Id>)
         -> Result<Routing, RoutingError> {
           sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
@@ -88,11 +89,6 @@ impl Routing {
           Ok(Routing {
               action_sender : action_sender,
           })
-    }
-
-    /// Clone the interface while maintaining the same RoutingNode, with a given set of keys.
-    pub fn clone_with_keys(&self, keys : Id) -> Routing {
-        unimplemented!()
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
@@ -126,44 +122,38 @@ impl Routing {
     /// If we received the request from a group, we'll not get the signed_token.
     pub fn get_response(&self, location     : Authority,
                                data         : Data,
-                               orig_request : ExternalRequest,
+                               data_request : DataRequest,
                                signed_token : Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(
-                    ExternalResponse::Get(data, orig_request, signed_token))));
+                    ExternalResponse::Get(data, data_request, signed_token))));
     }
     /// response error to a put request
     pub fn put_response(&self, location       : Authority,
                                response_error : ResponseError,
-                               orig_request   : ExternalRequest,
                                signed_token   : Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(
-                    ExternalResponse::Put(response_error, orig_request, signed_token))));
+                    ExternalResponse::Put(response_error, signed_token))));
     }
     /// Response error to a post request
     pub fn post_response(&self, location       : Authority,
                                 response_error : ResponseError,
-                                orig_request   : ExternalRequest,
                                 signed_token   : Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
                 location,
                 Content::ExternalResponse(
-                    ExternalResponse::Post(response_error, orig_request, signed_token))));
+                    ExternalResponse::Post(response_error, signed_token))));
     }
     /// response error to a delete respons
     pub fn delete_response(&self, location       : Authority,
                                   response_error : ResponseError,
-                                  orig_request   : ExternalRequest,
                                   signed_token   : Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
-                location,
-                Content::ExternalResponse(
-                    ExternalResponse::Delete(response_error,
-                                             orig_request,
-                                             signed_token))));
+                location, Content::ExternalResponse(ExternalResponse::Delete(response_error,
+                signed_token))));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
