@@ -1,4 +1,11 @@
 # Routing - Change Log
+
+### [0.3.2] Final public API for version 0.3
+
+- internal bug fixes
+- partial restoration of unit tests
+- fine-tuning public API in correspondence with user projects
+
 ### [0.3.1] Implementing internal functionality
 
 - [#582](https://github.com/maidsafe/routing/pull/582) implement routing public api channel to routing_node

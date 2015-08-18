@@ -19,7 +19,7 @@ Routing - a specialised storage DHT
 
 The routing library is undergoing an important rewriting.  The external API and the internal outlines have been laid out.  The library is currently not in a functional state.  To obtain the last functional state of Routing we refer to Routing version 0.2.8, as published on crates.io.  We expect it to be a few more days of work before routing will be published as version 0.3.2, the first expected functional version of the new routing API. The published version 0.3.0 should only be used by a user library to compile against, and prepare for the upcoming new interface.
 
-update on 14 August: the functionality in routing has been restored but the unit tests have not yet been updated and don't compile.  Currently we are validating the example in version 0.3.1 
+update on 18 August: the functionality in routing has been restored and some unit tests have been updated and asserted.  The basic behaviour of the routing example has been asserted in this version 0.3.2.  Final internal work has to be done, and expected soon in version 0.3.3
 
 #Overview
 
