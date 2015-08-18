@@ -955,16 +955,13 @@ impl RoutingNode {
 
         // Request token is only set if it came from a non-group entity.
         // If it came from a group, then sentinel guarantees message validity.
-        let has_invalid_signature = {
-            if let &Some(ref token) = response.get_signed_token() {
-                !token.verify_signature(&self.core.id().signing_public_key())
-            }
-            else { false }
+        if let &Some(ref token) = response.get_signed_token() {
+            if !token.verify_signature(&self.core.id().signing_public_key()) {
+                return Err(RoutingError::FailedSignature); };
+        } else {
+            if !self.core.name_in_range(to_authority.get_location()) {
+                return Err(RoutingError::BadAuthority); };
         };
-
-        if has_invalid_signature {
-            return Err(RoutingError::FailedSignature);
-        }
 
         self.send_to_user(Event::Response {
             response       : response,
