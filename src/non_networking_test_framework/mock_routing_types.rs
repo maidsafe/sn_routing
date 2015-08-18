@@ -36,84 +36,14 @@ use sodiumoxide;
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::sign;
 
-pub use routing::data::{Data, DataRequest};
-pub use routing::immutable_data::ImmutableDataType;
-pub use routing::NameType;
-
-pub const NAME_TYPE_LEN : usize = 64;
-pub const POLL_DURATION_IN_MILLISEC: u32 = 1;
-
-pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
-  let mut vector = Vec::new();
-  for i in arr.iter() {
-    vector.push(*i);
-  }
-  vector
-}
-
-pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8;64] {
-  let mut arr = [0u8;64];
-  for i in (0..64) {
-    arr[i] = vector[i];
-  }
-  arr
-}
-
-pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
-  let mut arr = [0u8;32];
-  for i in (0..32) {
-    arr[i] = vector[i];
-  }
-  arr
-}
-
-pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for _ in 0..size {
-        vec.push(random::<u8>());
-    }
-    vec
-}
-
-pub static QUORUM_SIZE: usize = 6;
+use routing::data::{Data, DataRequest};
+use routing::immutable_data::ImmutableDataType;
+use routing::NameType;
+use routing::types::{Address, FromAddress, ToAddress, NodeAddress};
+use routing::error::{RoutingError, InterfaceError, ResponseError};
 
 pub trait Mergeable {
     fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
-}
-
-pub type MessageId = u32;
-pub type NodeAddress = NameType; // (Address, NodeTag)
-pub type FromAddress = NameType; // (Address, NodeTag)
-pub type ToAddress = NameType; // (Address, NodeTag)
-pub type GroupAddress = NameType; // (Address, GroupTag)
-pub type SerialisedMessage = Vec<u8>;
-pub type IdNode = NameType;
-pub type IdNodes = Vec<IdNode>;
-pub type Bytes = Vec<u8>;
-
-#[derive(RustcEncodable, RustcDecodable)]
-struct SignedKey {
-  sign_public_key: sign::PublicKey,
-  encrypt_public_key: crypto::box_::PublicKey,
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct NameAndTypeId {
-  pub name : NameType,
-  pub type_id : u64
-}
-
-
-//                        +-> from_node name
-//                        |           +-> preserve the message_id when sending on
-//                        |           |         +-> destination name
-//                        |           |         |
-pub type FilterType = (SourceAddress, MessageId, DestinationAddress);
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum Address {
-    Client(crypto::sign::PublicKey),
-    Node(NameType),
 }
 
 /// Address of the source of the message
@@ -180,157 +110,8 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
 }
 
-/// Returns true if `lhs` is closer to `target` than `rhs`.  "Closer" here is as per the Kademlia
-/// notion of XOR distance, i.e. the distance between two `NameType`s is the bitwise XOR of their
-/// values.
-pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
-    for i in 0..lhs.0.len() {
-        let res_0 = lhs.0[i] ^ target.0[i];
-        let res_1 = rhs.0[i] ^ target.0[i];
-
-        if res_0 != res_1 {
-            return res_0 < res_1
-        }
-    }
-    false
-}
-
-/// Returns true if `lhs` is closer to `target` than `rhs`, or when `lhs == rhs`.
-/// "Closer" here is as per the Kademlia notion of XOR distance,
-/// i.e. the distance between two `NameType`s is the bitwise XOR of their values.
-pub fn closer_to_target_or_equal(lhs: &NameType, rhs: &NameType, target: &NameType) -> bool {
-    for i in 0..lhs.0.len() {
-        let res_0 = lhs.0[i] ^ target.0[i];
-        let res_1 = rhs.0[i] ^ target.0[i];
-
-        if res_0 != res_1 {
-            return res_0 < res_1
-        }
-    }
-    true
-}
-
 pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 
-
-//------------------------------------------------------------------------------
-#[deny(missing_docs)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-/// represents response errors
-pub enum ResponseError {
-    /// data not found
-    NoData,
-    /// invalid request
-    InvalidRequest,
-    /// failure to store data
-    FailedToStoreData(Data)
-}
-
-impl error::Error for ResponseError {
-    fn description(&self) -> &str {
-        match *self {
-            ResponseError::NoData => "No Data",
-            ResponseError::InvalidRequest => "Invalid request",
-            ResponseError::FailedToStoreData(_) => "Failed to store data",
-        }
-    }
-
-    fn cause(&self) -> Option<&error::Error> {
-        None
-    }
-}
-
-impl fmt::Display for ResponseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            ResponseError::NoData => fmt::Display::fmt("ResponsError::NoData", f),
-            ResponseError::InvalidRequest => fmt::Display::fmt("ResponsError::InvalidRequest", f),
-            ResponseError::FailedToStoreData(_) =>
-                fmt::Display::fmt("ResponseError::FailedToStoreData", f),
-        }
-    }
-}
-
-impl Encodable for ResponseError {
-    fn encode<E: Encoder>(&self, e: &mut E)->Result<(), E::Error> {
-        let type_tag;
-        let mut data : Option<Data> = None;
-        match *self {
-            ResponseError::NoData => type_tag = "NoData",
-            ResponseError::InvalidRequest => type_tag = "InvalidRequest",
-            ResponseError::FailedToStoreData(ref err_data) => {
-                type_tag = "FailedToStoreData";
-                data = Some(err_data.clone());
-            }
-        };
-        CborTagEncode::new(5483_100, &(&type_tag, &data)).encode(e)
-    }
-}
-
-impl Decodable for ResponseError {
-    fn decode<D: Decoder>(d: &mut D)->Result<ResponseError, D::Error> {
-        let _ = try!(d.read_u64());
-        // let mut type_tag : String;
-        // // let mut data : Option<Vec<u8>>;
-        let (type_tag, data) : (String, Option<Data>)
-            = try!(Decodable::decode(d));
-        match &type_tag[..] {
-            "NoData" => Ok(ResponseError::NoData),
-            "InvalidRequest" => Ok(ResponseError::InvalidRequest),
-            "FailedToStoreData" => {
-                match data {
-                    Some(err_data) => Ok(ResponseError::FailedToStoreData(err_data)),
-                    None => Err(d.error("No data in FailedToStoreData"))
-                }
-            },
-            _ => Err(d.error("Unrecognised ResponseError"))
-        }
-    }
-}
-
-//------------------------------------------------------------------------------
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub enum InterfaceError {
-    Abort,
-    Response(ResponseError),
-}
-
-impl From<ResponseError> for InterfaceError {
-    fn from(e: ResponseError) -> InterfaceError {
-        InterfaceError::Response(e)
-    }
-}
-
-impl From<CborError> for InterfaceError {
-    fn from(_: CborError) -> Self {
-        InterfaceError::Abort
-    }
-}
-
-impl error::Error for InterfaceError {
-    fn description(&self) -> &str {
-        match *self {
-            InterfaceError::Abort => "Aborted",
-            InterfaceError::Response(_) => "Invalid response",
-        }
-    }
-
-    fn cause(&self) -> Option<&error::Error> {
-        match *self {
-            InterfaceError::Response(ref err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for InterfaceError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            InterfaceError::Abort => fmt::Display::fmt("InterfaceError::Abort", f),
-            InterfaceError::Response(ref err) => fmt::Display::fmt(err, f)
-        }
-    }
-}
 
 //------------------------------------------------------------------------------
 pub enum ClientError {
@@ -344,131 +125,6 @@ impl From<CborError> for ClientError {
 
 impl From<io::Error> for ClientError {
     fn from(e: io::Error) -> ClientError { ClientError::Io(e) }
-}
-
-//------------------------------------------------------------------------------
-#[deny(missing_docs)]
-#[derive(Debug)]
-/// Represents routing error types
-pub enum RoutingError {
-    /// The node/client has not bootstrapped yet
-    NotBootstrapped,
-    /// invalid requester or handler authorities
-    BadAuthority,
-    /// failure to connect to an already connected node
-    AlreadyConnected,
-    /// received message having unknown type
-    UnknownMessageType,
-    /// Failed signature check
-    FailedSignature,
-    /// Not Enough signatures
-    NotEnoughSignatures,
-    /// Duplicate signatures
-    DuplicateSignatures,
-    /// duplicate request received
-    FilterCheckFailed,
-    /// failure to bootstrap off the provided endpoints
-    FailedToBootstrap,
-    /// unexpected empty routing table
-    RoutingTableEmpty,
-    /// public id rejected because of unallowed relocated status
-    RejectedPublicId,
-    /// routing table did not add the node information,
-    /// either because it was already added, or because it did not improve the routing table
-    RefusedFromRoutingTable,
-    /// We received a refresh message but it did not contain group source address
-    RefreshNotFromGroup,
-    /// String errors
-    Utf8(str::Utf8Error),
-    /// interface error
-    Interface(InterfaceError),
-    /// i/o error
-    Io(io::Error),
-    /// serialisation error
-    Cbor(CborError),
-    /// invalid response
-    Response(ResponseError),
-}
-
-impl From<str::Utf8Error> for RoutingError {
-    fn from(e: str::Utf8Error) -> RoutingError { RoutingError::Utf8(e) }
-}
-
-
-impl From<ResponseError> for RoutingError {
-    fn from(e: ResponseError) -> RoutingError { RoutingError::Response(e) }
-}
-
-impl From<CborError> for RoutingError {
-    fn from(e: CborError) -> RoutingError { RoutingError::Cbor(e) }
-}
-
-impl From<io::Error> for RoutingError {
-    fn from(e: io::Error) -> RoutingError { RoutingError::Io(e) }
-}
-
-impl From<InterfaceError> for RoutingError {
-    fn from(e: InterfaceError) -> RoutingError { RoutingError::Interface(e) }
-}
-
-impl error::Error for RoutingError {
-    fn description(&self) -> &str {
-        match *self {
-            RoutingError::NotBootstrapped => "Not bootstrapped",
-            RoutingError::BadAuthority => "Invalid authority",
-            RoutingError::AlreadyConnected => "Already connected",
-            RoutingError::UnknownMessageType => "Invalid message type",
-            RoutingError::FilterCheckFailed => "Filter check failure",
-            RoutingError::FailedSignature => "Signature check failure",
-            RoutingError::NotEnoughSignatures => "Not enough signatures",
-            RoutingError::DuplicateSignatures => "Not enough signatures",
-            RoutingError::FailedToBootstrap => "Could not bootstrap",
-            RoutingError::RoutingTableEmpty => "Routing table empty",
-            RoutingError::RejectedPublicId => "Rejected Public Id",
-            RoutingError::RefusedFromRoutingTable => "Refused from routing table",
-            RoutingError::RefreshNotFromGroup => "Refresh message not from group",
-            RoutingError::Utf8(_) => "String/Utf8 error",
-            RoutingError::Interface(_) => "Interface error",
-            RoutingError::Io(_) => "I/O error",
-            RoutingError::Cbor(_) => "Serialisation error",
-            RoutingError::Response(_) => "Response error",
-        }
-    }
-
-    fn cause(&self) -> Option<&error::Error> {
-        match *self {
-            RoutingError::Interface(ref err) => Some(err),
-            RoutingError::Io(ref err) => Some(err),
-            // RoutingError::Cbor(ref err) => Some(err as &error::Error),
-            RoutingError::Response(ref err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for RoutingError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            RoutingError::NotBootstrapped => fmt::Display::fmt("Not bootstrapped", f),
-            RoutingError::BadAuthority => fmt::Display::fmt("Bad authority", f),
-            RoutingError::AlreadyConnected => fmt::Display::fmt("already connected", f),
-            RoutingError::UnknownMessageType => fmt::Display::fmt("Unknown message", f),
-            RoutingError::FilterCheckFailed => fmt::Display::fmt("filter check failed", f),
-            RoutingError::FailedSignature => fmt::Display::fmt("Signature check failed", f),
-            RoutingError::NotEnoughSignatures => fmt::Display::fmt("Not enough signatures (multi-sig)", f),
-            RoutingError::DuplicateSignatures => fmt::Display::fmt("Duplicated signatures (multi-sig)", f),
-            RoutingError::FailedToBootstrap => fmt::Display::fmt("could not bootstrap", f),
-            RoutingError::RoutingTableEmpty => fmt::Display::fmt("routing table empty", f),
-            RoutingError::RejectedPublicId => fmt::Display::fmt("Rejected Public Id", f),
-            RoutingError::RefusedFromRoutingTable => fmt::Display::fmt("Refused from routing table", f),
-            RoutingError::RefreshNotFromGroup => fmt::Display::fmt("Refresh message not from group", f),
-            RoutingError::Utf8(ref err) => fmt::Display::fmt(err, f),
-            RoutingError::Interface(ref err) => fmt::Display::fmt(err, f),
-            RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
-            RoutingError::Cbor(ref err) => fmt::Display::fmt(err, f),
-            RoutingError::Response(ref err) => fmt::Display::fmt(err, f),
-        }
-    }
 }
 
 
@@ -561,7 +217,7 @@ pub trait Interface : Sync + Send {
                   data_request   : DataRequest,
                   our_authority  : Authority,
                   from_authority : Authority,
-                  from_address   : SourceAddress) -> Result<Vec<MethodCall>, InterfaceError>;
+                  from_address   : SourceAddress) -> Result<Vec<MethodCall>, ResponseError>;
 
     /// depending on our_authority and from_authority, data is stored on current node or an address
     /// (with different authority) for further handling of the request is provided.
@@ -571,7 +227,7 @@ pub trait Interface : Sync + Send {
                   from_authority : Authority,
                   from_address   : SourceAddress,
                   dest_address   : DestinationAddress,
-                  data           : Data) -> Result<Vec<MethodCall>, InterfaceError>;
+                  data           : Data) -> Result<Vec<MethodCall>, ResponseError>;
 
     /// depending on our_authority and from_authority, post request is handled by current node or
     /// an address for further handling of the request is provided. Failure is indicated as an
@@ -581,7 +237,7 @@ pub trait Interface : Sync + Send {
                    from_authority: Authority,
                    from_address  : SourceAddress,
                    dest_address  : DestinationAddress,
-                   data          : Data) -> Result<Vec<MethodCall>, InterfaceError>;
+                   data          : Data) -> Result<Vec<MethodCall>, ResponseError>;
 
     /// Handle messages internal to the group (triggered by churn events). Payloads
     /// from these messages are grouped by (type_tag, from_group) key, and once
@@ -616,14 +272,14 @@ pub trait Interface : Sync + Send {
     fn handle_cache_get(&mut self,
                         data_request  : DataRequest,
                         data_location : NameType,
-                        from_address  : NameType) -> Result<MethodCall, InterfaceError>;
+                        from_address  : NameType) -> Result<MethodCall, ResponseError>;
 
     /// attempts to store data in cache. The type of data and/or from_authority indicates
     /// if store in cache is required.
     fn handle_cache_put(&mut self,
                         from_authority: Authority,
                         from_address: NameType,
-                        data: Data) -> Result<MethodCall, InterfaceError>;
+                        data: Data) -> Result<MethodCall, ResponseError>;
 }
 
 

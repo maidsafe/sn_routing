@@ -29,19 +29,19 @@ impl PmidNode {
         PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
     }
 
-    pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, InterfaceError> {
+    pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, ResponseError> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
-            return Err(From::from(ResponseError::NoData));
+            return Err(ResponseError::NoData);
         }
         let sd : ImmutableData = try!(::routing::utils::decode(&data));
         Ok(vec![MethodCall::Reply { data: Data::ImmutableData(sd) }])
     }
 
-    pub fn handle_put(&mut self, incoming_data : Data) ->Result<Vec<MethodCall>, InterfaceError> {
+    pub fn handle_put(&mut self, incoming_data : Data) ->Result<Vec<MethodCall>, ResponseError> {
         let immutable_data = match incoming_data {
             Data::ImmutableData(data) => { data }
-            _ => { return Err(From::from(ResponseError::InvalidRequest)); }
+            _ => { return Err(ResponseError::InvalidRequest); }
         };
         let data = try!(::routing::utils::encode(&immutable_data));
         let data_name_and_remove_sacrificial = match *immutable_data.get_type_tag() {
@@ -69,13 +69,13 @@ impl PmidNode {
                         self.chunk_store_.delete(name.clone());
                         self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
                         // TODO: ideally, the InterfaceError shall have an option holding a list of copies
-                        return Err(From::from(ResponseError::FailedToStoreData(Data::ImmutableData(immutable_data))));
+                        return Err(ResponseError::FailedToStoreData(Data::ImmutableData(immutable_data)));
                     }
                 },
                 _ => {}
             }
         }
-        Err(From::from(ResponseError::InvalidRequest))
+        Err(ResponseError::InvalidRequest)
     }
 
 }

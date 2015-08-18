@@ -75,29 +75,29 @@ impl Interface for VaultFacade {
                   data_request: DataRequest,
                   our_authority: Authority,
                   from_authority: Authority,
-                  _: SourceAddress)->Result<Vec<MethodCall>, InterfaceError> { // from_address
+                  _: SourceAddress)->Result<Vec<MethodCall>, ResponseError> { // from_address
         match our_authority {
             Authority::NaeManager(name) => {
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to them are both from Node
                 match data_request {
                     DataRequest::ImmutableData(_, _) => self.data_manager.handle_get(&name),
                     DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
-                    _ => Err(From::from(ResponseError::InvalidRequest))
+                    _ => Err(ResponseError::InvalidRequest)
                 }
             }
             Authority::ManagedNode => {
                 match from_authority {
                     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
-                    _ => Err(From::from(ResponseError::InvalidRequest)),
+                    _ => Err(ResponseError::InvalidRequest),
                 }
             }
-            _ => { return Err(From::from(ResponseError::InvalidRequest)); }
+            _ => { return Err(ResponseError::InvalidRequest); }
         }
     }
 
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
                   _: SourceAddress, _: DestinationAddress,
-                  data: Data ) -> Result<Vec<MethodCall>, InterfaceError> {
+                  data: Data ) -> Result<Vec<MethodCall>, ResponseError> {
         match our_authority {
             Authority::ClientManager(from_address) => {
                 return self.maid_manager.handle_put(&from_address, data);
@@ -109,7 +109,7 @@ impl Interface for VaultFacade {
                 match data {
                     Data::ImmutableData(data) => self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
                     Data::StructuredData(data) => self.sd_manager.handle_put(data),
-                    _ => return Err(From::from(ResponseError::InvalidRequest)),
+                    _ => return Err(ResponseError::InvalidRequest),
                 }
             }
             Authority::NodeManager(dest_address) => {
@@ -119,7 +119,7 @@ impl Interface for VaultFacade {
                 return self.pmid_node.handle_put(data);
             }
             _ => {
-                return Err(From::from(ResponseError::InvalidRequest));
+                return Err(ResponseError::InvalidRequest);
             }
         }
     }
@@ -130,7 +130,7 @@ impl Interface for VaultFacade {
                    _: Authority, // from_authority
                    _: SourceAddress, // from_address
                    _: DestinationAddress, // dest_address
-                   data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
+                   data: Data) -> Result<Vec<MethodCall>, ResponseError> {
         match our_authority {
             Authority::NaeManager(_) => {
                 match data {
@@ -140,7 +140,7 @@ impl Interface for VaultFacade {
             }
             _ => {}
         }
-        Err(From::from(ResponseError::InvalidRequest))
+        Err(ResponseError::InvalidRequest)
     }
 
     fn handle_get_response(&mut self,
@@ -238,23 +238,24 @@ impl Interface for VaultFacade {
     fn handle_cache_get(&mut self,
                         _: DataRequest, // data_request
                         data_location: NameType,
-                        _: NameType) -> Result<MethodCall, InterfaceError> { // from_address
+                        _: NameType) -> Result<MethodCall, ResponseError> { // from_address
         match self.data_cache.get(&data_location) {
             Some(data) => Ok(MethodCall::Reply { data: data.clone() }),
-            None => Err(From::from(ResponseError::NoData))
+            None => Err(ResponseError::NoData)
         }
     }
 
     fn handle_cache_put(&mut self,
                         _: Authority, // from_authority
                         _: NameType, // from_address
-                        data: Data) -> Result<MethodCall, InterfaceError> {
+                        data: Data) -> Result<MethodCall, ResponseError> {
         self.data_cache.add(data.name(), data);
-        Err(InterfaceError::Abort)
+        // TODO: use ResponseError::Abort once available
+        Err(ResponseError::InvalidRequest)
     }
 }
 
-pub type ResponseNotifier = ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<MethodCall>, InterfaceError>>,
+pub type ResponseNotifier = ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<MethodCall>, ResponseError>>,
                                               ::std::sync::Condvar)>;
 
 impl VaultFacade {
@@ -716,7 +717,8 @@ impl VaultFacade {
                                                 Data::ImmutableData(im_data.clone()));
         assert_eq!(put_result.is_err(), true);
         match put_result.err().unwrap() {
-            InterfaceError::Abort => { }
+            // TODO: use ResponseError::Abort once available
+            ResponseError::InvalidRequest => { }
             _ => panic!("Unexpected"),
         }
         {

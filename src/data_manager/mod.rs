@@ -100,10 +100,10 @@ impl DataManager {
     DataManager { db_: database::DataManagerDatabase::new(), resource_index: 1 }
   }
 
-  pub fn handle_get(&mut self, name : &NameType) ->Result<Vec<MethodCall>, InterfaceError> {
+  pub fn handle_get(&mut self, name : &NameType) ->Result<Vec<MethodCall>, ResponseError> {
 	  let result = self.db_.get_pmid_nodes(name);
 	  if result.len() == 0 {
-	    return Err(From::from(ResponseError::NoData));
+	    return Err(ResponseError::NoData);
 	  }
 
 	  let mut dest_pmids : Vec<MethodCall> = Vec::new();
@@ -114,10 +114,11 @@ impl DataManager {
   }
 
   pub fn handle_put(&mut self, data: ImmutableData, nodes_in_table: &mut Vec<NameType>)
-          -> Result<Vec<MethodCall>, InterfaceError> {
+          -> Result<Vec<MethodCall>, ResponseError> {
     let data_name = data.name();
     if self.db_.exist(&data_name) {
-      return Err(InterfaceError::Abort);
+      // TODO : use ResponseError::Abort once available
+      return Err(ResponseError::InvalidRequest);
     }
 
     nodes_in_table.sort_by(|a, b|
