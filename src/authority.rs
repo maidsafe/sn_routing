@@ -123,19 +123,19 @@ pub fn our_authority(message       : &RoutingMessage,
                 ExternalRequest::Get(ref data_request) => Some(data_request.name().clone()),
                 ExternalRequest::Put(ref data)         => Some(data.name()),
                 ExternalRequest::Post(ref data)        => Some(data.name()),
-                ExternalRequest::Delete(_)             => None,
+                ExternalRequest::Delete(ref data)      => Some(data.name()),
             }
         },
         Content::InternalRequest(ref request) => {
             match *request {
-                InternalRequest::Connect(_)                 => None,
-                InternalRequest::RequestNetworkName(ref public_id) => Some(public_id.name()),
+                InternalRequest::Connect(ref connect_request)       => None,
+                InternalRequest::RequestNetworkName(ref public_id)  => Some(public_id.name()),
                 InternalRequest::CacheNetworkName(ref public_id, _) => Some(public_id.name()),
-                InternalRequest::Refresh(_, _)              => None,
+                InternalRequest::Refresh(_, _)                      => None,
             }
         },
-        Content::ExternalResponse(_)    => None,
-        Content::InternalResponse(_)    => None,
+        Content::ExternalResponse(_) => None,
+        Content::InternalResponse(_) => None,
     };
 
     let element = match element {
