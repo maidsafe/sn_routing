@@ -251,7 +251,13 @@ impl RoutingCore {
                 }
             },
             _ => {
-                self.relay_map.add_peer(identity, endpoint, public_id)
+                let bootstrapped_prior = self.relay_map.has_bootstrap_connections();
+                let added = self.relay_map.add_peer(identity, endpoint, public_id);
+                if !bootstrapped_prior && added && self.routing_table.is_none() {
+                    info!("Routing Client bootstrapped.");
+                    let _ = self.event_sender.send(Event::Bootstrapped);
+                };
+                added
             },
         }
     }
