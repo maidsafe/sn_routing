@@ -29,6 +29,7 @@ use id::Id;
 use public_id::PublicId;
 use NameType;
 use peer::Peer;
+use action::Action;
 use event::Event;
 use messages::RoutingMessage;
 
@@ -50,13 +51,14 @@ pub struct RoutingCore {
     network_name  : Option<NameType>,
     routing_table : Option<RoutingTable>,
     relay_map     : RelayMap,
-    // sender for signaling churn events
+    // sender for signaling events and action
     event_sender  : Sender<Event>,
+    action_sender : Sender<Action>,
 }
 
 impl RoutingCore {
     /// Start a RoutingCore with a new Id and the disabled RoutingTable
-    pub fn new(event_sender : Sender<Event>) -> RoutingCore {
+    pub fn new(event_sender : Sender<Event>, action_sender : Sender<Action>) -> RoutingCore {
         let id = Id::new();
         RoutingCore {
             id            : id,
@@ -64,6 +66,7 @@ impl RoutingCore {
             routing_table : None,
             relay_map     : RelayMap::new(),
             event_sender  : event_sender,
+            action_sender : action_sender,
         }
     }
 
@@ -183,7 +186,12 @@ impl RoutingCore {
                     Some(ref mut routing_table) => {
                         let trigger_churn = routing_table
                             .address_in_our_close_group_range(&name);
+                        let routing_table_count_prior = routing_table.size();
                         routing_table.drop_node(&name);
+                        if routing_table_count_prior == 1usize {
+                            error!("Routing Node has disconnected.");
+                            let _ = self.event_sender.send(Event::Disconnected);
+                            let _ = self.action_sender.send(Action::Terminate); };
                         info!("RT({:?}) dropped node {:?}", routing_table.size(), name);
                         if trigger_churn {
                             let mut close_group : Vec<NameType> = routing_table
@@ -217,10 +225,16 @@ impl RoutingCore {
                                     .address_in_our_close_group_range(&routing_name);
                                 let node_info = NodeInfo::new(given_public_id,
                                     vec![endpoint.clone()], Some(endpoint));
+                                let routing_table_count_prior = routing_table.size();
                                 // TODO (ben 10/08/2015) drop connection of dropped node
                                 let (added, _) = routing_table.add_node(node_info);
-                                if added { info!("RT({:?}) added {:?}", routing_table.size(),
-                                      routing_name); };
+                                if added {
+                                    // if we transition from zero to one routing connection
+                                    if routing_table_count_prior == 0usize {
+                                        info!("Routing Node has connected.");
+                                        let _ = self.event_sender.send(Event::Connected); };
+                                    info!("RT({:?}) added {:?}", routing_table.size(),
+                                        routing_name); };
                                 if added && trigger_churn {
                                     let mut close_group : Vec<NameType> = routing_table
                                             .our_close_group().iter()

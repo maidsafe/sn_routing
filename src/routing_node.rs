@@ -94,7 +94,7 @@ impl RoutingNode {
         let _ = cm.start_accepting(vec![Port::Tcp(5483u16)]);
         let accepting_on = cm.get_own_endpoints();
 
-        let core = RoutingCore::new(event_sender.clone());
+        let core = RoutingCore::new(event_sender.clone(), action_sender.clone());
         info!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
 
         RoutingNode {

@@ -56,6 +56,7 @@ pub enum Event {
     //    ~~|~~~~~~~~~~
     //      | our close group sorted from our name; always including our name
     //      | if size > 1, we are connected to the network
+    Bootstrapped,
     Connected,
     Disconnected,
     FailedRequest(Authority, ExternalRequest, InterfaceError),
