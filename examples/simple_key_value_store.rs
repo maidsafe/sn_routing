@@ -66,6 +66,8 @@ use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode};
 use routing::{ExternalRequest, ExternalResponse, SignedToken};
+use routing::id::Id;
+use routing::public_id::PublicId;
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -279,7 +281,9 @@ impl Client {
     fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
         let (event_sender, event_receiver) = mpsc::channel::<Event>();
 
-        let routing = Routing::new_client(event_sender, None);
+        let id = Id::new();
+        println!("Client has set name {:?}", PublicId::new(&id));
+        let routing = Routing::new_client(event_sender, Some(id));
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 

@@ -55,7 +55,7 @@ impl Routing {
 
         // start the handler for routing without a restriction to become a full node
         let mut routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
-            event_sender, false);
+            event_sender, false, None);
 
         spawn(move || {
             debug!("started routing run()");
@@ -71,24 +71,26 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will only bootstrap to the network and not attempt to
     /// achieve full routing node status.
+    /// If the client is started with a relocated id (ie the name has been reassigned),
+    /// the core will instantely instantiate termination of the client.
     pub fn new_client(event_sender : mpsc::Sender<Event>, keys : Option<Id>)
         -> Routing {
-          sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
+        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
-          let (action_sender, action_receiver) = mpsc::channel::<Action>();
+        let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
-          // start the handler for routing with a restriction to become a full node
-          let mut routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
-              event_sender, true);
+        // start the handler for routing with a restriction to become a full node
+        let mut routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
+            event_sender, true, keys);
 
-          spawn(move || {
-              routing_node.run();
-              debug!("Routing node terminated running.");
-          });
+        spawn(move || {
+            routing_node.run();
+            debug!("Routing node terminated running.");
+        });
 
-          Routing {
-              action_sender : action_sender,
-          }
+        Routing {
+            action_sender : action_sender,
+        }
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.

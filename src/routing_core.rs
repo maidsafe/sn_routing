@@ -58,8 +58,15 @@ pub struct RoutingCore {
 
 impl RoutingCore {
     /// Start a RoutingCore with a new Id and the disabled RoutingTable
-    pub fn new(event_sender : Sender<Event>, action_sender : Sender<Action>) -> RoutingCore {
-        let id = Id::new();
+    pub fn new(event_sender : Sender<Event>, action_sender : Sender<Action>,
+        keys : Option<Id>) -> RoutingCore {
+        let id = match keys {
+            Some(id) => id,
+            None => Id::new(),
+        };
+        // nodes are not persistant, and a client has no network allocated name
+        if id.is_relocated() { let _ = action_sender.send(Action::Terminate); };
+
         RoutingCore {
             id            : id,
             network_name  : None,
