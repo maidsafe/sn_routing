@@ -399,38 +399,103 @@ impl RoutingNode {
     /// If we are the relay node for a message from the SAFE network to a node we relay for,
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
-    fn message_received(&mut self, message_wrap : SignedMessage) -> RoutingResult {
+    fn message_received(&mut self, signed_message : SignedMessage) -> RoutingResult {
 
-        let message = message_wrap.get_routing_message().clone();
+        let message = signed_message.get_routing_message().clone();
 
         // filter check
-        if self.filter.check(message_wrap.signature()) {
+        if self.filter.check(signed_message.signature()) {
             // should just return quietly
             return Err(RoutingError::FilterCheckFailed);
         }
-        debug!("message {:?} from {:?} to {:?}", message.content,
-            message.source(), message.destination());
+        debug!("MESSAGE {:?} from {:?} to {:?}, our authority {:?}", message.content,
+            message.source(), message.destination(), self.core.our_authority(&message));
         // add to filter
-        self.filter.add(message_wrap.signature().clone());
+        self.filter.add(signed_message.signature().clone());
 
         // Forward
-        if self.core.is_connected_node() { ignore(self.send(message_wrap.clone())); }
-
-        // if !self.core.name_in_range(&message.destination().get_location()) {
-        //     debug!("Not for us, destination {:?} out of range",
-        //         message.destination().get_location());
-        //     return Ok(()); };
+        if self.core.is_connected_node() { ignore(self.send(signed_message.clone())); }
 
         // check if our calculated authority matches the destination authority of the message
-        if self.core.our_authority(&message)
-            .map(|our_auth| message.to_authority != our_auth).unwrap_or(false) {
-            debug!("Destination authority {:?} is while our authority is {:?}",
-                message.to_authority, self.core.our_authority(&message));
-            return Err(RoutingError::BadAuthority);
+        let our_authority = self.core.our_authority(&message);
+        if our_authority.clone().map(|our_auth| message.to_authority != our_auth).unwrap_or(true) {
+            return self.unmatched_authority(message, signed_message);
         }
 
         // Accumulate message
-        let (message, opt_token) = match self.accumulate(message_wrap) {
+        let (message, opt_token) = match self.accumulate(signed_message) {
+            Some((message, opt_token)) => (message, opt_token),
+            None => return Ok(()),
+        };
+
+        match message.content {
+            Content::InternalRequest(request) => {
+                match request {
+                    InternalRequest::RequestNetworkName(_) => {
+                        match opt_token {
+                            Some(response_token) => self.handle_request_network_name(request,
+                                message.from_authority, message.to_authority, response_token),
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
+                    InternalRequest::CacheNetworkName(_, _) => {
+                        self.handle_cache_network_name(request, message.from_authority,
+                            message.to_authority)
+                    },
+                    _ => {
+                        error!("Authorised internal request {:?} not handled", request);
+                        return Err(RoutingError::UnknownMessageType);
+                    },
+                }
+            },
+            Content::InternalResponse(response) => {
+                match response {
+                    InternalResponse::CacheNetworkName(_, _, _) => {
+                        self.handle_cache_network_name_response(response, message.from_authority,
+                            message.to_authority)
+                    },
+                    _ => {
+                        error!("Authorised internal response {:?} not handled", response);
+                        return Err(RoutingError::UnknownMessageType);
+                    },
+                }
+            },
+            Content::ExternalRequest(request) => {
+                self.send_to_user(Event::Request {
+                    request        : request,
+                    our_authority  : message.to_authority,
+                    from_authority : message.from_authority,
+                    response_token : opt_token,
+                });
+                Ok(())
+            },
+            _ => {
+                error!("Authorised content {:?} not handled", message.content);
+                return Err(RoutingError::UnknownMessageType);
+            },
+        }
+    }
+
+    fn unmatched_authority(&mut self, message : RoutingMessage, signed_message : SignedMessage)
+        -> RoutingResult {
+        let destination = message.destination();
+
+        // Either the messaage is directed at a group, and the target should be in range,
+        // or it should be aimed directly at us.
+        if destination.is_group() {
+            if !self.core.name_in_range(destination.get_location()) {
+                return Err(RoutingError::BadAuthority); };
+        } else {
+            match destination.get_address() {
+                Some(ref address) => if !self.core.is_us(address) {
+                    return Err(RoutingError::BadAuthority); },
+                None => return Err(RoutingError::BadAuthority),
+            }
+        };
+        debug!("Unmatched authority for {:?} is for us", message);
+
+        // Accumulate message
+        let (message, opt_token) = match self.accumulate(signed_message) {
             Some((message, opt_token)) => (message, opt_token),
             None => return Ok(()),
         };
@@ -445,20 +510,14 @@ impl RoutingNode {
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     },
-                    InternalRequest::RequestNetworkName(_) => {
-                        match opt_token {
-                            Some(response_token) => self.handle_request_network_name(request,
-                                message.from_authority, message.to_authority, response_token),
-                            None => return Err(RoutingError::UnknownMessageType),
-                        }
-                    },
-                    InternalRequest::CacheNetworkName(_, _) => {
-                        self.handle_cache_network_name(request, message.from_authority,
-                            message.to_authority)
-                    },
                     InternalRequest::Refresh(_, _) => {
+                        // TODO (ben 17/08/2015) implement handle Refresh identical to preceding
+                        // implementation
                         Ok(())
-                        // TODO (ben 13/08/2015) implement self.handle_refresh()
+                    },
+                    _ => {
+                        error!("Unauthorised internal request {:?} not handled", request);
+                        return Err(RoutingError::UnknownMessageType);
                     },
                 }
             },
@@ -468,25 +527,20 @@ impl RoutingNode {
                         self.handle_connect_response(response, message.from_authority,
                             message.to_authority)
                     },
-                    InternalResponse::CacheNetworkName(_, _, _) => {
-                        self.handle_cache_network_name_response(response, message.from_authority,
-                            message.to_authority)
-                    }
+                    _ => {
+                        error!("Unauthorised internal response {:?} not handled", response);
+                        return Err(RoutingError::UnknownMessageType);
+                    },
                 }
             },
-            Content::ExternalRequest(request) => {
-                self.send_to_user(Event::Request {
-                    request        : request,
-                    our_authority  : message.to_authority,
-                    from_authority : message.from_authority,
-                    response_token : opt_token,
-                });
-                Ok(())
-            }
             Content::ExternalResponse(response) => {
                 self.handle_external_response(response, message.to_authority,
                     message.from_authority)
-            }
+            },
+            Content::ExternalRequest(request) => {
+                error!("Unauthorised external request {:?} not handled", request);
+                return Err(RoutingError::UnknownMessageType);
+            },
         }
     }
 
