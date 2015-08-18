@@ -23,7 +23,6 @@ use std::collections::HashMap;
 
 use routing_types::*;
 use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
-use utils::{encode, decode};
 
 type Identity = NameType; // name of the chunk
 type PmidNode = NameType;
@@ -75,7 +74,7 @@ impl Sendable for DataManagerSendable {
         if self.has_preserialised_content {
             self.preserialised_content.clone()
         } else {
-            match encode(&self) {
+            match ::routing::utils::encode(&self) {
                 Ok(result) => result,
                 Err(_) => Vec::new()
             }
@@ -92,7 +91,8 @@ impl Sendable for DataManagerSendable {
         }
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for it in responses.iter() {
-            let wrapper = match decode::<DataManagerSendable>(&it.serialised_contents()) {
+            let wrapper =
+                match ::routing::utils::decode::<DataManagerSendable>(&it.serialised_contents()) {
                     Ok(result) => result,
                     Err(_) => { continue }
                 };
@@ -136,7 +136,7 @@ impl DataManagerDatabase {
     }
 
     pub fn put_pmid_nodes(&mut self, name : &Identity, pmid_nodes: PmidNodes) {
-        self.storage.entry(name.clone()).or_insert(pmid_nodes.clone());
+        let _ = self.storage.entry(name.clone()).or_insert(pmid_nodes.clone());
     }
 
     pub fn add_pmid_node(&mut self, name : &Identity, pmid_node: PmidNode) {
@@ -153,7 +153,7 @@ impl DataManagerDatabase {
         let nodes = self.storage.entry(name.clone()).or_insert(vec![]);
         for i in 0..nodes.len() {
             if nodes[i] == pmid_node {
-              nodes.remove(i);
+              let _ = nodes.remove(i);
               break;
             }
         }
@@ -170,7 +170,7 @@ impl DataManagerDatabase {
     pub fn handle_account_transfer(&mut self, account_wrapper : &DataManagerSendable) {
         // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
         let _ = self.storage.remove(&account_wrapper.name());
-        self.storage.insert(account_wrapper.name(), account_wrapper.get_data_holders());
+        let _ = self.storage.insert(account_wrapper.name(), account_wrapper.get_data_holders());
     }
 
     pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {

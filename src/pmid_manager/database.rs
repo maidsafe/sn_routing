@@ -23,7 +23,7 @@ use std::collections;
 
 use transfer_parser::transfer_tags::PMID_MANAGER_ACCOUNT_TAG;
 use routing_types::*;
-use utils::{median, encode, decode};
+use utils;
 
 type Identity = NameType; // pmidnode address
 
@@ -64,7 +64,7 @@ impl Sendable for PmidManagerAccountWrapper {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        match encode(&self) {
+        match ::routing::utils::encode(&self) {
             Ok(result) => result,
             Err(_) => Vec::new()
         }
@@ -80,7 +80,8 @@ impl Sendable for PmidManagerAccountWrapper {
         let mut stored_total_size: Vec<u64> = Vec::with_capacity(responses.len());
         assert!(responses.len() < (GROUP_SIZE + 1) / 2);
         for value in responses {
-            let wrapper = match decode::<PmidManagerAccountWrapper>(&value.serialised_contents()) {
+            let wrapper = match ::routing::utils::decode::<PmidManagerAccountWrapper>(
+                &value.serialised_contents()) {
                     Ok(result) => result,
                     Err(_) => { continue }
                 };
@@ -89,9 +90,9 @@ impl Sendable for PmidManagerAccountWrapper {
             stored_total_size.push(wrapper.get_account().get_stored_total_size());
         }
         Some(Box::new(PmidManagerAccountWrapper::new(self.name.clone(), PmidManagerAccount {
-            offered_space : median(offered_space),
-            lost_total_size: median(lost_total_size),
-            stored_total_size: median(stored_total_size)
+            offered_space : utils::median(offered_space),
+            lost_total_size: utils::median(lost_total_size),
+            stored_total_size: utils::median(stored_total_size)
         })))
     }
 }
@@ -199,7 +200,7 @@ impl PmidManagerDatabase {
     pub fn handle_account_transfer(&mut self, account_wrapper : &PmidManagerAccountWrapper) {
         // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
         let _ = self.storage.remove(&account_wrapper.name());
-        self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
+        let _ = self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
     }
 
     pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {

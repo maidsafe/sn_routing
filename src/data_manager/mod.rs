@@ -25,7 +25,7 @@ use rustc_serialize::Encodable;
 
 use routing_types::*;
 use transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG;
-use utils::{median, encode, decode};
+use utils;
 
 type Address = NameType;
 
@@ -68,7 +68,7 @@ impl Sendable for DataManagerStatsSendable {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        match encode(&self) {
+        match ::routing::utils::encode(&self) {
             Ok(result) => result,
             Err(_) => Vec::new()
         }
@@ -81,14 +81,15 @@ impl Sendable for DataManagerStatsSendable {
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
         let mut resource_indexes: Vec<u64> = Vec::new();
         for value in responses {
-            match decode::<DataManagerStatsSendable>(&value.serialised_contents()) {
+            match ::routing::utils::decode::<DataManagerStatsSendable>(
+                    &value.serialised_contents()) {
                 Ok(senderable) => { resource_indexes.push(senderable.get_resource_index()); }
                 Err(_) => {}
             }
         }
         assert!(resource_indexes.len() < (GROUP_SIZE + 1) / 2);
         Some(Box::new(DataManagerStatsSendable::new(NameType([0u8; 64]),
-                                                    median(resource_indexes))))
+                                                    utils::median(resource_indexes))))
     }
 }
 
@@ -152,7 +153,7 @@ impl DataManager {
               vec![MethodCall::Put { destination: pmid_node, content: response, }]
           },
           None => vec![]
-      }      
+      }
   }
 
   pub fn handle_put_response(&mut self, response: ResponseError,

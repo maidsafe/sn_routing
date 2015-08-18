@@ -4,7 +4,7 @@
 
 **Primary Maintainer:**     Qi Ma (qi.ma@maidsafe.net)
 
-**Secondary Maintainer:**   Chandra Prakash (prakash@maidsafe.net)
+**Secondary Maintainer:**   Fraser Hutchison (fraser.hutchison@maidsafe.net)
 
 |Crate|Linux/OS X|ARM (Linux)|Windows|Coverage|Issues|
 |:---:|:--------:|:---------:|:-----:|:------:|:----:|

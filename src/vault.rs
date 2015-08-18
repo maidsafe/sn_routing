@@ -179,7 +179,7 @@ impl Interface for VaultFacade {
     }
 
     // https://maidsafe.atlassian.net/browse/MAID-1111 post_response is not required on vault
-    fn handle_post_response(&mut self, 
+    fn handle_post_response(&mut self,
                             _: Authority, // from_authority
                             _: SourceAddress, // from_address
                             _: ResponseError) -> Vec<MethodCall> { // response
@@ -258,6 +258,7 @@ pub type ResponseNotifier = ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<Meth
                                               ::std::sync::Condvar)>;
 
 impl VaultFacade {
+    #[cfg(test)]
     pub fn new() -> VaultFacade {
         VaultFacade {
             data_manager: DataManager::new(), maid_manager: MaidManager::new(),
@@ -354,7 +355,6 @@ impl VaultFacade {
     use super::*;
     use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
-    use utils::decode;
     use routing_types::*;
 
     fn maid_manager_put(vault: &mut VaultFacade, from: SourceAddress,
@@ -409,7 +409,7 @@ impl VaultFacade {
         assert_eq!(calls.len(), 1);
         match calls[0] {
             MethodCall::Forward { destination } => {
-                assert_eq!(destination, dest_address);                
+                assert_eq!(destination, dest_address);
             }
             _ => panic!("Unexpected"),
         }
@@ -544,9 +544,9 @@ impl VaultFacade {
         sd_manager_put(&mut vault, from.clone(), dest.clone(), sd.clone());
 
         let keys2 = crypto::sign::gen_keypair();
-        let mut sd_new = StructuredData::new(0, name, 1, value.clone(), vec![keys2.0], vec![keys1.0], &keys2.1).ok().unwrap();
+        let sd_new = StructuredData::new(0, name, 1, value.clone(), vec![keys2.0], vec![keys1.0], &keys2.1).ok().unwrap();
         sd_manager_post(&mut vault, from.clone(), dest.clone(), sd_new.clone());
-        
+
         sd_manager_get(&mut vault, from.clone(), StructuredData::compute_name(0, &name), sd_new);
     }
 
@@ -688,7 +688,7 @@ impl VaultFacade {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::SD_MANAGER_ACCOUNT_TAG);
                     assert_eq!(*from_group, sdv.name());
-                    match decode::<StructuredData>(payload) {
+                    match ::routing::utils::decode::<StructuredData>(payload) {
                         Ok(sd) => { assert_eq!(sd, sdv); }
                         Err(_) => panic!("Unexpected"),
                     };

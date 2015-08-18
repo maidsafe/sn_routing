@@ -19,7 +19,6 @@
 
 use chunk_store::ChunkStore;
 use routing_types::*;
-use utils::{encode, decode};
 
 pub struct PmidNode {
     chunk_store_ : ChunkStore
@@ -35,7 +34,7 @@ impl PmidNode {
         if data.len() == 0 {
             return Err(From::from(ResponseError::NoData));
         }
-        let sd : ImmutableData = try!(decode(&data));
+        let sd : ImmutableData = try!(::routing::utils::decode(&data));
         Ok(vec![MethodCall::Reply { data: Data::ImmutableData(sd) }])
     }
 
@@ -44,7 +43,7 @@ impl PmidNode {
             Data::ImmutableData(data) => { data }
             _ => { return Err(From::from(ResponseError::InvalidRequest)); }
         };
-        let data = try!(encode(&immutable_data));
+        let data = try!(::routing::utils::encode(&immutable_data));
         let data_name_and_remove_sacrificial = match *immutable_data.get_type_tag() {
             ImmutableDataType::Normal => (immutable_data.name(), true),
             _ => (immutable_data.name(), false),
@@ -63,7 +62,7 @@ impl PmidNode {
         let names = self.chunk_store_.names();
         for name in names.iter() {
             let fetched_data = self.chunk_store_.get(name.clone());
-            let parsed_data : ImmutableData = try!(decode(&fetched_data));
+            let parsed_data : ImmutableData = try!(::routing::utils::decode(&fetched_data));
             match *parsed_data.get_type_tag() {
                 ImmutableDataType::Sacrificial => {
                     if fetched_data.len() > required_space {

@@ -269,7 +269,7 @@ impl Encodable for ResponseError {
 
 impl Decodable for ResponseError {
     fn decode<D: Decoder>(d: &mut D)->Result<ResponseError, D::Error> {
-        try!(d.read_u64());
+        let _ = try!(d.read_u64());
         // let mut type_tag : String;
         // // let mut data : Option<Vec<u8>>;
         let (type_tag, data) : (String, Option<Data>)
@@ -298,6 +298,12 @@ pub enum InterfaceError {
 impl From<ResponseError> for InterfaceError {
     fn from(e: ResponseError) -> InterfaceError {
         InterfaceError::Response(e)
+    }
+}
+
+impl From<CborError> for InterfaceError {
+    fn from(_: CborError) -> Self {
+        InterfaceError::Abort
     }
 }
 

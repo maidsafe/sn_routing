@@ -20,7 +20,6 @@
 use chunk_store::ChunkStore;
 use routing_types::*;
 use transfer_parser::transfer_tags::SD_MANAGER_ACCOUNT_TAG;
-use utils::{encode, decode};
 
 pub struct StructuredDataManager {
     // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
@@ -39,7 +38,7 @@ impl StructuredDataManager {
         if data.len() == 0 {
             return Err(From::from(ResponseError::NoData));
         }
-        let sd : StructuredData = try!(decode(&data));
+        let sd : StructuredData = try!(::routing::utils::decode(&data));
         Ok(vec![MethodCall::Reply { data: Data::StructuredData(sd) }])
     }
 
@@ -52,7 +51,7 @@ impl StructuredDataManager {
         if self.chunk_store_.has_chunk(structured_data.name()) {
             Err(InterfaceError::Response(ResponseError::FailedToStoreData(Data::StructuredData(structured_data))))
         } else {
-            let serialised_data = try!(encode(&structured_data));
+            let serialised_data = try!(::routing::utils::encode(&structured_data));
             self.chunk_store_.put(structured_data.name(), serialised_data);
             Ok(vec![MethodCall::Reply { data: Data::StructuredData(structured_data) }])
         }
@@ -68,18 +67,18 @@ impl StructuredDataManager {
         if data.len() == 0 {
             return Err(From::from(ResponseError::NoData));
         }
-        let mut sd : StructuredData = try!(decode(&data));
+        let mut sd : StructuredData = try!(::routing::utils::decode(&data));
         match sd.replace_with_other(in_coming_data.clone()) {
             Ok(_) => {},
             Err(_) => { return Err(From::from(ResponseError::InvalidRequest)); }
         }
-        let serialised_data = try!(encode(&sd));
+        let serialised_data = try!(::routing::utils::encode(&sd));
         self.chunk_store_.put(in_coming_data.name(), serialised_data);
         Ok(vec![])
     }
 
     pub fn handle_account_transfer(&mut self, in_coming_sd: Vec<u8>) {
-        let sd : StructuredData = match decode(&in_coming_sd) {
+        let sd : StructuredData = match ::routing::utils::decode(&in_coming_sd) {
             Ok(result) => { result }
             Err(_) => return
         };
@@ -108,11 +107,8 @@ impl StructuredDataManager {
 
 #[cfg(test)]
 mod test {
-    use sodiumoxide::crypto;
-
     use super::*;
-    use utils::encode;
-
+    use sodiumoxide::crypto;
     use routing_types::*;
 
     #[test]
@@ -207,14 +203,14 @@ mod test {
         }
         let keys2 = crypto::sign::gen_keypair();
         { // update to a new owner, wrong signature
-            let mut sdv_new = StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], &keys2.1).ok().unwrap();
+            let sdv_new = StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], &keys2.1).ok().unwrap();
             match sd_manager.handle_post(sdv_new.clone()) {
                 Err(result) => { assert_eq!(result, From::from(ResponseError::InvalidRequest)); }
                 _ => panic!("Unexpected"),
             }
         }
         { // update to a new owner, correct signature
-            let mut sdv_new = StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], &keys.1).ok().unwrap();
+            let sdv_new = StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], &keys.1).ok().unwrap();
             match sd_manager.handle_post(sdv_new.clone()) {
                 Ok(_) => {}
                 _ => panic!("Unexpected"),
@@ -230,7 +226,7 @@ mod test {
         let sdv = StructuredData::new(0, name, 0, value, vec![keys.0], vec![], &keys.1).ok().unwrap();
 
         let mut sd_manager = StructuredDataManager::new();
-        let serialised_data = match encode(&sdv) {
+        let serialised_data = match ::routing::utils::encode(&sdv) {
             Ok(result) => result,
             Err(_) => panic!("Unexpected"),
         };
