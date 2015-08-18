@@ -115,7 +115,7 @@ impl StructuredData {
     }
 
     /// Confirms *unique and valid* owner_signatures are at least 50% of total owners
-    pub fn verify_previous_owner_signatures(&self, owner_keys: &Vec<crypto::sign::PublicKey>) -> Result<(), RoutingError> {
+    fn verify_previous_owner_signatures(&self, owner_keys: &Vec<crypto::sign::PublicKey>) -> Result<(), RoutingError> {
          // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
          // Any duplicates invalidates this type
          if self.previous_owner_signatures.iter().filter(|&sig| self.previous_owner_signatures.iter()
@@ -143,7 +143,7 @@ impl StructuredData {
          Ok(())
     }
 
-    pub fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
+    fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
         // seems overkill to use serialisation here, but done
         // to ensure cross platform signature handling is OK
         let mut enc = cbor::Encoder::from_memory();
