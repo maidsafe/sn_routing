@@ -22,7 +22,7 @@
 // pub use routing::immutable_data::{ImmutableData, ImmutableDataType};
 // pub use routing::node_interface::MethodCall;
 // pub use routing::sendable::Sendable;
-// pub use routing::types::GROUP_SIZE;
+pub use routing::types::GROUP_SIZE;
 
 
 pub use non_networking_test_framework::mock_routing_types::*;

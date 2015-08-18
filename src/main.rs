@@ -41,6 +41,7 @@ extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
 extern crate lru_time_cache;
+extern crate routing;
 
 use std::thread;
 use std::thread::spawn;
