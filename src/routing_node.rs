@@ -127,7 +127,8 @@ impl RoutingNode {
                     ignore(self.message_received(signed_message));
                 },
                 Ok(Action::SendContent(to_authority, content)) => {
-                    if self.core.is_connected_node() {
+                    if (!self.client_restriction && self.core.is_connected_node())
+                        || (self.client_restriction && self.core.has_bootstrap_endpoints()) {
                         let _ = self.send_content(to_authority, content);
                     } else {
                         match content {
