@@ -48,7 +48,7 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
     /// The intial Routing object will have newly generated keys
-    pub fn new(event_sender : mpsc::Sender<Event>) -> Result<Routing, RoutingError> {
+    pub fn new(event_sender : mpsc::Sender<Event>) -> Routing {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
@@ -63,16 +63,16 @@ impl Routing {
             debug!("Routing node terminated running.");
         });
 
-        Ok(Routing {
+        Routing {
             action_sender : action_sender,
-        })
+        }
     }
 
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will only bootstrap to the network and not attempt to
     /// achieve full routing node status.
     pub fn new_client(event_sender : mpsc::Sender<Event>, keys : Option<Id>)
-        -> Result<Routing, RoutingError> {
+        -> Routing {
           sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
           let (action_sender, action_receiver) = mpsc::channel::<Action>();
@@ -86,9 +86,9 @@ impl Routing {
               debug!("Routing node terminated running.");
           });
 
-          Ok(Routing {
+          Routing {
               action_sender : action_sender,
-          })
+          }
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.

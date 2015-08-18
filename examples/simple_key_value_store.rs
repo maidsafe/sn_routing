@@ -134,7 +134,7 @@ struct Node {
 impl Node {
     fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Node, RoutingError> {
         let (sender, receiver) = mpsc::channel::<Event>();
-        let routing = try!(Routing::new(sender));
+        let routing = Routing::new(sender);
 
         Ok(Node {
             routing  : routing,
@@ -278,7 +278,8 @@ struct Client {
 impl Client {
     fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
         let (event_sender, event_receiver) = mpsc::channel::<Event>();
-        let routing = try!(Routing::new_client(event_sender, None));
+
+        let routing = Routing::new_client(event_sender);
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
