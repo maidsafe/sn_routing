@@ -418,8 +418,8 @@ impl RoutingNode {
         if self.core.is_connected_node() { ignore(self.send(signed_message.clone())); }
 
         // check if our calculated authority matches the destination authority of the message
-        let our_authority = self.core.our_authority(&message);
-        if our_authority.clone().map(|our_auth| message.to_authority != our_auth).unwrap_or(true) {
+        if self.core.our_authority(&message)
+            .map(|our_auth| message.to_authority != our_auth).unwrap_or(true) {
             // Either the message is directed at a group, and the target should be in range,
             // or it should be aimed directly at us.
             if message.destination().is_group() {
