@@ -199,7 +199,7 @@ impl DataManagerDatabase {
                     actions.push(MethodCall::Get {
                         name: (*key).clone(),
                         // DataManager only handles ImmutableData
-                        data_request: DataRequest::ImmutableData(ImmutableDataType::Normal)
+                        data_request: DataRequest::ImmutableData((*key).clone(), ImmutableDataType::Normal)
                     });
                 }}
                 None => continue

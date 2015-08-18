@@ -24,6 +24,11 @@ use sodiumoxide::crypto;
 
 use self::mock_routing_types::*;
 
+use routing::data::{Data, DataRequest};
+use routing::immutable_data::ImmutableDataType;
+use routing::NameType;
+use routing::error::{RoutingError, InterfaceError, ResponseError};
+
 type DataStore = ::std::sync::Arc<::std::sync::Mutex<::std::collections::HashMap<NameType, Vec<u8>>>>;
 
 const STORAGE_FILE_NAME: &'static str = "VaultStorageSimulation";
@@ -116,7 +121,7 @@ impl RoutingVaultMock {
         ::std::thread::spawn(move || {
             // TODO: how to simulate the authorities?
             //       Here throwing the request to PmidNode directly
-            let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(ImmutableDataType::Normal),
+            let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(name, ImmutableDataType::Normal),
                                                                  Authority::ManagedNode,
                                                                  Authority::NaeManager(name),
                                                                  SourceAddress::Direct(name)));
@@ -173,7 +178,7 @@ impl RoutingVaultMock {
                     if let Ok(data) = deserialise::<Data>(raw_data) {
                         // TODO: how to simulate the authorities?
                         //       Here throwing the request to PmidNode directly
-                        let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(ImmutableDataType::Normal),
+                        let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(data.name(), ImmutableDataType::Normal),
                                                                              Authority::ManagedNode,
                                                                              Authority::NaeManager(data.name()),
                                                                              SourceAddress::Direct(data.name())));

@@ -75,28 +75,29 @@ impl Interface for VaultFacade {
                   data_request: DataRequest,
                   our_authority: Authority,
                   from_authority: Authority,
-                  _: SourceAddress)->Result<Vec<MethodCall>, InterfaceError> { // from_address
+                  _: SourceAddress)->Result<Vec<MethodCall>, ResponseError> { // from_address
         match our_authority {
             Authority::NaeManager(name) => {
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to them are both from Node
                 match data_request {
-                    DataRequest::ImmutableData(_) => self.data_manager.handle_get(&name),
-                    DataRequest::StructuredData(_) => self.sd_manager.handle_get(name)
+                    DataRequest::ImmutableData(_, _) => self.data_manager.handle_get(&name),
+                    DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
+                    _ => Err(ResponseError::InvalidRequest)
                 }
             }
             Authority::ManagedNode => {
                 match from_authority {
                     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
-                    _ => Err(From::from(ResponseError::InvalidRequest)),
+                    _ => Err(ResponseError::InvalidRequest),
                 }
             }
-            _ => { return Err(From::from(ResponseError::InvalidRequest)); }
+            _ => { return Err(ResponseError::InvalidRequest); }
         }
     }
 
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
                   _: SourceAddress, _: DestinationAddress,
-                  data: Data ) -> Result<Vec<MethodCall>, InterfaceError> {
+                  data: Data ) -> Result<Vec<MethodCall>, ResponseError> {
         match our_authority {
             Authority::ClientManager(from_address) => {
                 return self.maid_manager.handle_put(&from_address, data);
@@ -108,7 +109,7 @@ impl Interface for VaultFacade {
                 match data {
                     Data::ImmutableData(data) => self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
                     Data::StructuredData(data) => self.sd_manager.handle_put(data),
-                    _ => return Err(From::from(ResponseError::InvalidRequest)),
+                    _ => return Err(ResponseError::InvalidRequest),
                 }
             }
             Authority::NodeManager(dest_address) => {
@@ -118,7 +119,7 @@ impl Interface for VaultFacade {
                 return self.pmid_node.handle_put(data);
             }
             _ => {
-                return Err(From::from(ResponseError::InvalidRequest));
+                return Err(ResponseError::InvalidRequest);
             }
         }
     }
@@ -129,7 +130,7 @@ impl Interface for VaultFacade {
                    _: Authority, // from_authority
                    _: SourceAddress, // from_address
                    _: DestinationAddress, // dest_address
-                   data: Data) -> Result<Vec<MethodCall>, InterfaceError> {
+                   data: Data) -> Result<Vec<MethodCall>, ResponseError> {
         match our_authority {
             Authority::NaeManager(_) => {
                 match data {
@@ -139,7 +140,7 @@ impl Interface for VaultFacade {
             }
             _ => {}
         }
-        Err(From::from(ResponseError::InvalidRequest))
+        Err(ResponseError::InvalidRequest)
     }
 
     fn handle_get_response(&mut self,
@@ -237,23 +238,24 @@ impl Interface for VaultFacade {
     fn handle_cache_get(&mut self,
                         _: DataRequest, // data_request
                         data_location: NameType,
-                        _: NameType) -> Result<MethodCall, InterfaceError> { // from_address
+                        _: NameType) -> Result<MethodCall, ResponseError> { // from_address
         match self.data_cache.get(&data_location) {
             Some(data) => Ok(MethodCall::Reply { data: data.clone() }),
-            None => Err(From::from(ResponseError::NoData))
+            None => Err(ResponseError::NoData)
         }
     }
 
     fn handle_cache_put(&mut self,
                         _: Authority, // from_authority
                         _: NameType, // from_address
-                        data: Data) -> Result<MethodCall, InterfaceError> {
+                        data: Data) -> Result<MethodCall, ResponseError> {
         self.data_cache.add(data.name(), data);
-        Err(InterfaceError::Abort)
+        // TODO: use ResponseError::Abort once available
+        Err(ResponseError::InvalidRequest)
     }
 }
 
-pub type ResponseNotifier = ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<MethodCall>, InterfaceError>>,
+pub type ResponseNotifier = ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<MethodCall>, ResponseError>>,
                                               ::std::sync::Condvar)>;
 
 impl VaultFacade {
@@ -445,7 +447,7 @@ impl VaultFacade {
 
     fn sd_manager_get(vault: &mut VaultFacade, from: SourceAddress,
                       name: NameType, sd_expected: StructuredData) {
-        let get_result = vault.handle_get(DataRequest::StructuredData(0),
+        let get_result = vault.handle_get(DataRequest::StructuredData(name, 0),
                                           Authority::NaeManager(name),
                                           Authority::ManagedNode,
                                           from.clone());
@@ -484,7 +486,7 @@ impl VaultFacade {
             let dest = DestinationAddress::Direct(NameType::new([9u8; 64]));
             data_manager_put(&mut vault, from.clone(), dest, im_data.clone());
             let keys = crypto::sign::gen_keypair();
-            let get_result = vault.handle_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+            let get_result = vault.handle_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                               Authority::NaeManager(im_data.name().clone()),
                                               Authority::Client(keys.0), from);
             assert_eq!(get_result.is_err(), false);
@@ -509,7 +511,7 @@ impl VaultFacade {
                 _ => panic!("Unexpected"),
             }
 
-            let get_result = vault.handle_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+            let get_result = vault.handle_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                               Authority::ManagedNode,
                                               Authority::NaeManager(im_data.name().clone()), from);
             assert_eq!(get_result.is_err(), false);
@@ -538,13 +540,12 @@ impl VaultFacade {
         let name = NameType([3u8; 64]);
         let value = generate_random_vec_u8(1024);
         let keys1 = crypto::sign::gen_keypair();
-        let sd = StructuredData::new(0, name, value.clone(), vec![], 0, vec![keys1.0], vec![]);
+        let sd = StructuredData::new(0, name, 0, value.clone(), vec![keys1.0], vec![], &keys1.1).ok().unwrap();
 
         sd_manager_put(&mut vault, from.clone(), dest.clone(), sd.clone());
 
         let keys2 = crypto::sign::gen_keypair();
-        let mut sd_new = StructuredData::new(0, name, value.clone(), vec![keys1.0], 1, vec![keys2.0], vec![]);
-        assert_eq!(sd_new.add_signature(&keys1.1).ok(), Some(0));
+        let mut sd_new = StructuredData::new(0, name, 1, value.clone(), vec![keys2.0], vec![keys1.0], &keys2.1).ok().unwrap();
         sd_manager_post(&mut vault, from.clone(), dest.clone(), sd_new.clone());
         
         sd_manager_get(&mut vault, from.clone(), StructuredData::compute_name(0, &name), sd_new);
@@ -676,7 +677,8 @@ impl VaultFacade {
         {// StructuredDataManager - churn handling
             let name = NameType([3u8; 64]);
             let value = generate_random_vec_u8(1024);
-            let sdv = StructuredData::new(0, name, value, vec![], 0, vec![], vec![]);
+            let keys = crypto::sign::gen_keypair();
+            let sdv = StructuredData::new(0, name, 0, value, vec![keys.0], vec![], &keys.1).ok().unwrap();
 
             sd_manager_put(&mut vault, from.clone(), dest.clone(), sdv.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
@@ -705,7 +707,7 @@ impl VaultFacade {
         let value = generate_random_vec_u8(1024);
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         {
-            let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+            let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                                     im_data.name().clone(), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), true);
             assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
@@ -715,11 +717,12 @@ impl VaultFacade {
                                                 Data::ImmutableData(im_data.clone()));
         assert_eq!(put_result.is_err(), true);
         match put_result.err().unwrap() {
-            InterfaceError::Abort => { }
+            // TODO: use ResponseError::Abort once available
+            ResponseError::InvalidRequest => { }
             _ => panic!("Unexpected"),
         }
         {
-            let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+            let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                                     im_data.name().clone(), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), false);
             match get_result.ok().unwrap() {
@@ -735,7 +738,7 @@ impl VaultFacade {
             }
         }
         {
-            let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.get_type_tag().clone()),
+            let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                                     NameType::new([7u8; 64]), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), true);
             assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
