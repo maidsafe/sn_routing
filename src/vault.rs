@@ -80,8 +80,9 @@ impl Interface for VaultFacade {
             Authority::NaeManager(name) => {
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to them are both from Node
                 match data_request {
-                    DataRequest::ImmutableData(_) => self.data_manager.handle_get(&name),
-                    DataRequest::StructuredData(_) => self.sd_manager.handle_get(name)
+                    DataRequest::ImmutableData(_, _) => self.data_manager.handle_get(&name),
+                    DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
+                    _ => Err(From::from(ResponseError::InvalidRequest))
                 }
             }
             Authority::ManagedNode => {

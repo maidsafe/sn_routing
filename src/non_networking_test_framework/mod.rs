@@ -116,7 +116,7 @@ impl RoutingVaultMock {
         ::std::thread::spawn(move || {
             // TODO: how to simulate the authorities?
             //       Here throwing the request to PmidNode directly
-            let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(ImmutableDataType::Normal),
+            let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(name, ImmutableDataType::Normal),
                                                                  Authority::ManagedNode,
                                                                  Authority::NaeManager(name),
                                                                  SourceAddress::Direct(name)));
@@ -173,7 +173,7 @@ impl RoutingVaultMock {
                     if let Ok(data) = deserialise::<Data>(raw_data) {
                         // TODO: how to simulate the authorities?
                         //       Here throwing the request to PmidNode directly
-                        let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(ImmutableDataType::Normal),
+                        let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(data.name(), ImmutableDataType::Normal),
                                                                              Authority::ManagedNode,
                                                                              Authority::NaeManager(data.name()),
                                                                              SourceAddress::Direct(data.name())));
