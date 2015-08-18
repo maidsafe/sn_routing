@@ -80,7 +80,7 @@ impl StructuredData {
     /// To transfer ownership the current owner signs over the data, the previous owners field
     /// must have the previous owners of version - 1 as the current owners of that last version.
     pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), RoutingError> {
-        try!(self.validate_self_against_stored(&other));
+        try!(self.validate_self_against_successor(&other));
 
         self.type_tag = other.type_tag;
         self.identifier = other.identifier;
@@ -97,7 +97,7 @@ impl StructuredData {
         StructuredData::compute_name(self.type_tag, &self.identifier)
     }
 
-    pub fn validate_self_against_stored(&self, other: &StructuredData) -> Result<(), RoutingError> {
+    pub fn validate_self_against_successor(&self, other: &StructuredData) -> Result<(), RoutingError> {
         let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
             &other.current_owner_keys
         } else {
