@@ -151,6 +151,7 @@ impl RoutingNode {
                 },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
+                    let _ = self.event_sender.send(Event::Terminated);
                     self.connection_manager.stop();
                     break;
                 },
