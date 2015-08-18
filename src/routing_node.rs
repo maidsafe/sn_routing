@@ -527,9 +527,9 @@ impl RoutingNode {
                         self.handle_connect_response(response, message.from_authority,
                             message.to_authority)
                     },
-                    _ => {
-                        error!("Unauthorised internal response {:?} not handled", response);
-                        return Err(RoutingError::UnknownMessageType);
+                    InternalResponse::CacheNetworkName(_, _, _) => {
+                        self.handle_cache_network_name_response(response, message.from_authority,
+                            message.to_authority)
                     },
                 }
             },
