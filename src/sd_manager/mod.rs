@@ -34,23 +34,23 @@ impl StructuredDataManager {
         StructuredDataManager { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
     }
 
-    pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, InterfaceError> {
+    pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, ResponseError> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
-            return Err(From::from(ResponseError::NoData));
+            return Err(ResponseError::NoData);
         }
         let sd : StructuredData = try!(decode(&data));
         Ok(vec![MethodCall::Reply { data: Data::StructuredData(sd) }])
     }
 
-    pub fn handle_put(&mut self, structured_data: StructuredData) ->Result<Vec<MethodCall>, InterfaceError> {
+    pub fn handle_put(&mut self, structured_data: StructuredData) ->Result<Vec<MethodCall>, ResponseError> {
         // TODO: SD using PUT for the first copy, then POST to update and transfer in case of churn
         //       so if the data exists, then the put shall be rejected
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
         if self.chunk_store_.has_chunk(structured_data.name()) {
-            Err(InterfaceError::Response(ResponseError::FailedToStoreData(Data::StructuredData(structured_data))))
+            Err(ResponseError::FailedToStoreData(Data::StructuredData(structured_data)))
         } else {
             let serialised_data = try!(encode(&structured_data));
             self.chunk_store_.put(structured_data.name(), serialised_data);
@@ -58,7 +58,7 @@ impl StructuredDataManager {
         }
     }
 
-    pub fn handle_post(&mut self, in_coming_data: StructuredData) ->Result<Vec<MethodCall>, InterfaceError> {
+    pub fn handle_post(&mut self, in_coming_data: StructuredData) ->Result<Vec<MethodCall>, ResponseError> {
         // TODO: SD using PUT for the first copy, then POST to update and transfer in case of churn
         //       so if the data exists, then the put shall be rejected
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
@@ -66,12 +66,12 @@ impl StructuredDataManager {
         //       in addition to above, POST shall check the ownership
         let data = self.chunk_store_.get(in_coming_data.name());
         if data.len() == 0 {
-            return Err(From::from(ResponseError::NoData));
+            return Err(ResponseError::NoData);
         }
         let mut sd : StructuredData = try!(decode(&data));
         match sd.replace_with_other(in_coming_data.clone()) {
             Ok(_) => {},
-            Err(_) => { return Err(From::from(ResponseError::InvalidRequest)); }
+            Err(_) => { return Err(ResponseError::InvalidRequest); }
         }
         let serialised_data = try!(encode(&sd));
         self.chunk_store_.put(in_coming_data.name(), serialised_data);

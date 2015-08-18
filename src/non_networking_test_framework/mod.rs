@@ -24,6 +24,11 @@ use sodiumoxide::crypto;
 
 use self::mock_routing_types::*;
 
+use routing::data::{Data, DataRequest};
+use routing::immutable_data::ImmutableDataType;
+use routing::NameType;
+use routing::error::{RoutingError, InterfaceError, ResponseError};
+
 type DataStore = ::std::sync::Arc<::std::sync::Mutex<::std::collections::HashMap<NameType, Vec<u8>>>>;
 
 const STORAGE_FILE_NAME: &'static str = "VaultStorageSimulation";
