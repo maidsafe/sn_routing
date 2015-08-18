@@ -907,12 +907,12 @@ impl RoutingNode {
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&self, signed_message : SignedMessage) -> RoutingResult {
         let destination = signed_message.get_routing_message().destination();
-        debug!("Sending signed message to {:?}", destination);
         let bytes = try!(encode(&signed_message));
         // query the routing table for parallel or swarm
         let endpoints = self.core.target_endpoints(&destination);
-        debug!("Sending to {:?} target connection(s)", endpoints.len());
         if !endpoints.is_empty() {
+            debug!("Sending {:?} to {:?} target connection(s)",
+                signed_message.get_routing_message().content, endpoints.len());
             for endpoint in endpoints {
                 // TODO(ben 10/08/2015) drop endpoints that fail to send
                 ignore(self.connection_manager.send(endpoint, bytes.clone()));
@@ -921,17 +921,18 @@ impl RoutingNode {
 
         match self.core.bootstrap_endpoints() {
             Some(bootstrap_peers) => {
-                debug!("Falling back to {:?} bootstrap connections to send.",
-                    bootstrap_peers.len());
                 // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
                 // the relay_name in from_authority Client(relay_name, client_public_key) is
                 // the name of the bootstrap connection we're sending it on.  Although this might
                 // open a window for attacking a node, in v0.3.* we can leave this unresolved.
                 for bootstrap_peer in bootstrap_peers {
                     // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
-                    debug!("Sending to bootstrap node {:?}", bootstrap_peer.identity());
-                    ignore(self.connection_manager.send(bootstrap_peer.endpoint().clone(),
-                        bytes.clone()));
+                    if self.connection_manager.send(bootstrap_peer.endpoint().clone(),
+                        bytes.clone()).is_ok() {
+                        debug!("Sent {:?} to bootstrap connection {:?}",
+                            signed_message.get_routing_message().content,
+                            bootstrap_peer.identity());
+                        break; };
                 }
             },
             None => {},
