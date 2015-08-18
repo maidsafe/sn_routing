@@ -80,22 +80,7 @@ impl StructuredData {
     /// To transfer ownership the current owner signs over the data, the previous owners field
     /// must have the previous owners of version - 1 as the current owners of that last version.
     pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), RoutingError> {
-        {
-            let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
-                &other.current_owner_keys
-            } else {
-                &other.previous_owner_keys
-            };
-
-            // TODO(dirvine) Increase error types to be more descriptive  :07/07/2015
-            if      other.type_tag != self.type_tag     ||
-                    other.identifier != self.identifier ||
-                    other.version != self.version + 1   ||
-                    *owner_keys_to_match != self.current_owner_keys  {
-                return Err(RoutingError::UnknownMessageType)
-            }
-            try!(other.verify_previous_owner_signatures(owner_keys_to_match));
-        }
+        try!(self.validate_self_against_successor(&other));
 
         self.type_tag = other.type_tag;
         self.identifier = other.identifier;
@@ -110,6 +95,23 @@ impl StructuredData {
     /// Returns name and validates invariants
     pub fn name(&self) -> NameType {
         StructuredData::compute_name(self.type_tag, &self.identifier)
+    }
+
+    pub fn validate_self_against_successor(&self, other: &StructuredData) -> Result<(), RoutingError> {
+        let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
+            &other.current_owner_keys
+        } else {
+            &other.previous_owner_keys
+        };
+
+        // TODO(dirvine) Increase error types to be more descriptive  :07/07/2015
+        if      other.type_tag != self.type_tag     ||
+                other.identifier != self.identifier ||
+                other.version != self.version + 1   ||
+                *owner_keys_to_match != self.current_owner_keys  {
+            return Err(RoutingError::UnknownMessageType)
+        }
+        other.verify_previous_owner_signatures(owner_keys_to_match)
     }
 
     /// Confirms *unique and valid* owner_signatures are at least 50% of total owners
