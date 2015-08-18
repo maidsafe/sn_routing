@@ -17,8 +17,7 @@
 
 use std::io;
 use std::convert::From;
-use cbor::CborError;
-use cbor::CborTagEncode;
+use cbor::{CborError, CborTagEncode};
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::error;
 use std::fmt;
@@ -39,6 +38,10 @@ pub enum ResponseError {
     FailedRequestForData(Data),
     /// had to clear Sacrificial Data in order to complete request
     HadToClearSacrificial(usize),
+}
+
+impl From<CborError> for ResponseError {
+    fn from(e: CborError) -> ResponseError { ResponseError::Abort }
 }
 
 impl error::Error for ResponseError {
