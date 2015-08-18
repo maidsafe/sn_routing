@@ -40,61 +40,10 @@ pub use routing::data::{Data, DataRequest};
 pub use routing::immutable_data::ImmutableDataType;
 pub use routing::NameType;
 
-pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8;32] {
-  let mut arr = [0u8;32];
-  for i in (0..32) {
-    arr[i] = vector[i];
-  }
-  arr
-}
-
-pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for _ in 0..size {
-        vec.push(random::<u8>());
-    }
-    vec
-}
-
-pub static QUORUM_SIZE: usize = 6;
+use routing::types::{Address, FromAddress, ToAddress, NodeAddress};
 
 pub trait Mergeable {
     fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
-}
-
-pub type MessageId = u32;
-pub type NodeAddress = NameType; // (Address, NodeTag)
-pub type FromAddress = NameType; // (Address, NodeTag)
-pub type ToAddress = NameType; // (Address, NodeTag)
-pub type GroupAddress = NameType; // (Address, GroupTag)
-pub type SerialisedMessage = Vec<u8>;
-pub type IdNode = NameType;
-pub type IdNodes = Vec<IdNode>;
-pub type Bytes = Vec<u8>;
-
-#[derive(RustcEncodable, RustcDecodable)]
-struct SignedKey {
-  sign_public_key: sign::PublicKey,
-  encrypt_public_key: crypto::box_::PublicKey,
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct NameAndTypeId {
-  pub name : NameType,
-  pub type_id : u64
-}
-
-
-//                        +-> from_node name
-//                        |           +-> preserve the message_id when sending on
-//                        |           |         +-> destination name
-//                        |           |         |
-pub type FilterType = (SourceAddress, MessageId, DestinationAddress);
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum Address {
-    Client(crypto::sign::PublicKey),
-    Node(NameType),
 }
 
 /// Address of the source of the message
