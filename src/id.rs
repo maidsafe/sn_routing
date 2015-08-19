@@ -67,12 +67,6 @@ impl Id {
       self.name
     }
 
-    pub fn set_name(&mut self, name: NameType) {
-        // This function should not exist, it is here only temporarily
-        // to fix compilation.
-        self.name = name;
-    }
-
     // name field is initially same as original_name, this should be later overwritten by
     // relocated name provided by the network using this method
     pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {

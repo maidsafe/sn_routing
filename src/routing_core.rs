@@ -65,7 +65,10 @@ impl RoutingCore {
             None => Id::new(),
         };
         // nodes are not persistant, and a client has no network allocated name
-        if id.is_relocated() { let _ = action_sender.send(Action::Terminate); };
+        if id.is_relocated() {
+            error!("Core terminates routing as initialised with relocated id {:?}",
+                PublicId::new(&id));
+            let _ = action_sender.send(Action::Terminate); };
 
         RoutingCore {
             id            : id,
