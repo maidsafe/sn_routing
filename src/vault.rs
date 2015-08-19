@@ -346,8 +346,6 @@ impl VaultFacade {
 
 #[cfg(test)]
  mod test {
-    use std::convert::From;
-
     use cbor;
     use sodiumoxide::crypto;
 
@@ -538,12 +536,12 @@ impl VaultFacade {
         let name = NameType([3u8; 64]);
         let value = generate_random_vec_u8(1024);
         let keys1 = crypto::sign::gen_keypair();
-        let sd = StructuredData::new(0, name, 0, value.clone(), vec![keys1.0], vec![], &keys1.1).ok().unwrap();
+        let sd = StructuredData::new(0, name, 0, value.clone(), vec![keys1.0], vec![], Some(&keys1.1)).ok().unwrap();
 
         sd_manager_put(&mut vault, from.clone(), dest.clone(), sd.clone());
 
         let keys2 = crypto::sign::gen_keypair();
-        let sd_new = StructuredData::new(0, name, 1, value.clone(), vec![keys2.0], vec![keys1.0], &keys2.1).ok().unwrap();
+        let sd_new = StructuredData::new(0, name, 1, value.clone(), vec![keys2.0], vec![keys1.0], Some(&keys1.1)).ok().unwrap();
         sd_manager_post(&mut vault, from.clone(), dest.clone(), sd_new.clone());
 
         sd_manager_get(&mut vault, from.clone(), StructuredData::compute_name(0, &name), sd_new);
@@ -676,7 +674,7 @@ impl VaultFacade {
             let name = NameType([3u8; 64]);
             let value = generate_random_vec_u8(1024);
             let keys = crypto::sign::gen_keypair();
-            let sdv = StructuredData::new(0, name, 0, value, vec![keys.0], vec![], &keys.1).ok().unwrap();
+            let sdv = StructuredData::new(0, name, 0, value, vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
 
             sd_manager_put(&mut vault, from.clone(), dest.clone(), sdv.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
@@ -708,7 +706,7 @@ impl VaultFacade {
             let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                                     im_data.name().clone(), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), true);
-            assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
+            assert_eq!(get_result.err().unwrap(), ResponseError::Abort);
         }
 
         let put_result = vault.handle_cache_put(Authority::ManagedNode, NameType::new([7u8; 64]),
@@ -738,7 +736,7 @@ impl VaultFacade {
             let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                                     NameType::new([7u8; 64]), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), true);
-            assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
+            assert_eq!(get_result.err().unwrap(), ResponseError::Abort);
         }
     }
 }

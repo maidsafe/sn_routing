@@ -117,7 +117,7 @@ mod test {
         let name = NameType([3u8; 64]);
         let value = generate_random_vec_u8(1024);
         let keys = crypto::sign::gen_keypair();
-        let sdv = StructuredData::new(0, name, 0, value.clone(), vec![keys.0], vec![], &keys.1).ok().unwrap();
+        let sdv = StructuredData::new(0, name, 0, value.clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
         {
             let put_result = sd_manager.handle_put(sdv.clone());
             assert_eq!(put_result.is_ok(), true);
@@ -163,10 +163,10 @@ mod test {
         let name = NameType([3u8; 64]);
         let value = generate_random_vec_u8(1024);
         let keys = crypto::sign::gen_keypair();
-        let sdv = StructuredData::new(0, name, 0, value.clone(), vec![keys.0], vec![], &keys.1).ok().unwrap();
+        let sdv = StructuredData::new(0, name, 0, value.clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
         { // posting to none existing data
             match sd_manager.handle_post(sdv.clone()) {
-                Err(result) => { assert_eq!(result, From::from(ResponseError::NoData)); }
+                Err(result) => { assert_eq!(result, ResponseError::InvalidRequest(Data::StructuredData(sdv.clone()))); }
                 _ => panic!("Unexpected"),
             }
         }
@@ -188,14 +188,14 @@ mod test {
             }
         }
         { // incorrect version
-            let sdv_new = StructuredData::new(0, name, 3, value.clone(), vec![keys.0], vec![], &keys.1).ok().unwrap();
+            let sdv_new = StructuredData::new(0, name, 3, value.clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
             match sd_manager.handle_post(sdv_new.clone()) {
-                Err(result) => { assert_eq!(result, From::from(ResponseError::InvalidRequest)); }
+                Err(result) => { assert_eq!(result, ResponseError::InvalidRequest(Data::StructuredData(sdv_new))); }
                 _ => panic!("Unexpected"),
             }
         }
         { // correct version
-            let sdv_new = StructuredData::new(0, name, 1, value.clone(), vec![keys.0], vec![], &keys.1).ok().unwrap();
+            let sdv_new = StructuredData::new(0, name, 1, value.clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
             match sd_manager.handle_post(sdv_new.clone()) {
                 Ok(_) => {}
                 _ => panic!("Unexpected"),
@@ -203,14 +203,14 @@ mod test {
         }
         let keys2 = crypto::sign::gen_keypair();
         { // update to a new owner, wrong signature
-            let sdv_new = StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], &keys2.1).ok().unwrap();
+            let sdv_new = StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], Some(&keys2.1)).ok().unwrap();
             match sd_manager.handle_post(sdv_new.clone()) {
-                Err(result) => { assert_eq!(result, From::from(ResponseError::InvalidRequest)); }
+                Err(result) => { assert_eq!(result, ResponseError::InvalidRequest(Data::StructuredData(sdv_new))); }
                 _ => panic!("Unexpected"),
             }
         }
         { // update to a new owner, correct signature
-            let sdv_new = StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], &keys.1).ok().unwrap();
+            let sdv_new = StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], Some(&keys.1)).ok().unwrap();
             match sd_manager.handle_post(sdv_new.clone()) {
                 Ok(_) => {}
                 _ => panic!("Unexpected"),
@@ -223,7 +223,7 @@ mod test {
         let name = NameType([3u8; 64]);
         let value = generate_random_vec_u8(1024);
         let keys = crypto::sign::gen_keypair();
-        let sdv = StructuredData::new(0, name, 0, value, vec![keys.0], vec![], &keys.1).ok().unwrap();
+        let sdv = StructuredData::new(0, name, 0, value, vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
 
         let mut sd_manager = StructuredDataManager::new();
         let serialised_data = match ::routing::utils::encode(&sdv) {
