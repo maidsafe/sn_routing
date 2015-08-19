@@ -87,14 +87,15 @@ impl RoutingNode {
     pub fn new(action_sender      : mpsc::Sender<Action>,
                action_receiver    : mpsc::Receiver<Action>,
                event_sender       : mpsc::Sender<Event>,
-               client_restriction : bool) -> RoutingNode {
+               client_restriction : bool,
+               keys               : Option<Id>) -> RoutingNode {
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
         let mut cm = crust::ConnectionManager::new(crust_sender);
         let _ = cm.start_accepting(vec![Port::Tcp(5483u16)]);
         let accepting_on = cm.get_own_endpoints();
 
-        let core = RoutingCore::new(event_sender.clone());
+        let core = RoutingCore::new(event_sender.clone(), action_sender.clone(), keys);
         info!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
 
         RoutingNode {
@@ -151,6 +152,7 @@ impl RoutingNode {
                 },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
+                    let _ = self.event_sender.send(Event::Terminated);
                     self.connection_manager.stop();
                     break;
                 },
