@@ -36,7 +36,7 @@ impl StructuredDataManager {
     pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, ResponseError> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
-            return Err(ResponseError::NoData);
+            return Err(ResponseError::Abort);
         }
         let sd : StructuredData = try!(::routing::utils::decode(&data));
         Ok(vec![MethodCall::Reply { data: Data::StructuredData(sd) }])
@@ -49,7 +49,7 @@ impl StructuredDataManager {
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
         if self.chunk_store_.has_chunk(structured_data.name()) {
-            Err(ResponseError::FailedToStoreData(Data::StructuredData(structured_data)))
+            Err(ResponseError::FailedRequestForData(Data::StructuredData(structured_data)))
         } else {
             let serialised_data = try!(::routing::utils::encode(&structured_data));
             self.chunk_store_.put(structured_data.name(), serialised_data);
@@ -65,12 +65,12 @@ impl StructuredDataManager {
         //       in addition to above, POST shall check the ownership
         let data = self.chunk_store_.get(in_coming_data.name());
         if data.len() == 0 {
-            return Err(ResponseError::NoData);
+            return Err(ResponseError::InvalidRequest(Data::StructuredData(in_coming_data)));
         }
         let mut sd : StructuredData = try!(::routing::utils::decode(&data));
         match sd.replace_with_other(in_coming_data.clone()) {
             Ok(_) => {},
-            Err(_) => { return Err(ResponseError::InvalidRequest); }
+            Err(_) => { return Err(ResponseError::InvalidRequest(Data::StructuredData(in_coming_data))); }
         }
         let serialised_data = try!(::routing::utils::encode(&sd));
         self.chunk_store_.put(in_coming_data.name(), serialised_data);

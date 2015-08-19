@@ -17,8 +17,6 @@
 
 #![deny(missing_docs)]
 
-use std::convert::From;
-
 use time::Duration;
 use cbor::Decoder;
 use rustc_serialize::{Decodable, Encodable};
@@ -82,16 +80,16 @@ impl Interface for VaultFacade {
                 match data_request {
                     DataRequest::ImmutableData(_, _) => self.data_manager.handle_get(&name),
                     DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
-                    _ => Err(ResponseError::InvalidRequest)
+                    _ => Err(ResponseError::Abort)
                 }
             }
             Authority::ManagedNode => {
                 match from_authority {
                     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
-                    _ => Err(ResponseError::InvalidRequest),
+                    _ => Err(ResponseError::Abort),
                 }
             }
-            _ => { return Err(ResponseError::InvalidRequest); }
+            _ => { return Err(ResponseError::Abort); }
         }
     }
 
@@ -109,7 +107,7 @@ impl Interface for VaultFacade {
                 match data {
                     Data::ImmutableData(data) => self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
                     Data::StructuredData(data) => self.sd_manager.handle_put(data),
-                    _ => return Err(ResponseError::InvalidRequest),
+                    _ => return Err(ResponseError::InvalidRequest(data)),
                 }
             }
             Authority::NodeManager(dest_address) => {
@@ -119,7 +117,7 @@ impl Interface for VaultFacade {
                 return self.pmid_node.handle_put(data);
             }
             _ => {
-                return Err(ResponseError::InvalidRequest);
+                return Err(ResponseError::InvalidRequest(data));
             }
         }
     }
@@ -140,7 +138,7 @@ impl Interface for VaultFacade {
             }
             _ => {}
         }
-        Err(ResponseError::InvalidRequest)
+        Err(ResponseError::InvalidRequest(data))
     }
 
     fn handle_get_response(&mut self,
@@ -241,7 +239,8 @@ impl Interface for VaultFacade {
                         _: NameType) -> Result<MethodCall, ResponseError> { // from_address
         match self.data_cache.get(&data_location) {
             Some(data) => Ok(MethodCall::Reply { data: data.clone() }),
-            None => Err(ResponseError::NoData)
+            // TODO: NoData may still be preferred here
+            None => Err(ResponseError::Abort)
         }
     }
 
@@ -250,8 +249,7 @@ impl Interface for VaultFacade {
                         _: NameType, // from_address
                         data: Data) -> Result<MethodCall, ResponseError> {
         self.data_cache.add(data.name(), data);
-        // TODO: use ResponseError::Abort once available
-        Err(ResponseError::InvalidRequest)
+        Err(ResponseError::Abort)
     }
 }
 
@@ -717,8 +715,7 @@ impl VaultFacade {
                                                 Data::ImmutableData(im_data.clone()));
         assert_eq!(put_result.is_err(), true);
         match put_result.err().unwrap() {
-            // TODO: use ResponseError::Abort once available
-            ResponseError::InvalidRequest => { }
+            ResponseError::Abort => {}
             _ => panic!("Unexpected"),
         }
         {

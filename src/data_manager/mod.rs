@@ -103,7 +103,7 @@ impl DataManager {
   pub fn handle_get(&mut self, name : &NameType) ->Result<Vec<MethodCall>, ResponseError> {
 	  let result = self.db_.get_pmid_nodes(name);
 	  if result.len() == 0 {
-	    return Err(ResponseError::NoData);
+	    return Err(ResponseError::Abort);
 	  }
 
 	  let mut dest_pmids : Vec<MethodCall> = Vec::new();
@@ -117,8 +117,7 @@ impl DataManager {
           -> Result<Vec<MethodCall>, ResponseError> {
     let data_name = data.name();
     if self.db_.exist(&data_name) {
-      // TODO : use ResponseError::Abort once available
-      return Err(ResponseError::InvalidRequest);
+      return Err(ResponseError::Abort);
     }
 
     nodes_in_table.sort_by(|a, b|
@@ -160,7 +159,9 @@ impl DataManager {
   pub fn handle_put_response(&mut self, response: ResponseError,
                              from_address: &NameType) -> Vec<MethodCall> {
       match response {
-          ResponseError::FailedToStoreData(data) => {
+          // TODO: may need to update the flow to utilize HadToClearSacrificial explicitly
+          //       currently assuming FailedRequestForData is replacing FailedTOStoreData
+          ResponseError::FailedRequestForData(data) => {
               match data.clone() {
                   // DataManager shall only handle Immutable data
                   // Structured Data shall be handled in StructuredDataManager

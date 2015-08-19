@@ -32,16 +32,16 @@ impl PmidNode {
     pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, ResponseError> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
-            return Err(ResponseError::NoData);
+            return Err(ResponseError::Abort);
         }
         let sd : ImmutableData = try!(::routing::utils::decode(&data));
         Ok(vec![MethodCall::Reply { data: Data::ImmutableData(sd) }])
     }
 
     pub fn handle_put(&mut self, incoming_data : Data) ->Result<Vec<MethodCall>, ResponseError> {
-        let immutable_data = match incoming_data {
+        let immutable_data = match incoming_data.clone() {
             Data::ImmutableData(data) => { data }
-            _ => { return Err(ResponseError::InvalidRequest); }
+            _ => { return Err(ResponseError::InvalidRequest(incoming_data)); }
         };
         let data = try!(::routing::utils::encode(&immutable_data));
         let data_name_and_remove_sacrificial = match *immutable_data.get_type_tag() {
@@ -56,7 +56,7 @@ impl PmidNode {
         // TODO: keeps removing sacrificial copies till enough space emptied
         //       if all sacrificial copies removed but still can not satisfy, do not restore
         if !data_name_and_remove_sacrificial.1 {
-            return Err(From::from(ResponseError::InvalidRequest))
+            return Err(ResponseError::InvalidRequest(incoming_data))
         }
         let required_space = data.len() - (self.chunk_store_.max_disk_usage() - self.chunk_store_.current_disk_usage());
         let names = self.chunk_store_.names();
@@ -69,13 +69,15 @@ impl PmidNode {
                         self.chunk_store_.delete(name.clone());
                         self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
                         // TODO: ideally, the InterfaceError shall have an option holding a list of copies
-                        return Err(ResponseError::FailedToStoreData(Data::ImmutableData(immutable_data)));
+                        // TODO: may need to update the flow to utilize HadToClearSacrificial explicitly
+                        //       currently assuming FailedRequestForData is replacing FailedTOStoreData
+                        return Err(ResponseError::FailedRequestForData(Data::ImmutableData(immutable_data)));
                     }
                 },
                 _ => {}
             }
         }
-        Err(ResponseError::InvalidRequest)
+        Err(ResponseError::InvalidRequest(incoming_data))
     }
 
 }

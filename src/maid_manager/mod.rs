@@ -41,7 +41,7 @@ impl MaidManager {
         if self.db_.put_data(from, data.payload_size() as u64) {
             Ok(vec![MethodCall::Put { destination: data.name(), content: data }])
         } else {
-            Err(ResponseError::InvalidRequest)
+            Err(ResponseError::InvalidRequest(data))
         }
     }
 
