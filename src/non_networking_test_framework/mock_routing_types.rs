@@ -36,6 +36,7 @@ use sodiumoxide;
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::sign;
 
+use routing::authority::Authority;
 use routing::data::{Data, DataRequest};
 use routing::immutable_data::ImmutableDataType;
 use routing::NameType;
@@ -87,20 +88,6 @@ impl DestinationAddress {
             DestinationAddress::Direct(to_address)           => to_address,
         }
     }
-}
-
-
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Debug, Clone)]
-pub enum Authority {
-  ClientManager(NameType),  // signed by a client and corresponding ClientName is in our range
-  NaeManager(NameType),     // we are responsible for this element
-                            // and the destination is the element
-  NodeManager(NameType),    // the destination is not the element, and we are responsible for it
-  ManagedNode,              // our name is the destination
-                            // and the message came from within our range
-  ManagedClient(crypto::sign::PublicKey),  // in our group
-  Client(crypto::sign::PublicKey),         // detached
-  Unknown,
 }
 
 

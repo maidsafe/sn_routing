@@ -83,7 +83,7 @@ impl Interface for VaultFacade {
                     _ => Err(ResponseError::Abort)
                 }
             }
-            Authority::ManagedNode => {
+            Authority::ManagedNode(_) => {
                 match from_authority {
                     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
                     _ => Err(ResponseError::Abort),
@@ -113,7 +113,7 @@ impl Interface for VaultFacade {
             Authority::NodeManager(dest_address) => {
                 return self.pmid_manager.handle_put(dest_address, data);
             }
-            Authority::ManagedNode => {
+            Authority::ManagedNode(_) => {
                 return self.pmid_node.handle_put(data);
             }
             _ => {
@@ -155,23 +155,11 @@ impl Interface for VaultFacade {
     //     1, the original immutable data if it failed to squeeze in
     //     2, the sacrificial copy if it has been removed to empty the space
     // DataManager doesn't need to carry out replication in case of sacrificial copy
-    fn handle_put_response(&mut self, from_authority: Authority, from_address: SourceAddress,
+    fn handle_put_response(&mut self, from_authority: Authority, _: SourceAddress,
                            response: ResponseError) -> Vec<MethodCall> {
         match from_authority {
-            Authority::ManagedNode => {
-                match from_address {
-                    SourceAddress::Direct(pmid_node) => self.pmid_manager.handle_put_response(&pmid_node, response),
-                    _ => vec![]
-                }
-            }
-            Authority::NodeManager(_) => {
-                // TODO: this from_address shall be the original pmid_node that failing or removing the copy
-                //       which requires work in routing to replace the address properly
-                match from_address {
-                    SourceAddress::Direct(pmid_node) => self.data_manager.handle_put_response(response, &pmid_node),
-                    _ => vec![]
-                }
-            }
+            Authority::ManagedNode(pmid_node) => self.pmid_manager.handle_put_response(&pmid_node, response),
+            Authority::NodeManager(pmid_node) => self.data_manager.handle_put_response(response, &pmid_node),
             _ => vec![]
         }
     }
@@ -362,7 +350,7 @@ impl VaultFacade {
         };
         let keys = crypto::sign::gen_keypair();
         let put_result = vault.handle_put(Authority::ClientManager(client),
-                                          Authority::Client(keys.0),
+                                          Authority::Client(client, keys.0),
                                           from, dest, Data::ImmutableData(im_data.clone()));
         assert_eq!(put_result.is_err(), false);
         let calls = put_result.ok().unwrap();
@@ -415,7 +403,7 @@ impl VaultFacade {
     fn sd_manager_put(vault: &mut VaultFacade, from: SourceAddress,
                       dest: DestinationAddress, sdv: StructuredData) {
         let put_result = vault.handle_put(Authority::NaeManager(sdv.name()),
-                                          Authority::ManagedNode,
+                                          Authority::ManagedNode(NameType::new([7u8; 64])),
                                           from.clone(), dest, Data::StructuredData(sdv.clone()));
         assert_eq!(put_result.is_ok(), true);
         let mut calls = put_result.ok().unwrap();
@@ -436,7 +424,7 @@ impl VaultFacade {
     fn sd_manager_post(vault: &mut VaultFacade, from: SourceAddress,
                        dest: DestinationAddress, sdv: StructuredData) {
         let post_result = vault.handle_post(Authority::NaeManager(sdv.name()),
-                                            Authority::ManagedNode,
+                                            Authority::ManagedNode(NameType::new([7u8; 64])),
                                             from.clone(), dest, Data::StructuredData(sdv.clone()));
         assert_eq!(post_result.is_ok(), true);
     }
@@ -445,7 +433,7 @@ impl VaultFacade {
                       name: NameType, sd_expected: StructuredData) {
         let get_result = vault.handle_get(DataRequest::StructuredData(name, 0),
                                           Authority::NaeManager(name),
-                                          Authority::ManagedNode,
+                                          Authority::ManagedNode(NameType::new([7u8; 64])),
                                           from.clone());
         assert_eq!(get_result.is_ok(), true);
         let mut calls = get_result.ok().unwrap();
@@ -484,7 +472,7 @@ impl VaultFacade {
             let keys = crypto::sign::gen_keypair();
             let get_result = vault.handle_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                               Authority::NaeManager(im_data.name().clone()),
-                                              Authority::Client(keys.0), from);
+                                              Authority::Client(NameType::new([7u8; 64]), keys.0), from);
             assert_eq!(get_result.is_err(), false);
             let get_calls = get_result.ok().unwrap();
             assert_eq!(get_calls.len(), data_manager::PARALLELISM);
@@ -497,7 +485,7 @@ impl VaultFacade {
         { // PmidNode stores/retrieves data
             let from = SourceAddress::Direct(NameType::new([7u8; 64]));
             let dest = DestinationAddress::Direct(NameType::new([6u8; 64]));
-            let put_result = vault.handle_put(Authority::ManagedNode, Authority::NodeManager(NameType::new([6u8; 64])),
+            let put_result = vault.handle_put(Authority::ManagedNode(NameType::new([6u8; 64])), Authority::NodeManager(NameType::new([6u8; 64])),
                                               from.clone(), dest, Data::ImmutableData(im_data.clone()));
             assert_eq!(put_result.is_ok(), true);
             let mut put_calls = put_result.ok().unwrap();
@@ -508,7 +496,7 @@ impl VaultFacade {
             }
 
             let get_result = vault.handle_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
-                                              Authority::ManagedNode,
+                                              Authority::ManagedNode(NameType::new([6u8; 64])),
                                               Authority::NaeManager(im_data.name().clone()), from);
             assert_eq!(get_result.is_err(), false);
             let mut get_calls = get_result.ok().unwrap();
@@ -709,7 +697,7 @@ impl VaultFacade {
             assert_eq!(get_result.err().unwrap(), ResponseError::Abort);
         }
 
-        let put_result = vault.handle_cache_put(Authority::ManagedNode, NameType::new([7u8; 64]),
+        let put_result = vault.handle_cache_put(Authority::ManagedNode(NameType::new([6u8; 64])), NameType::new([7u8; 64]),
                                                 Data::ImmutableData(im_data.clone()));
         assert_eq!(put_result.is_err(), true);
         match put_result.err().unwrap() {

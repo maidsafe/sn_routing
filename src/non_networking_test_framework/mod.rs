@@ -26,6 +26,7 @@ use sodiumoxide::crypto;
 
 use self::mock_routing_types::*;
 
+use routing::authority::Authority;
 use routing::data::{Data, DataRequest};
 use routing::immutable_data::ImmutableDataType;
 use routing::NameType;
@@ -139,7 +140,7 @@ impl MockRouting {
             // TODO: how to simulate the authorities?
             //       Here throwing the request to PmidNode directly
             let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(name, ImmutableDataType::Normal),
-                                                                 Authority::ManagedNode,
+                                                                 Authority::ManagedNode(NameType::new([7u8; 64])),
                                                                  Authority::NaeManager(name),
                                                                  SourceAddress::Direct(name)));
         });
@@ -155,7 +156,7 @@ impl MockRouting {
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
             let _ = cloned_sender.send(RoutingMessage::HandlePut(Authority::ClientManager(client_address),
-                                                                 Authority::ManagedClient(client_pub_key),
+                                                                 Authority::Client(client_address, client_pub_key),
                                                                  SourceAddress::RelayedForClient(client_address, client_pub_key),
                                                                  DestinationAddress::Direct(data.name()),
                                                                  data));
@@ -196,7 +197,7 @@ impl MockRouting {
                         // TODO: how to simulate the authorities?
                         //       Here throwing the request to PmidNode directly
                         let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(data.name(), ImmutableDataType::Normal),
-                                                                             Authority::ManagedNode,
+                                                                             Authority::ManagedNode(NameType::new([7u8; 64])),
                                                                              Authority::NaeManager(data.name()),
                                                                              SourceAddress::Direct(data.name())));
                     }
@@ -229,7 +230,7 @@ impl MockRouting {
             //       here we assume if data is not present in cache previously, then forward to PmidNode
             //       otherwise terminate the flow directly
             if success {
-                let _ = cloned_sender.send(RoutingMessage::HandlePut(Authority::ManagedNode,
+                let _ = cloned_sender.send(RoutingMessage::HandlePut(Authority::ManagedNode(NameType::new([7u8; 64])),
                                                                      Authority::NaeManager(data.name()),
                                                                      SourceAddress::Direct(data.name()),
                                                                      DestinationAddress::Direct(data.name()),

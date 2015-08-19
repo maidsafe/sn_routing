@@ -17,6 +17,7 @@
 
 
 pub use routing::{closer_to_target, NameType};
+pub use routing::authority::Authority;
 pub use routing::data::{Data, DataRequest};
 pub use routing::error::{RoutingError, InterfaceError, ResponseError};
 pub use routing::immutable_data::{ImmutableData, ImmutableDataType};
