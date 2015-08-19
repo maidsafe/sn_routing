@@ -21,6 +21,9 @@ use error::RoutingError;
 use NameType;
 use sodiumoxide::crypto;
 
+/// Maximum allowed size for a Structured Data to grow to
+pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
+
 /// StructuredData
 /// These types may be stored unsigned with previous and current owner keys
 /// set to the same keys. Updates though require a signature to validate
