@@ -19,8 +19,6 @@
 
 pub mod mock_routing_types;
 
-use cbor;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::io::{Read, Write};
 use sodiumoxide::crypto;
 
@@ -51,22 +49,6 @@ pub fn convert_vec_to_hashmap(vec: Vec<(NameType, Vec<u8>)>) -> ::std::collectio
     vec.into_iter().collect()
 }
 
-/// utility function to serialise an Encodable type
-pub fn serialise<T>(data: &T) -> Result<Vec<u8>, ResponseError>
-                                 where T: Encodable {
-    let mut encoder = ::cbor::Encoder::from_memory();
-    encoder.encode(&[data]);
-    Ok(encoder.into_bytes())
-}
-
-
-/// utility function to deserialise a Decodable type
-pub fn deserialise<T>(data: &[u8]) -> Result<T, ResponseError>
-                                      where T: Decodable {
-    let mut d = cbor::Decoder::from_bytes(data);
-    Ok(d.decode().next().ok_or(ResponseError::Abort).unwrap().unwrap())
-}
-
 fn get_storage() -> DataStore {
     static mut STORAGE: *const PersistentStorageSimulation = 0 as *const PersistentStorageSimulation;
     static mut ONCE: ::std::sync::Once = ::std::sync::ONCE_INIT;
@@ -83,7 +65,7 @@ fn get_storage() -> DataStore {
                 if let Ok(_) = file.read_to_end(&mut raw_disk_data) {
                     if raw_disk_data.len() != 0 {
                         let vec: Vec<(NameType, Vec<u8>)>;
-                        vec = deserialise(&raw_disk_data).unwrap();
+                        vec = ::routing::utils::decode(&raw_disk_data).unwrap();
                         memory_storage = convert_vec_to_hashmap(vec);
                     }
                 }
@@ -105,7 +87,7 @@ fn sync_disk_storage(memory_storage: &::std::collections::HashMap<NameType, Vec<
     temp_dir_pathbuf.push(STORAGE_FILE_NAME);
 
     let mut file = ::std::fs::File::create(temp_dir_pathbuf).unwrap();
-    file.write_all(&serialise(&convert_hashmap_to_vec(memory_storage)).unwrap());
+    file.write_all(&::routing::utils::encode(&convert_hashmap_to_vec(memory_storage)).unwrap());
     file.sync_all();
 }
 
@@ -193,7 +175,7 @@ impl MockRouting {
             ::std::thread::sleep_ms(delay_ms);
             match data_store.lock().unwrap().get(&name) {
                 Some(raw_data) => {
-                    if let Ok(data) = deserialise::<Data>(raw_data) {
+                    if let Ok(data) = ::routing::utils::decode::<Data>(raw_data) {
                         // TODO: how to simulate the authorities?
                         //       Here throwing the request to PmidNode directly
 
@@ -220,7 +202,7 @@ impl MockRouting {
             let mut data_store_mutex_guard = data_store.lock().unwrap();
             let success = if data_store_mutex_guard.contains_key(&location) {
                 false
-            } else if let Ok(raw_data) = serialise(&data) {
+            } else if let Ok(raw_data) = ::routing::utils::encode(&data) {
                 let _ = data_store_mutex_guard.insert(location, raw_data);
                 sync_disk_storage(&*data_store_mutex_guard);
                 true

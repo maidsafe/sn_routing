@@ -25,12 +25,10 @@
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
-        unconditional_recursion, unknown_lints, unsafe_code, unused_allocation,
+        unconditional_recursion, unknown_lints, unsafe_code, unused, unused_allocation,
         unused_attributes, unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results, variant_size_differences)]
-
-#![allow(dead_code, unused_variables)]
 
 // Non-MaidSafe crates
 extern crate cbor;
