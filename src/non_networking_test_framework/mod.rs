@@ -97,11 +97,10 @@ pub struct MockRouting {
 
 impl MockRouting {
     pub fn new(event_sender: ::std::sync::mpsc::Sender<(RoutingMessage)>) -> MockRouting {
-        let (sender, receiver) = ::std::sync::mpsc::channel();
         let (client_sender, _) = ::std::sync::mpsc::channel();
 
         let mock_routing = MockRouting {
-            sender: sender,
+            sender: event_sender,
             client_sender: client_sender,
             network_delay_ms: 1000,
         };
