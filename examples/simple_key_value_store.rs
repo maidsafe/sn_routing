@@ -329,7 +329,7 @@ impl Client {
     }
 
     fn handle_routing_event(&mut self, event : Event) {
-        println!("Client received routing event: {:?}", event);
+        debug!("Client received routing event: {:?}", event);
         match event {
             Event::Response{response, our_authority, from_authority} => {
                 match response {
