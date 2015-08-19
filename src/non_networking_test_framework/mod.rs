@@ -19,14 +19,18 @@
 
 pub mod mock_routing_types;
 
+use cbor;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::io::{Read, Write};
 use sodiumoxide::crypto;
 
 use self::mock_routing_types::*;
 
+use routing::authority::Authority;
 use routing::data::{Data, DataRequest};
+use routing::event::Event;
 use routing::immutable_data::ImmutableDataType;
-use routing::NameType;
+use routing::{ExternalRequest, NameType};
 use routing::error::{RoutingError, InterfaceError, ResponseError};
 
 type DataStore = ::std::sync::Arc<::std::sync::Mutex<::std::collections::HashMap<NameType, Vec<u8>>>>;
@@ -45,6 +49,22 @@ pub fn convert_hashmap_to_vec(hashmap: &::std::collections::HashMap<NameType, Ve
 // This is a hack because presently cbor isn't able to encode HashMap<NameType, Vec<u8>>
 pub fn convert_vec_to_hashmap(vec: Vec<(NameType, Vec<u8>)>) -> ::std::collections::HashMap<NameType, Vec<u8>> {
     vec.into_iter().collect()
+}
+
+/// utility function to serialise an Encodable type
+pub fn serialise<T>(data: &T) -> Result<Vec<u8>, ResponseError>
+                                 where T: Encodable {
+    let mut encoder = ::cbor::Encoder::from_memory();
+    encoder.encode(&[data]);
+    Ok(encoder.into_bytes())
+}
+
+
+/// utility function to deserialise a Decodable type
+pub fn deserialise<T>(data: &[u8]) -> Result<T, ResponseError>
+                                      where T: Decodable {
+    let mut d = cbor::Decoder::from_bytes(data);
+    Ok(d.decode().next().ok_or(ResponseError::Abort).unwrap().unwrap())
 }
 
 fn get_storage() -> DataStore {
@@ -90,13 +110,13 @@ fn sync_disk_storage(memory_storage: &::std::collections::HashMap<NameType, Vec<
 }
 
 pub struct MockRouting {
-    sender: ::std::sync::mpsc::Sender<RoutingMessage>,
+    sender: ::std::sync::mpsc::Sender<Event>,
     client_sender: ::std::sync::mpsc::Sender<Data>,  // for testing only
     network_delay_ms: u32,  // for testing only
 }
 
 impl MockRouting {
-    pub fn new(event_sender: ::std::sync::mpsc::Sender<(RoutingMessage)>) -> MockRouting {
+    pub fn new(event_sender: ::std::sync::mpsc::Sender<(Event)>) -> MockRouting {
         let (client_sender, _) = ::std::sync::mpsc::channel();
 
         let mock_routing = MockRouting {
@@ -120,10 +140,10 @@ impl MockRouting {
         let _ = ::std::thread::spawn(move || {
             // TODO: how to simulate the authorities?
             //       Here throwing the request to PmidNode directly
-            let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(name, ImmutableDataType::Normal),
-                                                                 Authority::ManagedNode,
-                                                                 Authority::NaeManager(name),
-                                                                 SourceAddress::Direct(name)));
+            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(DataRequest::ImmutableData(name, ImmutableDataType::Normal)),
+                                                       our_authority: Authority::ManagedNode(NameType::new([7u8; 64])),
+                                                       from_authority: Authority::NaeManager(name),
+                                                       response_token: None });
         });
         let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
         self.client_sender = client_sender;
@@ -136,11 +156,10 @@ impl MockRouting {
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            let _ = cloned_sender.send(RoutingMessage::HandlePut(Authority::ClientManager(client_address),
-                                                                 Authority::ManagedClient(client_pub_key),
-                                                                 SourceAddress::RelayedForClient(client_address, client_pub_key),
-                                                                 DestinationAddress::Direct(data.name()),
-                                                                 data));
+            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data),
+                                                       our_authority: Authority::ClientManager(client_address),
+                                                       from_authority: Authority::Client(client_address, client_pub_key),
+                                                       response_token: None });
         });
     }
 
@@ -177,10 +196,11 @@ impl MockRouting {
                     if let Ok(data) = deserialise::<Data>(raw_data) {
                         // TODO: how to simulate the authorities?
                         //       Here throwing the request to PmidNode directly
-                        let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(data.name(), ImmutableDataType::Normal),
-                                                                             Authority::ManagedNode,
-                                                                             Authority::NaeManager(data.name()),
-                                                                             SourceAddress::Direct(data.name())));
+
+                        let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(DataRequest::ImmutableData(data.name(), ImmutableDataType::Normal)),
+                                                                   our_authority: Authority::ManagedNode(NameType::new([7u8; 64])),
+                                                                   from_authority: Authority::NaeManager(data.name()),
+                                                                   response_token: None });
                     }
                 },
                 None => (),
@@ -210,14 +230,14 @@ impl MockRouting {
             // TODO: how to simulate the authorities?
             //       here we assume if data is not present in cache previously, then forward to PmidNode
             //       otherwise terminate the flow directly
+
             if success {
-                let _ = cloned_sender.send(RoutingMessage::HandlePut(Authority::ManagedNode,
-                                                                     Authority::NaeManager(data.name()),
-                                                                     SourceAddress::Direct(data.name()),
-                                                                     DestinationAddress::Direct(data.name()),
-                                                                     data));
+                let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data.clone()),
+                                                           our_authority: Authority::ManagedNode(NameType::new([7u8; 64])),
+                                                           from_authority: Authority::NaeManager(data.name()),
+                                                           response_token: None });
             } else {
-                let _ = cloned_sender.send(RoutingMessage::ShutDown);
+                let _ = cloned_sender.send(Event::Terminated);
             };
         });
 
@@ -322,7 +342,7 @@ impl MockRouting {
     }
 
     pub fn close(&self) {
-        let _ = self.sender.send(RoutingMessage::ShutDown);
+        let _ = self.sender.send(Event::Terminated);
     }
 }
 

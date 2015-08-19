@@ -16,9 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 
-pub use routing::{closer_to_target, NameType};
+pub use routing::{closer_to_target, NameType, SignedToken, ExternalRequest, ExternalResponse};
+pub use routing::authority::Authority;
 pub use routing::data::{Data, DataRequest};
 pub use routing::error::{RoutingError, InterfaceError, ResponseError};
+pub use routing::event::Event;
 pub use routing::immutable_data::{ImmutableData, ImmutableDataType};
 pub use routing::structured_data::StructuredData;
 pub use routing::types::*;

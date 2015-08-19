@@ -25,10 +25,12 @@
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
-        unconditional_recursion, unknown_lints, unsafe_code, unused, unused_allocation,
+        unconditional_recursion, unknown_lints, unsafe_code, unused_allocation,
         unused_attributes, unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results, variant_size_differences)]
+
+#![allow(dead_code, unused_variables)]
 
 // Non-MaidSafe crates
 extern crate cbor;
@@ -59,8 +61,7 @@ mod non_networking_test_framework;
 #[cfg(not(feature = "use-actual-routing"))]
 type Routing = ::std::sync::Arc<::std::sync::Mutex<non_networking_test_framework::MockRouting>>;
 #[cfg(not(feature = "use-actual-routing"))]
-// `RoutingMessage` should be `::routing::event::Event`
-fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(RoutingMessage)>) -> Routing {
+fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
     let mock_routing = non_networking_test_framework::MockRouting::new(event_sender);
     ::std::sync::Arc::new(::std::sync::Mutex::new(mock_routing))
 }
@@ -75,7 +76,7 @@ fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Ev
 
 
 use vault::{VaultFacade, ResponseNotifier};
-use routing_types::{MethodCall, POLL_DURATION_IN_MILLISEC, RoutingMessage};
+use routing_types::{MethodCall, POLL_DURATION_IN_MILLISEC};
 
 /// The Vault structure to hold the logical interface to provide behavioural logic to routing.
 pub struct Vault {
