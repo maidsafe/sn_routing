@@ -103,31 +103,6 @@ pub enum Authority {
   Unknown,
 }
 
-///
-/// Returns true if both slices are equal in length and have equal contents
-///
-pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
-    lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
-}
-
-pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
-
-
-//------------------------------------------------------------------------------
-pub enum ClientError {
-    Io(io::Error),
-    Cbor(CborError),
-}
-
-impl From<CborError> for ClientError {
-    fn from(e: CborError) -> ClientError { ClientError::Cbor(e) }
-}
-
-impl From<io::Error> for ClientError {
-    fn from(e: io::Error) -> ClientError { ClientError::Io(e) }
-}
-
-
 
 /// This trait is required for any type of message to be
 /// passed to routing, refresh / account transfer is optional
@@ -280,21 +255,4 @@ pub trait Interface : Sync + Send {
                         from_authority: Authority,
                         from_address: NameType,
                         data: Data) -> Result<MethodCall, ResponseError>;
-}
-
-
-/// utility function to serialise an Encodable type
-pub fn serialise<T>(data: &T) -> Result<Vec<u8>, ResponseError>
-                                 where T: Encodable {
-    let mut encoder = ::cbor::Encoder::from_memory();
-    encoder.encode(&[data]);
-    Ok(encoder.into_bytes())
-}
-
-
-/// utility function to deserialise a Decodable type
-pub fn deserialise<T>(data: &[u8]) -> Result<T, ResponseError>
-                                      where T: Decodable {
-    let mut d = cbor::Decoder::from_bytes(data);
-    Ok(d.decode().next().ok_or(ResponseError::Abort).unwrap().unwrap())
 }

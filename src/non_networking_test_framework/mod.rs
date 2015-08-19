@@ -19,6 +19,8 @@
 
 pub mod mock_routing_types;
 
+use cbor;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::io::{Read, Write};
 use sodiumoxide::crypto;
 
@@ -45,6 +47,22 @@ pub fn convert_hashmap_to_vec(hashmap: &::std::collections::HashMap<NameType, Ve
 // This is a hack because presently cbor isn't able to encode HashMap<NameType, Vec<u8>>
 pub fn convert_vec_to_hashmap(vec: Vec<(NameType, Vec<u8>)>) -> ::std::collections::HashMap<NameType, Vec<u8>> {
     vec.into_iter().collect()
+}
+
+/// utility function to serialise an Encodable type
+pub fn serialise<T>(data: &T) -> Result<Vec<u8>, ResponseError>
+                                 where T: Encodable {
+    let mut encoder = ::cbor::Encoder::from_memory();
+    encoder.encode(&[data]);
+    Ok(encoder.into_bytes())
+}
+
+
+/// utility function to deserialise a Decodable type
+pub fn deserialise<T>(data: &[u8]) -> Result<T, ResponseError>
+                                      where T: Decodable {
+    let mut d = cbor::Decoder::from_bytes(data);
+    Ok(d.decode().next().ok_or(ResponseError::Abort).unwrap().unwrap())
 }
 
 fn get_storage() -> DataStore {
