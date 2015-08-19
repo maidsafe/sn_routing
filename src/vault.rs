@@ -68,12 +68,11 @@ fn merge_refreshable<T>(empty_entry: T, payloads: Vec<Vec<u8>>) ->
     }
 }
 
-impl Interface for VaultFacade {
+impl VaultFacade {
     fn handle_get(&mut self,
-                  data_request: DataRequest,
                   our_authority: Authority,
                   from_authority: Authority,
-                  _: SourceAddress)->Result<Vec<MethodCall>, ResponseError> { // from_address
+                  data_request: DataRequest)->Result<Vec<MethodCall>, ResponseError> { // from_address
         match our_authority {
             Authority::NaeManager(name) => {
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to them are both from Node
@@ -94,8 +93,7 @@ impl Interface for VaultFacade {
     }
 
     fn handle_put(&mut self, our_authority: Authority, _from_authority: Authority,
-                  _: SourceAddress, _: DestinationAddress,
-                  data: Data ) -> Result<Vec<MethodCall>, ResponseError> {
+                  data: Data) -> Result<Vec<MethodCall>, ResponseError> {
         match our_authority {
             Authority::ClientManager(from_address) => {
                 return self.maid_manager.handle_put(&from_address, data);
@@ -126,8 +124,6 @@ impl Interface for VaultFacade {
     fn handle_post(&mut self,
                    our_authority: Authority,
                    _: Authority, // from_authority
-                   _: SourceAddress, // from_address
-                   _: DestinationAddress, // dest_address
                    data: Data) -> Result<Vec<MethodCall>, ResponseError> {
         match our_authority {
             Authority::NaeManager(_) => {
@@ -155,7 +151,7 @@ impl Interface for VaultFacade {
     //     1, the original immutable data if it failed to squeeze in
     //     2, the sacrificial copy if it has been removed to empty the space
     // DataManager doesn't need to carry out replication in case of sacrificial copy
-    fn handle_put_response(&mut self, from_authority: Authority, _: SourceAddress,
+    fn handle_put_response(&mut self, from_authority: Authority,
                            response: ResponseError) -> Vec<MethodCall> {
         match from_authority {
             Authority::ManagedNode(pmid_node) => self.pmid_manager.handle_put_response(&pmid_node, response),
@@ -167,7 +163,6 @@ impl Interface for VaultFacade {
     // https://maidsafe.atlassian.net/browse/MAID-1111 post_response is not required on vault
     fn handle_post_response(&mut self,
                             _: Authority, // from_authority
-                            _: SourceAddress, // from_address
                             _: ResponseError) -> Vec<MethodCall> { // response
         vec![]
     }
@@ -256,7 +251,7 @@ impl VaultFacade {
     }
 
     pub fn mutex_new(notifier: ResponseNotifier,
-                     receiver: ::std::sync::mpsc::Receiver<RoutingMessage>)
+                     receiver: ::std::sync::mpsc::Receiver<Event>)
       -> (::std::sync::Arc<::std::sync::Mutex<VaultFacade>>, ::std::thread::JoinHandle<()>) {
         let vault_facade = ::std::sync::Arc::new(::std::sync::Mutex::new(VaultFacade {
             data_manager: DataManager::new(), maid_manager: MaidManager::new(),
@@ -269,50 +264,18 @@ impl VaultFacade {
         let receiver_joiner = ::std::thread::Builder::new().name("VaultReceiverThread".to_string()).spawn(move || {
             for it in receiver.iter() {
                 let (routing_acting, actions) = match it {
-                    RoutingMessage::ShutDown => (true, Ok(vec![MethodCall::ShutDown])),
-                    RoutingMessage::HandleGet(data_request, our_authority,
-                                              from_authority, from_address) =>
-                        (true, vault_facade_cloned.lock().unwrap().handle_get(data_request, our_authority,
-                                                                              from_authority, from_address)),
-                    RoutingMessage::HandlePut(our_authority, from_authority,
-                                              from_address, dest_address, data) =>
-                        (true, vault_facade_cloned.lock().unwrap().handle_put(our_authority, from_authority,
-                                                                              from_address, dest_address, data)),
-                    // _ => (false, Ok(vec![MethodCall::Terminate])),
+                    Event::Terminated => (true, Ok(vec![MethodCall::ShutDown])),
+                    Event::Request{ request, our_authority, from_authority, response_token } => {
+                        match request {
+                            ExternalRequest::Get(data_request) => (true,
+                                vault_facade_cloned.lock().unwrap().handle_get(our_authority, from_authority, data_request)),
+                            ExternalRequest::Put(data) => (true,
+                                vault_facade_cloned.lock().unwrap().handle_put(our_authority, from_authority, data)),
+                            _ => (false, Ok(vec![MethodCall::ShutDown])),
+                        }
+                    }
+                    _ => (false, Ok(vec![MethodCall::ShutDown])),
                 };
-                // pub enum RoutingMessage {
-                //     HandleGet { data_request   : DataRequest,
-                //                 our_authority  : Authority,
-                //                 from_authority : Authority,
-                //                 from_address   : SourceAddress },
-                //     HandlePut { our_authority  : Authority,
-                //                 from_authority : Authority,
-                //                 from_address   : SourceAddress,
-                //                 dest_address   : DestinationAddress,
-                //                 data           : Data },
-                //     HandlePost { our_authority : Authority,
-                //                  from_authority: Authority,
-                //                  from_address  : SourceAddress,
-                //                  dest_address  : DestinationAddress,
-                //                  data          : Data },
-                //     HandleRefresh { type_tag   : u64,
-                //                     from_group : NameType,
-                //                     payloads   : Vec<Vec<u8>> },
-                //     HandleChurn { close_group  : Vec<NameType> },
-                //     HandleGetResponse { from_address    : NameType,
-                //                            response     : Data},
-                //     HandlePutResponse { from_authority  : Authority,
-                //                         from_address    : SourceAddress,
-                //                         response        : ResponseError },
-                //     HandlePostResponse { from_authority : Authority,
-                //                          from_address   : SourceAddress,
-                //                          response       : ResponseError },
-                //     HandleCacheGet { data_request       : DataRequest,
-                //                      data_location      : NameType,
-                //                      from_address       : NameType },
-                //     HandleCachePut { from_authority     : Authority,
-                //                      from_address       : NameType,
-                //                      data               : Data }
 
                 if routing_acting {
                     let &(ref lock, ref condition_var) = &*notifier;
