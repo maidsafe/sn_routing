@@ -64,7 +64,7 @@ use routing::error::RoutingError;
 use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
-use routing::utils::{encode};
+use routing::utils::{encode, decode};
 use routing::{ExternalRequest, ExternalResponse, SignedToken};
 use routing::id::Id;
 use routing::public_id::PublicId;
@@ -334,17 +334,29 @@ impl Client {
             Event::Response{response, our_authority, from_authority} => {
                 match response {
                     ExternalResponse::Get(data, data_request, opt_signed_token) => {
-
+                        let plain_data = match data {
+                            Data::PlainData(plain_data) => plain_data,
+                            _ => {
+                                error!("Node: Only storing plain data in this example");
+                                return; },
+                        };
+                        let (key, value) : (String, String) = match decode(plain_data.value()) {
+                            Ok((key, value)) => (key, value),
+                            Err(_) => {
+                                error!("Failed to decode get response.");
+                                return; },
+                        };
+                        println!("Got value {:?} on key {:?}", value, key);
                     },
                     ExternalResponse::Put(response_error, opt_signed_token) => {
-
+                        error!("Failed to store: {:?}", response_error);
                     },
                     _ => error!("Received external response {:?}, but not handled in example",
                         response),
-                }
+                };
             },
             _ => {},
-        }
+        };
     }
 
     fn send_get_request(&self, what: String) {
@@ -356,7 +368,7 @@ impl Client {
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
-        let data = encode(&put_what).unwrap();
+        let data = encode(&(put_where, put_what)).unwrap();
 
         self.routing.put_request(Authority::NaeManager(name.clone()),
                                  Data::PlainData(PlainData::new(name, data)));
