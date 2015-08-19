@@ -120,9 +120,7 @@ impl Vault {
                   response_token: Option<::routing::SignedToken>) {
         match request {
             ::routing::ExternalRequest::Get(data_request) => {
-                // TODO - remove 'let _ = '
-                let _ = self.handle_get(our_authority, from_authority, data_request,
-                                response_token);
+                self.handle_get(our_authority, from_authority, data_request, response_token);
             },
             ::routing::ExternalRequest::Put(data) => {
                 // TODO - remove 'let _ = '
@@ -194,25 +192,45 @@ impl Vault {
                   our_authority: Authority,
                   from_authority: Authority,
                   data_request: DataRequest,
-                  _response_token: Option<::routing::SignedToken>) ->
-            Result<Vec<MethodCall>, ResponseError> {
+                  response_token: Option<::routing::SignedToken>) {
         match our_authority {
             Authority::NaeManager(name) => {
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to
                 // them are both from Node
                 match data_request {
-                    DataRequest::ImmutableData(_, _) => self.data_manager.handle_get(&name),
-                    DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
-                    _ => Err(ResponseError::Abort)
+                    DataRequest::ImmutableData(_, _) => {
+                        // drop the message if we don't have the data
+                        if let Ok(actions) = self.data_manager.handle_get(&name) {
+                            self.send(actions, response_token);
+                        }
+                    },
+                    DataRequest::StructuredData(_, _) => {
+                        // drop the message if we don't have the data
+                        if let Ok(actions) = self.sd_manager.handle_get(name) {
+                            self.send(actions, response_token);
+                        }
+                    },
+                    _ => {
+                        // TODO - log error?  Or panic?
+                    },
                 }
-            }
+            },
             Authority::ManagedNode(_) => {
                 match from_authority {
-                    Authority::NaeManager(name) => self.pmid_node.handle_get(name),
-                    _ => Err(ResponseError::Abort),
+                    Authority::NaeManager(name) => {
+                        // drop the message if we don't have the data
+                        if let Ok(actions) = self.pmid_node.handle_get(name) {
+                            self.send(actions, response_token);
+                        }
+                    },
+                    _ => {
+                        // TODO - log error?  Or panic?
+                    },
                 }
-            }
-            _ => { return Err(ResponseError::Abort); }
+            },
+            _ => {
+                // TODO - log error?  Or panic?
+            },
         }
     }
 
@@ -220,32 +238,71 @@ impl Vault {
                   our_authority: Authority,
                   _: Authority,
                   data: Data,
-                  _response_token: Option<::routing::SignedToken>) ->
-            Result<Vec<MethodCall>, ResponseError> {
+                  response_token: Option<::routing::SignedToken>) {
         match our_authority {
             Authority::ClientManager(from_address) => {
-                return self.maid_manager.handle_put(&from_address, data);
-            }
+                match self.maid_manager.handle_put(&from_address, data) {
+                    Ok(actions) => {
+                        self.send(actions, response_token);
+                    },
+                    Err(/*error*/_) => {
+                        // TODO - log error and send failure response
+                    },
+                }
+            },
             Authority::NaeManager(_) => {
                 // both DataManager and StructuredDataManager are NaeManagers
                 // client put other data (Immutable, StructuredData) will all goes to MaidManager
                 // first, then goes to DataManager (i.e. from_authority is always ClientManager)
                 match data {
-                    Data::ImmutableData(data) =>
-                        self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
-                    Data::StructuredData(data) => self.sd_manager.handle_put(data),
-                    _ => return Err(ResponseError::InvalidRequest(data)),
+                    Data::ImmutableData(data) => {
+                        match self.data_manager.handle_put(data, &mut (self.nodes_in_table)) {
+                            Ok(actions) => {
+                                self.send(actions, response_token);
+                            },
+                            Err(/*error*/_) => {
+                                // TODO - log error and send failure response
+                            },
+                        }
+                    },
+                    Data::StructuredData(data) => {
+                        match self.sd_manager.handle_put(data) {
+                            Ok(actions) => {
+                                self.send(actions, response_token);
+                            },
+                            Err(/*error*/_) => {
+                                // TODO - log error and send failure response
+                            },
+                        }
+                    },
+                    _ => {
+                        // TODO - log error.  Send failure response?
+                    },
                 }
-            }
+            },
             Authority::NodeManager(dest_address) => {
-                return self.pmid_manager.handle_put(dest_address, data);
-            }
+                match self.pmid_manager.handle_put(dest_address, data) {
+                    Ok(actions) => {
+                        self.send(actions, response_token);
+                    },
+                    Err(/*error*/_) => {
+                        // TODO - log error.  Send failure response?
+                    },
+                }
+            },
             Authority::ManagedNode(_) => {
-                return self.pmid_node.handle_put(data);
-            }
+                match self.pmid_node.handle_put(data) {
+                    Ok(actions) => {
+                        self.send(actions, response_token);
+                    },
+                    Err(/*error*/_) => {
+                        // TODO - log error and send failure response
+                    },
+                }
+            },
             _ => {
-                return Err(ResponseError::InvalidRequest(data));
-            }
+                // TODO - log error.  Send failure response?
+            },
         }
     }
 
@@ -385,7 +442,7 @@ impl Vault {
     }
 
     #[allow(dead_code)]
-    fn send(&self, actions: Vec<MethodCall>) {
+    fn send(&self, actions: Vec<MethodCall>, response_token: Option<::routing::SignedToken>) {
         for action in actions {
             match action {
                 MethodCall::Get { name, data_request } => {
@@ -395,7 +452,7 @@ impl Vault {
                     let _ = self.routing.put(destination, content);
                 },
                 MethodCall::Reply { data } => {
-                    let _ = self.routing.get_response(data);
+                    let _ = self.routing.get_response(data, response_token.clone());
                 },
                 _ => {}
             }

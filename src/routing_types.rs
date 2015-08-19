@@ -25,6 +25,7 @@ pub use routing::immutable_data::{ImmutableData, ImmutableDataType};
 pub use routing::structured_data::StructuredData;
 pub use routing::types::*;
 
+#[cfg(not(feature = "use-actual-routing"))]
 pub use non_networking_test_framework::mock_routing_types::*;
 
 /// MethodCall denotes a specific request to be carried out by routing.

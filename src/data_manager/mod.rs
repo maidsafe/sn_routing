@@ -34,9 +34,9 @@ pub use self::database::DataManagerSendable;
 pub static PARALLELISM: usize = 4;
 
 pub struct DataManager {
-  db_ : database::DataManagerDatabase,
+  db_: database::DataManagerDatabase,
   // the higher the index is, the slower the farming rate will be
-  resource_index : u64
+  resource_index: u64
 }
 
 #[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
@@ -96,154 +96,153 @@ impl Sendable for DataManagerStatsSendable {
 
 
 impl DataManager {
-  pub fn new() -> DataManager {
-    DataManager { db_: database::DataManagerDatabase::new(), resource_index: 1 }
-  }
-
-  pub fn handle_get(&mut self, name : &NameType) ->Result<Vec<MethodCall>, ResponseError> {
-	  let result = self.db_.get_pmid_nodes(name);
-	  if result.len() == 0 {
-	    return Err(ResponseError::Abort);
-	  }
-
-	  let mut dest_pmids : Vec<MethodCall> = Vec::new();
-	  for pmid in result.iter() {
-        dest_pmids.push(MethodCall::Forward { destination: pmid.clone() });
-	  }
-	  Ok(dest_pmids)
-  }
-
-  pub fn handle_put(&mut self, data: ImmutableData, nodes_in_table: &mut Vec<NameType>)
-          -> Result<Vec<MethodCall>, ResponseError> {
-    let data_name = data.name();
-    if self.db_.exist(&data_name) {
-      return Err(ResponseError::Abort);
+    pub fn new() -> DataManager {
+        DataManager { db_: database::DataManagerDatabase::new(), resource_index: 1 }
     }
 
-    nodes_in_table.sort_by(|a, b|
-        if closer_to_target(&a, &b, &data_name) {
-          cmp::Ordering::Less
-        } else {
-          cmp::Ordering::Greater
-        });
-    let pmid_nodes_num = cmp::min(nodes_in_table.len(), PARALLELISM);
-    let mut dest_pmids: Vec<NameType> = Vec::new();
-    for index in 0..pmid_nodes_num {
-        dest_pmids.push(nodes_in_table[index].clone());
-    }
-    self.db_.put_pmid_nodes(&data_name, dest_pmids.clone());
-    match *data.get_type_tag() {
-        ImmutableDataType::Sacrificial => {
-            self.resource_index = cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
+    pub fn handle_get(&mut self, name: &NameType) -> Result<Vec<MethodCall>, ResponseError> {
+        let result = self.db_.get_pmid_nodes(name);
+        if result.len() == 0 {
+            return Err(ResponseError::Abort);
         }
-        _ => {}
-    }
-    let mut forwarding_calls : Vec<MethodCall> = Vec::new();
-    for pmid in dest_pmids {
-        forwarding_calls.push(MethodCall::Forward { destination: pmid.clone() });
-    }
-    Ok(forwarding_calls)
-  }
 
-  pub fn handle_get_response(&mut self, response: Data) -> Vec<MethodCall> {
-      let replicate_to = self.replicate_to(&response.name());
-      match replicate_to {
-          Some(pmid_node) => {
-              self.db_.add_pmid_node(&response.name(), pmid_node.clone());
-              vec![MethodCall::Put { destination: pmid_node, content: response, }]
-          },
-          None => vec![]
+        let mut dest_pmids: Vec<MethodCall> = Vec::new();
+        for pmid in result.iter() {
+            dest_pmids.push(MethodCall::Forward { destination: pmid.clone() });
+        }
+        Ok(dest_pmids)
+    }
+
+    pub fn handle_put(&mut self, data: ImmutableData, nodes_in_table: &mut Vec<NameType>)
+            -> Result<Vec<MethodCall>, ResponseError> {
+      let data_name = data.name();
+      if self.db_.exist(&data_name) {
+          return Err(ResponseError::Abort);
       }
-  }
 
-  pub fn handle_put_response(&mut self, response: ResponseError,
-                             from_address: &NameType) -> Vec<MethodCall> {
-      match response {
-          // TODO: may need to update the flow to utilize HadToClearSacrificial explicitly
-          //       currently assuming FailedRequestForData is replacing FailedTOStoreData
-          ResponseError::FailedRequestForData(data) => {
-              match data.clone() {
-                  // DataManager shall only handle Immutable data
-                  // Structured Data shall be handled in StructuredDataManager
-                  Data::ImmutableData(immutable_data) => {
-                      let name = data.name();
-                      self.db_.remove_pmid_node(&name, from_address.clone());
-                      match *immutable_data.get_type_tag() {
-                          ImmutableDataType::Normal => {
-                              let replicate_to = self.replicate_to(&name);
-                              match replicate_to {
-                                  Some(pmid_node) => {
-                                      self.db_.add_pmid_node(&name, pmid_node.clone());
-                                      return vec![MethodCall::Put { destination: pmid_node, content: data }];
-                                  },
-                                  None => {}
-                              }
-                          }
-                          ImmutableDataType::Sacrificial => {
-                              self.resource_index = cmp::max(1, self.resource_index - 1);
-                          }
-                          _ => {}
-                      }
-                  }
-                  _ => {}
-              }
+      nodes_in_table.sort_by(|a, b|
+          if closer_to_target(&a, &b, &data_name) {
+            cmp::Ordering::Less
+          } else {
+            cmp::Ordering::Greater
+          });
+      let pmid_nodes_num = cmp::min(nodes_in_table.len(), PARALLELISM);
+      let mut dest_pmids: Vec<NameType> = Vec::new();
+      for index in 0..pmid_nodes_num {
+          dest_pmids.push(nodes_in_table[index].clone());
+      }
+      self.db_.put_pmid_nodes(&data_name, dest_pmids.clone());
+      match *data.get_type_tag() {
+          ImmutableDataType::Sacrificial => {
+              self.resource_index = cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
           }
           _ => {}
       }
-      vec![]
-  }
-
-  pub fn handle_account_transfer(&mut self, merged_account: DataManagerSendable) {
-      self.db_.handle_account_transfer(&merged_account);
-  }
-
-  pub fn handle_stats_transfer(&mut self, merged_stats: DataManagerStatsSendable) {
-      // TODO: shall give more priority to the incoming stats?
-      self.resource_index = (self.resource_index + merged_stats.get_resource_index()) / 2;
-  }
-
-  pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
-      // TODO: as Vault doesn't have access to what ID it is, we have to use the first one in the
-      //       close group as its ID
-      let mut result = self.db_.retrieve_all_and_reset(close_group);
-      let data_manager_stats_sendable =
-          DataManagerStatsSendable::new(close_group[0].clone(), self.resource_index);
-      let mut encoder = cbor::Encoder::from_memory();
-      if encoder.encode(&[data_manager_stats_sendable.clone()]).is_ok() {
-          result.push(MethodCall::Refresh {
-              type_tag: DATA_MANAGER_STATS_TAG, from_group: data_manager_stats_sendable.name(),
-              payload: encoder.as_bytes().to_vec()
-          });
+      let mut forwarding_calls: Vec<MethodCall> = Vec::new();
+      for pmid in dest_pmids {
+          forwarding_calls.push(MethodCall::Forward { destination: pmid.clone() });
       }
-      result
-  }
+      Ok(forwarding_calls)
+    }
 
-  fn replicate_to(&mut self, name : &NameType) -> Option<NameType> {
-      match self.db_.temp_storage_after_churn.get(name) {
-          Some(pmid_nodes) => {
-              if pmid_nodes.len() < 3 {
-                  self.db_.close_grp_from_churn.sort_by(|a, b| {
-                      if closer_to_target(&a, &b, &name) {
-                        cmp::Ordering::Less
-                      } else {
-                        cmp::Ordering::Greater
-                      }
-                  });
-                  let mut close_grp_node_to_add = NameType::new([0u8; 64]);
-                  for close_grp_it in self.db_.close_grp_from_churn.iter() {
-                      if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
-                          close_grp_node_to_add = close_grp_it.clone();
-                          break;
-                      }
-                  }
-                  return Some(close_grp_node_to_add);
-              }
-          },
-          None => {}
-      }
-      None
-  }
+    pub fn handle_get_response(&mut self, response: Data) -> Vec<MethodCall> {
+        let replicate_to = self.replicate_to(&response.name());
+        match replicate_to {
+            Some(pmid_node) => {
+                self.db_.add_pmid_node(&response.name(), pmid_node.clone());
+                vec![MethodCall::Put { destination: pmid_node, content: response, }]
+            },
+            None => vec![]
+        }
+    }
 
+    pub fn handle_put_response(&mut self, response: ResponseError,
+                               from_address: &NameType) -> Vec<MethodCall> {
+        match response {
+            // TODO: may need to update the flow to utilize HadToClearSacrificial explicitly
+            //       currently assuming FailedRequestForData is replacing FailedTOStoreData
+            ResponseError::FailedRequestForData(data) => {
+                match data.clone() {
+                    // DataManager shall only handle Immutable data
+                    // Structured Data shall be handled in StructuredDataManager
+                    Data::ImmutableData(immutable_data) => {
+                        let name = data.name();
+                        self.db_.remove_pmid_node(&name, from_address.clone());
+                        match *immutable_data.get_type_tag() {
+                            ImmutableDataType::Normal => {
+                                let replicate_to = self.replicate_to(&name);
+                                match replicate_to {
+                                    Some(pmid_node) => {
+                                        self.db_.add_pmid_node(&name, pmid_node.clone());
+                                        return vec![MethodCall::Put { destination: pmid_node, content: data }];
+                                    },
+                                    None => {}
+                                }
+                            }
+                            ImmutableDataType::Sacrificial => {
+                                self.resource_index = cmp::max(1, self.resource_index - 1);
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        vec![]
+    }
+
+    pub fn handle_account_transfer(&mut self, merged_account: DataManagerSendable) {
+        self.db_.handle_account_transfer(&merged_account);
+    }
+
+    pub fn handle_stats_transfer(&mut self, merged_stats: DataManagerStatsSendable) {
+        // TODO: shall give more priority to the incoming stats?
+        self.resource_index = (self.resource_index + merged_stats.get_resource_index()) / 2;
+    }
+
+    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
+        // TODO: as Vault doesn't have access to what ID it is, we have to use the first one in the
+        //       close group as its ID
+        let mut result = self.db_.retrieve_all_and_reset(close_group);
+        let data_manager_stats_sendable =
+            DataManagerStatsSendable::new(close_group[0].clone(), self.resource_index);
+        let mut encoder = cbor::Encoder::from_memory();
+        if encoder.encode(&[data_manager_stats_sendable.clone()]).is_ok() {
+            result.push(MethodCall::Refresh {
+                type_tag: DATA_MANAGER_STATS_TAG, from_group: data_manager_stats_sendable.name(),
+                payload: encoder.as_bytes().to_vec()
+            });
+        }
+        result
+    }
+
+    fn replicate_to(&mut self, name: &NameType) -> Option<NameType> {
+        match self.db_.temp_storage_after_churn.get(name) {
+            Some(pmid_nodes) => {
+                if pmid_nodes.len() < 3 {
+                    self.db_.close_grp_from_churn.sort_by(|a, b| {
+                        if closer_to_target(&a, &b, &name) {
+                          cmp::Ordering::Less
+                        } else {
+                          cmp::Ordering::Greater
+                        }
+                    });
+                    let mut close_grp_node_to_add = NameType::new([0u8; 64]);
+                    for close_grp_it in self.db_.close_grp_from_churn.iter() {
+                        if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
+                            close_grp_node_to_add = close_grp_it.clone();
+                            break;
+                        }
+                    }
+                    return Some(close_grp_node_to_add);
+                }
+            },
+            None => {}
+        }
+        None
+    }
 }
 
 #[cfg(test)]
