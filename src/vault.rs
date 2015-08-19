@@ -17,40 +17,27 @@
 
 #![deny(missing_docs)]
 
-use time::Duration;
-use cbor::Decoder;
-use rustc_serialize::{Decodable, Encodable};
-
-use lru_time_cache::LruCache;
-
 use routing_types::*;
-
-use data_manager::{DataManager, DataManagerSendable, DataManagerStatsSendable};
-use maid_manager::{MaidManager, MaidManagerAccountWrapper, MaidManagerAccount};
-use pmid_manager::{PmidManager, PmidManagerAccountWrapper, PmidManagerAccount};
-use pmid_node::PmidNode;
-use sd_manager::StructuredDataManager;
-use transfer_parser::transfer_tags::{MAID_MANAGER_ACCOUNT_TAG, DATA_MANAGER_ACCOUNT_TAG,
-    PMID_MANAGER_ACCOUNT_TAG, SD_MANAGER_ACCOUNT_TAG, DATA_MANAGER_STATS_TAG};
 
 /// Main struct to hold all personas
 pub struct VaultFacade {
-    data_manager: DataManager,
-    maid_manager: MaidManager,
-    pmid_manager: PmidManager,
-    pmid_node: PmidNode,
-    sd_manager: StructuredDataManager,
+    data_manager: ::data_manager::DataManager,
+    maid_manager: ::maid_manager::MaidManager,
+    pmid_manager: ::pmid_manager::PmidManager,
+    pmid_node: ::pmid_node::PmidNode,
+    sd_manager: ::sd_manager::StructuredDataManager,
     nodes_in_table: Vec<NameType>,
     #[allow(dead_code)]
-    data_cache: LruCache<NameType, Data>
+    data_cache: ::lru_time_cache::LruCache<NameType, Data>
 }
 
 #[allow(dead_code)]
 fn merge_refreshable<T>(empty_entry: T, payloads: Vec<Vec<u8>>) ->
-        T where T: for<'a> Sendable + Encodable + Decodable + 'static {
+        T where T: for<'a> Sendable + ::rustc_serialize::Encodable + ::rustc_serialize::Decodable +
+        'static {
     let mut transfer_entries = Vec::<Box<Sendable>>::new();
     for it in payloads.iter() {
-        let mut decoder = Decoder::from_bytes(&it[..]);
+        let mut decoder = ::cbor::Decoder::from_bytes(&it[..]);
         if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
             let parsed: T = parsed_entry;
             transfer_entries.push(Box::new(parsed));
@@ -58,7 +45,7 @@ fn merge_refreshable<T>(empty_entry: T, payloads: Vec<Vec<u8>>) ->
     }
     match empty_entry.merge(transfer_entries) {
         Some(result) => {
-            let mut decoder = Decoder::from_bytes(&result.serialised_contents()[..]);
+            let mut decoder = ::cbor::Decoder::from_bytes(&result.serialised_contents()[..]);
             if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
                 let parsed: T = parsed_entry;
                 parsed
@@ -74,10 +61,13 @@ impl VaultFacade {
     #[cfg(test)]
     pub fn new() -> VaultFacade {
         VaultFacade {
-            data_manager: DataManager::new(), maid_manager: MaidManager::new(),
-            pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
-            sd_manager: StructuredDataManager::new(), nodes_in_table: Vec::new(),
-            data_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(10), 100),
+            data_manager: ::data_manager::DataManager::new(),
+            maid_manager: ::maid_manager::MaidManager::new(),
+            pmid_manager: ::pmid_manager::PmidManager::new(),
+            pmid_node: ::pmid_node::PmidNode::new(),
+            sd_manager: ::sd_manager::StructuredDataManager::new(), nodes_in_table: Vec::new(),
+            data_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
+                ::time::Duration::minutes(10), 100),
         }
     }
 
@@ -85,10 +75,13 @@ impl VaultFacade {
                      receiver: ::std::sync::mpsc::Receiver<Event>) ->
             (::std::sync::Arc<::std::sync::Mutex<VaultFacade>>, ::std::thread::JoinHandle<()>) {
         let vault_facade = ::std::sync::Arc::new(::std::sync::Mutex::new(VaultFacade {
-            data_manager: DataManager::new(), maid_manager: MaidManager::new(),
-            pmid_manager: PmidManager::new(), pmid_node: PmidNode::new(),
-            sd_manager: StructuredDataManager::new(), nodes_in_table: Vec::new(),
-            data_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(10), 100),
+            data_manager: ::data_manager::DataManager::new(),
+            maid_manager: ::maid_manager::MaidManager::new(),
+            pmid_manager: ::pmid_manager::PmidManager::new(),
+            pmid_node: ::pmid_node::PmidNode::new(),
+            sd_manager: ::sd_manager::StructuredDataManager::new(), nodes_in_table: Vec::new(),
+            data_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
+                ::time::Duration::minutes(10), 100),
         }));
 
         let vault_facade_cloned = vault_facade.clone();
@@ -264,31 +257,31 @@ impl VaultFacade {
         // TODO: The assumption of the incoming payloads is that it is a vector of serialised
         //       account entries from the close group nodes of `from_group`
         match type_tag {
-            MAID_MANAGER_ACCOUNT_TAG => {
+            ::transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG => {
                 let merged_account = merge_refreshable(
-                    MaidManagerAccountWrapper::new(from_group, MaidManagerAccount::new()),
-                    payloads);
+                    ::maid_manager::MaidManagerAccountWrapper::new(from_group,
+                        ::maid_manager::MaidManagerAccount::new()), payloads);
                 self.maid_manager.handle_account_transfer(merged_account);
             },
-            DATA_MANAGER_ACCOUNT_TAG => {
-                let merged_account = merge_refreshable(DataManagerSendable::new(from_group, vec![]),
-                                                       payloads);
+            ::transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG => {
+                let merged_account = merge_refreshable(
+                    ::data_manager::DataManagerSendable::new(from_group, vec![]), payloads);
                 self.data_manager.handle_account_transfer(merged_account);
             },
-            PMID_MANAGER_ACCOUNT_TAG => {
+            ::transfer_parser::transfer_tags::PMID_MANAGER_ACCOUNT_TAG => {
                 let merged_account = merge_refreshable(
-                    PmidManagerAccountWrapper::new(from_group, PmidManagerAccount::new()),
-                    payloads);
+                    ::pmid_manager::PmidManagerAccountWrapper::new(from_group,
+                        ::pmid_manager::PmidManagerAccount::new()), payloads);
                 self.pmid_manager.handle_account_transfer(merged_account);
             },
-            SD_MANAGER_ACCOUNT_TAG => {
+            ::transfer_parser::transfer_tags::SD_MANAGER_ACCOUNT_TAG => {
                 for payload in payloads {
                     self.sd_manager.handle_account_transfer(payload);
                 }
             },
-            DATA_MANAGER_STATS_TAG => {
-                let merged_stats = merge_refreshable(DataManagerStatsSendable::new(from_group, 0),
-                                                     payloads);
+            ::transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG => {
+                let merged_stats = merge_refreshable(
+                    ::data_manager::DataManagerStatsSendable::new(from_group, 0), payloads);
                 self.data_manager.handle_stats_transfer(merged_stats);
             },
             _ => {},
@@ -534,7 +527,8 @@ pub type ResponseNotifier =
             // MaidManagerAccount
             match churn_data[0] {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
-                    assert_eq!(*type_tag, transfer_tags::MAID_MANAGER_ACCOUNT_TAG);
+                    assert_eq!(*type_tag,
+                               ::transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG);
                     assert_eq!(*from_group, available_nodes[0]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
