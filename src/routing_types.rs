@@ -25,8 +25,6 @@ pub use routing::immutable_data::{ImmutableData, ImmutableDataType};
 pub use routing::structured_data::StructuredData;
 pub use routing::types::*;
 
-pub const POLL_DURATION_IN_MILLISEC: u32 = 1;
-
 pub use non_networking_test_framework::mock_routing_types::*;
 
 /// MethodCall denotes a specific request to be carried out by routing.
@@ -48,6 +46,6 @@ pub enum MethodCall {
     Reply { data: Data },
     /// terminate
     Terminate,
-    /// shutdown
-    ShutDown
+    // /// shutdown
+    // ShutDown
 }

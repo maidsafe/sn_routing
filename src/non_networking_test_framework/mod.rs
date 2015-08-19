@@ -158,7 +158,7 @@ impl MockRouting {
 
     // -----------  the following methods are expected to be API functions   ------------- //
 
-    pub fn get_response(&mut self, data: Data) {
+    pub fn get_response(&self, data: Data) {
         let delay_ms = self.network_delay_ms;
         let cloned_client_sender = self.client_sender.clone();
         let _ = ::std::thread::spawn(move || {
@@ -166,7 +166,7 @@ impl MockRouting {
         });
     }
 
-    pub fn get(&mut self, name: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
+    pub fn get(&self, name: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
         let delay_ms = self.network_delay_ms;
         let data_store = get_storage();
         let cloned_sender = self.sender.clone();
@@ -192,7 +192,7 @@ impl MockRouting {
         Ok(())
     }
 
-    pub fn put(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {
+    pub fn put(&self, location: NameType, data: Data) -> Result<(), ResponseError> {
         let delay_ms = self.network_delay_ms;
         let data_store = get_storage();
         let cloned_sender = self.sender.clone();
@@ -313,11 +313,6 @@ impl MockRouting {
 
     //     Ok(())
     // }
-
-    pub fn run(&mut self) {
-        // let data_store = get_storage();
-        // println!("Amount Of Chunks Stored: {:?}", data_store.lock().unwrap().len());
-    }
 
     pub fn bootstrap(&mut self) -> Result<(), RoutingError> {
         Ok(())

@@ -10,17 +10,17 @@ license = "GPL-3.0"
 homepage = "http://maidsafe.net"
 
 [dependencies]
-# ---- MaidSafe ------
-lru_time_cache = "0.2.*"
-routing = "0.3.*"
-
-# ---- Others -----
+# ---- Non-MaidSafe -----
 cbor = "*"
 rand = "*"
 rustc-serialize = "*"
 sodiumoxide = "*"
 tempdir = "*"
 time = "*"
+
+# ---- MaidSafe ------
+lru_time_cache = "0.2.*"
+routing = "0.3.*"
 
 [features]
 use-actual-routing = []
