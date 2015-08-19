@@ -89,24 +89,23 @@ fn sync_disk_storage(memory_storage: &::std::collections::HashMap<NameType, Vec<
     file.sync_all();
 }
 
-pub struct RoutingVaultMock {
-    sender          : ::std::sync::mpsc::Sender<RoutingMessage>,
-    client_sender   : ::std::sync::mpsc::Sender<Data>,  // for testing only
+pub struct MockRouting {
+    sender: ::std::sync::mpsc::Sender<RoutingMessage>,
+    client_sender: ::std::sync::mpsc::Sender<Data>,  // for testing only
     network_delay_ms: u32,  // for testing only
 }
 
-impl RoutingVaultMock {
-    pub fn new() -> (RoutingVaultMock, ::std::sync::mpsc::Receiver<RoutingMessage>) {
-        let (sender, receiver) = ::std::sync::mpsc::channel();
+impl MockRouting {
+    pub fn new(event_sender: ::std::sync::mpsc::Sender<(RoutingMessage)>) -> MockRouting {
         let (client_sender, _) = ::std::sync::mpsc::channel();
 
-        let mock_routing = RoutingVaultMock {
-            sender          : sender,
-            client_sender   : client_sender,
+        let mock_routing = MockRouting {
+            sender: event_sender,
+            client_sender: client_sender,
             network_delay_ms: 1000,
         };
 
-        (mock_routing, receiver)
+        mock_routing
     }
 
     #[allow(dead_code)]
@@ -118,7 +117,7 @@ impl RoutingVaultMock {
 
     pub fn client_get(&mut self, name: NameType) -> ::std::sync::mpsc::Receiver<Data> {
         let cloned_sender = self.sender.clone();
-        ::std::thread::spawn(move || {
+        let _ = ::std::thread::spawn(move || {
             // TODO: how to simulate the authorities?
             //       Here throwing the request to PmidNode directly
             let _ = cloned_sender.send(RoutingMessage::HandleGet(DataRequest::ImmutableData(name, ImmutableDataType::Normal),
@@ -135,7 +134,7 @@ impl RoutingVaultMock {
                       client_pub_key: crypto::sign::PublicKey, data: Data) {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
-        ::std::thread::spawn(move || {
+        let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
             let _ = cloned_sender.send(RoutingMessage::HandlePut(Authority::ClientManager(client_address),
                                                                  Authority::ManagedClient(client_pub_key),
@@ -161,7 +160,7 @@ impl RoutingVaultMock {
     pub fn get_response(&mut self, data: Data) {
         let delay_ms = self.network_delay_ms;
         let cloned_client_sender = self.client_sender.clone();
-        ::std::thread::spawn(move || {
+        let _ = ::std::thread::spawn(move || {
             let _ = cloned_client_sender.send(data);
         });
     }
@@ -171,7 +170,7 @@ impl RoutingVaultMock {
         let data_store = get_storage();
         let cloned_sender = self.sender.clone();
 
-        ::std::thread::spawn(move || {
+        let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
             match data_store.lock().unwrap().get(&name) {
                 Some(raw_data) => {
@@ -196,13 +195,13 @@ impl RoutingVaultMock {
         let data_store = get_storage();
         let cloned_sender = self.sender.clone();
 
-        ::std::thread::spawn(move || {
+        let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
             let mut data_store_mutex_guard = data_store.lock().unwrap();
             let success = if data_store_mutex_guard.contains_key(&location) {
                 false
             } else if let Ok(raw_data) = serialise(&data) {
-                data_store_mutex_guard.insert(location, raw_data);
+                let _ = data_store_mutex_guard.insert(location, raw_data);
                 sync_disk_storage(&*data_store_mutex_guard);
                 true
             } else {
@@ -219,7 +218,7 @@ impl RoutingVaultMock {
                                                                      data));
             } else {
                 let _ = cloned_sender.send(RoutingMessage::ShutDown);
-            };            
+            };
         });
 
         Ok(())
@@ -354,7 +353,7 @@ impl RoutingVaultMock {
 //         let id_packet = ::routing::types::Id::with_keys(account_packet.get_maid().public_keys().clone(),
 //                                                         account_packet.get_maid().secret_keys().clone());
 
-//         let (routing, receiver) = RoutingVaultMock::new(id_packet);
+//         let (routing, receiver) = MockRouting::new(id_packet);
 //         let (message_queue, reciever_joiner) = ::client::message_queue::MessageQueue::new(notifier.clone(), receiver);
 
 //         let mock_routing = ::std::sync::Arc::new(::std::sync::Mutex::new(routing));
@@ -495,7 +494,7 @@ impl RoutingVaultMock {
 //         let id_packet = ::routing::types::Id::with_keys(account_packet.get_maid().public_keys().clone(),
 //                                                       account_packet.get_maid().secret_keys().clone());
 
-//         let (routing, receiver) = RoutingVaultMock::new(id_packet);
+//         let (routing, receiver) = MockRouting::new(id_packet);
 //         let (message_queue, receiver_joiner) = ::client::message_queue::MessageQueue::new(notifier.clone(), receiver);
 //         let mock_routing = ::std::sync::Arc::new(::std::sync::Mutex::new(routing));
 //         let mock_routing_clone = mock_routing.clone();

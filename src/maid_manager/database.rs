@@ -23,7 +23,7 @@ use std::collections;
 
 use routing_types::*;
 use transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG;
-use utils::{median, encode, decode};
+use utils;
 
 type Identity = NameType; // maid node address
 
@@ -64,7 +64,7 @@ impl Sendable for MaidManagerAccountWrapper {
     }
 
     fn serialised_contents(&self) -> Vec<u8> {
-        match encode(&self) {
+        match ::routing::utils::encode(&self) {
             Ok(result) => result,
             Err(_) => Vec::new()
         }
@@ -78,7 +78,8 @@ impl Sendable for MaidManagerAccountWrapper {
         let mut data_stored: Vec<u64> = Vec::new();
         let mut space_available: Vec<u64> = Vec::new();
         for value in responses {
-            let wrapper = match decode::<MaidManagerAccountWrapper>(&value.serialised_contents()) {
+            let wrapper = match ::routing::utils::decode::<MaidManagerAccountWrapper>(
+                &value.serialised_contents()) {
                     Ok(result) => result,
                     Err(_) => { continue }
                 };
@@ -88,8 +89,8 @@ impl Sendable for MaidManagerAccountWrapper {
         assert!(data_stored.len() < (GROUP_SIZE + 1) / 2);
 
         Some(Box::new(MaidManagerAccountWrapper::new(self.name.clone(), MaidManagerAccount {
-            data_stored : median(data_stored),
-            space_available: median(space_available)
+            data_stored: utils::median(data_stored),
+            space_available: utils::median(space_available)
         })))
     }
 }
@@ -167,7 +168,7 @@ impl MaidManagerDatabase {
     pub fn handle_account_transfer(&mut self, account_wrapper : &MaidManagerAccountWrapper) {
         // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
         let _ = self.storage.remove(&account_wrapper.name());
-        self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
+        let _ = self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
     }
 
     pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {

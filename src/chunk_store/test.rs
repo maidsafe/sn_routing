@@ -112,9 +112,9 @@ mod test {
           chunk_store.current_disk_usage()
       };
 
-      put(1usize);
-      put(100usize);
-      put(10usize);
+      assert_eq!(put(1usize), 1usize);
+      assert_eq!(put(100usize), 101usize);
+      assert_eq!(put(10usize), 111usize);
       assert_eq!(put(5usize), k_disk_size);
   }
 
@@ -158,9 +158,9 @@ mod test {
       let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
       let value = get_random_non_empty_string(2 * ONE_KB);
       // let first_name: routing::NameType = name_value_container[0].0.clone();
-      name_value_container[0].0.clone();
+      let _ = name_value_container[0].0.clone();
       // let second_name: routing::NameType = name_value_container[1].0.clone();
-      name_value_container[1].0.clone();
+      let _ = name_value_container[1].0.clone();
       chunk_store_utest.put(name, value.into_bytes());
   }
 
@@ -190,10 +190,10 @@ mod test {
       };
 
       let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
-      put(name.clone(), 1usize);
-      put(name.clone(), 100usize);
-      put(name.clone(), 10usize);
-      assert_eq!(put(name.clone(), 5usize), 5);// last inserted data size
+      assert_eq!(put(name.clone(), 1usize), 1usize);
+      assert_eq!(put(name.clone(), 100usize), 100usize);
+      assert_eq!(put(name.clone(), 10usize), 10usize);
+      assert_eq!(put(name.clone(), 5usize), 5usize);  // last inserted data size
   }
 
 }

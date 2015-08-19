@@ -296,7 +296,7 @@ pub fn serialise<T>(data: &T) -> Result<Vec<u8>, ResponseError>
 pub fn deserialise<T>(data: &[u8]) -> Result<T, ResponseError>
                                       where T: Decodable {
     let mut d = cbor::Decoder::from_bytes(data);
-    Ok(d.decode().next().ok_or(ResponseError::InvalidRequest).unwrap().unwrap())
+    Ok(d.decode().next().ok_or(ResponseError::Abort).unwrap().unwrap())
 }
 
 

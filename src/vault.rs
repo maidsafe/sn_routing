@@ -17,8 +17,6 @@
 
 #![deny(missing_docs)]
 
-use std::convert::From;
-
 use time::Duration;
 use cbor::Decoder;
 use rustc_serialize::{Decodable, Encodable};
@@ -82,16 +80,16 @@ impl Interface for VaultFacade {
                 match data_request {
                     DataRequest::ImmutableData(_, _) => self.data_manager.handle_get(&name),
                     DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
-                    _ => Err(ResponseError::InvalidRequest)
+                    _ => Err(ResponseError::Abort)
                 }
             }
             Authority::ManagedNode => {
                 match from_authority {
                     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
-                    _ => Err(ResponseError::InvalidRequest),
+                    _ => Err(ResponseError::Abort),
                 }
             }
-            _ => { return Err(ResponseError::InvalidRequest); }
+            _ => { return Err(ResponseError::Abort); }
         }
     }
 
@@ -109,7 +107,7 @@ impl Interface for VaultFacade {
                 match data {
                     Data::ImmutableData(data) => self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
                     Data::StructuredData(data) => self.sd_manager.handle_put(data),
-                    _ => return Err(ResponseError::InvalidRequest),
+                    _ => return Err(ResponseError::InvalidRequest(data)),
                 }
             }
             Authority::NodeManager(dest_address) => {
@@ -119,7 +117,7 @@ impl Interface for VaultFacade {
                 return self.pmid_node.handle_put(data);
             }
             _ => {
-                return Err(ResponseError::InvalidRequest);
+                return Err(ResponseError::InvalidRequest(data));
             }
         }
     }
@@ -140,7 +138,7 @@ impl Interface for VaultFacade {
             }
             _ => {}
         }
-        Err(ResponseError::InvalidRequest)
+        Err(ResponseError::InvalidRequest(data))
     }
 
     fn handle_get_response(&mut self,
@@ -179,7 +177,7 @@ impl Interface for VaultFacade {
     }
 
     // https://maidsafe.atlassian.net/browse/MAID-1111 post_response is not required on vault
-    fn handle_post_response(&mut self, 
+    fn handle_post_response(&mut self,
                             _: Authority, // from_authority
                             _: SourceAddress, // from_address
                             _: ResponseError) -> Vec<MethodCall> { // response
@@ -241,7 +239,8 @@ impl Interface for VaultFacade {
                         _: NameType) -> Result<MethodCall, ResponseError> { // from_address
         match self.data_cache.get(&data_location) {
             Some(data) => Ok(MethodCall::Reply { data: data.clone() }),
-            None => Err(ResponseError::NoData)
+            // TODO: NoData may still be preferred here
+            None => Err(ResponseError::Abort)
         }
     }
 
@@ -250,8 +249,7 @@ impl Interface for VaultFacade {
                         _: NameType, // from_address
                         data: Data) -> Result<MethodCall, ResponseError> {
         self.data_cache.add(data.name(), data);
-        // TODO: use ResponseError::Abort once available
-        Err(ResponseError::InvalidRequest)
+        Err(ResponseError::Abort)
     }
 }
 
@@ -259,6 +257,7 @@ pub type ResponseNotifier = ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<Meth
                                               ::std::sync::Condvar)>;
 
 impl VaultFacade {
+    #[cfg(test)]
     pub fn new() -> VaultFacade {
         VaultFacade {
             data_manager: DataManager::new(), maid_manager: MaidManager::new(),
@@ -347,15 +346,12 @@ impl VaultFacade {
 
 #[cfg(test)]
  mod test {
-    use std::convert::From;
-
     use cbor;
     use sodiumoxide::crypto;
 
     use super::*;
     use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
-    use utils::decode;
     use routing_types::*;
 
     fn maid_manager_put(vault: &mut VaultFacade, from: SourceAddress,
@@ -410,7 +406,7 @@ impl VaultFacade {
         assert_eq!(calls.len(), 1);
         match calls[0] {
             MethodCall::Forward { destination } => {
-                assert_eq!(destination, dest_address);                
+                assert_eq!(destination, dest_address);
             }
             _ => panic!("Unexpected"),
         }
@@ -540,14 +536,14 @@ impl VaultFacade {
         let name = NameType([3u8; 64]);
         let value = generate_random_vec_u8(1024);
         let keys1 = crypto::sign::gen_keypair();
-        let sd = StructuredData::new(0, name, 0, value.clone(), vec![keys1.0], vec![], &keys1.1).ok().unwrap();
+        let sd = StructuredData::new(0, name, 0, value.clone(), vec![keys1.0], vec![], Some(&keys1.1)).ok().unwrap();
 
         sd_manager_put(&mut vault, from.clone(), dest.clone(), sd.clone());
 
         let keys2 = crypto::sign::gen_keypair();
-        let mut sd_new = StructuredData::new(0, name, 1, value.clone(), vec![keys2.0], vec![keys1.0], &keys2.1).ok().unwrap();
+        let sd_new = StructuredData::new(0, name, 1, value.clone(), vec![keys2.0], vec![keys1.0], Some(&keys1.1)).ok().unwrap();
         sd_manager_post(&mut vault, from.clone(), dest.clone(), sd_new.clone());
-        
+
         sd_manager_get(&mut vault, from.clone(), StructuredData::compute_name(0, &name), sd_new);
     }
 
@@ -678,7 +674,7 @@ impl VaultFacade {
             let name = NameType([3u8; 64]);
             let value = generate_random_vec_u8(1024);
             let keys = crypto::sign::gen_keypair();
-            let sdv = StructuredData::new(0, name, 0, value, vec![keys.0], vec![], &keys.1).ok().unwrap();
+            let sdv = StructuredData::new(0, name, 0, value, vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
 
             sd_manager_put(&mut vault, from.clone(), dest.clone(), sdv.clone());
             let churn_data = vault.handle_churn(small_close_group.clone());
@@ -689,7 +685,7 @@ impl VaultFacade {
                 MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::SD_MANAGER_ACCOUNT_TAG);
                     assert_eq!(*from_group, sdv.name());
-                    match decode::<StructuredData>(payload) {
+                    match ::routing::utils::decode::<StructuredData>(payload) {
                         Ok(sd) => { assert_eq!(sd, sdv); }
                         Err(_) => panic!("Unexpected"),
                     };
@@ -710,15 +706,14 @@ impl VaultFacade {
             let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                                     im_data.name().clone(), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), true);
-            assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
+            assert_eq!(get_result.err().unwrap(), ResponseError::Abort);
         }
 
         let put_result = vault.handle_cache_put(Authority::ManagedNode, NameType::new([7u8; 64]),
                                                 Data::ImmutableData(im_data.clone()));
         assert_eq!(put_result.is_err(), true);
         match put_result.err().unwrap() {
-            // TODO: use ResponseError::Abort once available
-            ResponseError::InvalidRequest => { }
+            ResponseError::Abort => {}
             _ => panic!("Unexpected"),
         }
         {
@@ -741,7 +736,7 @@ impl VaultFacade {
             let get_result = vault.handle_cache_get(DataRequest::ImmutableData(im_data.name(), im_data.get_type_tag().clone()),
                                                     NameType::new([7u8; 64]), NameType::new([7u8; 64]));
             assert_eq!(get_result.is_err(), true);
-            assert_eq!(get_result.err().unwrap(), From::from(ResponseError::NoData));
+            assert_eq!(get_result.err().unwrap(), ResponseError::Abort);
         }
     }
 }

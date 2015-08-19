@@ -13,27 +13,24 @@
 // KIND, either express or implied.
 //
 // Please review the Licences for the specific language governing permissions and limitations
-// relating to use of the SAFE Network Software.                                                                */
+// relating to use of the SAFE Network Software.
 
 #![allow(dead_code)]
 #![deny(missing_docs)]
 
-extern crate tempdir;
-
-use routing_types::{NameType, vector_as_u8_64_array, NAME_TYPE_LEN};
+use routing_types::{NameType, vector_as_u8_64_array};
 use std::fs::{File, read_dir, remove_file};
 use std::ffi::OsStr;
 use std::path::Path;
-use self::tempdir::TempDir;
 use std::io::{Read, Write};
-use std::error::Error;
+use tempdir;
 use rustc_serialize::hex::{ToHex, FromHex};
 
 
 /// Chunkstore is a collection for holding all data chunks.
 /// Implements a maximum disk usage to restrict storage.
 pub struct ChunkStore {
-    tempdir: TempDir,
+    tempdir: tempdir::TempDir,
     max_disk_usage: usize,
     current_disk_usage: usize,
 }
@@ -74,14 +71,14 @@ impl ChunkStore {
             Ok(size) => self.current_disk_usage += size,
             _ => (),
         }
-        file.sync_all();
+        let _ = file.sync_all();
     }
 
     pub fn delete(&mut self, name: NameType) {
         let name = self.to_hex_string(&name);
 
         match read_dir(&self.tempdir.path()) {
-            Ok(mut dir_entries) => {
+            Ok(dir_entries) => {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
@@ -89,7 +86,7 @@ impl ChunkStore {
                                 match entry.metadata() {
                                     Ok(metadata) => {
                                         let len = metadata.len() as usize;
-                                        remove_file(entry.path());
+                                        let _ = remove_file(entry.path());
                                         self.current_disk_usage -= len;
                                     },
                                     _ => ()
@@ -109,7 +106,7 @@ impl ChunkStore {
         let name = self.to_hex_string(&name);
 
         match read_dir(&self.tempdir.path()) {
-            Ok(mut dir_entries) => {
+            Ok(dir_entries) => {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
@@ -117,7 +114,7 @@ impl ChunkStore {
                                 match File::open(&entry.path()) {
                                     Ok(mut file) => {
                                         let mut contents = Vec::<u8>::new();
-                                        file.read_to_end(&mut contents);
+                                        let _ = file.read_to_end(&mut contents);
                                         return contents;
                                     },
                                     _ => (),
@@ -151,7 +148,7 @@ impl ChunkStore {
         let name = self.to_hex_string(&name);
 
         match read_dir(&self.tempdir.path()) {
-            Ok(mut dir_entries) => {
+            Ok(dir_entries) => {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
@@ -173,7 +170,7 @@ impl ChunkStore {
         let mut names: Vec<NameType> = Vec::new();
 
         match read_dir(&self.tempdir.path()) {
-            Ok(mut dir_entries) => {
+            Ok(dir_entries) => {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {

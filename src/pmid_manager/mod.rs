@@ -39,14 +39,16 @@ impl PmidManager {
         if self.db_.put_data(&pmid_node, data.payload_size() as u64) {
             return Ok(vec![MethodCall::Forward { destination: pmid_node }]);
         }
-        Err(ResponseError::InvalidRequest)
+        Err(ResponseError::InvalidRequest(data))
     }
 
     pub fn handle_put_response(&mut self, from_address: &NameType,
                                response: ResponseError) -> Vec<MethodCall> {
         // The content in response is payload for the failing to store data or the removed Sacrificial copy.
         match response {
-            ResponseError::FailedToStoreData(data) => {
+            // TODO: may need to update the flow to utilize HadToClearSacrificial explicitly
+            //       currently assuming FailedRequestForData is replacing FailedTOStoreData
+            ResponseError::FailedRequestForData(data) => {
                 self.db_.delete_data(from_address, data.payload_size() as u64);
                 return vec![MethodCall::Forward { destination: data.name() }];
             }

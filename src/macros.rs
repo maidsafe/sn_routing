@@ -17,38 +17,6 @@
 
 #![macro_use]
 
-/// Convert a container of `u8`s to an array.  If the container is not the exact size specified,
-/// `None` is returned.  Otherwise, all of the elements are moved into the array.
-///
-/// ## Examples
-///
-/// ```
-/// # #[macro_use] extern crate routing;
-/// # fn main() {
-/// let mut data = Vec::<u8>::new();
-/// data.push(1);
-/// data.push(2);
-/// let data_copy = data.clone();
-/// assert!(container_of_u8_to_array!(data, 2).is_some());
-/// assert!(container_of_u8_to_array!(data_copy, 3).is_none());
-/// # }
-/// ```
-#[macro_export]
-macro_rules! container_of_u8_to_array {
-    ($container:ident, $size:expr) => {{
-        if $container.len() != $size {
-            None
-        } else {
-            let mut arr = [0u8; $size];
-            for element in $container.into_iter().enumerate() {
-                arr[element.0] = element.1;
-            }
-            Some(arr)
-        }
-    }};
-}
-
-
 /// This macro is intended to be used in all cases where we unwrap() a result to delebrately panic
 /// in case of error - eg., in test-cases. Such unwraps don't give a precise point of failure in
 /// our code and instead indicate some line number in core library. This macro will provide a
