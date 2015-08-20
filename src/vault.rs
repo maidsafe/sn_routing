@@ -67,6 +67,7 @@ pub struct Vault {
     nodes_in_table: Vec<NameType>,
     #[allow(dead_code)]
     data_cache: ::lru_time_cache::LruCache<NameType, Data>,
+    request_cache: ::lru_time_cache::LruCache<NameType, Vec<(Authority, DataRequest)>>,
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
     #[allow(dead_code)]
     routing: Routing,
@@ -109,6 +110,8 @@ impl Vault {
             nodes_in_table: Vec::new(),
             data_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
                 ::time::Duration::minutes(10), 100),
+            request_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
+                ::time::Duration::minutes(5), 1000),
             receiver: receiver,
             routing: get_new_routing(sender)
         }
@@ -138,11 +141,11 @@ impl Vault {
 
     fn on_response(&mut self,
                    response: ::routing::ExternalResponse,
-                   /*our_authority*/_: ::routing::authority::Authority,
-                   /*from_authority*/_: ::routing::authority::Authority) {
+                   our_authority: ::routing::authority::Authority,
+                   from_authority: ::routing::authority::Authority) {
         match response {
-            ::routing::ExternalResponse::Get(/*data*/_, /*data_request*/_, /*response_token*/_) => {
-                unimplemented!();
+            ::routing::ExternalResponse::Get(data, _, response_token) => {
+                self.handle_get_response(our_authority, from_authority, data, response_token);
             },
             ::routing::ExternalResponse::Put(/*response_error*/_, /*response_token*/_) => {
                 unimplemented!();
@@ -198,9 +201,19 @@ impl Vault {
             Authority::NaeManager(name) => {
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to
                 // them are both from Node
-                match data_request {
+                match data_request.clone() {
                     // drop the message if we don't have the data
-                    DataRequest::ImmutableData(_, _) => self.data_manager.handle_get(&name),
+                    DataRequest::ImmutableData(_, _) => {
+                        // Only remember the request from client for Immutable Data
+                        // as StructuredData will get replied immediately from SDManager
+                        if self.request_cache.contains_key(&name) {
+                            self.request_cache.get_mut(&name).unwrap().push((from_authority.clone(),
+                                                                             data_request.clone()));
+                        } else {
+                            self.request_cache.add(name, vec![(from_authority.clone(), data_request.clone())]);
+                        }
+                        self.data_manager.handle_get(&name)
+                    }
                     DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
                     _ => Ok(vec![]),
                 }
@@ -267,14 +280,29 @@ impl Vault {
 
     #[allow(dead_code)]
     fn handle_get_response(&mut self,
-                           _: NameType, // from_address
+                           our_authority: Authority,
+                           _from_authority: Authority,
                            response: Data,
-                           _: Option<::routing::SignedToken>) -> Vec<MethodCall> {
-        // GetResponse only used by DataManager to replicate data to new PN
-        match response.clone() {
+                           response_token: Option<::routing::SignedToken>) {
+        match our_authority {
+            // Lookup in the request_cache and reply to the clients
+            Authority::NaeManager(name) => {
+                if self.request_cache.contains_key(&name) {
+                    let records = self.request_cache.remove(&name).unwrap();
+                    for record in records {
+                        self.send(vec![MethodCall::Reply{ data: response.clone() }], response_token.clone(),
+                                  Some(record.0), Some(record.1));
+                    }
+                }
+            },
+            _ => {}
+        }
+        let returned_actions = match response.clone() {
+            // GetResponse used by DataManager to replicate data to new PN
             Data::ImmutableData(_) => self.data_manager.handle_get_response(response),
             _ => vec![]
-        }
+        };
+        self.send(returned_actions, None, None, None);
     }
 
     // Put response will holding the copy of failed to store data, which will be:
@@ -381,7 +409,7 @@ impl Vault {
     }
 
     #[allow(dead_code)]
-    fn send(&self, actions: Vec<MethodCall>,
+    fn send(&mut self, actions: Vec<MethodCall>,
             response_token: Option<::routing::SignedToken>,
             reply_to: Option<Authority>,
             original_data_request: Option<DataRequest>) {
