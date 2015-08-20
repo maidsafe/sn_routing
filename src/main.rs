@@ -58,5 +58,6 @@ mod non_networking_test_framework;
 
 /// Runs a SAFE Network vault
 pub fn main () {
-    vault::Vault::run();
+    let mut vault = ::vault::Vault::new();
+    vault.run();
 }
