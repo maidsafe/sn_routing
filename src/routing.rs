@@ -18,6 +18,7 @@
 
 use sodiumoxide;
 use std::sync::mpsc;
+use std::thread::spawn;
 
 use id::Id;
 use action::Action;
@@ -30,14 +31,7 @@ use types::Bytes;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use sodiumoxide::crypto;
-
-//use types::{MessageId, Address};
-//use utils::{encode, decode};
-//use authority::{Authority};
-//use messages::{RoutingMessage, SignedMessage, MessageType};
-//use error::{RoutingError};
-//use std::thread::spawn;
-//use std::collections::BTreeMap;
+use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -45,8 +39,8 @@ type RoutingResult = Result<(), RoutingError>;
 /// On constructing a new Routing object a RoutingNode will also be started.
 /// Routing objects are clonable for multithreading, or a Routing object can be
 /// cloned with a new set of keys while preserving a single RoutingNode.
+#[derive(Clone)]
 pub struct Routing {
-    keys          : Id,
     action_sender : mpsc::Sender<Action>,
 }
 
@@ -54,82 +48,114 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
     /// The intial Routing object will have newly generated keys
-    // TODO(dirvine) Always start a node if possible  :09/08/2015
-    pub fn new(event_sender : mpsc::Sender<Event>) -> Result<Routing, RoutingError> {
+    pub fn new(event_sender : mpsc::Sender<Event>) -> Routing {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
-        let keys = Id::new();
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
-        // TODO (ben 5/08/2015) Errors on starting RoutingNode should more aggressively
-        //      be handled internally
-        // start the handler for routing
-        let routing_node = match RoutingNode::new(action_sender.clone(), action_receiver,
-            event_sender) {
-                Ok(routing_node) => routing_node,
-                Err(e) => return Err(e),
-        };
-        Ok(Routing {
-            keys          : keys,
+        // start the handler for routing without a restriction to become a full node
+        let mut routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
+            event_sender, false, None);
+
+        spawn(move || {
+            debug!("started routing run()");
+            routing_node.run();
+            debug!("Routing node terminated running.");
+        });
+
+        Routing {
             action_sender : action_sender,
-        })
+        }
     }
 
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will only bootstrap to the network and not attempt to
     /// achieve full routing node status.
-    // TODO(dirvine) take an Id as a param to sign messages ???? (or amend put etc. for a client put_request to take reference to a particular ID for sign/encryt, we should be already bootstrapped anyway with the new() call :09/08/2015
-    // FIXME(dirvine) discussion required :09/08/2015
-    pub fn new_client(event_receiver : mpsc::Sender<Event>)
-        -> Result<Routing, RoutingError> {
-        unimplemented!()
-    }
+    /// If the client is started with a relocated id (ie the name has been reassigned),
+    /// the core will instantely instantiate termination of the client.
+    pub fn new_client(event_sender : mpsc::Sender<Event>, keys : Option<Id>)
+        -> Routing {
+        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
-    /// Clone the interface while maintaining the same RoutingNode, with a given set of keys.
-    pub fn clone_with_keys(&self, keys : Id) -> Routing {
-        unimplemented!()
+        let (action_sender, action_receiver) = mpsc::channel::<Action>();
+
+        // start the handler for routing with a restriction to become a full node
+        let mut routing_node = RoutingNode::new(action_sender.clone(), action_receiver,
+            event_sender, true, keys);
+
+        spawn(move || {
+            routing_node.run();
+            debug!("Routing node terminated running.");
+        });
+
+        Routing {
+            action_sender : action_sender,
+        }
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
     pub fn get_request(&self, location : Authority, data_request : DataRequest) {
-        unimplemented!()
+        let _ = self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalRequest(ExternalRequest::Get(data_request))));
     }
 
     /// Add something to the network
     pub fn put_request(&self, location : Authority, data : Data) {
-        unimplemented!()
+        let _ = self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalRequest(ExternalRequest::Put(data))));
     }
 
     /// Change something already on the network
     pub fn post_request(&self, location : Authority, data : Data) {
-        unimplemented!()
+        let _ = self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalRequest(ExternalRequest::Post(data))));
     }
 
     /// Remove something from the network
-    pub fn delete_request(&self, location : Authority, data_request : DataRequest) {
-        unimplemented!()
+    pub fn delete_request(&self, location : Authority, data : Data) {
+        let _ = self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalRequest(ExternalRequest::Delete(data))));
     }
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_token.
-    pub fn get_response(&self, location : Authority, data: Data, signed_token : Option<SignedToken>) {
-        unimplemented!()
+    pub fn get_response(&self, location     : Authority,
+                               data         : Data,
+                               data_request : DataRequest,
+                               signed_token : Option<SignedToken>) {
+        let _ = self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalResponse(
+                    ExternalResponse::Get(data, data_request, signed_token))));
     }
-    // FIXME(dirvine) perhaps all responses here shoudl be a single respond_error fn instead 
-    // Also these shoudl return an error so if not yet a node they fail (if clients try and call for instance) :09/08/2015
     /// response error to a put request
-    pub fn put_response(&self, location : Authority, response_error : ResponseError,
-        signed_token : SignedToken) {
-        unimplemented!()
+    pub fn put_response(&self, location       : Authority,
+                               response_error : ResponseError,
+                               signed_token   : Option<SignedToken>) {
+        let _ = self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalResponse(
+                    ExternalResponse::Put(response_error, signed_token))));
     }
     /// Response error to a post request
-    pub fn post_response(&self, location : Authority, response_error : ResponseError,
-        signed_token : SignedToken) {
-        unimplemented!()
+    pub fn post_response(&self, location       : Authority,
+                                response_error : ResponseError,
+                                signed_token   : Option<SignedToken>) {
+        let _ = self.action_sender.send(Action::SendContent(
+                location,
+                Content::ExternalResponse(
+                    ExternalResponse::Post(response_error, signed_token))));
     }
     /// response error to a delete respons
-    pub fn delete_response(&self, location : Authority, response_error : ResponseError,
-        signed_token : SignedToken) {
-        unimplemented!()
+    pub fn delete_response(&self, location       : Authority,
+                                  response_error : ResponseError,
+                                  signed_token   : Option<SignedToken>) {
+        let _ = self.action_sender.send(Action::SendContent(
+                location, Content::ExternalResponse(ExternalResponse::Delete(response_error,
+                signed_token))));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -137,17 +163,15 @@ impl Routing {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content.
     pub fn refresh_request(&self, type_tag: u64, from_group: NameType, content: Bytes) {
-        unimplemented!()
+        let _ = self.action_sender.send(Action::SendContent(
+                Authority::ManagedNode(from_group),
+                Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
+
     }
 
     /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
     /// messages.  After handling all messages it will send an Event::Terminated to the user.
-    // TODO(dirvine) This maybe should be implementing  aDrop trait  :09/08/2015
     pub fn stop(&mut self) {
-        unimplemented!()
-    }
-
-    pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
-        self.keys.signing_public_key()
+        let _ = self.action_sender.send(Action::Terminate);
     }
 }

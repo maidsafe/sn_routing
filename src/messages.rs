@@ -17,17 +17,19 @@
 
 use sodiumoxide::crypto::sign::Signature;
 use sodiumoxide::crypto::sign;
+use std::fmt::{Debug, Formatter, Error};
+use cbor::{CborError};
+use std::collections::BTreeMap;
+
 use crust::Endpoint;
+
 use authority::Authority;
 use data::{Data, DataRequest};
 use types;
 use public_id::PublicId;
-use types::{DestinationAddress, SourceAddress};
 use error::{ResponseError};
 use NameType;
 use utils;
-use cbor::{CborError};
-use std::collections::BTreeMap;
 
 pub static VERSION_NUMBER : u8 = 0;
 
@@ -45,7 +47,7 @@ pub struct ConnectResponse {
     pub receiver_fob: PublicId,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub struct SignedToken {
     pub serialised_request : Vec<u8>,
     pub signature          : Signature,
@@ -59,47 +61,49 @@ impl SignedToken {
     }
 }
 
+impl Debug for SignedToken {
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
+        formatter.write_str(&format!("SignedToken"))
+    }
+}
 /// These are the messageTypes routing provides
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalRequest {
     Get(DataRequest),
     Put(Data),
     Post(Data),
-    Delete(DataRequest),
+    Delete(Data),
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalResponse {
-    Get   (Data,          SignedToken),
-    Put   (ResponseError, SignedToken),
-    Post  (ResponseError, SignedToken),
-    Delete(ResponseError, SignedToken),
+    // TODO: Technical depth: if the third param here is Some(...) then
+    // the it shares most of the data with the second argument, which
+    // needlessly increases bandwidth.
+    Get   (Data, DataRequest, Option<SignedToken>),
+    Put   (ResponseError, Option<SignedToken>),
+    Post  (ResponseError, Option<SignedToken>),
+    Delete(ResponseError, Option<SignedToken>),
 }
 
 impl ExternalResponse {
-    pub fn get_signed_token(&self) -> &SignedToken {
+    // If the *request* was from a group entity, then there is
+    // no signed token.
+    pub fn get_signed_token(&self) -> &Option<SignedToken> {
         match *self {
-            ExternalResponse::Get(_, ref r)    => r,
+            ExternalResponse::Get(_, _, ref r)    => r,
             ExternalResponse::Put(_, ref r)    => r,
             ExternalResponse::Post(_, ref r)   => r,
             ExternalResponse::Delete(_, ref r) => r,
         }
-    }
-
-    pub fn get_orig_request(&self) -> Result<SignedMessage, CborError> {
-        SignedMessage::new_from_token(self.get_signed_token().clone())
-    }
-
-    pub fn verify_request_came_from(&self, requester_pub_key: &sign::PublicKey) -> bool {
-        self.get_signed_token().verify_signature(requester_pub_key)
     }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
     Connect(ConnectRequest),
-    FindGroup,
-    GetGroupKey,
+    // FindGroup,
+    // GetGroupKey,
     RequestNetworkName(PublicId),
     // a client can send RequestNetworkName
     CacheNetworkName(PublicId, SignedToken),
@@ -115,8 +119,8 @@ pub enum InternalRequest {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
     Connect(ConnectResponse, SignedToken),
-    FindGroup(Vec<PublicId>, SignedToken),
-    GetGroupKey(BTreeMap<NameType, sign::PublicKey>, SignedToken),
+    // FindGroup(Vec<PublicId>, SignedToken),
+    // GetGroupKey(BTreeMap<NameType, sign::PublicKey>, SignedToken),
     CacheNetworkName(PublicId, Vec<PublicId>, SignedToken),
     //               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
     //                 |         |              | the original Request::RequestNetworkName

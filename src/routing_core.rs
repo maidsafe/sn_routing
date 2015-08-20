@@ -29,11 +29,12 @@ use id::Id;
 use public_id::PublicId;
 use NameType;
 use peer::Peer;
+use action::Action;
 use event::Event;
 use messages::RoutingMessage;
 
 /// ConnectionName labels the counterparty on a connection in relation to us
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum ConnectionName {
    Relay(Address),
    Routing(NameType),
@@ -50,20 +51,32 @@ pub struct RoutingCore {
     network_name  : Option<NameType>,
     routing_table : Option<RoutingTable>,
     relay_map     : RelayMap,
-    // sender for signaling churn events
+    // sender for signaling events and action
     event_sender  : Sender<Event>,
+    action_sender : Sender<Action>,
 }
 
 impl RoutingCore {
     /// Start a RoutingCore with a new Id and the disabled RoutingTable
-    pub fn new(event_sender : Sender<Event>) -> RoutingCore {
-        let id = Id::new();
+    pub fn new(event_sender : Sender<Event>, action_sender : Sender<Action>,
+        keys : Option<Id>) -> RoutingCore {
+        let id = match keys {
+            Some(id) => id,
+            None => Id::new(),
+        };
+        // nodes are not persistant, and a client has no network allocated name
+        if id.is_relocated() {
+            error!("Core terminates routing as initialised with relocated id {:?}",
+                PublicId::new(&id));
+            let _ = action_sender.send(Action::Terminate); };
+
         RoutingCore {
             id            : id,
             network_name  : None,
             routing_table : None,
             relay_map     : RelayMap::new(),
             event_sender  : event_sender,
+            action_sender : action_sender,
         }
     }
 
@@ -78,6 +91,17 @@ impl RoutingCore {
         match self.network_name {
             Some(name) => Address::Node(name.clone()),
             None => Address::Client(self.id.signing_public_key()),
+        }
+    }
+
+    /// Returns true if Client(public_key) matches our public signing key,
+    /// even if we are a full node; or returns true if Node(name) is our current name.
+    /// Note that there is a difference to using core::our_address, as that would
+    /// fail to assert an (old) Client identification after we were assigned a network name.
+    pub fn is_us(&self, address : &Address) -> bool {
+        match *address {
+            Address::Client(public_key) => public_key == self.id.signing_public_key(),
+            Address::Node(name) => name == self.id().name()
         }
     }
 
@@ -172,7 +196,13 @@ impl RoutingCore {
                     Some(ref mut routing_table) => {
                         let trigger_churn = routing_table
                             .address_in_our_close_group_range(&name);
+                        let routing_table_count_prior = routing_table.size();
                         routing_table.drop_node(&name);
+                        if routing_table_count_prior == 1usize {
+                            error!("Routing Node has disconnected.");
+                            let _ = self.event_sender.send(Event::Disconnected);
+                            let _ = self.action_sender.send(Action::Terminate); };
+                        info!("RT({:?}) dropped node {:?}", routing_table.size(), name);
                         if trigger_churn {
                             let mut close_group : Vec<NameType> = routing_table
                                     .our_close_group().iter()
@@ -186,7 +216,15 @@ impl RoutingCore {
                     None => None,
                 }
             },
-            _ => self.relay_map.drop_connection_name(connection_name)
+            _ => {
+                let bootstrapped_prior = self.relay_map.has_bootstrap_connections();
+                let dropped_peer = self.relay_map.drop_connection_name(connection_name);
+                let bootstrapped_posterior = self.relay_map.has_bootstrap_connections();
+                if !bootstrapped_posterior && bootstrapped_prior && !self.is_node() {
+                    error!("Routing Client has disconnected.");
+                    let _ = self.event_sender.send(Event::Disconnected);
+                    let _ = self.action_sender.send(Action::Terminate); };
+                dropped_peer },
         }
     }
 
@@ -205,13 +243,21 @@ impl RoutingCore {
                                     .address_in_our_close_group_range(&routing_name);
                                 let node_info = NodeInfo::new(given_public_id,
                                     vec![endpoint.clone()], Some(endpoint));
+                                let routing_table_count_prior = routing_table.size();
                                 // TODO (ben 10/08/2015) drop connection of dropped node
                                 let (added, _) = routing_table.add_node(node_info);
+                                if added {
+                                    // if we transition from zero to one routing connection
+                                    if routing_table_count_prior == 0usize {
+                                        info!("Routing Node has connected.");
+                                        let _ = self.event_sender.send(Event::Connected); };
+                                    info!("RT({:?}) added {:?}", routing_table.size(),
+                                        routing_name); };
                                 if added && trigger_churn {
                                     let mut close_group : Vec<NameType> = routing_table
-                                            .our_close_group().iter()
-                                            .map(|node_info| node_info.fob.name())
-                                            .collect::<Vec<NameType>>();
+                                        .our_close_group().iter()
+                                        .map(|node_info| node_info.fob.name())
+                                        .collect::<Vec<NameType>>();
                                     close_group.insert(0, self.id.name());
                                     let _ = self.event_sender.send(Event::Churn(close_group));
                                 };
@@ -223,7 +269,18 @@ impl RoutingCore {
                 }
             },
             _ => {
-                self.relay_map.add_peer(identity, endpoint, public_id)
+                let bootstrapped_prior = self.relay_map.has_bootstrap_connections();
+                let is_bootstrap_connection = match identity {
+                    ConnectionName::Bootstrap(_) => true,
+                    _ => false,
+                };
+                let added = self.relay_map.add_peer(identity, endpoint, public_id);
+                if !bootstrapped_prior && added && is_bootstrap_connection
+                    && self.routing_table.is_none() {
+                    info!("Routing Client bootstrapped.");
+                    let _ = self.event_sender.send(Event::Bootstrapped);
+                };
+                added
             },
         }
     }

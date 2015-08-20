@@ -7,16 +7,19 @@
 
 Routing - a specialised storage DHT
 
-|Crate|Linux|ARM/Linux|Windows|OSX|Coverage|Issues|
-|:------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
-|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Build Status](https://travis-ci.org/maidsafe/routing.svg?branch=master)](https://travis-ci.org/maidsafe/routing)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_arm_status_badge)](http://ci.maidsafe.net:8080/job/routing_arm_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_win64_status_badge)](http://ci.maidsafe.net:8080/job/routing_win64_status_badge/)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_osx_status_badge)](http://ci.maidsafe.net:8080/job/routing_osx_status_badge/)|[![Coverage Status](https://coveralls.io/repos/maidsafe/routing/badge.svg)](https://coveralls.io/r/maidsafe/routing)|[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)
+|Crate|Linux/OS X|ARM (Linux)|Windows|Coverage|Issues|
+|:---:|:--------:|:---------:|:-----:|:------:|:----:|
+|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Build Status](https://travis-ci.org/maidsafe/routing.svg?branch=master)](https://travis-ci.org/maidsafe/routing)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_arm_status_badge)](http://ci.maidsafe.net:8080/job/routing_arm_status_badge/)|[![Build status](https://ci.appveyor.com/api/projects/status/2w1joqd2h64o4xrh/branch/master?svg=true)](https://ci.appveyor.com/project/MaidSafe-QA/routing/branch/master)|[![Coverage Status](https://coveralls.io/repos/maidsafe/routing/badge.svg)](https://coveralls.io/r/maidsafe/routing)|[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)|
 
 | [API Documentation - master branch](http://maidsafe.net/routing/master/) | [SAFE Network System Documention](http://systemdocs.maidsafe.net) | [MaidSafe website](http://maidsafe.net) | [Safe Community site](https://forum.safenetwork.io) |
 |:------:|:-------:|:-------:|:-------:|
 
+
 #Important notice on 6 August 2015
 
-The routing library is undergoing an important rewriting.  The external API and the internal outlines have been laid out.  The library is currently not in a functional state.  To obtain the last functional state of Routing we refer to Routing version 0.2.8, as published on crates.io.  We expect it to be a few more days of work before routing will be published as version 0.3.1, the first expected functional version of the new routing API. The published version 0.3.0 should only be used by a user library to compile against, and prepare for the upcoming new interface.
+The routing library is undergoing an important rewriting.  The external API and the internal outlines have been laid out.  The library is currently not in a functional state.  To obtain the last functional state of Routing we refer to Routing version 0.2.8, as published on crates.io.  We expect it to be a few more days of work before routing will be published as version 0.3.2, the first expected functional version of the new routing API. The published version 0.3.0 should only be used by a user library to compile against, and prepare for the upcoming new interface.
+
+update on 18 August: the functionality in routing has been restored and some unit tests have been updated and asserted.  The basic behaviour of the routing example has been asserted in this version 0.3.2.  Final internal work has to be done, and expected soon in version 0.3.3
 
 #Overview
 

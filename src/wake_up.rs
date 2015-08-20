@@ -15,24 +15,37 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(test)]
-mod test {
-    use types::*;
-    use public_id::PublicId;
-    use id::Id;
-    use name_type::NameType;
-    use rand::random;
-    use test_utils::random_trait::Random;
+use std::sync::mpsc;
+use std::thread::spawn;
+use std::thread;
 
-    impl Random for PublicId {
-        fn generate_random() -> PublicId {
-            PublicId::new(&Id::new())
+use action::Action;
+
+pub struct WakeUpCaller {
+    action_sender : mpsc::Sender<Action>,
+}
+
+impl WakeUpCaller {
+    pub fn new(action_sender : mpsc::Sender<Action>, ) -> WakeUpCaller {
+        WakeUpCaller {
+            action_sender : action_sender,
         }
     }
-    
-    impl Random for NameType {
-        fn generate_random() -> NameType {
-            NameType(vector_as_u8_64_array(generate_random_vec_u8(64)))
-        }
+
+    pub fn start(&self, sleep_duration : u32) {
+        let action_sender_clone = self.action_sender.clone();
+        spawn(move || {
+            loop {
+                thread::sleep_ms(sleep_duration);
+                match action_sender_clone.send(Action::WakeUp) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        debug!("Failed to send Action::WakeUp. Stopped WakeUpCaller.");
+                        break; },
+                };
+            }
+        });
     }
+
+    // TODO (ben 16/08/2015) implement stop
 }

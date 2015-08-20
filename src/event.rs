@@ -18,6 +18,7 @@
 use authority::Authority;
 use messages::{RoutingMessage, ExternalRequest, ExternalResponse, SignedToken};
 use name_type::NameType;
+use error::InterfaceError;
 use sodiumoxide::crypto::sign;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
@@ -44,7 +45,6 @@ pub enum Event {
         response       : ExternalResponse,
         our_authority  : Authority,
         from_authority : Authority,
-        orig_request   : ExternalRequest,
     },
     Refresh(u64, NameType, Vec<Vec<u8>>),
     //      ~|~  ~~|~~~~~  ~~|~~~~~~~~~
@@ -56,5 +56,10 @@ pub enum Event {
     //    ~~|~~~~~~~~~~
     //      | our close group sorted from our name; always including our name
     //      | if size > 1, we are connected to the network
+    Bootstrapped,
+    Connected,
+    Disconnected,
+    FailedRequest(Authority, ExternalRequest, InterfaceError),
+    FailedResponse(Authority, ExternalResponse, InterfaceError),
     Terminated,
 }
