@@ -66,7 +66,7 @@ fn executable_test() {
     //     let marked_connections = v.len() - 1;
     //     println!("\t  safe_vault {} has {} connected connections.", processes.len(), marked_connections);
     //     if num_of_nodes as usize != marked_connections + 1 {
-    //     	test_failed = true;
+    //       test_failed = true;
     //     }
     // }
     // assert_eq!(test_failed, false);

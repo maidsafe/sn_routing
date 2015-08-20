@@ -47,7 +47,6 @@ pub trait Mergeable {
     fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
 }
 
-
 /// This trait is required for any type of message to be
 /// passed to routing, refresh / account transfer is optional
 /// The name will let routing know its a NaeManager and the owner will allow routing to hash
@@ -60,28 +59,3 @@ pub trait Sendable {
     fn refresh(&self)->bool; // is this an account transfer type
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>>;
 }
-
-
-/// MethodCall denotes a specific request to be carried out by routing.
-#[derive(PartialEq, Eq, Clone)]
-pub enum MethodCall {
-    /// request to have `destination` to handle put for the `content`
-    Put { destination: NameType, content: Data },
-    /// request to retreive data with specified type and name from network
-    Get { name: NameType, data_request: DataRequest },
-    /// request to post
-    Post { destination: NameType, content: Data },
-    /// Request delete
-    Delete { name: NameType, data : Data },
-    /// request to refresh
-    Refresh { type_tag: u64, from_group: NameType, payload: Vec<u8> },
-    /// request to forward on the request to destination for further handling
-    Forward { destination: NameType },
-    /// reply
-    Reply { data: Data },
-    /// terminate
-    Terminate,
-    /// shutdown
-    ShutDown
-}
-
