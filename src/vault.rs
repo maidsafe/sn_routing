@@ -231,7 +231,7 @@ impl Vault {
             _ => {
                 // TODO - log error?  Or panic?
             },
-        }
+        };
     }
 
     fn handle_put(&mut self,
@@ -445,11 +445,11 @@ impl Vault {
     fn send(&self, actions: Vec<MethodCall>, response_token: Option<::routing::SignedToken>) {
         for action in actions {
             match action {
-                MethodCall::Get { name, data_request } => {
-                    let _ = self.routing.lock().unwrap().get(name, data_request);
+                MethodCall::Get { location, data_request } => {
+                    let _ = self.routing.lock().unwrap().get_request(location, data_request);
                 },
-                MethodCall::Put { destination, content } => {
-                    let _ = self.routing.lock().unwrap().put(destination, content);
+                MethodCall::Put { location, content } => {
+                    let _ = self.routing.lock().unwrap().put_request(location, content);
                 },
                 MethodCall::Reply { data } => {
                     let _ = self.routing.lock().unwrap().get_response(data, response_token.clone());

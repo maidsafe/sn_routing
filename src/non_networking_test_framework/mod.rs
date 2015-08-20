@@ -166,7 +166,12 @@ impl MockRouting {
         });
     }
 
-    pub fn get(&self, name: NameType, request_for: DataRequest) -> Result<(), ResponseError> {
+    pub fn get_request(&self, location: Authority, request_for: DataRequest) -> Result<(), ResponseError> {
+        let name = match request_for.clone() {
+            DataRequest::StructuredData(name, _) => name,
+            DataRequest::ImmutableData(name, _) => name,
+            DataRequest::PlainData(_) => panic!("Unexpected"),
+        };
         let delay_ms = self.network_delay_ms;
         let data_store = get_storage();
         let cloned_sender = self.sender.clone();
@@ -192,7 +197,14 @@ impl MockRouting {
         Ok(())
     }
 
-    pub fn put(&self, location: NameType, data: Data) -> Result<(), ResponseError> {
+    pub fn put_request(&self, location: Authority, data: Data) -> Result<(), ResponseError> {
+        let destination = match location.clone() {
+            Authority::ClientManager(dest) => dest,
+            Authority::NaeManager(dest) => dest,
+            Authority::NodeManager(dest) => dest,
+            Authority::ManagedNode(dest) => dest,
+            _ => panic!("Unexpected"),
+        };
         let delay_ms = self.network_delay_ms;
         let data_store = get_storage();
         let cloned_sender = self.sender.clone();
@@ -200,10 +212,10 @@ impl MockRouting {
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
             let mut data_store_mutex_guard = data_store.lock().unwrap();
-            let success = if data_store_mutex_guard.contains_key(&location) {
+            let success = if data_store_mutex_guard.contains_key(&destination) {
                 false
             } else if let Ok(raw_data) = ::routing::utils::encode(&data) {
-                let _ = data_store_mutex_guard.insert(location, raw_data);
+                let _ = data_store_mutex_guard.insert(destination, raw_data);
                 sync_disk_storage(&*data_store_mutex_guard);
                 true
             } else {

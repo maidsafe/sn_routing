@@ -31,10 +31,10 @@ pub use non_networking_test_framework::mock_routing_types::*;
 /// MethodCall denotes a specific request to be carried out by routing.
 #[derive(PartialEq, Eq, Clone)]
 pub enum MethodCall {
-    /// request to have `destination` to handle put for the `content`
-    Put { destination: NameType, content: Data },
-    /// request to retreive data with specified type and name from network
-    Get { name: NameType, data_request: DataRequest },
+    /// request to have `location` to handle put for the `content`
+    Put { location: Authority, content: Data },
+    /// request to retreive data with specified type and location from network
+    Get { location: Authority, data_request: DataRequest },
     // /// request to post
     // Post { destination: NameType, content: Data },
     // /// Request delete

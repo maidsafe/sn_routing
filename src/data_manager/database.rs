@@ -197,7 +197,7 @@ impl DataManagerDatabase {
             match self.temp_storage_after_churn.get(key) {
                 Some(result) => { if result.len() < 3 {
                     actions.push(MethodCall::Get {
-                        name: (*key).clone(),
+                        location: Authority::ManagedNode((*key).clone()),
                         // DataManager only handles ImmutableData
                         data_request: DataRequest::ImmutableData((*key).clone(), ImmutableDataType::Normal)
                     });
