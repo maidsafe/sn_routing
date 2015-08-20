@@ -158,7 +158,10 @@ impl MockRouting {
 
     // -----------  the following methods are expected to be API functions   ------------- //
 
-    pub fn get_response(&self, data: Data, /*response_token*/_: Option<::routing::SignedToken>) {
+    pub fn get_response(&self, _location     : Authority,
+                               data         : Data,
+                               _data_request : DataRequest,
+                               _response_token : Option<::routing::SignedToken>) {
         let delay_ms = self.network_delay_ms;
         let cloned_client_sender = self.client_sender.clone();
         let _ = ::std::thread::spawn(move || {
