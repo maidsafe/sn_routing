@@ -42,10 +42,6 @@ pub enum MethodCall {
     Forward { destination: NameType },
     /// reply
     Reply { data: Data },
-    /// terminate
-    Terminate,
-    // /// shutdown
-    // ShutDown
 }
 
 /// For account transfer usage
