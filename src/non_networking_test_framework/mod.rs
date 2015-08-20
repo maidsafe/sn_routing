@@ -24,68 +24,9 @@ use routing::authority::Authority;
 use routing::data::{Data, DataRequest};
 use routing::event::Event;
 use routing::immutable_data::ImmutableDataType;
-use routing::{ExternalRequest, NameType};
+use routing::{ExternalRequest, ExternalResponse, NameType};
 use routing::error::{RoutingError, InterfaceError, ResponseError};
 
-type DataStore = ::std::sync::Arc<::std::sync::Mutex<::std::collections::HashMap<NameType, Vec<u8>>>>;
-
-const STORAGE_FILE_NAME: &'static str = "VaultStorageSimulation";
-
-struct PersistentStorageSimulation {
-    data_store: DataStore,
-}
-
-// This is a hack because presently cbor isn't able to encode HashMap<NameType, Vec<u8>>
-pub fn convert_hashmap_to_vec(hashmap: &::std::collections::HashMap<NameType, Vec<u8>>) -> Vec<(NameType, Vec<u8>)> {
-    hashmap.iter().map(|a| (a.0.clone(), a.1.clone())).collect()
-}
-
-// This is a hack because presently cbor isn't able to encode HashMap<NameType, Vec<u8>>
-pub fn convert_vec_to_hashmap(vec: Vec<(NameType, Vec<u8>)>) -> ::std::collections::HashMap<NameType, Vec<u8>> {
-    vec.into_iter().collect()
-}
-
-fn get_storage() -> DataStore {
-    static mut STORAGE: *const PersistentStorageSimulation = 0 as *const PersistentStorageSimulation;
-    static mut ONCE: ::std::sync::Once = ::std::sync::ONCE_INIT;
-
-    unsafe {
-        ONCE.call_once(|| {
-            let mut memory_storage = ::std::collections::HashMap::new();
-
-            let mut temp_dir_pathbuf = ::std::env::temp_dir();
-            temp_dir_pathbuf.push(STORAGE_FILE_NAME);
-
-            if let Ok(mut file) = ::std::fs::File::open(temp_dir_pathbuf) {
-                let mut raw_disk_data = Vec::with_capacity(file.metadata().unwrap().len() as usize);
-                if let Ok(_) = file.read_to_end(&mut raw_disk_data) {
-                    if raw_disk_data.len() != 0 {
-                        let vec: Vec<(NameType, Vec<u8>)>;
-                        vec = ::routing::utils::decode(&raw_disk_data).unwrap();
-                        memory_storage = convert_vec_to_hashmap(vec);
-                    }
-                }
-            }
-
-            STORAGE = ::std::mem::transmute(Box::new(
-                    PersistentStorageSimulation {
-                        data_store: ::std::sync::Arc::new(::std::sync::Mutex::new(memory_storage)),
-                    }
-                    ));
-        });
-
-        (*STORAGE).data_store.clone()
-    }
-}
-
-fn sync_disk_storage(memory_storage: &::std::collections::HashMap<NameType, Vec<u8>>) {
-    let mut temp_dir_pathbuf = ::std::env::temp_dir();
-    temp_dir_pathbuf.push(STORAGE_FILE_NAME);
-
-    let mut file = ::std::fs::File::create(temp_dir_pathbuf).unwrap();
-    file.write_all(&::routing::utils::encode(&convert_hashmap_to_vec(memory_storage)).unwrap());
-    file.sync_all();
-}
 
 pub struct MockRouting {
     sender: ::std::sync::mpsc::Sender<Event>,
@@ -112,15 +53,13 @@ impl MockRouting {
     }
 
     // -----------  the following methods are for testing purpose only   ------------- //
-
-    pub fn client_get(&mut self, name: NameType) -> ::std::sync::mpsc::Receiver<Data> {
+    pub fn client_get(&mut self, client_address: NameType, client_pub_key: crypto::sign::PublicKey,
+                      name: NameType) -> ::std::sync::mpsc::Receiver<Data> {
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-            // TODO: how to simulate the authorities?
-            //       Here throwing the request to PmidNode directly
             let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(DataRequest::ImmutableData(name, ImmutableDataType::Normal)),
-                                                       our_authority: Authority::ManagedNode(NameType::new([7u8; 64])),
-                                                       from_authority: Authority::NaeManager(name),
+                                                       our_authority: Authority::NaeManager(name),
+                                                       from_authority: Authority::Client(client_address, client_pub_key),
                                                        response_token: None });
         });
         let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
@@ -141,27 +80,36 @@ impl MockRouting {
         });
     }
 
-    pub fn has_chunk(&mut self, name: NameType) -> bool {
-        let data_store_wrapped = get_storage();
-        let data_store = data_store_wrapped.lock().unwrap();
-        match data_store.get(&name) {
-            Some(raw_data) => true,
-            None => false,
-        }
+    pub fn churn_event(&mut self, nodes: Vec<NameType>) {
+        let cloned_sender = self.sender.clone();
+        let _ = ::std::thread::spawn(move || {
+            let _ = cloned_sender.send(Event::Churn(nodes));
+        });
     }
 
     // -----------  the above methods are for testing purpose only   ------------- //
 
     // -----------  the following methods are expected to be API functions   ------------- //
 
-    pub fn get_response(&self, _location     : Authority,
-                               data         : Data,
-                               _data_request : DataRequest,
-                               _response_token : Option<::routing::SignedToken>) {
+    pub fn get_response(&self, location       : Authority,
+                               data           : Data,
+                               data_request   : DataRequest,
+                               response_token : Option<::routing::SignedToken>) {
         let delay_ms = self.network_delay_ms;
+        let cloned_sender = self.sender.clone();
         let cloned_client_sender = self.client_sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let _ = cloned_client_sender.send(data);
+            match location.clone() {
+                Authority::NaeManager(_) => {
+                    let _ = cloned_sender.send(Event::Response{ response: ExternalResponse::Get(data.clone(), data_request, response_token),
+                                                                our_authority: location,
+                                                                from_authority: Authority::ManagedNode(NameType::new([7u8; 64])) });
+                },
+                Authority::Client(_, _) => {
+                    let _ = cloned_client_sender.send(data);
+                },
+                _ => {}
+            }
         });
     }
 
@@ -172,25 +120,19 @@ impl MockRouting {
             DataRequest::PlainData(_) => panic!("Unexpected"),
         };
         let delay_ms = self.network_delay_ms;
-        let data_store = get_storage();
         let cloned_sender = self.sender.clone();
 
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            match data_store.lock().unwrap().get(&name) {
-                Some(raw_data) => {
-                    if let Ok(data) = ::routing::utils::decode::<Data>(raw_data) {
-                        // TODO: how to simulate the authorities?
-                        //       Here throwing the request to PmidNode directly
-
-                        let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(DataRequest::ImmutableData(data.name(), ImmutableDataType::Normal)),
-                                                                   our_authority: Authority::ManagedNode(NameType::new([7u8; 64])),
-                                                                   from_authority: Authority::NaeManager(data.name()),
-                                                                   response_token: None });
-                    }
+            match location.clone() {
+                Authority::ManagedNode(_) => {
+                    let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(request_for),
+                                                               our_authority: Authority::ManagedNode(NameType::new([7u8; 64])),
+                                                               from_authority: Authority::NaeManager(name),
+                                                               response_token: None });
                 },
-                None => (),
-            };
+                _ => {}
+            }
         });
 
         Ok(())
@@ -205,33 +147,31 @@ impl MockRouting {
             _ => panic!("Unexpected"),
         };
         let delay_ms = self.network_delay_ms;
-        let data_store = get_storage();
         let cloned_sender = self.sender.clone();
 
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            let mut data_store_mutex_guard = data_store.lock().unwrap();
-            let success = if data_store_mutex_guard.contains_key(&destination) {
-                false
-            } else if let Ok(raw_data) = ::routing::utils::encode(&data) {
-                let _ = data_store_mutex_guard.insert(destination, raw_data);
-                sync_disk_storage(&*data_store_mutex_guard);
-                true
-            } else {
-                false
-            };
-            // TODO: how to simulate the authorities?
-            //       here we assume if data is not present in cache previously, then forward to PmidNode
-            //       otherwise terminate the flow directly
-
-            if success {
-                let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data.clone()),
-                                                           our_authority: Authority::ManagedNode(NameType::new([7u8; 64])),
-                                                           from_authority: Authority::NaeManager(data.name()),
-                                                           response_token: None });
-            } else {
-                let _ = cloned_sender.send(Event::Terminated);
-            };
+            match location.clone() {
+                Authority::NaeManager(_) => {
+                    let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data.clone()),
+                                                               our_authority: location,
+                                                               from_authority: Authority::ClientManager(NameType::new([7u8; 64])),
+                                                               response_token: None });
+                },
+                Authority::NodeManager(_) => {
+                    let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data.clone()),
+                                                               our_authority: location,
+                                                               from_authority: Authority::NaeManager(data.name()),
+                                                               response_token: None });
+                },
+                Authority::ManagedNode(_) => {
+                    let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data.clone()),
+                                                               our_authority: location,
+                                                               from_authority: Authority::NodeManager(NameType::new([6u8; 64])),
+                                                               response_token: None });
+                },
+                _ => {}
+            }
         });
 
         Ok(())

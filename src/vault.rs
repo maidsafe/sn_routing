@@ -462,17 +462,22 @@ pub type ResponseNotifier =
         let vault = Vault::new();
         let routing_mutex_clone = vault.routing.clone();
         let _ = run_vault(vault);
+
+        let mut available_nodes = Vec::with_capacity(30);
+        for _ in 0..30 {
+            available_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
+        }
+        routing_mutex_clone.lock().unwrap().churn_event(available_nodes);
+
         let client_name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
         let sign_keys =  crypto::sign::gen_keypair();
         let value = generate_random_vec_u8(1024);
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         routing_mutex_clone.lock().unwrap().client_put(client_name, sign_keys.0,
                                                        Data::ImmutableData(im_data.clone()));
-        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), false);
         thread::sleep_ms(5000);
-        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), true);
 
-        let receiver = routing_mutex_clone.lock().unwrap().client_get(im_data.name());
+        let receiver = routing_mutex_clone.lock().unwrap().client_get(client_name, sign_keys.0, im_data.name());
         for it in receiver.iter() {
             assert_eq!(it, Data::ImmutableData(im_data));
             break;
