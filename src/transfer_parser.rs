@@ -51,6 +51,7 @@ impl Decodable for Transfer {
                 Ok(Transfer::PmidManagerAccount(try!(Decodable::decode(decoder)))),
             transfer_tags::DATA_MANAGER_STATS_TAG =>
                 Ok(Transfer::DataManagerStats(try!(Decodable::decode(decoder)))),
+            transfer_tags::SD_MANAGER_ACCOUNT_TAG => Ok(Transfer::Unknown(tag)),
             _ => Ok(Transfer::Unknown(tag)),
         }
     }

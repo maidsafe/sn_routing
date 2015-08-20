@@ -12,7 +12,7 @@ If there is no data stored, it will reply with an error (routing ensures the fai
 
 ### Get(N)
 _Client_  *->> |__DataManager__  (Primary, Backup, Sacrificial) [Exist(name) ? So : Terminate_Flow]
-          *->  |_PmidNode_ [Has(name) ? Reply(data) : GetFailure]
+          *->  |_PmidNode_ [Has(name) ? Reply(data) : Terminate_Flow]
 
 Note : name is N which is Hash(D) for Primary copy, is Hash(N) for Backup copy and is Hash(Hash(N)) for Sacrificial copy
        data is Primary or Backup or Sacrificial copy
