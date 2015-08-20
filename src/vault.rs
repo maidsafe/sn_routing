@@ -25,10 +25,11 @@ fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Ev
 }
 
 #[cfg(not(feature = "use-actual-routing"))]
-type Routing = ::non_networking_test_framework::MockRouting;
+type Routing = ::std::sync::Arc<::std::sync::Mutex<::non_networking_test_framework::MockRouting>>;
 #[cfg(not(feature = "use-actual-routing"))]
 fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
-    ::non_networking_test_framework::MockRouting::new(event_sender)
+    let mock_routing = ::non_networking_test_framework::MockRouting::new(event_sender);
+    ::std::sync::Arc::new(::std::sync::Mutex::new(mock_routing))
 }
 
 #[allow(dead_code)]
@@ -73,30 +74,7 @@ pub struct Vault {
 }
 
 impl Vault {
-    pub fn run() {
-        use ::routing::event::Event;
-        let mut vault = Vault::new();
-        while let Ok(event) = vault.receiver.recv() {
-            match event {
-                Event::Request{ request, our_authority, from_authority, response_token } =>
-                    vault.on_request(request, our_authority, from_authority, response_token),
-                Event::Response{ response, our_authority, from_authority } =>
-                    vault.on_response(response, our_authority, from_authority),
-                Event::Refresh(type_tag, group_name, accounts) =>
-                    vault.on_refresh(type_tag, group_name, accounts),
-                Event::Churn(close_group) => vault.on_churn(close_group),
-                Event::Connected => vault.on_connected(),
-                Event::Disconnected => vault.on_disconnected(),
-                Event::FailedRequest(location, request, error) =>
-                    vault.on_failed_request(location, request, error),
-                Event::FailedResponse(location, response, error) =>
-                    vault.on_failed_response(location, response, error),
-                Event::Terminated => break,
-            };
-        }
-    }
-
-    fn new() -> Vault {
+    pub fn new() -> Vault {
         ::sodiumoxide::init();
         let (sender, receiver) = ::std::sync::mpsc::channel();
         Vault {
@@ -110,6 +88,28 @@ impl Vault {
                 ::time::Duration::minutes(10), 100),
             receiver: receiver,
             routing: get_new_routing(sender)
+        }
+    }
+
+    pub fn run(&mut self) {
+        use ::routing::event::Event;
+        while let Ok(event) = self.receiver.recv() {
+            match event {
+                Event::Request{ request, our_authority, from_authority, response_token } =>
+                    self.on_request(request, our_authority, from_authority, response_token),
+                Event::Response{ response, our_authority, from_authority } =>
+                    self.on_response(response, our_authority, from_authority),
+                Event::Refresh(type_tag, group_name, accounts) =>
+                    self.on_refresh(type_tag, group_name, accounts),
+                Event::Churn(close_group) => self.on_churn(close_group),
+                Event::Connected => self.on_connected(),
+                Event::Disconnected => self.on_disconnected(),
+                Event::FailedRequest(location, request, error) =>
+                    self.on_failed_request(location, request, error),
+                Event::FailedResponse(location, response, error) =>
+                    self.on_failed_response(location, response, error),
+                Event::Terminated => break,
+            };
         }
     }
 
@@ -446,13 +446,13 @@ impl Vault {
         for action in actions {
             match action {
                 MethodCall::Get { name, data_request } => {
-                    let _ = self.routing.get(name, data_request);
+                    let _ = self.routing.lock().unwrap().get(name, data_request);
                 },
                 MethodCall::Put { destination, content } => {
-                    let _ = self.routing.put(destination, content);
+                    let _ = self.routing.lock().unwrap().put(destination, content);
                 },
                 MethodCall::Reply { data } => {
-                    let _ = self.routing.get_response(data, response_token.clone());
+                    let _ = self.routing.lock().unwrap().get_response(data, response_token.clone());
                 },
                 _ => {}
             }
@@ -467,12 +467,41 @@ pub type ResponseNotifier =
 #[cfg(test)]
  mod test {
     use cbor;
+    use std::thread;
+    use std::thread::spawn;
     use sodiumoxide::crypto;
 
     use super::*;
     // use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
     use routing_types::*;
+
+    #[test]
+    fn put_get_flow() {
+        let run_vault = |mut vault: Vault| {
+            let _ = spawn(move || {
+                vault.run();
+            });
+        };
+        let vault = Vault::new();
+        let routing_mutex_clone = vault.routing.clone();
+        let _ = run_vault(vault);
+        let client_name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
+        let sign_keys =  crypto::sign::gen_keypair();
+        let value = generate_random_vec_u8(1024);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        routing_mutex_clone.lock().unwrap().client_put(client_name, sign_keys.0,
+                                                       Data::ImmutableData(im_data.clone()));
+        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), false);
+        thread::sleep_ms(5000);
+        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), true);
+
+        let receiver = routing_mutex_clone.lock().unwrap().client_get(im_data.name());
+        for it in receiver.iter() {
+            assert_eq!(it, Data::ImmutableData(im_data));
+            break;
+        }
+    }
 
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
         let keys = crypto::sign::gen_keypair();
@@ -568,63 +597,6 @@ pub type ResponseNotifier =
         // }
     }
 
-    #[test]
-    fn put_get_flow() {
-        let mut vault = Vault::new();
-        let value = generate_random_vec_u8(1024);
-        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
-        { // MaidManager, shall allowing the put and SendOn to DataManagers around name
-            maid_manager_put(&mut vault, NameType::new([9u8; 64]), im_data.clone());
-        }
-        vault.nodes_in_table = vec![NameType::new([1u8; 64]), NameType::new([2u8; 64]),
-            NameType::new([3u8; 64]), NameType::new([4u8; 64]), NameType::new([5u8; 64]),
-            NameType::new([6u8; 64]), NameType::new([7u8; 64]), NameType::new([8u8; 64])];
-        { // DataManager, shall SendOn to pmid_nodes
-            data_manager_put(&mut vault, im_data.clone());
-            let keys = crypto::sign::gen_keypair();
-            let _get_result = vault.handle_get(Authority::NaeManager(im_data.name().clone()),
-                                              Authority::Client(NameType::new([7u8; 64]), keys.0),
-                                              DataRequest::ImmutableData(im_data.name(),
-                                                  im_data.get_type_tag().clone()), None);
-            // assert_eq!(get_result.is_err(), false);
-            // let get_calls = get_result.ok().unwrap();
-            // assert_eq!(get_calls.len(), data_manager::PARALLELISM);
-        }
-        { // PmidManager, shall put to pmid_nodes
-            pmid_manager_put(&mut vault, NameType::new([7u8; 64]), im_data.clone());
-        }
-        { // PmidNode stores/retrieves data
-            let _put_result = vault.handle_put(Authority::ManagedNode(NameType::new([6u8; 64])),
-                                              Authority::NodeManager(NameType::new([6u8; 64])),
-                                              Data::ImmutableData(im_data.clone()), None);
-            // assert_eq!(put_result.is_ok(), true);
-            // let mut put_calls = put_result.ok().unwrap();
-            // assert_eq!(put_calls.len(), 1);
-            // match put_calls.remove(0) {
-            //     MethodCall::Terminate => {},
-            //     _ => panic!("Unexpected"),
-            // }
-
-            let _get_result = vault.handle_get(Authority::ManagedNode(NameType::new([6u8; 64])),
-                                              Authority::NaeManager(im_data.name().clone()),
-                                              DataRequest::ImmutableData(im_data.name(),
-                                                  im_data.get_type_tag().clone()), None);
-            // assert_eq!(get_result.is_err(), false);
-            // let mut get_calls = get_result.ok().unwrap();
-            // assert_eq!(get_calls.len(), 1);
-            // match get_calls.remove(0) {
-            //     MethodCall::Reply { data } => {
-            //         match data {
-            //             Data::ImmutableData(fetched_im_data) => {
-            //                 assert_eq!(fetched_im_data, im_data);
-            //             }
-            //             _ => panic!("Unexpected"),
-            //         }
-            //     }
-            //     _ => panic!("Unexpected"),
-            // }
-        }
-    }
 
     #[test]
     fn structured_data_put_post_get() {
