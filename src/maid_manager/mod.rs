@@ -39,7 +39,7 @@ impl MaidManager {
     pub fn handle_put(&mut self, from: &NameType,
                       data: Data) -> Result<Vec<MethodCall>, ResponseError> {
         if self.db_.put_data(from, data.payload_size() as u64) {
-            Ok(vec![MethodCall::Put { destination: data.name(), content: data }])
+            Ok(vec![MethodCall::Put { location: Authority::NaeManager(data.name()), content: data }])
         } else {
             Err(ResponseError::InvalidRequest(data))
         }
@@ -72,8 +72,8 @@ mod test {
         let calls = put_result.ok().unwrap();
         assert_eq!(calls.len(), 1);
         match calls[0] {
-            MethodCall::Put { destination, ref content } => {
-                assert_eq!(destination, data.name());
+            MethodCall::Put { ref location, ref content } => {
+                assert_eq!(*location, Authority::NaeManager(data.name()));
                 assert_eq!(*content, Data::ImmutableData(data));
             }
             _ => panic!("Unexpected"),

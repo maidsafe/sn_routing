@@ -150,7 +150,7 @@ impl DataManager {
         match replicate_to {
             Some(pmid_node) => {
                 self.db_.add_pmid_node(&response.name(), pmid_node.clone());
-                vec![MethodCall::Put { destination: pmid_node, content: response, }]
+                vec![MethodCall::Put { location: Authority::ManagedNode(pmid_node), content: response, }]
             },
             None => vec![]
         }
@@ -174,7 +174,8 @@ impl DataManager {
                                 match replicate_to {
                                     Some(pmid_node) => {
                                         self.db_.add_pmid_node(&name, pmid_node.clone());
-                                        return vec![MethodCall::Put { destination: pmid_node, content: data }];
+                                        return vec![MethodCall::Put { location: Authority::ManagedNode(pmid_node), 
+                                                                      content: data }];
                                     },
                                     None => {}
                                 }

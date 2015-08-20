@@ -17,7 +17,9 @@
 
 #[cfg(test)]
 mod test {
-  use rand::{thread_rng, Rng};
+  extern crate rand;
+
+  use self::rand::{thread_rng, Rng};
 
   use routing_types::*;
 
