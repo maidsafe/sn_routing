@@ -100,7 +100,7 @@ impl DataManager {
         DataManager { db_: database::DataManagerDatabase::new(), resource_index: 1 }
     }
 
-    pub fn handle_get(&mut self, name: &NameType) -> Result<Vec<MethodCall>, ResponseError> {
+    pub fn handle_get(&mut self, name: &NameType, data_request: DataRequest) -> Result<Vec<MethodCall>, ResponseError> {
         let result = self.db_.get_pmid_nodes(name);
         if result.len() == 0 {
             return Err(ResponseError::Abort);
@@ -108,7 +108,8 @@ impl DataManager {
 
         let mut dest_pmids: Vec<MethodCall> = Vec::new();
         for pmid in result.iter() {
-            dest_pmids.push(MethodCall::Forward { destination: pmid.clone() });
+            dest_pmids.push(MethodCall::Get { location: Authority::ManagedNode(pmid.clone()),
+                                              data_request: data_request.clone() });
         }
         Ok(dest_pmids)
     }
@@ -140,7 +141,8 @@ impl DataManager {
       }
       let mut forwarding_calls: Vec<MethodCall> = Vec::new();
       for pmid in dest_pmids {
-          forwarding_calls.push(MethodCall::Forward { destination: pmid.clone() });
+          forwarding_calls.push(MethodCall::Put { location: Authority::NodeManager(pmid.clone()),
+                                                  content: Data::ImmutableData(data.clone()), });
       }
       Ok(forwarding_calls)
     }
@@ -276,7 +278,8 @@ mod test {
         }
         let data_name = NameType::new(data.name().get_id());
         {
-            let get_result = data_manager.handle_get(&data_name);
+            let get_result = data_manager.handle_get(&data_name, DataRequest::ImmutableData(data_name.clone(),
+                                                                                            ImmutableDataType::Normal));
             assert_eq!(get_result.is_err(), false);
             let calls = get_result.ok().unwrap();
             assert_eq!(calls.len(), super::PARALLELISM);

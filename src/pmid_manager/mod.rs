@@ -37,7 +37,8 @@ impl PmidManager {
     pub fn handle_put(&mut self, pmid_node: NameType,
                       data: Data) ->Result<Vec<MethodCall>, ResponseError> {
         if self.db_.put_data(&pmid_node, data.payload_size() as u64) {
-            return Ok(vec![MethodCall::Forward { destination: pmid_node }]);
+            return Ok(vec![MethodCall::Put { location: Authority::ManagedNode(pmid_node.clone()),
+                                             content: data, }]);
         }
         Err(ResponseError::InvalidRequest(data))
     }

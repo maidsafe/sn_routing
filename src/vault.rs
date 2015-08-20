@@ -212,7 +212,7 @@ impl Vault {
                         } else {
                             self.request_cache.add(name, vec![(from_authority.clone(), data_request.clone())]);
                         }
-                        self.data_manager.handle_get(&name)
+                        self.data_manager.handle_get(&name, data_request.clone())
                     }
                     DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
                     _ => Ok(vec![]),
