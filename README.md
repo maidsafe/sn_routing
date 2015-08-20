@@ -3,7 +3,7 @@
 
 **Primary Maintainer:**     Benjamin Bollen (benjamin.bollen@maidsafe.net)
 
-**Secondary Maintainer:**   Peter Jankuliak (peter.jankuliak@maidsafe.net)
+**Secondary Maintainer:**   Brian Smith (brian.smith@maidsafe.net)
 
 Routing - a specialised storage DHT
 
