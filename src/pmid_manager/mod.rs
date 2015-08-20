@@ -84,9 +84,10 @@ mod test {
     assert_eq!(put_result.is_err(), false);
     let calls = put_result.ok().unwrap();
     assert_eq!(calls.len(), 1);
-    match calls[0] {
-        MethodCall::Forward { destination } => {
-            assert_eq!(destination, dest);
+    match calls[0].clone() {
+        MethodCall::Put { location, content } => {
+            assert_eq!(location, Authority::ManagedNode(dest));
+            assert_eq!(content, Data::ImmutableData(data.clone()));
         }
         _ => panic!("Unexpected"),
     }

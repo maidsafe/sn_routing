@@ -268,9 +268,10 @@ mod test {
             let calls = put_result.ok().unwrap();
             assert_eq!(calls.len(), super::PARALLELISM);
             for i in 0..calls.len() {
-                match calls[i] {
-                    MethodCall::Forward { destination } => {
-                        assert_eq!(destination, nodes_in_table[i]);
+                match calls[i].clone() {
+                    MethodCall::Put { location, content } => {
+                        assert_eq!(location, Authority::NodeManager(nodes_in_table[i]));
+                        assert_eq!(content, Data::ImmutableData(data.clone()));
                     }
                     _ => panic!("Unexpected"),
                 }
@@ -278,15 +279,16 @@ mod test {
         }
         let data_name = NameType::new(data.name().get_id());
         {
-            let get_result = data_manager.handle_get(&data_name, DataRequest::ImmutableData(data_name.clone(),
-                                                                                            ImmutableDataType::Normal));
+            let request = DataRequest::ImmutableData(data_name.clone(), ImmutableDataType::Normal);
+            let get_result = data_manager.handle_get(&data_name, request.clone());
             assert_eq!(get_result.is_err(), false);
             let calls = get_result.ok().unwrap();
             assert_eq!(calls.len(), super::PARALLELISM);
             for i in 0..calls.len() {
-                match calls[i] {
-                    MethodCall::Forward { destination } => {
-                        assert_eq!(destination, nodes_in_table[i]);
+                match calls[i].clone() {
+                    MethodCall::Get { location, data_request } => {
+                        assert_eq!(location, Authority::ManagedNode(nodes_in_table[i]));
+                        assert_eq!(data_request, request);
                     }
                     _ => panic!("Unexpected"),
                 }
