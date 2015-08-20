@@ -17,12 +17,8 @@
 
 #![allow(unsafe_code, unused)] // TODO Remove the unused attribute later
 
-pub mod mock_routing_types;
-
 use std::io::{Read, Write};
 use sodiumoxide::crypto;
-
-use self::mock_routing_types::*;
 
 use routing::authority::Authority;
 use routing::data::{Data, DataRequest};

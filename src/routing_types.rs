@@ -25,9 +25,6 @@ pub use routing::immutable_data::{ImmutableData, ImmutableDataType};
 pub use routing::structured_data::StructuredData;
 pub use routing::types::*;
 
-#[cfg(not(feature = "use-actual-routing"))]
-pub use non_networking_test_framework::mock_routing_types::*;
-
 /// MethodCall denotes a specific request to be carried out by routing.
 #[derive(PartialEq, Eq, Clone)]
 pub enum MethodCall {
@@ -49,4 +46,29 @@ pub enum MethodCall {
     Terminate,
     // /// shutdown
     // ShutDown
+}
+
+/// For account transfer usage
+pub trait Mergeable {
+	/// For account transfer usage
+    fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
+}
+
+/// This trait is required for any type of message to be
+/// passed to routing, refresh / account transfer is optional
+/// The name will let routing know its a NaeManager and the owner will allow routing to hash
+/// the requesters ID with this name (by hashing the requesters ID) for put and post messages
+pub trait Sendable {
+	/// return the name
+    fn name(&self)->NameType;
+    /// return the type_tag
+    fn type_tag(&self)->u64;
+    /// return serialised content
+    fn serialised_contents(&self)->Vec<u8>;
+    /// return the owner
+    fn owner(&self)->Option<NameType> { None }
+    /// is this an account transfer type
+    fn refresh(&self)->bool;
+    /// Merge two sendable object
+    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>>;
 }

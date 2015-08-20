@@ -18,10 +18,11 @@
 use routing_types::*;
 
 #[cfg(feature = "use-actual-routing")]
-type Routing = ::routing::routing::Routing;
+type Routing = ::std::sync::Arc<::std::sync::Mutex<::routing::routing::Routing>>;
 #[cfg(feature = "use-actual-routing")]
 fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
-    ::routing::routing::Routing::new(event_sender)
+    let routing = ::routing::routing::Routing::new(event_sender);
+    ::std::sync::Arc::new(::std::sync::Mutex::new(routing))
 }
 
 #[cfg(not(feature = "use-actual-routing"))]
@@ -411,15 +412,18 @@ pub type ResponseNotifier =
 #[cfg(test)]
  mod test {
     use cbor;
-    use std::thread;
-    use std::thread::spawn;
     use sodiumoxide::crypto;
+    #[cfg(not(feature = "use-actual-routing"))]
+    use std::thread;
+    #[cfg(not(feature = "use-actual-routing"))]
+    use std::thread::spawn;
 
     use super::*;
     // use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
     use routing_types::*;
 
+    #[cfg(not(feature = "use-actual-routing"))]
     #[test]
     fn put_get_flow() {
         let run_vault = |mut vault: Vault| {
