@@ -165,7 +165,7 @@ impl MockRouting {
         });
     }
 
-    pub fn get_request(&self, location: Authority, request_for: DataRequest) -> Result<(), ResponseError> {
+    pub fn get_request(&self, location: Authority, request_for: DataRequest) {
         let name = match request_for.clone() {
             DataRequest::StructuredData(name, _) => name,
             DataRequest::ImmutableData(name, _) => name,
@@ -192,11 +192,9 @@ impl MockRouting {
                 None => (),
             };
         });
-
-        Ok(())
     }
 
-    pub fn put_request(&self, location: Authority, data: Data) -> Result<(), ResponseError> {
+    pub fn put_request(&self, location: Authority, data: Data) {
         let destination = match location.clone() {
             Authority::ClientManager(dest) => dest,
             Authority::NaeManager(dest) => dest,
@@ -233,8 +231,6 @@ impl MockRouting {
                 let _ = cloned_sender.send(Event::Terminated);
             };
         });
-
-        Ok(())
     }
 
     // pub fn post(&mut self, location: NameType, data: Data) -> Result<(), ResponseError> {

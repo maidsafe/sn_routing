@@ -203,6 +203,3 @@ impl ChunkStore {
         name.get_id().to_hex()
     }
 }
-#[test]
-fn dummy()  {
-}

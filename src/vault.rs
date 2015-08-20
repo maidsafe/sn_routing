@@ -18,19 +18,17 @@
 use routing_types::*;
 
 #[cfg(feature = "use-actual-routing")]
-type Routing = ::std::sync::Arc<::std::sync::Mutex<::routing::routing::Routing>>;
+type Routing = ::routing::routing::Routing;
 #[cfg(feature = "use-actual-routing")]
 fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
-    let routing = ::routing::routing::Routing::new(event_sender);
-    ::std::sync::Arc::new(::std::sync::Mutex::new(routing))
+    ::routing::routing::Routing::new(event_sender)
 }
 
 #[cfg(not(feature = "use-actual-routing"))]
-type Routing = ::std::sync::Arc<::std::sync::Mutex<::non_networking_test_framework::MockRouting>>;
+type Routing = ::non_networking_test_framework::MockRouting;
 #[cfg(not(feature = "use-actual-routing"))]
 fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
-    let mock_routing = ::non_networking_test_framework::MockRouting::new(event_sender);
-    ::std::sync::Arc::new(::std::sync::Mutex::new(mock_routing))
+    ::non_networking_test_framework::MockRouting::new(event_sender)
 }
 
 #[allow(dead_code)]
@@ -75,7 +73,31 @@ pub struct Vault {
 }
 
 impl Vault {
-    pub fn new() -> Vault {
+    pub fn run() {
+        use ::routing::event::Event;
+        let mut vault = Vault::new();
+
+        while let Ok(event) = vault.receiver.recv() {
+            match event {
+                Event::Request{ request, our_authority, from_authority, response_token } =>
+                    vault.on_request(request, our_authority, from_authority, response_token),
+                Event::Response{ response, our_authority, from_authority } =>
+                    vault.on_response(response, our_authority, from_authority),
+                Event::Refresh(type_tag, group_name, accounts) =>
+                    vault.on_refresh(type_tag, group_name, accounts),
+                Event::Churn(close_group) => vault.on_churn(close_group),
+                Event::Connected => vault.on_connected(),
+                Event::Disconnected => vault.on_disconnected(),
+                Event::FailedRequest(location, request, error) =>
+                    vault.on_failed_request(location, request, error),
+                Event::FailedResponse(location, response, error) =>
+                    vault.on_failed_response(location, response, error),
+                Event::Terminated => break,
+            };
+        }
+    }
+
+    fn new() -> Vault {
         ::sodiumoxide::init();
         let (sender, receiver) = ::std::sync::mpsc::channel();
         Vault {
@@ -89,28 +111,6 @@ impl Vault {
                 ::time::Duration::minutes(10), 100),
             receiver: receiver,
             routing: get_new_routing(sender)
-        }
-    }
-
-    pub fn run(&mut self) {
-        use ::routing::event::Event;
-        while let Ok(event) = self.receiver.recv() {
-            match event {
-                Event::Request{ request, our_authority, from_authority, response_token } =>
-                    self.on_request(request, our_authority, from_authority, response_token),
-                Event::Response{ response, our_authority, from_authority } =>
-                    self.on_response(response, our_authority, from_authority),
-                Event::Refresh(type_tag, group_name, accounts) =>
-                    self.on_refresh(type_tag, group_name, accounts),
-                Event::Churn(close_group) => self.on_churn(close_group),
-                Event::Connected => self.on_connected(),
-                Event::Disconnected => self.on_disconnected(),
-                Event::FailedRequest(location, request, error) =>
-                    self.on_failed_request(location, request, error),
-                Event::FailedResponse(location, response, error) =>
-                    self.on_failed_response(location, response, error),
-                Event::Terminated => break,
-            };
         }
     }
 
@@ -384,19 +384,19 @@ impl Vault {
     fn send(&self, actions: Vec<MethodCall>,
             response_token: Option<::routing::SignedToken>,
             reply_to: Option<Authority>,
-            ori_data_request: Option<DataRequest>) {
+            original_data_request: Option<DataRequest>) {
         for action in actions {
             match action {
                 MethodCall::Get { location, data_request } => {
-                    let _ = self.routing.lock().unwrap().get_request(location, data_request);
+                    self.routing.get_request(location, data_request);
                 },
                 MethodCall::Put { location, content } => {
-                    let _ = self.routing.lock().unwrap().put_request(location, content);
+                    self.routing.put_request(location, content);
                 },
                 MethodCall::Reply { data } => {
-                    if reply_to != None && ori_data_request != None {
-                        let _ = self.routing.lock().unwrap().get_response(reply_to.clone().unwrap(),
-                                    data, ori_data_request.clone().unwrap(), response_token.clone());
+                    if reply_to != None && original_data_request != None {
+                        self.routing.get_response(reply_to.clone().unwrap(), data,
+                            original_data_request.clone().unwrap(), response_token.clone());
                     }
                 },
                 _ => {}
@@ -413,43 +413,11 @@ pub type ResponseNotifier =
  mod test {
     use cbor;
     use sodiumoxide::crypto;
-    #[cfg(not(feature = "use-actual-routing"))]
-    use std::thread;
-    #[cfg(not(feature = "use-actual-routing"))]
-    use std::thread::spawn;
 
     use super::*;
     // use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
     use routing_types::*;
-
-    #[cfg(not(feature = "use-actual-routing"))]
-    #[test]
-    fn put_get_flow() {
-        let run_vault = |mut vault: Vault| {
-            let _ = spawn(move || {
-                vault.run();
-            });
-        };
-        let vault = Vault::new();
-        let routing_mutex_clone = vault.routing.clone();
-        let _ = run_vault(vault);
-        let client_name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
-        let sign_keys =  crypto::sign::gen_keypair();
-        let value = generate_random_vec_u8(1024);
-        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
-        routing_mutex_clone.lock().unwrap().client_put(client_name, sign_keys.0,
-                                                       Data::ImmutableData(im_data.clone()));
-        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), false);
-        thread::sleep_ms(5000);
-        assert_eq!(routing_mutex_clone.lock().unwrap().has_chunk(im_data.name()), true);
-
-        let receiver = routing_mutex_clone.lock().unwrap().client_get(im_data.name());
-        for it in receiver.iter() {
-            assert_eq!(it, Data::ImmutableData(im_data));
-            break;
-        }
-    }
 
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
         let keys = crypto::sign::gen_keypair();
