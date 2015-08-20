@@ -31,9 +31,12 @@ use lru_time_cache::LruCache;
 
 use action::Action;
 use event::Event;
+use immutable_data::{ImmutableData, ImmutableDataType};
 use NameType;
 use name_type::{closer_to_target_or_equal};
+use plain_data::PlainData;
 use routing_core::{RoutingCore, ConnectionName};
+use structured_data::StructuredData;
 use id::Id;
 use public_id::PublicId;
 use hello::Hello;
@@ -66,20 +69,23 @@ static MAX_CRUST_EVENT_COUNTER : u8 = 10;
 /// Routing Node
 pub struct RoutingNode {
     // for CRUST
-    crust_receiver      : mpsc::Receiver<crust::Event>,
-    connection_manager  : crust::ConnectionManager,
-    accepting_on        : Vec<crust::Endpoint>,
+    crust_receiver        : mpsc::Receiver<crust::Event>,
+    connection_manager    : crust::ConnectionManager,
+    accepting_on          : Vec<crust::Endpoint>,
     // for RoutingNode
-    client_restriction  : bool,
-    action_sender       : mpsc::Sender<Action>,
-    action_receiver     : mpsc::Receiver<Action>,
-    event_sender        : mpsc::Sender<Event>,
-    wakeup              : WakeUpCaller,
-    filter              : MessageFilter<types::FilterType>,
-    core                : RoutingCore,
-    public_id_cache     : LruCache<NameType, PublicId>,
-    connection_cache    : BTreeMap<NameType, SteadyTime>,
-    accumulator         : MessageAccumulator,
+    client_restriction    : bool,
+    action_sender         : mpsc::Sender<Action>,
+    action_receiver       : mpsc::Receiver<Action>,
+    event_sender          : mpsc::Sender<Event>,
+    wakeup                : WakeUpCaller,
+    filter                : MessageFilter<types::FilterType>,
+    core                  : RoutingCore,
+    public_id_cache       : LruCache<NameType, PublicId>,
+    connection_cache      : BTreeMap<NameType, SteadyTime>,
+    accumulator           : MessageAccumulator,
+    immutable_data_cache  : Option<LruCache<NameType, ImmutableData>>,
+    plain_data_cache      : Option<LruCache<NameType, PlainData>>,
+    structured_data_cache : Option<LruCache<(NameType, u64), StructuredData>>,
     // refresh_accumulator : RefreshAccumulator,
 }
 
@@ -99,21 +105,43 @@ impl RoutingNode {
         info!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
 
         RoutingNode {
-            crust_receiver      : crust_receiver,
-            connection_manager  : cm,
-            accepting_on        : accepting_on,
-            client_restriction  : client_restriction,
-            action_sender       : action_sender.clone(),
-            action_receiver     : action_receiver,
-            event_sender        : event_sender,
-            wakeup              : WakeUpCaller::new(action_sender),
-            filter              : MessageFilter::with_expiry_duration(Duration::minutes(20)),
-            core                : core,
-            public_id_cache     : LruCache::with_expiry_duration(Duration::minutes(10)),
-            connection_cache    : BTreeMap::new(),
-            accumulator         : MessageAccumulator::new(),
+            crust_receiver        : crust_receiver,
+            connection_manager    : cm,
+            accepting_on          : accepting_on,
+            client_restriction    : client_restriction,
+            action_sender         : action_sender.clone(),
+            action_receiver       : action_receiver,
+            event_sender          : event_sender,
+            wakeup                : WakeUpCaller::new(action_sender),
+            filter                : MessageFilter::with_expiry_duration(Duration::minutes(20)),
+            core                  : core,
+            public_id_cache       : LruCache::with_expiry_duration(Duration::minutes(10)),
+            connection_cache      : BTreeMap::new(),
+            accumulator           : MessageAccumulator::new(),
+            immutable_data_cache  : None,
+            plain_data_cache      : None,
+            structured_data_cache : None
         }
     }
+
+    /// configures lru cache associated with plain data
+    pub fn set_plain_data_cache(&mut self, time_to_live: Option<Duration>,
+                                           capacity: Option<usize>) {
+        set_lru_cache(&mut self.plain_data_cache, time_to_live, capacity);
+    }
+
+    /// configures lru cache associated with immutable data
+    pub fn set_immutable_data_cache(&mut self, time_to_live: Option<Duration>,
+                                               capacity: Option<usize>) {
+        set_lru_cache(&mut self.immutable_data_cache, time_to_live, capacity);
+    }
+
+    /// configures lru cache associated with structured data
+    pub fn set_structured_data_cache(&mut self, time_to_live: Option<Duration>,
+                                                capacity: Option<usize>) {
+        set_lru_cache(&mut self.structured_data_cache, time_to_live, capacity);
+    }
+
 
     #[allow(unused_assignments)]
     pub fn run(&mut self) {
@@ -1003,6 +1031,142 @@ impl RoutingNode {
             None => None,
         }
     }
+
+    fn handle_cache_get(&mut self, request : ExternalRequest) -> Option<Data> {
+         match request {
+             ExternalRequest::Get(data_request) => {
+                 match data_request {
+                     DataRequest::StructuredData(data_name, value) => {
+                         match self.structured_data_cache.as_mut() {
+                             Some(cache) => {
+                                 match cache.get(&(data_name, value)) {
+                                     Some(data) => Some(Data::StructuredData(data.clone())),
+                                     _ => return None,
+                                 }
+                             },
+                             None => None,
+                         }
+                     },
+                     DataRequest::ImmutableData(data_name, _) => {
+                         match self.immutable_data_cache.as_mut() {
+                             Some(mut cache) => {
+                                 match cache.get(&data_name) {
+                                     Some(data) => Some(Data::ImmutableData(data.clone())),
+                                     _ => None,
+                                 }
+                             },
+                             None => None,
+                         }
+                     },
+                     DataRequest::PlainData(data_name) => {
+                         match self.plain_data_cache.as_mut() {
+                             Some(mut cache) => {
+                                 match cache.get(&data_name) {
+                                     Some(data) => Some(Data::PlainData(data.clone())),
+                                     _ => None,
+                                 }
+                             },
+                             None => None,
+                         }
+                     },
+                 }
+             },
+             _ => None
+         }
+     }
+
+     fn handle_cache_put(&mut self, response : ExternalResponse) {
+         match response {
+             ExternalResponse::Get(data, _, _) => {
+                 match data {
+                     Data::ImmutableData(ref immutable_data) => {
+                         match self.immutable_data_cache.as_mut() {
+                             Some(cache) =>
+                                 cache.add(immutable_data.name(), immutable_data.clone()),
+                             None => {}
+                         }
+                     },
+                     Data::PlainData(ref plain_data) => {
+                         match self.plain_data_cache.as_mut() {
+                             Some(cache) => cache.add(plain_data.name(), plain_data.clone()),
+                             None => {}
+                         }
+                     },
+                     Data::StructuredData(ref structured_data) => {
+                         match self.structured_data_cache.as_mut() {
+                             Some(cache) => cache.add((structured_data.name(),
+                                                       structured_data.get_version()),
+                                                      structured_data.clone()),
+                             None => {}
+                         }
+                     },
+                 }
+             },
+             _ => {}
+         };
+     }
 }
 
 fn ignore<R,E>(_result: Result<R,E>) {}
+
+fn set_lru_cache<K, V>(lru_cache: &mut Option<LruCache<K, V>>, time_to_live: Option<Duration>,
+                       capacity: Option<usize>) where K: PartialOrd + Ord + Clone, V: Clone {
+     match (time_to_live, capacity) {
+         (Some(lru_time_to_live), Some(lru_capacity)) => {
+             *lru_cache =
+                Some(LruCache::<K, V>::with_expiry_duration_and_capacity(lru_time_to_live,
+                                                                         lru_capacity));
+         },
+         (Some(lru_time_to_live), None) => {
+             *lru_cache = Some(LruCache::<K, V>::with_expiry_duration(lru_time_to_live));
+         },
+         (None, Some(lru_capacity)) => {
+             *lru_cache = Some(LruCache::<K, V>::with_capacity(lru_capacity));
+         },
+         (None, None) => { *lru_cache = None }
+     }
+}
+
+#[cfg(test)]
+mod test {
+    use action::Action;
+    use crust;
+    use sodiumoxide::crypto;
+    use data::{Data, DataRequest};
+    use event::Event;
+    use immutable_data::{ImmutableData, ImmutableDataType};
+    use messages::{ExternalRequest, ExternalResponse, SignedToken};
+    use rand::{thread_rng, Rng};
+    use std::sync::mpsc;
+    use super::RoutingNode;
+
+    #[test]
+    fn cache() {
+        let (action_sender, action_receiver) = mpsc::channel::<Action>();
+        let (event_sender, _) = mpsc::channel::<Event>();
+        let mut node = RoutingNode::new(action_sender, action_receiver, event_sender, false, None);
+        node.set_immutable_data_cache(None, Some(10));
+        let mut data = [0u8; 64];
+        thread_rng().fill_bytes(&mut data);
+        let immutable = ImmutableData::new(ImmutableDataType::Normal,
+                           data.iter().map(|&x|x).collect::<Vec<_>>());
+        let immutable_data = Data::ImmutableData(immutable.clone());
+        let key_pair = crypto::sign::gen_keypair();
+        let sig = crypto::sign::sign_detached(&data, &key_pair.1);
+        let sign_token = SignedToken {
+             serialised_request : data.iter().map(|&x|x).collect::<Vec<_>>(),
+             signature : sig
+        };
+
+        let data_request = DataRequest::ImmutableData(immutable.name().clone(),
+                                                      immutable.get_type_tag().clone());
+
+        let response = ExternalResponse::Get(immutable_data, data_request.clone(),
+                                             Some(sign_token));
+        let request = ExternalRequest::Get(data_request);
+
+        assert!(node.handle_cache_get(request.clone()).is_none());
+        node.handle_cache_put(response);
+        assert!(node.handle_cache_get(request).is_some());
+    }
+}
