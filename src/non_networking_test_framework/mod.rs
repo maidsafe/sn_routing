@@ -27,7 +27,7 @@ use routing::immutable_data::ImmutableDataType;
 use routing::{ExternalRequest, ExternalResponse, NameType};
 use routing::error::{RoutingError, InterfaceError, ResponseError};
 
-
+#[derive(Clone)]
 pub struct MockRouting {
     sender: ::std::sync::mpsc::Sender<Event>,
     client_sender: ::std::sync::mpsc::Sender<Data>,  // for testing only

@@ -32,10 +32,10 @@
 // use std::error::Error;
 // use std::io::Read;
 
-#[test]
+// #[test]
 // This test requires the executable safe_vault is presented at the same place of the test get executed
 // also it depends a printout in routing lib. if such printout is changed / muted, this test needs to be updated
-fn executable_test() {
+// fn executable_test() {
     // let mut processes = Vec::new();
     // let num_of_nodes = 8;
     // let executable_path = match std::env::current_exe() {
@@ -70,4 +70,4 @@ fn executable_test() {
     //     }
     // }
     // assert_eq!(test_failed, false);
-}
+// }

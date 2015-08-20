@@ -75,27 +75,7 @@ pub struct Vault {
 
 impl Vault {
     pub fn run() {
-        use ::routing::event::Event;
-        let mut vault = Vault::new();
-
-        while let Ok(event) = vault.receiver.recv() {
-            match event {
-                Event::Request{ request, our_authority, from_authority, response_token } =>
-                    vault.on_request(request, our_authority, from_authority, response_token),
-                Event::Response{ response, our_authority, from_authority } =>
-                    vault.on_response(response, our_authority, from_authority),
-                Event::Refresh(type_tag, group_name, accounts) =>
-                    vault.on_refresh(type_tag, group_name, accounts),
-                Event::Churn(close_group) => vault.on_churn(close_group),
-                Event::Connected => vault.on_connected(),
-                Event::Disconnected => vault.on_disconnected(),
-                Event::FailedRequest(location, request, error) =>
-                    vault.on_failed_request(location, request, error),
-                Event::FailedResponse(location, response, error) =>
-                    vault.on_failed_response(location, response, error),
-                Event::Terminated => break,
-            };
-        }
+        Vault::new().do_run()
     }
 
     fn new() -> Vault {
@@ -114,6 +94,28 @@ impl Vault {
                 ::time::Duration::minutes(5), 1000),
             receiver: receiver,
             routing: get_new_routing(sender)
+        }
+    }
+
+    fn do_run(&mut self) {
+        use ::routing::event::Event;
+        while let Ok(event) = self.receiver.recv() {
+            match event {
+                Event::Request{ request, our_authority, from_authority, response_token } =>
+                    self.on_request(request, our_authority, from_authority, response_token),
+                Event::Response{ response, our_authority, from_authority } =>
+                    self.on_response(response, our_authority, from_authority),
+                Event::Refresh(type_tag, group_name, accounts) =>
+                    self.on_refresh(type_tag, group_name, accounts),
+                Event::Churn(close_group) => self.on_churn(close_group),
+                Event::Connected => self.on_connected(),
+                Event::Disconnected => self.on_disconnected(),
+                Event::FailedRequest(location, request, error) =>
+                    self.on_failed_request(location, request, error),
+                Event::FailedResponse(location, response, error) =>
+                    self.on_failed_response(location, response, error),
+                Event::Terminated => break,
+            };
         }
     }
 
@@ -446,6 +448,42 @@ pub type ResponseNotifier =
     // use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
     use routing_types::*;
+
+    #[cfg(not(feature = "use-actual-routing"))]
+    #[test]
+    fn put_get_flow() {
+        let run_vault = |mut vault: Vault| {
+            let _ = ::std::thread::spawn(move || {
+                vault.do_run();
+            });
+        };
+        let vault = Vault::new();
+        let mut routing = vault.routing.clone();
+        let _ = run_vault(vault);
+
+        let mut available_nodes = Vec::with_capacity(30);
+        for _ in 0..30 {
+            available_nodes.push(::routing::NameType(::routing::types::vector_as_u8_64_array(
+                ::routing::types::generate_random_vec_u8(64))));
+        }
+        routing.churn_event(available_nodes);
+
+        let client_name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
+            ::routing::types::generate_random_vec_u8(64)));
+        let sign_keys =  ::sodiumoxide::crypto::sign::gen_keypair();
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+            ::routing::immutable_data::ImmutableDataType::Normal, value);
+        routing.client_put(client_name, sign_keys.0,
+            ::routing::data::Data::ImmutableData(im_data.clone()));
+        ::std::thread::sleep_ms(5000);
+
+        let receiver = routing.client_get(client_name, sign_keys.0, im_data.name());
+        for it in receiver.iter() {
+            assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
+            break;
+        }
+    }
 
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
         let keys = crypto::sign::gen_keypair();
