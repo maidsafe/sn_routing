@@ -166,8 +166,8 @@ impl Vault {
         unimplemented!();
     }
 
-    fn on_churn(&mut self, /*close_group*/_: Vec<::routing::NameType>) {
-        unimplemented!();
+    fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
+        self.nodes_in_table = close_group;
     }
 
     fn on_connected(&mut self) {
