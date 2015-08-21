@@ -43,8 +43,6 @@ extern crate crust;
 extern crate routing;
 
 use std::io;
-use std::net::SocketAddr;
-use std::str::FromStr;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
@@ -56,11 +54,9 @@ use docopt::Docopt;
 use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
-use crust::Endpoint;
 use routing::routing::Routing;
 use routing::authority::Authority;
 use routing::NameType;
-use routing::error::RoutingError;
 use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
@@ -331,9 +327,11 @@ impl Client {
     fn handle_routing_event(&mut self, event : Event) {
         debug!("Client received routing event: {:?}", event);
         match event {
-            Event::Response{response, our_authority, from_authority} => {
+            Event::Response{
+                response, our_authority : _our_authority,
+                from_authority : _from_authority} => {
                 match response {
-                    ExternalResponse::Get(data, data_request, opt_signed_token) => {
+                    ExternalResponse::Get(data, _data_request, _opt_signed_token) => {
                         let plain_data = match data {
                             Data::PlainData(plain_data) => plain_data,
                             _ => {
@@ -348,7 +346,7 @@ impl Client {
                         };
                         println!("Got value {:?} on key {:?}", value, key);
                     },
-                    ExternalResponse::Put(response_error, opt_signed_token) => {
+                    ExternalResponse::Put(response_error, _opt_signed_token) => {
                         error!("Failed to store: {:?}", response_error);
                     },
                     _ => error!("Received external response {:?}, but not handled in example",
