@@ -984,7 +984,7 @@ impl RoutingNode {
         Ok(())
     }
 
-    // -----Message Handlers from Routing Table connections----------------------------------------
+    // ----- Message Handlers that return to the event channel ------------------------------------
 
     fn handle_external_response(&self, response       : ExternalResponse,
                                        to_authority   : Authority,
@@ -1009,8 +1009,21 @@ impl RoutingNode {
         Ok(())
     }
 
-    fn handle_refresh(&mut self, message: RoutingMessage, tag: u64, payload: Vec<u8>) -> RoutingResult {
-        unimplemented!()
+    fn handle_refresh(&mut self, type_tag      : u64,
+                                 payload       : Vec<u8>,
+                                 sender        : NameType,
+                                 our_authority : Authority,
+                                 payload       : Bytes) -> RoutingResult {
+        debug_assert!(our_authority.is_group());
+        // threshold
+        match self.refresh_accumulator.add_message(threshold,
+            type_tag.clone(),){
+            Some(vec_of_bytes) => {
+                let _ = self.event_sender.send(Event::Refresh(type_tag, our_authority.get))
+            },
+            None => {},
+        };
+        Ok(())
     }
 
     // ------ FIXME -------------------------------------------------------------------------------
