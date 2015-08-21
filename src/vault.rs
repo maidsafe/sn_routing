@@ -478,7 +478,9 @@ pub type ResponseNotifier =
             ::routing::data::Data::ImmutableData(im_data.clone()));
         ::std::thread::sleep_ms(2000);
 
-        routing.client_get(client_name, sign_keys.0, im_data.name());
+        let data_request = ::routing::data::DataRequest::ImmutableData(im_data.name(),
+            ::routing::immutable_data::ImmutableDataType::Normal);
+        routing.client_get(client_name, sign_keys.0, data_request);
         for it in receiver.iter() {
             assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
             break;
@@ -518,7 +520,8 @@ pub type ResponseNotifier =
             ::routing::data::Data::StructuredData(sd_new.clone()));
         ::std::thread::sleep_ms(2000);
 
-        routing.client_get(client_name, sign_keys.0, sd.name());
+        let data_request = ::routing::data::DataRequest::StructuredData(sd.name(), 0);
+        routing.client_get(client_name, sign_keys.0, data_request);
         for it in receiver.iter() {
             assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
             break;

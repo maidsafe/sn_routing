@@ -60,10 +60,15 @@ impl MockRouting {
 
     // -----------  the following methods are for testing purpose only   ------------- //
     pub fn client_get(&mut self, client_address: NameType,
-                      client_pub_key: crypto::sign::PublicKey, name: NameType) {
+                      client_pub_key: crypto::sign::PublicKey, data_request: DataRequest) {
+        let name = match data_request {
+            DataRequest::ImmutableData(name, _) => name,
+            DataRequest::StructuredData(name, _) => name,
+            _ => panic!("unexpected")
+        };
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(DataRequest::ImmutableData(name, ImmutableDataType::Normal)),
+            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(data_request),
                                                        our_authority: Authority::NaeManager(name),
                                                        from_authority: Authority::Client(client_address, client_pub_key),
                                                        response_token: None });
