@@ -101,8 +101,11 @@ impl Vault {
         use ::routing::event::Event;
         while let Ok(event) = self.receiver.recv() {
             match event {
-                Event::Request{ request, our_authority, from_authority, response_token } =>
-                    self.on_request(request, our_authority, from_authority, response_token),
+                Event::Request{ request, our_authority, from_authority, response_token } => {
+                    println!("request :  {:?}  ;  our_authority : {:?}  ;  from_authority : {:?}",
+                             request, our_authority, from_authority);
+                    self.on_request(request, our_authority, from_authority, response_token)
+                },
                 Event::Response{ response, our_authority, from_authority } =>
                     self.on_response(response, our_authority, from_authority),
                 Event::Refresh(type_tag, group_name, accounts) =>
@@ -124,7 +127,6 @@ impl Vault {
                   our_authority: ::routing::authority::Authority,
                   from_authority: ::routing::authority::Authority,
                   response_token: Option<::routing::SignedToken>) {
-        println!("vault on request");
         match request {
             ::routing::ExternalRequest::Get(data_request) => {
                 self.handle_get(our_authority, from_authority, data_request, response_token);
@@ -230,7 +232,7 @@ impl Vault {
                 }
             },
             Authority::ManagedNode(_) => {
-                println!("vault ManagedNode received get request");
+                println!("vault ManagedNode received get request from {:?}", from_authority);
                 match from_authority {
                     // drop the message if we don't have the data
                     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
