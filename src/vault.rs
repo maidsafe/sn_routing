@@ -165,18 +165,22 @@ impl Vault {
                   /*type_tag*/_: u64,
                   /*group_name*/_: ::routing::NameType,
                   /*accounts*/_: Vec<Vec<u8>>) {
+        println!("vault on refresh");
         unimplemented!();
     }
 
     fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
+        println!("vault on churn");
         self.nodes_in_table = close_group;
     }
 
     fn on_connected(&mut self) {
+        println!("vault on connected");
         unimplemented!();
     }
 
     fn on_disconnected(&mut self) {
+        println!("vault on disconnected");
         unimplemented!();
     }
 
@@ -184,6 +188,7 @@ impl Vault {
                          /*location*/_: Authority,
                          /*request*/_: ExternalRequest,
                          /*error*/_: InterfaceError) {
+        println!("vault on failed request");
         unimplemented!();
     }
 
@@ -191,6 +196,7 @@ impl Vault {
                           /*location*/_: Authority,
                           /*response*/_: ExternalResponse,
                           /*error*/_: InterfaceError) {
+        println!("vault on failed response");
         unimplemented!();
     }
 
@@ -499,33 +505,44 @@ pub type ResponseNotifier =
             let _ = run_vault(Vault::new());
             ::std::thread::sleep_ms(1000 + i * 1000);
         }
-        // let id = ::routing::id::Id::new();
         let (sender, receiver) = ::std::sync::mpsc::channel();
-        let mut client_routing = ::routing::routing::Routing::new_client(sender, None);
+        let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(Event)>| {
+            let _ = ::std::thread::spawn(move || {
+                println!("client routing starts listen");
+                while let Ok(event) = receiver.recv() {
+                    println!("client routing received an event");
+                    match event {
+                        // Event::Request{ request, our_authority, from_authority, response_token } =>
+                        //     println!("client received a request"),
+                        // Event::Response{ response, our_authority, from_authority } =>
+                        //     println!("client received a Response"),
+                        Event::Refresh(_type_tag, _group_name, _accounts) =>
+                            println!("client received a refresh"),
+                        Event::Churn(_close_group) => println!("client received a churn"),
+                        Event::Connected => {
+                            // client_routing.stop();
+                            println!("client connected");
+                        },
+                        Event::Disconnected => println!("client disconnected"),
+                        Event::FailedRequest(_location, _request, _error) =>
+                            println!("client received a failed request"),
+                        Event::FailedResponse(_location, _response, _error) =>
+                            println!("client received a failed response"),
+                        Event::Terminated => break,
+                        _ => { panic!("unexpected"); }
+                    };
+                }
+            });
+        };
+        let _ = client_receiving(receiver);
+        // let mut client_routing = ::routing::routing::Routing::new_client(sender, None);
+        let mut client_routing = ::routing::routing::Routing::new_client(sender, Some(::routing::id::Id::new()));
         println!("client routing created");
-        while let Ok(event) = receiver.recv() {
-            println!("client routing received an event");
-            match event {
-                // Event::Request{ request, our_authority, from_authority, response_token } =>
-                //     println!("client received a request"),
-                // Event::Response{ response, our_authority, from_authority } =>
-                //     println!("client received a Response"),
-                Event::Refresh(_type_tag, _group_name, _accounts) =>
-                    println!("client received a refresh"),
-                Event::Churn(_close_group) => println!("client received a churn"),
-                Event::Connected => {
-                    client_routing.stop();
-                    println!("client connected");
-                },
-                Event::Disconnected => println!("client disconnected"),
-                Event::FailedRequest(_location, _request, _error) =>
-                    println!("client received a failed request"),
-                Event::FailedResponse(_location, _response, _error) =>
-                    println!("client received a failed response"),
-                Event::Terminated => break,
-                _ => { panic!("unexpected"); }
-            };
-        }
+        // let _ = thread_guard.join();
+        ::std::thread::sleep_ms(5000);
+        client_routing.stop();
+        ::std::thread::sleep_ms(5000);
+        println!("test completed");
     }
 
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
