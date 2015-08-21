@@ -101,11 +101,8 @@ impl Vault {
         use ::routing::event::Event;
         while let Ok(event) = self.receiver.recv() {
             match event {
-                Event::Request{ request, our_authority, from_authority, response_token } => {
-                    println!("request :  {:?}  ;  our_authority : {:?}  ;  from_authority : {:?}",
-                             request, our_authority, from_authority);
-                    self.on_request(request, our_authority, from_authority, response_token)
-                },
+                Event::Request{ request, our_authority, from_authority, response_token } =>
+                    self.on_request(request, our_authority, from_authority, response_token),
                 Event::Response{ response, our_authority, from_authority } =>
                     self.on_response(response, our_authority, from_authority),
                 Event::Refresh(type_tag, group_name, accounts) =>
@@ -148,7 +145,6 @@ impl Vault {
                    response: ::routing::ExternalResponse,
                    our_authority: ::routing::authority::Authority,
                    from_authority: ::routing::authority::Authority) {
-        println!("vault as {:?} received response from {:?}", our_authority, from_authority);
         match response {
             ::routing::ExternalResponse::Get(data, _, response_token) => {
                 self.handle_get_response(our_authority, from_authority, data, response_token);
@@ -169,22 +165,18 @@ impl Vault {
                   /*type_tag*/_: u64,
                   /*group_name*/_: ::routing::NameType,
                   /*accounts*/_: Vec<Vec<u8>>) {
-        println!("vault on refresh");
         unimplemented!();
     }
 
     fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
-        println!("vault on churn");
         self.nodes_in_table = close_group;
     }
 
     fn on_connected(&mut self) {
-        println!("vault on connected");
         unimplemented!();
     }
 
     fn on_disconnected(&mut self) {
-        println!("vault on disconnected");
         unimplemented!();
     }
 
@@ -192,7 +184,6 @@ impl Vault {
                          /*location*/_: Authority,
                          /*request*/_: ExternalRequest,
                          /*error*/_: InterfaceError) {
-        println!("vault on failed request");
         unimplemented!();
     }
 
@@ -200,7 +191,6 @@ impl Vault {
                           /*location*/_: Authority,
                           /*response*/_: ExternalResponse,
                           /*error*/_: InterfaceError) {
-        println!("vault on failed response");
         unimplemented!();
     }
 
@@ -211,7 +201,6 @@ impl Vault {
                   response_token: Option<::routing::SignedToken>) {
         let returned_actions = match our_authority {
             Authority::NaeManager(name) => {
-                println!("vault NaeManager received get request for data {:}", name);
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to
                 // them are both from Node
                 match data_request.clone() {
@@ -232,19 +221,11 @@ impl Vault {
                 }
             },
             Authority::ManagedNode(_) => {
-                println!("vault ManagedNode received get request from {:?}", from_authority);
-                match data_request.clone() {
-                    DataRequest::ImmutableData(name, _) => {
-                        from_authority = Authority::NaeManager(name.clone());
-                        self.pmid_node.handle_get(name)
-                    },
+                match from_authority {
+                    // drop the message if we don't have the data
+                    Authority::NaeManager(name) => self.pmid_node.handle_get(name),
                     _ => Ok(vec![]),
                 }
-                // match from_authority {
-                //     // drop the message if we don't have the data
-                //     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
-                //     _ => Ok(vec![]),
-                // }
             },
             _ => Ok(vec![]),
         };
@@ -437,16 +418,13 @@ impl Vault {
         for action in actions {
             match action {
                 MethodCall::Get { location, data_request } => {
-                    println!("vault send get request");
                     self.routing.get_request(location, data_request);
                 },
                 MethodCall::Put { location, content } => {
-                    println!("vault send put request");
                     self.routing.put_request(location, content);
                 },
                 MethodCall::Reply { data } => {
                     if reply_to != None && original_data_request != None {
-                        println!("vault send reply to {:?}", reply_to.clone().unwrap());
                         self.routing.get_response(reply_to.clone().unwrap(), data,
                             original_data_request.clone().unwrap(), response_token.clone());
                     }
@@ -526,9 +504,7 @@ pub type ResponseNotifier =
         let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(Event)>,
                                 client_sender: ::std::sync::mpsc::Sender<(Data)>| {
             let _ = ::std::thread::spawn(move || {
-                println!("client routing starts listen");
                 while let Ok(event) = receiver.recv() {
-                    println!("client routing received an event");
                     match event {
                         Event::Request{ request, our_authority, from_authority, response_token } =>
                             println!("as {:?} received request: {:?} from {:?} having token {:?}",
@@ -546,10 +522,7 @@ pub type ResponseNotifier =
                         Event::Refresh(_type_tag, _group_name, _accounts) =>
                             println!("client received a refresh"),
                         Event::Churn(_close_group) => println!("client received a churn"),
-                        Event::Connected => {
-                            // client_routing.stop();
-                            println!("client connected");
-                        },
+                        Event::Connected => println!("client connected"),
                         Event::Disconnected => println!("client disconnected"),
                         Event::FailedRequest(_location, _request, _error) =>
                             println!("client received a failed request"),
@@ -564,20 +537,18 @@ pub type ResponseNotifier =
             });
         };
         let _ = client_receiving(receiver, client_sender);
-        // let mut client_routing = ::routing::routing::Routing::new_client(sender, None);
-        let client_routing = ::routing::routing::Routing::new_client(sender, Some(::routing::id::Id::new()));
-        println!("client routing created");
-        // let _ = thread_guard.join();
+        let id = ::routing::id::Id::new();
+        let client_name = id.name();
+        let client_routing = ::routing::routing::Routing::new_client(sender, Some(id));
         ::std::thread::sleep_ms(1000);
 
-        let client_name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
-            ::routing::types::generate_random_vec_u8(64)));
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
             ::routing::immutable_data::ImmutableDataType::Normal, value);
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         ::std::thread::sleep_ms(2000);
+
         client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
