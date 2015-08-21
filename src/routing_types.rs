@@ -44,12 +44,6 @@ pub enum MethodCall {
     Reply { data: Data },
 }
 
-/// For account transfer usage
-pub trait Mergeable {
-	/// For account transfer usage
-    fn merge<'a, I>(xs: I) -> Option<Self> where I: Iterator<Item=&'a Self>;
-}
-
 /// This trait is required for any type of message to be
 /// passed to routing, refresh / account transfer is optional
 /// The name will let routing know its a NaeManager and the owner will allow routing to hash

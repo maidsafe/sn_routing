@@ -18,19 +18,17 @@
 use routing_types::*;
 
 #[cfg(feature = "use-actual-routing")]
-type Routing = ::std::sync::Arc<::std::sync::Mutex<::routing::routing::Routing>>;
+type Routing = ::routing::routing::Routing;
 #[cfg(feature = "use-actual-routing")]
 fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
-    let routing = ::routing::routing::Routing::new(event_sender);
-    ::std::sync::Arc::new(::std::sync::Mutex::new(routing))
+    ::routing::routing::Routing::new(event_sender)
 }
 
 #[cfg(not(feature = "use-actual-routing"))]
-type Routing = ::std::sync::Arc<::std::sync::Mutex<::non_networking_test_framework::MockRouting>>;
+type Routing = ::non_networking_test_framework::MockRouting;
 #[cfg(not(feature = "use-actual-routing"))]
 fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
-    let mock_routing = ::non_networking_test_framework::MockRouting::new(event_sender);
-    ::std::sync::Arc::new(::std::sync::Mutex::new(mock_routing))
+    ::non_networking_test_framework::MockRouting::new(event_sender)
 }
 
 #[allow(dead_code)]
@@ -76,7 +74,11 @@ pub struct Vault {
 }
 
 impl Vault {
-    pub fn new() -> Vault {
+    pub fn run() {
+        Vault::new().do_run()
+    }
+
+    fn new() -> Vault {
         ::sodiumoxide::init();
         let (sender, receiver) = ::std::sync::mpsc::channel();
         Vault {
@@ -95,7 +97,7 @@ impl Vault {
         }
     }
 
-    pub fn run(&mut self) {
+    fn do_run(&mut self) {
         use ::routing::event::Event;
         while let Ok(event) = self.receiver.recv() {
             match event {
@@ -412,19 +414,19 @@ impl Vault {
     fn send(&mut self, actions: Vec<MethodCall>,
             response_token: Option<::routing::SignedToken>,
             reply_to: Option<Authority>,
-            ori_data_request: Option<DataRequest>) {
+            original_data_request: Option<DataRequest>) {
         for action in actions {
             match action {
                 MethodCall::Get { location, data_request } => {
-                    let _ = self.routing.lock().unwrap().get_request(location, data_request);
+                    self.routing.get_request(location, data_request);
                 },
                 MethodCall::Put { location, content } => {
-                    let _ = self.routing.lock().unwrap().put_request(location, content);
+                    self.routing.put_request(location, content);
                 },
                 MethodCall::Reply { data } => {
-                    if reply_to != None && ori_data_request != None {
-                        let _ = self.routing.lock().unwrap().get_response(reply_to.clone().unwrap(),
-                                    data, ori_data_request.clone().unwrap(), response_token.clone());
+                    if reply_to != None && original_data_request != None {
+                        self.routing.get_response(reply_to.clone().unwrap(), data,
+                            original_data_request.clone().unwrap(), response_token.clone());
                     }
                 },
                 _ => {}
@@ -441,10 +443,6 @@ pub type ResponseNotifier =
  mod test {
     use cbor;
     use sodiumoxide::crypto;
-    #[cfg(not(feature = "use-actual-routing"))]
-    use std::thread;
-    #[cfg(not(feature = "use-actual-routing"))]
-    use std::thread::spawn;
 
     use super::*;
     // use data_manager;
@@ -455,31 +453,35 @@ pub type ResponseNotifier =
     #[test]
     fn put_get_flow() {
         let run_vault = |mut vault: Vault| {
-            let _ = spawn(move || {
-                vault.run();
+            let _ = ::std::thread::spawn(move || {
+                vault.do_run();
             });
         };
-        let vault = Vault::new();
-        let routing_mutex_clone = vault.routing.clone();
+        let mut vault = Vault::new();
+        let receiver = vault.routing.get_client_receiver();
+        let mut routing = vault.routing.clone();
         let _ = run_vault(vault);
 
         let mut available_nodes = Vec::with_capacity(30);
         for _ in 0..30 {
-            available_nodes.push(NameType(vector_as_u8_64_array(generate_random_vec_u8(64))));
+            available_nodes.push(::routing::NameType(::routing::types::vector_as_u8_64_array(
+                ::routing::types::generate_random_vec_u8(64))));
         }
-        routing_mutex_clone.lock().unwrap().churn_event(available_nodes);
+        routing.churn_event(available_nodes);
 
-        let client_name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
-        let sign_keys =  crypto::sign::gen_keypair();
-        let value = generate_random_vec_u8(1024);
-        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
-        routing_mutex_clone.lock().unwrap().client_put(client_name, sign_keys.0,
-                                                       Data::ImmutableData(im_data.clone()));
-        thread::sleep_ms(5000);
+        let client_name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
+            ::routing::types::generate_random_vec_u8(64)));
+        let sign_keys =  ::sodiumoxide::crypto::sign::gen_keypair();
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+            ::routing::immutable_data::ImmutableDataType::Normal, value);
+        routing.client_put(client_name, sign_keys.0,
+            ::routing::data::Data::ImmutableData(im_data.clone()));
+        ::std::thread::sleep_ms(2000);
 
-        let receiver = routing_mutex_clone.lock().unwrap().client_get(client_name, sign_keys.0, im_data.name());
+        routing.client_get(client_name, sign_keys.0, im_data.name());
         for it in receiver.iter() {
-            assert_eq!(it, Data::ImmutableData(im_data));
+            assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
             break;
         }
     }

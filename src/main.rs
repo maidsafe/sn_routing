@@ -32,6 +32,8 @@
 
 // Non-MaidSafe crates
 extern crate cbor;
+#[cfg(test)]
+extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate tempdir;
@@ -57,6 +59,5 @@ mod non_networking_test_framework;
 
 /// Runs a SAFE Network vault
 pub fn main () {
-    let mut vault = ::vault::Vault::new();
-    vault.run();
+    ::vault::Vault::run();
 }
