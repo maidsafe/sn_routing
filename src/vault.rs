@@ -124,6 +124,7 @@ impl Vault {
                   our_authority: ::routing::authority::Authority,
                   from_authority: ::routing::authority::Authority,
                   response_token: Option<::routing::SignedToken>) {
+        println!("vault on request");
         match request {
             ::routing::ExternalRequest::Get(data_request) => {
                 self.handle_get(our_authority, from_authority, data_request, response_token);
@@ -145,6 +146,7 @@ impl Vault {
                    response: ::routing::ExternalResponse,
                    our_authority: ::routing::authority::Authority,
                    from_authority: ::routing::authority::Authority) {
+        println!("vault on response");
         match response {
             ::routing::ExternalResponse::Get(data, _, response_token) => {
                 self.handle_get_response(our_authority, from_authority, data, response_token);
@@ -207,6 +209,7 @@ impl Vault {
                   response_token: Option<::routing::SignedToken>) {
         let returned_actions = match our_authority {
             Authority::NaeManager(name) => {
+                println!("vault NaeManager received get request for data {:}", name);
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to
                 // them are both from Node
                 match data_request.clone() {
@@ -227,6 +230,7 @@ impl Vault {
                 }
             },
             Authority::ManagedNode(_) => {
+                println!("vault ManagedNode received get request");
                 match from_authority {
                     // drop the message if we don't have the data
                     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
@@ -424,12 +428,15 @@ impl Vault {
         for action in actions {
             match action {
                 MethodCall::Get { location, data_request } => {
+                    println!("vault send get request");
                     self.routing.get_request(location, data_request);
                 },
                 MethodCall::Put { location, content } => {
+                    println!("vault send put request");
                     self.routing.put_request(location, content);
                 },
                 MethodCall::Reply { data } => {
+                    println!("vault send reply");
                     if reply_to != None && original_data_request != None {
                         self.routing.get_response(reply_to.clone().unwrap(), data,
                             original_data_request.clone().unwrap(), response_token.clone());
@@ -536,13 +543,23 @@ pub type ResponseNotifier =
         };
         let _ = client_receiving(receiver);
         // let mut client_routing = ::routing::routing::Routing::new_client(sender, None);
-        let mut client_routing = ::routing::routing::Routing::new_client(sender, Some(::routing::id::Id::new()));
+        let client_routing = ::routing::routing::Routing::new_client(sender, Some(::routing::id::Id::new()));
         println!("client routing created");
         // let _ = thread_guard.join();
-        ::std::thread::sleep_ms(5000);
-        client_routing.stop();
-        ::std::thread::sleep_ms(5000);
-        println!("test completed");
+        ::std::thread::sleep_ms(1000);
+
+        let client_name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
+            ::routing::types::generate_random_vec_u8(64)));
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+            ::routing::immutable_data::ImmutableDataType::Normal, value);
+        client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
+                                   ::routing::data::Data::ImmutableData(im_data.clone()));
+        ::std::thread::sleep_ms(2000);
+        client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
+            ::routing::data::DataRequest::ImmutableData(im_data.name(),
+                ::routing::immutable_data::ImmutableDataType::Normal));
+        ::std::thread::sleep_ms(2000);
     }
 
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
