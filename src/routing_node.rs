@@ -83,10 +83,10 @@ pub struct RoutingNode {
     public_id_cache       : LruCache<NameType, PublicId>,
     connection_cache      : BTreeMap<NameType, SteadyTime>,
     accumulator           : MessageAccumulator,
+    refresh_accumulator   : RefreshAccumulator,
     immutable_data_cache  : Option<LruCache<NameType, ImmutableData>>,
     plain_data_cache      : Option<LruCache<NameType, PlainData>>,
     structured_data_cache : Option<LruCache<(NameType, u64), StructuredData>>,
-    // refresh_accumulator : RefreshAccumulator,
 }
 
 impl RoutingNode {
@@ -118,9 +118,10 @@ impl RoutingNode {
             public_id_cache       : LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_cache      : BTreeMap::new(),
             accumulator           : MessageAccumulator::new(),
+            refresh_accumulator   : RefreshAccumulator::new(),
             immutable_data_cache  : None,
             plain_data_cache      : None,
-            structured_data_cache : None
+            structured_data_cache : None,
         }
     }
 
