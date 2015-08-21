@@ -130,10 +130,10 @@ impl Vault {
             },
             ::routing::ExternalRequest::Put(data) => {
                 // TODO - remove 'let _ = '
-                let _ = self.handle_put(our_authority, from_authority, data, response_token);
+                self.handle_put(our_authority, from_authority, data, response_token);
             },
-            ::routing::ExternalRequest::Post(/*data*/_) => {
-                unimplemented!();
+            ::routing::ExternalRequest::Post(data) => {
+                self.handle_post(our_authority, from_authority, data, response_token);
             },
             ::routing::ExternalRequest::Delete(/*data*/_) => {
                 unimplemented!();
@@ -236,7 +236,7 @@ impl Vault {
 
     fn handle_put(&mut self,
                   our_authority: Authority,
-                  _: Authority,
+                  _from_authority: Authority,
                   data: Data,
                   response_token: Option<::routing::SignedToken>) {
         let returned_actions = match our_authority {
@@ -261,26 +261,25 @@ impl Vault {
     }
 
     // Post is only used to update the content or owners of a StructuredData
-    #[allow(dead_code)]
     fn handle_post(&mut self,
                    our_authority: Authority,
-                   _: Authority, // from_authority
+                   _from_authority: Authority,
                    data: Data,
-                   _: Option<::routing::SignedToken>) ->
-            Result<Vec<MethodCall>, ResponseError> {
-        match our_authority {
+                   response_token: Option<::routing::SignedToken>) {
+        let returned_actions = match our_authority {
             Authority::NaeManager(_) => {
                 match data {
-                    Data::StructuredData(data) => { return self.sd_manager.handle_post(data); }
-                    _ => {}
+                    Data::StructuredData(data) => self.sd_manager.handle_post(data),
+                    _ => Ok(vec![]),
                 }
             }
-            _ => {}
+            _ => Ok(vec![]),
+        };
+        if let Ok(actions) = returned_actions {
+            self.send(actions, response_token, None, None);
         }
-        Err(ResponseError::InvalidRequest(data))
     }
 
-    #[allow(dead_code)]
     fn handle_get_response(&mut self,
                            our_authority: Authority,
                            _from_authority: Authority,
@@ -486,6 +485,47 @@ pub type ResponseNotifier =
         }
     }
 
+    #[cfg(not(feature = "use-actual-routing"))]
+    #[test]
+    fn post_flow() {
+        let run_vault = |mut vault: Vault| {
+            let _ = ::std::thread::spawn(move || {
+                vault.do_run();
+            });
+        };
+        let mut vault = Vault::new();
+        let receiver = vault.routing.get_client_receiver();
+        let mut routing = vault.routing.clone();
+        let _ = run_vault(vault);
+
+        let name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
+            ::routing::types::generate_random_vec_u8(64)));
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let sign_keys =  ::sodiumoxide::crypto::sign::gen_keypair();
+        let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
+            value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+
+        let client_name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
+            ::routing::types::generate_random_vec_u8(64)));
+        routing.client_put(client_name, sign_keys.0,
+            ::routing::data::Data::StructuredData(sd.clone()));
+        ::std::thread::sleep_ms(2000);
+
+        let keys =  ::sodiumoxide::crypto::sign::gen_keypair();
+        let sd_new = ::routing::structured_data::StructuredData::new(0, name, 1,
+            value.clone(), vec![keys.0], vec![sign_keys.0], Some(&sign_keys.1)).ok().unwrap();
+        routing.client_post(client_name, sign_keys.0,
+            ::routing::data::Data::StructuredData(sd_new.clone()));
+        ::std::thread::sleep_ms(2000);
+
+        routing.client_get(client_name, sign_keys.0, sd.name());
+        for it in receiver.iter() {
+            assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
+            break;
+        }
+    }
+
+
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
         let keys = crypto::sign::gen_keypair();
         let _put_result = vault.handle_put(Authority::ClientManager(client),
@@ -554,10 +594,9 @@ pub type ResponseNotifier =
     }
 
     fn sd_manager_post(vault: &mut Vault, sdv: StructuredData) {
-        let post_result = vault.handle_post(Authority::NaeManager(sdv.name()),
+        vault.handle_post(Authority::NaeManager(sdv.name()),
                                             Authority::ManagedNode(NameType::new([7u8; 64])),
                                             Data::StructuredData(sdv.clone()), None);
-        assert_eq!(post_result.is_ok(), true);
     }
 
     fn sd_manager_get(vault: &mut Vault, name: NameType, _sd_expected: StructuredData) {
