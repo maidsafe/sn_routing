@@ -41,7 +41,7 @@ impl MockRouting {
         let mock_routing = MockRouting {
             sender: event_sender,
             client_sender: client_sender,
-            network_delay_ms: 1000,
+            network_delay_ms: 200,
         };
 
         mock_routing
@@ -52,9 +52,15 @@ impl MockRouting {
         self.network_delay_ms = delay_ms;
     }
 
+    pub fn get_client_receiver(&mut self) -> ::std::sync::mpsc::Receiver<Data> {
+        let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
+        self.client_sender = client_sender;
+        client_receiver
+    }
+
     // -----------  the following methods are for testing purpose only   ------------- //
-    pub fn client_get(&mut self, client_address: NameType, client_pub_key: crypto::sign::PublicKey,
-                      name: NameType) -> ::std::sync::mpsc::Receiver<Data> {
+    pub fn client_get(&mut self, client_address: NameType,
+                      client_pub_key: crypto::sign::PublicKey, name: NameType) {
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(DataRequest::ImmutableData(name, ImmutableDataType::Normal)),
@@ -62,9 +68,6 @@ impl MockRouting {
                                                        from_authority: Authority::Client(client_address, client_pub_key),
                                                        response_token: None });
         });
-        let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
-        self.client_sender = client_sender;
-        client_receiver
     }
 
     pub fn client_put(&mut self, client_address: NameType,

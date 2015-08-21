@@ -457,7 +457,8 @@ pub type ResponseNotifier =
                 vault.do_run();
             });
         };
-        let vault = Vault::new();
+        let mut vault = Vault::new();
+        let receiver = vault.routing.get_client_receiver();
         let mut routing = vault.routing.clone();
         let _ = run_vault(vault);
 
@@ -476,13 +477,13 @@ pub type ResponseNotifier =
             ::routing::immutable_data::ImmutableDataType::Normal, value);
         routing.client_put(client_name, sign_keys.0,
             ::routing::data::Data::ImmutableData(im_data.clone()));
-        ::std::thread::sleep_ms(5000);
+        ::std::thread::sleep_ms(2000);
 
-        let _receiver = routing.client_get(client_name, sign_keys.0, im_data.name());
-        // for it in receiver.iter() {
-        //     assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
-        //     break;
-        // }
+        routing.client_get(client_name, sign_keys.0, im_data.name());
+        for it in receiver.iter() {
+            assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
+            break;
+        }
     }
 
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
