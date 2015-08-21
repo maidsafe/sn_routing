@@ -486,6 +486,48 @@ pub type ResponseNotifier =
         }
     }
 
+    #[cfg(feature = "use-actual-routing")]
+    #[test]
+    fn network_test() {
+        let run_vault = |mut vault: Vault| {
+            let _ = ::std::thread::spawn(move || {
+                vault.do_run();
+            });
+        };
+        for i in 0..4 {
+            println!("starting node {:?}", i);
+            let _ = run_vault(Vault::new());
+            ::std::thread::sleep_ms(1000 + i * 1000);
+        }
+        // let id = ::routing::id::Id::new();
+        let (sender, receiver) = ::std::sync::mpsc::channel();
+        let mut client_routing = ::routing::routing::Routing::new_client(sender, None);
+        println!("client routing created");
+        while let Ok(event) = receiver.recv() {
+            println!("client routing received an event");
+            match event {
+                // Event::Request{ request, our_authority, from_authority, response_token } =>
+                //     println!("client received a request"),
+                // Event::Response{ response, our_authority, from_authority } =>
+                //     println!("client received a Response"),
+                Event::Refresh(_type_tag, _group_name, _accounts) =>
+                    println!("client received a refresh"),
+                Event::Churn(_close_group) => println!("client received a churn"),
+                Event::Connected => {
+                    client_routing.stop();
+                    println!("client connected");
+                },
+                Event::Disconnected => println!("client disconnected"),
+                Event::FailedRequest(_location, _request, _error) =>
+                    println!("client received a failed request"),
+                Event::FailedResponse(_location, _response, _error) =>
+                    println!("client received a failed response"),
+                Event::Terminated => break,
+                _ => { panic!("unexpected"); }
+            };
+        }
+    }
+
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
         let keys = crypto::sign::gen_keypair();
         let _put_result = vault.handle_put(Authority::ClientManager(client),
