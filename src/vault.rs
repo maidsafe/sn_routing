@@ -596,53 +596,6 @@ pub type ResponseNotifier =
         // }
     }
 
-    fn sd_manager_post(vault: &mut Vault, sdv: StructuredData) {
-        vault.handle_post(Authority::NaeManager(sdv.name()),
-                                            Authority::ManagedNode(NameType::new([7u8; 64])),
-                                            Data::StructuredData(sdv.clone()), None);
-    }
-
-    fn sd_manager_get(vault: &mut Vault, name: NameType, _sd_expected: StructuredData) {
-        let _get_result = vault.handle_get(Authority::NaeManager(name),
-                                          Authority::ManagedNode(NameType::new([7u8; 64])),
-                                          DataRequest::StructuredData(name, 0), None);
-        // assert_eq!(get_result.is_ok(), true);
-        // let mut calls = get_result.ok().unwrap();
-        // assert_eq!(calls.len(), 1);
-        // match calls.remove(0) {
-        //     MethodCall::Reply { data } => {
-        //         match data {
-        //             Data::StructuredData(sd) => {
-        //                 assert_eq!(sd, sd_expected);
-        //             }
-        //             _ => panic!("Unexpected"),
-        //         }
-        //     }
-        //     _ => panic!("Unexpected"),
-        // }
-    }
-
-
-    #[test]
-    fn structured_data_put_post_get() {
-        let mut vault = Vault::new();
-
-        let name = NameType([3u8; 64]);
-        let value = generate_random_vec_u8(1024);
-        let keys1 = crypto::sign::gen_keypair();
-        let sd = StructuredData::new(0, name, 0, value.clone(), vec![keys1.0], vec![],
-                                     Some(&keys1.1)).ok().unwrap();
-
-        sd_manager_put(&mut vault, sd.clone());
-
-        let keys2 = crypto::sign::gen_keypair();
-        let sd_new = StructuredData::new(0, name, 1, value.clone(), vec![keys2.0], vec![keys1.0],
-                                         Some(&keys1.1)).ok().unwrap();
-        sd_manager_post(&mut vault, sd_new.clone());
-
-        sd_manager_get(&mut vault, StructuredData::compute_name(0, &name), sd_new);
-    }
-
     #[test]
     fn churn_test() {
         let mut vault = Vault::new();
