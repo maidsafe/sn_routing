@@ -196,7 +196,7 @@ impl Vault {
 
     fn handle_get(&mut self,
                   our_authority: Authority,
-                  mut from_authority: Authority,
+                  from_authority: Authority,
                   data_request: DataRequest,
                   response_token: Option<::routing::SignedToken>) {
         let returned_actions = match our_authority {
