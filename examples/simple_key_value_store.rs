@@ -19,26 +19,24 @@
 //!      starting a passive node:       simple_key_value_store --node
 //!      starting an interactive node:  simple_key_value_store
 
-//#![forbid(bad_style, warnings)]
-//#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
-//        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-//        private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
-//        unconditional_recursion, unknown_lints, unsafe_code, unused,
-//        unused_allocation, unused_attributes, unused_comparisons, unused_features, unused_parens,
-//        while_true)]
-//#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-//        unused_qualifications, unused_results, variant_size_differences)]
+#![forbid(bad_style, warnings)]
+#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+       non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
+       private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
+       unconditional_recursion, unknown_lints, unsafe_code, unused,
+       unused_allocation, unused_attributes, unused_comparisons, unused_features, unused_parens,
+       while_true)]
+#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+       unused_qualifications, unused_results, variant_size_differences)]
 
 #[macro_use]
 extern crate log;
 extern crate env_logger;
 
-extern crate cbor;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 
-extern crate crust;
 extern crate routing;
 
 use std::io;
@@ -195,7 +193,7 @@ impl Node {
 
         match our_authority {
             Authority::NaeManager(_) => {
-                self.db.insert(plain_data.name(), plain_data);
+                let _ = self.db.insert(plain_data.name(), plain_data);
             },
             _ => {
                 println!("Node: Unexpected our_authority ({:?})", our_authority);
@@ -252,7 +250,7 @@ impl Client {
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
-        thread::spawn(move || { Client::read_user_commands(command_sender); });
+        let _ = spawn(move || { Client::read_user_commands(command_sender); });
 
         Client {
             routing          : routing,
