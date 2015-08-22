@@ -206,7 +206,7 @@ impl RoutingCore {
                         if trigger_churn {
                             let mut close_group : Vec<NameType> = routing_table
                                     .our_close_group().iter()
-                                    .map(|node_info| node_info.fob.name())
+                                    .map(|node_info| node_info.public_id.name())
                                     .collect::<Vec<NameType>>();
                             close_group.insert(0, self.id.name());
                             let _ = self.event_sender.send(Event::Churn(close_group));
@@ -256,7 +256,7 @@ impl RoutingCore {
                                 if added && trigger_churn {
                                     let mut close_group : Vec<NameType> = routing_table
                                         .our_close_group().iter()
-                                        .map(|node_info| node_info.fob.name())
+                                        .map(|node_info| node_info.public_id.name())
                                         .collect::<Vec<NameType>>();
                                     close_group.insert(0, self.id.name());
                                     let _ = self.event_sender.send(Event::Churn(close_group));
@@ -447,7 +447,7 @@ impl RoutingCore {
             Some(ref routing_table) => {
                 let mut close_group : Vec<NameType> = routing_table
                         .our_close_group().iter()
-                        .map(|node_info| node_info.fob.name())
+                        .map(|node_info| node_info.public_id.name())
                         .collect::<Vec<NameType>>();
                 close_group.insert(0, self.id.name());
                 Some(close_group)
@@ -464,7 +464,7 @@ impl RoutingCore {
             Some(ref routing_table) => {
                 let mut close_group : Vec<PublicId> = routing_table
                         .our_close_group().iter()
-                        .map(|node_info| node_info.fob.clone())
+                        .map(|node_info| node_info.public_id.clone())
                         .collect::<Vec<PublicId>>();
                 close_group.insert(0, PublicId::new(&self.id));
                 Some(close_group)

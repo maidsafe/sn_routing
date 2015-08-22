@@ -32,7 +32,7 @@ static OPTIMAL_SIZE: usize = 64;
 
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
-    pub fob: PublicId,
+    pub public_id: PublicId,
     pub endpoints: Vec<Endpoint>,
     pub connected_endpoint: Option<Endpoint>,
     #[cfg(test)]
@@ -41,25 +41,25 @@ pub struct NodeInfo {
 
 impl NodeInfo {
     #[cfg(not(test))]
-    pub fn new(fob: PublicId, endpoints: Vec<Endpoint>,
+    pub fn new(public_id: PublicId, endpoints: Vec<Endpoint>,
                connected_endpoint: Option<Endpoint>) -> NodeInfo {
         NodeInfo {
-            fob: fob,
+            public_id: public_id,
             endpoints: endpoints,
             connected_endpoint: connected_endpoint,
         }
     }
     #[cfg(not(test))]
     pub fn id(&self) -> NameType {
-        self.fob.name()
+        self.public_id.name()
     }
 
     #[cfg(test)]
-    pub fn new(fob: PublicId, endpoints: Vec<Endpoint>,
+    pub fn new(public_id: PublicId, endpoints: Vec<Endpoint>,
                connected_endpoint: Option<Endpoint>) -> NodeInfo {
-        let id = fob.name();
+        let id = public_id.name();
         NodeInfo {
-            fob: fob,
+            public_id: public_id,
             endpoints: endpoints,
             connected_endpoint: connected_endpoint,
             id: id,
@@ -277,7 +277,7 @@ impl RoutingTable {
     // pub fn public_id(&self, their_id: &NameType)->Option<PublicId> {
     //     debug_assert!(self.is_nodes_sorted(), "RT::public_id: Nodes are not sorted");
     //     match self.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
-    //         Some(node) => Some(node.fob.clone()),
+    //         Some(node) => Some(node.public_id.clone()),
     //         None => None,
     //     }
     // }
@@ -591,7 +591,7 @@ mod test {
         fn public_id(&self, their_id: &NameType)->Option<PublicId> {
             debug_assert!(self.table.is_nodes_sorted(), "RT::public_id: Nodes are not sorted");
             match self.table.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
-                Some(node) => Some(node.fob.clone()),
+                Some(node) => Some(node.public_id.clone()),
                 None => None,
             }
         }
@@ -619,7 +619,7 @@ mod test {
         let public_id = PublicId::new(&Id::new());
         NodeInfo {
             id: public_id.name(),
-            fob: public_id,
+            public_id: public_id,
             endpoints: random_endpoints(),
             connected_endpoint: None,
         }
@@ -1325,7 +1325,7 @@ mod test {
             Some(_) => {},
             None => panic!("PublicId None"),
         }
-        // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(),
+        // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_public_id.public_key(),
         //                                 *table_.GetPublicKey(info_.id())));
         match table_unit_test.public_id(
                 &table_unit_test.buckets[table_unit_test.buckets.len() - 1].far_contact) {
@@ -1351,7 +1351,7 @@ mod test {
             Some(_) => panic!("PublicId Exits"),
             None => {},
         }
-        // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_fob.public_key(),
+        // EXPECT_TRUE(asymm::MatchingKeys(info_.dht_public_id.public_key(),
         //                                 *table_.GetPublicKey(info_.id())));
         assert!(table_unit_test.our_id == table_unit_test.table.our_id);
         assert_eq!(RoutingTable::get_optimal_size(), table_unit_test.table.routing_table.len());
