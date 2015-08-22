@@ -28,7 +28,6 @@
 //        while_true)]
 //#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
 //        unused_qualifications, unused_results, variant_size_differences)]
-//#![feature(convert, core)]
 
 #[macro_use]
 extern crate log;
