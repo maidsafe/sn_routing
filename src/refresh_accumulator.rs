@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use lru_time_cache::LruCache;
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 use NameType;
 
 type Map<K,V> = BTreeMap<K,V>;
@@ -35,17 +35,16 @@ const MAX_REQUEST_COUNT: usize = 1000;
 impl RefreshAccumulator {
 
     pub fn new() -> RefreshAccumulator {
-        RefreshAccumulator {
-            requests: LruCache::with_capacity(MAX_REQUEST_COUNT),
-        }
+        RefreshAccumulator { requests: LruCache::with_capacity(MAX_REQUEST_COUNT) }
     }
 
     pub fn add_message(&mut self,
-                       threshold:    usize,
-                       type_tag:     u64,
-                       sender_node:  NameType,
+                       threshold: usize,
+                       type_tag: u64,
+                       sender_node: NameType,
                        sender_group: NameType,
-                       payload:      Bytes) -> Option<Vec<Bytes>> {
+                       payload: Bytes)
+                       -> Option<Vec<Bytes>> {
         let request = (sender_group, type_tag);
 
         {

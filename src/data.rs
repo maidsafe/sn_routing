@@ -26,23 +26,23 @@ use NameType;
 pub enum Data {
     StructuredData(StructuredData),
     ImmutableData(ImmutableData),
-    PlainData(PlainData)
+    PlainData(PlainData),
 }
 
 impl Data {
     pub fn name(&self) -> NameType {
         match *self {
             Data::StructuredData(ref d) => d.name(),
-            Data::ImmutableData(ref d)  => d.name(),
-            Data::PlainData(ref d)      => d.name(),
+            Data::ImmutableData(ref d) => d.name(),
+            Data::PlainData(ref d) => d.name(),
         }
     }
 
     pub fn payload_size(&self) -> usize {
         match *self {
             Data::StructuredData(ref d) => d.payload_size(),
-            Data::ImmutableData(ref d)  => d.payload_size(),
-            Data::PlainData(ref d)      => d.payload_size(),
+            Data::ImmutableData(ref d) => d.payload_size(),
+            Data::PlainData(ref d) => d.payload_size(),
         }
     }
 }
@@ -58,8 +58,8 @@ impl DataRequest {
     pub fn name(&self) -> NameType {
         match *self {
             DataRequest::StructuredData(ref name, tag) => StructuredData::compute_name(tag, name),
-            DataRequest::ImmutableData(ref name, _)  => name.clone(),
-            DataRequest::PlainData(ref name)         => name.clone(),
+            DataRequest::ImmutableData(ref name, _) => name.clone(),
+            DataRequest::PlainData(ref name) => name.clone(),
         }
     }
 }

@@ -51,7 +51,7 @@ impl NameType {
 
     // private function exposed in fmt Debug {:?} and Display {} traits
     fn get_debug_id(&self) -> String {
-      format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+        format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
               self.0[0],
               self.0[1],
               self.0[2],
@@ -63,23 +63,23 @@ impl NameType {
     // private function exposed in fmt LowerHex {:x} trait
     // note(ben): UpperHex explicitly not implemented to prevent mixed usage
     fn get_full_id(&self) -> String {
-      let mut full_id = String::with_capacity(2 * NAME_TYPE_LEN);
-      for char in self.0.iter() {
-        full_id.push_str(format!("{:02x}", char).as_str());
-      }
-      full_id
+        let mut full_id = String::with_capacity(2 * NAME_TYPE_LEN);
+        for char in self.0.iter() {
+            full_id.push_str(format!("{:02x}", char).as_str());
+        }
+        full_id
     }
 }
 
 impl fmt::Debug for NameType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      write!(f, "{}", self.get_debug_id())
+        write!(f, "{}", self.get_debug_id())
     }
 }
 
 impl fmt::Display for NameType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      write!(f, "{}", self.get_debug_id())
+        write!(f, "{}", self.get_debug_id())
     }
 }
 
@@ -129,30 +129,30 @@ pub fn closer_to_target_or_equal(lhs: &NameType, rhs: &NameType, target: &NameTy
 /// The `NameType` can be ordered from zero as a normal Euclidean number
 impl Ord for NameType {
     #[inline]
-    fn cmp(&self, other : &NameType) -> Ordering {
+    fn cmp(&self, other: &NameType) -> Ordering {
         Ord::cmp(&&self.0[..], &&other.0[..])
     }
 }
 
 impl PartialOrd for NameType {
     #[inline]
-    fn partial_cmp(&self, other : &NameType) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &NameType) -> Option<Ordering> {
         PartialOrd::partial_cmp(&&self.0[..], &&other.0[..])
     }
     #[inline]
-    fn lt(&self, other : &NameType) -> bool {
+    fn lt(&self, other: &NameType) -> bool {
         PartialOrd::lt(&&self.0[..], &&other.0[..])
     }
     #[inline]
-    fn le(&self, other : &NameType) -> bool {
+    fn le(&self, other: &NameType) -> bool {
         PartialOrd::le(&&self.0[..], &&other.0[..])
     }
     #[inline]
-    fn gt(&self, other : &NameType) -> bool {
+    fn gt(&self, other: &NameType) -> bool {
         PartialOrd::gt(&&self.0[..], &&other.0[..])
     }
     #[inline]
-    fn ge(&self, other : &NameType) -> bool {
+    fn ge(&self, other: &NameType) -> bool {
         PartialOrd::ge(&&self.0[..], &&other.0[..])
     }
 }
@@ -204,24 +204,22 @@ impl ::std::ops::Index<::std::ops::RangeFull> for NameType {
         b.index(_index)
     }
 }
-    
+
 
 impl Encodable for NameType {
-    fn encode<E: Encoder>(&self, encoder: &mut E)
-                -> Result<(), E::Error> {
-            encoder.emit_seq(NAME_TYPE_LEN, |encoder| {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
+        encoder.emit_seq(NAME_TYPE_LEN, |encoder| {
                 for (i, e) in self[..].iter().enumerate() {
                     try!(encoder.emit_seq_elt(i, |encoder| e.encode(encoder)))
                 }
                 Ok(())
             })
-        }
+    }
 }
 
 impl Decodable for NameType {
-    fn decode<D: Decoder>(decoder: &mut D)
-                    -> Result<NameType, D::Error> {
-            decoder.read_seq(|decoder, len| {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<NameType, D::Error> {
+        decoder.read_seq(|decoder, len| {
                 if len != NAME_TYPE_LEN {
                     return Err(decoder.error(
                         &format!("Expecting array of length: {}, but found {}",
