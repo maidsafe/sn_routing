@@ -22,29 +22,28 @@ use std::thread;
 use action::Action;
 
 pub struct WakeUpCaller {
-    action_sender : mpsc::Sender<Action>,
+    action_sender: mpsc::Sender<Action>,
 }
 
 impl WakeUpCaller {
-    pub fn new(action_sender : mpsc::Sender<Action>, ) -> WakeUpCaller {
-        WakeUpCaller {
-            action_sender : action_sender,
-        }
+    pub fn new(action_sender: mpsc::Sender<Action>) -> WakeUpCaller {
+        WakeUpCaller { action_sender: action_sender }
     }
 
-    pub fn start(&self, sleep_duration : u32) {
+    pub fn start(&self, sleep_duration: u32) {
         let action_sender_clone = self.action_sender.clone();
         spawn(move || {
-            loop {
-                thread::sleep_ms(sleep_duration);
-                match action_sender_clone.send(Action::WakeUp) {
-                    Ok(_) => {},
-                    Err(_) => {
-                        debug!("Failed to send Action::WakeUp. Stopped WakeUpCaller.");
-                        break; },
-                };
-            }
-        });
+                       loop {
+                           thread::sleep_ms(sleep_duration);
+                           match action_sender_clone.send(Action::WakeUp) {
+                               Ok(_) => {}
+                               Err(_) => {
+                                   debug!("Failed to send Action::WakeUp. Stopped WakeUpCaller.");
+                                   break;
+                               }
+                           };
+                       }
+                   });
     }
 
     // TODO (ben 16/08/2015) implement stop

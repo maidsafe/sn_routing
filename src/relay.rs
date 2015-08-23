@@ -37,17 +37,14 @@ const MAX_RELAY : usize = 100;
 /// we are relaying messages, when we are ourselves connected to the network.
 /// These have to identify as Client(sign::PublicKey)
 pub struct RelayMap {
-    relay_map  : BTreeMap<ConnectionName, Peer>,
-    lookup_map : HashMap<Endpoint, ConnectionName>,
+    relay_map: BTreeMap<ConnectionName, Peer>,
+    lookup_map: HashMap<Endpoint, ConnectionName>,
 }
 
 impl RelayMap {
     /// This creates a new RelayMap.
     pub fn new() -> RelayMap {
-        RelayMap {
-            relay_map  : BTreeMap::new(),
-            lookup_map : HashMap::new(),
-        }
+        RelayMap { relay_map: BTreeMap::new(), lookup_map: HashMap::new() }
     }
 
     /// Adds a Peer to the relay map if the relay map has open
@@ -56,26 +53,31 @@ impl RelayMap {
     /// Returns true is the endpoint is newly added, or was already present.
     /// Returns false if the threshold was reached or identity already exists.
     /// Returns false if the endpoint is already assigned (to a different name).
-    pub fn add_peer(&mut self, identity: ConnectionName, endpoint: Endpoint,
-        public_id : Option<PublicId>) -> bool {
+    pub fn add_peer(&mut self,
+                    identity: ConnectionName,
+                    endpoint: Endpoint,
+                    public_id: Option<PublicId>)
+                    -> bool {
         // reject Routing peers from relay_map
         match identity {
             ConnectionName::Routing(_) => return false,
-            _ => {},
+            _ => {}
         };
         // impose limit on number of relay nodes active
-        if !self.relay_map.contains_key(&identity)  // legacy for multiple endpoints per identity
-            && self.relay_map.len() >= MAX_RELAY {
-            return false; }
+        if !self.relay_map.contains_key(&identity) && self.relay_map.len() >= MAX_RELAY {
+            return false;
+        }
         // check if endpoint already exists
         if self.lookup_map.contains_key(&endpoint) {
-            return false; }
+            return false;
+        }
         // for now don't allow multiple endpoints on a Peer
         if self.relay_map.contains_key(&identity) {
-            return false; }
+            return false;
+        }
         self.lookup_map.entry(endpoint.clone())
                        .or_insert(identity.clone());
-        let new_peer = || { Peer::new(identity.clone(), endpoint  , public_id) };
+        let new_peer = || Peer::new(identity.clone(), endpoint, public_id);
         self.relay_map.entry(identity.clone())
                       .or_insert_with(new_peer);
         true
@@ -93,12 +95,12 @@ impl RelayMap {
     }
 
     /// Removes the provided ConnectionName from the relay map, providing the Peer as removed.
-    pub fn drop_connection_name(&mut self, connection_name : &ConnectionName) -> Option<Peer> {
+    pub fn drop_connection_name(&mut self, connection_name: &ConnectionName) -> Option<Peer> {
         match self.relay_map.remove(connection_name) {
             Some(peer) => {
                 let _ = self.lookup_map.remove(peer.endpoint());
                 Some(peer)
-            },
+            }
             None => None,
         }
     }
@@ -126,7 +128,7 @@ impl RelayMap {
 
     // Returns the ConnectionName if either a Relay(Address::Node(name))
     // or Bootstrap(name) is found in the relay map.
-    pub fn lookup_name(&self, name : &NameType) -> Option<ConnectionName> {
+    pub fn lookup_name(&self, name: &NameType) -> Option<ConnectionName> {
         let relay_name = match self.relay_map.get(
             &ConnectionName::Relay(Address::Node(name.clone()))) {
             Some(peer) => Some(peer.identity().clone()),

@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use lru_time_cache::LruCache;
-use std::collections::{BTreeSet};
+use std::collections::BTreeSet;
 use messages::RoutingMessage;
 use NameType;
 
@@ -34,15 +34,14 @@ pub struct MessageAccumulator {
 impl MessageAccumulator {
 
     pub fn new() -> MessageAccumulator {
-        MessageAccumulator {
-            requests: LruCache::with_capacity(MAX_REQUEST_COUNT),
-        }
+        MessageAccumulator { requests: LruCache::with_capacity(MAX_REQUEST_COUNT) }
     }
 
     pub fn add_message(&mut self,
-                       threshold : usize,
-                       claimant  : NameType,
-                       message   : RoutingMessage) -> Option<RoutingMessage> {
+                       threshold: usize,
+                       claimant: NameType,
+                       message: RoutingMessage)
+                       -> Option<RoutingMessage> {
         {
             if threshold <= 1 {
                 return Some(message);

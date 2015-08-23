@@ -20,7 +20,7 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto::box_;
 use NameType;
-use error::{RoutingError};
+use error::RoutingError;
 use id::Id;
 use utils;
 use std::fmt::{Debug, Formatter, Error};
@@ -39,12 +39,12 @@ impl Debug for PublicId {
 }
 
 impl PublicId {
-    pub fn new(id : &Id) -> PublicId {
-      PublicId {
-        public_encrypt_key : id.encrypting_public_key().clone(),
-        public_sign_key    : id.signing_public_key().clone(),
-        name               : id.name(),
-      }
+    pub fn new(id: &Id) -> PublicId {
+        PublicId {
+            public_encrypt_key: id.encrypting_public_key().clone(),
+            public_sign_key: id.signing_public_key().clone(),
+            name: id.name(),
+        }
     }
 
     pub fn name(&self) -> NameType {
@@ -59,7 +59,7 @@ impl PublicId {
         utils::public_key_to_client_name(&self.public_sign_key)
     }
 
-    pub fn serialised_contents(&self)->Result<Vec<u8>, RoutingError> {
+    pub fn serialised_contents(&self) -> Result<Vec<u8>, RoutingError> {
         let mut e = cbor::Encoder::from_memory();
         try!(e.encode(&[&self]));
         Ok(e.into_bytes())
