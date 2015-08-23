@@ -21,21 +21,25 @@ use sodiumoxide::crypto;
 use std::cmp;
 use NameType;
 use name_type::closer_to_target;
-use error::{RoutingError};
+use error::RoutingError;
 
 use rustc_serialize::{Decodable, Encodable};
 
-pub fn encode<T>(value: &T) -> Result<Vec<u8>, CborError> where T: Encodable {
+pub fn encode<T>(value: &T) -> Result<Vec<u8>, CborError>
+    where T: Encodable
+{
     let mut enc = Encoder::from_memory();
     try!(enc.encode(&[value]));
     Ok(enc.into_bytes())
 }
 
-pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, CborError> where T: Decodable {
+pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, CborError>
+    where T: Decodable
+{
     let mut dec = Decoder::from_bytes(&bytes[..]);
     match dec.decode().next() {
         Some(result) => result,
-        None => Err(CborError::UnexpectedEOF)
+        None => Err(CborError::UnexpectedEOF),
     }
 }
 
@@ -48,7 +52,8 @@ pub fn public_key_to_client_name(key: &sign::PublicKey) -> NameType {
 // In case of only one close node provided (in initial network setup scenario),
 // relocated_name = Hash(original_name + 1st closest node id)
 pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
-                                original_name: &NameType) -> Result<NameType, RoutingError> {
+                                original_name: &NameType)
+                                -> Result<NameType, RoutingError> {
     if close_nodes.is_empty() {
         return Err(RoutingError::RoutingTableEmpty);
     }
@@ -62,9 +67,9 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
 
     let mut combined: Vec<u8> = Vec::new();
     for node_id in close_nodes {
-      for i in node_id.get_id().iter() {
-        combined.push(*i);
-      }
+        for i in node_id.get_id().iter() {
+            combined.push(*i);
+        }
     }
     Ok(NameType(crypto::hash::sha512::hash(&combined).0))
 }
