@@ -41,7 +41,9 @@ pub enum ResponseError {
 }
 
 impl From<CborError> for ResponseError {
-    fn from(e: CborError) -> ResponseError { ResponseError::Abort }
+    fn from(e: CborError) -> ResponseError {
+        ResponseError::Abort
+    }
 }
 
 impl error::Error for ResponseError {
@@ -50,8 +52,9 @@ impl error::Error for ResponseError {
             ResponseError::Abort => "Abort",
             ResponseError::InvalidRequest(_) => "Invalid request",
             ResponseError::FailedRequestForData(_) => "Failed request for data",
-            ResponseError::HadToClearSacrificial(size) => "Had to clear {:?} bytes of Sacrificial
-                data to complete request",
+            ResponseError::HadToClearSacrificial(size) => "Had to clear {:?} bytes of \
+                 Sacrificial\n                data to \
+                 complete request",
         }
     }
 
@@ -64,7 +67,8 @@ impl fmt::Display for ResponseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ResponseError::Abort => fmt::Display::fmt("ResponseError:: Abort", f),
-            ResponseError::InvalidRequest(_) => fmt::Display::fmt("ResponsError::InvalidRequest", f),
+            ResponseError::InvalidRequest(_) => fmt::Display::fmt("ResponsError::InvalidRequest",
+                                  f),
             ResponseError::FailedRequestForData(_) =>
                 fmt::Display::fmt("ResponseError::FailedToStoreData", f),
             ResponseError::HadToClearSacrificial(_) =>
@@ -109,11 +113,15 @@ pub enum ClientError {
 }
 
 impl From<CborError> for ClientError {
-    fn from(e: CborError) -> ClientError { ClientError::Cbor(e) }
+    fn from(e: CborError) -> ClientError {
+        ClientError::Cbor(e)
+    }
 }
 
 impl From<io::Error> for ClientError {
-    fn from(e: io::Error) -> ClientError { ClientError::Io(e) }
+    fn from(e: io::Error) -> ClientError {
+        ClientError::Io(e)
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -161,24 +169,34 @@ pub enum RoutingError {
 }
 
 impl From<str::Utf8Error> for RoutingError {
-    fn from(e: str::Utf8Error) -> RoutingError { RoutingError::Utf8(e) }
+    fn from(e: str::Utf8Error) -> RoutingError {
+        RoutingError::Utf8(e)
+    }
 }
 
 
 impl From<ResponseError> for RoutingError {
-    fn from(e: ResponseError) -> RoutingError { RoutingError::Response(e) }
+    fn from(e: ResponseError) -> RoutingError {
+        RoutingError::Response(e)
+    }
 }
 
 impl From<CborError> for RoutingError {
-    fn from(e: CborError) -> RoutingError { RoutingError::Cbor(e) }
+    fn from(e: CborError) -> RoutingError {
+        RoutingError::Cbor(e)
+    }
 }
 
 impl From<io::Error> for RoutingError {
-    fn from(e: io::Error) -> RoutingError { RoutingError::Io(e) }
+    fn from(e: io::Error) -> RoutingError {
+        RoutingError::Io(e)
+    }
 }
 
 impl From<InterfaceError> for RoutingError {
-    fn from(e: InterfaceError) -> RoutingError { RoutingError::Interface(e) }
+    fn from(e: InterfaceError) -> RoutingError {
+        RoutingError::Interface(e)
+    }
 }
 
 impl error::Error for RoutingError {
@@ -225,13 +243,19 @@ impl fmt::Display for RoutingError {
             RoutingError::UnknownMessageType => fmt::Display::fmt("Unknown message", f),
             RoutingError::FilterCheckFailed => fmt::Display::fmt("filter check failed", f),
             RoutingError::FailedSignature => fmt::Display::fmt("Signature check failed", f),
-            RoutingError::NotEnoughSignatures => fmt::Display::fmt("Not enough signatures (multi-sig)", f),
-            RoutingError::DuplicateSignatures => fmt::Display::fmt("Duplicated signatures (multi-sig)", f),
+            RoutingError::NotEnoughSignatures => fmt::Display::fmt("Not enough signatures \
+                                   (multi-sig)",
+                                  f),
+            RoutingError::DuplicateSignatures => fmt::Display::fmt("Duplicated signatures \
+                                   (multi-sig)",
+                                  f),
             RoutingError::FailedToBootstrap => fmt::Display::fmt("could not bootstrap", f),
             RoutingError::RoutingTableEmpty => fmt::Display::fmt("routing table empty", f),
             RoutingError::RejectedPublicId => fmt::Display::fmt("Rejected Public Id", f),
-            RoutingError::RefusedFromRoutingTable => fmt::Display::fmt("Refused from routing table", f),
-            RoutingError::RefreshNotFromGroup => fmt::Display::fmt("Refresh message not from group", f),
+            RoutingError::RefusedFromRoutingTable =>
+                fmt::Display::fmt("Refused from routing table", f),
+            RoutingError::RefreshNotFromGroup =>
+                fmt::Display::fmt("Refresh message not from group", f),
             RoutingError::Utf8(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Interface(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
@@ -248,7 +272,9 @@ mod test {
     use rustc_serialize::{Decodable, Encodable};
     use cbor;
 
-    fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
+    fn test_object<T>(obj_before: T)
+        where T: for<'a> Encodable + Decodable + Eq
+    {
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());

@@ -29,7 +29,7 @@ mod test {
             PublicId::new(&Id::new())
         }
     }
-    
+
     impl Random for NameType {
         fn generate_random() -> NameType {
             NameType(vector_as_u8_64_array(generate_random_vec_u8(64)))

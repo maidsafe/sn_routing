@@ -35,7 +35,7 @@ pub struct StructuredData {
     previous_owner_keys: Vec<crypto::sign::PublicKey>,
     version: u64,
     current_owner_keys: Vec<crypto::sign::PublicKey>,
-    previous_owner_signatures: Vec<crypto::sign::Signature>
+    previous_owner_signatures: Vec<crypto::sign::Signature>,
 }
 
 
@@ -48,17 +48,18 @@ impl StructuredData {
                data: Vec<u8>,
                current_owner_keys: Vec<crypto::sign::PublicKey>,
                previous_owner_keys: Vec<crypto::sign::PublicKey>,
-               signing_key: Option<&crypto::sign::SecretKey>) -> Result<StructuredData, RoutingError> {
+               signing_key: Option<&crypto::sign::SecretKey>)
+               -> Result<StructuredData, RoutingError> {
 
         let mut structured_data = StructuredData {
-                   type_tag: type_tag,
-                   identifier: identifier,
-                   data: data,
-                   previous_owner_keys: previous_owner_keys,
-                   version: version,
-                   current_owner_keys : current_owner_keys,
-                   previous_owner_signatures: vec![],
-                 };
+            type_tag: type_tag,
+            identifier: identifier,
+            data: data,
+            previous_owner_keys: previous_owner_keys,
+            version: version,
+            current_owner_keys: current_owner_keys,
+            previous_owner_signatures: vec![],
+        };
 
         if let Some(key) = signing_key {
             let _ = try!(structured_data.add_signature(key));
@@ -100,7 +101,9 @@ impl StructuredData {
         StructuredData::compute_name(self.type_tag, &self.identifier)
     }
 
-    pub fn validate_self_against_successor(&self, other: &StructuredData) -> Result<(), RoutingError> {
+    pub fn validate_self_against_successor(&self,
+                                           other: &StructuredData)
+                                           -> Result<(), RoutingError> {
         let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
             &other.current_owner_keys
         } else {
@@ -108,42 +111,43 @@ impl StructuredData {
         };
 
         // TODO(dirvine) Increase error types to be more descriptive  :07/07/2015
-        if      other.type_tag != self.type_tag     ||
-                other.identifier != self.identifier ||
-                other.version != self.version + 1   ||
-                *owner_keys_to_match != self.current_owner_keys  {
+        if other.type_tag != self.type_tag || other.identifier != self.identifier ||
+           other.version != self.version + 1 ||
+           *owner_keys_to_match != self.current_owner_keys {
             return Err(RoutingError::UnknownMessageType)
         }
         other.verify_previous_owner_signatures(owner_keys_to_match)
     }
 
     /// Confirms *unique and valid* owner_signatures are at least 50% of total owners
-    fn verify_previous_owner_signatures(&self, owner_keys: &Vec<crypto::sign::PublicKey>) -> Result<(), RoutingError> {
+    fn verify_previous_owner_signatures(&self,
+                                        owner_keys: &Vec<crypto::sign::PublicKey>)
+                                        -> Result<(), RoutingError> {
          // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
          // Any duplicates invalidates this type
-         if self.previous_owner_signatures.iter().filter(|&sig| self.previous_owner_signatures.iter()
+        if self.previous_owner_signatures.iter().filter(|&sig| self.previous_owner_signatures.iter()
                                   .any(|ref sig_check| NameType(sig.0) == NameType(sig_check.0)))
-                                  .count() > (owner_keys.len() + 1) /2 {
+                                  .count() > (owner_keys.len() + 1) / 2 {
 
             return Err(RoutingError::DuplicateSignatures);
-         }
+        }
 
 
          // Refuse when not enough previous_owner_signatures found
-         if self.previous_owner_signatures.len() < (owner_keys.len()  + 1 ) / 2 {
-             return Err(RoutingError::NotEnoughSignatures);
-         }
+        if self.previous_owner_signatures.len() < (owner_keys.len() + 1) / 2 {
+            return Err(RoutingError::NotEnoughSignatures);
+        }
 
-         let data = try!(self.data_to_sign());
+        let data = try!(self.data_to_sign());
          // Count valid previous_owner_signatures and refuse if quantity is not enough
-         if self.previous_owner_signatures.iter()
+        if self.previous_owner_signatures.iter()
                         .filter(|&sig| owner_keys
                           .iter()
                           .any(|ref pub_key| crypto::sign::verify_detached(&sig, &data, pub_key)))
                             .count() < (owner_keys.len() / 2 + owner_keys.len() % 2) {
             return Err(RoutingError::NotEnoughSignatures);
-         }
-         Ok(())
+        }
+        Ok(())
     }
 
     fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
@@ -160,7 +164,9 @@ impl StructuredData {
     }
 
     /// Returns number of previous_owner_signatures still required (if any, 0 means this is complete)
-    pub fn add_signature(&mut self, secret_key: &crypto::sign::SecretKey) -> Result<isize, RoutingError> {
+    pub fn add_signature(&mut self,
+                         secret_key: &crypto::sign::SecretKey)
+                         -> Result<isize, RoutingError> {
         let data = try!(self.data_to_sign());
         let sig = crypto::sign::sign_detached(&data, secret_key);
         self.previous_owner_signatures.push(sig);
@@ -169,12 +175,11 @@ impl StructuredData {
         } else {
             &self.previous_owner_keys
         };
-        Ok(((owner_keys.len() + 1) as isize / 2) -
-             self.previous_owner_signatures.len() as isize)
+        Ok(((owner_keys.len() + 1) as isize / 2) - self.previous_owner_signatures.len() as isize)
     }
 
     /// Overwrite any existing signatures with the new signatures provided
-    pub fn replace_signatures(&mut self, new_signatures : Vec<crypto::sign::Signature>) {
+    pub fn replace_signatures(&mut self, new_signatures: Vec<crypto::sign::Signature>) {
         self.previous_owner_signatures = new_signatures;
     }
 
@@ -232,13 +237,14 @@ mod test {
         let owner_keys = vec![keys.0];
 
         match StructuredData::new(0,
-                                Random::generate_random(),
-                                0,
-                                vec![],
-                                owner_keys.clone(),
-                                vec![],
-                                Some(&keys.1)) {
-            Ok(structured_data) => assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(())),
+                                  Random::generate_random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&keys.1)) {
+            Ok(structured_data) =>
+                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(())),
             Err(error) => panic!("Error: {:?}", error),
         }
     }
@@ -252,18 +258,19 @@ mod test {
         let owner_keys = vec![keys1.0, keys2.0, keys3.0];
 
         match StructuredData::new(0,
-                                Random::generate_random(),
-                                0,
-                                //crypto::hash::sha512::hash("test_identity".to_string().as_bytes()),
-                                vec![],
-                                owner_keys.clone(),
-                                vec![],
-                                Some(&keys1.1)) {
+                                  Random::generate_random(),
+                                  0,
+                                  // crypto::hash::sha512::hash("test_identity".to_string().as_by
+                                  // tes()),
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&keys1.1)) {
             Ok(mut structured_data) => {
                 assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(), None);
                 assert_eq!(structured_data.add_signature(&keys2.1).ok(), Some(0));
                 assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(()));
-            },
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
     }
@@ -279,22 +286,22 @@ mod test {
 
         // Owned by keys1 keys2 and keys3
         match StructuredData::new(0,
-                                identifier.clone(),
-                                0,
-                                vec![],
-                                vec![keys1.0, keys2.0, keys3.0],
-                                vec![],
-                                Some(&keys1.1)) {
+                                  identifier.clone(),
+                                  0,
+                                  vec![],
+                                  vec![keys1.0, keys2.0, keys3.0],
+                                  vec![],
+                                  Some(&keys1.1)) {
             Ok(mut orig_structured_data) => {
                 assert_eq!(orig_structured_data.add_signature(&keys2.1).ok(), Some(0));
                 // Transfer ownership and update to new owner
                 match StructuredData::new(0,
-                                        identifier.clone(),
-                                        1,
-                                        vec![],
-                                        vec![new_owner.0],
-                                        vec![keys1.0, keys2.0, keys3.0],
-                                        Some(&keys1.1)) {
+                                          identifier.clone(),
+                                          1,
+                                          vec![],
+                                          vec![new_owner.0],
+                                          vec![keys1.0, keys2.0, keys3.0],
+                                          Some(&keys1.1)) {
                     Ok(mut new_structured_data) => {
                         assert_eq!(new_structured_data.add_signature(&keys2.1).ok(), Some(0));
                         match orig_structured_data.replace_with_other(new_structured_data) {
@@ -303,24 +310,24 @@ mod test {
                         }
                         // transfer ownership back to keys1 only
                         match StructuredData::new(0,
-                                                identifier,
-                                                2,
-                                                vec![],
-                                                vec![keys1.0],
-                                                vec![new_owner.0],
-                                                Some(&new_owner.1)) {
+                                                  identifier,
+                                                  2,
+                                                  vec![],
+                                                  vec![keys1.0],
+                                                  vec![new_owner.0],
+                                                  Some(&new_owner.1)) {
                             Ok(another_new_structured_data) => {
                                 match orig_structured_data.replace_with_other(another_new_structured_data) {
                                     Ok(()) => println!("All good"),
                                     Err(e) => panic!("Error {}", e),
                                 }
-                            },
+                            }
                             Err(error) => panic!("Error: {:?}", error),
                         }
-                    },
+                    }
                     Err(error) => panic!("Error: {:?}", error),
                 }
-            },
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
     }

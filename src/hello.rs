@@ -21,9 +21,9 @@ use types::Address;
 
 #[derive(Debug, Eq, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Hello {
-    pub address       : Address,
-    pub public_id     : PublicId,
-    pub confirmed_you : Option<Address>,
+    pub address: Address,
+    pub public_id: PublicId,
+    pub confirmed_you: Option<Address>,
 }
 
 #[cfg(test)]

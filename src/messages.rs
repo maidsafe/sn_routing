@@ -18,7 +18,7 @@
 use sodiumoxide::crypto::sign::Signature;
 use sodiumoxide::crypto::sign;
 use std::fmt::{Debug, Formatter, Error};
-use cbor::{CborError};
+use cbor::CborError;
 use std::collections::BTreeMap;
 
 use crust::Endpoint;
@@ -27,7 +27,7 @@ use authority::Authority;
 use data::{Data, DataRequest};
 use types;
 use public_id::PublicId;
-use error::{ResponseError};
+use error::ResponseError;
 use NameType;
 use utils;
 
@@ -49,15 +49,13 @@ pub struct ConnectResponse {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub struct SignedToken {
-    pub serialised_request : Vec<u8>,
-    pub signature          : Signature,
+    pub serialised_request: Vec<u8>,
+    pub signature: Signature,
 }
 
 impl SignedToken {
     pub fn verify_signature(&self, public_sign_key: &sign::PublicKey) -> bool {
-        sign::verify_detached(&self.signature,
-                              &self.serialised_request,
-                              &public_sign_key)
+        sign::verify_detached(&self.signature, &self.serialised_request, &public_sign_key)
     }
 }
 
@@ -80,9 +78,9 @@ pub enum ExternalResponse {
     // TODO: Technical depth: if the third param here is Some(...) then
     // the it shares most of the data with the second argument, which
     // needlessly increases bandwidth.
-    Get   (Data, DataRequest, Option<SignedToken>),
-    Put   (ResponseError, Option<SignedToken>),
-    Post  (ResponseError, Option<SignedToken>),
+    Get(Data, DataRequest, Option<SignedToken>),
+    Put(ResponseError, Option<SignedToken>),
+    Post(ResponseError, Option<SignedToken>),
     Delete(ResponseError, Option<SignedToken>),
 }
 
@@ -91,9 +89,9 @@ impl ExternalResponse {
     // no signed token.
     pub fn get_signed_token(&self) -> &Option<SignedToken> {
         match *self {
-            ExternalResponse::Get(_, _, ref r)    => r,
-            ExternalResponse::Put(_, ref r)    => r,
-            ExternalResponse::Post(_, ref r)   => r,
+            ExternalResponse::Get(_, _, ref r) => r,
+            ExternalResponse::Put(_, ref r) => r,
+            ExternalResponse::Post(_, ref r) => r,
             ExternalResponse::Delete(_, ref r) => r,
         }
     }
@@ -140,9 +138,9 @@ pub enum Content {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
     // version_number     : u8
-    pub from_authority : Authority,
-    pub to_authority   : Authority,
-    pub content        : Content,
+    pub from_authority: Authority,
+    pub to_authority: Authority,
+    pub content: Content,
 }
 
 impl RoutingMessage {
@@ -159,10 +157,10 @@ impl RoutingMessage {
     pub fn client_key(&self) -> Option<sign::PublicKey> {
         match self.from_authority {
             Authority::ClientManager(_) => None,
-            Authority::NaeManager(_)    => None,
-            Authority::NodeManager(_)   => None,
-            Authority::ManagedNode(_)   => None,
-            Authority::Client(_, key)   => Some(key),
+            Authority::NaeManager(_) => None,
+            Authority::NodeManager(_) => None,
+            Authority::ManagedNode(_) => None,
+            Authority::Client(_, key) => Some(key),
         }
     }
 
@@ -170,13 +168,13 @@ impl RoutingMessage {
         self.client_key().map(|n|utils::public_key_to_client_name(&n))
     }
 
-    pub fn from_group(&self) -> Option<NameType /* Group name */> {
+    pub fn from_group(&self) -> Option<NameType> {
         match self.from_authority {
             Authority::ClientManager(name) => Some(name),
-            Authority::NaeManager(name)    => Some(name),
-            Authority::NodeManager(name)   => Some(name),
-            Authority::ManagedNode(_)      => None,
-            Authority::Client(_, _)        => None,
+            Authority::NaeManager(name) => Some(name),
+            Authority::NodeManager(name) => Some(name),
+            Authority::ManagedNode(_) => None,
+            Authority::Client(_, _) => None,
         }
     }
 }
@@ -184,50 +182,44 @@ impl RoutingMessage {
 /// All messages sent / received are constructed as signed message.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
-    body      : RoutingMessage,
-    claimant  : types::Address,
-    //          when signed by Client(sign::PublicKey) the data needs to contain it as an owner
-    //          when signed by a Node(NameType), Sentinel needs to validate the signature
-    signature : Signature,
+    body: RoutingMessage,
+    claimant: types::Address,
+    //          when signed by Client(sign::PublicKey) the data needs to contain it as
+    // an owner
+    //          when signed by a Node(NameType), Sentinel needs to validate the
+    // signature
+    signature: Signature,
 }
 
 impl SignedMessage {
-    pub fn new(claimant: types::Address, message: RoutingMessage, private_sign_key: &sign::SecretKey)
-        -> Result<SignedMessage, CborError> {
+    pub fn new(claimant: types::Address,
+               message: RoutingMessage,
+               private_sign_key: &sign::SecretKey)
+               -> Result<SignedMessage, CborError> {
 
         let encoded_body = try!(utils::encode(&(&message, &claimant)));
         let signature    = sign::sign_detached(&encoded_body, private_sign_key);
 
-        Ok(SignedMessage {
-            body         : message,
-            claimant     : claimant,
-            signature    : signature
-        })
+        Ok(SignedMessage { body: message, claimant: claimant, signature: signature })
     }
 
-    pub fn with_signature(claimant: types::Address, message: RoutingMessage, signature: Signature)
-        -> Result<SignedMessage, CborError> {
+    pub fn with_signature(claimant: types::Address,
+                          message: RoutingMessage,
+                          signature: Signature)
+                          -> Result<SignedMessage, CborError> {
 
-          Ok(SignedMessage {
-              body         : message,
-              claimant     : claimant,
-              signature    : signature
-          })
+        Ok(SignedMessage { body: message, claimant: claimant, signature: signature })
     }
 
-    pub fn new_from_token(signed_token : SignedToken) -> Result<SignedMessage, CborError> {
+    pub fn new_from_token(signed_token: SignedToken) -> Result<SignedMessage, CborError> {
         let (message, claimant) = try!(utils::decode(&signed_token.serialised_request));
 
-        Ok(SignedMessage {
-            body      : message,
-            claimant  : claimant,
-            signature : signed_token.signature
-        })
+        Ok(SignedMessage { body: message, claimant: claimant, signature: signed_token.signature })
     }
 
     pub fn verify_signature(&self, public_sign_key: &sign::PublicKey) -> bool {
         let encoded_body = match utils::encode(&(&self.body, &self.claimant)) {
-            Ok(x)  => x,
+            Ok(x) => x,
             Err(_) => return false,
         };
 
@@ -238,7 +230,9 @@ impl SignedMessage {
         &self.body
     }
 
-    pub fn signature(&self) -> &Signature { &self.signature }
+    pub fn signature(&self) -> &Signature {
+        &self.signature
+    }
 
     pub fn encoded_body(&self) -> Result<Vec<u8>, CborError> {
         utils::encode(&(&self.body, &self.claimant))
@@ -246,9 +240,9 @@ impl SignedMessage {
 
     pub fn as_token(&self) -> Result<SignedToken, CborError> {
         Ok(SignedToken {
-            serialised_request : try!(self.encoded_body()),
-            signature          : self.signature().clone(),
-        })
+                serialised_request: try!(self.encoded_body()),
+                signature: self.signature().clone(),
+            })
     }
 
     pub fn claimant(&self) -> &types::Address {
