@@ -134,7 +134,16 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
                 InternalRequest::Connect(ref connect_request) => None,
                 InternalRequest::RequestNetworkName(ref public_id) => Some(public_id.name()),
                 InternalRequest::CacheNetworkName(ref public_id, _) => Some(public_id.name()),
-                InternalRequest::Refresh(_, _) => None,
+                InternalRequest::Refresh(_, _)                      => {
+                    let destination = message.destination();
+                    if destination != message.source() { return None; };
+                    if destination.is_group()
+                        && routing_table.address_in_our_close_group_range(
+                            destination.get_location()) {
+                        return Some(destination);
+                    };
+                    None
+                },
             }
         }
         Content::ExternalResponse(_) => None,
@@ -244,76 +253,105 @@ mod test {
         }
         let our_close_group : Vec<NodeInfo> = routing_table.our_close_group();
         let furthest_node_close_group : NodeInfo
-        = our_close_group.last().unwrap().clone();
+            = our_close_group.last().unwrap().clone();
         let closest_node_in_our_close_group = our_close_group.first().unwrap().clone();
         let second_closest_node_in_our_close_group : NodeInfo = our_close_group[1].clone();
 
         let nae_or_client_in_our_close_group : NameType
-        = xor(&xor(&closest_node_in_our_close_group.id, &our_name),
-              &second_closest_node_in_our_close_group.id);
-    // assert nae is indeed within close group
+            = xor(&xor(&closest_node_in_our_close_group.id, &our_name),
+                  &second_closest_node_in_our_close_group.id);
+        // assert nae is indeed within close group
         assert!(closer_to_target(&nae_or_client_in_our_close_group,
-                             &furthest_node_close_group.id,
-                             &our_name));
+                                 &furthest_node_close_group.id,
+                                 &our_name));
         for close_node in our_close_group {
-        // assert that nae does not collide with close node
+            // assert that nae does not collide with close node
             assert!(close_node.id != nae_or_client_in_our_close_group);
         }
-    // invert to get a far away address outside of the close group
+        // invert to get a far away address outside of the close group
         let name_outside_close_group : NameType
-        = xor(&furthest_node_close_group.id, &NameType::new([255u8; 64]));
-    // note: if the close group spans close to the whole address space,
-    // this construction actually inverts the address into the close group range;
-    // for group_size 32; 64 node in the network this intermittently fails at 41%
-    // for group_size 32; 80 nodes in the network this intermittently fails at 2%
-    // for group_size 32; 100 nodes in the network this intermittently fails
-    //     less than 1/8413 times, but should be exponentially less still.
+            = xor(&furthest_node_close_group.id, &NameType::new([255u8; 64]));
+        // note: if the close group spans close to the whole address space,
+        // this construction actually inverts the address into the close group range;
+        // for group_size 32; 64 node in the network this intermittently fails at 41%
+        // for group_size 32; 80 nodes in the network this intermittently fails at 2%
+        // for group_size 32; 100 nodes in the network this intermittently fails
+        //     less than 1/8413 times, but should be exponentially less still.
         assert!(closer_to_target(&furthest_node_close_group.id,
-                             &name_outside_close_group,
-                             &our_name));
+                                 &name_outside_close_group,
+                                 &our_name));
 
-        let some_data : Data = Data::ImmutableData(ImmutableData::new(ImmutableDataType::Normal,
-                                                                      vec![213u8; 20usize]));
+        let some_data : Data = Data::ImmutableData(ImmutableData::new(
+            ImmutableDataType::Normal, ::types::generate_random_vec_u8(20usize)));
+
+        // --- test determine_authority specific ----------------------------------------------------------------
         let client_manager_message = RoutingMessage {
-            from_authority: Authority::Client(Random::generate_random(),
-                                              client_public_key.clone()),
-            to_authority: Authority::ClientManager(public_key_to_client_name(&client_public_key)),
-            content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
+            from_authority : Authority::Client(Random::generate_random(), client_public_key.clone()),
+            to_authority   : Authority::ClientManager(public_key_to_client_name(&client_public_key)),
+            content : Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
         assert_eq!(super::determine_authority(&client_manager_message,
-        &routing_table,
-        some_data.name()).unwrap(),
-        Authority::ClientManager(public_key_to_client_name(&client_public_key)));
+            &routing_table,
+            some_data.name()).unwrap(),
+            Authority::ClientManager(public_key_to_client_name(&client_public_key)));
 
-    // assert to get a nae_manager Authority
+        // assert to get a nae_manager Authority
         let nae_manager_message = RoutingMessage {
-            from_authority: Authority::ClientManager(public_key_to_client_name(&client_public_key)),
-            to_authority: Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
-            content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
+            from_authority : Authority::ClientManager(public_key_to_client_name(&client_public_key)),
+            to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+            content        : Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
         assert_eq!(super::determine_authority(&nae_manager_message, &routing_table,
-        nae_or_client_in_our_close_group).unwrap(),
-        Authority::NaeManager(nae_or_client_in_our_close_group));
+            nae_or_client_in_our_close_group).unwrap(),
+            Authority::NaeManager(nae_or_client_in_our_close_group));
 
-    // assert to get a node_manager Authority
+        // assert to get a node_manager Authority
         let node_manager_message = RoutingMessage {
-            from_authority: Authority::NaeManager(Random::generate_random()),
-            to_authority: Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()),
-            content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
+            from_authority : Authority::NaeManager(Random::generate_random()),
+            to_authority   : Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()),
+            content        : Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
         assert_eq!(super::determine_authority(&node_manager_message,
-        &routing_table, some_data.name()).unwrap(),
-        Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()));
+            &routing_table, some_data.name()).unwrap(),
+            Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()));
 
-    // assert to get a managed_node Authority
+        // assert to get a managed_node Authority
         let managed_node_message = RoutingMessage {
-            from_authority: Authority::NodeManager(our_name.clone()),
-            to_authority: Authority::ManagedNode(our_name.clone()),
-            content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
+            from_authority : Authority::NodeManager(our_name.clone()),
+            to_authority   : Authority::ManagedNode(our_name.clone()),
+            content        : Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
         assert_eq!(super::determine_authority(&managed_node_message, &routing_table,
-        some_data.name()).unwrap(),
-        Authority::ManagedNode(our_name.clone()));
-    }
+            some_data.name()).unwrap(),
+            Authority::ManagedNode(our_name.clone()));
 
+        // --- test our_authority specific ----------------------------------------------------------------------
+        let some_bytes = ::types::generate_random_vec_u8(20usize);
+        // assert to get Refresh Authorities
+        let refresh_message = RoutingMessage {
+            from_authority : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+            to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+            content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
+                some_bytes.clone())),
+        };
+        assert_eq!(super::our_authority(&refresh_message, &routing_table),
+            Some(Authority::NaeManager(nae_or_client_in_our_close_group.clone())));
+
+        // assert that this is not a valid Refresh Authority
+        let refresh_message = RoutingMessage {
+            from_authority : Authority::ClientManager(nae_or_client_in_our_close_group.clone()),
+            to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+            content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
+                some_bytes.clone())),
+        };
+        assert!(super::our_authority(&refresh_message, &routing_table).is_none());
+        // assert that this is not a valid Refresh Authority
+        let refresh_message = RoutingMessage {
+            from_authority : Authority::NaeManager(closest_node_in_our_close_group.id.clone()),
+            to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+            content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
+                some_bytes.clone())),
+        };
+        assert!(super::our_authority(&refresh_message, &routing_table).is_none());
+    }
 }
