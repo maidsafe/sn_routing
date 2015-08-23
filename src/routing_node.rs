@@ -454,8 +454,8 @@ impl RoutingNode {
         }
 
         // check if our calculated authority matches the destination authority of the message
-        if self.core.our_authority(&message)
-            .map(|our_auth| message.to_authority != our_auth).unwrap_or(true) {
+        let our_authority = self.core.our_authority(&message);
+        if our_authority.clone().map(|our_auth| &message.to_authority != &our_auth).unwrap_or(true) {
             // Either the message is directed at a group, and the target should be in range,
             // or it should be aimed directly at us.
             if message.destination().is_group() {
@@ -473,7 +473,7 @@ impl RoutingNode {
         }
 
         // Accumulate message
-        let (message, opt_token) = match self.accumulate(signed_message) {
+        let (message, opt_token) = match self.accumulate(&signed_message) {
             Some((message, opt_token)) => (message, opt_token),
             None => return Ok(()),
         };
@@ -499,10 +499,21 @@ impl RoutingNode {
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     }
-                    InternalRequest::Refresh(_, _) => {
-                        // TODO (ben 17/08/2015) implement handle Refresh identical to preceding
-                        // implementation
-                        Ok(())
+                    InternalRequest::Refresh(type_tag, bytes) => {
+                        let refresh_authority = match our_authority {
+                            Some(authority) => {
+                                if authority.is_group() { return Err(RoutingError::BadAuthority) };
+                                authority
+                            },
+                            None => return Err(RoutingError::BadAuthority),
+                        };
+                        match *signed_message.claimant() {
+                            // TODO (ben 23/08/2015) later consider whether we need to restrict it
+                            // to only from nodes within our close group
+                            Address::Node(name) => self.handle_refresh(type_tag, name, bytes,
+                                refresh_authority),
+                            Address::Client(_) => Err(RoutingError::BadAuthority),
+                        }
                     }
                 }
             }
@@ -535,7 +546,7 @@ impl RoutingNode {
     }
 
     fn accumulate(&mut self,
-                  signed_message: SignedMessage)
+                  signed_message: &SignedMessage)
                   -> Option<(RoutingMessage, Option<SignedToken>)> {
         let message = signed_message.get_routing_message().clone();
 
@@ -556,12 +567,18 @@ impl RoutingNode {
         }
 
         let skip_accumulator = match message.content {
+            Content::InternalRequest(ref request) => {
+                match *request {
+                    InternalRequest::Refresh(_, _) => true,
+                    _ => false,
+                }
+            },
             Content::InternalResponse(ref response) => {
                 match *response {
                     InternalResponse::CacheNetworkName(_,_,_) => true,
                     _ => false,
                 }
-            }
+            },
             _ => false,
         };
 
@@ -570,8 +587,7 @@ impl RoutingNode {
             return Some((message, None));
         }
 
-        let threshold = min(types::GROUP_SIZE,
-                            (self.core.routing_table_size() as f32 * 0.8) as usize);
+        let threshold = self.group_threshold();
         debug!("Accumulator threshold is at {:?}", threshold);
 
         let claimant : NameType = match *signed_message.claimant() {
@@ -1051,16 +1067,16 @@ impl RoutingNode {
     }
 
     fn handle_refresh(&mut self, type_tag      : u64,
-                                 payload       : Vec<u8>,
                                  sender        : NameType,
-                                 our_authority : Authority,
-                                 payload       : Bytes) -> RoutingResult {
+                                 payload       : Bytes,
+                                 our_authority : Authority) -> RoutingResult {
         debug_assert!(our_authority.is_group());
-        // threshold
+        let threshold = self.group_threshold();
+        let group_name = our_authority.get_location().clone();
         match self.refresh_accumulator.add_message(threshold,
-            type_tag.clone(),){
+            type_tag.clone(), sender, group_name.clone(), payload){
             Some(vec_of_bytes) => {
-                let _ = self.event_sender.send(Event::Refresh(type_tag, our_authority.get))
+                let _ = self.event_sender.send(Event::Refresh(type_tag, group_name, vec_of_bytes));
             },
             None => {},
         };
@@ -1068,6 +1084,10 @@ impl RoutingNode {
     }
 
     // ------ FIXME -------------------------------------------------------------------------------
+
+    fn group_threshold(&self) -> usize {
+        min(types::GROUP_SIZE, (self.core.routing_table_size() as f32 * 0.8) as usize)
+    }
 
     fn get_a_bootstrap_name(&self) -> Option<NameType> {
         match self.core.bootstrap_endpoints() {
