@@ -80,21 +80,8 @@ pub struct RoutingNode {
     accumulator: MessageAccumulator,
     immutable_data_cache: Option<LruCache<NameType, ImmutableData>>,
     plain_data_cache: Option<LruCache<NameType, PlainData>>,
-    structured_data_cache: Option<LruCache<(NameType, u64), StructuredData>>, /* ref
-                                                                               * res
-                                                                               * h_a
-                                                                               * ccu
-                                                                               * mul
-                                                                               * ato
-                                                                               * r :
-                                                                               * Ref
-                                                                               * res
-                                                                               * hAc
-                                                                               * cum
-                                                                               * ula
-                                                                               * tor
-                                                                               * , */
-}
+    structured_data_cache: Option<LruCache<(NameType, u64), StructuredData>>, 
+    }
 
 impl RoutingNode {
     pub fn new(action_sender: mpsc::Sender<Action>,
