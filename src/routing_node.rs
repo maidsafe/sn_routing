@@ -141,9 +141,8 @@ impl RoutingNode {
     }
 
 
-    #[allow(unused_assignments)]
     pub fn run(&mut self) {
-        let mut crust_event_counter : u8 = 0;
+        let mut crust_event_counter : u8;
         self.wakeup.start(10);
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         debug!("RoutingNode started running and started bootstrap");
