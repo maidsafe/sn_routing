@@ -30,6 +30,7 @@ pub enum Action {
     //          ~~|~~~~~~~~~~
     //            | a fully signed message with a given claimant
     SendContent(Authority, Content),
+    ClientSendContent(Authority, Content),
     //          ~~|~~~~~~  ~~|~~~~
     //            |          | the bare content for a message to be formed
     //            | the destination authority

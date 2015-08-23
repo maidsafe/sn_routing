@@ -82,7 +82,7 @@ pub struct RoutingNode {
     immutable_data_cache: Option<LruCache<NameType, ImmutableData>>,
     plain_data_cache: Option<LruCache<NameType, PlainData>>,
     structured_data_cache: Option<LruCache<(NameType, u64), StructuredData>>,
-    }
+}
 
 impl RoutingNode {
     pub fn new(action_sender: mpsc::Sender<Action>,
@@ -174,10 +174,31 @@ impl RoutingNode {
                         }
 
                     }
-                }
+                },
+                Ok(Action::ClientSendContent(to_authority, content)) => {
+                    if self.core.is_connected_node() ||
+                       self.core.has_bootstrap_endpoints() {
+                        let _ = self.send_content(to_authority, content);
+                    } else {
+                        match content {
+                            Content::ExternalRequest(external_request) => {
+                                self.send_to_user(Event::FailedRequest(to_authority,
+                                    external_request, InterfaceError::NotConnected));
+                            }
+                            Content::ExternalResponse(external_response) => {
+                                self.send_to_user(Event::FailedResponse(to_authority,
+                                    external_response, InterfaceError::NotConnected));
+                            }
+                            _ =>
+                                error!("InternalRequest/Response was sent over ActionChannel {:?}",
+                                content),
+                        }
+
+                    }
+                },
                 Ok(Action::WakeUp) => {
                     // ensure that the loop is blocked for maximally 10ms
-                }
+                },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
                     let _ = self.event_sender.send(Event::Terminated);
@@ -984,6 +1005,27 @@ impl RoutingNode {
                 Ok(())
             }
         }
+    }
+
+    fn client_send_content(&self, to_authority: Authority, content: Content) -> RoutingResult {
+        // FIXME (ben 14/08/2015) we need a proper function to retrieve a bootstrap_name
+        let bootstrap_name = match self.get_a_bootstrap_name() {
+            Some(name) => name,
+            None => return Err(RoutingError::NotBootstrapped),
+        };
+        let routing_message = RoutingMessage {
+            from_authority: Authority::Client(bootstrap_name,
+                                              self.core.id().signing_public_key()),
+            to_authority: to_authority,
+            content: content,
+        };
+        match SignedMessage::new(Address::Client(self.core.id().signing_public_key()),
+                                 routing_message,
+                                 self.core.id().signing_private_key()) {
+            Ok(signed_message) => ignore(self.send(signed_message)),
+            Err(e) => return Err(RoutingError::Cbor(e)),
+        };
+        Ok(())
     }
 
     /// Send a SignedMessage out to the destination
