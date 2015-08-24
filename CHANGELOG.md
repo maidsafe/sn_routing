@@ -1,5 +1,17 @@
 # Routing - Change Log
 
+### [0.3.3] Events and refresh
+
+- [#638](https://github.com/maidsafe/routing/pull/638) debug formatting for Data
+- [#637](https://github.com/maidsafe/routing/pull/637) our authority API update
+- [#626](https://github.com/maidsafe/routing/pull/626) refresh messages
+- [#636](https://github.com/maidsafe/routing/pull/636) rustfmt formatting
+- [#634](https://github.com/maidsafe/routing/pull/634) rename fob to public_id in routing table
+- [#628](https://github.com/maidsafe/routing/pull/628) initial handlers for cache
+- [#624](https://github.com/maidsafe/routing/pull/624) remove peers from example CLI, small improvements
+- [#620](https://github.com/maidsafe/routing/pull/620) event bootstrapped, connected, disconnected
+- [#623](https://github.com/maidsafe/routing/pull/623) maximum allowed size for structured data
+
 ### [0.3.2] Final public API for version 0.3
 
 - internal bug fixes
