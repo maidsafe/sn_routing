@@ -189,7 +189,7 @@ impl Vault {
 
     fn on_failed_request(&mut self,
                          _request: ExternalRequest,
-                         _our_athority: Option<Authority>,
+                         _our_authority: Option<Authority>,
                          _location: Authority,                         
                          _error: InterfaceError) {
         unimplemented!();
@@ -197,7 +197,7 @@ impl Vault {
 
     fn on_failed_response(&mut self,
                           _response: ExternalResponse,
-                          _our_athority: Option<Authority>,
+                          _our_authority: Option<Authority>,
                           _location: Authority,                         
                           _error: InterfaceError) {
         unimplemented!();
