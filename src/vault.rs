@@ -109,12 +109,13 @@ impl Vault {
                 Event::Refresh(type_tag, group_name, accounts) =>
                     self.on_refresh(type_tag, group_name, accounts),
                 Event::Churn(close_group) => self.on_churn(close_group),
+                Event::Bootstrapped => self.on_bootstrapped(),
                 Event::Connected => self.on_connected(),
                 Event::Disconnected => self.on_disconnected(),
-                Event::FailedRequest(location, request, error) =>
-                    self.on_failed_request(location, request, error),
-                Event::FailedResponse(location, response, error) =>
-                    self.on_failed_response(location, response, error),
+                Event::FailedRequest{ request, our_authority, location, interface_error } =>
+                    self.on_failed_request(request, our_authority, location, interface_error),
+                Event::FailedResponse{ response, our_authority, location, interface_error } =>
+                    self.on_failed_response(response, our_authority, location, interface_error),
                 Event::Terminated => break,
             };
         }
@@ -173,8 +174,14 @@ impl Vault {
         self.nodes_in_table = close_group;
     }
 
-    fn on_connected(&mut self) {
-        unimplemented!();
+    fn on_bootstrapped(&self) {
+        // TODO: what is expected to be done here?
+        assert_eq!(0, self.nodes_in_table.len());
+    }
+
+    fn on_connected(&self) {
+        // TODO: what is expected to be done here?
+        assert_eq!(0, self.nodes_in_table.len());
     }
 
     fn on_disconnected(&mut self) {
@@ -182,16 +189,18 @@ impl Vault {
     }
 
     fn on_failed_request(&mut self,
-                         /*location*/_: Authority,
-                         /*request*/_: ExternalRequest,
-                         /*error*/_: InterfaceError) {
+                         _request: ExternalRequest,
+                         _our_authority: Option<Authority>,
+                         _location: Authority,                         
+                         _error: InterfaceError) {
         unimplemented!();
     }
 
     fn on_failed_response(&mut self,
-                          /*location*/_: Authority,
-                          /*response*/_: ExternalResponse,
-                          /*error*/_: InterfaceError) {
+                          _response: ExternalResponse,
+                          _our_authority: Option<Authority>,
+                          _location: Authority,                         
+                          _error: InterfaceError) {
         unimplemented!();
     }
 
@@ -200,7 +209,7 @@ impl Vault {
                   from_authority: Authority,
                   data_request: DataRequest,
                   response_token: Option<::routing::SignedToken>) {
-        let returned_actions = match our_authority {
+        let returned_actions = match our_authority.clone() {
             Authority::NaeManager(name) => {
                 // both DataManager and StructuredDataManager are NaeManagers and Get request to
                 // them are both from Node
@@ -231,7 +240,7 @@ impl Vault {
             _ => Ok(vec![]),
         };
         if let Ok(actions) = returned_actions {
-            self.send(actions, response_token, Some(from_authority), Some(data_request));
+            self.send(our_authority, actions, response_token, Some(from_authority), Some(data_request));
         }
     }
 
@@ -240,7 +249,7 @@ impl Vault {
                   _from_authority: Authority,
                   data: Data,
                   response_token: Option<::routing::SignedToken>) {
-        let returned_actions = match our_authority {
+        let returned_actions = match our_authority.clone() {
             Authority::ClientManager(from_address) => self.maid_manager.handle_put(&from_address, data),
             Authority::NaeManager(_) => {
                 // both DataManager and StructuredDataManager are NaeManagers
@@ -257,7 +266,7 @@ impl Vault {
             _ => Ok(vec![]),
         };
         if let Ok(actions) = returned_actions {
-            self.send(actions, response_token, None, None);
+            self.send(our_authority, actions, response_token, None, None);
         }
     }
 
@@ -277,7 +286,7 @@ impl Vault {
             _ => Ok(vec![]),
         };
         if let Ok(actions) = returned_actions {
-            self.send(actions, response_token, None, None);
+            self.send(our_authority, actions, response_token, None, None);
         }
     }
 
@@ -286,14 +295,14 @@ impl Vault {
                            _from_authority: Authority,
                            response: Data,
                            response_token: Option<::routing::SignedToken>) {
-        match our_authority {
+        match our_authority.clone() {
             // Lookup in the request_cache and reply to the clients
             Authority::NaeManager(name) => {
                 if self.request_cache.contains_key(&name) {
                     let records = self.request_cache.remove(&name).unwrap();
                     for record in records {
-                        self.send(vec![MethodCall::Reply{ data: response.clone() }], response_token.clone(),
-                                  Some(record.0), Some(record.1));
+                        self.send(our_authority.clone(), vec![MethodCall::Reply{ data: response.clone() }],
+                                  response_token.clone(), Some(record.0), Some(record.1));
                     }
                 }
             },
@@ -304,7 +313,7 @@ impl Vault {
             Data::ImmutableData(_) => self.data_manager.handle_get_response(response),
             _ => vec![]
         };
-        self.send(returned_actions, None, None, None);
+        self.send(our_authority, returned_actions, None, None, None);
     }
 
     // Put response will holding the copy of failed to store data, which will be:
@@ -411,21 +420,22 @@ impl Vault {
     }
 
     #[allow(dead_code)]
-    fn send(&mut self, actions: Vec<MethodCall>,
+    fn send(&mut self, our_authority: Authority,
+            actions: Vec<MethodCall>,
             response_token: Option<::routing::SignedToken>,
             reply_to: Option<Authority>,
             original_data_request: Option<DataRequest>) {
         for action in actions {
             match action {
                 MethodCall::Get { location, data_request } => {
-                    self.routing.get_request(location, data_request);
+                    self.routing.get_request(our_authority.clone(), location, data_request);
                 },
                 MethodCall::Put { location, content } => {
-                    self.routing.put_request(location, content);
+                    self.routing.put_request(our_authority.clone(), location, content);
                 },
                 MethodCall::Reply { data } => {
                     if reply_to != None && original_data_request != None {
-                        self.routing.get_response(reply_to.clone().unwrap(), data,
+                        self.routing.get_response(our_authority.clone(), reply_to.clone().unwrap(), data,
                             original_data_request.clone().unwrap(), response_token.clone());
                     }
                 },
@@ -567,10 +577,13 @@ pub type ResponseNotifier =
                         Event::Churn(_close_group) => println!("client received a churn"),
                         Event::Connected => println!("client connected"),
                         Event::Disconnected => println!("client disconnected"),
-                        Event::FailedRequest(_location, _request, _error) =>
-                            println!("client received a failed request"),
-                        Event::FailedResponse(_location, _response, _error) =>
-                            println!("client received a failed response"),
+                        Event::FailedRequest{ request, our_authority, location, interface_error } =>
+                            println!("as {:?} received request: {:?} targeting {:?} having error {:?}",
+                                     our_authority, request, location, interface_error),
+                        Event::FailedResponse{ response, our_authority, location, interface_error } =>
+                            println!("as {:?} received response: {:?} targeting {:?} having error {:?}",
+                                     our_authority, response, location, interface_error),
+                        Event::Bootstrapped => println!("client routing Bootstrapped"),
                         Event::Terminated => {
                             println!("client routing listening terminated");
                             break;
@@ -582,7 +595,7 @@ pub type ResponseNotifier =
         let _ = client_receiving(receiver, client_sender);
         let id = ::routing::id::Id::new();
         let client_name = id.name();
-        let client_routing = ::routing::routing::Routing::new_client(sender, Some(id));
+        let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
         ::std::thread::sleep_ms(1000);
 
         let value = ::routing::types::generate_random_vec_u8(1024);
