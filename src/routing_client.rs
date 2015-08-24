@@ -35,13 +35,13 @@ use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
 
 type RoutingResult = Result<(), RoutingError>;
 
-/// Routing provides an actionable interface to RoutingNode.
-/// On constructing a new Routing object a RoutingNode will also be started.
-/// Routing objects are clonable for multithreading, or a Routing object can be
-/// cloned with a new set of keys while preserving a single RoutingNode.
+/// Routing provides an actionable interface to RoutingNode.  On constructing a new Routing object a
+/// RoutingNode will also be started. Routing objects are clonable for multithreading, or a Routing
+/// object can be cloned with a new set of keys while preserving a single RoutingNode.
 #[derive(Clone)]
 pub struct RoutingClient {
     action_sender: mpsc::Sender<Action>,
+    get_counter: u8,
 }
 
 impl RoutingClient {
@@ -67,14 +67,16 @@ impl RoutingClient {
                        debug!("Routing node terminated running.");
                    });
 
-        RoutingClient { action_sender: action_sender }
+        RoutingClient { action_sender: action_sender, get_counter: 0u8 }
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn get_request(&self, location: Authority, data_request: DataRequest) {
+    pub fn get_request(&mut self, location: Authority, data_request: DataRequest) {
+        self.get_counter = self.get_counter.wrapping_add(1);
         let _ = self.action_sender.send(Action::ClientSendContent(
                 location,
-                Content::ExternalRequest(ExternalRequest::Get(data_request))));
+                Content::ExternalRequest(
+                    ExternalRequest::Get(data_request, self.get_counter))));
     }
 
     /// Add something to the network

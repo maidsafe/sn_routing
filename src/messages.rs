@@ -67,7 +67,7 @@ impl Debug for SignedToken {
 /// These are the messageTypes routing provides
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ExternalRequest {
-    Get(DataRequest),
+    Get(DataRequest, u8),
     Put(Data),
     Post(Data),
     Delete(Data),

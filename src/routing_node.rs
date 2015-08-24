@@ -1125,7 +1125,7 @@ impl RoutingNode {
 
     fn handle_cache_get(&mut self, request: ExternalRequest) -> Option<Data> {
         match request {
-            ExternalRequest::Get(data_request) => {
+            ExternalRequest::Get(data_request, _) => {
                 match data_request {
                     DataRequest::StructuredData(data_name, value) => {
                         match self.structured_data_cache.as_mut() {
@@ -1259,7 +1259,7 @@ mod test {
                                                       immutable.get_type_tag().clone());
 
         let response = ExternalResponse::Get(immutable_data, data_request.clone(), Some(sign_token));
-        let request = ExternalRequest::Get(data_request);
+        let request = ExternalRequest::Get(data_request, 0u8);
 
         assert!(node.handle_cache_get(request.clone()).is_none());
         node.handle_cache_put(response);
