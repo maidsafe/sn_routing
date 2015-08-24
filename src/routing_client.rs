@@ -50,7 +50,7 @@ impl RoutingClient {
     /// achieve full routing node status.
     /// If the client is started with a relocated id (ie the name has been reassigned),
     /// the core will instantely instantiate termination of the client.
-    pub fn new(event_sender: mpsc::Sender<Event>, keys: Option<Id>) -> Routing {
+    pub fn new(event_sender: mpsc::Sender<Event>, keys: Option<Id>) -> RoutingClient {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
@@ -67,7 +67,7 @@ impl RoutingClient {
                        debug!("Routing node terminated running.");
                    });
 
-        Routing { action_sender: action_sender }
+        RoutingClient { action_sender: action_sender }
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.

@@ -47,6 +47,18 @@ pub enum Event {
         our_authority: Authority,
         from_authority: Authority,
     },
+    FailedRequest {
+        request: ExternalRequest,
+        our_authority: Option<Authority>,
+        location: Authority,
+        interface_error: InterfaceError,
+    },
+    FailedResponse {
+        response: ExternalResponse,
+        our_authority: Option<Authority>,
+        location: Authority,
+        interface_error: InterfaceError,
+    },
     Refresh(u64, NameType, Vec<Vec<u8>>),
     //      ~|~  ~~|~~~~~  ~~|~~~~~~~~~
     //       |     |         | payloads is a vector of serialised account records as sent out
@@ -60,7 +72,5 @@ pub enum Event {
     Bootstrapped,
     Connected,
     Disconnected,
-    FailedRequest(Authority, ExternalRequest, InterfaceError),
-    FailedResponse(Authority, ExternalResponse, InterfaceError),
     Terminated,
 }

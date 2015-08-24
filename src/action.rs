@@ -29,7 +29,7 @@ pub enum Action {
     SendMessage(SignedMessage),
     //          ~~|~~~~~~~~~~
     //            | a fully signed message with a given claimant
-    SendContent(Authority, Content),
+    SendContent(Authority, Authority, Content),
     ClientSendContent(Authority, Content),
     //          ~~|~~~~~~  ~~|~~~~
     //            |          | the bare content for a message to be formed

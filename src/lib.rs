@@ -68,6 +68,7 @@ mod message_accumulator;
 
 /// Routing provides an actionable interface to routing.
 pub mod routing;
+pub mod routing_client;
 /// Event provides the events the user can expect to receive from routing
 pub mod event;
 pub mod test_utils;
