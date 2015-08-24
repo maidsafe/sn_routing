@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fmt::{Debug, Formatter, Error};
+
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use NameType;
 use sodiumoxide::crypto;
@@ -28,7 +30,7 @@ pub enum ImmutableDataType {
 
 /// ImmutableData
 /// hash == SHA512
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable, Debug)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable)]
 pub struct ImmutableData {
     type_tag: ImmutableDataType,
     value: Vec<u8>,
@@ -64,6 +66,12 @@ impl ImmutableData {
 
     pub fn payload_size(&self) -> usize {
         self.value.len()
+    }
+}
+
+impl Debug for ImmutableData {
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
+        formatter.write_str(&format!(" {:?}, {:?} ", self.type_tag, self.name()))
     }
 }
 
