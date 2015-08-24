@@ -528,6 +528,77 @@ pub type ResponseNotifier =
         }
     }
 
+    #[cfg(feature = "use-actual-routing")]
+    #[test]
+    fn network_put_get_test() {
+        let run_vault = |mut vault: Vault| {
+            let _ = ::std::thread::spawn(move || {
+                vault.do_run();
+            });
+        };
+        for i in 0..4 {
+            println!("starting node {:?}", i);
+            let _ = run_vault(Vault::new());
+            ::std::thread::sleep_ms(1000 + i * 1000);
+        }
+        let (sender, receiver) = ::std::sync::mpsc::channel();
+        let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
+        let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(Event)>,
+                                client_sender: ::std::sync::mpsc::Sender<(Data)>| {
+            let _ = ::std::thread::spawn(move || {
+                while let Ok(event) = receiver.recv() {
+                    match event {
+                        Event::Request{ request, our_authority, from_authority, response_token } =>
+                            println!("as {:?} received request: {:?} from {:?} having token {:?}",
+                                     our_authority, request, from_authority, response_token == None),
+                        Event::Response{ response, our_authority, from_authority } => {
+                            println!("as {:?} received response: {:?} from {:?}",
+                                     our_authority, response, from_authority);
+                            match response {
+                                ExternalResponse::Get(data, _, _) => {
+                                    let _ = client_sender.clone().send(data);
+                                },
+                                _ => panic!("not expected!")
+                            }
+                        },
+                        Event::Refresh(_type_tag, _group_name, _accounts) =>
+                            println!("client received a refresh"),
+                        Event::Churn(_close_group) => println!("client received a churn"),
+                        Event::Connected => println!("client connected"),
+                        Event::Disconnected => println!("client disconnected"),
+                        Event::FailedRequest(_location, _request, _error) =>
+                            println!("client received a failed request"),
+                        Event::FailedResponse(_location, _response, _error) =>
+                            println!("client received a failed response"),
+                        Event::Terminated => {
+                            println!("client routing listening terminated");
+                            break;
+                        },
+                    };
+                }
+            });
+        };
+        let _ = client_receiving(receiver, client_sender);
+        let id = ::routing::id::Id::new();
+        let client_name = id.name();
+        let client_routing = ::routing::routing::Routing::new_client(sender, Some(id));
+        ::std::thread::sleep_ms(1000);
+
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+            ::routing::immutable_data::ImmutableDataType::Normal, value);
+        client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
+                                   ::routing::data::Data::ImmutableData(im_data.clone()));
+        ::std::thread::sleep_ms(2000);
+
+        client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
+            ::routing::data::DataRequest::ImmutableData(im_data.name(),
+                ::routing::immutable_data::ImmutableDataType::Normal));
+        while let Ok(data) = client_receiver.recv() {
+            assert_eq!(data, ::routing::data::Data::ImmutableData(im_data.clone()));
+            break;
+        }
+    }
 
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
         let keys = crypto::sign::gen_keypair();
