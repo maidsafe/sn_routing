@@ -72,10 +72,11 @@ impl RoutingClient {
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
     pub fn get_request(&mut self, location: Authority, data_request: DataRequest) {
+        self.get_counter = self.get_counter.wrapping_add(1);
         let _ = self.action_sender.send(Action::ClientSendContent(
                 location,
                 Content::ExternalRequest(
-                    ExternalRequest::Get(data_request, self.get_counter.wrapping_add(1)))));
+                    ExternalRequest::Get(data_request, self.get_counter))));
     }
 
     /// Add something to the network
