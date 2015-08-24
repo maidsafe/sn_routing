@@ -19,26 +19,24 @@
 //!      starting a passive node:       simple_key_value_store --node
 //!      starting an interactive node:  simple_key_value_store
 
-//#![forbid(bad_style, warnings)]
-//#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
-//        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-//        private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
-//        unconditional_recursion, unknown_lints, unsafe_code, unused,
-//        unused_allocation, unused_attributes, unused_comparisons, unused_features, unused_parens,
-//        while_true)]
-//#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-//        unused_qualifications, unused_results, variant_size_differences)]
+#![forbid(bad_style, warnings)]
+#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+       non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
+       private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
+       unconditional_recursion, unknown_lints, unsafe_code, unused,
+       unused_allocation, unused_attributes, unused_comparisons, unused_features, unused_parens,
+       while_true)]
+#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+       unused_qualifications, unused_results, variant_size_differences)]
 
 #[macro_use]
 extern crate log;
 extern crate env_logger;
 
-extern crate cbor;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 
-extern crate crust;
 extern crate routing;
 
 use std::io;
@@ -54,6 +52,7 @@ use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
 use routing::routing::Routing;
+use routing::routing_client::RoutingClient;
 use routing::authority::Authority;
 use routing::NameType;
 use routing::event::Event;
@@ -165,7 +164,7 @@ impl Node {
     }
 
     fn handle_get_request(&mut self, data_request   : DataRequest,
-                                     _our_authority : Authority,
+                                     our_authority : Authority,
                                      from_authority : Authority,
                                      response_token : Option<SignedToken>) {
         let name = match data_request {
@@ -178,7 +177,8 @@ impl Node {
             None => return,
         };
 
-        self.routing.get_response(from_authority,
+        self.routing.get_response(our_authority,
+                                  from_authority,
                                   Data::PlainData(data),
                                   data_request,
                                   response_token);
@@ -195,7 +195,7 @@ impl Node {
 
         match our_authority {
             Authority::NaeManager(_) => {
-                self.db.insert(plain_data.name(), plain_data);
+                let _ = self.db.insert(plain_data.name(), plain_data);
             },
             _ => {
                 println!("Node: Unexpected our_authority ({:?})", our_authority);
@@ -236,7 +236,7 @@ fn parse_user_command(cmd : String) -> Option<UserCommand> {
 
 ////////////////////////////////////////////////////////////////////////////////
 struct Client {
-    routing          : Routing,
+    routing_client   : RoutingClient,
     event_receiver   : Receiver<Event>,
     command_receiver : Receiver<UserCommand>,
     is_done          : bool,
@@ -248,14 +248,14 @@ impl Client {
 
         let id = Id::new();
         println!("Client has set name {:?}", PublicId::new(&id));
-        let routing = Routing::new_client(event_sender, Some(id));
+        let routing_client = RoutingClient::new(event_sender, Some(id));
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
-        thread::spawn(move || { Client::read_user_commands(command_sender); });
+        let _ = spawn(move || { Client::read_user_commands(command_sender); });
 
         Client {
-            routing          : routing,
+            routing_client   : routing_client,
             event_receiver   : event_receiver,
             command_receiver : command_receiver,
             is_done          : false,
@@ -359,16 +359,16 @@ impl Client {
     fn send_get_request(&self, what: String) {
         let name = Client::calculate_key_name(&what);
 
-        self.routing.get_request(Authority::NaeManager(name.clone()),
-                                 DataRequest::PlainData(name));
+        self.routing_client.get_request(Authority::NaeManager(name.clone()),
+            DataRequest::PlainData(name));
     }
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
         let data = encode(&(put_where, put_what)).unwrap();
 
-        self.routing.put_request(Authority::NaeManager(name.clone()),
-                                 Data::PlainData(PlainData::new(name, data)));
+        self.routing_client.put_request(Authority::NaeManager(name.clone()),
+            Data::PlainData(PlainData::new(name, data)));
     }
 
     fn calculate_key_name(key: &String) -> NameType {

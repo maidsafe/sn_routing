@@ -69,98 +69,79 @@ impl Routing {
         Routing { action_sender: action_sender }
     }
 
-    /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
-    /// The RoutingNode will only bootstrap to the network and not attempt to
-    /// achieve full routing node status.
-    /// If the client is started with a relocated id (ie the name has been reassigned),
-    /// the core will instantely instantiate termination of the client.
-    pub fn new_client(event_sender: mpsc::Sender<Event>, keys: Option<Id>) -> Routing {
-        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-
-        let (action_sender, action_receiver) = mpsc::channel::<Action>();
-
-        // start the handler for routing with a restriction to become a full node
-        let mut routing_node = RoutingNode::new(action_sender.clone(),
-                                                action_receiver,
-                                                event_sender,
-                                                true,
-                                                keys);
-
-        spawn(move || {
-                       routing_node.run();
-                       debug!("Routing node terminated running.");
-                   });
-
-        Routing { action_sender: action_sender }
-    }
-
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn get_request(&self, location: Authority, data_request: DataRequest) {
+    pub fn get_request(&self, our_authority: Authority, location: Authority,
+        data_request: DataRequest) {
         let _ = self.action_sender.send(Action::SendContent(
-                location,
+                our_authority, location,
                 Content::ExternalRequest(ExternalRequest::Get(data_request))));
     }
 
     /// Add something to the network
-    pub fn put_request(&self, location: Authority, data: Data) {
+    pub fn put_request(&self, our_authority: Authority, location: Authority, data: Data) {
         let _ = self.action_sender.send(Action::SendContent(
-                location,
+                our_authority, location,
                 Content::ExternalRequest(ExternalRequest::Put(data))));
     }
 
     /// Change something already on the network
-    pub fn post_request(&self, location: Authority, data: Data) {
+    pub fn post_request(&self, our_authority: Authority, location: Authority, data: Data) {
         let _ = self.action_sender.send(Action::SendContent(
-                location,
+                our_authority, location,
                 Content::ExternalRequest(ExternalRequest::Post(data))));
     }
 
     /// Remove something from the network
-    pub fn delete_request(&self, location: Authority, data: Data) {
+    pub fn delete_request(&self, our_authority: Authority, location: Authority, data: Data) {
         let _ = self.action_sender.send(Action::SendContent(
-                location,
+                our_authority, location,
                 Content::ExternalRequest(ExternalRequest::Delete(data))));
     }
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_token.
     pub fn get_response(&self,
+                        our_authority: Authority,
                         location: Authority,
                         data: Data,
                         data_request: DataRequest,
                         signed_token: Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
-                location,
+                our_authority, location,
                 Content::ExternalResponse(
                     ExternalResponse::Get(data, data_request, signed_token))));
     }
     /// response error to a put request
     pub fn put_response(&self,
+                        our_authority: Authority,
                         location: Authority,
                         response_error: ResponseError,
                         signed_token: Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
-                location,
+                our_authority, location,
                 Content::ExternalResponse(
                     ExternalResponse::Put(response_error, signed_token))));
     }
     /// Response error to a post request
     pub fn post_response(&self,
+                        our_authority: Authority,
                          location: Authority,
                          response_error: ResponseError,
                          signed_token: Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
-                location,
+                our_authority, location,
                 Content::ExternalResponse(
                     ExternalResponse::Post(response_error, signed_token))));
     }
     /// response error to a delete respons
     pub fn delete_response(&self,
+                           our_authority: Authority,
                            location: Authority,
                            response_error: ResponseError,
                            signed_token: Option<SignedToken>) {
         let _ = self.action_sender.send(Action::SendContent(
-                location, Content::ExternalResponse(ExternalResponse::Delete(response_error,
-                signed_token))));
+                our_authority, location,
+                Content::ExternalResponse(ExternalResponse::Delete(response_error,
+                    signed_token))));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -169,7 +150,7 @@ impl Routing {
     /// content.
     pub fn refresh_request(&self, type_tag: u64, from_group: NameType, content: Bytes) {
         let _ = self.action_sender.send(Action::SendContent(
-                Authority::ManagedNode(from_group),
+                Authority::NaeManager(from_group.clone()), Authority::NaeManager(from_group),
                 Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
 
     }

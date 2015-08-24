@@ -82,7 +82,7 @@ pub struct RoutingNode {
     immutable_data_cache: Option<LruCache<NameType, ImmutableData>>,
     plain_data_cache: Option<LruCache<NameType, PlainData>>,
     structured_data_cache: Option<LruCache<(NameType, u64), StructuredData>>,
-    }
+}
 
 impl RoutingNode {
     pub fn new(action_sender: mpsc::Sender<Action>,
@@ -154,30 +154,15 @@ impl RoutingNode {
                 Ok(Action::SendMessage(signed_message)) => {
                     ignore(self.message_received(signed_message));
                 }
-                Ok(Action::SendContent(to_authority, content)) => {
-                    if (!self.client_restriction && self.core.is_connected_node()) ||
-                       (self.client_restriction && self.core.has_bootstrap_endpoints()) {
-                        let _ = self.send_content(to_authority, content);
-                    } else {
-                        match content {
-                            Content::ExternalRequest(external_request) => {
-                                self.send_to_user(Event::FailedRequest(to_authority,
-                                    external_request, InterfaceError::NotConnected));
-                            }
-                            Content::ExternalResponse(external_response) => {
-                                self.send_to_user(Event::FailedResponse(to_authority,
-                                    external_response, InterfaceError::NotConnected));
-                            }
-                            _ =>
-                                error!("InternalRequest/Response was sent over ActionChannel {:?}",
-                                content),
-                        }
-
-                    }
-                }
+                Ok(Action::SendContent(our_authority, to_authority, content)) => {
+                    let _ = self.send_content(our_authority, to_authority, content);
+                },
+                Ok(Action::ClientSendContent(to_authority, content)) => {
+                    let _ = self.client_send_content(to_authority, content);
+                },
                 Ok(Action::WakeUp) => {
                     // ensure that the loop is blocked for maximally 10ms
-                }
+                },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
                     let _ = self.event_sender.send(Event::Terminated);
@@ -937,53 +922,84 @@ impl RoutingNode {
         }
     }
 
-    fn send_content(&self, to_authority: Authority, content: Content) -> RoutingResult {
-        match self.core.our_address() {
-            Address::Node(name) => {
-                let our_authority = {
-                    match self.core.our_authority(& RoutingMessage {
-                        from_authority : Authority::ManagedNode(name),
-                        to_authority   : to_authority.clone(),
-                        content        : content.clone(),
-                        }) {
-                        Some(authority) => authority,
-                        None => Authority::ManagedNode(name),
-                    }
-                };
-                let routing_message = RoutingMessage {
-                    from_authority: our_authority,
-                    to_authority: to_authority,
-                    content: content,
-                };
-                match SignedMessage::new(Address::Node(self.core.id().name()),
-                                         routing_message,
-                                         self.core.id().signing_private_key()) {
-                    Ok(signed_message) => ignore(self.send(signed_message)),
-                    Err(e) => return Err(RoutingError::Cbor(e)),
-                };
-                Ok(())
-            }
-            Address::Client(public_key) => {
-                // FIXME (ben 14/08/2015) we need a proper function to retrieve a bootstrap_name
-                let bootstrap_name = match self.get_a_bootstrap_name() {
-                    Some(name) => name,
-                    None => return Err(RoutingError::NotBootstrapped),
-                };
-                let routing_message = RoutingMessage {
-                    from_authority: Authority::Client(bootstrap_name,
-                                                      public_key),
-                    to_authority: to_authority,
-                    content: content,
-                };
-                match SignedMessage::new(Address::Client(self.core.id().signing_public_key()),
-                                         routing_message,
-                                         self.core.id().signing_private_key()) {
-                    Ok(signed_message) => ignore(self.send(signed_message)),
-                    Err(e) => return Err(RoutingError::Cbor(e)),
-                };
-                Ok(())
+    fn send_content(&self, our_authority: Authority, to_authority: Authority,
+        content: Content) -> RoutingResult {
+        if self.core.is_connected_node() {
+            let routing_message = RoutingMessage {
+                from_authority: our_authority,
+                to_authority: to_authority,
+                content: content,
+            };
+            match SignedMessage::new(Address::Node(self.core.id().name()),
+                                     routing_message,
+                                     self.core.id().signing_private_key()) {
+                Ok(signed_message) => ignore(self.send(signed_message)),
+                Err(e) => return Err(RoutingError::Cbor(e)),
+            };
+        } else {
+            match content {
+                Content::ExternalRequest(external_request) => {
+                    self.send_to_user(Event::FailedRequest {
+                        request: external_request,
+                        our_authority: Some(our_authority),
+                        location: to_authority,
+                        interface_error: InterfaceError::NotConnected });
+                }
+                Content::ExternalResponse(external_response) => {
+                    self.send_to_user(Event::FailedResponse {
+                        response: external_response,
+                        our_authority: Some(our_authority),
+                        location: to_authority,
+                        interface_error: InterfaceError::NotConnected });
+                }
+                // FIXME (ben 24/08/2015) InternalRequest::Refresh can pass here on failure
+                _ => error!("InternalRequest/Response was sent back to user {:?}", content),
             }
         }
+        Ok(())
+    }
+
+    fn client_send_content(&self, to_authority: Authority, content: Content) -> RoutingResult {
+        if self.core.is_connected_node() ||
+            self.core.has_bootstrap_endpoints() {
+            // FIXME (ben 14/08/2015) we need a proper function to retrieve a bootstrap_name
+            let bootstrap_name = match self.get_a_bootstrap_name() {
+                Some(name) => name,
+                None => return Err(RoutingError::NotBootstrapped),
+            };
+            let routing_message = RoutingMessage {
+                from_authority: Authority::Client(bootstrap_name,
+                                                  self.core.id().signing_public_key()),
+                to_authority: to_authority,
+                content: content,
+            };
+            match SignedMessage::new(Address::Client(self.core.id().signing_public_key()),
+                                     routing_message,
+                                     self.core.id().signing_private_key()) {
+                Ok(signed_message) => ignore(self.send(signed_message)),
+                // FIXME (ben 24/08/2015) find an elegant way to give the message back to user
+                Err(e) => return Err(RoutingError::Cbor(e)),
+            };
+        } else {
+            match content {
+                Content::ExternalRequest(external_request) => {
+                    self.send_to_user(Event::FailedRequest {
+                        request: external_request,
+                        our_authority: None,
+                        location: to_authority,
+                        interface_error: InterfaceError::NotConnected });
+                }
+                Content::ExternalResponse(external_response) => {
+                    self.send_to_user(Event::FailedResponse {
+                        response: external_response,
+                        our_authority: None,
+                        location: to_authority,
+                        interface_error: InterfaceError::NotConnected });
+                }
+                _ => error!("InternalRequest/Response was sent back to user {:?}", content),
+            }
+        }
+        Ok(())
     }
 
     /// Send a SignedMessage out to the destination
