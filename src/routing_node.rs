@@ -594,8 +594,6 @@ impl RoutingNode {
                             bootstrap_name: &NameType,
                             bootstrap_endpoint: &Endpoint)
                             -> RoutingResult {
-        debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
-            bootstrap_endpoint);
         // if RoutingNode is restricted from becoming a node,
         // it suffices to never request a network name.
         if self.client_restriction {
@@ -604,6 +602,8 @@ impl RoutingNode {
         if self.core.is_node() {
             return Err(RoutingError::AlreadyConnected);
         };
+        debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
+            bootstrap_endpoint);
         let core_id = self.core.id();
         let routing_message = RoutingMessage {
             from_authority: Authority::Client(bootstrap_name.clone(),
