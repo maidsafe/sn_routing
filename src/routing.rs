@@ -74,7 +74,7 @@ impl Routing {
         data_request: DataRequest) {
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
-                Content::ExternalRequest(ExternalRequest::Get(data_request))));
+                Content::ExternalRequest(ExternalRequest::Get(data_request, 0u8))));
     }
 
     /// Add something to the network

@@ -123,7 +123,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
     let element = match message.content {
         Content::ExternalRequest(ref request) => {
             match *request {
-                ExternalRequest::Get(ref data_request) => Some(data_request.name().clone()),
+                ExternalRequest::Get(ref data_request, _) => Some(data_request.name().clone()),
                 ExternalRequest::Put(ref data) => Some(data.name()),
                 ExternalRequest::Post(ref data) => Some(data.name()),
                 ExternalRequest::Delete(ref data) => Some(data.name()),

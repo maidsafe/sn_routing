@@ -142,7 +142,7 @@ impl Node {
                                  from_authority : Authority,
                                  response_token : Option<SignedToken>) {
         match request {
-            ExternalRequest::Get(data_request) => {
+            ExternalRequest::Get(data_request, _) => {
                 self.handle_get_request(data_request,
                                         our_authority,
                                         from_authority,
@@ -163,10 +163,10 @@ impl Node {
         }
     }
 
-    fn handle_get_request(&mut self, data_request   : DataRequest,
-                                     our_authority : Authority,
-                                     from_authority : Authority,
-                                     response_token : Option<SignedToken>) {
+    fn handle_get_request(&mut self, data_request: DataRequest,
+                                     our_authority: Authority,
+                                     from_authority: Authority,
+                                     response_token: Option<SignedToken>) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
             _ => { println!("Node: Only serving plain data in this example"); return; }
@@ -356,7 +356,7 @@ impl Client {
         };
     }
 
-    fn send_get_request(&self, what: String) {
+    fn send_get_request(&mut self, what: String) {
         let name = Client::calculate_key_name(&what);
 
         self.routing_client.get_request(Authority::NaeManager(name.clone()),
