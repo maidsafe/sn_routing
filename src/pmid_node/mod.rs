@@ -30,15 +30,18 @@ impl PmidNode {
     }
 
     pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, ResponseError> {
+        info!("pmid_node getting {:?}", name);
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
             return Err(ResponseError::Abort);
         }
         let sd : ImmutableData = try!(::routing::utils::decode(&data));
+        info!("pmid_node returning {:?}", name);
         Ok(vec![MethodCall::Reply { data: Data::ImmutableData(sd) }])
     }
 
     pub fn handle_put(&mut self, incoming_data : Data) ->Result<Vec<MethodCall>, ResponseError> {
+        info!("pmid_node storing {:?}", incoming_data.name());
         let immutable_data = match incoming_data.clone() {
             Data::ImmutableData(data) => { data }
             _ => { return Err(ResponseError::InvalidRequest(incoming_data)); }

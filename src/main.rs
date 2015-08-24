@@ -30,14 +30,20 @@
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results, variant_size_differences)]
 
+#[macro_use]
+extern crate log;
+#[cfg(feature = "use-actual-routing")]
+#[cfg(test)]
+extern crate env_logger;
+
 // Non-MaidSafe crates
 extern crate cbor;
-#[cfg(test)]
-extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate tempdir;
 extern crate time;
+#[cfg(test)]
+extern crate rand;
 
 // MaidSafe crates
 extern crate lru_time_cache;

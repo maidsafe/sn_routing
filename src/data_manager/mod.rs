@@ -160,6 +160,7 @@ impl DataManager {
 
     pub fn handle_put_response(&mut self, response: ResponseError,
                                from_address: &NameType) -> Vec<MethodCall> {
+        info!("DataManager handle_put_responsen from {:?}", from_address);
         match response {
             // TODO: may need to update the flow to utilize HadToClearSacrificial explicitly
             //       currently assuming FailedRequestForData is replacing FailedTOStoreData

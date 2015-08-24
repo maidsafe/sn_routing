@@ -12,6 +12,7 @@ homepage = "http://maidsafe.net"
 [dependencies]
 # ---- Non-MaidSafe -----
 cbor = "*"
+log = "*"
 rand = "*"
 rustc-serialize = "*"
 sodiumoxide = "*"
@@ -21,6 +22,9 @@ time = "*"
 # ---- MaidSafe ------
 lru_time_cache = "0.2.*"
 routing = "0.3.*"
+
+[dev-dependencies]
+env_logger = "*"
 
 [features]
 use-actual-routing = []
