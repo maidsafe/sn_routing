@@ -285,7 +285,7 @@ impl Vault {
             _ => Ok(vec![]),
         };
         if let Ok(actions) = returned_actions {
-            self.send(actions, response_token, None, None);
+            self.send(our_authority, actions, response_token, None, None);
         }
     }
 
