@@ -21,18 +21,16 @@ use NameType;
 
 type Map<K,V> = BTreeMap<K,V>;
 pub type Bytes = Vec<u8>;
-
-const MAX_REQUEST_COUNT: usize = 1000;
-
 //                     +-> Source and target group
 //                     |
 pub type Request = (NameType, u64);
-
 pub struct RefreshAccumulator {
     //                                 +-> Who sent it
     //                                 |
     requests: LruCache<Request, Map<NameType, Bytes>>,
 }
+
+const MAX_REQUEST_COUNT: usize = 1000;
 
 impl RefreshAccumulator {
 
