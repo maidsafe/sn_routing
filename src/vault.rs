@@ -542,6 +542,10 @@ pub type ResponseNotifier =
     #[cfg(feature = "use-actual-routing")]
     #[test]
     fn network_put_get_test() {
+        match ::env_logger::init() {
+            Ok(()) => {},
+            Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
+        }
         let run_vault = |mut vault: Vault| {
             let _ = ::std::thread::spawn(move || {
                 vault.do_run();

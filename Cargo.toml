@@ -12,6 +12,7 @@ homepage = "http://maidsafe.net"
 [dependencies]
 # ---- Non-MaidSafe -----
 cbor = "*"
+log = "*"
 rand = "*"
 rustc-serialize = "*"
 sodiumoxide = "*"
