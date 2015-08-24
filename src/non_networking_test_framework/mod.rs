@@ -112,7 +112,8 @@ impl MockRouting {
 
     // -----------  the following methods are expected to be API functions   ------------- //
 
-    pub fn get_response(&self, location       : Authority,
+    pub fn get_response(&self, our_authority  : Authority,
+                               location       : Authority,
                                data           : Data,
                                data_request   : DataRequest,
                                response_token : Option<::routing::SignedToken>) {
@@ -124,7 +125,7 @@ impl MockRouting {
                 Authority::NaeManager(_) => {
                     let _ = cloned_sender.send(Event::Response{ response: ExternalResponse::Get(data.clone(), data_request, response_token),
                                                                 our_authority: location,
-                                                                from_authority: Authority::ManagedNode(NameType::new([7u8; 64])) });
+                                                                from_authority: our_authority });
                 },
                 Authority::Client(_, _) => {
                     let _ = cloned_client_sender.send(data);
@@ -134,63 +135,27 @@ impl MockRouting {
         });
     }
 
-    pub fn get_request(&self, location: Authority, request_for: DataRequest) {
-        let name = match request_for.clone() {
-            DataRequest::StructuredData(name, _) => name,
-            DataRequest::ImmutableData(name, _) => name,
-            DataRequest::PlainData(_) => panic!("Unexpected"),
-        };
+    pub fn get_request(&self, our_authority : Authority, location: Authority, request_for: DataRequest) {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
-
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            match location.clone() {
-                Authority::ManagedNode(_) => {
-                    let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(request_for),
-                                                               our_authority: Authority::ManagedNode(NameType::new([7u8; 64])),
-                                                               from_authority: Authority::NaeManager(name),
-                                                               response_token: None });
-                },
-                _ => {}
-            }
+            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(request_for),
+                                                       our_authority: location,
+                                                       from_authority: our_authority,
+                                                       response_token: None });
         });
     }
 
-    pub fn put_request(&self, location: Authority, data: Data) {
-        let destination = match location.clone() {
-            Authority::ClientManager(dest) => dest,
-            Authority::NaeManager(dest) => dest,
-            Authority::NodeManager(dest) => dest,
-            Authority::ManagedNode(dest) => dest,
-            _ => panic!("Unexpected"),
-        };
+    pub fn put_request(&self, our_authority : Authority, location: Authority, data: Data) {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
-
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            match location.clone() {
-                Authority::NaeManager(_) => {
-                    let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data.clone()),
-                                                               our_authority: location,
-                                                               from_authority: Authority::ClientManager(NameType::new([7u8; 64])),
-                                                               response_token: None });
-                },
-                Authority::NodeManager(_) => {
-                    let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data.clone()),
-                                                               our_authority: location,
-                                                               from_authority: Authority::NaeManager(data.name()),
-                                                               response_token: None });
-                },
-                Authority::ManagedNode(_) => {
-                    let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data.clone()),
-                                                               our_authority: location,
-                                                               from_authority: Authority::NodeManager(NameType::new([6u8; 64])),
-                                                               response_token: None });
-                },
-                _ => {}
-            }
+            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data.clone()),
+                                                       our_authority: location,
+                                                       from_authority: our_authority,
+                                                       response_token: None });
         });
     }
 
