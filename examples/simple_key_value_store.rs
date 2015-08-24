@@ -28,7 +28,6 @@
 //        while_true)]
 //#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
 //        unused_qualifications, unused_results, variant_size_differences)]
-//#![feature(convert, core)]
 
 #[macro_use]
 extern crate log;
@@ -43,8 +42,6 @@ extern crate crust;
 extern crate routing;
 
 use std::io;
-use std::net::SocketAddr;
-use std::str::FromStr;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
@@ -56,22 +53,22 @@ use docopt::Docopt;
 use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
-use crust::Endpoint;
 use routing::routing::Routing;
 use routing::authority::Authority;
 use routing::NameType;
-use routing::error::RoutingError;
 use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
-use routing::utils::{encode};
+use routing::utils::{encode, decode};
 use routing::{ExternalRequest, ExternalResponse, SignedToken};
+use routing::id::Id;
+use routing::public_id::PublicId;
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage:
-  simple_key_value_store [<peer>...]
-  simple_key_value_store (--node [<peer>...])
+  simple_key_value_store
+  simple_key_value_store --node
   simple_key_value_store --help
 
 Options:
@@ -85,43 +82,14 @@ Options:
   A passive node is one that simply reacts on received requests. Such nodes are
   the workers; they route messages and store and provide data.
 
-  The optional <peer>... arg(s) are a list of peer endpoints (other running
-  instances of this example).  If these are supplied, the node will try to
-  connect to one of these in order to join the network.  If no endpoints are
-  supplied, the node will try to connect to an existing network using Crust's
-  discovery protocol.
+  The crust configuration file can be used to provide information on what
+  network discovery patterns to use, or which seed nodes to use.
 ";
 
 #[derive(RustcDecodable, Debug)]
 struct Args {
-    arg_peer: Vec<PeerEndpoint>,
     flag_node: bool,
     flag_help: bool,
-}
-
-#[derive(Debug)]
-enum PeerEndpoint {
-    Tcp(SocketAddr),
-}
-
-impl PeerEndpoint {
-    fn to_crust_endpoint(self) -> Endpoint {
-        Endpoint::Tcp(match self { PeerEndpoint::Tcp(address) => address })
-    }
-}
-
-impl Decodable for PeerEndpoint {
-    fn decode<D: Decoder>(decoder: &mut D)->Result<PeerEndpoint, D::Error> {
-        let str = try!(decoder.read_str());
-        let address = match SocketAddr::from_str(&str) {
-            Ok(addr) => addr,
-            Err(_) => {
-                return Err(decoder.error(&format!(
-                    "Could not decode {} as valid IPv4 or IPv6 address.", str)[..]));
-            },
-        };
-        Ok(PeerEndpoint::Tcp(address))
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -132,15 +100,15 @@ struct Node {
 }
 
 impl Node {
-    fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Node, RoutingError> {
+    fn new() -> Node {
         let (sender, receiver) = mpsc::channel::<Event>();
         let routing = Routing::new(sender);
 
-        Ok(Node {
+        Node {
             routing  : routing,
             receiver : receiver,
             db       : BTreeMap::new(),
-        })
+        }
     }
 
     fn run(&mut self) {
@@ -234,7 +202,6 @@ impl Node {
                 assert!(false);
             }
         }
-
     }
 }
 
@@ -276,21 +243,23 @@ struct Client {
 }
 
 impl Client {
-    fn new(_bootstrap_peers: Vec<Endpoint>) -> Result<Client, RoutingError> {
+    fn new() -> Client {
         let (event_sender, event_receiver) = mpsc::channel::<Event>();
 
-        let routing = Routing::new_client(event_sender, None);
+        let id = Id::new();
+        println!("Client has set name {:?}", PublicId::new(&id));
+        let routing = Routing::new_client(event_sender, Some(id));
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
         thread::spawn(move || { Client::read_user_commands(command_sender); });
 
-        Ok(Client {
+        Client {
             routing          : routing,
             event_receiver   : event_receiver,
             command_receiver : command_receiver,
             is_done          : false,
-        })
+        }
     }
 
     fn run(&mut self) {
@@ -355,22 +324,36 @@ impl Client {
     }
 
     fn handle_routing_event(&mut self, event : Event) {
-        println!("Client received routing event: {:?}", event);
+        debug!("Client received routing event: {:?}", event);
         match event {
-            Event::Response{response, our_authority, from_authority} => {
+            Event::Response{
+                response, our_authority : _our_authority,
+                from_authority : _from_authority} => {
                 match response {
-                    ExternalResponse::Get(data, data_request, opt_signed_token) => {
-
+                    ExternalResponse::Get(data, _data_request, _opt_signed_token) => {
+                        let plain_data = match data {
+                            Data::PlainData(plain_data) => plain_data,
+                            _ => {
+                                error!("Node: Only storing plain data in this example");
+                                return; },
+                        };
+                        let (key, value) : (String, String) = match decode(plain_data.value()) {
+                            Ok((key, value)) => (key, value),
+                            Err(_) => {
+                                error!("Failed to decode get response.");
+                                return; },
+                        };
+                        println!("Got value {:?} on key {:?}", value, key);
                     },
-                    ExternalResponse::Put(response_error, opt_signed_token) => {
-
+                    ExternalResponse::Put(response_error, _opt_signed_token) => {
+                        error!("Failed to store: {:?}", response_error);
                     },
                     _ => error!("Received external response {:?}, but not handled in example",
                         response),
-                }
+                };
             },
             _ => {},
-        }
+        };
     }
 
     fn send_get_request(&self, what: String) {
@@ -382,7 +365,7 @@ impl Client {
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
-        let data = encode(&put_what).unwrap();
+        let data = encode(&(put_where, put_what)).unwrap();
 
         self.routing.put_request(Authority::NaeManager(name.clone()),
                                  Data::PlainData(PlainData::new(name, data)));
@@ -404,23 +387,11 @@ fn main() {
                             .and_then(|docopt| docopt.decode())
                             .unwrap_or_else(|error| error.exit());
 
-    let bootstrap_peers = args.arg_peer.into_iter()
-                                       .map(|ep| ep.to_crust_endpoint())
-                                       .collect::<Vec<_>>();
-
     if args.flag_node {
-        let mut node = match Node::new(bootstrap_peers) {
-            Ok(node) => node,
-            Err(err) => { println!("Failed to create Node: {:?}", err); return; }
-        };
-
+        let mut node = Node::new();
         node.run();
     } else {
-        let mut client = match Client::new(bootstrap_peers) {
-            Ok(client) => client,
-            Err(err) => { println!("Failed to create Client: {:?}", err); return; }
-        };
-
+        let mut client = Client::new();
         client.run();
     }
 }

@@ -36,15 +36,16 @@ use sodiumoxide::crypto::sign;
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Event {
     Request {
-        request        : ExternalRequest,
-        our_authority  : Authority,
-        from_authority : Authority,
-        response_token : Option<SignedToken>, // Not set when the request came from a group
+        request: ExternalRequest,
+        our_authority: Authority,
+        from_authority: Authority,
+        response_token: Option<SignedToken>, /* Not set when the request came from
+                                              * a group */
     },
     Response {
-        response       : ExternalResponse,
-        our_authority  : Authority,
-        from_authority : Authority,
+        response: ExternalResponse,
+        our_authority: Authority,
+        from_authority: Authority,
     },
     Refresh(u64, NameType, Vec<Vec<u8>>),
     //      ~|~  ~~|~~~~~  ~~|~~~~~~~~~
@@ -56,6 +57,7 @@ pub enum Event {
     //    ~~|~~~~~~~~~~
     //      | our close group sorted from our name; always including our name
     //      | if size > 1, we are connected to the network
+    Bootstrapped,
     Connected,
     Disconnected,
     FailedRequest(Authority, ExternalRequest, InterfaceError),

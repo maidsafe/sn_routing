@@ -23,9 +23,9 @@ use NameType;
 // relocated name provided by the network using assign_relocated_name method
 // TODO (ben 2015-04-01) : implement order based on name
 pub struct Id {
-  sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
-  encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey),
-  name: NameType
+    sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
+    encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey),
+    name: NameType,
 }
 
 impl Id {
@@ -34,9 +34,9 @@ impl Id {
         let sign_keys =  sodiumoxide::crypto::sign::gen_keypair();
         let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0);
         Id {
-          sign_keys : sign_keys,
-          encrypt_keys : sodiumoxide::crypto::box_::gen_keypair(),
-          name : name,
+            sign_keys: sign_keys,
+            encrypt_keys: sodiumoxide::crypto::box_::gen_keypair(),
+            name: name,
         }
     }
 
@@ -54,23 +54,14 @@ impl Id {
     }
 
     pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
-                     encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey)) -> Id {
+                     encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey))
+                     -> Id {
         let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0);
-        Id {
-          sign_keys : sign_keys,
-          encrypt_keys : encrypt_keys,
-          name : name,
-        }
+        Id { sign_keys: sign_keys, encrypt_keys: encrypt_keys, name: name }
     }
 
     pub fn name(&self) -> NameType {
-      self.name
-    }
-
-    pub fn set_name(&mut self, name: NameType) {
-        // This function should not exist, it is here only temporarily
-        // to fix compilation.
-        self.name = name;
+        self.name
     }
 
     // name field is initially same as original_name, this should be later overwritten by

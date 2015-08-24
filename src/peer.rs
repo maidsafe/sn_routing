@@ -29,29 +29,32 @@ use public_id::PublicId;
 /// endpoints, merging, comparing and other functionality.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub struct Peer {
-    identity            : ConnectionName,
+    identity: ConnectionName,
     //                    ~~|~~~~~~~~~~~
     //                      | identifies the peer in relation to us
-    endpoint            : crust::Endpoint,
+    endpoint: crust::Endpoint,
     //                    ~~|~~~~~~~~~~~~
     //                      | initially only support a single endpoint
-    public_id           : Option<PublicId>,
+    public_id: Option<PublicId>,
     //                    ~~|~~~~~~~~~~~~~
     //                      | store public_id once obtained
-    connected_timestamp : SteadyTime,
-    //                    ~~|~~~~~~~
-    //                      | the recorded time when the connection was established,
-    //                      | this allows unidentified connections to time-out
+    connected_timestamp: SteadyTime, /*                    ~~|~~~~~~~
+                                      *                      | the recorded time
+                                      * when the connection was established,
+                                      *                      | this allows
+                                      * unidentified connections to time-out */
 }
 
 impl Peer {
-    pub fn new(identity : ConnectionName, endpoint : crust::Endpoint,
-        public_id : Option<PublicId>) -> Peer {
+    pub fn new(identity: ConnectionName,
+               endpoint: crust::Endpoint,
+               public_id: Option<PublicId>)
+               -> Peer {
         Peer {
-            identity            : identity,
-            endpoint            : endpoint,
-            public_id           : public_id,
-            connected_timestamp : SteadyTime::now(),
+            identity: identity,
+            endpoint: endpoint,
+            public_id: public_id,
+            connected_timestamp: SteadyTime::now(),
         }
     }
 
@@ -71,19 +74,19 @@ impl Peer {
         &self.connected_timestamp
     }
 
-    pub fn set_public_id(&mut self, public_id : PublicId) {
+    pub fn set_public_id(&mut self, public_id: PublicId) {
         self.public_id = Some(public_id);
     }
 
     /// Returns a new Peer with the changed identity.
     /// No checks are performed on the consistency of the new identity
     /// with the previous information.
-    pub fn change_identity(&mut self, identity : ConnectionName) -> Peer {
+    pub fn change_identity(&mut self, identity: ConnectionName) -> Peer {
         Peer {
-            identity            : identity,
-            endpoint            : self.endpoint.clone(),
-            public_id           : self.public_id.clone(),
-            connected_timestamp : self.connected_timestamp.clone(),
+            identity: identity,
+            endpoint: self.endpoint.clone(),
+            public_id: self.public_id.clone(),
+            connected_timestamp: self.connected_timestamp.clone(),
         }
     }
 }
