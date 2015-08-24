@@ -32,6 +32,7 @@
 
 #[macro_use]
 extern crate log;
+#[cfg(feature = "use-actual-routing")]
 #[cfg(test)]
 extern crate env_logger;
 
