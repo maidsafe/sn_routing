@@ -422,7 +422,7 @@ impl RoutingNode {
     fn message_received(&mut self, signed_message: SignedMessage) -> RoutingResult {
 
         // filter check, should just return quietly
-        if self.filter.check(&signed_message) {
+        if !self.filter.check(&signed_message) {
             return Err(RoutingError::FilterCheckFailed);
         }
 
@@ -454,11 +454,9 @@ impl RoutingNode {
 
         // Accumulate message
         let (message, opt_token) = match self.accumulate(&signed_message) {
-            Some((message, opt_token)) =>{
+            Some((message, opt_token)) => {
                 self.filter.block(&message);
-                info!("ACC({:?}) {:?}, token {:?}", self.group_threshold(),
-                    message, opt_token);
-                (message, opt_token)},
+                (message, opt_token) },
             None => return Ok(()),
         };
 

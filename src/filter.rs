@@ -40,7 +40,6 @@ impl Filter {
     /// the message has been seen before, which filters on repeated signed messages.
     /// If this is a new signed message, it will store the signature to the filter.
     /// Secondly the hash of the contained routing message is calculated and checked.
-    ///
     pub fn check(&mut self, signed_message: &::messages::SignedMessage) -> bool {
 
         // if the signature has been stored, we have processed this message before
@@ -52,7 +51,6 @@ impl Filter {
             Ok(bytes) => ::sodiumoxide::crypto::hash::sha256::hash(&bytes[..]),
             Err(_) => return false,
         };
-
         // already get the return value, but continue processing the analytics
         let blocked = self.message_filter.check(&digest);
 
@@ -70,7 +68,6 @@ impl Filter {
           Ok(bytes) => ::sodiumoxide::crypto::hash::sha256::hash(&bytes[..]),
           Err(_) => return,
       };
-
       self.message_filter.add(digest);
     }
 
