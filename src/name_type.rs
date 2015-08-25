@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor::CborTagEncode;
-// use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
 use std::hash;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cmp::*;
