@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+### [0.3.4] Improvements to filter and accumulator behavior
+
+- [#642](https://github.com/maidsafe/routing/pull/642) improve filter to block resolved messages
+- [#640](https://github.com/maidsafe/routing/pull/640) Enable duplicate get requests
+
 ### [0.3.3] Events and refresh
 
 - [#638](https://github.com/maidsafe/routing/pull/638) debug formatting for Data
