@@ -432,7 +432,7 @@ impl RoutingNode {
         }
 
         let message = signed_message.get_routing_message().clone();
-        
+
         // check if our calculated authority matches the destination authority of the message
         let our_authority = self.core.our_authority(&message);
         if our_authority.clone().map(|our_auth| &message.to_authority != &our_auth).unwrap_or(true) {
@@ -455,6 +455,7 @@ impl RoutingNode {
         // Accumulate message
         let (message, opt_token) = match self.accumulate(&signed_message) {
             Some((message, opt_token)) =>{
+                self.filter.block(&message);
                 info!("ACC({:?}) {:?}, token {:?}", self.group_threshold(),
                     message, opt_token);
                 (message, opt_token)},
