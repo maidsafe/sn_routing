@@ -62,6 +62,7 @@ mod routing_node;
 mod routing_core;
 mod relay;
 mod hello;
+mod churn;
 mod wake_up;
 mod peer;
 mod refresh_accumulator;
