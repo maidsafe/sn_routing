@@ -32,8 +32,6 @@
 
 #[macro_use]
 extern crate log;
-#[cfg(feature = "use-actual-routing")]
-#[cfg(test)]
 extern crate env_logger;
 
 // Non-MaidSafe crates
@@ -65,5 +63,10 @@ mod non_networking_test_framework;
 
 /// Runs a SAFE Network vault
 pub fn main () {
+    match env_logger::init() {
+        Ok(()) => {},
+        Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
+    }
+
     ::vault::Vault::run();
 }

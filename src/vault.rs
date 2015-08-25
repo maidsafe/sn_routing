@@ -222,13 +222,17 @@ impl Vault {
                         if self.request_cache.contains_key(&name) {
                             debug!("DataManager handle_get inserting original request {:?} from {:?} into {:?} ",
                                    data_request, from_authority, name);
-                            self.request_cache.get_mut(&name).unwrap().push((from_authority.clone(),
-                                                                             data_request.clone(),
-                                                                             response_token.clone()));
+                            match self.request_cache.get_mut(&name) {
+                                Some(ref mut request) => request.push((from_authority.clone(),
+                                                                       data_request.clone(),
+                                                                       response_token.clone())),
+                                None => error!("Failed to insert get request in the cache."),
+                            };
                         } else {
                             debug!("DataManager handle_get created original request {:?} from {:?} as entry {:?}",
-                                   data_request, from_authority, name);
-                            self.request_cache.add(name, vec![(from_authority.clone(), data_request.clone(), response_token.clone())]);
+                                data_request, from_authority, name);
+                            self.request_cache.add(name, vec![(from_authority.clone(),
+                                data_request.clone(), response_token.clone())]);
                         }
                         self.data_manager.handle_get(&name, data_request.clone())
                     }
@@ -298,18 +302,25 @@ impl Vault {
 
     fn handle_get_response(&mut self,
                            our_authority: Authority,
-                           _from_authority: Authority,
+                           from_authority: Authority,
                            response: Data,
                            response_token: Option<::routing::SignedToken>) {
         match our_authority.clone() {
             // Lookup in the request_cache and reply to the clients
             Authority::NaeManager(name) => {
                 if self.request_cache.contains_key(&name) {
-                    let records = self.request_cache.remove(&name).unwrap();
-                    for record in records {
-                        self.send(our_authority.clone(), vec![MethodCall::Reply{ data: response.clone() }],
-                                  record.2, Some(record.0), Some(record.1));
-                    }
+                    match self.request_cache.remove(&name) {
+                        Some(requests) => {
+                            for request in requests {
+                                self.send(our_authority.clone(), vec![MethodCall::Reply {
+                                    data: response.clone() }], request.2, Some(request.0),
+                                    Some(request.1));
+                            }
+                        },
+                        None => debug!("Failed to find any requests for get response from {:?}
+                            with our authority {:?}: {:?}.", from_authority,  our_authority,
+                            response),
+                    };
                 }
             },
             _ => {}
@@ -429,8 +440,8 @@ impl Vault {
     fn send(&mut self, our_authority: Authority,
             actions: Vec<MethodCall>,
             response_token: Option<::routing::SignedToken>,
-            reply_to: Option<Authority>,
-            original_data_request: Option<DataRequest>) {
+            optional_reply_to: Option<Authority>,
+            optional_original_data_request: Option<DataRequest>) {
         for action in actions {
             match action {
                 MethodCall::Get { location, data_request } => {
@@ -440,12 +451,15 @@ impl Vault {
                     self.routing.put_request(our_authority.clone(), location, content);
                 },
                 MethodCall::Reply { data } => {
-                    if reply_to != None && original_data_request != None {
-                        debug!("as {:?} sending data {:?} to {:?} in responding to the ori_data_request {:?}",
-                               our_authority, data, reply_to.clone().unwrap(), original_data_request.clone().unwrap());
-                        self.routing.get_response(our_authority.clone(), reply_to.clone().unwrap(), data,
-                            original_data_request.clone().unwrap(), response_token.clone());
-                    }
+                    match (&optional_reply_to, &optional_original_data_request) {
+                        (&Some(ref reply_to), &Some(ref original_data_request)) => {
+                            debug!("as {:?} sending data {:?} to {:?} in responding to the ori_data_request {:?}",
+                                our_authority, data, reply_to, original_data_request);
+                            self.routing.get_response(our_authority.clone(), reply_to.clone(), data,
+                                original_data_request.clone(), response_token.clone())
+                        },
+                        _ => {},
+                    };
                 },
                 _ => {}
             }
