@@ -76,12 +76,6 @@ struct SignedKey {
     encrypt_public_key: crypto::box_::PublicKey,
 }
 
-// TODO (ben 12/08/2015) Discussion point, message_id from RoutingMessage has been removed
-// in favour the signature of the signed message.  There is an unresolved question on
-// how to handle an explicit double identical request (eg for a network based reference
-// counter).
-pub type FilterType = Signature;
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
 pub enum Address {
     Client(crypto::sign::PublicKey),

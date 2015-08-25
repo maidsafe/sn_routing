@@ -54,6 +54,7 @@ extern crate message_filter;
 
 mod common_bits;
 mod action;
+mod filter;
 mod messages;
 mod name_type;
 mod routing_table;

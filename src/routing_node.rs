@@ -73,7 +73,7 @@ pub struct RoutingNode {
     action_receiver: mpsc::Receiver<Action>,
     event_sender: mpsc::Sender<Event>,
     wakeup: WakeUpCaller,
-    filter: MessageFilter<types::FilterType>,
+    filter: ::filter::Filter,
     core: RoutingCore,
     public_id_cache: LruCache<NameType, PublicId>,
     connection_cache: BTreeMap<NameType, SteadyTime>,
@@ -109,7 +109,7 @@ impl RoutingNode {
             action_receiver: action_receiver,
             event_sender: event_sender,
             wakeup: WakeUpCaller::new(action_sender),
-            filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
+            filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
             core: core,
             public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_cache: BTreeMap::new(),
@@ -421,22 +421,17 @@ impl RoutingNode {
     /// no relay-messages enter the SAFE network here.
     fn message_received(&mut self, signed_message: SignedMessage) -> RoutingResult {
 
-        let message = signed_message.get_routing_message().clone();
-
-        // filter check
-        if self.filter.check(signed_message.signature()) {
-            // should just return quietly
+        // filter check, should just return quietly
+        if !self.filter.check(&signed_message) {
             return Err(RoutingError::FilterCheckFailed);
         }
-        debug!("MESSAGE {:?} from {:?} to {:?}, our authority {:?}", message.content,
-            message.source(), message.destination(), self.core.our_authority(&message));
-        // add to filter
-        self.filter.add(signed_message.signature().clone());
 
         // Forward
         if self.core.is_connected_node() {
             ignore(self.send(signed_message.clone()));
         }
+
+        let message = signed_message.get_routing_message().clone();
 
         // check if our calculated authority matches the destination authority of the message
         let our_authority = self.core.our_authority(&message);
@@ -459,7 +454,9 @@ impl RoutingNode {
 
         // Accumulate message
         let (message, opt_token) = match self.accumulate(&signed_message) {
-            Some((message, opt_token)) => (message, opt_token),
+            Some((message, opt_token)) => {
+                self.filter.block(&message);
+                (message, opt_token) },
             None => return Ok(()),
         };
 
@@ -594,8 +591,6 @@ impl RoutingNode {
                             bootstrap_name: &NameType,
                             bootstrap_endpoint: &Endpoint)
                             -> RoutingResult {
-        debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
-            bootstrap_endpoint);
         // if RoutingNode is restricted from becoming a node,
         // it suffices to never request a network name.
         if self.client_restriction {
@@ -604,6 +599,8 @@ impl RoutingNode {
         if self.core.is_node() {
             return Err(RoutingError::AlreadyConnected);
         };
+        debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
+            bootstrap_endpoint);
         let core_id = self.core.id();
         let routing_message = RoutingMessage {
             from_authority: Authority::Client(bootstrap_name.clone(),
