@@ -56,6 +56,7 @@ impl MessageAccumulator {
                 return None;
             }
 
+            debug!("Returning message, {:?}, from accumulator", message);
             Some(message)
 
         }.map(|message| {

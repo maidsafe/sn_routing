@@ -32,3 +32,9 @@ name = "simple_key_value_store"
 path = "examples/simple_key_value_store.rs"
 test = true
 bench = false
+
+[[example]]
+name = "key_value_store"
+path = "examples/key_value_store.rs"
+test = true
+bench = false
