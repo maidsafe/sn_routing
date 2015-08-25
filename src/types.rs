@@ -76,9 +76,6 @@ struct SignedKey {
     encrypt_public_key: crypto::box_::PublicKey,
 }
 
-pub type FilterType = Signature;
-pub type ContentFilter = crypto::hash::sha256::Digest;
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
 pub enum Address {
     Client(crypto::sign::PublicKey),
