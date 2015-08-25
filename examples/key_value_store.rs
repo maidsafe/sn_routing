@@ -66,9 +66,9 @@ use routing::public_id::PublicId;
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
 Usage:
-  simple_key_value_store
-  simple_key_value_store --node
-  simple_key_value_store --help
+  key_value_store
+  key_value_store --node
+  key_value_store --help
 
 Options:
   -n, --node   Run as a non-interactive routing node in the network.
