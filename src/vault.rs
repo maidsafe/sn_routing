@@ -440,8 +440,8 @@ impl Vault {
     fn send(&mut self, our_authority: Authority,
             actions: Vec<MethodCall>,
             response_token: Option<::routing::SignedToken>,
-            opt_reply_to: Option<Authority>,
-            opt_original_data_request: Option<DataRequest>) {
+            optional_reply_to: Option<Authority>,
+            optional_original_data_request: Option<DataRequest>) {
         for action in actions {
             match action {
                 MethodCall::Get { location, data_request } => {
@@ -451,7 +451,7 @@ impl Vault {
                     self.routing.put_request(our_authority.clone(), location, content);
                 },
                 MethodCall::Reply { data } => {
-                    match (&opt_reply_to, &opt_original_data_request) {
+                    match (&optional_reply_to, &optional_original_data_request) {
                         (&Some(ref reply_to), &Some(ref original_data_request)) => {
                             debug!("as {:?} sending data {:?} to {:?} in responding to the ori_data_request {:?}",
                                 our_authority, data, reply_to, original_data_request);
