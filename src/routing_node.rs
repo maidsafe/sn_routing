@@ -584,6 +584,7 @@ impl RoutingNode {
             }
         };
 
+        debug!("Adding message from {:?} to accumulator", claimant);
         self.accumulator.add_message(threshold as usize, claimant, message)
                         .map(|msg| (msg, None))
     }
