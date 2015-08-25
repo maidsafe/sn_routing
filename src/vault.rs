@@ -467,8 +467,7 @@ pub type ResponseNotifier =
     use routing_types::*;
 
     #[cfg(not(feature = "use-actual-routing"))]
-    #[test]
-    fn put_get_flow() {
+    fn mock_env_setup() -> (super::Routing, ::std::sync::mpsc::Receiver<(Data)>) {
         let run_vault = |mut vault: Vault| {
             let _ = ::std::thread::spawn(move || {
                 vault.do_run();
@@ -485,6 +484,13 @@ pub type ResponseNotifier =
                 ::routing::types::generate_random_vec_u8(64))));
         }
         routing.churn_event(available_nodes);
+        (routing, receiver)
+    }
+
+    #[cfg(not(feature = "use-actual-routing"))]
+    #[test]
+    fn put_get_flow() {
+        let (mut routing, receiver) = mock_env_setup();
 
         let client_name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
             ::routing::types::generate_random_vec_u8(64)));
@@ -508,15 +514,7 @@ pub type ResponseNotifier =
     #[cfg(not(feature = "use-actual-routing"))]
     #[test]
     fn post_flow() {
-        let run_vault = |mut vault: Vault| {
-            let _ = ::std::thread::spawn(move || {
-                vault.do_run();
-            });
-        };
-        let mut vault = Vault::new();
-        let receiver = vault.routing.get_client_receiver();
-        let mut routing = vault.routing.clone();
-        let _ = run_vault(vault);
+        let (mut routing, receiver) = mock_env_setup();
 
         let name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
             ::routing::types::generate_random_vec_u8(64)));
@@ -547,8 +545,9 @@ pub type ResponseNotifier =
     }
 
     #[cfg(feature = "use-actual-routing")]
-    #[test]
-    fn network_put_get_test() {
+    fn network_env_setup() -> (::routing::routing_client::RoutingClient,
+                               ::std::sync::mpsc::Receiver<(Data)>,
+                               NameType) {
         match ::env_logger::init() {
             Ok(()) => {},
             Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
@@ -606,8 +605,15 @@ pub type ResponseNotifier =
         let _ = client_receiving(receiver, client_sender);
         let id = ::routing::id::Id::new();
         let client_name = id.name();
-        let mut client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
+        let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
         ::std::thread::sleep_ms(1000);
+        (client_routing, client_receiver, client_name)
+    }
+
+    #[cfg(feature = "use-actual-routing")]
+    #[test]
+    fn network_put_get_test() {
+        let (mut client_routing, client_receiver, client_name) = network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
@@ -628,65 +634,7 @@ pub type ResponseNotifier =
     #[cfg(feature = "use-actual-routing")]
     #[test]
     fn network_post_test() {
-        match ::env_logger::init() {
-            Ok(()) => {},
-            Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
-        }
-        let run_vault = |mut vault: Vault| {
-            let _ = ::std::thread::spawn(move || {
-                vault.do_run();
-            });
-        };
-        for i in 0..4 {
-            println!("starting node {:?}", i);
-            let _ = run_vault(Vault::new());
-            ::std::thread::sleep_ms(1000 + i * 1000);
-        }
-        let (sender, receiver) = ::std::sync::mpsc::channel();
-        let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
-        let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(Event)>,
-                                client_sender: ::std::sync::mpsc::Sender<(Data)>| {
-            let _ = ::std::thread::spawn(move || {
-                while let Ok(event) = receiver.recv() {
-                    match event {
-                        Event::Request{ request, our_authority, from_authority, response_token } =>
-                            println!("as {:?} received request: {:?} from {:?} having token {:?}",
-                                     our_authority, request, from_authority, response_token == None),
-                        Event::Response{ response, our_authority, from_authority } => {
-                            println!("as {:?} received response: {:?} from {:?}",
-                                     our_authority, response, from_authority);
-                            match response {
-                                ExternalResponse::Get(data, _, _) => {
-                                    let _ = client_sender.clone().send(data);
-                                },
-                                _ => panic!("not expected!")
-                            }
-                        },
-                        Event::Refresh(_type_tag, _group_name, _accounts) =>
-                            println!("client received a refresh"),
-                        Event::Churn(_close_group) => println!("client received a churn"),
-                        Event::Connected => println!("client connected"),
-                        Event::Disconnected => println!("client disconnected"),
-                        Event::FailedRequest{ request, our_authority, location, interface_error } =>
-                            println!("as {:?} received request: {:?} targeting {:?} having error {:?}",
-                                     our_authority, request, location, interface_error),
-                        Event::FailedResponse{ response, our_authority, location, interface_error } =>
-                            println!("as {:?} received response: {:?} targeting {:?} having error {:?}",
-                                     our_authority, response, location, interface_error),
-                        Event::Bootstrapped => println!("client routing Bootstrapped"),
-                        Event::Terminated => {
-                            println!("client routing listening terminated");
-                            break;
-                        },
-                    };
-                }
-            });
-        };
-        let _ = client_receiving(receiver, client_sender);
-        let id = ::routing::id::Id::new();
-        let client_name = id.name();
-        let mut client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
-        ::std::thread::sleep_ms(1000);
+        let (mut client_routing, client_receiver, client_name) = network_env_setup();
 
         let name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
             ::routing::types::generate_random_vec_u8(64)));
