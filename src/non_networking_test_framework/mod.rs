@@ -68,7 +68,7 @@ impl MockRouting {
         };
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(data_request),
+            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(data_request, 0),
                                                        our_authority: Authority::NaeManager(name),
                                                        from_authority: Authority::Client(client_address, client_pub_key),
                                                        response_token: None });
@@ -140,7 +140,7 @@ impl MockRouting {
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(request_for),
+            let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(request_for, 0),
                                                        our_authority: location,
                                                        from_authority: our_authority,
                                                        response_token: None });

@@ -127,7 +127,7 @@ impl Vault {
                   from_authority: ::routing::authority::Authority,
                   response_token: Option<::routing::SignedToken>) {
         match request {
-            ::routing::ExternalRequest::Get(data_request) => {
+            ::routing::ExternalRequest::Get(data_request, _) => {
                 self.handle_get(our_authority, from_authority, data_request, response_token);
             },
             ::routing::ExternalRequest::Put(data) => {
@@ -219,9 +219,13 @@ impl Vault {
                         // Only remember the request from client for Immutable Data
                         // as StructuredData will get replied immediately from SDManager
                         if self.request_cache.contains_key(&name) {
+                            debug!("DataManager handle_get inserting original request {:?} from {:?} into {:?} ",
+                                   data_request, from_authority, name);
                             self.request_cache.get_mut(&name).unwrap().push((from_authority.clone(),
                                                                              data_request.clone()));
                         } else {
+                            debug!("DataManager handle_get created original request {:?} from {:?} as entry {:?}",
+                                   data_request, from_authority, name);
                             self.request_cache.add(name, vec![(from_authority.clone(), data_request.clone())]);
                         }
                         self.data_manager.handle_get(&name, data_request.clone())
@@ -435,6 +439,8 @@ impl Vault {
                 },
                 MethodCall::Reply { data } => {
                     if reply_to != None && original_data_request != None {
+                        debug!("as {:?} sending data {:?} to {:?} in responding to the ori_data_request {:?}",
+                               our_authority, data, reply_to.clone().unwrap(), original_data_request.clone().unwrap());
                         self.routing.get_response(our_authority.clone(), reply_to.clone().unwrap(), data,
                             original_data_request.clone().unwrap(), response_token.clone());
                     }
@@ -455,7 +461,6 @@ pub type ResponseNotifier =
     use sodiumoxide::crypto;
 
     use super::*;
-    // use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
     use routing_types::*;
 
@@ -599,7 +604,7 @@ pub type ResponseNotifier =
         let _ = client_receiving(receiver, client_sender);
         let id = ::routing::id::Id::new();
         let client_name = id.name();
-        let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
+        let mut client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
         ::std::thread::sleep_ms(1000);
 
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -621,27 +626,14 @@ pub type ResponseNotifier =
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
         let keys = crypto::sign::gen_keypair();
         let _put_result = vault.handle_put(Authority::ClientManager(client),
-                                          Authority::Client(client, keys.0),
-                                          Data::ImmutableData(im_data.clone()), None);
-        // assert_eq!(put_result.is_err(), false);
-        // let calls = put_result.ok().unwrap();
-        // assert_eq!(calls.len(), 1);
-        // match calls[0] {
-        //     MethodCall::Put { destination, ref content } => {
-        //         assert_eq!(destination, im_data.name());
-        //         assert_eq!(*content,  Data::ImmutableData(im_data.clone()));
-        //     }
-        //     _ => panic!("Unexpected"),
-        // }
+                                           Authority::Client(client, keys.0),
+                                           Data::ImmutableData(im_data.clone()), None);
     }
 
     fn data_manager_put(vault: &mut Vault, im_data: ImmutableData) {
         let _put_result = vault.handle_put(Authority::NaeManager(im_data.name()),
-                                          Authority::ClientManager(NameType::new([1u8; 64])),
-                                          Data::ImmutableData(im_data), None);
-        // assert_eq!(put_result.is_err(), false);
-        // let calls = put_result.ok().unwrap();
-        // assert_eq!(calls.len(), data_manager::PARALLELISM);
+                                           Authority::ClientManager(NameType::new([1u8; 64])),
+                                           Data::ImmutableData(im_data), None);
     }
 
     fn add_nodes_to_table(vault: &mut Vault, nodes: &Vec<NameType>) {
@@ -652,37 +644,14 @@ pub type ResponseNotifier =
 
     fn pmid_manager_put(vault: &mut Vault, pmid_node: NameType, im_data: ImmutableData) {
           let _put_result = vault.handle_put(Authority::NodeManager(pmid_node),
-                                            Authority::NaeManager(im_data.name()),
-                                            Data::ImmutableData(im_data), None);
-        // assert_eq!(put_result.is_err(), false);
-        // let calls = put_result.ok().unwrap();
-        // assert_eq!(calls.len(), 1);
-        // match calls[0] {
-        //     MethodCall::Forward { destination } => {
-        //         assert_eq!(destination, pmid_node);
-        //     }
-        //     _ => panic!("Unexpected"),
-        // }
+                                             Authority::NaeManager(im_data.name()),
+                                             Data::ImmutableData(im_data), None);
     }
 
     fn sd_manager_put(vault: &mut Vault, sdv: StructuredData) {
         let _put_result = vault.handle_put(Authority::NaeManager(sdv.name()),
-                                          Authority::ManagedNode(NameType::new([7u8; 64])),
-                                          Data::StructuredData(sdv.clone()), None);
-        // assert_eq!(put_result.is_ok(), true);
-        // let mut calls = put_result.ok().unwrap();
-        // assert_eq!(calls.len(), 1);
-        // match calls.remove(0) {
-        //     MethodCall::Reply { data } => {
-        //         match data {
-        //             Data::StructuredData(sd) => {
-        //                 assert_eq!(sd, sdv);
-        //             }
-        //             _ => panic!("Unexpected"),
-        //         }
-        //     }
-        //     _ => panic!("Unexpected"),
-        // }
+                                           Authority::ManagedNode(NameType::new([7u8; 64])),
+                                           Data::StructuredData(sdv.clone()), None);
     }
 
     #[test]
