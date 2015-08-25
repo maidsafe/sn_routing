@@ -221,7 +221,7 @@ impl SignedMessage {
             Err(_) => return false,
         };
 
-        sign::verify_detached(&self.signature, &encoded_body, &public_sign_key)
+        sign::verify_detached(&self.signature, &encoded_body, public_sign_key)
     }
 
     pub fn get_routing_message(&self) -> &RoutingMessage {
