@@ -54,7 +54,7 @@ impl Filter {
         // already get the return value, but continue processing the analytics
         let blocked = self.message_filter.check(&digest);
 
-        // TODO (ben 24/08/2015) calculate the effictive group size to set the
+        // TODO (ben 24/08/2015) calculate the effective group size to set the
         // accumulator threshold
 
         !blocked
