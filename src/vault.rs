@@ -67,7 +67,8 @@ pub struct Vault {
     nodes_in_table: Vec<NameType>,
     #[allow(dead_code)]
     data_cache: ::lru_time_cache::LruCache<NameType, Data>,
-    request_cache: ::lru_time_cache::LruCache<NameType, Vec<(Authority, DataRequest)>>,
+    request_cache: ::lru_time_cache::LruCache<NameType,
+            Vec<(Authority, DataRequest, Option<::routing::SignedToken>)>>,
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
     #[allow(dead_code)]
     routing: Routing,
@@ -222,11 +223,12 @@ impl Vault {
                             debug!("DataManager handle_get inserting original request {:?} from {:?} into {:?} ",
                                    data_request, from_authority, name);
                             self.request_cache.get_mut(&name).unwrap().push((from_authority.clone(),
-                                                                             data_request.clone()));
+                                                                             data_request.clone(),
+                                                                             response_token.clone()));
                         } else {
                             debug!("DataManager handle_get created original request {:?} from {:?} as entry {:?}",
                                    data_request, from_authority, name);
-                            self.request_cache.add(name, vec![(from_authority.clone(), data_request.clone())]);
+                            self.request_cache.add(name, vec![(from_authority.clone(), data_request.clone(), response_token.clone())]);
                         }
                         self.data_manager.handle_get(&name, data_request.clone())
                     }
@@ -306,7 +308,7 @@ impl Vault {
                     let records = self.request_cache.remove(&name).unwrap();
                     for record in records {
                         self.send(our_authority.clone(), vec![MethodCall::Reply{ data: response.clone() }],
-                                  response_token.clone(), Some(record.0), Some(record.1));
+                                  record.2, Some(record.0), Some(record.1));
                     }
                 }
             },
@@ -317,7 +319,7 @@ impl Vault {
             Data::ImmutableData(_) => self.data_manager.handle_get_response(response),
             _ => vec![]
         };
-        self.send(our_authority, returned_actions, None, None, None);
+        self.send(our_authority, returned_actions, response_token, None, None);
     }
 
     // Put response will holding the copy of failed to store data, which will be:
