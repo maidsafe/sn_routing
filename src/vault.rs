@@ -67,7 +67,8 @@ pub struct Vault {
     nodes_in_table: Vec<NameType>,
     #[allow(dead_code)]
     data_cache: ::lru_time_cache::LruCache<NameType, Data>,
-    request_cache: ::lru_time_cache::LruCache<NameType, Vec<(Authority, DataRequest)>>,
+    request_cache: ::lru_time_cache::LruCache<NameType,
+            Vec<(Authority, DataRequest, Option<::routing::SignedToken>)>>,
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
     #[allow(dead_code)]
     routing: Routing,
@@ -127,7 +128,7 @@ impl Vault {
                   from_authority: ::routing::authority::Authority,
                   response_token: Option<::routing::SignedToken>) {
         match request {
-            ::routing::ExternalRequest::Get(data_request) => {
+            ::routing::ExternalRequest::Get(data_request, _) => {
                 self.handle_get(our_authority, from_authority, data_request, response_token);
             },
             ::routing::ExternalRequest::Put(data) => {
@@ -219,10 +220,15 @@ impl Vault {
                         // Only remember the request from client for Immutable Data
                         // as StructuredData will get replied immediately from SDManager
                         if self.request_cache.contains_key(&name) {
+                            debug!("DataManager handle_get inserting original request {:?} from {:?} into {:?} ",
+                                   data_request, from_authority, name);
                             self.request_cache.get_mut(&name).unwrap().push((from_authority.clone(),
-                                                                             data_request.clone()));
+                                                                             data_request.clone(),
+                                                                             response_token.clone()));
                         } else {
-                            self.request_cache.add(name, vec![(from_authority.clone(), data_request.clone())]);
+                            debug!("DataManager handle_get created original request {:?} from {:?} as entry {:?}",
+                                   data_request, from_authority, name);
+                            self.request_cache.add(name, vec![(from_authority.clone(), data_request.clone(), response_token.clone())]);
                         }
                         self.data_manager.handle_get(&name, data_request.clone())
                     }
@@ -302,7 +308,7 @@ impl Vault {
                     let records = self.request_cache.remove(&name).unwrap();
                     for record in records {
                         self.send(our_authority.clone(), vec![MethodCall::Reply{ data: response.clone() }],
-                                  response_token.clone(), Some(record.0), Some(record.1));
+                                  record.2, Some(record.0), Some(record.1));
                     }
                 }
             },
@@ -313,7 +319,7 @@ impl Vault {
             Data::ImmutableData(_) => self.data_manager.handle_get_response(response),
             _ => vec![]
         };
-        self.send(our_authority, returned_actions, None, None, None);
+        self.send(our_authority, returned_actions, response_token, None, None);
     }
 
     // Put response will holding the copy of failed to store data, which will be:
@@ -435,6 +441,8 @@ impl Vault {
                 },
                 MethodCall::Reply { data } => {
                     if reply_to != None && original_data_request != None {
+                        debug!("as {:?} sending data {:?} to {:?} in responding to the ori_data_request {:?}",
+                               our_authority, data, reply_to.clone().unwrap(), original_data_request.clone().unwrap());
                         self.routing.get_response(our_authority.clone(), reply_to.clone().unwrap(), data,
                             original_data_request.clone().unwrap(), response_token.clone());
                     }
@@ -455,13 +463,11 @@ pub type ResponseNotifier =
     use sodiumoxide::crypto;
 
     use super::*;
-    // use data_manager;
     use transfer_parser::{Transfer, transfer_tags};
     use routing_types::*;
 
     #[cfg(not(feature = "use-actual-routing"))]
-    #[test]
-    fn put_get_flow() {
+    fn mock_env_setup() -> (super::Routing, ::std::sync::mpsc::Receiver<(Data)>) {
         let run_vault = |mut vault: Vault| {
             let _ = ::std::thread::spawn(move || {
                 vault.do_run();
@@ -478,6 +484,13 @@ pub type ResponseNotifier =
                 ::routing::types::generate_random_vec_u8(64))));
         }
         routing.churn_event(available_nodes);
+        (routing, receiver)
+    }
+
+    #[cfg(not(feature = "use-actual-routing"))]
+    #[test]
+    fn put_get_flow() {
+        let (mut routing, receiver) = mock_env_setup();
 
         let client_name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
             ::routing::types::generate_random_vec_u8(64)));
@@ -501,15 +514,7 @@ pub type ResponseNotifier =
     #[cfg(not(feature = "use-actual-routing"))]
     #[test]
     fn post_flow() {
-        let run_vault = |mut vault: Vault| {
-            let _ = ::std::thread::spawn(move || {
-                vault.do_run();
-            });
-        };
-        let mut vault = Vault::new();
-        let receiver = vault.routing.get_client_receiver();
-        let mut routing = vault.routing.clone();
-        let _ = run_vault(vault);
+        let (mut routing, receiver) = mock_env_setup();
 
         let name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
             ::routing::types::generate_random_vec_u8(64)));
@@ -540,8 +545,9 @@ pub type ResponseNotifier =
     }
 
     #[cfg(feature = "use-actual-routing")]
-    #[test]
-    fn network_put_get_test() {
+    fn network_env_setup() -> (::routing::routing_client::RoutingClient,
+                               ::std::sync::mpsc::Receiver<(Data)>,
+                               NameType) {
         match ::env_logger::init() {
             Ok(()) => {},
             Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
@@ -601,6 +607,13 @@ pub type ResponseNotifier =
         let client_name = id.name();
         let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
         ::std::thread::sleep_ms(1000);
+        (client_routing, client_receiver, client_name)
+    }
+
+    #[cfg(feature = "use-actual-routing")]
+    #[test]
+    fn network_put_get_test() {
+        let (mut client_routing, client_receiver, client_name) = network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
@@ -618,30 +631,48 @@ pub type ResponseNotifier =
         }
     }
 
+    #[cfg(feature = "use-actual-routing")]
+    #[test]
+    fn network_post_test() {
+        let (mut client_routing, client_receiver, client_name) = network_env_setup();
+
+        let name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
+            ::routing::types::generate_random_vec_u8(64)));
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let sign_keys =  ::sodiumoxide::crypto::sign::gen_keypair();
+        let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
+            value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+        client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
+                                   ::routing::data::Data::StructuredData(sd.clone()));
+        ::std::thread::sleep_ms(2000);
+
+        let keys =  ::sodiumoxide::crypto::sign::gen_keypair();
+        let sd_new = ::routing::structured_data::StructuredData::new(0, name, 1,
+            value.clone(), vec![keys.0], vec![sign_keys.0], Some(&sign_keys.1)).ok().unwrap();
+        client_routing.post_request(::routing::authority::Authority::NaeManager(sd.name()),
+                                    ::routing::data::Data::StructuredData(sd_new.clone()));
+        ::std::thread::sleep_ms(2000);
+
+        client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
+            ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+        while let Ok(data) = client_receiver.recv() {
+            assert_eq!(data, ::routing::data::Data::StructuredData(sd_new.clone()));
+            break;
+        }
+    }
+
+
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
         let keys = crypto::sign::gen_keypair();
         let _put_result = vault.handle_put(Authority::ClientManager(client),
-                                          Authority::Client(client, keys.0),
-                                          Data::ImmutableData(im_data.clone()), None);
-        // assert_eq!(put_result.is_err(), false);
-        // let calls = put_result.ok().unwrap();
-        // assert_eq!(calls.len(), 1);
-        // match calls[0] {
-        //     MethodCall::Put { destination, ref content } => {
-        //         assert_eq!(destination, im_data.name());
-        //         assert_eq!(*content,  Data::ImmutableData(im_data.clone()));
-        //     }
-        //     _ => panic!("Unexpected"),
-        // }
+                                           Authority::Client(client, keys.0),
+                                           Data::ImmutableData(im_data.clone()), None);
     }
 
     fn data_manager_put(vault: &mut Vault, im_data: ImmutableData) {
         let _put_result = vault.handle_put(Authority::NaeManager(im_data.name()),
-                                          Authority::ClientManager(NameType::new([1u8; 64])),
-                                          Data::ImmutableData(im_data), None);
-        // assert_eq!(put_result.is_err(), false);
-        // let calls = put_result.ok().unwrap();
-        // assert_eq!(calls.len(), data_manager::PARALLELISM);
+                                           Authority::ClientManager(NameType::new([1u8; 64])),
+                                           Data::ImmutableData(im_data), None);
     }
 
     fn add_nodes_to_table(vault: &mut Vault, nodes: &Vec<NameType>) {
@@ -652,37 +683,14 @@ pub type ResponseNotifier =
 
     fn pmid_manager_put(vault: &mut Vault, pmid_node: NameType, im_data: ImmutableData) {
           let _put_result = vault.handle_put(Authority::NodeManager(pmid_node),
-                                            Authority::NaeManager(im_data.name()),
-                                            Data::ImmutableData(im_data), None);
-        // assert_eq!(put_result.is_err(), false);
-        // let calls = put_result.ok().unwrap();
-        // assert_eq!(calls.len(), 1);
-        // match calls[0] {
-        //     MethodCall::Forward { destination } => {
-        //         assert_eq!(destination, pmid_node);
-        //     }
-        //     _ => panic!("Unexpected"),
-        // }
+                                             Authority::NaeManager(im_data.name()),
+                                             Data::ImmutableData(im_data), None);
     }
 
     fn sd_manager_put(vault: &mut Vault, sdv: StructuredData) {
         let _put_result = vault.handle_put(Authority::NaeManager(sdv.name()),
-                                          Authority::ManagedNode(NameType::new([7u8; 64])),
-                                          Data::StructuredData(sdv.clone()), None);
-        // assert_eq!(put_result.is_ok(), true);
-        // let mut calls = put_result.ok().unwrap();
-        // assert_eq!(calls.len(), 1);
-        // match calls.remove(0) {
-        //     MethodCall::Reply { data } => {
-        //         match data {
-        //             Data::StructuredData(sd) => {
-        //                 assert_eq!(sd, sdv);
-        //             }
-        //             _ => panic!("Unexpected"),
-        //         }
-        //     }
-        //     _ => panic!("Unexpected"),
-        // }
+                                           Authority::ManagedNode(NameType::new([7u8; 64])),
+                                           Data::StructuredData(sdv.clone()), None);
     }
 
     #[test]

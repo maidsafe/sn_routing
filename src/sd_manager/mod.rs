@@ -68,6 +68,7 @@ impl StructuredDataManager {
             return Err(ResponseError::InvalidRequest(Data::StructuredData(in_coming_data)));
         }
         let mut sd : StructuredData = try!(::routing::utils::decode(&data));
+        debug!("sd_manager updating {:?} to {:?}", sd, in_coming_data);
         match sd.replace_with_other(in_coming_data.clone()) {
             Ok(_) => {},
             Err(_) => { return Err(ResponseError::InvalidRequest(Data::StructuredData(in_coming_data))); }
