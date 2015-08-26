@@ -33,5 +33,5 @@ test_script:
   - ps: if ($env:CONFIGURATION -eq "Release") {
           $env:config_flags = "--release"
         }
-  - cargo build --verbose %config_flags%
-  - cargo test --verbose
+  - cargo build --verbose --features "use-mock-routing" %config_flags%
+  - cargo test --verbose --features "use-mock-routing"
