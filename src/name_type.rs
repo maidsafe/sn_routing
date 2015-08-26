@@ -17,6 +17,7 @@
 
 use std::hash;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::hex::ToHex;
 use std::cmp::*;
 use std::fmt;
 
@@ -58,14 +59,9 @@ impl NameType {
               self.0[NAME_TYPE_LEN-1])
     }
 
-    // private function exposed in fmt LowerHex {:x} trait
-    // note(ben): UpperHex explicitly not implemented to prevent mixed usage
+    // private function returning hex encoded NameType as String
     fn get_full_id(&self) -> String {
-        let mut full_id = String::with_capacity(2 * NAME_TYPE_LEN);
-        for char in self.0.iter() {
-            full_id.push_str(format!("{:02x}", char).as_str());
-        }
-        full_id
+        self.0.to_hex()
     }
 }
 
@@ -80,13 +76,6 @@ impl fmt::Display for NameType {
         write!(f, "{}", self.get_debug_id())
     }
 }
-
-impl fmt::LowerHex for NameType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get_full_id())
-    }
-}
-
 
 impl PartialEq for NameType {
     fn eq(&self, other: &NameType) -> bool {
