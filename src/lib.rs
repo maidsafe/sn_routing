@@ -56,6 +56,7 @@ mod common_bits;
 mod action;
 mod filter;
 mod messages;
+mod direct_messages;
 mod name_type;
 mod routing_table;
 mod routing_node;
