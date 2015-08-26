@@ -622,6 +622,7 @@ impl RoutingNode {
 
     fn generate_churn(&self, churn: ::direct_messages::Churn, target: Vec<::crust::Endpoint>)
         -> RoutingResult {
+        debug!("Generating CHURN {:?} to {:?}", churn.close_group, target);
         // send Churn to all our close group nodes
         let direct_message = match ::direct_messages::DirectMessage::new(
             ::direct_messages::Content::Churn(churn.clone()),
@@ -639,6 +640,7 @@ impl RoutingNode {
     }
 
     fn handle_churn(&mut self, churn: &::direct_messages::Churn) {
+        debug!("Refreshing CHURN {:?}", churn.close_group);
         for his_close_node in churn.close_group.iter() {
             self.refresh_routing_table(his_close_node.clone());
         }
