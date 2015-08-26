@@ -159,4 +159,19 @@ impl MockRouting {
         });
     }
 
+    pub fn refresh_request(&self, type_tag: u64, from_group: NameType, content: Vec<u8>) {
+        // routing is expected to accumulate the refresh requests
+        // for the same group into one event request to vault
+        let delay_ms = self.network_delay_ms;
+        let cloned_sender = self.sender.clone();
+        let _ = ::std::thread::spawn(move || {
+            ::std::thread::sleep_ms(delay_ms);
+            let mut refresh_contents = vec![content.clone()];
+            for _ in 2..::data_manager::PARALLELISM {
+                refresh_contents.push(content.clone());
+            }
+            let _ = cloned_sender.send(Event::Refresh(type_tag, from_group, refresh_contents));
+        });
+    }
+
 }

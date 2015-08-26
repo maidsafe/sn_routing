@@ -165,14 +165,16 @@ impl Vault {
     }
 
     fn on_refresh(&mut self,
-                  /*type_tag*/_: u64,
-                  /*group_name*/_: ::routing::NameType,
-                  /*accounts*/_: Vec<Vec<u8>>) {
-        unimplemented!();
+                  type_tag: u64,
+                  group_name: ::routing::NameType,
+                  accounts: Vec<Vec<u8>>) {
+        self.handle_refresh(type_tag, group_name, accounts);
     }
 
     fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
-        self.nodes_in_table = close_group;
+        let refresh_calls = self.handle_churn(close_group);
+        self.send(Authority::NaeManager(NameType::new([0u8; 64])),
+                  refresh_calls, None, None, None);
     }
 
     fn on_bootstrapped(&self) {
@@ -360,7 +362,6 @@ impl Vault {
         vec![]
     }
 
-    #[allow(dead_code)]
     fn handle_churn(&mut self, mut close_group: Vec<NameType>) -> Vec<MethodCall> {
         let mm = self.maid_manager.retrieve_all_and_reset();
         let vh = self.sd_manager.retrieve_all_and_reset();
@@ -371,7 +372,6 @@ impl Vault {
         mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
     }
 
-    #[allow(dead_code)]
     fn handle_refresh(&mut self,
                       type_tag: u64,
                       from_group: NameType,
@@ -436,7 +436,6 @@ impl Vault {
         Err(ResponseError::Abort)
     }
 
-    #[allow(dead_code)]
     fn send(&mut self, our_authority: Authority,
             actions: Vec<MethodCall>,
             response_token: Option<::routing::SignedToken>,
@@ -456,11 +455,15 @@ impl Vault {
                             debug!("as {:?} sending data {:?} to {:?} in responding to the ori_data_request {:?}",
                                 our_authority, data, reply_to, original_data_request);
                             self.routing.get_response(our_authority.clone(), reply_to.clone(), data,
-                                original_data_request.clone(), response_token.clone())
+                                original_data_request.clone(), response_token.clone());
                         },
                         _ => {},
                     };
                 },
+                MethodCall::Refresh { type_tag, from_group, payload } => {
+                    debug!("refreshing account type {:?} of group {:?} to network", type_tag, from_group);
+                    self.routing.refresh_request(type_tag, from_group, payload);
+                }
                 _ => {}
             }
         }
