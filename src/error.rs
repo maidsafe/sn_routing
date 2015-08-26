@@ -37,7 +37,7 @@ pub enum ResponseError {
     /// failure to complete request for data
     FailedRequestForData(Data),
     /// had to clear Sacrificial Data in order to complete request
-    HadToClearSacrificial(usize),
+    HadToClearSacrificial(::NameType, usize),
 }
 
 impl From<CborError> for ResponseError {
@@ -52,9 +52,8 @@ impl error::Error for ResponseError {
             ResponseError::Abort => "Abort",
             ResponseError::InvalidRequest(_) => "Invalid request",
             ResponseError::FailedRequestForData(_) => "Failed request for data",
-            ResponseError::HadToClearSacrificial(size) => "Had to clear {:?} bytes of \
-                 Sacrificial\n                data to \
-                 complete request",
+            ResponseError::HadToClearSacrificial(_, _) => "Had to clear Sacrificial data to
+              complete request",
         }
     }
 
@@ -71,7 +70,7 @@ impl fmt::Display for ResponseError {
                                   f),
             ResponseError::FailedRequestForData(_) =>
                 fmt::Display::fmt("ResponseError::FailedToStoreData", f),
-            ResponseError::HadToClearSacrificial(_) =>
+            ResponseError::HadToClearSacrificial(_, _) =>
                 fmt::Display::fmt("ResponseError::HadToClearSacrificial", f),
         }
     }
