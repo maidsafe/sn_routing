@@ -1,5 +1,8 @@
 # Safe Vault - Change Log
 
+## [0.1.4]
+- [MAID-1283](https://maidsafe.atlassian.net/browse/MAID-1283) Rename repositories from "maidsafe_" to "safe_"
+
 ## [0.1.3]
 - [MAID-1186](https://maidsafe.atlassian.net/browse/MAID-1186) Handling of unified Structrued Data
     - [MAID-1187](https://maidsafe.atlassian.net/browse/MAID-1187) Updating Version Handler
