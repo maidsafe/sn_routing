@@ -115,12 +115,12 @@ impl Node {
             let event = match self.receiver.recv() {
                 Ok(event) => event,
                 Err(_)  => {
-                    println!("Node: Routing closed the event channel");
+                    error!("Node: Routing closed the event channel");
                     return;
                 }
             };
 
-            println!("Node: Received event {:?}", event);
+            debug!("Node: Received event {:?}", event);
 
             match event {
                 Event::Request{request,
@@ -155,10 +155,10 @@ impl Node {
                                         response_token);
             },
             ExternalRequest::Post(_) => {
-                println!("Node: Post is not implemented, ignoring.");
+                error!("Node: Post is not implemented, ignoring.");
             },
             ExternalRequest::Delete(_) => {
-                println!("Node: Delete is not implemented, ignoring.");
+                error!("Node: Delete is not implemented, ignoring.");
             },
         }
     }
@@ -169,7 +169,7 @@ impl Node {
                                      response_token: Option<SignedToken>) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
-            _ => { println!("Node: Only serving plain data in this example"); return; }
+            _ => { error!("Node: Only serving plain data in this example"); return; }
         };
 
         let data = match self.db.get(&name) {
@@ -190,7 +190,7 @@ impl Node {
                                      _response_token : Option<SignedToken>) {
         let plain_data = match data {
             Data::PlainData(plain_data) => plain_data,
-            _ => { println!("Node: Only storing plain data in this example"); return; }
+            _ => { error!("Node: Only storing plain data in this example"); return; }
         };
 
         match our_authority {
@@ -198,7 +198,7 @@ impl Node {
                 let _ = self.db.insert(plain_data.name(), plain_data);
             },
             _ => {
-                println!("Node: Unexpected our_authority ({:?})", our_authority);
+                error!("Node: Unexpected our_authority ({:?})", our_authority);
                 assert!(false);
             }
         }
@@ -247,7 +247,7 @@ impl Client {
         let (event_sender, event_receiver) = mpsc::channel::<Event>();
 
         let id = Id::new();
-        println!("Client has set name {:?}", PublicId::new(&id));
+        info!("Client has set name {:?}", PublicId::new(&id));
         let routing_client = RoutingClient::new(event_sender, Some(id));
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();

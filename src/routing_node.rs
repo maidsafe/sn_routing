@@ -74,9 +74,9 @@ pub struct RoutingNode {
     event_sender: mpsc::Sender<Event>,
     wakeup: WakeUpCaller,
     filter: ::filter::Filter,
+    // connection_filter: ::message_filter::MessageFilter<::NameType>,
     core: RoutingCore,
     public_id_cache: LruCache<NameType, PublicId>,
-    connection_cache: BTreeMap<NameType, SteadyTime>,
     accumulator: MessageAccumulator,
     refresh_accumulator: RefreshAccumulator,
     data_cache: LruCache<NameType, Data>,
@@ -108,9 +108,10 @@ impl RoutingNode {
             event_sender: event_sender,
             wakeup: WakeUpCaller::new(action_sender),
             filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
+            // connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
+            //     ::time::Duration::seconds(1)),
             core: core,
             public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-            connection_cache: BTreeMap::new(),
             accumulator: MessageAccumulator::new(),
             refresh_accumulator: RefreshAccumulator::new(),
             data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
@@ -133,6 +134,9 @@ impl RoutingNode {
                 },
                 Ok(Action::ClientSendContent(to_authority, content)) => {
                     let _ = self.client_send_content(to_authority, content);
+                },
+                Ok(Action::Churn(our_close_group, targets)) => {
+                    let _ = self.generate_churn(our_close_group, targets);
                 },
                 Ok(Action::WakeUp) => {
                     // ensure that the loop is blocked for maximally 10ms
@@ -166,7 +170,11 @@ impl RoutingNode {
                             // The message received is not a Signed Routing Message,
                             // expect it to be an Hello message to identify a connection
                             Err(_) => {
-                                let _ = self.handle_hello(&endpoint, bytes);
+                                match decode::<::direct_messages::DirectMessage>(&bytes) {
+                                    Ok(direct_message) => self.direct_message_received(
+                                        direct_message, endpoint),
+                                    _ => error!("Unparsable message received on {:?}", endpoint),
+                                };
                             }
                         };
                     }
@@ -252,138 +260,141 @@ impl RoutingNode {
                   endpoint: Endpoint,
                   confirmed_address: Option<Address>)
                   -> RoutingResult {
-        let message = try!(encode(&Hello {
-            address       : self.core.our_address(),
-            public_id     : PublicId::new(self.core.id()),
-            confirmed_you : confirmed_address.clone()}));
         debug!("Saying hello I am {:?} on {:?}, confirming {:?}", self.core.our_address(),
             endpoint, confirmed_address);
-        ignore(self.connection_manager.send(endpoint, message));
+        let direct_message = match ::direct_messages::DirectMessage::new(
+            ::direct_messages::Content::Hello( ::direct_messages::Hello {
+                address: self.core.our_address(),
+                public_id: PublicId::new(self.core.id()),
+                confirmed_you: confirmed_address,
+                }), self.core.id().signing_private_key()) {
+                    Ok(x) => x,
+                    Err(e) => return Err(RoutingError::Cbor(e)),
+                };
+        let bytes = try!(::utils::encode(&direct_message));
+        ignore(self.connection_manager.send(endpoint, bytes));
         Ok(())
     }
 
-    fn handle_hello(&mut self, endpoint: &Endpoint, serialised_message: Bytes) -> RoutingResult {
-        match decode::<Hello>(&serialised_message) {
-            Ok(hello) => {
-                debug!("Hello, it is {:?} on {:?}", hello.address, endpoint);
-                let old_identity = match self.core.lookup_endpoint(&endpoint) {
-                    // if already connected through the routing table, just confirm or destroy
-                    Some(ConnectionName::Routing(known_name)) => {
-                        debug!("Endpoint {:?} registered to routing node {:?}", endpoint,
-                            known_name);
-                        match hello.address {
-                            // FIXME (ben 11/08/2015) Hello messages need to be signed and
-                            // we also need to check the match with the PublicId stored in RT
-                            Address::Node(known_name) => return Ok(()),
-                            _ => {
-                                // the endpoint does not match with the routing information
-                                // we know about it; drop it
-                                let _ = self.core.drop_peer(&ConnectionName::Routing(known_name));
-                                self.connection_manager.drop_node(endpoint.clone());
-                                return Err(RoutingError::RejectedPublicId);
-                            }
-                        }
-                    }
-                    // a connection should have been labeled as Unidentified
-                    None => None,
-                    Some(relay_connection_name) => Some(relay_connection_name),
-                };
-                // FIXME (ben 14/08/2015) temporary copy until Debug is
-                // implemented for ConnectionName
-                let hello_address = hello.address.clone();
-                // if set to true we will take the initiative to drop the connection,
-                // if refused from core;
-                // if alpha is false we will leave the connection unidentified,
-                // only adding the new identity when it is confirmed by the other side
-                // (hello.confirmed_you set to our address), which has to send a confirmed hello
-                let mut alpha = false;
-                // construct the new identity from Hello
-                let new_identity = match (hello.address, self.core.our_address()) {
-                    (Address::Node(his_name), Address::Node(our_name)) => {
-                    // He is a node, and we are a node, establish a routing table connection
-                    // FIXME (ben 11/08/2015) we need to check his PublicId against the network
-                    // but this requires an additional RFC so currently leave out such check
-                    // refer to https://github.com/maidsafe/routing/issues/387
-                        alpha = &self.core.id().name() < &his_name;
-                        ConnectionName::Routing(his_name)
-                    }
-                    (Address::Client(his_public_key), Address::Node(our_name)) => {
-                    // He is a client, we are a node, establish a relay connection
-                        debug!("Connection {:?} will be labeled as a relay to {:?}",
-                            endpoint, Address::Client(his_public_key));
-                        alpha = true;
-                        ConnectionName::Relay(Address::Client(his_public_key))
-                    }
-                    (Address::Node(his_name), Address::Client(our_public_key)) => {
-                    // He is a node, we are a client, establish a bootstrap connection
-                        debug!("Connection {:?} will be labeled as a bootstrap node name {:?}",
-                            endpoint, his_name);
-                        ConnectionName::Bootstrap(his_name)
-                    }
-                    (Address::Client(his_public_key), Address::Client(our_public_key)) => {
-                    // He is a client, we are a client, no-go
-                        match old_identity {
-                            Some(old_connection_name) => {
-                                let _ = self.core.drop_peer(&old_connection_name);
-                            }
-                            None => {}
-                        };
+    fn handle_hello(&mut self, endpoint: Endpoint, hello: &::direct_messages::Hello)
+        -> RoutingResult {
+
+        debug!("Hello, it is {:?} on {:?}", hello.address, endpoint);
+        let old_identity = match self.core.lookup_endpoint(&endpoint) {
+            // if already connected through the routing table, just confirm or destroy
+            Some(ConnectionName::Routing(known_name)) => {
+                debug!("Endpoint {:?} registered to routing node {:?}", endpoint,
+                    known_name);
+                match hello.address {
+                    // FIXME (ben 11/08/2015) Hello messages need to be signed and
+                    // we also need to check the match with the PublicId stored in RT
+                    Address::Node(known_name) => return Ok(()),
+                    _ => {
+                        // the endpoint does not match with the routing information
+                        // we know about it; drop it
+                        let _ = self.core.drop_peer(&ConnectionName::Routing(known_name));
                         self.connection_manager.drop_node(endpoint.clone());
-                        return Err(RoutingError::BadAuthority);
+                        return Err(RoutingError::RejectedPublicId);
                     }
-                };
-                let confirmed = match hello.confirmed_you {
-                    Some(address) => {
-                        if self.core.is_us(&address) {
-                            debug!("This hello message successfully confirmed our address, {:?}",
-                                address);
-                            true
-                        } else {
-                            self.connection_manager.drop_node(endpoint.clone());
-                            error!("Wrongfully confirmed as {:?} on {:?} and dropped the connection",
-                                address, endpoint);
-                            return Err(RoutingError::RejectedPublicId);
-                        }
-                    }
-                    None => false,
-                };
-                if alpha || confirmed {
-                    // we know it's not a routing connection, remove it from the relay map
-                    let dropped_peer = match &old_identity {
-                        &Some(ConnectionName::Routing(_)) => unreachable!(),
-                        // drop any relay connection in favour of new to-be-determined identity
-                        &Some(ref old_connection_name) => {
-                            self.core.drop_peer(old_connection_name)
-                        }
-                        &None => None,
-                    };
-                    // add the new identity, or drop the connection
-                    if self.core.add_peer(new_identity.clone(), endpoint.clone(),
-                        Some(hello.public_id)) {
-                        debug!("Added {:?} to the core on {:?}", hello_address, endpoint);
-                        if alpha {
-                            ignore(self.send_hello(endpoint.clone(), Some(hello_address)));
-                        };
-                        match new_identity {
-                            ConnectionName::Bootstrap(bootstrap_name) => {
-                                ignore(self.request_network_name(&bootstrap_name, endpoint));
-                            }
-                            _ => {}
-                        };
-                    } else {
-                        // depending on the identity of the connection, follow the rules on dropping
-                        // to avoid both sides drop the other connection, possibly leaving none
-                        self.connection_manager.drop_node(endpoint.clone());
-                        debug!("Core refused {:?} on {:?} and dropped the connection",
-                            hello_address, endpoint);
-                    };
-                } else {
-                    debug!("We are not alpha and the hello was not confirmed yet, awaiting alpha.");
                 }
-                Ok(())
             }
-            Err(_) => Err(RoutingError::UnknownMessageType),
+            // a connection should have been labeled as Unidentified
+            None => None,
+            Some(relay_connection_name) => Some(relay_connection_name),
+        };
+        // FIXME (ben 14/08/2015) temporary copy until Debug is
+        // implemented for ConnectionName
+        let hello_address = hello.address.clone();
+        // if set to true we will take the initiative to drop the connection,
+        // if refused from core;
+        // if alpha is false we will leave the connection unidentified,
+        // only adding the new identity when it is confirmed by the other side
+        // (hello.confirmed_you set to our address), which has to send a confirmed hello
+        let mut alpha = false;
+        // construct the new identity from Hello
+        let new_identity = match (hello.address.clone(), self.core.our_address()) {
+            (Address::Node(his_name), Address::Node(our_name)) => {
+            // He is a node, and we are a node, establish a routing table connection
+            // FIXME (ben 11/08/2015) we need to check his PublicId against the network
+            // but this requires an additional RFC so currently leave out such check
+            // refer to https://github.com/maidsafe/routing/issues/387
+                alpha = &self.core.id().name() < &his_name;
+                ConnectionName::Routing(his_name)
+            }
+            (Address::Client(his_public_key), Address::Node(our_name)) => {
+            // He is a client, we are a node, establish a relay connection
+                debug!("Connection {:?} will be labeled as a relay to {:?}",
+                    endpoint, Address::Client(his_public_key));
+                alpha = true;
+                ConnectionName::Relay(Address::Client(his_public_key))
+            }
+            (Address::Node(his_name), Address::Client(our_public_key)) => {
+            // He is a node, we are a client, establish a bootstrap connection
+                debug!("Connection {:?} will be labeled as a bootstrap node name {:?}",
+                    endpoint, his_name);
+                ConnectionName::Bootstrap(his_name)
+            }
+            (Address::Client(his_public_key), Address::Client(our_public_key)) => {
+            // He is a client, we are a client, no-go
+                match old_identity {
+                    Some(old_connection_name) => {
+                        let _ = self.core.drop_peer(&old_connection_name);
+                    }
+                    None => {}
+                };
+                self.connection_manager.drop_node(endpoint.clone());
+                return Err(RoutingError::BadAuthority);
+            }
+        };
+        let confirmed = match hello.confirmed_you {
+            Some(ref address) => {
+                if self.core.is_us(&address) {
+                    debug!("This hello message successfully confirmed our address, {:?}",
+                        address);
+                    true
+                } else {
+                    self.connection_manager.drop_node(endpoint.clone());
+                    error!("Wrongfully confirmed as {:?} on {:?} and dropped the connection",
+                        address, endpoint);
+                    return Err(RoutingError::RejectedPublicId);
+                }
+            }
+            None => false,
+        };
+        if alpha || confirmed {
+            // we know it's not a routing connection, remove it from the relay map
+            let dropped_peer = match &old_identity {
+                &Some(ConnectionName::Routing(_)) => unreachable!(),
+                // drop any relay connection in favour of new to-be-determined identity
+                &Some(ref old_connection_name) => {
+                    self.core.drop_peer(old_connection_name)
+                }
+                &None => None,
+            };
+            // add the new identity, or drop the connection
+            if self.core.add_peer(new_identity.clone(), endpoint.clone(),
+                Some(hello.public_id.clone())) {
+                debug!("Added {:?} to the core on {:?}", hello_address, endpoint);
+                if alpha {
+                    ignore(self.send_hello(endpoint.clone(), Some(hello_address)));
+                };
+                match new_identity {
+                    ConnectionName::Bootstrap(bootstrap_name) => {
+                        ignore(self.request_network_name(&bootstrap_name, &endpoint));
+                    }
+                    _ => {}
+                };
+            } else {
+                // depending on the identity of the connection, follow the rules on dropping
+                // to avoid both sides drop the other connection, possibly leaving none
+                self.connection_manager.drop_node(endpoint.clone());
+                debug!("Core refused {:?} on {:?} and dropped the connection",
+                    hello_address, endpoint);
+            };
+        } else {
+            debug!("We are not alpha and the hello was not confirmed yet, awaiting alpha.");
         }
+        Ok(())
     }
 
 
@@ -399,6 +410,14 @@ impl RoutingNode {
         if !self.filter.check(&signed_message) {
             return Err(RoutingError::FilterCheckFailed);
         }
+
+        // scan for remote names
+        if self.core.is_connected_node() {
+            match signed_message.claimant() {
+                &::types::Address::Node(ref name) => self.refresh_routing_table(&name),
+                _ => {},
+            };
+        };
 
         // Forward
         if self.core.is_connected_node() {
@@ -560,6 +579,57 @@ impl RoutingNode {
                         .map(|msg| (msg, None))
     }
 
+    // ---- Direct Messages -----------------------------------------------------------------------
+
+    fn direct_message_received(&mut self, direct_message: ::direct_messages::DirectMessage,
+        endpoint: ::crust::Endpoint) {
+
+        match direct_message.content() {
+            &::direct_messages::Content::Hello(ref hello) => {
+                // verify signature of hello
+                if !direct_message.verify_signature(&hello.public_id.signing_public_key()) {
+                    error!("DirectMessage::Hello failed signature verification on {:?}",
+                        endpoint);
+                    self.connection_manager.drop_node(endpoint); };
+                let _ = self.handle_hello(endpoint, hello);
+            },
+            &::direct_messages::Content::Churn(ref his_close_group) => {
+                // TODO (ben 26/08/2015) verify the signature with the public_id
+                // from our routing table.
+                self.handle_churn(his_close_group);
+            },
+        };
+    }
+
+    // ---- Churn ---------------------------------------------------------------------------------
+
+    fn generate_churn(&self, churn: ::direct_messages::Churn, target: Vec<::crust::Endpoint>)
+        -> RoutingResult {
+        debug!("CHURN: sending {:?} names to {:?} close nodes",
+            churn.close_group.len(), target.len());
+        // send Churn to all our close group nodes
+        let direct_message = match ::direct_messages::DirectMessage::new(
+            ::direct_messages::Content::Churn(churn.clone()),
+            self.core.id().signing_private_key()) {
+                Ok(x) => x,
+                Err(e) => return Err(RoutingError::Cbor(e)),
+            };
+        let bytes = try!(::utils::encode(&direct_message));
+        for endpoint in target {
+            ignore(self.connection_manager.send(endpoint, bytes.clone()));
+        }
+        // notify the user
+        let _ = self.event_sender.send(::event::Event::Churn(churn.close_group));
+        Ok(())
+    }
+
+    fn handle_churn(&mut self, churn: &::direct_messages::Churn) {
+        debug!("CHURN: received {:?} names", churn.close_group.len());
+        for his_close_node in churn.close_group.iter() {
+            self.refresh_routing_table(his_close_node);
+        }
+    }
+
     // ---- Request Network Name ------------------------------------------------------------------
 
     fn request_network_name(&mut self,
@@ -706,7 +776,7 @@ impl RoutingNode {
                         for peer in group {
                             // TODO (ben 12/08/2015) self.public_id_cache.insert()
                             // or hold off till RFC on removing public_id_cache
-                            self.refresh_routing_table(peer.name());
+                            self.refresh_routing_table(&peer.name());
                         }
                         Ok(())
                     }
@@ -721,31 +791,15 @@ impl RoutingNode {
 
     /// Scan all passing messages for the existance of nodes in the address space.
     /// If a node is detected with a name that would improve our routing table,
-    /// then try to connect.  During a delay of 5 seconds, we collapse
+    /// then try to connect.  During a delay of 1 seconds, we collapse
     /// all re-occurances of this name, and block a new connect request
-    /// TODO: The behaviour of this function has been adapted to serve as a filter
-    /// to cover for the lack of a filter on FindGroupResponse
-    fn refresh_routing_table(&mut self, from_node: NameType) {
-      // disable refresh when scanning on small routing_table size
-        let time_now = SteadyTime::now();
-        if !self.connection_cache.contains_key(&from_node) {
-            if self.core.check_node(&ConnectionName::Routing(from_node)) {
-                ignore(self.send_connect_request(&from_node));
+    fn refresh_routing_table(&mut self, from_node: &NameType) {
+        // if !self.connection_filter.check(from_node) {
+            if self.core.check_node(&ConnectionName::Routing(from_node.clone())) {
+                ignore(self.send_connect_request(from_node));
             }
-            self.connection_cache.entry(from_node.clone())
-              .or_insert(time_now);
-        }
-
-        let mut prune_blockage : Vec<NameType> = Vec::new();
-        for (blocked_node, time) in self.connection_cache.iter_mut() {
-           // clear block for nodes
-            if time_now - *time > Duration::seconds(10) {
-                prune_blockage.push(blocked_node.clone());
-            }
-        }
-        for prune_name in prune_blockage {
-            self.connection_cache.remove(&prune_name);
-        }
+        //     self.connection_filter.add(from_node.clone());
+        // }
     }
 
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
@@ -825,8 +879,7 @@ impl RoutingNode {
                 // to validate the public_id from the network
                 self.connection_manager.connect(connect_request.local_endpoints.clone());
                 self.connection_manager.connect(connect_request.external_endpoints.clone());
-                self.connection_cache.entry(connect_request.requester_fob.name())
-                    .or_insert(SteadyTime::now());
+                // self.connection_filter.add(connect_request.requester_fob.name());
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
                     to_authority: from_authority,
@@ -877,8 +930,7 @@ impl RoutingNode {
                 debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
                 self.connection_manager.connect(connect_response.local_endpoints.clone());
                 self.connection_manager.connect(connect_response.external_endpoints.clone());
-                self.connection_cache.entry(connect_response.receiver_fob.name())
-                    .or_insert(SteadyTime::now());
+                // self.connection_filter.add(connect_response.receiver_fob.name());
                 Ok(())
             }
             _ => return Err(RoutingError::BadAuthority),
@@ -1074,7 +1126,7 @@ impl RoutingNode {
     // ------ FIXME -------------------------------------------------------------------------------
 
     fn group_threshold(&self) -> usize {
-        min(types::GROUP_SIZE, (self.core.routing_table_size() as f32 * 0.8) as usize)
+        min(types::QUORUM_SIZE, (self.core.routing_table_size() as f32 * 0.8) as usize)
     }
 
     fn get_a_bootstrap_name(&self) -> Option<NameType> {
