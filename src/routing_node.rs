@@ -160,6 +160,9 @@ impl RoutingNode {
                 Ok(Action::ClientSendContent(to_authority, content)) => {
                     let _ = self.client_send_content(to_authority, content);
                 },
+                Ok(Action::Churn(our_close_group)) => {
+                    let _ = self.generate_churn(our_close_group);
+                },
                 Ok(Action::WakeUp) => {
                     // ensure that the loop is blocked for maximally 10ms
                 },
@@ -611,6 +614,20 @@ impl RoutingNode {
 
             },
         };
+    }
+
+    // ---- Churn ---------------------------------------------------------------------------------
+
+    fn generate_churn(&self, churn: ::direct_messages::Churn) -> RoutingResult {
+        // notify the user
+        // send Churn to all our close group nodes
+        Ok(())
+    }
+
+    fn handle_churn(&mut self, churn: ::direct_messages::Churn) {
+        for his_close_node in churn.close_group {
+            self.refresh_routing_table(his_close_node);
+        }
     }
 
     // ---- Request Network Name ------------------------------------------------------------------
