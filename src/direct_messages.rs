@@ -22,15 +22,21 @@
 pub static VERSION_NUMBER : u8 = 0;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+pub struct Hello {
+    pub address: ::types::Address,
+    pub public_id: ::public_id::PublicId,
+    pub confirmed_you: Option<::types::Address>,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+pub struct Churn {
+    pub my_close_group: Vec<::NameType>,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum Content {
-    Hello {
-        address: ::types::Address,
-        public_id: ::public_id::PublicId,
-        confirmed_you: Option<::types::Address>,
-    },
-    Churn {
-        my_close_group: Vec<::NameType>,
-    },
+    Hello(Hello),
+    Churn(Churn),
 }
 
 
