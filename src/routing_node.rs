@@ -74,9 +74,9 @@ pub struct RoutingNode {
     event_sender: mpsc::Sender<Event>,
     wakeup: WakeUpCaller,
     filter: ::filter::Filter,
+    connection_filter: ::message_filter::MessageFilter<::NameType>,
     core: RoutingCore,
     public_id_cache: LruCache<NameType, PublicId>,
-    connection_cache: BTreeMap<NameType, SteadyTime>,
     accumulator: MessageAccumulator,
     refresh_accumulator: RefreshAccumulator,
     immutable_data_cache: Option<LruCache<NameType, ImmutableData>>,
@@ -110,9 +110,10 @@ impl RoutingNode {
             event_sender: event_sender,
             wakeup: WakeUpCaller::new(action_sender),
             filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
+            connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
+                ::time::Duration::seconds(1)),
             core: core,
             public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-            connection_cache: BTreeMap::new(),
             accumulator: MessageAccumulator::new(),
             refresh_accumulator: RefreshAccumulator::new(),
             immutable_data_cache: None,
@@ -622,7 +623,8 @@ impl RoutingNode {
 
     fn generate_churn(&self, churn: ::direct_messages::Churn, target: Vec<::crust::Endpoint>)
         -> RoutingResult {
-        debug!("Generating CHURN {:?} to {:?}", churn.close_group, target);
+        debug!("CHURN: sending {:?} names to {:?} close nodes",
+            churn.close_group.len(), target.len());
         // send Churn to all our close group nodes
         let direct_message = match ::direct_messages::DirectMessage::new(
             ::direct_messages::Content::Churn(churn.clone()),
@@ -640,7 +642,7 @@ impl RoutingNode {
     }
 
     fn handle_churn(&mut self, churn: &::direct_messages::Churn) {
-        debug!("Refreshing CHURN {:?}", churn.close_group);
+        debug!("CHURN: received {:?} names", churn.close_group.len());
         for his_close_node in churn.close_group.iter() {
             self.refresh_routing_table(his_close_node.clone());
         }
@@ -807,30 +809,13 @@ impl RoutingNode {
 
     /// Scan all passing messages for the existance of nodes in the address space.
     /// If a node is detected with a name that would improve our routing table,
-    /// then try to connect.  During a delay of 5 seconds, we collapse
+    /// then try to connect.  During a delay of 1 seconds, we collapse
     /// all re-occurances of this name, and block a new connect request
-    /// TODO: The behaviour of this function has been adapted to serve as a filter
-    /// to cover for the lack of a filter on FindGroupResponse
     fn refresh_routing_table(&mut self, from_node: NameType) {
-      // disable refresh when scanning on small routing_table size
-        let time_now = SteadyTime::now();
-        if !self.connection_cache.contains_key(&from_node) {
+        if !self.connection_filter.check(&from_node) {
             if self.core.check_node(&ConnectionName::Routing(from_node)) {
                 ignore(self.send_connect_request(&from_node));
             }
-            self.connection_cache.entry(from_node.clone())
-              .or_insert(time_now);
-        }
-
-        let mut prune_blockage : Vec<NameType> = Vec::new();
-        for (blocked_node, time) in self.connection_cache.iter_mut() {
-           // clear block for nodes
-            if time_now - *time > Duration::seconds(10) {
-                prune_blockage.push(blocked_node.clone());
-            }
-        }
-        for prune_name in prune_blockage {
-            self.connection_cache.remove(&prune_name);
         }
     }
 
@@ -911,8 +896,7 @@ impl RoutingNode {
                 // to validate the public_id from the network
                 self.connection_manager.connect(connect_request.local_endpoints.clone());
                 self.connection_manager.connect(connect_request.external_endpoints.clone());
-                self.connection_cache.entry(connect_request.requester_fob.name())
-                    .or_insert(SteadyTime::now());
+                self.connection_filter.add(connect_request.requester_fob.name());
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
                     to_authority: from_authority,
@@ -963,8 +947,7 @@ impl RoutingNode {
                 debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
                 self.connection_manager.connect(connect_response.local_endpoints.clone());
                 self.connection_manager.connect(connect_response.external_endpoints.clone());
-                self.connection_cache.entry(connect_response.receiver_fob.name())
-                    .or_insert(SteadyTime::now());
+                self.connection_filter.add(connect_response.receiver_fob.name());
                 Ok(())
             }
             _ => return Err(RoutingError::BadAuthority),
