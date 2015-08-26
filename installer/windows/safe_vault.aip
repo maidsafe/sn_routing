@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<DOCUMENT Type="Advanced Installer" CreateVersion="12.0" version="12.3" Modules="enterprise" RootPath="." Language="en" Id="{739027E0-9C93-4ABE-B6D1-9A1A6C425609}">
+<DOCUMENT Type="Advanced Installer" CreateVersion="12.0" version="12.3.1" Modules="enterprise" RootPath="." Language="en" Id="{739027E0-9C93-4ABE-B6D1-9A1A6C425609}">
   <COMPONENT cid="caphyon.advinst.msicomp.MsiPropsComponent">
     <ROW Property="AI_BITMAP_DISPLAY_MODE" Value="0"/>
     <ROW Property="AI_COLOR_DISABLED_TEXT" Value="3026478" MultiBuildValue="DefaultBuild:15461355" MsiKey="AI_COLOR_DISABLED_TEXT"/>
@@ -24,7 +24,7 @@
     <ROW Property="ProductCode" Value="1033:{673D03E3-D7FE-4DC3-B6FA-72423BF0587D} " Type="16"/>
     <ROW Property="ProductLanguage" Value="1033"/>
     <ROW Property="ProductName" Value="SAFE Network Vault"/>
-    <ROW Property="ProductVersion" Value="0.1.1" Type="32"/>
+    <ROW Property="ProductVersion" Value="0.0.1" Type="32"/>
     <ROW Property="SecureCustomProperties" Value="OLDPRODUCTS;AI_NEWERPRODUCTFOUND;AI_SETUPEXEPATH;SETUPEXEDIR"/>
     <ROW Property="UpgradeCode" Value="{5E9B0DC5-46AC-4ABA-B93E-5131A1EFED0A}"/>
     <ROW Property="WindowsType9X" MultiBuildValue="DefaultBuild:Windows 9x/ME" ValueLocId="-"/>
@@ -37,24 +37,24 @@
   <COMPONENT cid="caphyon.advinst.msicomp.MsiDirsComponent">
     <ROW Directory="APPDIR" Directory_Parent="TARGETDIR" DefaultDir="APPDIR:." IsPseudoRoot="1" DirectoryOptions="3"/>
     <ROW Directory="CommonAppDataFolder" Directory_Parent="TARGETDIR" DefaultDir="COMMON~1|CommonAppDataFolder" IsPseudoRoot="1"/>
-    <ROW Directory="MaidSafe_Dir" Directory_Parent="CommonAppDataFolder" DefaultDir="SAFE" DirectoryOptions="3"/>
-    <ROW Directory="SAFENetworkVault_Dir" Directory_Parent="MaidSafe_Dir" DefaultDir="SAFENE~1|SAFE Network Vault" DirectoryOptions="3"/>
+    <ROW Directory="MaidSafe_Dir" Directory_Parent="CommonAppDataFolder" DefaultDir="SAFE_V~1|safe_vault" DirectoryOptions="3"/>
+    <ROW Directory="ProgramFiles64Folder" Directory_Parent="TARGETDIR" DefaultDir="PROGRA~1|ProgramFiles64Folder" IsPseudoRoot="1"/>
     <ROW Directory="TARGETDIR" DefaultDir="SourceDir"/>
+    <ROW Directory="safe_vault_Dir" Directory_Parent="ProgramFiles64Folder" DefaultDir="SAFE_V~1|safe_vault"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiCompsComponent">
     <ROW Component="AI_ExePath" ComponentId="{F6FC2898-AED8-4014-B9B8-560920CDC09E}" Directory_="APPDIR" Attributes="260" KeyPath="AI_ExePath"/>
     <ROW Component="MaidSafe" ComponentId="{36BBA577-473C-4623-B11B-534B6F77D65F}" Directory_="MaidSafe_Dir" Attributes="256"/>
     <ROW Component="ProductInformation" ComponentId="{DE4B89DA-D559-498D-BCFF-15CF27E2A16C}" Directory_="APPDIR" Attributes="260" KeyPath="Version"/>
-    <ROW Component="SAFENetworkVault" ComponentId="{681955D9-806A-4C93-B420-6220144FD192}" Directory_="SAFENetworkVault_Dir" Attributes="256"/>
-    <ROW Component="safe_vault.bootstrap.cache" ComponentId="{F1E1EBDC-66CC-4317-9065-2890B620FC1E}" Directory_="SAFENetworkVault_Dir" Attributes="256" KeyPath="safe_vault.bootstrap.cache" Type="0"/>
-    <ROW Component="safe_vault.exe" ComponentId="{9993AFF7-BF41-4BC5-990E-BFE3B05146F9}" Directory_="APPDIR" Attributes="256" KeyPath="safe_vault.exe"/>
+    <ROW Component="safe_vault.bootstrap.cache_1" ComponentId="{8065D6DF-3B32-41EE-A14D-FE9AA8F10559}" Directory_="MaidSafe_Dir" Attributes="0" KeyPath="safe_vault.bootstrap.cache" Type="0"/>
+    <ROW Component="safe_vault.exe" ComponentId="{9993AFF7-BF41-4BC5-990E-BFE3B05146F9}" Directory_="safe_vault_Dir" Attributes="256" KeyPath="safe_vault.exe"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiFeatsComponent">
-    <ROW Feature="Vault" Title="MainFeature" Description="Vault executable" Display="0" Level="1" Directory_="APPDIR" Attributes="16" Components="AI_ExePath MaidSafe ProductInformation SAFENetworkVault safe_vault.bootstrap.cache safe_vault.exe"/>
+    <ROW Feature="Vault" Title="MainFeature" Description="Vault executable" Display="0" Level="1" Directory_="APPDIR" Attributes="16" Components="AI_ExePath MaidSafe ProductInformation safe_vault.bootstrap.cache_1 safe_vault.exe"/>
     <ATTRIBUTE name="CurrentFeature" value="Vault"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiFilesComponent">
-    <ROW File="safe_vault.bootstrap.cache" Component_="safe_vault.bootstrap.cache" FileName="SAFE_V~1.CAC|safe_vault.bootstrap.cache" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\common\safe_vault.bootstrap.cache" SelfReg="false"/>
+    <ROW File="safe_vault.bootstrap.cache" Component_="safe_vault.bootstrap.cache_1" FileName="SAFE_V~1.CAC|safe_vault.bootstrap.cache" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\common\safe_vault.bootstrap.cache" SelfReg="false"/>
     <ROW File="safe_vault.exe" Component_="safe_vault.exe" FileName="SAFE_V~1.EXE|safe_vault.exe" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\..\target\release\safe_vault.exe" SelfReg="false" NextFile="safe_vault.bootstrap.cache" DigSign="true"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.BootstrOptComponent">
@@ -252,7 +252,6 @@
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiCreateFolderComponent">
     <ROW Directory_="MaidSafe_Dir" Component_="MaidSafe" ManualDelete="true"/>
-    <ROW Directory_="SAFENetworkVault_Dir" Component_="SAFENetworkVault" ManualDelete="true"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiCustActComponent">
     <ROW Action="AI_BACKUP_AI_SETUPEXEPATH" Type="51" Source="AI_SETUPEXEPATH_ORIGINAL" Target="[AI_SETUPEXEPATH]"/>
