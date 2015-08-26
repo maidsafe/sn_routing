@@ -37,7 +37,7 @@ pub enum ResponseError {
     /// failure to complete request for data
     FailedRequestForData(Data),
     /// had to clear Sacrificial Data in order to complete request
-    HadToClearSacrificial(::NameType, usize),
+    HadToClearSacrificial(::NameType, u32),
 }
 
 impl From<CborError> for ResponseError {
