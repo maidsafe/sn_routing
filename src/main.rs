@@ -58,7 +58,8 @@ mod vault;
 mod utils;
 mod routing_types;
 mod macros;
-#[cfg(not(feature = "use-actual-routing"))]
+
+#[cfg(feature = "use-mock-routing")]
 mod non_networking_test_framework;
 
 /// Runs a SAFE Network vault

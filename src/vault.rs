@@ -17,16 +17,16 @@
 
 use routing_types::*;
 
-#[cfg(feature = "use-actual-routing")]
+#[cfg(not(feature = "use-mock-routing"))]
 type Routing = ::routing::routing::Routing;
-#[cfg(feature = "use-actual-routing")]
+#[cfg(not(feature = "use-mock-routing"))]
 fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
     ::routing::routing::Routing::new(event_sender)
 }
 
-#[cfg(not(feature = "use-actual-routing"))]
+#[cfg(feature = "use-mock-routing")]
 type Routing = ::non_networking_test_framework::MockRouting;
-#[cfg(not(feature = "use-actual-routing"))]
+#[cfg(feature = "use-mock-routing")]
 fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
     ::non_networking_test_framework::MockRouting::new(event_sender)
 }
@@ -495,7 +495,7 @@ pub type ResponseNotifier =
     use transfer_parser::{Transfer, transfer_tags};
     use routing_types::*;
 
-    #[cfg(not(feature = "use-actual-routing"))]
+    #[cfg(feature = "use-mock-routing")]
     fn mock_env_setup() -> (super::Routing, ::std::sync::mpsc::Receiver<(Data)>) {
         let run_vault = |mut vault: Vault| {
             let _ = ::std::thread::spawn(move || {
@@ -516,7 +516,7 @@ pub type ResponseNotifier =
         (routing, receiver)
     }
 
-    #[cfg(not(feature = "use-actual-routing"))]
+    #[cfg(feature = "use-mock-routing")]
     #[test]
     fn put_get_flow() {
         let (mut routing, receiver) = mock_env_setup();
@@ -540,7 +540,7 @@ pub type ResponseNotifier =
         }
     }
 
-    #[cfg(not(feature = "use-actual-routing"))]
+    #[cfg(feature = "use-mock-routing")]
     #[test]
     fn post_flow() {
         let (mut routing, receiver) = mock_env_setup();
@@ -573,7 +573,7 @@ pub type ResponseNotifier =
         }
     }
 
-    #[cfg(feature = "use-actual-routing")]
+    #[cfg(not(feature = "use-mock-routing"))]
     fn network_env_setup() -> (::routing::routing_client::RoutingClient,
                                ::std::sync::mpsc::Receiver<(Data)>,
                                NameType) {
@@ -639,7 +639,7 @@ pub type ResponseNotifier =
         (client_routing, client_receiver, client_name)
     }
 
-    #[cfg(feature = "use-actual-routing")]
+    #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_put_get_test() {
         let (mut client_routing, client_receiver, client_name) = network_env_setup();
@@ -660,7 +660,7 @@ pub type ResponseNotifier =
         }
     }
 
-    #[cfg(feature = "use-actual-routing")]
+    #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_post_test() {
         let (mut client_routing, client_receiver, client_name) = network_env_setup();
