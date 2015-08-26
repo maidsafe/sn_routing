@@ -65,7 +65,7 @@ impl RelayMap {
         };
         // impose limit on number of relay nodes active
         if !self.relay_map.contains_key(&identity) && self.relay_map.len() >= MAX_RELAY {
-            error!(REJECTED because of MAX_RELAY);
+            error!("REJECTED because of MAX_RELAY");
             return false;
         }
         // check if endpoint already exists
