@@ -192,7 +192,11 @@ impl RoutingNode {
                             // The message received is not a Signed Routing Message,
                             // expect it to be an Hello message to identify a connection
                             Err(_) => {
-                                let _ = self.handle_hello(&endpoint, bytes);
+                                match decode::<::direct_messages::DirectMessage>(&bytes) {
+                                    Ok(direct_message) => self.direct_message_received(
+                                        direct_message, endpoint),
+                                    _ => error!("Unparsable message received on {:?}", endpoint),
+                                };
                             }
                         };
                     }
@@ -584,6 +588,14 @@ impl RoutingNode {
         debug!("Adding message from {:?} to accumulator", claimant);
         self.accumulator.add_message(threshold as usize, claimant, message)
                         .map(|msg| (msg, None))
+    }
+
+    // ---- Direct Messages -----------------------------------------------------------------------
+
+    fn direct_message_received(&mut self, direct_message: ::direct_messages::DirectMessage,
+        endpoint: ::crust::Endpoint) {
+
+
     }
 
     // ---- Request Network Name ------------------------------------------------------------------
