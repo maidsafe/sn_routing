@@ -23,10 +23,6 @@ environment:
 #    - RUST_VERSION: beta
     - RUST_VERSION: nightly
 
-matrix:
-  allow_failures:
-    - platform: x86
-
 build: false
 
 test_script:
