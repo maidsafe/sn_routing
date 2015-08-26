@@ -1,5 +1,11 @@
 # Routing - Change Log
 
+### [0.3.5] improvements to ResponseError and testing
+
+- [#647](https://github.com/maidsafe/routing/pull/647) CI disallow failures on windows x86 (32bit) architecture
+- [#646](https://github.com/maidsafe/routing/pull/646) correct ResponseError::HadToClearSacrificial to return NameType and u32 size
+- [#645](https://github.com/maidsafe/routing/pull/645) key_value_store to test < Client | ClientManager > < ClientManager | NaeManager > behaviour
+
 ### [0.3.4] Improvements to filter and accumulator behavior
 
 - [#642](https://github.com/maidsafe/routing/pull/642) improve filter to block resolved messages
