@@ -282,13 +282,19 @@ impl RoutingNode {
                   endpoint: Endpoint,
                   confirmed_address: Option<Address>)
                   -> RoutingResult {
-        let message = try!(encode(&Hello {
-            address       : self.core.our_address(),
-            public_id     : PublicId::new(self.core.id()),
-            confirmed_you : confirmed_address.clone()}));
         debug!("Saying hello I am {:?} on {:?}, confirming {:?}", self.core.our_address(),
             endpoint, confirmed_address);
-        ignore(self.connection_manager.send(endpoint, message));
+        let direct_message = match ::direct_messages::DirectMessage::new(
+            ::direct_messages::Content::Hello {
+                address: self.core.our_address(),
+                public_id: PublicId::new(self.core.id()),
+                confirmed_you: confirmed_address,
+                }, self.core.id().signing_private_key()) {
+                    Ok(x) => x,
+                    Err(e) => return Err(RoutingError::Cbor(e)),
+                };
+        let bytes = try!(::utils::encode(&direct_message));
+        ignore(self.connection_manager.send(endpoint, bytes));
         Ok(())
     }
 
