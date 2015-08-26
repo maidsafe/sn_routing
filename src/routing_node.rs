@@ -74,7 +74,7 @@ pub struct RoutingNode {
     event_sender: mpsc::Sender<Event>,
     wakeup: WakeUpCaller,
     filter: ::filter::Filter,
-    connection_filter: ::message_filter::MessageFilter<::NameType>,
+    // connection_filter: ::message_filter::MessageFilter<::NameType>,
     core: RoutingCore,
     public_id_cache: LruCache<NameType, PublicId>,
     accumulator: MessageAccumulator,
@@ -108,8 +108,8 @@ impl RoutingNode {
             event_sender: event_sender,
             wakeup: WakeUpCaller::new(action_sender),
             filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
-            connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
-                ::time::Duration::seconds(1)),
+            // connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
+            //     ::time::Duration::seconds(1)),
             core: core,
             public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             accumulator: MessageAccumulator::new(),
@@ -411,6 +411,14 @@ impl RoutingNode {
             return Err(RoutingError::FilterCheckFailed);
         }
 
+        // scan for remote names
+        if self.core.is_connected_node() {
+            match signed_message.claimant() {
+                &::types::Address::Node(ref name) => self.refresh_routing_table(&name),
+                _ => {},
+            };
+        };
+
         // Forward
         if self.core.is_connected_node() {
             ignore(self.send(signed_message.clone()));
@@ -618,7 +626,7 @@ impl RoutingNode {
     fn handle_churn(&mut self, churn: &::direct_messages::Churn) {
         debug!("CHURN: received {:?} names", churn.close_group.len());
         for his_close_node in churn.close_group.iter() {
-            self.refresh_routing_table(his_close_node.clone());
+            self.refresh_routing_table(his_close_node);
         }
     }
 
@@ -768,7 +776,7 @@ impl RoutingNode {
                         for peer in group {
                             // TODO (ben 12/08/2015) self.public_id_cache.insert()
                             // or hold off till RFC on removing public_id_cache
-                            self.refresh_routing_table(peer.name());
+                            self.refresh_routing_table(&peer.name());
                         }
                         Ok(())
                     }
@@ -785,12 +793,13 @@ impl RoutingNode {
     /// If a node is detected with a name that would improve our routing table,
     /// then try to connect.  During a delay of 1 seconds, we collapse
     /// all re-occurances of this name, and block a new connect request
-    fn refresh_routing_table(&mut self, from_node: NameType) {
-        if !self.connection_filter.check(&from_node) {
-            if self.core.check_node(&ConnectionName::Routing(from_node)) {
-                ignore(self.send_connect_request(&from_node));
+    fn refresh_routing_table(&mut self, from_node: &NameType) {
+        // if !self.connection_filter.check(from_node) {
+            if self.core.check_node(&ConnectionName::Routing(from_node.clone())) {
+                ignore(self.send_connect_request(from_node));
             }
-        }
+        //     self.connection_filter.add(from_node.clone());
+        // }
     }
 
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
@@ -870,7 +879,7 @@ impl RoutingNode {
                 // to validate the public_id from the network
                 self.connection_manager.connect(connect_request.local_endpoints.clone());
                 self.connection_manager.connect(connect_request.external_endpoints.clone());
-                self.connection_filter.add(connect_request.requester_fob.name());
+                // self.connection_filter.add(connect_request.requester_fob.name());
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
                     to_authority: from_authority,
@@ -921,7 +930,7 @@ impl RoutingNode {
                 debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
                 self.connection_manager.connect(connect_response.local_endpoints.clone());
                 self.connection_manager.connect(connect_response.external_endpoints.clone());
-                self.connection_filter.add(connect_response.receiver_fob.name());
+                // self.connection_filter.add(connect_response.receiver_fob.name());
                 Ok(())
             }
             _ => return Err(RoutingError::BadAuthority),
