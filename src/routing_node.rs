@@ -107,7 +107,7 @@ impl RoutingNode {
             action_receiver: action_receiver,
             event_sender: event_sender,
             wakeup: WakeUpCaller::new(action_sender),
-            filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
+            filter: ::filter::Filter::with_expiry_duration(Duration::seconds(2)),
             // connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
             //     ::time::Duration::seconds(1)),
             core: core,
@@ -477,7 +477,7 @@ impl RoutingNode {
                     InternalRequest::Refresh(type_tag, bytes) => {
                         let refresh_authority = match our_authority {
                             Some(authority) => {
-                                if authority.is_group() { return Err(RoutingError::BadAuthority) };
+                                if !authority.is_group() { return Err(RoutingError::BadAuthority) };
                                 authority
                             },
                             None => return Err(RoutingError::BadAuthority),
