@@ -15,16 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rustc_serialize::{Decoder, Encodable, Encoder};
-use public_id::PublicId;
-use types::Address;
-
-// TODO (ben 25/08/2015) Hello needs to be signed and validated
+// TODO (ben 25/08/2015) Churn needs to be signed and validated
+/// Churn is a direct connection message 
 #[derive(Debug, Eq, PartialEq, RustcEncodable, RustcDecodable)]
-pub struct Hello {
-    pub address: Address,
-    pub public_id: PublicId,
-    pub confirmed_you: Option<Address>,
+pub struct Churn {
+    pub my_close_group: Vec<::NameType>,
 }
 
 #[cfg(test)]

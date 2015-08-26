@@ -20,12 +20,12 @@ accumulator = "0.0.*"
 docopt = "*"
 itertools = "*"
 log = "*"
+env_logger = "*"
 sodiumoxide = "*"
 crust = "0.2.*"
 
 [dev-dependencies]
 bit-vec = "*"
-env_logger = "*"
 
 [[example]]
 name = "simple_key_value_store"

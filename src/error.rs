@@ -17,7 +17,7 @@
 
 use std::io;
 use std::convert::From;
-use cbor::{CborError, CborTagEncode};
+use cbor::CborError;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::error;
 use std::fmt;

@@ -100,8 +100,6 @@ impl ExternalResponse {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
     Connect(ConnectRequest),
-    // FindGroup,
-    // GetGroupKey,
     RequestNetworkName(PublicId),
     // a client can send RequestNetworkName
     CacheNetworkName(PublicId, SignedToken),
@@ -223,7 +221,7 @@ impl SignedMessage {
             Err(_) => return false,
         };
 
-        sign::verify_detached(&self.signature, &encoded_body, &public_sign_key)
+        sign::verify_detached(&self.signature, &encoded_body, public_sign_key)
     }
 
     pub fn get_routing_message(&self) -> &RoutingMessage {
