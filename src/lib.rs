@@ -27,7 +27,6 @@
 //! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
 //!
 
-#![feature(convert)]
 #![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
        html_root_url = "http://maidsafe.github.io/routing")]
