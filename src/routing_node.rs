@@ -1160,7 +1160,7 @@ impl RoutingNode {
     // ------ FIXME -------------------------------------------------------------------------------
 
     fn group_threshold(&self) -> usize {
-        min(types::GROUP_SIZE, (self.core.routing_table_size() as f32 * 0.8) as usize)
+        min(types::QUORUM_SIZE, (self.core.routing_table_size() as f32 * 0.8) as usize)
     }
 
     fn get_a_bootstrap_name(&self) -> Option<NameType> {
