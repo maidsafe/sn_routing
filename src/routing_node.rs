@@ -160,8 +160,8 @@ impl RoutingNode {
                 Ok(Action::ClientSendContent(to_authority, content)) => {
                     let _ = self.client_send_content(to_authority, content);
                 },
-                Ok(Action::Churn(our_close_group)) => {
-                    let _ = self.generate_churn(our_close_group);
+                Ok(Action::Churn(our_close_group, targets)) => {
+                    let _ = self.generate_churn(our_close_group, targets);
                 },
                 Ok(Action::WakeUp) => {
                     // ensure that the loop is blocked for maximally 10ms
@@ -611,22 +611,36 @@ impl RoutingNode {
                 let _ = self.handle_hello(endpoint, hello);
             },
             &::direct_messages::Content::Churn(ref his_close_group) => {
-
+                // TODO (ben 26/08/2015) verify the signature with the public_id
+                // from our routing table.
+                self.handle_churn(his_close_group);
             },
         };
     }
 
     // ---- Churn ---------------------------------------------------------------------------------
 
-    fn generate_churn(&self, churn: ::direct_messages::Churn) -> RoutingResult {
-        // notify the user
+    fn generate_churn(&self, churn: ::direct_messages::Churn, target: Vec<::crust::Endpoint>)
+        -> RoutingResult {
         // send Churn to all our close group nodes
+        let direct_message = match ::direct_messages::DirectMessage::new(
+            ::direct_messages::Content::Churn(churn.clone()),
+            self.core.id().signing_private_key()) {
+                Ok(x) => x,
+                Err(e) => return Err(RoutingError::Cbor(e)),
+            };
+        let bytes = try!(::utils::encode(&direct_message));
+        for endpoint in target {
+            ignore(self.connection_manager.send(endpoint, bytes.clone()));
+        }
+        // notify the user
+        let _ = self.event_sender.send(::event::Event::Churn(churn.close_group));
         Ok(())
     }
 
-    fn handle_churn(&mut self, churn: ::direct_messages::Churn) {
-        for his_close_node in churn.close_group {
-            self.refresh_routing_table(his_close_node);
+    fn handle_churn(&mut self, churn: &::direct_messages::Churn) {
+        for his_close_node in churn.close_group.iter() {
+            self.refresh_routing_table(his_close_node.clone());
         }
     }
 
