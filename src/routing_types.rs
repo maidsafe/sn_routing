@@ -38,10 +38,12 @@ pub enum MethodCall {
     // Delete { name: NameType, data : Data },
     /// request to refresh
     Refresh { type_tag: u64, from_group: NameType, payload: Vec<u8> },
-    /// request to forward on the request to destination for further handling
-    Forward { destination: NameType },
     /// reply
     Reply { data: Data },
+    /// response error indicating failed in putting data
+    FailedPut { location: Authority, data: Data },
+    /// response error indicating clearing sarificial data
+    ClearSacrificial { location: Authority, name: NameType, size: u32 },
 }
 
 /// This trait is required for any type of message to be

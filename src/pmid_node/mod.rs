@@ -40,8 +40,9 @@ impl PmidNode {
         Ok(vec![MethodCall::Reply { data: Data::ImmutableData(sd) }])
     }
 
-    pub fn handle_put(&mut self, incoming_data : Data) ->Result<Vec<MethodCall>, ResponseError> {
-        info!("pmid_node storing {:?}", incoming_data.name());
+    pub fn handle_put(&mut self, pmid_node: NameType,
+                      incoming_data: Data) ->Result<Vec<MethodCall>, ResponseError> {
+        info!("pmid_node {:?} storing {:?}", pmid_node, incoming_data.name());
         let immutable_data = match incoming_data.clone() {
             Data::ImmutableData(data) => { data }
             _ => { return Err(ResponseError::InvalidRequest(incoming_data)); }
@@ -56,31 +57,42 @@ impl PmidNode {
             self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
             return Ok(vec![]);
         }
-        // TODO: keeps removing sacrificial copies till enough space emptied
-        //       if all sacrificial copies removed but still can not satisfy, do not restore
         if !data_name_and_remove_sacrificial.1 {
-            return Err(ResponseError::InvalidRequest(incoming_data))
+            // For sacrifized data, just notify PmidManager to update the account
+            // Replication shall not be carried out for it
+            return Ok(vec![MethodCall::ClearSacrificial { location: Authority::NodeManager(pmid_node),
+                                                          name: incoming_data.name(),
+                                                          size: incoming_data.payload_size() as u32 }]);
         }
         let required_space = data.len() - (self.chunk_store_.max_disk_usage() - self.chunk_store_.current_disk_usage());
         let names = self.chunk_store_.names();
+        let mut returned_calls = vec![];
+        let mut emptied_space = 0;
         for name in names.iter() {
             let fetched_data = self.chunk_store_.get(name.clone());
             let parsed_data : ImmutableData = try!(::routing::utils::decode(&fetched_data));
             match *parsed_data.get_type_tag() {
                 ImmutableDataType::Sacrificial => {
-                    if fetched_data.len() > required_space {
-                        self.chunk_store_.delete(name.clone());
+                    emptied_space += fetched_data.len();
+                    self.chunk_store_.delete(name.clone());
+                    // For sacrifized data, just notify PmidManager to update the account
+                    // and DataManager need to adjust its farming rate, replication shall not be carried out for it
+                    returned_calls.push(MethodCall::ClearSacrificial {
+                            location: Authority::NodeManager(pmid_node.clone()),
+                            name: parsed_data.name(),
+                            size: parsed_data.payload_size() as u32 });
+                    if emptied_space > required_space {
                         self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
-                        // TODO: ideally, the InterfaceError shall have an option holding a list of copies
-                        // TODO: may need to update the flow to utilize HadToClearSacrificial explicitly
-                        //       currently assuming FailedRequestForData is replacing FailedTOStoreData
-                        return Err(ResponseError::FailedRequestForData(Data::ImmutableData(immutable_data)));
+                        return Ok(returned_calls);
                     }
                 },
                 _ => {}
             }
         }
-        Err(ResponseError::InvalidRequest(incoming_data))
+        // Reduplication needs to be carried out
+        returned_calls.push(MethodCall::FailedPut { location: Authority::NodeManager(pmid_node),
+                                                    data: incoming_data });
+        Ok(returned_calls)
     }
 
 }
@@ -97,7 +109,8 @@ mod test {
         let value = generate_random_vec_u8(1024);
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         {
-            let put_result = pmid_node.handle_put(Data::ImmutableData(im_data.clone()));
+            let put_result = pmid_node.handle_put(NameType::new([0u8; 64]),
+                                                  Data::ImmutableData(im_data.clone()));
             assert_eq!(put_result.is_ok(), true);
             let calls = put_result.ok().unwrap();
             assert_eq!(calls.len(), 0);
