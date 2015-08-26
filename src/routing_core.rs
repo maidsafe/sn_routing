@@ -212,12 +212,17 @@ impl RoutingCore {
                         };
                         info!("RT({:?}) dropped node {:?}", routing_table.size(), name);
                         if trigger_churn {
-                            let mut close_group : Vec<NameType> = routing_table
-                                    .our_close_group().iter()
+                            let our_close_group = routing_table.our_close_group();
+                            let mut close_group : Vec<NameType> = our_close_group.iter()
                                     .map(|node_info| node_info.public_id.name())
-                                    .collect::<Vec<NameType>>();
+                                    .collect::<Vec<::NameType>>();
                             close_group.insert(0, self.id.name());
-                            let _ = self.event_sender.send(Event::Churn(close_group));
+                            let target_endpoints : Vec<::crust::Endpoint> = our_close_group.iter()
+                                .filter_map(|node_info| node_info.connected_endpoint)
+                                .collect::<Vec<::crust::Endpoint>>();
+                            let _ = self.action_sender.send(Action::Churn(
+                                ::direct_messages::Churn{ close_group: close_group },
+                                target_endpoints ));
                         };
                         None
                     }
@@ -271,12 +276,18 @@ impl RoutingCore {
                                     info!("RT({:?}) added {:?}", routing_table.size(),
                                         routing_name);                                };
                                 if added && trigger_churn {
-                                    let mut close_group : Vec<NameType> = routing_table
-                                        .our_close_group().iter()
-                                        .map(|node_info| node_info.public_id.name())
-                                        .collect::<Vec<NameType>>();
+                                    let our_close_group = routing_table.our_close_group();
+                                    let mut close_group : Vec<NameType> = our_close_group.iter()
+                                            .map(|node_info| node_info.public_id.name())
+                                            .collect::<Vec<::NameType>>();
                                     close_group.insert(0, self.id.name());
-                                    let _ = self.event_sender.send(Event::Churn(close_group));
+                                    let target_endpoints : Vec<::crust::Endpoint> = our_close_group
+                                        .iter()
+                                        .filter_map(|node_info| node_info.connected_endpoint)
+                                        .collect::<Vec<::crust::Endpoint>>();
+                                    let _ = self.action_sender.send(Action::Churn(
+                                        ::direct_messages::Churn{ close_group: close_group },
+                                        target_endpoints ));
                                 };
                                 added
                             }
