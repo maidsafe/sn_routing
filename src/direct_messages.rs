@@ -30,7 +30,7 @@ pub struct Hello {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct Churn {
-    pub my_close_group: Vec<::NameType>,
+    pub close_group: Vec<::NameType>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
