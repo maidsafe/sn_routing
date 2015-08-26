@@ -162,9 +162,9 @@ impl DataManager {
                                from_address: &NameType) -> Vec<MethodCall> {
         info!("DataManager handle_put_responsen from {:?}", from_address);
         match response {
-            // TODO: may need to update the flow to utilize HadToClearSacrificial explicitly
-            //       currently assuming FailedRequestForData is replacing FailedTOStoreData
             ResponseError::FailedRequestForData(data) => {
+                // TODO: giving more weight when failed in storing a Normal immutable data ?
+                self.resource_index = cmp::max(1, self.resource_index - 4);
                 match data.clone() {
                     // DataManager shall only handle Immutable data
                     // Structured Data shall be handled in StructuredDataManager
@@ -177,21 +177,23 @@ impl DataManager {
                                 match replicate_to {
                                     Some(pmid_node) => {
                                         self.db_.add_pmid_node(&name, pmid_node.clone());
-                                        return vec![MethodCall::Put { location: Authority::ManagedNode(pmid_node), 
+                                        return vec![MethodCall::Put { location: Authority::NodeManager(pmid_node), 
                                                                       content: data }];
                                     },
                                     None => {}
                                 }
-                            }
-                            ImmutableDataType::Sacrificial => {
-                                self.resource_index = cmp::max(1, self.resource_index - 1);
                             }
                             _ => {}
                         }
                     }
                     _ => {}
                 }
-            }
+            },
+            ResponseError::HadToClearSacrificial(name, _) => {
+                // giving less weight when removing a sacrificial data
+                self.resource_index = cmp::max(1, self.resource_index - 1);
+                self.db_.remove_pmid_node(&name, from_address.clone());
+            },
             _ => {}
         }
         vec![]

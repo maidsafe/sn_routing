@@ -159,6 +159,21 @@ impl MockRouting {
         });
     }
 
+    pub fn put_response(&self,
+                        our_authority: Authority,
+                        location: Authority,
+                        response_error: ResponseError,
+                        signed_token: Option<::routing::SignedToken>) {
+        let delay_ms = self.network_delay_ms;
+        let cloned_sender = self.sender.clone();
+        let _ = ::std::thread::spawn(move || {
+            ::std::thread::sleep_ms(delay_ms);
+            let _ = cloned_sender.send(Event::Response{ response: ExternalResponse::Put(response_error, signed_token),
+                                                        our_authority: location,
+                                                        from_authority: our_authority });
+        });
+    }
+
     pub fn refresh_request(&self, type_tag: u64, from_group: NameType, content: Vec<u8>) {
         // routing is expected to accumulate the refresh requests
         // for the same group into one event request to vault

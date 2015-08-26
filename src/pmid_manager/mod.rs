@@ -45,14 +45,17 @@ impl PmidManager {
 
     pub fn handle_put_response(&mut self, from_address: &NameType,
                                response: ResponseError) -> Vec<MethodCall> {
-        // The content in response is payload for the failing to store data or the removed Sacrificial copy.
         match response {
-            // TODO: may need to update the flow to utilize HadToClearSacrificial explicitly
-            //       currently assuming FailedRequestForData is replacing FailedTOStoreData
             ResponseError::FailedRequestForData(data) => {
                 self.db_.delete_data(from_address, data.payload_size() as u64);
-                return vec![MethodCall::Forward { destination: data.name() }];
-            }
+                return vec![MethodCall::FailedPut { location: Authority::NaeManager(data.name()),
+                                                    data: data }];
+            },
+            ResponseError::HadToClearSacrificial(name, size) => {
+                self.db_.delete_data(from_address, size as u64);
+                return vec![MethodCall::ClearSacrificial {
+                    location: Authority::NaeManager(name), name: name, size: size }];
+            },
             _ => {}
         }
         vec![]
