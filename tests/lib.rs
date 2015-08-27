@@ -33,8 +33,8 @@ use std::error::Error;
 use std::io::Read;
 
 #[test]
-// This test requires the executable safe_vault to be presented at the same place of the test get executed
-// also it depends a printout in routing lib. if such printout is changed / muted, this test needs to be updated
+// This test requires the executable safe_vault to be presented
+// And the test must be executed with "RUST_LOG=info" as prefix, example "RUST_LOG=info cargo test"
 fn executable_test() {
     let mut processes = Vec::new();
     let num_of_nodes = 8;
