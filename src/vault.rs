@@ -690,6 +690,31 @@ pub type ResponseNotifier =
         }
     }
 
+    #[cfg(not(feature = "use-mock-routing"))]
+    #[test]
+    fn network_churn_test() {
+        let (mut client_routing, client_receiver, client_name) = network_env_setup();
+
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+            ::routing::immutable_data::ImmutableDataType::Normal, value);
+        client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
+                                   ::routing::data::Data::ImmutableData(im_data.clone()));
+        ::std::thread::sleep_ms(2000);
+
+        let _ = ::std::thread::spawn(move || {
+            ::vault::Vault::run();
+        });
+        ::std::thread::sleep_ms(5000);
+
+        client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
+            ::routing::data::DataRequest::ImmutableData(im_data.name(),
+                ::routing::immutable_data::ImmutableDataType::Normal));
+        while let Ok(data) = client_receiver.recv() {
+            assert_eq!(data, ::routing::data::Data::ImmutableData(im_data.clone()));
+            break;
+        }
+    }
 
     fn maid_manager_put(vault: &mut Vault, client: NameType, im_data: ImmutableData) {
         let keys = crypto::sign::gen_keypair();
