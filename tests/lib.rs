@@ -109,10 +109,10 @@ fn executable_churn_test() {
             while let Ok(event) = receiver.recv() {
                 match event {
                     Event::Request{ request, our_authority, from_authority, response_token } =>
-                        println!("as {:?} received request: {:?} from {:?} having token {:?}",
+                        println!("client as {:?} received request: {:?} from {:?} having token {:?}",
                                  our_authority, request, from_authority, response_token == None),
                     Event::Response{ response, our_authority, from_authority } => {
-                        println!("as {:?} received response: {:?} from {:?}",
+                        println!("client as {:?} received response: {:?} from {:?}",
                                  our_authority, response, from_authority);
                         match response {
                             ::routing::ExternalResponse::Get(data, _, _) => {
@@ -127,10 +127,10 @@ fn executable_churn_test() {
                     Event::Connected => println!("client connected"),
                     Event::Disconnected => println!("client disconnected"),
                     Event::FailedRequest{ request, our_authority, location, interface_error } =>
-                        println!("as {:?} received request: {:?} targeting {:?} having error {:?}",
+                        println!("client as {:?} received request: {:?} targeting {:?} having error {:?}",
                                  our_authority, request, location, interface_error),
                     Event::FailedResponse{ response, our_authority, location, interface_error } =>
-                        println!("as {:?} received response: {:?} targeting {:?} having error {:?}",
+                        println!("client as {:?} received response: {:?} targeting {:?} having error {:?}",
                                  our_authority, response, location, interface_error),
                     Event::Bootstrapped => println!("client routing Bootstrapped"),
                     Event::Terminated => {
@@ -152,7 +152,7 @@ fn executable_churn_test() {
         ::routing::immutable_data::ImmutableDataType::Normal, value);
     client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                ::routing::data::Data::ImmutableData(im_data.clone()));
-    ::std::thread::sleep_ms(2000);
+    ::std::thread::sleep_ms(5000);
 
     let mut new_vault_process = match Command::new(executable_path.to_path_buf()).stderr(Stdio::piped()).spawn() {
         Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
@@ -163,4 +163,11 @@ fn executable_churn_test() {
     let result : Vec<u8> = new_vault_process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
     let s = String::from_utf8(result).unwrap();
     println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
+
+    while let Some(mut process) = processes.pop() {
+        let _ = process.kill();
+        let result : Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
+        let s = String::from_utf8(result).unwrap();
+        println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
+    }
 }

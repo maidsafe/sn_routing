@@ -463,7 +463,7 @@ impl Vault {
                     };
                 },
                 MethodCall::Refresh { type_tag, from_group, payload } => {
-                    debug!("refreshing account type {:?} of group {:?} to network", type_tag, from_group);
+                    info!("refreshing account type {:?} of group {:?} to network", type_tag, from_group);
                     self.routing.refresh_request(type_tag, from_group, payload);
                 },
                 MethodCall::FailedPut { location, data } => {
