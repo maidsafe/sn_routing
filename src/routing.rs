@@ -32,6 +32,7 @@ use error::{RoutingError, ResponseError};
 use authority::Authority;
 use sodiumoxide::crypto;
 use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
+use cache::CacheOptions;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -48,7 +49,7 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
     /// The intial Routing object will have newly generated keys
-    pub fn new(event_sender: mpsc::Sender<Event>) -> Routing {
+    pub fn new(event_sender: mpsc::Sender<Event>, cache_options: CacheOptions) -> Routing {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
@@ -58,6 +59,7 @@ impl Routing {
                                                 action_receiver,
                                                 event_sender,
                                                 false,
+                                                cache_options,
                                                 None);
 
         spawn(move || {

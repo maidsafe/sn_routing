@@ -47,6 +47,7 @@ use utils;
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
 use wake_up::WakeUpCaller;
+use cache::{CacheOptions, DataCache};
 
 use messages::{RoutingMessage, SignedMessage, SignedToken, ConnectRequest, ConnectResponse,
                Content, ExternalRequest, ExternalResponse, InternalRequest, InternalResponse};
@@ -79,7 +80,7 @@ pub struct RoutingNode {
     public_id_cache: LruCache<NameType, PublicId>,
     accumulator: MessageAccumulator,
     refresh_accumulator: RefreshAccumulator,
-    data_cache: LruCache<NameType, Data>,
+    data_cache: DataCache,
 }
 
 impl RoutingNode {
@@ -87,6 +88,7 @@ impl RoutingNode {
                action_receiver: mpsc::Receiver<Action>,
                event_sender: mpsc::Sender<Event>,
                client_restriction: bool,
+               cache_options: CacheOptions,
                keys: Option<Id>)
                -> RoutingNode {
 
@@ -114,7 +116,7 @@ impl RoutingNode {
             public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             accumulator: MessageAccumulator::new(),
             refresh_accumulator: RefreshAccumulator::new(),
-            data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
+            data_cache: DataCache::new(cache_options),
         }
     }
 
@@ -1097,6 +1099,8 @@ impl RoutingNode {
             };
         };
 
+        // cache here !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
         self.send_to_user(Event::Response {
             response       : response,
             our_authority  : to_authority,
@@ -1147,35 +1151,12 @@ impl RoutingNode {
         }
     }
 
-    fn handle_cache_get(&mut self, request: ExternalRequest) -> Option<Data> {
-        match request {
-            ExternalRequest::Get(data_request, _) => {
-                match data_request {
-                    DataRequest::ImmutableData(data_name, _) => {
-                        match self.data_cache.get(&data_name) {
-                            Some(data) => Some(data.clone()),
-                            None => None,
-                        }
-                    }
-                    _ => None
-                }
-            }
-            _ => None,
-        }
+    fn handle_cache_get(&mut self, request: ExternalRequest) -> Option<&Data> {
+        self.data_cache.get(request)
     }
 
     fn handle_cache_put(&mut self, response: ExternalResponse) {
-        match response {
-            ExternalResponse::Get(data, _, _) => {
-                match data {
-                    Data::ImmutableData(ref immutable_data) => {
-                        self.data_cache.insert(immutable_data.name(), data.clone());
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        };
+        self.data_cache.insert(response)
     }
 }
 

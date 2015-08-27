@@ -67,6 +67,7 @@ mod wake_up;
 mod peer;
 mod refresh_accumulator;
 mod message_accumulator;
+mod cache;
 
 /// Routing provides an actionable interface to routing.
 pub mod routing;
