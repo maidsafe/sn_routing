@@ -11,7 +11,7 @@ RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
 VaultName=$(sed -n 's/[ \t]*name[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
 VaultPath=/usr/bin/
-BootstrapFilePath=/var/cache/safe_vault/
+ConfigFilePath=/var/cache/safe_vault/
 Platform=$1
 Description="SAFE Network vault"
 
@@ -32,7 +32,7 @@ function remove_safe_user {
 }
 
 function set_owner {
-  printf 'chown -R safe:safe %s\n' "$BootstrapFilePath" >> after_install.sh
+  printf 'chown -R safe:safe %s\n' "$ConfigFilePath" >> after_install.sh
   printf 'chown safe:safe %s\n' "$VaultPath$VaultName" >> after_install.sh
   printf 'chmod 775 %s\n\n' "$VaultPath$VaultName" >> after_install.sh
 }
@@ -245,14 +245,14 @@ function create_package {
     --version $Version \
     --license GPLv3 \
     --vendor MaidSafe \
-    --directories $BootstrapFilePath \
+    --directories $ConfigFilePath \
     --maintainer "MaidSafeQA <qa@maidsafe.net>" \
     --description "$Description" \
     --url "http://maidsafe.net" \
     $AfterInstallCommand \
     $BeforeRemoveCommand \
     "$RootDir/target/release/$VaultName"=$VaultPath \
-    "$RootDir/installer/common/$VaultName.bootstrap.cache"=$BootstrapFilePath \
+    "$RootDir/installer/common/$VaultName.crust.config"=$ConfigFilePath \
     $ExtraFilesCommand
 }
 
