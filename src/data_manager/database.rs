@@ -171,6 +171,8 @@ impl DataManagerDatabase {
         // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
         let _ = self.storage.remove(&account_wrapper.name());
         let _ = self.storage.insert(account_wrapper.name(), account_wrapper.get_data_holders());
+        info!("DataManager updated account {:?} to {:?}",
+              account_wrapper.name(), account_wrapper.get_data_holders());
     }
 
     pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
