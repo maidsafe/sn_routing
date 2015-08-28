@@ -172,6 +172,9 @@ impl Vault {
     }
 
     fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
+        if close_group.len() > self.nodes_in_table.len() {
+            info!("vault added connected node");
+        }
         let refresh_calls = self.handle_churn(close_group);
         self.send(Authority::NaeManager(NameType::new([0u8; 64])),
                   refresh_calls, None, None, None);
@@ -460,7 +463,7 @@ impl Vault {
                     };
                 },
                 MethodCall::Refresh { type_tag, from_group, payload } => {
-                    debug!("refreshing account type {:?} of group {:?} to network", type_tag, from_group);
+                    info!("refreshing account type {:?} of group {:?} to network", type_tag, from_group);
                     self.routing.refresh_request(type_tag, from_group, payload);
                 },
                 MethodCall::FailedPut { location, data } => {

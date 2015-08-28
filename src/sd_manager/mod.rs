@@ -83,6 +83,7 @@ impl StructuredDataManager {
             Ok(result) => { result }
             Err(_) => return
         };
+        info!("SdManager transferred structured_data {:?} in", sd.name());
         self.chunk_store_.delete(sd.name());
         self.chunk_store_.put(sd.name(), in_coming_sd);
     }
