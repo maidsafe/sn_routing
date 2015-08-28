@@ -20,6 +20,7 @@ use sodiumoxide::crypto::sign;
 use std::fmt::{Debug, Formatter, Error};
 use cbor::CborError;
 use std::collections::BTreeMap;
+use ::rand::Rng;
 
 use crust::Endpoint;
 
@@ -186,37 +187,46 @@ pub struct SignedMessage {
     // an owner
     //          when signed by a Node(NameType), Sentinel needs to validate the
     // signature
+    random_bits: u8,
     signature: Signature,
 }
 
 impl SignedMessage {
     pub fn new(claimant: types::Address,
                message: RoutingMessage,
-               private_sign_key: &sign::SecretKey)
+               private_sign_key: &sign::SecretKey,
+               rng: &::rand::ThreadRng)
                -> Result<SignedMessage, CborError> {
 
-        let encoded_body = try!(utils::encode(&(&message, &claimant)));
+        let random_bits = rng.gen::<u8>();
+        let encoded_body = try!(utils::encode(&(&message, &claimant, &random_bits)));
         let signature    = sign::sign_detached(&encoded_body, private_sign_key);
 
-        Ok(SignedMessage { body: message, claimant: claimant, signature: signature })
+        Ok(SignedMessage { body: message, claimant: claimant,
+            random_bits: random_bits, signature: signature })
     }
 
     pub fn with_signature(claimant: types::Address,
                           message: RoutingMessage,
+                          random_bits: u8,
                           signature: Signature)
                           -> Result<SignedMessage, CborError> {
 
-        Ok(SignedMessage { body: message, claimant: claimant, signature: signature })
+        Ok(SignedMessage { body: message, claimant: claimant,
+              random_bits: random_bits, signature: signature })
     }
 
     pub fn new_from_token(signed_token: SignedToken) -> Result<SignedMessage, CborError> {
-        let (message, claimant) = try!(utils::decode(&signed_token.serialised_request));
+        let (message, claimant, random_bits) =
+            try!(utils::decode(&signed_token.serialised_request));
 
-        Ok(SignedMessage { body: message, claimant: claimant, signature: signed_token.signature })
+        Ok(SignedMessage { body: message, claimant: claimant,
+            random_bits: random_bits, signature: signed_token.signature })
     }
 
     pub fn verify_signature(&self, public_sign_key: &sign::PublicKey) -> bool {
-        let encoded_body = match utils::encode(&(&self.body, &self.claimant)) {
+        let encoded_body = match utils::encode(&(&self.body, &self.claimant,
+            &self.random_bits)) {
             Ok(x) => x,
             Err(_) => return false,
         };
@@ -233,7 +243,7 @@ impl SignedMessage {
     }
 
     pub fn encoded_body(&self) -> Result<Vec<u8>, CborError> {
-        utils::encode(&(&self.body, &self.claimant))
+        utils::encode(&(&self.body, &self.claimant, &self.random_bits))
     }
 
     pub fn as_token(&self) -> Result<SignedToken, CborError> {
