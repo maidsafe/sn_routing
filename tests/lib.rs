@@ -24,8 +24,9 @@
 
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, variant_size_differences)]
-#![feature(negate_unsigned)]
 
+#[cfg(not(feature = "use-mock-routing"))]
+extern crate sodiumoxide;
 #[cfg(not(feature = "use-mock-routing"))]
 extern crate routing;
 
@@ -34,15 +35,9 @@ use std::error::Error;
 #[cfg(not(feature = "use-mock-routing"))]
 use std::io::Read;
 
-
-// The following tests require the executable safe_vault to be presented
-// And the tests must be executed as "RUST_LOG=info RUST_TEST_THREADS=1 cargo test"
-
 #[cfg(not(feature = "use-mock-routing"))]
-#[test]
-fn executable_connection_test() {
+fn start_vaults(num_of_nodes: u32) -> Vec<::std::process::Child> {
     let mut processes = Vec::new();
-    let num_of_nodes = 8;
     let executable_path = match std::env::current_exe() {
         Ok(mut exe_path) => {
             exe_path.pop();
@@ -60,49 +55,16 @@ fn executable_connection_test() {
                 });
         ::std::thread::sleep_ms(1000 + i * 1500);
     }
-    ::std::thread::sleep_ms(15000);
-    let mut test_failed = false;
-    while let Some(mut process) = processes.pop() {
-        let _ = process.kill();
-        let result : Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
-        let s = String::from_utf8(result).unwrap();
-        println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
-        let v: Vec<&str> = s.split("added connected node").collect();
-        let marked_connections = v.len() - 1;
-        println!("\t  safe_vault {} has {} connected connections.", processes.len(), marked_connections);
-        if num_of_nodes as usize != marked_connections + 1 {
-          test_failed = true;
-        }
-    }
-    assert_eq!(test_failed, false);
+    ::std::thread::sleep_ms(num_of_nodes * 1000);
+    processes
 }
 
 #[cfg(not(feature = "use-mock-routing"))]
-#[test]
-fn executable_churn_test() {
-    let mut processes = Vec::new();
-    let num_of_nodes = 4;
-    let executable_path = match std::env::current_exe() {
-        Ok(mut exe_path) => {
-            exe_path.pop();
-            std::path::Path::new("./target").join(exe_path.iter().last().unwrap()).join("safe_vault")
-        }
-        Err(e) => panic!("Failed to get current integration test path: {}", e),
-    };
-    println!("Expecting vault executable at the path of {}", executable_path.to_path_buf().display());
-    
-    for i in 0..num_of_nodes {
-        println!("---------- starting node {} --------------", i);
-        processes.push(match ::std::process::Command::new(executable_path.to_path_buf()).stderr(std::process::Stdio::piped()).spawn() {
-                    Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
-                    Ok(process) => process,
-                });
-        ::std::thread::sleep_ms(1000 + i * 1500);
-    }
-    ::std::thread::sleep_ms(5000);
-
+fn start_client() -> (::routing::routing_client::RoutingClient,
+                      ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
+                      ::routing::NameType) {
     let (sender, receiver) = ::std::sync::mpsc::channel();
-    let (client_sender, /*client_receiver*/ _) = ::std::sync::mpsc::channel();
+    let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
     let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(::routing::event::Event)>,
                             client_sender: ::std::sync::mpsc::Sender<(::routing::data::Data)>| {
         let _ = ::std::thread::spawn(move || {
@@ -146,6 +108,38 @@ fn executable_churn_test() {
     let client_name = id.name();
     let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
     ::std::thread::sleep_ms(1000);
+    (client_routing, client_receiver, client_name)
+}
+
+// The following tests require the executable safe_vault to be presented
+// And the tests must be executed as "RUST_LOG=info RUST_TEST_THREADS=1 cargo test"
+
+#[cfg(not(feature = "use-mock-routing"))]
+#[test]
+fn executable_connection_test() {
+    let num_of_nodes = 8;
+    let mut processes = start_vaults(num_of_nodes);
+    let mut test_failed = false;
+    while let Some(mut process) = processes.pop() {
+        let _ = process.kill();
+        let result : Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
+        let s = String::from_utf8(result).unwrap();
+        println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
+        let v: Vec<&str> = s.split("added connected node").collect();
+        let marked_connections = v.len() - 1;
+        println!("\t  safe_vault {} has {} connected connections.", processes.len(), marked_connections);
+        if num_of_nodes as usize != marked_connections + 1 {
+          test_failed = true;
+        }
+    }
+    assert_eq!(test_failed, false);
+}
+
+#[cfg(not(feature = "use-mock-routing"))]
+#[test]
+fn executable_immutable_data_churn_test() {
+    let mut processes = start_vaults(4);
+    let (mut client_routing, client_receiver, client_name) = start_client();
 
     let value = ::routing::types::generate_random_vec_u8(1024);
     let im_data = ::routing::immutable_data::ImmutableData::new(
@@ -154,16 +148,69 @@ fn executable_churn_test() {
                                ::routing::data::Data::ImmutableData(im_data.clone()));
     ::std::thread::sleep_ms(5000);
 
-    let mut new_vault_process = match ::std::process::Command::new(executable_path.to_path_buf()).stderr(std::process::Stdio::piped()).spawn() {
-        Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
-        Ok(process) => process,
-    };
-    ::std::thread::sleep_ms(5000);
-    let _ = new_vault_process.kill();
-    let result : Vec<u8> = new_vault_process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
-    let s = String::from_utf8(result).unwrap();
-    println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
+    let mut new_vault_process = start_vaults(1);
 
+    client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
+        ::routing::data::DataRequest::ImmutableData(im_data.name(),
+            ::routing::immutable_data::ImmutableDataType::Normal));
+    while let Ok(data) = client_receiver.recv() {
+        assert_eq!(data, ::routing::data::Data::ImmutableData(im_data.clone()));
+        break;
+    }
+
+    if let Some(mut process) = new_vault_process.pop() {
+        let _ = process.kill();
+        let result : Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
+        let s = String::from_utf8(result).unwrap();
+        let mm_v: Vec<&str> = s.split("MaidManager updated account").collect();
+        assert_eq!(2, mm_v.len());
+        let dm_v: Vec<&str> = s.split("DataManager updated account").collect();
+        assert_eq!(2, dm_v.len());
+        let pm_v: Vec<&str> = s.split("DataManager updated account").collect();
+        assert_eq!(2, pm_v.len());
+        println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
+    };
+    while let Some(mut process) = processes.pop() {
+        let _ = process.kill();
+        let result : Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
+        let s = String::from_utf8(result).unwrap();
+        println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
+    }
+}
+
+#[cfg(not(feature = "use-mock-routing"))]
+#[test]
+fn executable_structured_data_churn_test() {
+    let mut processes = start_vaults(4);
+    let (mut client_routing, client_receiver, client_name) = start_client();
+
+    let name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
+        ::routing::types::generate_random_vec_u8(64)));
+    let value = ::routing::types::generate_random_vec_u8(1024);
+    let sign_keys =  ::sodiumoxide::crypto::sign::gen_keypair();
+    let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
+        value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+    client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
+                               ::routing::data::Data::StructuredData(sd.clone()));
+    ::std::thread::sleep_ms(5000);
+
+    let mut new_vault_process = start_vaults(1);
+
+    client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
+        ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+    while let Ok(data) = client_receiver.recv() {
+        assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));
+        break;
+    }
+
+    if let Some(mut process) = new_vault_process.pop() {
+        let _ = process.kill();
+        let result : Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
+        let s = String::from_utf8(result).unwrap();
+        let sd_v: Vec<&str> = s.split("SdManager transferred structured_data").collect();
+        assert_eq!(2, sd_v.len());
+        println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
+    };
     while let Some(mut process) = processes.pop() {
         let _ = process.kill();
         let result : Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
