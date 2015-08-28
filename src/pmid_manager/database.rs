@@ -78,7 +78,7 @@ impl Sendable for PmidManagerAccountWrapper {
         let mut offered_space: Vec<u64> = Vec::with_capacity(responses.len());
         let mut lost_total_size: Vec<u64> = Vec::with_capacity(responses.len());
         let mut stored_total_size: Vec<u64> = Vec::with_capacity(responses.len());
-        assert!(responses.len() < (GROUP_SIZE + 1) / 2);
+
         for value in responses {
             let wrapper = match ::routing::utils::decode::<PmidManagerAccountWrapper>(
                 &value.serialised_contents()) {

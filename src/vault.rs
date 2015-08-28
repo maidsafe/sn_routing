@@ -815,9 +815,17 @@ pub type ResponseNotifier =
                             _ => panic!("Unexpected"),
                         }
                     }
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 _ => panic!("Refresh type expected")
             };
+            add_nodes_to_table(&mut vault, &Vec::<::routing::NameType>::new());
+            let re_churn_data = vault.handle_churn(small_close_group.clone());
+            assert_eq!(churn_data[0], re_churn_data[0]);
             assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
         }
 
@@ -846,6 +854,11 @@ pub type ResponseNotifier =
                             _ => panic!("Unexpected"),
                         }
                     }
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
@@ -864,10 +877,19 @@ pub type ResponseNotifier =
                             _ => panic!("Unexpected"),
                         }
                     }
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
             };
+            add_nodes_to_table(&mut vault, &available_nodes);
+            let re_churn_data = vault.handle_churn(close_group.clone());
+            assert_eq!(churn_data[0], re_churn_data[0]);
+            assert_eq!(churn_data[1], re_churn_data[1]);
             // DataManagerStatsTransfer will always be included in the return
             assert_eq!(vault.data_manager.retrieve_all_and_reset(&mut close_group).len(), 1);
         }
@@ -892,9 +914,17 @@ pub type ResponseNotifier =
                             _ => panic!("Unexpected"),
                         }
                     }
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 _ => panic!("Refresh type expected")
             };
+            add_nodes_to_table(&mut vault, &Vec::<::routing::NameType>::new());
+            let re_churn_data = vault.handle_churn(small_close_group.clone());
+            assert_eq!(churn_data[0], re_churn_data[0]);
             assert!(vault.pmid_manager.retrieve_all_and_reset(&Vec::new()).is_empty());
         }
 
@@ -918,9 +948,17 @@ pub type ResponseNotifier =
                         Ok(sd) => { assert_eq!(sd, sdv); }
                         Err(_) => panic!("Unexpected"),
                     };
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 _ => panic!("Refresh type expected")
             };
+            add_nodes_to_table(&mut vault, &Vec::<::routing::NameType>::new());
+            let re_churn_data = vault.handle_churn(small_close_group.clone());
+            assert_eq!(churn_data[0], re_churn_data[0]);
             assert!(vault.sd_manager.retrieve_all_and_reset().is_empty());
         }
 

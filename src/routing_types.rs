@@ -26,7 +26,7 @@ pub use routing::structured_data::StructuredData;
 pub use routing::types::*;
 
 /// MethodCall denotes a specific request to be carried out by routing.
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum MethodCall {
     /// request to have `location` to handle put for the `content`
     Put { location: Authority, content: Data },
