@@ -194,10 +194,10 @@ pub struct SignedMessage {
 impl SignedMessage {
     pub fn new(claimant: types::Address,
                message: RoutingMessage,
-               private_sign_key: &sign::SecretKey,
-               rng: &::rand::ThreadRng)
+               private_sign_key: &sign::SecretKey)
                -> Result<SignedMessage, CborError> {
 
+        let mut rng = ::rand::thread_rng();
         let random_bits = rng.gen::<u8>();
         let encoded_body = try!(utils::encode(&(&message, &claimant, &random_bits)));
         let signature    = sign::sign_detached(&encoded_body, private_sign_key);
