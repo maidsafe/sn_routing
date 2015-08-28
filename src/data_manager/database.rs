@@ -198,17 +198,22 @@ impl DataManagerDatabase {
         for (key, value) in self.storage.iter() {
             match self.temp_storage_after_churn.get(key) {
                 Some(result) => { if result.len() < 3 {
-                    actions.push(MethodCall::Get {
-                        location: Authority::ManagedNode((*key).clone()),
-                        // DataManager only handles ImmutableData
-                        data_request: DataRequest::ImmutableData((*key).clone(), ImmutableDataType::Normal)
-                    });
+                    for pmid_node in result.iter() {
+                        info!("DataManager sends out a Get request in churn, fetching data {:?} from pmid_node {:?}",
+                              *key, pmid_node);
+                        actions.push(MethodCall::Get {
+                            location: Authority::ManagedNode(pmid_node.clone()),
+                            // DataManager only handles ImmutableData
+                            data_request: DataRequest::ImmutableData((*key).clone(), ImmutableDataType::Normal)
+                        });
+                    }
                 }}
                 None => continue
             }
             let data_manager_sendable = DataManagerSendable::new((*key).clone(), (*value).clone());
             let mut encoder = cbor::Encoder::from_memory();
             if encoder.encode(&[data_manager_sendable.clone()]).is_ok() {
+                debug!("DataManager sends out a refresh regarding account {:?}", data_manager_sendable.name());
                 actions.push(MethodCall::Refresh {
                     type_tag: DATA_MANAGER_ACCOUNT_TAG,
                     from_group: data_manager_sendable.name(),
@@ -217,6 +222,7 @@ impl DataManagerDatabase {
             }
         }
         self.storage.clear();
+        debug!("DataManager storage cleaned in churn with actions.len() = {:?}", actions.len());
         actions
     }
 }
