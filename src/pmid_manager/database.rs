@@ -201,6 +201,8 @@ impl PmidManagerDatabase {
         // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
         let _ = self.storage.remove(&account_wrapper.name());
         let _ = self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
+        info!("PmidManager updated account {:?} to {:?}",
+              account_wrapper.name(), account_wrapper.get_account());
     }
 
     pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {
