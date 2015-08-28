@@ -477,7 +477,7 @@ impl RoutingNode {
                     InternalRequest::Refresh(type_tag, bytes) => {
                         let refresh_authority = match our_authority {
                             Some(authority) => {
-                                if authority.is_group() { return Err(RoutingError::BadAuthority) };
+                                if !authority.is_group() { return Err(RoutingError::BadAuthority) };
                                 authority
                             },
                             None => return Err(RoutingError::BadAuthority),
