@@ -26,20 +26,19 @@
         unused_qualifications, variant_size_differences)]
 #![feature(negate_unsigned)]
 
+#[cfg(not(feature = "use-mock-routing"))]
 extern crate routing;
 
-use std::io::BufRead;
-use std::thread;
-use std::process::Stdio;
-use std::process::Command;
+#[cfg(not(feature = "use-mock-routing"))]
 use std::error::Error;
+#[cfg(not(feature = "use-mock-routing"))]
 use std::io::Read;
 
-use routing::event::Event;
 
 // The following tests require the executable safe_vault to be presented
 // And the tests must be executed as "RUST_LOG=info RUST_TEST_THREADS=1 cargo test"
 
+#[cfg(not(feature = "use-mock-routing"))]
 #[test]
 fn executable_connection_test() {
     let mut processes = Vec::new();
@@ -55,13 +54,13 @@ fn executable_connection_test() {
 
     for i in 0..num_of_nodes {
         println!("---------- starting node {} --------------", i);
-        processes.push(match Command::new(executable_path.to_path_buf()).stderr(Stdio::piped()).spawn() {
+        processes.push(match ::std::process::Command::new(executable_path.to_path_buf()).stderr(::std::process::Stdio::piped()).spawn() {
                     Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
                     Ok(process) => process,
                 });
-        thread::sleep_ms(1000 + i * 1500);
+        ::std::thread::sleep_ms(1000 + i * 1500);
     }
-    thread::sleep_ms(15000);
+    ::std::thread::sleep_ms(15000);
     let mut test_failed = false;
     while let Some(mut process) = processes.pop() {
         let _ = process.kill();
@@ -78,6 +77,7 @@ fn executable_connection_test() {
     assert_eq!(test_failed, false);
 }
 
+#[cfg(not(feature = "use-mock-routing"))]
 #[test]
 fn executable_churn_test() {
     let mut processes = Vec::new();
@@ -93,25 +93,25 @@ fn executable_churn_test() {
     
     for i in 0..num_of_nodes {
         println!("---------- starting node {} --------------", i);
-        processes.push(match Command::new(executable_path.to_path_buf()).stderr(Stdio::piped()).spawn() {
+        processes.push(match ::std::process::Command::new(executable_path.to_path_buf()).stderr(std::process::Stdio::piped()).spawn() {
                     Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
                     Ok(process) => process,
                 });
-        thread::sleep_ms(1000 + i * 1500);
+        ::std::thread::sleep_ms(1000 + i * 1500);
     }
-    thread::sleep_ms(5000);
+    ::std::thread::sleep_ms(5000);
 
     let (sender, receiver) = ::std::sync::mpsc::channel();
     let (client_sender, /*client_receiver*/ _) = ::std::sync::mpsc::channel();
-    let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(Event)>,
+    let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(::routing::event::Event)>,
                             client_sender: ::std::sync::mpsc::Sender<(::routing::data::Data)>| {
         let _ = ::std::thread::spawn(move || {
             while let Ok(event) = receiver.recv() {
                 match event {
-                    Event::Request{ request, our_authority, from_authority, response_token } =>
+                    ::routing::event::Event::Request{ request, our_authority, from_authority, response_token } =>
                         println!("client as {:?} received request: {:?} from {:?} having token {:?}",
                                  our_authority, request, from_authority, response_token == None),
-                    Event::Response{ response, our_authority, from_authority } => {
+                    ::routing::event::Event::Response{ response, our_authority, from_authority } => {
                         println!("client as {:?} received response: {:?} from {:?}",
                                  our_authority, response, from_authority);
                         match response {
@@ -121,19 +121,19 @@ fn executable_churn_test() {
                             _ => panic!("not expected!")
                         }
                     },
-                    Event::Refresh(_type_tag, _group_name, _accounts) =>
+                    ::routing::event::Event::Refresh(_type_tag, _group_name, _accounts) =>
                         println!("client received a refresh"),
-                    Event::Churn(_close_group) => println!("client received a churn"),
-                    Event::Connected => println!("client connected"),
-                    Event::Disconnected => println!("client disconnected"),
-                    Event::FailedRequest{ request, our_authority, location, interface_error } =>
+                    ::routing::event::Event::Churn(_close_group) => println!("client received a churn"),
+                    ::routing::event::Event::Connected => println!("client connected"),
+                    ::routing::event::Event::Disconnected => println!("client disconnected"),
+                    ::routing::event::Event::FailedRequest{ request, our_authority, location, interface_error } =>
                         println!("client as {:?} received request: {:?} targeting {:?} having error {:?}",
                                  our_authority, request, location, interface_error),
-                    Event::FailedResponse{ response, our_authority, location, interface_error } =>
+                    ::routing::event::Event::FailedResponse{ response, our_authority, location, interface_error } =>
                         println!("client as {:?} received response: {:?} targeting {:?} having error {:?}",
                                  our_authority, response, location, interface_error),
-                    Event::Bootstrapped => println!("client routing Bootstrapped"),
-                    Event::Terminated => {
+                    ::routing::event::Event::Bootstrapped => println!("client routing Bootstrapped"),
+                    ::routing::event::Event::Terminated => {
                         println!("client routing listening terminated");
                         break;
                     },
@@ -154,7 +154,7 @@ fn executable_churn_test() {
                                ::routing::data::Data::ImmutableData(im_data.clone()));
     ::std::thread::sleep_ms(5000);
 
-    let mut new_vault_process = match Command::new(executable_path.to_path_buf()).stderr(Stdio::piped()).spawn() {
+    let mut new_vault_process = match ::std::process::Command::new(executable_path.to_path_buf()).stderr(std::process::Stdio::piped()).spawn() {
         Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
         Ok(process) => process,
     };
