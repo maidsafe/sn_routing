@@ -15,12 +15,6 @@ Routing - a specialised storage DHT
 |:------:|:-------:|:-------:|:-------:|
 
 
-#Important notice on 6 August 2015
-
-The routing library is undergoing an important rewriting.  The external API and the internal outlines have been laid out.  The library is currently not in a functional state.  To obtain the last functional state of Routing we refer to Routing version 0.2.8, as published on crates.io.  We expect it to be a few more days of work before routing will be published as version 0.3.2, the first expected functional version of the new routing API. The published version 0.3.0 should only be used by a user library to compile against, and prepare for the upcoming new interface.
-
-update on 18 August: the functionality in routing has been restored and some unit tests have been updated and asserted.  The basic behaviour of the routing example has been asserted in this version 0.3.2.  Final internal work has to be done, and expected soon in version 0.3.3
-
 #Overview
 
 A secured [DHT](http://en.wikipedia.org/wiki/Distributed_hash_table), based on a [kademlia-like](http://en.wikipedia.org/wiki/Kademlia) implementation, but with some very stark differences. This is a recursive as opposed to iterative network, enabling easier NAT traversal and providing more efficient use of routers and larger networks. This also allows very fast reconfiguration of network changes, aleviating the requirement for a refresh algorithm. A recursive solution based on a network protocol layer that is 'connection oriented' also allows a close group to be aligned with security protocols.
@@ -31,7 +25,7 @@ allows the creation of a DHT based PKI and this in turn allows a decentralised n
 This is a very under researched area. For a general introduction to some of the ideas behind the design related to XOR Space, watching [The SAFE Network from First Principles series](https://www.youtube.com/watch?v=Lr9FJRDcNzk&list=PLiYqQVdgdw_sSDkdIZzDRQR9xZlsukIxD) is recommended. The slides for XOR Distance Metric and Basic Routing lecture are also [available here](http://ericklavoie.com/talks/safenetwork/1-xor-routing.pdf). The last video from the series on how the same ideas were applied to decentralised BitTorrent trackers is available [here](https://www.youtube.com/watch?v=YFV908uoLPY). A proper formalisation of the Routing algorithm is in progress.
 
 
-###Pre-requisite:
+##Pre-requisite:
 libsodium is a native dependency for [sodiumxoide](https://github.com/dnaq/sodiumoxide). Thus, install sodium by following the instructions [here](http://doc.libsodium.org/installation/index.html).
 
 For windows, download and use the [prebuilt mingw library](https://download.libsodium.org/libsodium/releases/libsodium-1.0.2-mingw.tar.gz).
@@ -41,9 +35,15 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 General note: please document code you touch, and introduce property-based unit tests where applicable.
 
-## RUST-3 Sprint tasks
+## [0.3.6]
+- [x] Fixed [#560](https://github.com/maidsafe/routing/issues/560) Removed unstable features.
+- [x] Updated "hello" messages
+- [x] Updated cache-handling in line with current Routing requirements
+- [x] Further work on churn handling
 
-### [0.3.0] Unified Data
+##### RUST-3 Sprint tasks
+
+## [0.3.0] Unified Data
 - [x] [MAID-1158](https://maidsafe.atlassian.net/browse/MAID-1158) Unified Data
     - [x] [MAID-1159](https://maidsafe.atlassian.net/browse/MAID-1159) Implement PlainData
     - [x] [MAID-1160](https://maidsafe.atlassian.net/browse/MAID-1160) Implement ImmutableData
@@ -63,12 +63,12 @@ General note: please document code you touch, and introduce property-based unit 
 - [x] [MAID-1170](https://maidsafe.atlassian.net/browse/MAID-1170) Update RoutingClient and relay node: RoutingMessage
 - [x] [MAID-1251](https://maidsafe.atlassian.net/browse/MAID-1251) Remove option first from routing node
 
-### Use public key for all messages
+## Use public key for all messages
 - [x] [MAID-1255](https://maidsafe.atlassian.net/browse/MAID-1255) RFC 0001 - Use public key for id on all messages
     - [x] [MAID-1256](https://maidsafe.atlassian.net/browse/MAID-1256) Remove redundant field header.source.reply_to
     - [x] [MAID-1257](https://maidsafe.atlassian.net/browse/MAID-1257) Modify Authority enum
 
-### [0.3.1] Sentinel
+## [0.3.1] Sentinel
 - [ ] [MAID-1152](https://maidsafe.atlassian.net/browse/MAID-1152) Implement Sentinels into Routing (group task)
     - [ ] [MAID-1154](https://maidsafe.atlassian.net/browse/MAID-1154) Implement PureSentinel in RoutingMembrane::handle_put_data
     - [ ] [MAID-1157](https://maidsafe.atlassian.net/browse/MAID-1157) Implement KeySentinel for FindGroupResponse messages
@@ -87,7 +87,7 @@ General note: please document code you touch, and introduce property-based unit 
 
 Note 2015-06-22: below tasks will be affected by [proposed RFC: Remove Transaction Managers](https://github.com/maidsafe/rfcs/pull/1) ([view draft](https://github.com/dirvine/rfcs/blob/master/proposed/0000-Remove-Transaction-Managers.md))
 
-### Old tasks for reference
+## Old tasks for reference
 - [x] [MAID-1063](https://maidsafe.atlassian.net/browse/MAID-1063) replace MessageTypeTag with full enum.
 - [ ] [MAID-1065](https://maidsafe.atlassian.net/browse/MAID-1065) Return Result for Put Get Post-
 - [ ] [MAID-1042](https://maidsafe.atlassian.net/browse/MAID-1042) Sentinel [Reference document](https://docs.google.com/document/d/1-x7pCq_YXm-P5xDi7y8UIYDbheVwJ10Q80FzgtnMD8A/edit?usp=sharing)
