@@ -692,7 +692,7 @@ pub type ResponseNotifier =
 
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
-    fn network_churn_test() {
+    fn network_churn_immutable_data_test() {
         let (mut client_routing, client_receiver, client_name) = network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -712,6 +712,34 @@ pub type ResponseNotifier =
                 ::routing::immutable_data::ImmutableDataType::Normal));
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::ImmutableData(im_data.clone()));
+            break;
+        }
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    #[test]
+    fn network_churn_structured_data_test() {
+        let (mut client_routing, client_receiver, client_name) = network_env_setup();
+
+        let name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
+            ::routing::types::generate_random_vec_u8(64)));
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let sign_keys =  ::sodiumoxide::crypto::sign::gen_keypair();
+        let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
+            value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+        client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
+                                   ::routing::data::Data::StructuredData(sd.clone()));
+        ::std::thread::sleep_ms(2000);
+
+        let _ = ::std::thread::spawn(move || {
+            ::vault::Vault::run();
+        });
+        ::std::thread::sleep_ms(5000);
+
+        client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
+            ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+        while let Ok(data) = client_receiver.recv() {
+            assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));
             break;
         }
     }
