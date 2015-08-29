@@ -695,7 +695,7 @@ pub type ResponseNotifier =
 
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
-    fn network_churn_test() {
+    fn network_churn_immutable_data_test() {
         let (mut client_routing, client_receiver, client_name) = network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -715,6 +715,34 @@ pub type ResponseNotifier =
                 ::routing::immutable_data::ImmutableDataType::Normal));
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::ImmutableData(im_data.clone()));
+            break;
+        }
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    #[test]
+    fn network_churn_structured_data_test() {
+        let (mut client_routing, client_receiver, client_name) = network_env_setup();
+
+        let name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
+            ::routing::types::generate_random_vec_u8(64)));
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let sign_keys =  ::sodiumoxide::crypto::sign::gen_keypair();
+        let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
+            value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+        client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
+                                   ::routing::data::Data::StructuredData(sd.clone()));
+        ::std::thread::sleep_ms(2000);
+
+        let _ = ::std::thread::spawn(move || {
+            ::vault::Vault::run();
+        });
+        ::std::thread::sleep_ms(5000);
+
+        client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
+            ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+        while let Ok(data) = client_receiver.recv() {
+            assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));
             break;
         }
     }
@@ -790,9 +818,17 @@ pub type ResponseNotifier =
                             _ => panic!("Unexpected"),
                         }
                     }
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 _ => panic!("Refresh type expected")
             };
+            add_nodes_to_table(&mut vault, &Vec::<::routing::NameType>::new());
+            let re_churn_data = vault.handle_churn(small_close_group.clone());
+            assert_eq!(churn_data[0], re_churn_data[0]);
             assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
         }
 
@@ -821,6 +857,11 @@ pub type ResponseNotifier =
                             _ => panic!("Unexpected"),
                         }
                     }
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
@@ -839,10 +880,19 @@ pub type ResponseNotifier =
                             _ => panic!("Unexpected"),
                         }
                     }
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected")
             };
+            add_nodes_to_table(&mut vault, &available_nodes);
+            let re_churn_data = vault.handle_churn(close_group.clone());
+            assert_eq!(churn_data[0], re_churn_data[0]);
+            assert_eq!(churn_data[1], re_churn_data[1]);
             // DataManagerStatsTransfer will always be included in the return
             assert_eq!(vault.data_manager.retrieve_all_and_reset(&mut close_group).len(), 1);
         }
@@ -867,9 +917,17 @@ pub type ResponseNotifier =
                             _ => panic!("Unexpected"),
                         }
                     }
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 _ => panic!("Refresh type expected")
             };
+            add_nodes_to_table(&mut vault, &Vec::<::routing::NameType>::new());
+            let re_churn_data = vault.handle_churn(small_close_group.clone());
+            assert_eq!(churn_data[0], re_churn_data[0]);
             assert!(vault.pmid_manager.retrieve_all_and_reset(&Vec::new()).is_empty());
         }
 
@@ -893,9 +951,17 @@ pub type ResponseNotifier =
                         Ok(sd) => { assert_eq!(sd, sdv); }
                         Err(_) => panic!("Unexpected"),
                     };
+                    let mut payloads = vec![];
+                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
+                        payloads.push(payload.clone());
+                    }
+                    vault.handle_refresh(*type_tag, *from_group, payloads);
                 },
                 _ => panic!("Refresh type expected")
             };
+            add_nodes_to_table(&mut vault, &Vec::<::routing::NameType>::new());
+            let re_churn_data = vault.handle_churn(small_close_group.clone());
+            assert_eq!(churn_data[0], re_churn_data[0]);
             assert!(vault.sd_manager.retrieve_all_and_reset().is_empty());
         }
 

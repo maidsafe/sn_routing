@@ -86,9 +86,6 @@ impl Sendable for DataManagerSendable {
     }
 
     fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
-        if responses.len() == GROUP_SIZE - 1 {
-            return None;
-        }
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for it in responses.iter() {
             let wrapper =
@@ -106,7 +103,7 @@ impl Sendable for DataManagerSendable {
         }
         stats.sort_by(|a, b| b.1.cmp(&a.1));
         let (pmids, count) = stats[0].clone();
-        if count < (GROUP_SIZE as u64 + 1) / 2 {
+        if count >= (GROUP_SIZE as u64 + 1) / 2 {
             return Some(Box::new(DataManagerSendable::new(self.name.clone(), pmids)));
         }
         None
@@ -175,40 +172,20 @@ impl DataManagerDatabase {
               account_wrapper.name(), account_wrapper.get_data_holders());
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
+    pub fn retrieve_all_and_reset(&mut self, _close_group: &mut Vec<NameType>) -> Vec<MethodCall> {
         self.temp_storage_after_churn = self.storage.clone();
-        let mut close_grp_already_stored = false;
-
-        for it in self.storage.iter_mut() {
-            let mut new_pmid_nodes = Vec::<NameType>::with_capacity(it.1.len());
-            for vec_it in it.1.iter() {
-                if close_group.iter().find(|a| **a == *vec_it).is_some() {
-                    new_pmid_nodes.push(vec_it.clone());
-                }
-            }
-
-            if new_pmid_nodes.len() < 3 && !close_grp_already_stored {
-                self.close_grp_from_churn = close_group.clone();
-                close_grp_already_stored = true;
-            }
-            *it.1 = new_pmid_nodes;
-        }
-
         let mut actions = Vec::<MethodCall>::new();
         for (key, value) in self.storage.iter() {
-            match self.temp_storage_after_churn.get(key) {
-                Some(result) => { if result.len() < 3 {
-                    for pmid_node in result.iter() {
-                        info!("DataManager sends out a Get request in churn, fetching data {:?} from pmid_node {:?}",
-                              *key, pmid_node);
-                        actions.push(MethodCall::Get {
-                            location: Authority::ManagedNode(pmid_node.clone()),
-                            // DataManager only handles ImmutableData
-                            data_request: DataRequest::ImmutableData((*key).clone(), ImmutableDataType::Normal)
-                        });
-                    }
-                }}
-                None => continue
+            if value.len() < 3 {
+                for pmid_node in value.iter() {
+                    info!("DataManager sends out a Get request in churn, fetching data {:?} from pmid_node {:?}",
+                          *key, pmid_node);
+                    actions.push(MethodCall::Get {
+                        location: Authority::ManagedNode(pmid_node.clone()),
+                        // DataManager only handles ImmutableData
+                        data_request: DataRequest::ImmutableData((*key).clone(), ImmutableDataType::Normal)
+                    });
+                }
             }
             let data_manager_sendable = DataManagerSendable::new((*key).clone(), (*value).clone());
             let mut encoder = cbor::Encoder::from_memory();

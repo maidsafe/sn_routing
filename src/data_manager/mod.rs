@@ -87,7 +87,6 @@ impl Sendable for DataManagerStatsSendable {
                 Err(_) => {}
             }
         }
-        assert!(resource_indexes.len() < (GROUP_SIZE + 1) / 2);
         Some(Box::new(DataManagerStatsSendable::new(NameType([0u8; 64]),
                                                     utils::median(resource_indexes))))
     }
