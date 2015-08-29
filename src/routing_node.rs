@@ -109,7 +109,7 @@ impl RoutingNode {
             wakeup: WakeUpCaller::new(action_sender),
             filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
             connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
-                ::time::Duration::seconds(20)),
+                ::time::Duration::minutes(20)),
             core: core,
             public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             accumulator: MessageAccumulator::new(),
