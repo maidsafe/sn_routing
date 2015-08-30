@@ -147,45 +147,45 @@ impl RoutingNode {
                     break;
                 }
             };
-                match self.crust_receiver.try_recv() {
-                    Err(_) => {
-                        // FIXME (ben 16/08/2015) other reasons could induce an error
-                        // main error assumed now to be no new crust events
-                        // break;
-                    }
-                    Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                        match decode::<SignedMessage>(&bytes) {
-                            Ok(message) => {
-                                // handle SignedMessage for any identified endpoint
-                                match self.core.lookup_endpoint(&endpoint) {
-                                    Some(ConnectionName::Unidentified(_, _)) => debug!("message
-                                    from unidentified connection"),
+            match self.crust_receiver.try_recv() {
+                Err(_) => {
+                    // FIXME (ben 16/08/2015) other reasons could induce an error
+                    // main error assumed now to be no new crust events
+                    // break;
+                }
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    match decode::<SignedMessage>(&bytes) {
+                        Ok(message) => {
+                            // handle SignedMessage for any identified endpoint
+                            match self.core.lookup_endpoint(&endpoint) {
+                                Some(ConnectionName::Unidentified(_, _)) => debug!("message
+                                        from unidentified connection"),
                                     None => debug!("message from unknown endpoint"),
                                     _ => ignore(self.message_received(message)),
-                                };
-                            }
-                            // The message received is not a Signed Routing Message,
-                            // expect it to be an Hello message to identify a connection
-                            Err(_) => {
-                                match decode::<::direct_messages::DirectMessage>(&bytes) {
-                                    Ok(direct_message) => self.direct_message_received(
+                            };
+                        }
+                        // The message received is not a Signed Routing Message,
+                        // expect it to be an Hello message to identify a connection
+                        Err(_) => {
+                            match decode::<::direct_messages::DirectMessage>(&bytes) {
+                                Ok(direct_message) => self.direct_message_received(
                                         direct_message, endpoint),
                                     _ => error!("Unparsable message received on {:?}", endpoint),
-                                };
-                            }
-                        };
-                    }
-                    Ok(crust::Event::NewConnection(endpoint)) => {
-                        self.handle_new_connection(endpoint);
-                    }
-                    Ok(crust::Event::LostConnection(endpoint)) => {
-                        self.handle_lost_connection(endpoint);
-                    }
-                    Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                        self.handle_new_bootstrap_connection(endpoint);
-                    }
-                };
-                thread::sleep_ms(1);
+                            };
+                        }
+                    };
+                }
+                Ok(crust::Event::NewConnection(endpoint)) => {
+                    self.handle_new_connection(endpoint);
+                }
+                Ok(crust::Event::LostConnection(endpoint)) => {
+                    self.handle_lost_connection(endpoint);
+                }
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    self.handle_new_bootstrap_connection(endpoint);
+                }
+            };
+            thread::sleep_ms(1);
         }
     }
 
