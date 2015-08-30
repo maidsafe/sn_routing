@@ -18,6 +18,7 @@
 
 use std::sync::mpsc;
 use std::thread::spawn;
+use std::thread;
 use std::collections::BTreeMap;
 use sodiumoxide::crypto::sign::{verify_detached, Signature};
 use sodiumoxide::crypto::sign;
@@ -60,7 +61,6 @@ use message_accumulator::MessageAccumulator;
 type RoutingResult = Result<(), RoutingError>;
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
-static MAX_CRUST_EVENT_COUNTER : u8 = 10;
 /// Routing Node
 pub struct RoutingNode {
     // for CRUST
@@ -119,12 +119,11 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
-        let mut crust_event_counter : u8;
         self.wakeup.start(10);
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         debug!("RoutingNode started running and started bootstrap");
         loop {
-            match self.action_receiver.recv() {
+            match self.action_receiver.try_recv() {
                 Err(_) => {}
                 Ok(Action::SendMessage(signed_message)) => {
                     ignore(self.message_received(signed_message));
@@ -148,13 +147,11 @@ impl RoutingNode {
                     break;
                 }
             };
-            loop {
-                crust_event_counter = 0;
                 match self.crust_receiver.try_recv() {
                     Err(_) => {
                         // FIXME (ben 16/08/2015) other reasons could induce an error
                         // main error assumed now to be no new crust events
-                        break;
+                        // break;
                     }
                     Ok(crust::Event::NewMessage(endpoint, bytes)) => {
                         match decode::<SignedMessage>(&bytes) {
@@ -188,12 +185,7 @@ impl RoutingNode {
                         self.handle_new_bootstrap_connection(endpoint);
                     }
                 };
-                crust_event_counter += 1;
-                if crust_event_counter >= MAX_CRUST_EVENT_COUNTER {
-                    debug!("Breaking to yield to Actions.");
-                    break;
-                };
-            }
+                thread::sleep_ms(1);
         }
     }
 
