@@ -18,6 +18,7 @@
 
 use std::sync::mpsc;
 use std::thread::spawn;
+use std::thread;
 use std::collections::BTreeMap;
 use sodiumoxide::crypto::sign::{verify_detached, Signature};
 use sodiumoxide::crypto::sign;
@@ -60,7 +61,6 @@ use message_accumulator::MessageAccumulator;
 type RoutingResult = Result<(), RoutingError>;
 
 static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
-static MAX_CRUST_EVENT_COUNTER : u8 = 10;
 /// Routing Node
 pub struct RoutingNode {
     // for CRUST
@@ -74,7 +74,7 @@ pub struct RoutingNode {
     event_sender: mpsc::Sender<Event>,
     wakeup: WakeUpCaller,
     filter: ::filter::Filter,
-    // connection_filter: ::message_filter::MessageFilter<::NameType>,
+    connection_filter: ::message_filter::MessageFilter<::NameType>,
     core: RoutingCore,
     public_id_cache: LruCache<NameType, PublicId>,
     accumulator: MessageAccumulator,
@@ -108,8 +108,8 @@ impl RoutingNode {
             event_sender: event_sender,
             wakeup: WakeUpCaller::new(action_sender),
             filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
-            // connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
-            //     ::time::Duration::seconds(1)),
+            connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
+                ::time::Duration::minutes(20)),
             core: core,
             public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             accumulator: MessageAccumulator::new(),
@@ -119,12 +119,11 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
-        let mut crust_event_counter : u8;
         self.wakeup.start(10);
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         debug!("RoutingNode started running and started bootstrap");
         loop {
-            match self.action_receiver.recv() {
+            match self.action_receiver.try_recv() {
                 Err(_) => {}
                 Ok(Action::SendMessage(signed_message)) => {
                     ignore(self.message_received(signed_message));
@@ -148,52 +147,45 @@ impl RoutingNode {
                     break;
                 }
             };
-            loop {
-                crust_event_counter = 0;
-                match self.crust_receiver.try_recv() {
-                    Err(_) => {
-                        // FIXME (ben 16/08/2015) other reasons could induce an error
-                        // main error assumed now to be no new crust events
-                        break;
-                    }
-                    Ok(crust::Event::NewMessage(endpoint, bytes)) => {
-                        match decode::<SignedMessage>(&bytes) {
-                            Ok(message) => {
-                                // handle SignedMessage for any identified endpoint
-                                match self.core.lookup_endpoint(&endpoint) {
-                                    Some(ConnectionName::Unidentified(_, _)) => debug!("message
-                                    from unidentified connection"),
+            match self.crust_receiver.try_recv() {
+                Err(_) => {
+                    // FIXME (ben 16/08/2015) other reasons could induce an error
+                    // main error assumed now to be no new crust events
+                    // break;
+                }
+                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                    match decode::<SignedMessage>(&bytes) {
+                        Ok(message) => {
+                            // handle SignedMessage for any identified endpoint
+                            match self.core.lookup_endpoint(&endpoint) {
+                                Some(ConnectionName::Unidentified(_, _)) => debug!("message
+                                        from unidentified connection"),
                                     None => debug!("message from unknown endpoint"),
                                     _ => ignore(self.message_received(message)),
-                                };
-                            }
-                            // The message received is not a Signed Routing Message,
-                            // expect it to be an Hello message to identify a connection
-                            Err(_) => {
-                                match decode::<::direct_messages::DirectMessage>(&bytes) {
-                                    Ok(direct_message) => self.direct_message_received(
+                            };
+                        }
+                        // The message received is not a Signed Routing Message,
+                        // expect it to be an Hello message to identify a connection
+                        Err(_) => {
+                            match decode::<::direct_messages::DirectMessage>(&bytes) {
+                                Ok(direct_message) => self.direct_message_received(
                                         direct_message, endpoint),
                                     _ => error!("Unparsable message received on {:?}", endpoint),
-                                };
-                            }
-                        };
-                    }
-                    Ok(crust::Event::NewConnection(endpoint)) => {
-                        self.handle_new_connection(endpoint);
-                    }
-                    Ok(crust::Event::LostConnection(endpoint)) => {
-                        self.handle_lost_connection(endpoint);
-                    }
-                    Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                        self.handle_new_bootstrap_connection(endpoint);
-                    }
-                };
-                crust_event_counter += 1;
-                if crust_event_counter >= MAX_CRUST_EVENT_COUNTER {
-                    debug!("Breaking to yield to Actions.");
-                    break;
-                };
-            }
+                            };
+                        }
+                    };
+                }
+                Ok(crust::Event::NewConnection(endpoint)) => {
+                    self.handle_new_connection(endpoint);
+                }
+                Ok(crust::Event::LostConnection(endpoint)) => {
+                    self.handle_lost_connection(endpoint);
+                }
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    self.handle_new_bootstrap_connection(endpoint);
+                }
+            };
+            thread::sleep_ms(1);
         }
     }
 
@@ -794,12 +786,12 @@ impl RoutingNode {
     /// then try to connect.  During a delay of 1 seconds, we collapse
     /// all re-occurances of this name, and block a new connect request
     fn refresh_routing_table(&mut self, from_node: &NameType) {
-        // if !self.connection_filter.check(from_node) {
+        if !self.connection_filter.check(from_node) {
             if self.core.check_node(&ConnectionName::Routing(from_node.clone())) {
                 ignore(self.send_connect_request(from_node));
             }
-        //     self.connection_filter.add(from_node.clone());
-        // }
+            self.connection_filter.add(from_node.clone());
+        }
     }
 
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
@@ -879,7 +871,7 @@ impl RoutingNode {
                 // to validate the public_id from the network
                 self.connection_manager.connect(connect_request.local_endpoints.clone());
                 self.connection_manager.connect(connect_request.external_endpoints.clone());
-                // self.connection_filter.add(connect_request.requester_fob.name());
+                self.connection_filter.add(connect_request.requester_fob.name());
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
                     to_authority: from_authority,
@@ -930,7 +922,7 @@ impl RoutingNode {
                 debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
                 self.connection_manager.connect(connect_response.local_endpoints.clone());
                 self.connection_manager.connect(connect_response.external_endpoints.clone());
-                // self.connection_filter.add(connect_response.receiver_fob.name());
+                self.connection_filter.add(connect_response.receiver_fob.name());
                 Ok(())
             }
             _ => return Err(RoutingError::BadAuthority),
