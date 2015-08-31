@@ -1,17 +1,23 @@
 # Routing - Change Log
 
-### [0.3.5] improvements to ResponseError and testing
+## [0.3.6]
+-  Fixed [#560](https://github.com/maidsafe/routing/issues/560) Removed unstable features.
+-  Updated "hello" messages
+-  Updated cache-handling in line with current Routing requirements
+-  Further work on churn handling
+
+## [0.3.5] improvements to ResponseError and testing
 
 - [#647](https://github.com/maidsafe/routing/pull/647) CI disallow failures on windows x86 (32bit) architecture
 - [#646](https://github.com/maidsafe/routing/pull/646) correct ResponseError::HadToClearSacrificial to return NameType and u32 size
 - [#645](https://github.com/maidsafe/routing/pull/645) key_value_store to test < Client | ClientManager > < ClientManager | NaeManager > behaviour
 
-### [0.3.4] Improvements to filter and accumulator behavior
+## [0.3.4] Improvements to filter and accumulator behavior
 
 - [#642](https://github.com/maidsafe/routing/pull/642) improve filter to block resolved messages
 - [#640](https://github.com/maidsafe/routing/pull/640) Enable duplicate get requests
 
-### [0.3.3] Events and refresh
+## [0.3.3] Events and refresh
 
 - [#638](https://github.com/maidsafe/routing/pull/638) debug formatting for Data
 - [#637](https://github.com/maidsafe/routing/pull/637) our authority API update
@@ -23,13 +29,13 @@
 - [#620](https://github.com/maidsafe/routing/pull/620) event bootstrapped, connected, disconnected
 - [#623](https://github.com/maidsafe/routing/pull/623) maximum allowed size for structured data
 
-### [0.3.2] Final public API for version 0.3
+## [0.3.2] Final public API for version 0.3
 
 - internal bug fixes
 - partial restoration of unit tests
 - fine-tuning public API in correspondence with user projects
 
-### [0.3.1] Implementing internal functionality
+## [0.3.1] Implementing internal functionality
 
 - [#582](https://github.com/maidsafe/routing/pull/582) implement routing public api channel to routing_node
 - [#580](https://github.com/maidsafe/routing/pull/580) review message_received in routing_node
@@ -47,7 +53,7 @@
 - [#565](https://github.com/maidsafe/routing/pull/565) implement target nodes in core
 - [#564](https://github.com/maidsafe/routing/pull/564) pruning and clean up
 
-### [0.3.0] Unified Data and refactor for channel interface
+## [0.3.0] Unified Data and refactor for channel interface
 - [MAID-1158](https://maidsafe.atlassian.net/browse/MAID-1158) Unified Data
     - [MAID-1159](https://maidsafe.atlassian.net/browse/MAID-1159) Implement PlainData
     - [MAID-1160](https://maidsafe.atlassian.net/browse/MAID-1160) Implement ImmutableData

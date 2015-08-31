@@ -132,6 +132,9 @@ impl Node {
                                         from_authority,
                                         response_token);
                 },
+                Event::Churn(our_close_group) => {
+                    self.handle_churn(our_close_group);
+                }
                 _ => {}
             }
         }
@@ -176,7 +179,7 @@ impl Node {
             Some(data) => data.clone(),
             None => return,
         };
-
+        println!("GET {:?}", name);
         self.routing.get_response(our_authority,
                                   from_authority,
                                   Data::PlainData(data),
@@ -195,6 +198,7 @@ impl Node {
 
         match our_authority {
             Authority::NaeManager(_) => {
+                println!("PUT {:?}", plain_data.name());
                 let _ = self.db.insert(plain_data.name(), plain_data);
             },
             _ => {
@@ -202,6 +206,17 @@ impl Node {
                 assert!(false);
             }
         }
+    }
+
+    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>) {
+
+        for value in self.db.values() {
+            println!("CHURN {:?}", value.name());
+            self.routing.put_request(::routing::authority::Authority::NaeManager(value.name()),
+                ::routing::authority::Authority::NaeManager(value.name()),
+                ::routing::data::Data::PlainData(value.clone()));
+        }
+        // self.db = BTreeMap::new();
     }
 }
 
