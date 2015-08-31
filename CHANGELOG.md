@@ -1,5 +1,11 @@
 # Routing - Change Log
 
+## [0.3.6]
+-  Fixed [#560](https://github.com/maidsafe/routing/issues/560) Removed unstable features.
+-  Updated "hello" messages
+-  Updated cache-handling in line with current Routing requirements
+-  Further work on churn handling
+
 ## [0.3.5] improvements to ResponseError and testing
 
 - [#647](https://github.com/maidsafe/routing/pull/647) CI disallow failures on windows x86 (32bit) architecture

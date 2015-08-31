@@ -40,7 +40,6 @@ use routing_core::{RoutingCore, ConnectionName};
 use structured_data::StructuredData;
 use id::Id;
 use public_id::PublicId;
-use hello::Hello;
 use types;
 use types::{MessageId, Bytes, Address};
 use utils::{encode, decode};
