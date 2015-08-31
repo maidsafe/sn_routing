@@ -610,7 +610,9 @@ impl RoutingNode {
             ignore(self.connection_manager.send(endpoint, bytes.clone()));
         }
         // notify the user
-        let _ = self.event_sender.send(::event::Event::Churn(churn.close_group));
+        if self.core.routing_table_size() >= ::types::QUORUM_SIZE {
+            let _ = self.event_sender.send(::event::Event::Churn(churn.close_group));
+        };
         Ok(())
     }
 

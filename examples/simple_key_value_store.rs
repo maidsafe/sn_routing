@@ -209,7 +209,7 @@ impl Node {
     }
 
     fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>) {
-
+        info!("Handle churn for close group size {:?}", _our_close_group.len());
         for value in self.db.values() {
             println!("CHURN {:?}", value.name());
             self.routing.put_request(::routing::authority::Authority::NaeManager(value.name()),
