@@ -72,3 +72,23 @@ impl Filter {
     }
 
 }
+
+pub struct RunningAverage {
+    average: f64,
+    block_average: f64,
+    counter: u32,
+    block_counter: u32,
+    block_size: u32,
+}
+
+impl RunningAverage {
+    pub fn new(block_size: u32) -> RunningAverage {
+        RunningAverage {
+            average: 0f64,
+            block_average: 0f64,
+            counter: 0u32,
+            block_counter: 0u32,
+            block_size: block_size,
+        }
+    }
+}
