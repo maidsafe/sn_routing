@@ -17,6 +17,7 @@
 
 use messages::{SignedMessage, Content};
 use authority::Authority;
+use types::CacheOptions;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
@@ -36,6 +37,7 @@ pub enum Action {
     //            | the destination authority
     // RoutingNode will form the RoutingMessage and sign it as its own identity
     Churn(::direct_messages::Churn, Vec<::crust::Endpoint>),
+    SetCacheOptions(CacheOptions),
     WakeUp,
     Terminate,
 }

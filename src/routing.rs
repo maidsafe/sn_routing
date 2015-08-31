@@ -27,12 +27,11 @@ use messages::SignedToken;
 use routing_node::RoutingNode;
 use NameType;
 use data::{Data, DataRequest};
-use types::Bytes;
+use types::{Bytes, CacheOptions};
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use sodiumoxide::crypto;
 use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
-use cache::CacheOptions;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -49,7 +48,7 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
     /// The intial Routing object will have newly generated keys
-    pub fn new(event_sender: mpsc::Sender<Event>, cache_options: CacheOptions) -> Routing {
+    pub fn new(event_sender: mpsc::Sender<Event>) -> Routing {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
@@ -59,7 +58,6 @@ impl Routing {
                                                 action_receiver,
                                                 event_sender,
                                                 false,
-                                                cache_options,
                                                 None);
 
         spawn(move || {
@@ -154,6 +152,12 @@ impl Routing {
         let _ = self.action_sender.send(Action::SendContent(
                 Authority::NaeManager(from_group.clone()), Authority::NaeManager(from_group),
                 Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
+
+    }
+
+    /// Dynamically enable/disable caching for Data types.
+    pub fn set_cache_options(&self, cache_options: CacheOptions) {
+        let _ = self.action_sender.send(Action::SetCacheOptions(cache_options));
 
     }
 

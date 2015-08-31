@@ -32,7 +32,6 @@ use error::{RoutingError, ResponseError};
 use authority::Authority;
 use sodiumoxide::crypto;
 use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
-use cache::CacheOptions;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -61,7 +60,6 @@ impl RoutingClient {
                                                 action_receiver,
                                                 event_sender,
                                                 true,
-                                                CacheOptions::new(),
                                                 keys);
 
         spawn(move || {
