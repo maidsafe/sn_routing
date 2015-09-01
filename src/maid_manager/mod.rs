@@ -36,12 +36,11 @@ impl MaidManager {
         }
     }
 
-    pub fn handle_put(&mut self, from: &NameType,
-                      data: Data) -> Result<Vec<MethodCall>, ResponseError> {
+    pub fn handle_put(&mut self, from: &NameType, data: Data) -> Vec<MethodCall> {
         if self.db_.put_data(from, data.payload_size() as u64) {
-            Ok(vec![MethodCall::Put { location: Authority::NaeManager(data.name()), content: data }])
+            vec![MethodCall::Put { location: Authority::NaeManager(data.name()), content: data }]
         } else {
-            Err(ResponseError::InvalidRequest(data))
+            vec![]
         }
     }
 

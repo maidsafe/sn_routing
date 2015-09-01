@@ -33,31 +33,37 @@ impl StructuredDataManager {
         StructuredDataManager { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
     }
 
-    pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, ResponseError> {
+    pub fn handle_get(&self, name: NameType) -> Vec<MethodCall> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
-            return Err(ResponseError::Abort);
+            return vec![];
         }
-        let sd : StructuredData = try!(::routing::utils::decode(&data));
-        Ok(vec![MethodCall::Reply { data: Data::StructuredData(sd) }])
+        let sd: StructuredData = match ::routing::utils::decode(&data) {
+            Ok(data) => data,
+            Err(_) => return vec![]
+        };
+        vec![MethodCall::Reply { data: Data::StructuredData(sd) }]
     }
 
-    pub fn handle_put(&mut self, structured_data: StructuredData) ->Result<Vec<MethodCall>, ResponseError> {
+    pub fn handle_put(&mut self, structured_data: StructuredData) -> Vec<MethodCall> {
         // TODO: SD using PUT for the first copy, then POST to update and transfer in case of churn
         //       so if the data exists, then the put shall be rejected
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
         if self.chunk_store_.has_chunk(structured_data.name()) {
-            Err(ResponseError::FailedRequestForData(Data::StructuredData(structured_data)))
+            vec![]
         } else {
-            let serialised_data = try!(::routing::utils::encode(&structured_data));
-            self.chunk_store_.put(structured_data.name(), serialised_data);
-            Ok(vec![MethodCall::Reply { data: Data::StructuredData(structured_data) }])
+            if let Ok(serialised_data) = ::routing::utils::encode(&structured_data) {
+                self.chunk_store_.put(structured_data.name(), serialised_data);
+                vec![MethodCall::Reply { data: Data::StructuredData(structured_data) }]
+            } else {
+                vec![]
+            }
         }
     }
 
-    pub fn handle_post(&mut self, in_coming_data: StructuredData) ->Result<Vec<MethodCall>, ResponseError> {
+    pub fn handle_post(&mut self, in_coming_data: StructuredData) -> Vec<MethodCall> {
         // TODO: SD using PUT for the first copy, then POST to update and transfer in case of churn
         //       so if the data exists, then the put shall be rejected
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
@@ -65,17 +71,19 @@ impl StructuredDataManager {
         //       in addition to above, POST shall check the ownership
         let data = self.chunk_store_.get(in_coming_data.name());
         if data.len() == 0 {
-            return Err(ResponseError::InvalidRequest(Data::StructuredData(in_coming_data)));
+            return vec![];
         }
-        let mut sd : StructuredData = try!(::routing::utils::decode(&data));
-        debug!("sd_manager updating {:?} to {:?}", sd, in_coming_data);
-        match sd.replace_with_other(in_coming_data.clone()) {
-            Ok(_) => {},
-            Err(_) => { return Err(ResponseError::InvalidRequest(Data::StructuredData(in_coming_data))); }
+        if let Ok(mut sd) = ::routing::utils::decode::<StructuredData>(&data) {
+            debug!("sd_manager updating {:?} to {:?}", sd, in_coming_data);
+            match sd.replace_with_other(in_coming_data.clone()) {
+                Ok(_) => {},
+                Err(_) => { return vec![]; }
+            }
+            if let Ok(serialised_data) = ::routing::utils::encode(&sd) {
+                self.chunk_store_.put(in_coming_data.name(), serialised_data);
+            }
         }
-        let serialised_data = try!(::routing::utils::encode(&sd));
-        self.chunk_store_.put(in_coming_data.name(), serialised_data);
-        Ok(vec![])
+        vec![]
     }
 
     pub fn handle_account_transfer(&mut self, in_coming_sd: Vec<u8>) {

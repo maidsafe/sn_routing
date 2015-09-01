@@ -99,25 +99,25 @@ impl DataManager {
         DataManager { db_: database::DataManagerDatabase::new(), resource_index: 1 }
     }
 
-    pub fn handle_get(&mut self, name: &NameType, data_request: DataRequest) -> Result<Vec<MethodCall>, ResponseError> {
+    pub fn handle_get(&mut self, name: &NameType, data_request: DataRequest) -> Vec<MethodCall> {
         let result = self.db_.get_pmid_nodes(name);
         if result.len() == 0 {
-            return Err(ResponseError::Abort);
+            return vec![];
         }
 
-        let mut dest_pmids: Vec<MethodCall> = Vec::new();
+        let mut forward_to_pmids: Vec<MethodCall> = Vec::new();
         for pmid in result.iter() {
-            dest_pmids.push(MethodCall::Get { location: Authority::ManagedNode(pmid.clone()),
+            forward_to_pmids.push(MethodCall::Get { location: Authority::ManagedNode(pmid.clone()),
                                               data_request: data_request.clone() });
         }
-        Ok(dest_pmids)
+        forward_to_pmids
     }
 
-    pub fn handle_put(&mut self, data: ImmutableData, nodes_in_table: &mut Vec<NameType>)
-            -> Result<Vec<MethodCall>, ResponseError> {
+    pub fn handle_put(&mut self, data: ImmutableData,
+                      nodes_in_table: &mut Vec<NameType>) -> Vec<MethodCall> {
       let data_name = data.name();
       if self.db_.exist(&data_name) {
-          return Err(ResponseError::Abort);
+          return vec![];
       }
 
       nodes_in_table.sort_by(|a, b|
@@ -143,7 +143,7 @@ impl DataManager {
           forwarding_calls.push(MethodCall::Put { location: Authority::NodeManager(pmid.clone()),
                                                   content: Data::ImmutableData(data.clone()), });
       }
-      Ok(forwarding_calls)
+      forwarding_calls
     }
 
     pub fn handle_get_response(&mut self, response: Data) -> Vec<MethodCall> {

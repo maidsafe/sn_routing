@@ -242,21 +242,19 @@ impl Vault {
                         self.data_manager.handle_get(&name, data_request.clone())
                     }
                     DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
-                    _ => Ok(vec![]),
+                    _ => vec![],
                 }
             },
             Authority::ManagedNode(_) => {
                 match from_authority {
                     // drop the message if we don't have the data
                     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
-                    _ => Ok(vec![]),
+                    _ => vec![],
                 }
             },
-            _ => Ok(vec![]),
+            _ => vec![],
         };
-        if let Ok(actions) = returned_actions {
-            self.send(our_authority, actions, response_token, Some(from_authority), Some(data_request));
-        }
+        self.send(our_authority, returned_actions, response_token, Some(from_authority), Some(data_request));
     }
 
     fn handle_put(&mut self,
@@ -273,16 +271,14 @@ impl Vault {
                 match data {
                     Data::ImmutableData(data) => self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
                     Data::StructuredData(data) => self.sd_manager.handle_put(data),
-                    _ => Ok(vec![]),
+                    _ => vec![],
                 }
             },
             Authority::NodeManager(dest_address) => self.pmid_manager.handle_put(dest_address, data),
             Authority::ManagedNode(pmid_node) => self.pmid_node.handle_put(pmid_node, data),
-            _ => Ok(vec![]),
+            _ => vec![],
         };
-        if let Ok(actions) = returned_actions {
-            self.send(our_authority, actions, response_token, None, None);
-        }
+        self.send(our_authority, returned_actions, response_token, None, None);
     }
 
     // Post is only used to update the content or owners of a StructuredData
@@ -295,14 +291,12 @@ impl Vault {
             Authority::NaeManager(_) => {
                 match data {
                     Data::StructuredData(data) => self.sd_manager.handle_post(data),
-                    _ => Ok(vec![]),
+                    _ => vec![],
                 }
             }
-            _ => Ok(vec![]),
+            _ => vec![],
         };
-        if let Ok(actions) = returned_actions {
-            self.send(our_authority, actions, response_token, None, None);
-        }
+        self.send(our_authority, returned_actions, response_token, None, None);
     }
 
     fn handle_get_response(&mut self,

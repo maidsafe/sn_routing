@@ -29,25 +29,29 @@ impl PmidNode {
         PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
     }
 
-    pub fn handle_get(&self, name: NameType) ->Result<Vec<MethodCall>, ResponseError> {
-        info!("pmid_node getting {:?}", name);
+    pub fn handle_get(&self, name: NameType) ->Vec<MethodCall> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
-            return Err(ResponseError::Abort);
+            return vec![];
         }
-        let sd : ImmutableData = try!(::routing::utils::decode(&data));
-        info!("pmid_node returning {:?}", name);
-        Ok(vec![MethodCall::Reply { data: Data::ImmutableData(sd) }])
+        let sd: ImmutableData = match ::routing::utils::decode(&data) {
+            Ok(data) => data,
+            Err(_) => return vec![]
+        };
+        vec![MethodCall::Reply { data: Data::ImmutableData(sd) }]
     }
 
     pub fn handle_put(&mut self, pmid_node: NameType,
-                      incoming_data: Data) ->Result<Vec<MethodCall>, ResponseError> {
+                      incoming_data: Data) -> Vec<MethodCall> {
         info!("pmid_node {:?} storing {:?}", pmid_node, incoming_data.name());
         let immutable_data = match incoming_data.clone() {
             Data::ImmutableData(data) => { data }
-            _ => { return Err(ResponseError::InvalidRequest(incoming_data)); }
+            _ => { return vec![]; }
         };
-        let data = try!(::routing::utils::encode(&immutable_data));
+        let data = match ::routing::utils::encode(&immutable_data) {
+            Ok(data) => data,
+            Err(_) => return vec![]
+        };
         let data_name_and_remove_sacrificial = match *immutable_data.get_type_tag() {
             ImmutableDataType::Normal => (immutable_data.name(), true),
             _ => (immutable_data.name(), false),
@@ -55,14 +59,14 @@ impl PmidNode {
         if self.chunk_store_.has_disk_space(data.len()) {
             // the type_tag needs to be stored as well
             self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
-            return Ok(vec![]);
+            return vec![];
         }
         if !data_name_and_remove_sacrificial.1 {
             // For sacrifized data, just notify PmidManager to update the account
             // Replication shall not be carried out for it
-            return Ok(vec![MethodCall::ClearSacrificial { location: Authority::NodeManager(pmid_node),
-                                                          name: incoming_data.name(),
-                                                          size: incoming_data.payload_size() as u32 }]);
+            return vec![MethodCall::ClearSacrificial { location: Authority::NodeManager(pmid_node),
+                                                       name: incoming_data.name(),
+                                                       size: incoming_data.payload_size() as u32 }];
         }
         let required_space = data.len() - (self.chunk_store_.max_disk_usage() - self.chunk_store_.current_disk_usage());
         let names = self.chunk_store_.names();
@@ -70,7 +74,10 @@ impl PmidNode {
         let mut emptied_space = 0;
         for name in names.iter() {
             let fetched_data = self.chunk_store_.get(name.clone());
-            let parsed_data : ImmutableData = try!(::routing::utils::decode(&fetched_data));
+            let parsed_data : ImmutableData = match ::routing::utils::decode(&fetched_data) {
+                Ok(data) => data,
+                Err(_) => return vec![],
+            };
             match *parsed_data.get_type_tag() {
                 ImmutableDataType::Sacrificial => {
                     emptied_space += fetched_data.len();
@@ -83,7 +90,7 @@ impl PmidNode {
                             size: parsed_data.payload_size() as u32 });
                     if emptied_space > required_space {
                         self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
-                        return Ok(returned_calls);
+                        return returned_calls;
                     }
                 },
                 _ => {}
@@ -92,7 +99,7 @@ impl PmidNode {
         // Reduplication needs to be carried out
         returned_calls.push(MethodCall::FailedPut { location: Authority::NodeManager(pmid_node),
                                                     data: incoming_data });
-        Ok(returned_calls)
+        returned_calls
     }
 
 }
