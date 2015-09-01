@@ -36,6 +36,5 @@ pub enum Action {
     //            | the destination authority
     // RoutingNode will form the RoutingMessage and sign it as its own identity
     Churn(::direct_messages::Churn, Vec<::crust::Endpoint>),
-    WakeUp,
     Terminate,
 }

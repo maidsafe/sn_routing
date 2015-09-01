@@ -46,7 +46,6 @@ use utils::{encode, decode};
 use utils;
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
-use wake_up::WakeUpCaller;
 
 use messages::{RoutingMessage, SignedMessage, SignedToken, ConnectRequest, ConnectResponse,
                Content, ExternalRequest, ExternalResponse, InternalRequest, InternalResponse};
@@ -71,7 +70,6 @@ pub struct RoutingNode {
     action_sender: mpsc::Sender<Action>,
     action_receiver: mpsc::Receiver<Action>,
     event_sender: mpsc::Sender<Event>,
-    wakeup: WakeUpCaller,
     filter: ::filter::Filter,
     connection_filter: ::message_filter::MessageFilter<::NameType>,
     core: RoutingCore,
@@ -104,7 +102,6 @@ impl RoutingNode {
             action_sender: action_sender.clone(),
             action_receiver: action_receiver,
             event_sender: event_sender,
-            wakeup: WakeUpCaller::new(action_sender),
             filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
             connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
                 ::time::Duration::minutes(20)),
@@ -117,7 +114,6 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
-        self.wakeup.start(10);
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         debug!("RoutingNode started running and started bootstrap");
         loop {
@@ -134,9 +130,6 @@ impl RoutingNode {
                 },
                 Ok(Action::Churn(our_close_group, targets)) => {
                     let _ = self.generate_churn(our_close_group, targets);
-                },
-                Ok(Action::WakeUp) => {
-                    // ensure that the loop is blocked for maximally 10ms
                 },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");

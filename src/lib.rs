@@ -61,7 +61,6 @@ mod routing_table;
 mod routing_node;
 mod routing_core;
 mod relay;
-mod wake_up;
 mod peer;
 mod refresh_accumulator;
 mod message_accumulator;
