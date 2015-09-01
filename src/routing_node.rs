@@ -1234,25 +1234,17 @@ impl RoutingNode {
                                         }
                                         return None;
                                     }
-                                    DataRequest::StructuredData(data_name, version) => {
+                                    DataRequest::StructuredData(data_name, tag) => {
                                         if self.cache_options.structured_data_caching_enabled() {
-                                            match data_cache.get(&data_name) {
+                                            let name = StructuredData::compute_name(tag, &data_name);
+                                            match data_cache.get(&name) {
                                                 Some(data) => {
-                                                    match *data {
-                                                        Data::StructuredData(ref structured_data) => {
-                                                            if structured_data.get_version() == version {
-                                                                let response = 
-                                                                    ExternalResponse::Get(
-                                                                        data.clone(),
-                                                                        data_request,
-                                                                        None);
-                                                                return Some(Content::ExternalResponse(response));
-                                                            } else {
-                                                                return None
-                                                            }
-                                                        },
-                                                        _ => return None
-                                                    }
+                                                    let response =
+                                                        ExternalResponse::Get(
+                                                            data.clone(),
+                                                            data_request,
+                                                            None);
+                                                    return Some(Content::ExternalResponse(response));
                                                 },
                                                 None => return None
                                             }
@@ -1309,11 +1301,53 @@ mod test {
     use authority::Authority;
     use types::CacheOptions;
 
-    #[test]
-    fn cache() {
+    fn create_node() -> RoutingNode {
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
         let (event_sender, _) = mpsc::channel::<Event>();
-        let mut node = RoutingNode::new(action_sender.clone(), action_receiver, event_sender, false, None);
+        RoutingNode::new(action_sender.clone(), action_receiver, event_sender, false, None)
+    }
+
+    #[test]
+    fn no_caching() {
+        let mut node = create_node();
+        let mut data = [0u8; 64];
+        thread_rng().fill_bytes(&mut data);
+        let immutable = ImmutableData::new(ImmutableDataType::Normal,
+                                           data.iter().map(|&x|x).collect::<Vec<_>>());
+        let immutable_data = Data::ImmutableData(immutable.clone());
+        let key_pair = crypto::sign::gen_keypair();
+        let sig = crypto::sign::sign_detached(&data, &key_pair.1);
+        let sign_token = SignedToken {
+            serialised_request: data.iter().map(|&x|x).collect::<Vec<_>>(),
+            signature: sig,
+        };
+
+        let data_request = DataRequest::ImmutableData(immutable.name().clone(),
+                                                      immutable.get_type_tag().clone());
+
+        let response = ExternalResponse::Get(immutable_data, data_request.clone(), Some(sign_token));
+        let request = ExternalRequest::Get(data_request, 0u8);
+
+        let routing_message_request = RoutingMessage {
+            from_authority: Authority::ClientManager(NameType::new([1u8; 64])),
+            to_authority: Authority::NaeManager(NameType::new(data)),
+            content: Content::ExternalRequest(request)
+        };
+
+        let routing_message_response = RoutingMessage {
+            from_authority: Authority::NaeManager(NameType::new(data)),
+            to_authority: Authority::ClientManager(NameType::new([1u8; 64])),
+            content: Content::ExternalResponse(response)
+        };
+
+        assert!(node.handle_cache_get(&routing_message_request).is_none());
+        node.handle_cache_put(&routing_message_response);
+        assert!(node.handle_cache_get(&routing_message_request).is_none());
+    }
+
+    #[test]
+    fn cache_for_type() {
+        let mut node = create_node();
         let cache_options = CacheOptions::with_caching(false, false, true);
         let _ = node.set_cache_options(cache_options);
         let mut data = [0u8; 64];
@@ -1349,5 +1383,45 @@ mod test {
         assert!(node.handle_cache_get(&routing_message_request).is_none());
         node.handle_cache_put(&routing_message_response);
         assert!(node.handle_cache_get(&routing_message_request).is_some());
+    }
+
+    #[test]
+    fn no_cache_for_type() {
+        let mut node = create_node();
+        let cache_options = CacheOptions::with_caching(true, true, false);
+        let _ = node.set_cache_options(cache_options);
+        let mut data = [0u8; 64];
+        thread_rng().fill_bytes(&mut data);
+        let immutable = ImmutableData::new(ImmutableDataType::Normal,
+                                           data.iter().map(|&x|x).collect::<Vec<_>>());
+        let immutable_data = Data::ImmutableData(immutable.clone());
+        let key_pair = crypto::sign::gen_keypair();
+        let sig = crypto::sign::sign_detached(&data, &key_pair.1);
+        let sign_token = SignedToken {
+            serialised_request: data.iter().map(|&x|x).collect::<Vec<_>>(),
+            signature: sig,
+        };
+
+        let data_request = DataRequest::ImmutableData(immutable.name().clone(),
+                                                      immutable.get_type_tag().clone());
+
+        let response = ExternalResponse::Get(immutable_data, data_request.clone(), Some(sign_token));
+        let request = ExternalRequest::Get(data_request, 0u8);
+
+        let routing_message_request = RoutingMessage {
+            from_authority: Authority::ClientManager(NameType::new([1u8; 64])),
+            to_authority: Authority::NaeManager(NameType::new(data)),
+            content: Content::ExternalRequest(request)
+        };
+
+        let routing_message_response = RoutingMessage {
+            from_authority: Authority::NaeManager(NameType::new(data)),
+            to_authority: Authority::ClientManager(NameType::new([1u8; 64])),
+            content: Content::ExternalResponse(response)
+        };
+
+        assert!(node.handle_cache_get(&routing_message_request).is_none());
+        node.handle_cache_put(&routing_message_response);
+        assert!(node.handle_cache_get(&routing_message_request).is_none());
     }
 }
