@@ -118,16 +118,12 @@ mod test {
         {
             let put_result = pmid_node.handle_put(NameType::new([0u8; 64]),
                                                   Data::ImmutableData(im_data.clone()));
-            assert_eq!(put_result.is_ok(), true);
-            let calls = put_result.ok().unwrap();
-            assert_eq!(calls.len(), 0);
+            assert_eq!(put_result.len(), 0);
         }
         {
-            let get_result = pmid_node.handle_get(im_data.name());
-            assert_eq!(get_result.is_err(), false);
-            let mut calls = get_result.ok().unwrap();
-            assert_eq!(calls.len(), 1);
-            match calls.remove(0) {
+            let mut get_result = pmid_node.handle_get(im_data.name());
+            assert_eq!(get_result.len(), 1);
+            match get_result.remove(0) {
                 MethodCall::Reply { data } => {
                     match data {
                         Data::ImmutableData(fetched_im_data) => {

@@ -44,6 +44,8 @@ pub enum MethodCall {
     FailedPut { location: Authority, data: Data },
     /// response error indicating clearing sarificial data
     ClearSacrificial { location: Authority, name: NameType, size: u32 },
+    /// response error indicating invalid request
+    InvalidRequest { data: Data },
 }
 
 /// This trait is required for any type of message to be
