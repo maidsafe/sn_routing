@@ -144,6 +144,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
                     };
                     None
                 },
+                InternalRequest::Hello{their_endpoint, our_id} => unimplemented!(),
             }
         }
         Content::ExternalResponse(_) => None,

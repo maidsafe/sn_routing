@@ -479,7 +479,8 @@ impl RoutingNode {
                                 refresh_authority),
                             Address::Client(_) => Err(RoutingError::BadAuthority),
                         }
-                    }
+                    },
+                    InternalRequest::Hello{their_endpoint, our_id} => unimplemented!()
                 }
             }
             Content::InternalResponse(response) => {
@@ -492,6 +493,7 @@ impl RoutingNode {
                         self.handle_connect_response(response, message.from_authority,
                             message.to_authority)
                     }
+                    InternalResponse::Hello{our_endpoint, their_id} => unimplemented!()
                 }
             }
             Content::ExternalRequest(request) => {
