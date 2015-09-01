@@ -35,5 +35,5 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 
 General note: please document code you touch, and introduce property-based unit tests where applicable.
 
-## [0.3.7]
-- [x] [#660](https://github.com/maidsafe/routing/pull/660) Unique SignedMessage with random bits and routing event loop
+## [0.3.8]
+- [x] [#664](https://github.com/maidsafe/routing/pull/664) update to match Crust's api change

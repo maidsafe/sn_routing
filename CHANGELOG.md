@@ -1,4 +1,6 @@
 # Routing - Change Log
+## [0.3.7] Unique signed messages
+- [#660](https://github.com/maidsafe/routing/pull/660) Unique SignedMessage with random bits and routing event loop
 
 ## [0.3.6]
 -  Fixed [#560](https://github.com/maidsafe/routing/issues/560) Removed unstable features.
