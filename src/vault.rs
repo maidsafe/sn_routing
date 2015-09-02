@@ -242,21 +242,19 @@ impl Vault {
                         self.data_manager.handle_get(&name, data_request.clone())
                     }
                     DataRequest::StructuredData(_, _) => self.sd_manager.handle_get(name),
-                    _ => Ok(vec![]),
+                    _ => vec![],
                 }
             },
             Authority::ManagedNode(_) => {
                 match from_authority {
                     // drop the message if we don't have the data
                     Authority::NaeManager(name) => self.pmid_node.handle_get(name),
-                    _ => Ok(vec![]),
+                    _ => vec![],
                 }
             },
-            _ => Ok(vec![]),
+            _ => vec![],
         };
-        if let Ok(actions) = returned_actions {
-            self.send(our_authority, actions, response_token, Some(from_authority), Some(data_request));
-        }
+        self.send(our_authority, returned_actions, response_token, Some(from_authority), Some(data_request));
     }
 
     fn handle_put(&mut self,
@@ -273,16 +271,14 @@ impl Vault {
                 match data {
                     Data::ImmutableData(data) => self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
                     Data::StructuredData(data) => self.sd_manager.handle_put(data),
-                    _ => Ok(vec![]),
+                    _ => vec![],
                 }
             },
             Authority::NodeManager(dest_address) => self.pmid_manager.handle_put(dest_address, data),
             Authority::ManagedNode(pmid_node) => self.pmid_node.handle_put(pmid_node, data),
-            _ => Ok(vec![]),
+            _ => vec![],
         };
-        if let Ok(actions) = returned_actions {
-            self.send(our_authority, actions, response_token, None, None);
-        }
+        self.send(our_authority, returned_actions, response_token, None, None);
     }
 
     // Post is only used to update the content or owners of a StructuredData
@@ -295,14 +291,12 @@ impl Vault {
             Authority::NaeManager(_) => {
                 match data {
                     Data::StructuredData(data) => self.sd_manager.handle_post(data),
-                    _ => Ok(vec![]),
+                    _ => vec![],
                 }
             }
-            _ => Ok(vec![]),
+            _ => vec![],
         };
-        if let Ok(actions) = returned_actions {
-            self.send(our_authority, actions, response_token, None, None);
-        }
+        self.send(our_authority, returned_actions, response_token, None, None);
     }
 
     fn handle_get_response(&mut self,
@@ -479,7 +473,8 @@ impl Vault {
                     self.routing.put_response(our_authority.clone(), location,
                                               ResponseError::HadToClearSacrificial(name, size),
                                               response_token.clone());
-                }
+                },
+                _ => {}
             }
         }
     }
@@ -602,11 +597,11 @@ pub type ResponseNotifier =
                 while let Ok(event) = receiver.recv() {
                     match event {
                         Event::Request{ request, our_authority, from_authority, response_token } =>
-                            println!("as {:?} received request: {:?} from {:?} having token {:?}",
-                                     our_authority, request, from_authority, response_token == None),
+                            info!("as {:?} received request: {:?} from {:?} having token {:?}",
+                                  our_authority, request, from_authority, response_token == None),
                         Event::Response{ response, our_authority, from_authority } => {
-                            println!("as {:?} received response: {:?} from {:?}",
-                                     our_authority, response, from_authority);
+                            info!("as {:?} received response: {:?} from {:?}",
+                                  our_authority, response, from_authority);
                             match response {
                                 ExternalResponse::Get(data, _, _) => {
                                     let _ = client_sender.clone().send(data);
@@ -615,19 +610,19 @@ pub type ResponseNotifier =
                             }
                         },
                         Event::Refresh(_type_tag, _group_name, _accounts) =>
-                            println!("client received a refresh"),
-                        Event::Churn(_close_group) => println!("client received a churn"),
-                        Event::Connected => println!("client connected"),
-                        Event::Disconnected => println!("client disconnected"),
+                            info!("client received a refresh"),
+                        Event::Churn(_close_group) => info!("client received a churn"),
+                        Event::Connected => info!("client connected"),
+                        Event::Disconnected => info!("client disconnected"),
                         Event::FailedRequest{ request, our_authority, location, interface_error } =>
-                            println!("as {:?} received request: {:?} targeting {:?} having error {:?}",
-                                     our_authority, request, location, interface_error),
+                            info!("as {:?} received request: {:?} targeting {:?} having error {:?}",
+                                  our_authority, request, location, interface_error),
                         Event::FailedResponse{ response, our_authority, location, interface_error } =>
-                            println!("as {:?} received response: {:?} targeting {:?} having error {:?}",
-                                     our_authority, response, location, interface_error),
-                        Event::Bootstrapped => println!("client routing Bootstrapped"),
+                            info!("as {:?} received response: {:?} targeting {:?} having error {:?}",
+                                  our_authority, response, location, interface_error),
+                        Event::Bootstrapped => info!("client routing Bootstrapped"),
                         Event::Terminated => {
-                            println!("client routing listening terminated");
+                            info!("client routing listening terminated");
                             break;
                         },
                     };

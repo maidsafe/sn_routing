@@ -34,13 +34,13 @@ impl PmidManager {
         }
     }
 
-    pub fn handle_put(&mut self, pmid_node: NameType,
-                      data: Data) ->Result<Vec<MethodCall>, ResponseError> {
+    pub fn handle_put(&mut self, pmid_node: NameType, data: Data) -> Vec<MethodCall> {
         if self.db_.put_data(&pmid_node, data.payload_size() as u64) {
-            return Ok(vec![MethodCall::Put { location: Authority::ManagedNode(pmid_node.clone()),
-                                             content: data, }]);
+            vec![MethodCall::Put { location: Authority::ManagedNode(pmid_node.clone()),
+                                   content: data }]
+        } else {
+            vec![]
         }
-        Err(ResponseError::InvalidRequest(data))
     }
 
     pub fn handle_put_response(&mut self, from_address: &NameType,
@@ -84,10 +84,8 @@ mod test {
     let value = generate_random_vec_u8(1024);
     let data = ImmutableData::new(ImmutableDataType::Normal, value);
     let put_result = pmid_manager.handle_put(dest, Data::ImmutableData(data.clone()));
-    assert_eq!(put_result.is_err(), false);
-    let calls = put_result.ok().unwrap();
-    assert_eq!(calls.len(), 1);
-    match calls[0].clone() {
+    assert_eq!(put_result.len(), 1);
+    match put_result[0].clone() {
         MethodCall::Put { location, content } => {
             assert_eq!(location, Authority::ManagedNode(dest));
             assert_eq!(content, Data::ImmutableData(data.clone()));
