@@ -40,7 +40,7 @@ impl MaidManager {
         if self.db_.put_data(from, data.payload_size() as u64) {
             vec![MethodCall::Put { location: Authority::NaeManager(data.name()), content: data }]
         } else {
-            vec![]
+            vec![MethodCall::NotEnoughAllowance]
         }
     }
 
