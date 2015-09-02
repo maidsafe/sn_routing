@@ -59,6 +59,14 @@ impl Routing {
                                                 event_sender,
                                                 false,
                                                 None);
+        // let mut routing_node = match RoutingNode::new(action_sender.clone(),
+        //                                               action_receiver,
+        //                                               event_sender,
+        //                                               false,
+        //                                               None){
+        //     Ok(x) => x,
+        //     Err(crust_error) => return Err(RoutingError::);
+        // };
 
         spawn(move || {
                        debug!("started routing run()");
