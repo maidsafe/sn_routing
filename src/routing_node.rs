@@ -91,8 +91,7 @@ impl RoutingNode {
                -> RoutingNode {
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
-        let mut cm = crust::ConnectionManager::new(crust_sender);
-        let _ = cm.start_accepting(vec![Port::Tcp(5483u16)]);
+        let cm = crust::ConnectionManager::new(crust_sender);
         let accepting_on = cm.get_own_endpoints();
 
         let core = RoutingCore::new(event_sender.clone(), action_sender.clone(), keys);
