@@ -21,6 +21,7 @@ $project_name = $matches[0].Matches.Groups[1].Value
 cd $project_root
 cargo update
 cargo rustc --release -- -C link-args="-Wl,--subsystem,windows"
+strip target\release\$project_name.exe
 
 # Update the AdvancedInstaller project file and build the package
 $aip_file = Join-Path $PSScriptRoot "$project_name.aip"
