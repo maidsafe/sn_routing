@@ -1,5 +1,11 @@
 # Safe Vault - Change Log
 
+## [0.1.5]
+- Major refactor of production code and tests to match Routing's new API, allowing testing on a real network rather than a mock
+- Updated installers to match Crust's config/bootstrap file changes
+- Added tarball to packages being generated
+- Dropped usage of feature-gated items
+
 ## [0.1.4]
 - [MAID-1283](https://maidsafe.atlassian.net/browse/MAID-1283) Rename repositories from "maidsafe_" to "safe_"
 
