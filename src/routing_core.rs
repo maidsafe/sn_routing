@@ -250,11 +250,16 @@ impl RoutingCore {
 
     /// Add all connections here first, until we can match them with either a 
     /// HelloResponse or ConnectResponse
+    /// will return any endpoints to be dropped by crust
     pub fn add_unknown_endpoint(&mut self, endpoint : Endpoint)-> Option<Vec<Endpoint>> {
         self.unknown_connection_map.insert(endpoint, SteadyTime::now());    
         self.clear_old_endpoints()
      }
-
+    /// check if unknown_endpoint exists (will remove from map)
+    pub fn get_unknown_endpoint(&mut self, endpoint: &Endpoint)-> bool {
+        self.unknown_connection_map.remove(endpoint).is_some()
+    }
+    
     fn clear_old_endpoints(&mut self)-> Option<Vec<Endpoint>> {
         let timed_out: Vec<_> = self.unknown_connection_map
          .iter()
