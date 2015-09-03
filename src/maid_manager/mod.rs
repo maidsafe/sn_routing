@@ -36,12 +36,11 @@ impl MaidManager {
         }
     }
 
-    pub fn handle_put(&mut self, from: &NameType,
-                      data: Data) -> Result<Vec<MethodCall>, ResponseError> {
+    pub fn handle_put(&mut self, from: &NameType, data: Data) -> Vec<MethodCall> {
         if self.db_.put_data(from, data.payload_size() as u64) {
-            Ok(vec![MethodCall::Put { location: Authority::NaeManager(data.name()), content: data }])
+            vec![MethodCall::Put { location: Authority::NaeManager(data.name()), content: data }]
         } else {
-            Err(ResponseError::InvalidRequest(data))
+            vec![MethodCall::NotEnoughAllowance]
         }
     }
 
@@ -68,10 +67,8 @@ mod test {
         let value = generate_random_vec_u8(1024);
         let data = ImmutableData::new(ImmutableDataType::Normal, value);
         let put_result = maid_manager.handle_put(&from, Data::ImmutableData(data.clone()));
-        assert_eq!(put_result.is_err(), false);
-        let calls = put_result.ok().unwrap();
-        assert_eq!(calls.len(), 1);
-        match calls[0] {
+        assert_eq!(put_result.len(), 1);
+        match put_result[0] {
             MethodCall::Put { ref location, ref content } => {
                 assert_eq!(*location, Authority::NaeManager(data.name()));
                 assert_eq!(*content, Data::ImmutableData(data));
