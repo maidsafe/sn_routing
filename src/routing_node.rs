@@ -1221,7 +1221,8 @@ impl RoutingNode {
                                         if self.cache_options.plain_data_caching_enabled() {
                                             match data_cache.get(&data_name) {
                                                 Some(data) => {
-                                                    debug!("Got PlainData {:?} from cache", data_name);
+                                                    debug!("Got PlainData {:?} from cache",
+                                                            data_name);
                                                     let response =
                                                         ExternalResponse::Get(
                                                             data.clone(),
@@ -1236,10 +1237,10 @@ impl RoutingNode {
                                     }
                                     DataRequest::StructuredData(data_name, tag) => {
                                         if self.cache_options.structured_data_caching_enabled() {
-                                            let name = StructuredData::compute_name(tag, &data_name);
-                                            match data_cache.get(&name) {
+                                            match data_cache.get(&data_request.name()) {
                                                 Some(data) => {
-                                                    debug!("Got StructuredData {:?} from cache", name);
+                                                    debug!("Got StructuredData {:?} from cache",
+                                                            data_request.name());
                                                     let response =
                                                         ExternalResponse::Get(
                                                             data.clone(),
@@ -1256,7 +1257,8 @@ impl RoutingNode {
                                         if self.cache_options.immutable_data_caching_enabled() {
                                             match data_cache.get(&data_name) {
                                                 Some(data) => {
-                                                    debug!("Got ImmutableData {:?} from cache", data_name);
+                                                    debug!("Got ImmutableData {:?} from cache",
+                                                            data_name);
                                                     let response =
                                                         ExternalResponse::Get(
                                                             data.clone(),
