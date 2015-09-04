@@ -1,21 +1,27 @@
+env:
+  global:
+    - secure: "Kh4TbgJ7jQdL+dPOuNmPIWZfQJL6zDzc0clGIVQP3oP5yDt0qcxUziSxTzRmwoGDRdWDTr+TjdzUaRprfkGpwHsNBKcL90G8GcoBEyevtrzCCtBDUJJrtABaDAJCqa7Rl29d9UNXu01Cnpfskhxv6miwHOuQfzfFKe2OW+RwTy0="
+    - LibSodiumVersion=1.0.3
 os:
   - linux
   - osx
 language: rust
 rust:
   - nightly
+#  - beta
+#  - stable
 sudo: false
 branches:
   only:
-      - master
-env:
-  global:
-    secure: "Kh4TbgJ7jQdL+dPOuNmPIWZfQJL6zDzc0clGIVQP3oP5yDt0qcxUziSxTzRmwoGDRdWDTr+TjdzUaRprfkGpwHsNBKcL90G8GcoBEyevtrzCCtBDUJJrtABaDAJCqa7Rl29d9UNXu01Cnpfskhxv6miwHOuQfzfFKe2OW+RwTy0="
+    - master
+cache:
+  directories:
+    - $HOME/libsodium-$LibSodiumVersion
 install:
-  - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_libsodium.sh | bash
-  - export PKG_CONFIG_PATH=$HOME/libsodium-1.0.3/lib/pkgconfig:$PKG_CONFIG_PATH
+  - curl -sSLO https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_libsodium.sh
+  - . install_libsodium.sh
 script:
-  - cargo build --verbose --features "use-mock-routing"
-  - RUST_TEST_THREADS=1 cargo test --features "use-mock-routing"
+  - cargo build --release --verbose --features "use-mock-routing"
+  - RUST_TEST_THREADS=1 cargo test --release --features "use-mock-routing"
 after_success:
   - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/deploy_gh-pages.sh | bash
