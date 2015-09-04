@@ -259,6 +259,7 @@ function create_package {
 cd "$RootDir"
 cargo update
 cargo build --release
+strip "$RootDir/target/release/$VaultName"
 rm -rf "$RootDir/packages/$Platform" || true
 if [[ "$1" == "linux" ]]
 then
