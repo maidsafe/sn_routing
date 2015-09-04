@@ -21,16 +21,17 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 
 #Todo Items
 
-## [0.1.5]
-- [x] Major refactor of production code and tests to match Routing's new API, allowing testing on a real network rather than a mock
-- [x] Updated installers to match Crust's config/bootstrap file changes
-- [x] Added tarball to packages being generated
-- [x] Dropped usage of feature-gated items
-
 ## [0.1.6]
-- [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
+- [x] Default to use real Routing rather than the mock
+- [x] Updated config file to match Crust changes
+- [x] Refactored flow for put_response
+- [x] Added churn tests
+- [x] Refactored returns from most persona functions to not use Result
 
 ## [0.1.7]
+- [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
+
+## [0.1.8]
 - [ ] [MAID-1189](https://maidsafe.atlassian.net/browse/MAID-1189) Proper PmidNode Initialisation (max diskspace)
 - [ ] [MAID-1190](https://maidsafe.atlassian.net/browse/MAID-1190) Proper MaidManager account entry creation (allowance)
 - [ ] [MAID-1191](https://maidsafe.atlassian.net/browse/MAID-1191) Proper PmidManager account entry creation (pmidnode diskspace info)
