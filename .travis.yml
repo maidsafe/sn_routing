@@ -2,6 +2,8 @@ env:
   global:
     - secure: "Kh4TbgJ7jQdL+dPOuNmPIWZfQJL6zDzc0clGIVQP3oP5yDt0qcxUziSxTzRmwoGDRdWDTr+TjdzUaRprfkGpwHsNBKcL90G8GcoBEyevtrzCCtBDUJJrtABaDAJCqa7Rl29d9UNXu01Cnpfskhxv6miwHOuQfzfFKe2OW+RwTy0="
     - LibSodiumVersion=1.0.3
+    - ElfUtilsVersion=0.163
+    - Features=use-mock-routing
 os:
   - linux
   - osx
@@ -17,11 +19,12 @@ branches:
 cache:
   directories:
     - $HOME/libsodium-$LibSodiumVersion
+    - $HOME/elfutils-$ElfUtilsVersion
 install:
   - curl -sSLO https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_libsodium.sh
   - . install_libsodium.sh
 script:
-  - cargo build --release --verbose --features "use-mock-routing"
-  - RUST_TEST_THREADS=1 cargo test --release --features "use-mock-routing"
+  - export RUST_TEST_THREADS=1
+  - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/build_and_run_tests.sh | bash
 after_success:
-  - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/deploy_gh-pages.sh | bash
+  - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/after_success.sh | bash
