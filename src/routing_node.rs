@@ -41,7 +41,7 @@ use structured_data::StructuredData;
 use id::Id;
 use public_id::PublicId;
 use types;
-use types::{MessageId, Bytes, Address, CacheOptions};
+use types::{Bytes, Address, CacheOptions};
 use utils::{encode, decode};
 use utils;
 use data::{Data, DataRequest};

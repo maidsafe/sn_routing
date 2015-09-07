@@ -56,7 +56,6 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 pub static GROUP_SIZE: usize = 8;
 pub static QUORUM_SIZE: usize = 6;
 
-pub type MessageId = u32;
 pub type Bytes = Vec<u8>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
