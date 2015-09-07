@@ -202,6 +202,7 @@ fn determine_authority(message: &RoutingMessage,
 
 #[cfg(test)]
 mod test {
+    extern crate cbor;
     use routing_table::{RoutingTable, NodeInfo};
     use public_id::PublicId;
     use messages::{RoutingMessage, Content, ExternalRequest, ExternalResponse};
@@ -214,6 +215,27 @@ mod test {
     use sodiumoxide::crypto;
     use data::Data;
     use immutable_data::{ImmutableData, ImmutableDataType};
+    use rustc_serialize::{Decodable, Encodable};
+    use sodiumoxide::crypto::sign;
+
+    fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: T = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_after == obj_before, true)
+
+    }
+
+
+    #[test]
+    fn test_authority() {
+        test_object(Authority::ClientManager(Random::generate_random()));
+        test_object(Authority::NaeManager(Random::generate_random()));
+        test_object(Authority::NodeManager(Random::generate_random()));
+        test_object(Authority::ManagedNode(Random::generate_random()));
+        test_object(Authority::Client(Random::generate_random(), sign::gen_keypair().0));
+    }
 
     #[test]
     fn our_authority_full_routing_table() {
