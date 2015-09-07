@@ -33,7 +33,7 @@ pub enum ResponseError {
     /// if received by routing, it will drop the state.
     Abort,
     /// On low balance or no account registered
-    LowBalance(u32),
+    LowBalance(Data, u32),
     /// invalid request
     InvalidRequest(Data),
     /// failure to complete request for data
@@ -52,7 +52,7 @@ impl error::Error for ResponseError {
     fn description(&self) -> &str {
         match *self {
             ResponseError::Abort => "Abort",
-            ResponseError::LowBalance(_) => "LowBalance",
+            ResponseError::LowBalance(_, _) => "LowBalance",
             ResponseError::InvalidRequest(_) => "Invalid request",
             ResponseError::FailedRequestForData(_) => "Failed request for data",
             ResponseError::HadToClearSacrificial(_, _) => "Had to clear Sacrificial data to
@@ -69,7 +69,7 @@ impl fmt::Display for ResponseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ResponseError::Abort => fmt::Display::fmt("ResponseError::Abort", f),
-            ResponseError::LowBalance(_) => fmt::Display::fmt("ResponseError::LowBalance", f),
+            ResponseError::LowBalance(_, _) => fmt::Display::fmt("ResponseError::LowBalance", f),
             ResponseError::InvalidRequest(_) =>
                 fmt::Display::fmt("ResponsError::InvalidRequest", f),
             ResponseError::FailedRequestForData(_) =>
