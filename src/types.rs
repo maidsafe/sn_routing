@@ -154,25 +154,24 @@ mod test {
     use sodiumoxide::crypto::sign;
     use utils;
 
-//    fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
-//        let mut e = cbor::Encoder::from_memory();
-//        e.encode(&[&obj_before]).unwrap();
-//        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-//        let obj_after: T = d.decode().next().unwrap().unwrap();
-//        assert_eq!(obj_after == obj_before, true)
-//
-//    }
-//
-//    #[test]
-//    fn test_authority() {
-//        test_object(Authority::ClientManager(Random::generate_random()));
-//        test_object(Authority::NaeManager(Random::generate_random()));
-//        test_object(Authority::NodeManager(Random::generate_random()));
-//        test_object(Authority::ManagedNode);
-//        test_object(Authority::Client(sign::gen_keypair().0));
-//        test_object(Authority::Unknown);
-//    }
-//
+    fn test_object<T>(obj_before : T) where T: for<'a> Encodable + Decodable + Eq {
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: T = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_after == obj_before, true)
+
+    }
+
+    #[test]
+    fn test_authority() {
+        test_object(Authority::ClientManager(Random::generate_random()));
+        test_object(Authority::NaeManager(Random::generate_random()));
+        test_object(Authority::NodeManager(Random::generate_random()));
+        test_object(Authority::ManagedNode(Random::generate_random()));
+        test_object(Authority::Client(Random::generate_random(), sign::gen_keypair().0));
+    }
+
 //    #[test]
 //    fn test_destination_address() {
 //        test_object(DestinationAddress::Direct(Random::generate_random()));
