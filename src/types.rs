@@ -172,16 +172,6 @@ mod test {
         test_object(Authority::Client(Random::generate_random(), sign::gen_keypair().0));
     }
 
-//    #[test]
-//    fn test_destination_address() {
-//        test_object(DestinationAddress::Direct(Random::generate_random()));
-//    }
-//
-//    #[test]
-//    fn test_source_address() {
-//        test_object(SourceAddress::Direct(Random::generate_random()));
-//    }
-
     #[test]
     fn serialisation_public_id() {
         let obj_before = PublicId::generate_random();
