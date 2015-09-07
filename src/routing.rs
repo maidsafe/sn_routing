@@ -27,7 +27,7 @@ use messages::SignedToken;
 use routing_node::RoutingNode;
 use NameType;
 use data::{Data, DataRequest};
-use types::Bytes;
+use types::{Bytes, CacheOptions};
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use sodiumoxide::crypto;
@@ -152,6 +152,12 @@ impl Routing {
         let _ = self.action_sender.send(Action::SendContent(
                 Authority::NaeManager(from_group.clone()), Authority::NaeManager(from_group),
                 Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
+
+    }
+
+    /// Dynamically enable/disable caching for Data types.
+    pub fn set_cache_options(&self, cache_options: CacheOptions) {
+        let _ = self.action_sender.send(Action::SetCacheOptions(cache_options));
 
     }
 

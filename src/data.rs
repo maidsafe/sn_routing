@@ -49,6 +49,7 @@ impl Data {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum DataRequest {
+    // (Identifier, TypeTag) pair for name resolution.
     StructuredData(NameType, u64),
     ImmutableData(NameType, ImmutableDataType),
     PlainData(NameType),

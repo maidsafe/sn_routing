@@ -259,7 +259,7 @@ impl RoutingCore {
     pub fn get_unknown_endpoint(&mut self, endpoint: &Endpoint)-> bool {
         self.unknown_connection_map.remove(endpoint).is_some()
     }
-    
+    // clear timed out endpoints and return to be removed from crust::connection_manager 
     fn clear_old_endpoints(&mut self)-> Option<Vec<Endpoint>> {
         let timed_out: Vec<_> = self.unknown_connection_map
          .iter()
@@ -302,6 +302,7 @@ impl RoutingCore {
                                     };
                                     info!("RT({:?}) added {:?}", routing_table.size(),
                                         routing_name);                                };
+                                
                                 if added && trigger_churn {
                                     let our_close_group = routing_table.our_close_group();
                                     let mut close_group : Vec<NameType> = our_close_group.iter()
