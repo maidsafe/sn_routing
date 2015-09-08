@@ -93,9 +93,10 @@ struct Args {
 
 ////////////////////////////////////////////////////////////////////////////////
 struct Node {
-    routing  : Routing,
-    receiver : Receiver<Event>,
-    db       : BTreeMap<NameType, PlainData>,
+    routing: Routing,
+    receiver: Receiver<Event>,
+    db: BTreeMap<NameType, PlainData>,
+    client_accounts: BTreeMap<::sodiumoxide::crypto::sign::PublicKey, u64>,
 }
 
 impl Node {
@@ -104,9 +105,10 @@ impl Node {
         let routing = Routing::new(sender);
 
         Node {
-            routing  : routing,
-            receiver : receiver,
-            db       : BTreeMap::new(),
+            routing: routing,
+            receiver: receiver,
+            db: BTreeMap::new(),
+            client_accounts: BTreeMap::new(),
         }
     }
 
@@ -120,7 +122,7 @@ impl Node {
                 }
             };
 
-            println!("Node: Received event {:?}", event);
+            info!("Node: Received event {:?}", event);
 
             match event {
                 Event::Request{request,
@@ -186,7 +188,7 @@ impl Node {
 
     fn handle_put_request(&mut self, data            : Data,
                                      our_authority   : Authority,
-                                     _from_authority : Authority,
+                                     from_authority : Authority,
                                      _response_token : Option<SignedToken>) {
         let plain_data = match data.clone() {
             Data::PlainData(plain_data) => plain_data,
@@ -199,9 +201,22 @@ impl Node {
                 let _ = self.db.insert(plain_data.name(), plain_data);
             },
             Authority::ClientManager(_) => {
-                debug!("Sending: key {:?}, value {:?}", plain_data.name(), plain_data);
-                self.routing.put_request(
-                    our_authority, Authority::NaeManager(plain_data.name()), data); 
+                match from_authority {
+                    ::routing::authority::Authority::Client(_, public_key) => {
+                        *self.client_accounts.entry(public_key)
+                            .or_insert(0u64) += data.payload_size() as u64;
+                        println!("Client ({:?}) stored {:?} bits", public_key,
+                            self.client_accounts.get(&public_key));
+                        debug!("Sending: key {:?}, value {:?}", plain_data.name(), plain_data);
+                        self.routing.put_request(
+                            our_authority, Authority::NaeManager(plain_data.name()), data);
+                    },
+                    _ => {
+                        println!("Node: Unexpected from_authority ({:?})", from_authority);
+                        assert!(false);
+                    },
+                };
+
             },
             _ => {
                 println!("Node: Unexpected our_authority ({:?})", our_authority);
