@@ -1,5 +1,6 @@
 // Copyright 2015 MaidSafe.net limited.
 //
+//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -15,25 +16,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub mod node;
-pub mod client;
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+extern crate routing;
 
-mod random_trait;
-mod types_util;
-mod messages_util;
-
-pub use self::node::*;
-pub use self::client::*;
-pub use self::random_trait::*;
-pub use self::types_util::*;
-pub use self::messages_util::*;
-
-use NameType;
-
-pub fn xor(lhs: &NameType, rhs: &NameType) -> NameType {
-    let mut result = NameType::new([0u8; 64]);
-    for i in 0..lhs.0.len() {
-        result.0[i] = lhs.0[i] ^ rhs.0[i];
-    }
-    result
+/// Run a routing node.
+pub fn main () {
+    ::env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));
+    ::routing::test_utils::node::Node::new().run();
 }

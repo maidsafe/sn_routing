@@ -38,3 +38,9 @@ name = "key_value_store"
 path = "examples/key_value_store.rs"
 test = true
 bench = false
+
+[[bin]]
+name = "node"
+path = "tests/node.rs"
+test = true
+bench = false

@@ -167,3 +167,40 @@ impl Routing {
         let _ = self.action_sender.send(Action::Terminate);
     }
 }
+
+
+#[cfg(test)]
+mod test {
+
+    extern crate env_logger;
+
+    use super::*;
+    use std::sync::mpsc;
+    use std::thread::{spawn, sleep_ms};
+    use event::Event;
+    use data::{Data, DataRequest};
+    use std::collections::BTreeMap;
+    use name_type::NameType;
+    use messages::{ExternalRequest, SignedToken}; //, ExternalResponse, InternalRequest, Content};
+    use authority::Authority;
+    use test_utils::node::Node;
+
+    pub struct RoutingNetwork;
+
+    impl RoutingNetwork {
+
+        fn new(size: usize) -> RoutingNetwork {
+            env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));
+
+            let node = || { let _ = spawn(move || { Node::new().run(); }); };
+            for _ in 0..size { node(); sleep_ms(1000); }
+
+            RoutingNetwork
+        }
+    }
+
+    #[test]
+    fn create_nodes() {
+        let _ = RoutingNetwork::new(10usize);
+    }
+}
