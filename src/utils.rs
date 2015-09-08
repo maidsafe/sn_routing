@@ -77,10 +77,13 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<NameType>,
 
 #[cfg(test)]
 mod test {
+    use NameType;
+    use utils;
     use std::cmp;
     use name_type::closer_to_target;
     use types::GROUP_SIZE;
-    use utils;
+    use sodiumoxide::crypto;
+    use test_utils::Random;
 
     #[test]
     fn calculate_relocated_name() {
