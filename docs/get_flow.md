@@ -12,20 +12,20 @@ If there is no data stored, it will reply with an error (routing ensures the fai
 
 ### Get(N)
 _Client_  *->> |__DataManager__  (Primary, Backup, Sacrificial) [Exist(name) ? So : Terminate_Flow]
-          *->  |_PmidNode_ [Has(name) ? Reply(data) : Terminate_Flow]
+          *->  |_PmidNode_ [Has(name) ? GetResponse(data) : Terminate_Flow]
+          *->> |__DataManager__ { [Value.Pmids.Count <= Threshold ? Replicate(D) ],
+                                  [OriginalClientRequestExists(name) ? Reply(data) ],
+                                  [HavingUnRespondedGetRequest ? GetFailure ] }
 
 Note : name is N which is Hash(D) for Primary copy, is Hash(N) for Backup copy and is Hash(Hash(N)) for Sacrificial copy
        data is Primary or Backup or Sacrificial copy
 
 
 --
-##### PmidNode::PutFailure
-_PmidNode_ ->> |__DataManager__ { [Value.Pmids.Count <= Threshold ? Replicate(D) ],
-                                  RemovePmid.Sy,
-                                  [[LyingPmidNode ? CorrectionToPmidManager.So], DownRank(PN)] }
+##### GetFailure
+__DataManager__  *->> |__PmidManager__ [HasAccount(pmid_node) ? deduct_from_account(pmid_node, size)]
 
 
 --
-<dd>Description: Get D from TempStore or network, then PutRequest(D).</ddt>
 ##### DataManager::Replicate
 __DataManager__ ([!TempStoreHas(D) ? NetworkGet(D)])(PutRequest.So(D))
