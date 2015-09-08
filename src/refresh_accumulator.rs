@@ -17,17 +17,16 @@
 
 use lru_time_cache::LruCache;
 use std::collections::BTreeMap;
-use NameType;
 
 type Map<K,V> = BTreeMap<K,V>;
 pub type Bytes = Vec<u8>;
 //                     +-> Source and target group
 //                     |
-pub type Request = (NameType, u64);
+pub type Request = (::authority::Authority, u64);
 pub struct RefreshAccumulator {
     //                                 +-> Who sent it
     //                                 |
-    requests: LruCache<Request, Map<NameType, Bytes>>,
+    requests: LruCache<Request, Map<::NameType, Bytes>>,
 }
 
 const MAX_REQUEST_COUNT: usize = 1000;
@@ -41,8 +40,8 @@ impl RefreshAccumulator {
     pub fn add_message(&mut self,
                        threshold: usize,
                        type_tag: u64,
-                       sender_node: NameType,
-                       sender_group: NameType,
+                       sender_node: ::NameType,
+                       sender_group: ::authority::Authority,
                        payload: Bytes)
                        -> Option<Vec<Bytes>> {
         let request = (sender_group, type_tag);

@@ -1120,11 +1120,11 @@ impl RoutingNode {
                                  our_authority: Authority) -> RoutingResult {
         debug_assert!(our_authority.is_group());
         let threshold = self.group_threshold();
-        let group_name = our_authority.get_location().clone();
         match self.refresh_accumulator.add_message(threshold,
-            type_tag.clone(), sender, group_name.clone(), payload){
+            type_tag.clone(), sender, our_authority.clone(), payload){
             Some(vec_of_bytes) => {
-                let _ = self.event_sender.send(Event::Refresh(type_tag, group_name, vec_of_bytes));
+                let _ = self.event_sender.send(Event::Refresh(type_tag, our_authority,
+                    vec_of_bytes));
             },
             None => {},
         };
@@ -1164,13 +1164,13 @@ impl RoutingNode {
                 None => self.data_cache =
                     Some(LruCache::<NameType, Data>::with_expiry_duration(Duration::minutes(10))),
                 Some(_) => {},
-            }    
+            }
         } else {
             self.data_cache = None;
         }
     }
 
-    fn handle_cache_put(&mut self, message: &RoutingMessage) {  
+    fn handle_cache_put(&mut self, message: &RoutingMessage) {
         match self.data_cache {
             Some(ref mut data_cache) => {
                 match message.content.clone() {
@@ -1208,7 +1208,7 @@ impl RoutingNode {
             },
             None => {}
         }
-            
+
     }
 
     fn handle_cache_get(&mut self, message: &RoutingMessage) -> Option<Content> {
