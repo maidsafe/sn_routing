@@ -454,12 +454,12 @@ impl RoutingNode {
         // Accumulate message
         let (message, opt_token) = match self.accumulate(&signed_message) {
             Some((message, opt_token)) => {
-                self.filter.block(&message);
                 (message, opt_token) },
-            None => return Ok(()),
+            None => return Err(::error::RoutingError::NotEnoughSignatures),
         };
 
-        match message.content {
+        let mut message_digest = ::filter::Filter::message_digest(&message);
+        let result = match message.content {
             Content::InternalRequest(request) => {
                 match request {
                     InternalRequest::RequestNetworkName(_) => {
@@ -488,6 +488,9 @@ impl RoutingNode {
                             },
                             None => return Err(RoutingError::BadAuthority),
                         };
+                        // FIXME (ben 8/09/2015) Exclude refresh message from being blocked
+                        // after succesful resolution
+                        message_digest = None;
                         match *signed_message.claimant() {
                             // TODO (ben 23/08/2015) later consider whether we need to restrict it
                             // to only from nodes within our close group
@@ -523,6 +526,23 @@ impl RoutingNode {
                 self.handle_external_response(response, message.to_authority,
                     message.from_authority)
             }
+        };
+
+        match message_digest {
+            Some(digest) => {
+                match result {
+                    Ok(()) => {
+                        self.filter.block(digest);
+                        Ok(())
+                    },
+                    Err(RoutingError::UnknownMessageType) => {
+                        self.filter.block(digest);
+                        Err(RoutingError::UnknownMessageType)
+                    },
+                    Err(e) => Err(e),
+                }
+            },
+            None => Err(RoutingError::FilterCheckFailed),
         }
     }
 
@@ -550,7 +570,10 @@ impl RoutingNode {
         let skip_accumulator = match message.content {
             Content::InternalRequest(ref request) => {
                 match *request {
-                    InternalRequest::Refresh(_, _) => true,
+                    InternalRequest::Refresh(_, _) => {
+                        println!("SKIPPED ACCUMULATOR FOR REFRESH");
+                        true
+                    },
                     _ => false,
                 }
             },
@@ -1121,14 +1144,14 @@ impl RoutingNode {
         debug_assert!(our_authority.is_group());
         let threshold = self.group_threshold();
         match self.refresh_accumulator.add_message(threshold,
-            type_tag.clone(), sender, our_authority.clone(), payload){
+            type_tag.clone(), sender, our_authority.clone(), payload) {
             Some(vec_of_bytes) => {
                 let _ = self.event_sender.send(Event::Refresh(type_tag, our_authority,
                     vec_of_bytes));
+                Ok(())
             },
-            None => {},
-        };
-        Ok(())
+            None => Err(::error::RoutingError::NotEnoughSignatures),
+        }
     }
 
     // ------ FIXME -------------------------------------------------------------------------------
