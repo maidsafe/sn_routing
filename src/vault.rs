@@ -324,9 +324,10 @@ impl Vault {
             },
             _ => {}
         }
-        let returned_actions = match response.clone() {
+        let returned_actions = match (from_authority, response.clone()) {
             // GetResponse used by DataManager to replicate data to new PN
-            Data::ImmutableData(_) => self.data_manager.handle_get_response(response),
+            (Authority::ManagedNode(pmid_node), Data::ImmutableData(_)) =>
+                self.data_manager.handle_get_response(pmid_node, response),
             _ => vec![]
         };
         self.send(our_authority, returned_actions, response_token, None, None);
@@ -344,6 +345,13 @@ impl Vault {
                 self.pmid_manager.handle_put_response(&pmid_node, response),
             Authority::NodeManager(pmid_node) =>
                 self.data_manager.handle_put_response(response, &pmid_node),
+            Authority::NaeManager(_) => {
+                match our_authority {
+                    Authority::NodeManager(pmid_node) =>
+                        self.pmid_manager.handle_get_failure_notification(&pmid_node, response),
+                    _ => vec![]
+                }
+            }
             _ => vec![]
         };
         self.send(our_authority, fowarding_calls, response_token, None, None);

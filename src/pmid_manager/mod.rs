@@ -61,6 +61,17 @@ impl PmidManager {
         vec![]
     }
 
+    pub fn handle_get_failure_notification(&mut self, from_address: &NameType,
+                                           response: ResponseError) -> Vec<MethodCall> {
+        match response {
+            ResponseError::FailedRequestForData(data) => {
+                self.db_.delete_data(from_address, data.payload_size() as u64);
+            },
+            _ => {}
+        }
+        vec![]
+    }
+
     pub fn handle_account_transfer(&mut self, merged_account: PmidManagerAccountWrapper) {
         self.db_.handle_account_transfer(&merged_account);
     }
