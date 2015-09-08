@@ -35,6 +35,15 @@ pub fn median(mut values: Vec<u64>) -> u64 {
 }
 
 #[cfg(test)]
+pub fn random_name() -> ::routing::NameType {
+    // TODO - once Routing provides either a compile-time value for `NameType`'s length or exposes
+    // `NameType::generate_random()` this should be used here.  Issue reported at
+    // https://github.com/maidsafe/routing/issues/674
+    ::routing::NameType(::routing::types::vector_as_u8_64_array(
+        ::routing::types::generate_random_vec_u8(64)))
+}
+
+#[cfg(test)]
 mod test {
     use super::*;
 

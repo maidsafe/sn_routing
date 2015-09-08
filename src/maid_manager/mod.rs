@@ -19,59 +19,54 @@
 
 mod database;
 
-use routing_types::*;
+pub use self::database::Account;
 
-pub use self::database::{MaidManagerAccountWrapper, MaidManagerAccount};
-
-type Address = NameType;
+type Address = ::routing::NameType;
 
 pub struct MaidManager {
-    db_ : database::MaidManagerDatabase
+    database : database::MaidManagerDatabase
 }
 
 impl MaidManager {
     pub fn new() -> MaidManager {
         MaidManager {
-            db_: database::MaidManagerDatabase::new()
+            database: database::MaidManagerDatabase::new()
         }
     }
 
-    pub fn handle_put(&mut self, from: &NameType, data: Data) -> Vec<MethodCall> {
-        if self.db_.put_data(from, data.payload_size() as u64) {
-            vec![MethodCall::Put { location: Authority::NaeManager(data.name()), content: data }]
+    pub fn handle_put(&mut self, from: &::routing::NameType, data: ::routing::data::Data) -> Vec<::types::MethodCall> {
+        if self.database.put_data(from, data.payload_size() as u64) {
+            vec![::types::MethodCall::Put { location: ::routing::authority::Authority::NaeManager(data.name()), content: data }]
         } else {
-            vec![MethodCall::NotEnoughAllowance]
+            vec![::types::MethodCall::NotEnoughAllowance]
         }
     }
 
-    pub fn handle_account_transfer(&mut self, merged_account: MaidManagerAccountWrapper) {
-        self.db_.handle_account_transfer(&merged_account);
+    pub fn handle_account_transfer(&mut self, merged_account: Account) {
+        self.database.handle_account_transfer(merged_account);
     }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<MethodCall> {
-        self.db_.retrieve_all_and_reset()
+    pub fn retrieve_all_and_reset(&mut self) -> Vec<::types::MethodCall> {
+        self.database.retrieve_all_and_reset()
     }
-
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
 
-    use routing_types::*;
-
     #[test]
     fn handle_put() {
         let mut maid_manager = MaidManager::new();
-        let from = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
-        let value = generate_random_vec_u8(1024);
-        let data = ImmutableData::new(ImmutableDataType::Normal, value);
-        let put_result = maid_manager.handle_put(&from, Data::ImmutableData(data.clone()));
+        let from = ::utils::random_name();
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+        let put_result = maid_manager.handle_put(&from, ::routing::data::Data::ImmutableData(data.clone()));
         assert_eq!(put_result.len(), 1);
         match put_result[0] {
-            MethodCall::Put { ref location, ref content } => {
-                assert_eq!(*location, Authority::NaeManager(data.name()));
-                assert_eq!(*content, Data::ImmutableData(data));
+            ::types::MethodCall::Put { ref location, ref content } => {
+                assert_eq!(*location, ::routing::authority::Authority::NaeManager(data.name()));
+                assert_eq!(*content, ::routing::data::Data::ImmutableData(data));
             }
             _ => panic!("Unexpected"),
         }
@@ -80,9 +75,10 @@ mod test {
     #[test]
     fn handle_account_transfer() {
         let mut maid_manager = MaidManager::new();
-        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
-        let account_wrapper = MaidManagerAccountWrapper::new(name.clone(), MaidManagerAccount::new());
-        maid_manager.handle_account_transfer(account_wrapper);
-        assert_eq!(maid_manager.db_.exist(&name), true);
+        let name = ::utils::random_name();
+        let account = Account::new(name.clone(),
+            super::database::AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>()));
+        maid_manager.handle_account_transfer(account);
+        assert_eq!(maid_manager.database.exist(&name), true);
     }
 }

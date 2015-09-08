@@ -47,17 +47,17 @@ extern crate rand;
 extern crate lru_time_cache;
 extern crate routing;
 
+mod chunk_store;
 mod data_manager;
+mod macros;
 mod maid_manager;
 mod pmid_manager;
-mod sd_manager;
-mod chunk_store;
 mod pmid_node;
+mod sd_manager;
 mod transfer_parser;
-mod vault;
+mod types;
 mod utils;
-mod routing_types;
-mod macros;
+mod vault;
 
 #[cfg(feature = "use-mock-routing")]
 mod non_networking_test_framework;

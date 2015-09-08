@@ -59,49 +59,49 @@ impl MockRouting {
     }
 
     // -----------  the following methods are for testing purpose only   ------------- //
-    pub fn client_get(&mut self, client_address: NameType,
-                      client_pub_key: crypto::sign::PublicKey, data_request: DataRequest) {
+    pub fn client_get(&mut self, client_address: ::routing::NameType,
+                      client_pub_key: crypto::sign::PublicKey, data_request: ::routing::data::DataRequest) {
         let name = match data_request {
-            DataRequest::ImmutableData(name, _) => name,
-            DataRequest::StructuredData(name, _) => name,
+            ::routing::data::DataRequest::ImmutableData(name, _) => name,
+            ::routing::data::DataRequest::StructuredData(name, _) => name,
             _ => panic!("unexpected")
         };
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Get(data_request, 0),
-                                                       our_authority: Authority::NaeManager(name),
-                                                       from_authority: Authority::Client(client_address, client_pub_key),
+                                                       our_authority: ::routing::authority::Authority::NaeManager(name),
+                                                       from_authority: ::routing::authority::Authority::Client(client_address, client_pub_key),
                                                        response_token: None });
         });
     }
 
-    pub fn client_put(&mut self, client_address: NameType,
+    pub fn client_put(&mut self, client_address: ::routing::NameType,
                       client_pub_key: crypto::sign::PublicKey, data: Data) {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
             let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Put(data),
-                                                       our_authority: Authority::ClientManager(client_address),
-                                                       from_authority: Authority::Client(client_address, client_pub_key),
+                                                       our_authority: ::routing::authority::Authority::ClientManager(client_address),
+                                                       from_authority: ::routing::authority::Authority::Client(client_address, client_pub_key),
                                                        response_token: None });
         });
     }
 
-    pub fn client_post(&mut self, client_address: NameType,
+    pub fn client_post(&mut self, client_address: ::routing::NameType,
                        client_pub_key: crypto::sign::PublicKey, data: Data) {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
             let _ = cloned_sender.send(Event::Request{ request: ExternalRequest::Post(data.clone()),
-                                                       our_authority: Authority::NaeManager(data.name()),
-                                                       from_authority: Authority::Client(client_address, client_pub_key),
+                                                       our_authority: ::routing::authority::Authority::NaeManager(data.name()),
+                                                       from_authority: ::routing::authority::Authority::Client(client_address, client_pub_key),
                                                        response_token: None });
         });
     }
 
-    pub fn churn_event(&mut self, nodes: Vec<NameType>) {
+    pub fn churn_event(&mut self, nodes: Vec<::routing::NameType>) {
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             let _ = cloned_sender.send(Event::Churn(nodes));
@@ -115,19 +115,19 @@ impl MockRouting {
     pub fn get_response(&self, our_authority  : Authority,
                                location       : Authority,
                                data           : Data,
-                               data_request   : DataRequest,
+                               data_request   : ::routing::data::DataRequest,
                                response_token : Option<::routing::SignedToken>) {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let cloned_client_sender = self.client_sender.clone();
         let _ = ::std::thread::spawn(move || {
             match location.clone() {
-                Authority::NaeManager(_) => {
+                ::routing::authority::Authority::NaeManager(_) => {
                     let _ = cloned_sender.send(Event::Response{ response: ExternalResponse::Get(data.clone(), data_request, response_token),
                                                                 our_authority: location,
                                                                 from_authority: our_authority });
                 },
-                Authority::Client(_, _) => {
+                ::routing::authority::Authority::Client(_, _) => {
                     let _ = cloned_client_sender.send(data);
                 },
                 _ => {}
@@ -135,7 +135,7 @@ impl MockRouting {
         });
     }
 
-    pub fn get_request(&self, our_authority : Authority, location: Authority, request_for: DataRequest) {
+    pub fn get_request(&self, our_authority : Authority, location: Authority, request_for: ::routing::data::DataRequest) {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
@@ -162,7 +162,7 @@ impl MockRouting {
     pub fn put_response(&self,
                         our_authority: Authority,
                         location: Authority,
-                        response_error: ResponseError,
+                        response_error: ::routing::error::ResponseError,
                         signed_token: Option<::routing::SignedToken>) {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
@@ -174,7 +174,7 @@ impl MockRouting {
         });
     }
 
-    pub fn refresh_request(&self, type_tag: u64, from_group: NameType, content: Vec<u8>) {
+    pub fn refresh_request(&self, type_tag: u64, from_group: ::routing::NameType, content: Vec<u8>) {
         // routing is expected to accumulate the refresh requests
         // for the same group into one event request to vault
         let delay_ms = self.network_delay_ms;

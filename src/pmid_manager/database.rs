@@ -22,106 +22,83 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
 
 use transfer_parser::transfer_tags::PMID_MANAGER_ACCOUNT_TAG;
-use routing_types::*;
 use utils;
 
-type Identity = NameType; // pmidnode address
+pub type PmidNodeName = ::routing::NameType;
 
-/// PmidManagerAccountWrapper implemets the sendable trait from routing, thus making it transporatble
-/// across through the routing layer
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
-pub struct PmidManagerAccountWrapper {
-    name: Identity,
-    account: PmidManagerAccount
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
+pub struct Account {
+    name: PmidNodeName,
+    value: AccountValue,
 }
 
-impl PmidManagerAccountWrapper {
-    pub fn new(name: NameType, account: PmidManagerAccount) -> PmidManagerAccountWrapper {
-        PmidManagerAccountWrapper {
+impl Account {
+    pub fn new(name: PmidNodeName, value: AccountValue) -> Account {
+        Account {
             name: name,
-            account: account
+            value: value,
         }
     }
 
-    pub fn get_account(&self) -> PmidManagerAccount {
-        self.account.clone()
+    pub fn name(&self) -> &PmidNodeName {
+        &self.name
+    }
+
+    pub fn value(&self) -> &AccountValue {
+        &self.value
     }
 }
 
-impl Clone for PmidManagerAccountWrapper {
-    fn clone(&self) -> Self {
-        PmidManagerAccountWrapper::new(self.name.clone(), self.account.clone())
-    }
-}
-
-impl Sendable for PmidManagerAccountWrapper {
-    fn name(&self) -> Identity {
-        self.name.clone()
-    }
-
-    fn type_tag(&self) -> u64 {
-        PMID_MANAGER_ACCOUNT_TAG
-    }
-
-    fn serialised_contents(&self) -> Vec<u8> {
-        match ::routing::utils::encode(&self) {
-            Ok(result) => result,
-            Err(_) => Vec::new()
+impl ::types::Refreshable for Account {
+    fn merge(from_group: ::routing::NameType,
+              responses: Vec<Account>) -> Option<Account> {
+        let mut stored_total_size: Vec<u64> = Vec::new();
+        let mut lost_total_size: Vec<u64> = Vec::new();
+        let mut offered_space: Vec<u64> = Vec::new();
+        for response in responses {
+            let account = match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
+                Ok(result) => {
+                    if *result.name() != from_group {
+                        continue;
+                    }
+                    result
+                },
+                Err(_) => continue,
+            };
+            stored_total_size.push(account.value().stored_total_size());
+            lost_total_size.push(account.value().lost_total_size());
+            offered_space.push(account.value().offered_space());
         }
-    }
-
-    fn refresh(&self)->bool {
-        true
-    }
-
-    fn merge(&self, responses: Vec<Box<Sendable>>) -> Option<Box<Sendable>> {
-        let mut offered_space: Vec<u64> = Vec::with_capacity(responses.len());
-        let mut lost_total_size: Vec<u64> = Vec::with_capacity(responses.len());
-        let mut stored_total_size: Vec<u64> = Vec::with_capacity(responses.len());
-
-        for value in responses {
-            let wrapper = match ::routing::utils::decode::<PmidManagerAccountWrapper>(
-                &value.serialised_contents()) {
-                    Ok(result) => result,
-                    Err(_) => { continue }
-                };
-            offered_space.push(wrapper.get_account().get_offered_space());
-            lost_total_size.push(wrapper.get_account().get_lost_total_size());
-            stored_total_size.push(wrapper.get_account().get_stored_total_size());
-        }
-        Some(Box::new(PmidManagerAccountWrapper::new(self.name.clone(), PmidManagerAccount {
-            offered_space : utils::median(offered_space),
-            lost_total_size: utils::median(lost_total_size),
-            stored_total_size: utils::median(stored_total_size)
-        })))
+        Some(Account::new(from_group, AccountValue::new(utils::median(stored_total_size),
+                                                        utils::median(lost_total_size),
+                                                        utils::median(offered_space))))
     }
 }
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug)]
-pub struct PmidManagerAccount {
-  stored_total_size : u64,
-  lost_total_size : u64,
-  offered_space : u64
+
+
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
+pub struct AccountValue {
+    stored_total_size : u64,
+    lost_total_size : u64,
+    offered_space : u64
 }
 
-impl Clone for PmidManagerAccount {
-    fn clone(&self) -> Self {
-        PmidManagerAccount {
-            stored_total_size : self.stored_total_size,
-            lost_total_size : self.lost_total_size,
-            offered_space : self.offered_space
-        }
+impl Default for AccountValue {
+    // FIXME: to bypass the AccountCreation process for simple network, capacity is assumed automatically
+    fn default() -> AccountValue {
+        AccountValue { stored_total_size: 0, lost_total_size: 0, offered_space: 1073741824 }
     }
 }
 
-impl PmidManagerAccount {
-    pub fn new() -> PmidManagerAccount {
-    // FIXME : to bypass the AccountCreation process for simple network, capacity is assumed automatically
-        PmidManagerAccount { stored_total_size: 0, lost_total_size: 0, offered_space: 1073741824 }
+impl AccountValue {
+    pub fn new(stored_total_size: u64, lost_total_size: u64, offered_space: u64) -> AccountValue {
+        AccountValue { stored_total_size: stored_total_size, lost_total_size: lost_total_size,
+                       offered_space: offered_space }
     }
 
   // TODO: Always return true to allow pmid_node carry out removal of Sacrificial copies
-  //       Otherwise PmidManagerAccount need to remember storage info of Primary, Backup and Sacrificial
+  //       Otherwise AccountValue need to remember storage info of Primary, Backup and Sacrificial
   //       copies separately to trigger an early alert
     pub fn put_data(&mut self, size : u64) -> bool {
         // if (self.stored_total_size + size) > self.offered_space {
@@ -161,21 +138,21 @@ impl PmidManagerAccount {
         self.lost_total_size += diff_size;
     }
 
-    pub fn get_offered_space(&self) -> u64 {
-        self.offered_space.clone()
+    pub fn stored_total_size(&self) -> u64 {
+        self.stored_total_size
     }
 
-    pub fn get_lost_total_size(&self) -> u64 {
-        self.lost_total_size.clone()
+    pub fn lost_total_size(&self) -> u64 {
+        self.lost_total_size
     }
 
-    pub fn get_stored_total_size(&self) -> u64 {
-        self.stored_total_size.clone()
+    pub fn offered_space(&self) -> u64 {
+        self.offered_space
     }
 }
 
 pub struct PmidManagerDatabase {
-  storage : collections::HashMap<Identity, PmidManagerAccount>,
+  storage : collections::HashMap<PmidNodeName, AccountValue>,
 }
 
 impl PmidManagerDatabase {
@@ -183,38 +160,39 @@ impl PmidManagerDatabase {
         PmidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
     }
 
-    pub fn exist(&mut self, name : &Identity) -> bool {
+    pub fn exist(&mut self, name : &PmidNodeName) -> bool {
         self.storage.contains_key(name)
     }
 
-    pub fn put_data(&mut self, name : &Identity, size: u64) -> bool {
-        let entry = self.storage.entry(name.clone()).or_insert(PmidManagerAccount::new());
+    pub fn put_data(&mut self, name : &PmidNodeName, size: u64) -> bool {
+        let default: AccountValue = Default::default();
+        let entry = self.storage.entry(name.clone()).or_insert(default);
         entry.put_data(size)
     }
 
-    pub fn delete_data(&mut self, name : &Identity, size: u64) {
-        let entry = self.storage.entry(name.clone()).or_insert(PmidManagerAccount::new());
+    pub fn delete_data(&mut self, name : &PmidNodeName, size: u64) {
+        let default: AccountValue = Default::default();
+        let entry = self.storage.entry(name.clone()).or_insert(default);
         entry.delete_data(size)
     }
 
-    pub fn handle_account_transfer(&mut self, account_wrapper : &PmidManagerAccountWrapper) {
+    pub fn handle_account_transfer(&mut self, merged_account: Account) {
         // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
-        let _ = self.storage.remove(&account_wrapper.name());
-        let _ = self.storage.insert(account_wrapper.name(), account_wrapper.get_account());
+        let _ = self.storage.remove(merged_account.name());
+        let _ = self.storage.insert(*merged_account.name(), merged_account.value().clone());
         info!("PmidManager updated account {:?} to {:?}",
-              account_wrapper.name(), account_wrapper.get_account());
+              merged_account.name(), merged_account.value());
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {
+    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<::routing::NameType>) -> Vec<::types::MethodCall> {
         let mut actions = Vec::with_capacity(self.storage.len());
         for (key, value) in self.storage.iter() {
             if close_group.iter().find(|a| **a == *key).is_some() {
-                let pmid_manager_wrapper =
-                    PmidManagerAccountWrapper::new((*key).clone(), (*value).clone());
+                let account = Account::new((*key).clone(), (*value).clone());
                 let mut encoder = cbor::Encoder::from_memory();
-                if encoder.encode(&[pmid_manager_wrapper.clone()]).is_ok() {
-                    actions.push(MethodCall::Refresh {
-                        type_tag: PMID_MANAGER_ACCOUNT_TAG, from_group: pmid_manager_wrapper.name(),
+                if encoder.encode(&[account.clone()]).is_ok() {
+                    actions.push(::types::MethodCall::Refresh {
+                        type_tag: PMID_MANAGER_ACCOUNT_TAG, from_group: *account.name(),
                         payload: encoder.as_bytes().to_vec()
                     });
                 }
@@ -230,15 +208,12 @@ impl PmidManagerDatabase {
 #[cfg(test)]
 mod test {
     use cbor;
-
-    use super::{PmidManagerDatabase, PmidManagerAccount, PmidManagerAccountWrapper};
-
-    use routing_types::*;
+    use super::*;
 
     #[test]
     fn exist() {
         let mut db = PmidManagerDatabase::new();
-        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
+        let name = ::utils::random_name();
         assert_eq!(db.exist(&name), false);
         db.put_data(&name, 1024);
         assert_eq!(db.exist(&name), true);
@@ -247,7 +222,7 @@ mod test {
     // #[test]
     // fn put_data() {
     //     let mut db = PmidManagerDatabase::new();
-    //     let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
+    //     let name = ::utils::random_name();
     //     assert_eq!(db.put_data(&name, 0), true);
     //     assert_eq!(db.exist(&name), true);
     //     assert_eq!(db.put_data(&name, 1), true);
@@ -262,26 +237,28 @@ mod test {
     #[test]
     fn handle_account_transfer() {
         let mut db = PmidManagerDatabase::new();
-        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
+        let name = ::utils::random_name();
         assert_eq!(db.put_data(&name, 1024), true);
         assert_eq!(db.exist(&name), true);
 
-        let pmidmanager_account_wrapper = PmidManagerAccountWrapper::new(name.clone(), PmidManagerAccount::new());
-        db.handle_account_transfer(&pmidmanager_account_wrapper);
-        assert_eq!(db.storage[&name].get_offered_space(), 1073741824);
-        assert_eq!(db.storage[&name].get_lost_total_size(), 0);
-        assert_eq!(db.storage[&name].get_stored_total_size(), 0);
+        let account_value = AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>(),
+                                              ::rand::random::<u64>());
+        let account = Account::new(name.clone(), account_value.clone());
+        db.handle_account_transfer(account);
+        assert_eq!(db.storage[&name], account_value);
     }
 
     #[test]
     fn pmid_manager_account_serialisation() {
-        let obj_before = PmidManagerAccount::new();
+        let obj_before = Account::new(::routing::NameType([1u8; 64]),
+            AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>(),
+                              ::rand::random::<u64>()));
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: PmidManagerAccount = d.decode().next().unwrap().unwrap();
+        let obj_after: Account = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);
     }
