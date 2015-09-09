@@ -34,13 +34,13 @@ pub static PARALLELISM: usize = 4;
 static LRU_CACHE_SIZE: usize = 1000;
 
 pub struct DataManager {
-    database: database::DataManagerDatabase,
+    database: database::Database,
     // the higher the index is, the slower the farming rate will be
     resource_index: u64,
     // key is pair of chunk_name and pmid_node, value is inserting time
-    on_going_gets: ::lru_time_cache::LruCache<(NameType, NameType), ::time::SteadyTime>,
+    on_going_gets: ::lru_time_cache::LruCache<(::routing::NameType, ::routing::NameType), ::time::SteadyTime>,
     // key is chunk_name and value is failing pmids
-    failed_pmids: ::lru_time_cache::LruCache<NameType, Vec<NameType>>
+    failed_pmids: ::lru_time_cache::LruCache<::routing::NameType, Vec<::routing::NameType>>
 }
 
 #[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
@@ -89,8 +89,7 @@ impl ::types::Refreshable for Stats {
 
 impl DataManager {
     pub fn new() -> DataManager {
-<<<<<<< HEAD
-        DataManager { database: database::DataManagerDatabase::new(), resource_index: 1,
+        DataManager { database: database::Database::new(), resource_index: 1,
                       on_going_gets: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
                       failed_pmids: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE) }
     }
@@ -163,15 +162,15 @@ impl DataManager {
       forwarding_calls
     }
 
-    pub fn handle_get_response(&mut self, ::routing::from: NameType, response: ::routing::data::Data) -> Vec<::types::MethodCall> {
+    pub fn handle_get_response(&mut self, from: ::routing::NameType, response: ::routing::data::Data) -> Vec<::types::MethodCall> {
         let _ = self.on_going_gets.remove(&(from.clone(), response.name()));
         let mut failure_notifications = Vec::new();
         match self.failed_pmids.remove(&response.name()) {
             Some(failed_pmids) => {
                 for failed_pmid in failed_pmids {
                     // TODO: utilize FailedPut here as currently ResponseError only has FailedRequestForData defined
-                    failure_notifications.push(MethodCall::FailedPut { location: Authority::NodeManager(failed_pmid),
-                                                                       data: response.clone() });
+                    failure_notifications.push(::types::MethodCall::FailedPut { location: ::routing::authority::Authority::NodeManager(failed_pmid),
+                                                                                data: response.clone() });
                 }
             },
             None => {}

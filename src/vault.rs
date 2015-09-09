@@ -337,9 +337,9 @@ impl Vault {
                 self.pmid_manager.handle_put_response(&pmid_node, response),
             ::routing::authority::Authority::NodeManager(pmid_node) =>
                 self.data_manager.handle_put_response(response, &pmid_node),
-            Authority::NaeManager(_) => {
+            ::routing::authority::Authority::NaeManager(_) => {
                 match our_authority {
-                    Authority::NodeManager(pmid_node) =>
+                    ::routing::authority::Authority::NodeManager(pmid_node) =>
                         self.pmid_manager.handle_get_failure_notification(&pmid_node, response),
                     _ => vec![]
                 }
