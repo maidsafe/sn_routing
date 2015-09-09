@@ -246,8 +246,9 @@ impl Node {
         // }
 
         for (client_name, stored) in self.client_accounts.iter() {
-            println!("REFRESH {:?} - {:?}", authority, stored);
-            self.routing.refresh_request(1u64, authority,
+            println!("REFRESH {:?} - {:?}", client_name, stored);
+            self.routing.refresh_request(1u64,
+                ::routing::authority::Authority::ClientManager(client_name),
                 encode(&stored).unwrap());
         }
         // self.db = BTreeMap::new();
