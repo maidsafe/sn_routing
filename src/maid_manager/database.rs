@@ -32,10 +32,7 @@ pub struct Account {
 
 impl Account {
     pub fn new(name: MaidNodeName, value: AccountValue) -> Account {
-        Account {
-            name: name,
-            value: value
-        }
+        Account { name: name, value: value }
     }
 
     pub fn name(&self) -> &MaidNodeName {
@@ -48,25 +45,26 @@ impl Account {
 }
 
 impl ::types::Refreshable for Account {
-    fn merge(from_group: ::routing::NameType,
-              responses: Vec<Account>) -> Option<Account> {
+    fn merge(from_group: ::routing::NameType, responses: Vec<Account>) -> Option<Account> {
         let mut data_stored: Vec<u64> = Vec::new();
         let mut space_available: Vec<u64> = Vec::new();
         for response in responses {
-            let account = match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
-                Ok(result) => {
-                    if *result.name() != from_group {
-                        continue;
+            let account =
+                match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
+                    Ok(result) => {
+                        if *result.name() != from_group {
+                            continue;
+                        }
+                        result
                     }
-                    result
-                },
-                Err(_) => continue,
-            };
+                    Err(_) => continue,
+                };
             data_stored.push(account.value().data_stored());
             space_available.push(account.value().space_available());
         }
-        Some(Account::new(from_group, AccountValue::new(utils::median(data_stored),
-                                                        utils::median(space_available))))
+        Some(Account::new(from_group,
+                          AccountValue::new(utils::median(data_stored),
+                                            utils::median(space_available))))
     }
 }
 
@@ -74,23 +72,24 @@ impl ::types::Refreshable for Account {
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct AccountValue {
-    data_stored : u64,
-    space_available : u64
+    data_stored: u64,
+    space_available: u64,
 }
 
 impl Default for AccountValue {
-    // FIXME: to bypass the AccountCreation process for simple network allowance is granted automatically
+    // FIXME: to bypass the AccountCreation process for simple network allowance is granted
+    // automatically
     fn default() -> AccountValue {
         AccountValue { data_stored: 0, space_available: 1073741824 }
     }
 }
 
 impl AccountValue {
-    pub fn new(data_stored : u64, space_available : u64) -> AccountValue {
+    pub fn new(data_stored: u64, space_available: u64) -> AccountValue {
         AccountValue { data_stored: data_stored, space_available: space_available }
     }
 
-    pub fn put_data(&mut self, size : u64) -> bool {
+    pub fn put_data(&mut self, size: u64) -> bool {
         if size > self.space_available {
             return false;
         }
@@ -100,7 +99,7 @@ impl AccountValue {
     }
 
     #[allow(dead_code)]
-    pub fn delete_data(&mut self, size : u64) {
+    pub fn delete_data(&mut self, size: u64) {
         if self.data_stored < size {
             self.space_available += self.data_stored;
             self.data_stored = 0;
@@ -111,7 +110,7 @@ impl AccountValue {
     }
 
     pub fn space_available(&self) -> u64 {
-      self.space_available
+        self.space_available
     }
 
     pub fn data_stored(&self) -> u64 {
@@ -125,8 +124,8 @@ pub struct MaidManagerDatabase {
 }
 
 impl MaidManagerDatabase {
-    pub fn new () -> MaidManagerDatabase {
-        MaidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
+    pub fn new() -> MaidManagerDatabase {
+        MaidManagerDatabase { storage: collections::HashMap::with_capacity(10000) }
     }
 
     pub fn put_data(&mut self, name: &MaidNodeName, size: u64) -> bool {
@@ -136,7 +135,6 @@ impl MaidManagerDatabase {
     }
 
     pub fn handle_account_transfer(&mut self, merged_account: Account) {
-        // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
         let _ = self.storage.remove(merged_account.name());
         let _ = self.storage.insert(*merged_account.name(), merged_account.value().clone());
         info!("MaidManager updated account {:?} to {:?}",
@@ -160,7 +158,7 @@ impl MaidManagerDatabase {
     }
 
     #[allow(dead_code)]
-    pub fn delete_data(&mut self, name : &MaidNodeName, size: u64) {
+    pub fn delete_data(&mut self, name: &MaidNodeName, size: u64) {
         match self.storage.get_mut(name) {
             Some(value) => value.delete_data(size),
             None => (),
@@ -238,7 +236,8 @@ mod test {
     #[test]
     fn maid_manager_account_serialisation() {
         let obj_before = Account::new(::routing::NameType([1u8; 64]),
-            AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>()));
+                                      AccountValue::new(::rand::random::<u64>(),
+                                                        ::rand::random::<u64>()));
 
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();

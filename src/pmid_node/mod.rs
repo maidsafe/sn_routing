@@ -18,36 +18,42 @@
 use chunk_store::ChunkStore;
 
 pub struct PmidNode {
-    chunk_store_ : ChunkStore
+    chunk_store_: ChunkStore,
 }
 
 impl PmidNode {
     pub fn new() -> PmidNode {
-        PmidNode { chunk_store_: ChunkStore::new(1073741824), } // TODO adjustable max_disk_space
+        PmidNode { chunk_store_: ChunkStore::new(1073741824) } // TODO adjustable max_disk_space
     }
 
-    pub fn handle_get(&self, name: ::routing::NameType) ->Vec<::types::MethodCall> {
+    pub fn handle_get(&self, name: ::routing::NameType) -> Vec<::types::MethodCall> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
             return vec![];
         }
         let sd: ::routing::immutable_data::ImmutableData = match ::routing::utils::decode(&data) {
             Ok(data) => data,
-            Err(_) => return vec![]
+            Err(_) => return vec![],
         };
         vec![::types::MethodCall::Reply { data: ::routing::data::Data::ImmutableData(sd) }]
     }
 
-    pub fn handle_put(&mut self, pmid_node: ::routing::NameType,
-                      incoming_data: ::routing::data::Data) -> Vec<::types::MethodCall> {
+    pub fn handle_put(&mut self,
+                      pmid_node: ::routing::NameType,
+                      incoming_data: ::routing::data::Data)
+                      -> Vec<::types::MethodCall> {
         info!("pmid_node {:?} storing {:?}", pmid_node, incoming_data.name());
         let immutable_data = match incoming_data.clone() {
-            ::routing::data::Data::ImmutableData(data) => { data }
-            _ => { return vec![]; }
+            ::routing::data::Data::ImmutableData(data) => {
+                data
+            }
+            _ => {
+                return vec![];
+            }
         };
         let data = match ::routing::utils::encode(&immutable_data) {
             Ok(data) => data,
-            Err(_) => return vec![]
+            Err(_) => return vec![],
         };
         let data_name_and_remove_sacrificial = match *immutable_data.get_type_tag() {
             ::routing::immutable_data::ImmutableDataType::Normal => (immutable_data.name(), true),
@@ -61,41 +67,50 @@ impl PmidNode {
         if !data_name_and_remove_sacrificial.1 {
             // For sacrifized data, just notify PmidManager to update the account
             // Replication shall not be carried out for it
-            return vec![::types::MethodCall::ClearSacrificial { location: ::routing::authority::Authority::NodeManager(pmid_node),
-                                                       name: incoming_data.name(),
-                                                       size: incoming_data.payload_size() as u32 }];
+            return vec![::types::MethodCall::ClearSacrificial {
+                location: ::routing::authority::Authority::NodeManager(pmid_node),
+                name: incoming_data.name(),
+                size: incoming_data.payload_size() as u32
+            }];
         }
-        let required_space = data.len() - (self.chunk_store_.max_disk_usage() - self.chunk_store_.current_disk_usage());
+        let required_space = data.len() -
+                             (self.chunk_store_.max_disk_usage() -
+                              self.chunk_store_.current_disk_usage());
         let names = self.chunk_store_.names();
         let mut returned_calls = vec![];
         let mut emptied_space = 0;
         for name in names.iter() {
             let fetched_data = self.chunk_store_.get(name.clone());
-            let parsed_data : ::routing::immutable_data::ImmutableData = match ::routing::utils::decode(&fetched_data) {
-                Ok(data) => data,
-                Err(_) => return vec![],
-            };
+            let parsed_data: ::routing::immutable_data::ImmutableData =
+                match ::routing::utils::decode(&fetched_data) {
+                    Ok(data) => data,
+                    Err(_) => return vec![],
+                };
             match *parsed_data.get_type_tag() {
                 ::routing::immutable_data::ImmutableDataType::Sacrificial => {
                     emptied_space += fetched_data.len();
                     self.chunk_store_.delete(name.clone());
-                    // For sacrifized data, just notify PmidManager to update the account
-                    // and DataManager need to adjust its farming rate, replication shall not be carried out for it
+                    // For sacrifized data, just notify PmidManager to update the account and
+                    // DataManager need to adjust its farming rate, replication shall not be carried
+                    // out for it
                     returned_calls.push(::types::MethodCall::ClearSacrificial {
-                            location: ::routing::authority::Authority::NodeManager(pmid_node.clone()),
-                            name: parsed_data.name(),
-                            size: parsed_data.payload_size() as u32 });
+                        location: ::routing::authority::Authority::NodeManager(pmid_node.clone()),
+                        name: parsed_data.name(),
+                        size: parsed_data.payload_size() as u32
+                    });
                     if emptied_space > required_space {
                         self.chunk_store_.put(data_name_and_remove_sacrificial.0, data);
                         return returned_calls;
                     }
-                },
+                }
                 _ => {}
             }
         }
         // Reduplication needs to be carried out
-        returned_calls.push(::types::MethodCall::FailedPut { location: ::routing::authority::Authority::NodeManager(pmid_node),
-                                                    data: incoming_data });
+        returned_calls.push(::types::MethodCall::FailedPut {
+            location: ::routing::authority::Authority::NodeManager(pmid_node),
+            data: incoming_data
+        });
         returned_calls
     }
 
@@ -109,10 +124,11 @@ mod test {
     fn handle_put_get() {
         let mut pmid_node = PmidNode::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+                          ::routing::immutable_data::ImmutableDataType::Normal, value);
         {
             let put_result = pmid_node.handle_put(::routing::NameType::new([0u8; 64]),
-                                                  ::routing::data::Data::ImmutableData(im_data.clone()));
+                                     ::routing::data::Data::ImmutableData(im_data.clone()));
             assert_eq!(put_result.len(), 0);
         }
         {
