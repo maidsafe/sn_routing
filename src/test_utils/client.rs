@@ -16,6 +16,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+extern crate time;
+
 pub struct Client {
     routing_client: ::routing_client::RoutingClient,
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
@@ -39,27 +41,50 @@ impl Client {
         }
     }
 
-    pub fn run(&mut self) {
-    }
+    pub fn run(&mut self) {}
 
     /// Get data from the network.
-    pub fn get(&mut self, request: ::data::DataRequest, location: Option<::authority::Authority>) {
-        let authority = match location {
-            Some(authority) => authority,
-            None => ::authority::Authority::NaeManager(request.name()),
-        };
+    pub fn get(&mut self, request: ::data::DataRequest) -> Option<::data::Data> {
+        debug!("Get request from Client for {:?}", request);
+        self.routing_client.get_request(
+            ::authority::Authority::NaeManager(request.name()), request.clone());
 
-        self.routing_client.get_request(authority, request.clone());
+        // Block until the data arrives.
+        let timeout = ::time::Duration::milliseconds(10000);
+        let marked = ::time::SteadyTime::now();
+        loop {
+            while let Ok(event) = self.receiver.try_recv() {
+                debug!("Client received routing event: {:?}", event);
+                match event {
+                    ::event::Event::Response{ response, our_authority: _, from_authority : _} => {
+                        match response {
+                            ::messages::ExternalResponse::Get(data, _, _) => {
+                                debug!("Client received data {:?} for get request.", data);
+                                debug!("Get took {:?} to arrive.",
+                                        ::time::SteadyTime::now() - marked);
+                                return Some(data);
+                            },
+                            _ => debug!("Received unexpected external response {:?},", response),
+                        };
+                    },
+                    _ => {},
+                };
+
+                break;
+            }
+
+            if marked + timeout < ::time::SteadyTime::now() {
+                debug!("Timed out waiting for data");
+                return None;
+            }
+            ::std::thread::sleep_ms(10);
+        }
     }
 
     /// Put data onto the network.
-    pub fn put(&self, data: ::data::Data, location: Option<::authority::Authority>) {
-        let authority = match location {
-            Some(authority) => authority,
-            None => ::authority::Authority::ClientManager(data.name()),
-        };
-
-        self.routing_client.put_request(authority, data)
+    pub fn put(&self, data: ::data::Data) {
+        debug!("Put request from Client for {:?}", data);
+        self.routing_client.put_request(::authority::Authority::ClientManager(self.name()), data);
     }
 
     // /// Post data onto the network.
@@ -83,6 +108,9 @@ impl Client {
     // }
 
     /// Exit run loop.
-    pub fn stop(&mut self) {
+    pub fn stop(&mut self) {}
+
+    pub fn name(&self) -> ::NameType {
+        self.public_id.name()
     }
 }

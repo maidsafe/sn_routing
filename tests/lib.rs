@@ -20,6 +20,7 @@
 extern crate log;
 extern crate env_logger;
 extern crate routing;
+extern crate sodiumoxide;
 
 use std::error::Error;
 
@@ -42,7 +43,7 @@ fn start_nodes(number_of_nodes: usize) -> Vec<::std::process::Child> {
                 executable_path.to_path_buf()).stderr(::std::process::Stdio::piped()).spawn() {
                     Err(e) => panic!("Failed to spawn process: {}", e.description()),
                     Ok(process) => {
-                    	debug!("---------- Starting Node {:05} --------------", process.id());
+                        debug!("Starting Node {:05}", process.id());
                     	process
                     }
             });
@@ -54,9 +55,13 @@ fn start_nodes(number_of_nodes: usize) -> Vec<::std::process::Child> {
 
 fn stop_nodes(processes: &mut Vec<::std::process::Child>) {
 	while let Some(mut process) = processes.pop() {
-		debug!("---------- Stopping Node {:05} --------------", process.id());
+		debug!("Stopping Node {:05}", process.id());
         let _ = process.kill();
     }
+}
+
+fn calculate_key_name(key: &::std::string::String) -> ::routing::NameType {
+    ::routing::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
 }
 
 #[cfg(test)]
@@ -75,4 +80,28 @@ mod test {
         client.stop();
 	}
 
+    #[test]
+    fn client_put_get() {
+        let mut nodes = super::start_nodes(8usize);
+        let client = ::routing::test_utils::client::Client::new();
+
+        let key = ::std::string::String::from("key");
+        let value = ::std::string::String::from("value");
+
+        let name = super::calculate_key_name(&key.clone());
+        let data = ::routing::utils::encode(&(key.clone(), value)).unwrap();
+        let data = ::routing::data::Data::PlainData(
+                ::routing::plain_data::PlainData::new(name.clone(), data));
+
+        client.put(data.clone());
+
+        // let recovered_data = match client.get(::routing::data::DataRequest::PlainData(name)) {
+        //     Some(data) => data,
+        //     None => panic!("Failed to recover stored data: {}.", name),
+        // };
+
+        // assert_eq!(recovered_data, data);
+
+        super::stop_nodes(&mut nodes);
+    }
 }

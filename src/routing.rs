@@ -199,8 +199,41 @@ mod test {
         }
     }
 
+    fn calculate_key_name(key: &::std::string::String) -> ::NameType {
+        ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+    }
+
     #[test]
     fn create_nodes() {
         let _ = RoutingNetwork::new(10usize);
+    }
+
+    #[test]
+    fn unit_client_put_get() {
+        let _ = RoutingNetwork::new(10usize);
+
+        sleep_ms(10000);
+
+        let mut client = ::test_utils::client::Client::new();
+
+        sleep_ms(10000);
+
+        let key = ::std::string::String::from("key");
+        let value = ::std::string::String::from("value");
+
+        let name = calculate_key_name(&key.clone());
+        let data = ::utils::encode(&(key.clone(), value)).unwrap();
+        let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
+
+        client.put(data.clone());
+
+        sleep_ms(10000);
+
+        let recovered_data = match client.get(::data::DataRequest::PlainData(name)) {
+            Some(data) => data,
+            None => panic!("Failed to recover stored data: {}.", name),
+        };
+
+        assert_eq!(recovered_data, data);
     }
 }

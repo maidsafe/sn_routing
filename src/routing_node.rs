@@ -132,6 +132,7 @@ impl RoutingNode {
                     let _ = self.send_content(our_authority, to_authority, content);
                 },
                 Ok(Action::ClientSendContent(to_authority, content)) => {
+                    debug!("ClientSendContent received for {:?}", content);
                     let _ = self.client_send_content(to_authority, content);
                 },
                 Ok(Action::Churn(our_close_group, targets)) => {
@@ -948,6 +949,7 @@ impl RoutingNode {
     // ----- Send Functions -----------------------------------------------------------------------
 
     fn send_to_user(&self, event: Event) {
+        debug!("Send to user event {:?}", event);
         if self.event_sender.send(event).is_err() {
             error!("Channel to user is broken. Terminating.");
             let _ = self.action_sender.send(Action::Terminate);
