@@ -174,26 +174,18 @@ mod test {
 
     extern crate env_logger;
 
-    use super::*;
-    use std::sync::mpsc;
-    use std::thread::{spawn, sleep_ms};
-    use event::Event;
-    use data::{Data, DataRequest};
-    use std::collections::BTreeMap;
-    use name_type::NameType;
-    use messages::{ExternalRequest, SignedToken}; //, ExternalResponse, InternalRequest, Content};
-    use authority::Authority;
-    use test_utils::node::Node;
-
     pub struct RoutingNetwork;
 
     impl RoutingNetwork {
 
-        fn new(size: usize) -> RoutingNetwork {
+        fn new(size: u32) -> RoutingNetwork {
             env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));
 
-            let node = || { let _ = spawn(move || { Node::new().run(); }); };
-            for _ in 0..size { node(); sleep_ms(1000); }
+            let node = || { let _ =
+                ::std::thread::spawn(move || ::test_utils::node::Node::new().run());
+            };
+            for i in 0..size { node(); ::std::thread::sleep_ms(1000 + i * 1000); }
+            ::std::thread::sleep_ms(size * 1000);
 
             RoutingNetwork
         }
@@ -203,31 +195,28 @@ mod test {
         ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
     }
 
-    #[test]
-    fn create_nodes() {
-        let _ = RoutingNetwork::new(10usize);
-    }
+    // #[test]
+    // fn create_nodes() {
+    //     let _ = RoutingNetwork::new(10u32);
+    // }
 
     #[test]
     fn unit_client_put_get() {
-        let _ = RoutingNetwork::new(10usize);
-
-        sleep_ms(10000);
+        let _ = RoutingNetwork::new(10u32);
 
         let mut client = ::test_utils::client::Client::new();
 
-        sleep_ms(10000);
+        ::std::thread::sleep_ms(2000);
 
         let key = ::std::string::String::from("key");
         let value = ::std::string::String::from("value");
-
         let name = calculate_key_name(&key.clone());
-        let data = ::utils::encode(&(key.clone(), value)).unwrap();
+        let data = ::utils::encode(&(key, value)).unwrap();
         let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
 
         client.put(data.clone());
 
-        sleep_ms(10000);
+        ::std::thread::sleep_ms(5000);
 
         let recovered_data = match client.get(::data::DataRequest::PlainData(name)) {
             Some(data) => data,

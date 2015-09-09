@@ -51,7 +51,7 @@ impl Client {
 
         // Block until the data arrives.
         let timeout = ::time::Duration::milliseconds(10000);
-        let marked = ::time::SteadyTime::now();
+        let time = ::time::SteadyTime::now();
         loop {
             while let Ok(event) = self.receiver.try_recv() {
                 debug!("Client received routing event: {:?}", event);
@@ -61,7 +61,7 @@ impl Client {
                             ::messages::ExternalResponse::Get(data, _, _) => {
                                 debug!("Client received data {:?} for get request.", data);
                                 debug!("Get took {:?} to arrive.",
-                                        ::time::SteadyTime::now() - marked);
+                                        ::time::SteadyTime::now() - time);
                                 return Some(data);
                             },
                             _ => debug!("Received unexpected external response {:?},", response),
@@ -73,7 +73,7 @@ impl Client {
                 break;
             }
 
-            if marked + timeout < ::time::SteadyTime::now() {
+            if time + timeout < ::time::SteadyTime::now() {
                 debug!("Timed out waiting for data");
                 return None;
             }
