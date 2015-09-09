@@ -31,11 +31,16 @@ type Address = ::routing::NameType;
 pub use self::database::Account;
 
 pub static PARALLELISM: usize = 4;
+static LRU_CACHE_SIZE: usize = 1000;
 
 pub struct DataManager {
-  database: database::Database,
-  // the higher the index is, the slower the farming rate will be
-  resource_index: u64
+    database: database::Database,
+    // the higher the index is, the slower the farming rate will be
+    resource_index: u64,
+    // key is pair of chunk_name and pmid_node, value is inserting time
+    on_going_gets: ::lru_time_cache::LruCache<(::routing::NameType, ::routing::NameType), ::time::SteadyTime>,
+    // key is chunk_name and value is failing pmids
+    failed_pmids: ::lru_time_cache::LruCache<::routing::NameType, Vec<::routing::NameType>>
 }
 
 #[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
@@ -84,19 +89,42 @@ impl ::types::Refreshable for Stats {
 
 impl DataManager {
     pub fn new() -> DataManager {
-        DataManager { database: database::Database::new(), resource_index: 1 }
+        DataManager { database: database::Database::new(), resource_index: 1,
+                      on_going_gets: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
+                      failed_pmids: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE) }
     }
 
     pub fn handle_get(&mut self, name: &::routing::NameType, data_request: ::routing::data::DataRequest) -> Vec<::types::MethodCall> {
+        // before querying in the records, first ensure all records are valid
+        let on_going_gets = self.on_going_gets.retrieve_all();
+        let mut failing_entries = Vec::new();
+        for on_going_get in on_going_gets {
+            if on_going_get.1 + ::time::Duration::seconds(10) < ::time::SteadyTime::now() {
+                self.database.remove_pmid_node(&(on_going_get.0).0, (on_going_get.0).1.clone());
+                failing_entries.push(on_going_get.0.clone());
+                if self.failed_pmids.contains_key(&name) {
+                    match self.failed_pmids.get_mut(&name) {
+                        Some(ref mut pmids) => pmids.push((on_going_get.0).1.clone()),
+                        None => error!("Failed to insert failed_pmid in the cache."),
+                    };
+                } else {
+                    self.failed_pmids.add(name.clone(), vec![(on_going_get.0).1.clone()]);
+                }
+            }
+        }
+        for failed_entry in failing_entries {
+            let _ = self.on_going_gets.remove(&failed_entry);
+        }
+
         let result = self.database.get_pmid_nodes(name);
         if result.len() == 0 {
             return vec![];
         }
-
-        let mut forward_to_pmids: Vec<::types::MethodCall> = Vec::new();
+        let mut forward_to_pmids = Vec::new();
         for pmid in result.iter() {
             forward_to_pmids.push(::types::MethodCall::Get { location: ::routing::authority::Authority::ManagedNode(pmid.clone()),
-                                              data_request: data_request.clone() });
+                                                             data_request: data_request.clone() });
+            self.on_going_gets.add((name.clone(), pmid.clone()), ::time::SteadyTime::now());
         }
         forward_to_pmids
     }
@@ -134,15 +162,29 @@ impl DataManager {
       forwarding_calls
     }
 
-    pub fn handle_get_response(&mut self, response: ::routing::data::Data) -> Vec<::types::MethodCall> {
+    pub fn handle_get_response(&mut self, from: ::routing::NameType, response: ::routing::data::Data) -> Vec<::types::MethodCall> {
+        let _ = self.on_going_gets.remove(&(from.clone(), response.name()));
+        let mut failure_notifications = Vec::new();
+        match self.failed_pmids.remove(&response.name()) {
+            Some(failed_pmids) => {
+                for failed_pmid in failed_pmids {
+                    // TODO: utilize FailedPut here as currently ResponseError only has FailedRequestForData defined
+                    failure_notifications.push(::types::MethodCall::FailedPut { location: ::routing::authority::Authority::NodeManager(failed_pmid),
+                                                                                data: response.clone() });
+                }
+            },
+            None => {}
+        }
+
         let replicate_to = self.replicate_to(&response.name());
-        match replicate_to {
+        let replication_calls = match replicate_to {
             Some(pmid_node) => {
                 self.database.add_pmid_node(&response.name(), pmid_node.clone());
                 vec![::types::MethodCall::Put { location: ::routing::authority::Authority::ManagedNode(pmid_node), content: response, }]
             },
             None => vec![]
-        }
+        };
+        failure_notifications.into_iter().chain(replication_calls.into_iter()).collect()
     }
 
     pub fn handle_put_response(&mut self, response: ::routing::error::ResponseError,

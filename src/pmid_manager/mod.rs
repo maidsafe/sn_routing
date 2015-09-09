@@ -59,6 +59,17 @@ impl PmidManager {
         vec![]
     }
 
+    pub fn handle_get_failure_notification(&mut self, from_address: &::routing::NameType,
+                                           response: ::routing::error::ResponseError) -> Vec<::types::MethodCall> {
+        match response {
+            ::routing::error::ResponseError::FailedRequestForData(data) => {
+                self.database.delete_data(from_address, data.payload_size() as u64);
+            },
+            _ => {}
+        }
+        vec![]
+    }
+
     pub fn handle_account_transfer(&mut self, merged_account: Account) {
         self.database.handle_account_transfer(merged_account);
     }
