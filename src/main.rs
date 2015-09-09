@@ -125,10 +125,10 @@ mod vault;
 mod non_networking_test_framework;
 
 /// Runs a SAFE Network vault
-pub fn main () {
+pub fn main() {
     match env_logger::init() {
-        Ok(()) => {},
-        Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
+        Ok(()) => {}
+        Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
     }
 
     ::vault::Vault::run();

@@ -19,9 +19,11 @@ use chunk_store::ChunkStore;
 use transfer_parser::transfer_tags::SD_MANAGER_ACCOUNT_TAG;
 
 pub struct StructuredDataManager {
-    // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
-    // If such assumption becomes in-valid, LruCache or Sqlite based persona specific database shall be used
-    chunk_store_ : ChunkStore
+    // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV)
+    // data, and put is overwritable
+    // If such assumption becomes in-valid, LruCache or Sqlite based persona specific
+    // database shall be used
+    chunk_store_: ChunkStore,
 }
 
 impl StructuredDataManager {
@@ -35,14 +37,17 @@ impl StructuredDataManager {
         if data.len() == 0 {
             return vec![];
         }
-        let sd: ::routing::structured_data::StructuredData = match ::routing::utils::decode(&data) {
-            Ok(data) => data,
-            Err(_) => return vec![]
-        };
+        let sd: ::routing::structured_data::StructuredData =
+            match ::routing::utils::decode(&data) {
+                Ok(data) => data,
+                Err(_) => return vec![],
+            };
         vec![::types::MethodCall::Reply { data: ::routing::data::Data::StructuredData(sd) }]
     }
 
-    pub fn handle_put(&mut self, structured_data: ::routing::structured_data::StructuredData) -> Vec<::types::MethodCall> {
+    pub fn handle_put(&mut self,
+                      structured_data: ::routing::structured_data::StructuredData)
+                      -> Vec<::types::MethodCall> {
         // TODO: SD using PUT for the first copy, then POST to update and transfer in case of churn
         //       so if the data exists, then the put shall be rejected
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
@@ -53,14 +58,18 @@ impl StructuredDataManager {
         } else {
             if let Ok(serialised_data) = ::routing::utils::encode(&structured_data) {
                 self.chunk_store_.put(structured_data.name(), serialised_data);
-                vec![::types::MethodCall::Reply { data: ::routing::data::Data::StructuredData(structured_data) }]
+                vec![::types::MethodCall::Reply {
+                         data: ::routing::data::Data::StructuredData(structured_data)
+                     }]
             } else {
                 vec![]
             }
         }
     }
 
-    pub fn handle_post(&mut self, in_coming_data: ::routing::structured_data::StructuredData) -> Vec<::types::MethodCall> {
+    pub fn handle_post(&mut self,
+                       in_coming_data: ::routing::structured_data::StructuredData)
+                       -> Vec<::types::MethodCall> {
         // TODO: SD using PUT for the first copy, then POST to update and transfer in case of churn
         //       so if the data exists, then the put shall be rejected
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
@@ -68,13 +77,20 @@ impl StructuredDataManager {
         //       in addition to above, POST shall check the ownership
         let data = self.chunk_store_.get(in_coming_data.name());
         if data.len() == 0 {
-            return vec![::types::MethodCall::InvalidRequest { data: ::routing::data::Data::StructuredData(in_coming_data) }];
+            return vec![::types::MethodCall::InvalidRequest {
+                            data: ::routing::data::Data::StructuredData(in_coming_data)
+                        }];
         }
-        if let Ok(mut sd) = ::routing::utils::decode::<::routing::structured_data::StructuredData>(&data) {
+        if let Ok(mut sd) =
+               ::routing::utils::decode::<::routing::structured_data::StructuredData>(&data) {
             debug!("sd_manager updating {:?} to {:?}", sd, in_coming_data);
             match sd.replace_with_other(in_coming_data.clone()) {
-                Ok(_) => {},
-                Err(_) => return vec![::types::MethodCall::InvalidRequest { data: ::routing::data::Data::StructuredData(in_coming_data) }]
+                Ok(_) => {}
+                Err(_) => {
+                    return vec![::types::MethodCall::InvalidRequest {
+                                    data: ::routing::data::Data::StructuredData(in_coming_data)
+                                }]
+                }
             }
             if let Ok(serialised_data) = ::routing::utils::encode(&sd) {
                 self.chunk_store_.put(in_coming_data.name(), serialised_data);
@@ -84,10 +100,13 @@ impl StructuredDataManager {
     }
 
     pub fn handle_account_transfer(&mut self, in_coming_sd: Vec<u8>) {
-        let sd: ::routing::structured_data::StructuredData = match ::routing::utils::decode(&in_coming_sd) {
-            Ok(result) => { result }
-            Err(_) => return
-        };
+        let sd: ::routing::structured_data::StructuredData =
+            match ::routing::utils::decode(&in_coming_sd) {
+                Ok(result) => {
+                    result
+                }
+                Err(_) => return,
+            };
         info!("SdManager transferred structured_data {:?} in", sd.name());
         self.chunk_store_.delete(sd.name());
         self.chunk_store_.put(sd.name(), in_coming_sd);
@@ -123,7 +142,9 @@ mod test {
         let name = ::routing::NameType([3u8; 64]);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let keys = crypto::sign::gen_keypair();
-        let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value.clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
+        let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value.clone(),
+                                                                  vec![keys.0], vec![],
+                                                                  Some(&keys.1)).ok().unwrap();
         {
             let mut put_result = sd_manager.handle_put(sdv.clone());
             assert_eq!(put_result.len(), 1);
@@ -148,7 +169,9 @@ mod test {
                     match data {
                         ::routing::data::Data::StructuredData(sd) => {
                             assert_eq!(sd, sdv);
-                            assert_eq!(sd.name(), ::routing::structured_data::StructuredData::compute_name(0, &::routing::NameType([3u8; 64])));
+                            assert_eq!(sd.name(),
+                                ::routing::structured_data::StructuredData::compute_name(0,
+                                    &::routing::NameType([3u8; 64])));
                             assert_eq!(*sd.get_data(), value);
                         }
                         _ => panic!("Unexpected"),
@@ -165,10 +188,14 @@ mod test {
         let name = ::routing::NameType([3u8; 64]);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let keys = crypto::sign::gen_keypair();
-        let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value.clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
+        let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value.clone(),
+                                                                  vec![keys.0], vec![],
+                                                                  Some(&keys.1)).ok().unwrap();
         { // posting to none existing data
             assert_eq!(sd_manager.handle_post(sdv.clone())[0],
-                       ::types::MethodCall::InvalidRequest { data: ::routing::data::Data::StructuredData(sdv.clone()) });
+                       ::types::MethodCall::InvalidRequest {
+                           data: ::routing::data::Data::StructuredData(sdv.clone())
+                       });
         }
         {
             let mut put_result = sd_manager.handle_put(sdv.clone());
@@ -186,22 +213,40 @@ mod test {
             }
         }
         { // incorrect version
-            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 3, value.clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
+            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 3, value.clone(),
+                                                                          vec![keys.0], vec![],
+                                                                          Some(&keys.1)).ok()
+                                                                          .unwrap();
             assert_eq!(sd_manager.handle_post(sdv_new.clone())[0],
-                       ::types::MethodCall::InvalidRequest { data: ::routing::data::Data::StructuredData(sdv_new) });
+                       ::types::MethodCall::InvalidRequest {
+                           data: ::routing::data::Data::StructuredData(sdv_new)
+                       });
         }
         { // correct version
-            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 1, value.clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
+            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 1, value.clone(),
+                                                                          vec![keys.0], vec![],
+                                                                          Some(&keys.1)).ok()
+                                                                          .unwrap();
             assert_eq!(sd_manager.handle_post(sdv_new.clone()).len(), 0);
         }
         let keys2 = crypto::sign::gen_keypair();
         { // update to a new owner, wrong signature
-            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], Some(&keys2.1)).ok().unwrap();
+            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 2, value.clone(),
+                                                                          vec![keys2.0],
+                                                                          vec![keys.0],
+                                                                          Some(&keys2.1)).ok()
+                                                                          .unwrap();
             assert_eq!(sd_manager.handle_post(sdv_new.clone())[0],
-                       ::types::MethodCall::InvalidRequest { data: ::routing::data::Data::StructuredData(sdv_new) });
+                       ::types::MethodCall::InvalidRequest {
+                           data: ::routing::data::Data::StructuredData(sdv_new)
+                       });
         }
         { // update to a new owner, correct signature
-            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 2, value.clone(), vec![keys2.0], vec![keys.0], Some(&keys.1)).ok().unwrap();
+            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 2, value.clone(),
+                                                                          vec![keys2.0],
+                                                                          vec![keys.0],
+                                                                          Some(&keys.1)).ok()
+                                                                          .unwrap();
             assert_eq!(sd_manager.handle_post(sdv_new.clone()).len(), 0);
         }
     }
@@ -211,7 +256,9 @@ mod test {
         let name = ::routing::NameType([3u8; 64]);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let keys = crypto::sign::gen_keypair();
-        let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value, vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
+        let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value, vec![keys.0],
+                                                                  vec![], Some(&keys.1)).ok()
+                                                                  .unwrap();
 
         let mut sd_manager = StructuredDataManager::new();
         let serialised_data = match ::routing::utils::encode(&sdv) {
@@ -219,7 +266,9 @@ mod test {
             Err(_) => panic!("Unexpected"),
         };
         sd_manager.handle_account_transfer(serialised_data);
-        assert_eq!(sd_manager.chunk_store_.has_chunk(::routing::structured_data::StructuredData::compute_name(0, &::routing::NameType([3u8; 64]))), true);
+        assert!(sd_manager.chunk_store_.has_chunk(
+            ::routing::structured_data::StructuredData::compute_name(0,
+                &::routing::NameType([3u8; 64]))));
     }
 
 }

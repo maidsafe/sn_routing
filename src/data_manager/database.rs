@@ -62,23 +62,28 @@ impl ::types::Refreshable for Account {
         }
     }
 
-    fn merge(from_group: ::routing::NameType,
-              responses: Vec<Account>) -> Option<Account> {
+    fn merge(from_group: ::routing::NameType, responses: Vec<Account>) -> Option<Account> {
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for response in responses {
-            let account = match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
-                Ok(result) => {
-                    if *result.name() != from_group {
-                        continue;
+            let account =
+                match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
+                    Ok(result) => {
+                        if *result.name() != from_group {
+                            continue;
+                        }
+                        result
                     }
-                    result
-                },
-                Err(_) => continue,
-            };
-            let push_in_vec = match stats.iter_mut().find(|a| a.0 == *account.data_holders()) {
-                    Some(find_res) => { find_res.1 += 1; false }
-                    None => { true }
+                    Err(_) => continue,
                 };
+            let push_in_vec = match stats.iter_mut().find(|a| a.0 == *account.data_holders()) {
+                Some(find_res) => {
+                    find_res.1 += 1;
+                    false
+                }
+                None => {
+                    true
+                }
+            };
             if push_in_vec {
                 stats.push((account.data_holders().clone(), 1));
             }
@@ -95,13 +100,13 @@ impl ::types::Refreshable for Account {
 
 
 pub struct Database {
-    storage : HashMap<DataName, PmidNodes>,
+    storage: HashMap<DataName, PmidNodes>,
     pub close_grp_from_churn: Vec<::routing::NameType>,
     pub temp_storage_after_churn: HashMap<::routing::NameType, PmidNodes>,
 }
 
 impl Database {
-    pub fn new () -> Database {
+    pub fn new() -> Database {
         Database {
             storage: HashMap::with_capacity(10000),
             close_grp_from_churn: Vec::new(),
@@ -131,8 +136,8 @@ impl Database {
         let nodes = self.storage.entry(name.clone()).or_insert(vec![]);
         for i in 0..nodes.len() {
             if nodes[i] == pmid_node {
-              let _ = nodes.remove(i);
-              break;
+                let _ = nodes.remove(i);
+                break;
             }
         }
     }
@@ -140,13 +145,12 @@ impl Database {
     pub fn get_pmid_nodes(&mut self, name: &DataName) -> PmidNodes {
         match self.storage.get(&name) {
             Some(entry) => entry.clone(),
-            None => Vec::<PmidNode>::new()
+            None => Vec::<PmidNode>::new(),
         }
     }
 
 
     pub fn handle_account_transfer(&mut self, merged_account: Account) {
-        // TODO: Assuming the incoming merged account entry has the priority and shall also be trusted first
         let _ = self.storage.remove(merged_account.name());
         let _ = self.storage.insert(*merged_account.name(), merged_account.data_holders().clone());
         info!("DataManager updated account {:?} to {:?}",
@@ -154,19 +158,21 @@ impl Database {
     }
 
     pub fn retrieve_all_and_reset(&mut self,
-                                  _close_group: &mut Vec<::routing::NameType>) ->
-            Vec<::types::MethodCall> {
+                                  _close_group: &mut Vec<::routing::NameType>)
+                                  -> Vec<::types::MethodCall> {
         self.temp_storage_after_churn = self.storage.clone();
         let mut actions = Vec::<::types::MethodCall>::new();
         for (key, value) in self.storage.iter() {
             if value.len() < 3 {
                 for pmid_node in value.iter() {
-                    info!("DataManager sends out a Get request in churn, fetching data {:?} from pmid_node {:?}",
-                          *key, pmid_node);
+                    info!("DataManager sends out a Get request in churn, fetching data {:?} from \
+                          pmid_node {:?}", *key, pmid_node);
                     actions.push(::types::MethodCall::Get {
                         location: ::routing::authority::Authority::ManagedNode(pmid_node.clone()),
                         // DataManager only handles ::routing::immutable_data::ImmutableData
-                        data_request: ::routing::data::DataRequest::ImmutableData((*key).clone(), ::routing::immutable_data::ImmutableDataType::Normal)
+                        data_request:
+                            ::routing::data::DataRequest::ImmutableData((*key).clone(),
+                                ::routing::immutable_data::ImmutableDataType::Normal)
                     });
                 }
             }
@@ -189,115 +195,120 @@ impl Database {
 
 #[cfg(test)]
 mod test {
-  use super::*;
+    use super::*;
 
-  #[test]
-  fn exist() {
-    let mut db = Database::new();
-    let value = ::routing::types::generate_random_vec_u8(1024);
-    let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
-    let mut pmid_nodes : Vec<::routing::NameType> = vec![];
+    #[test]
+    fn exist() {
+        let mut db = Database::new();
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let data = ::routing::immutable_data::ImmutableData::new(
+                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let mut pmid_nodes: Vec<::routing::NameType> = vec![];
 
-    for _ in 0..4 {
-      pmid_nodes.push(::utils::random_name());
+        for _ in 0..4 {
+            pmid_nodes.push(::utils::random_name());
+        }
+
+        let data_name = data.name();
+        assert_eq!(db.exist(&data_name), false);
+        db.put_pmid_nodes(&data_name, pmid_nodes);
+        assert_eq!(db.exist(&data_name), true);
     }
 
-    let data_name = data.name();
-    assert_eq!(db.exist(&data_name), false);
-    db.put_pmid_nodes(&data_name, pmid_nodes);
-    assert_eq!(db.exist(&data_name), true);
-  }
+    #[test]
+    fn put() {
+        let mut db = Database::new();
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let data = ::routing::immutable_data::ImmutableData::new(
+                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data_name = data.name();
+        let mut pmid_nodes: Vec<::routing::NameType> = vec![];
 
-  #[test]
-  fn put() {
-    let mut db = Database::new();
-    let value = ::routing::types::generate_random_vec_u8(1024);
-    let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
-    let data_name = data.name();
-    let mut pmid_nodes : Vec<::routing::NameType> = vec![];
+        for _ in 0..4 {
+            pmid_nodes.push(::utils::random_name());
+        }
 
-    for _ in 0..4 {
-      pmid_nodes.push(::utils::random_name());
+        let result = db.get_pmid_nodes(&data_name);
+        assert_eq!(result.len(), 0);
+
+        db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+
+        let result = db.get_pmid_nodes(&data_name);
+        assert_eq!(result.len(), pmid_nodes.len());
     }
 
-    let result = db.get_pmid_nodes(&data_name);
-    assert_eq!(result.len(), 0);
+    #[test]
+    fn remove_pmid() {
+        let mut db = Database::new();
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let data = ::routing::immutable_data::ImmutableData::new(
+                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data_name = data.name();
+        let mut pmid_nodes: Vec<::routing::NameType> = vec![];
 
-    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+        for _ in 0..4 {
+            pmid_nodes.push(::utils::random_name());
+        }
 
-    let result = db.get_pmid_nodes(&data_name);
-    assert_eq!(result.len(), pmid_nodes.len());
-  }
+        db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+        let result = db.get_pmid_nodes(&data_name);
+        assert_eq!(result, pmid_nodes);
 
-  #[test]
-  fn remove_pmid() {
-    let mut db = Database::new();
-    let value = ::routing::types::generate_random_vec_u8(1024);
-    let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
-    let data_name = data.name();
-    let mut pmid_nodes : Vec<::routing::NameType> = vec![];
+        db.remove_pmid_node(&data_name, pmid_nodes[0].clone());
 
-    for _ in 0..4 {
-      pmid_nodes.push(::utils::random_name());
+        let result = db.get_pmid_nodes(&data_name);
+        assert_eq!(result.len(), 3);
+        for index in 0..result.len() {
+            assert!(result[index] != pmid_nodes[0]);
+        }
     }
 
-    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
-    let result = db.get_pmid_nodes(&data_name);
-    assert_eq!(result, pmid_nodes);
+    #[test]
+    fn replace_pmids() {
+        let mut db = Database::new();
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let data = ::routing::immutable_data::ImmutableData::new(
+                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data_name = data.name();
+        let mut pmid_nodes: Vec<::routing::NameType> = vec![];
+        let mut new_pmid_nodes: Vec<::routing::NameType> = vec![];
 
-    db.remove_pmid_node(&data_name, pmid_nodes[0].clone());
+        for _ in 0..4 {
+            pmid_nodes.push(::utils::random_name());
+            new_pmid_nodes.push(::utils::random_name());
+        }
 
-    let result = db.get_pmid_nodes(&data_name);
-    assert_eq!(result.len(), 3);
-    for index in 0..result.len() {
-      assert!(result[index] != pmid_nodes[0]);
-    }
-  }
+        db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+        let result = db.get_pmid_nodes(&data_name);
+        assert_eq!(result, pmid_nodes);
+        assert!(result != new_pmid_nodes);
 
-  #[test]
-  fn replace_pmids() {
-    let mut db = Database::new();
-    let value = ::routing::types::generate_random_vec_u8(1024);
-    let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
-    let data_name = data.name();
-    let mut pmid_nodes : Vec<::routing::NameType> = vec![];
-    let mut new_pmid_nodes : Vec<::routing::NameType> = vec![];
+        for index in 0..4 {
+            db.remove_pmid_node(&data_name, pmid_nodes[index].clone());
+            db.add_pmid_node(&data_name, new_pmid_nodes[index].clone());
+        }
 
-    for _ in 0..4 {
-      pmid_nodes.push(::utils::random_name());
-      new_pmid_nodes.push(::utils::random_name());
-    }
-
-    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
-    let result = db.get_pmid_nodes(&data_name);
-    assert_eq!(result, pmid_nodes);
-    assert!(result != new_pmid_nodes);
-
-    for index in 0..4 {
-      db.remove_pmid_node(&data_name, pmid_nodes[index].clone());
-      db.add_pmid_node(&data_name, new_pmid_nodes[index].clone());
+        let result = db.get_pmid_nodes(&data_name);
+        assert_eq!(result, new_pmid_nodes);
+        assert!(result != pmid_nodes);
     }
 
-    let result = db.get_pmid_nodes(&data_name);
-    assert_eq!(result, new_pmid_nodes);
-    assert!(result != pmid_nodes);
-  }
+    #[test]
+    fn handle_account_transfer() {
+        let mut db = Database::new();
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let data = ::routing::immutable_data::ImmutableData::new(
+                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data_name = data.name();
+        let mut pmid_nodes: Vec<::routing::NameType> = vec![];
 
-  #[test]
-  fn handle_account_transfer() {
-    let mut db = Database::new();
-    let value = ::routing::types::generate_random_vec_u8(1024);
-    let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
-    let data_name = data.name();
-    let mut pmid_nodes : Vec<::routing::NameType> = vec![];
+        for _ in 0..4 {
+            pmid_nodes.push(::utils::random_name());
+        }
+        db.put_pmid_nodes(&data_name, pmid_nodes.clone());
+        assert_eq!(db.get_pmid_nodes(&data_name).len(), pmid_nodes.len());
 
-    for _ in 0..4 {
-      pmid_nodes.push(::utils::random_name());
+        db.handle_account_transfer(Account::new(data_name.clone(), vec![]));
+        assert_eq!(db.get_pmid_nodes(&data_name).len(), 0);
     }
-    db.put_pmid_nodes(&data_name, pmid_nodes.clone());
-    assert_eq!(db.get_pmid_nodes(&data_name).len(), pmid_nodes.len());
-
-    db.handle_account_transfer(Account::new(data_name.clone(), vec![]));
-    assert_eq!(db.get_pmid_nodes(&data_name).len(), 0);
-  }
 }

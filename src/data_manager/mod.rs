@@ -31,28 +31,27 @@ pub use self::database::Account;
 pub static PARALLELISM: usize = 4;
 static LRU_CACHE_SIZE: usize = 1000;
 
+type ChunkNameAndPmidNode = (::routing::NameType, ::routing::NameType);
+
 pub struct DataManager {
     database: database::Database,
     // the higher the index is, the slower the farming rate will be
     resource_index: u64,
     // key is pair of chunk_name and pmid_node, value is inserting time
-    on_going_gets: ::lru_time_cache::LruCache<(::routing::NameType, ::routing::NameType), ::time::SteadyTime>,
+    on_going_gets: ::lru_time_cache::LruCache<ChunkNameAndPmidNode, ::time::SteadyTime>,
     // key is chunk_name and value is failing pmids
-    failed_pmids: ::lru_time_cache::LruCache<::routing::NameType, Vec<::routing::NameType>>
+    failed_pmids: ::lru_time_cache::LruCache<::routing::NameType, Vec<::routing::NameType>>,
 }
 
 #[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
 pub struct Stats {
     name: ::routing::NameType,
-    resource_index: u64
+    resource_index: u64,
 }
 
 impl Stats {
     pub fn new(name: ::routing::NameType, resource_index: u64) -> Stats {
-        Stats {
-            name: name,
-            resource_index: resource_index
-        }
+        Stats { name: name, resource_index: resource_index }
     }
 
     pub fn name(&self) -> &::routing::NameType {
@@ -65,8 +64,7 @@ impl Stats {
 }
 
 impl ::types::Refreshable for Stats {
-    fn merge(from_group: ::routing::NameType,
-             responses: Vec<Stats>) -> Option<Stats> {
+    fn merge(from_group: ::routing::NameType, responses: Vec<Stats>) -> Option<Stats> {
         let mut resource_indexes: Vec<u64> = Vec::new();
         for value in responses {
             match ::routing::utils::decode::<Stats>(&value.serialised_contents()) {
@@ -74,7 +72,7 @@ impl ::types::Refreshable for Stats {
                     if *refreshable.name() == from_group {
                         resource_indexes.push(refreshable.resource_index());
                     }
-                },
+                }
                 Err(_) => {}
             }
         }
@@ -87,12 +85,18 @@ impl ::types::Refreshable for Stats {
 
 impl DataManager {
     pub fn new() -> DataManager {
-        DataManager { database: database::Database::new(), resource_index: 1,
-                      on_going_gets: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
-                      failed_pmids: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE) }
+        DataManager {
+            database: database::Database::new(),
+            resource_index: 1,
+            on_going_gets: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
+            failed_pmids: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
+        }
     }
 
-    pub fn handle_get(&mut self, name: &::routing::NameType, data_request: ::routing::data::DataRequest) -> Vec<::types::MethodCall> {
+    pub fn handle_get(&mut self,
+                      name: &::routing::NameType,
+                      data_request: ::routing::data::DataRequest)
+                      -> Vec<::types::MethodCall> {
         // before querying in the records, first ensure all records are valid
         let on_going_gets = self.on_going_gets.retrieve_all();
         let mut failing_entries = Vec::new();
@@ -120,57 +124,70 @@ impl DataManager {
         }
         let mut forward_to_pmids = Vec::new();
         for pmid in result.iter() {
-            forward_to_pmids.push(::types::MethodCall::Get { location: ::routing::authority::Authority::ManagedNode(pmid.clone()),
-                                                             data_request: data_request.clone() });
+            forward_to_pmids.push(::types::MethodCall::Get {
+                location: ::routing::authority::Authority::ManagedNode(pmid.clone()),
+                data_request: data_request.clone()
+            });
             self.on_going_gets.add((name.clone(), pmid.clone()), ::time::SteadyTime::now());
         }
         forward_to_pmids
     }
 
-    pub fn handle_put(&mut self, data: ::routing::immutable_data::ImmutableData,
-                      nodes_in_table: &mut Vec<::routing::NameType>) -> Vec<::types::MethodCall> {
-      let data_name = data.name();
-      if self.database.exist(&data_name) {
-          return vec![];
-      }
+    pub fn handle_put(&mut self,
+                      data: ::routing::immutable_data::ImmutableData,
+                      nodes_in_table: &mut Vec<::routing::NameType>)
+                      -> Vec<::types::MethodCall> {
+        let data_name = data.name();
+        if self.database.exist(&data_name) {
+            return vec![];
+        }
 
-      nodes_in_table.sort_by(|a, b|
+        nodes_in_table.sort_by(|a, b|
           if ::routing::closer_to_target(&a, &b, &data_name) {
             cmp::Ordering::Less
           } else {
             cmp::Ordering::Greater
           });
-      let pmid_nodes_num = cmp::min(nodes_in_table.len(), PARALLELISM);
-      let mut dest_pmids: Vec<::routing::NameType> = Vec::new();
-      for index in 0..pmid_nodes_num {
-          dest_pmids.push(nodes_in_table[index].clone());
-      }
-      self.database.put_pmid_nodes(&data_name, dest_pmids.clone());
-      match *data.get_type_tag() {
-          ::routing::immutable_data::ImmutableDataType::Sacrificial => {
-              self.resource_index = cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
-          }
-          _ => {}
-      }
-      let mut forwarding_calls: Vec<::types::MethodCall> = Vec::new();
-      for pmid in dest_pmids {
-          forwarding_calls.push(::types::MethodCall::Put { location: ::routing::authority::Authority::NodeManager(pmid.clone()),
-                                                  content: ::routing::data::Data::ImmutableData(data.clone()), });
-      }
-      forwarding_calls
+        let pmid_nodes_num = cmp::min(nodes_in_table.len(), PARALLELISM);
+        let mut dest_pmids: Vec<::routing::NameType> = Vec::new();
+        for index in 0..pmid_nodes_num {
+            dest_pmids.push(nodes_in_table[index].clone());
+        }
+        self.database.put_pmid_nodes(&data_name, dest_pmids.clone());
+        match *data.get_type_tag() {
+            ::routing::immutable_data::ImmutableDataType::Sacrificial => {
+                self.resource_index = cmp::min(1048576,
+                                               self.resource_index + dest_pmids.len() as u64);
+            }
+            _ => {}
+        }
+        let mut forwarding_calls: Vec<::types::MethodCall> = Vec::new();
+        for pmid in dest_pmids {
+            forwarding_calls.push(::types::MethodCall::Put {
+                location: ::routing::authority::Authority::NodeManager(pmid.clone()),
+                content: ::routing::data::Data::ImmutableData(data.clone()),
+            });
+        }
+        forwarding_calls
     }
 
-    pub fn handle_get_response(&mut self, from: ::routing::NameType, response: ::routing::data::Data) -> Vec<::types::MethodCall> {
+    pub fn handle_get_response(&mut self,
+                               from: ::routing::NameType,
+                               response: ::routing::data::Data)
+                               -> Vec<::types::MethodCall> {
         let _ = self.on_going_gets.remove(&(from.clone(), response.name()));
         let mut failure_notifications = Vec::new();
         match self.failed_pmids.remove(&response.name()) {
             Some(failed_pmids) => {
                 for failed_pmid in failed_pmids {
-                    // TODO: utilize FailedPut here as currently ResponseError only has FailedRequestForData defined
-                    failure_notifications.push(::types::MethodCall::FailedPut { location: ::routing::authority::Authority::NodeManager(failed_pmid),
-                                                                                data: response.clone() });
+                    // TODO: utilize FailedPut here as currently ResponseError only has
+                    // FailedRequestForData defined
+                    failure_notifications.push(::types::MethodCall::FailedPut {
+                        location: ::routing::authority::Authority::NodeManager(failed_pmid),
+                        data: response.clone()
+                    });
                 }
-            },
+            }
             None => {}
         }
 
@@ -178,15 +195,20 @@ impl DataManager {
         let replication_calls = match replicate_to {
             Some(pmid_node) => {
                 self.database.add_pmid_node(&response.name(), pmid_node.clone());
-                vec![::types::MethodCall::Put { location: ::routing::authority::Authority::ManagedNode(pmid_node), content: response, }]
-            },
-            None => vec![]
+                vec![::types::MethodCall::Put {
+                    location: ::routing::authority::Authority::ManagedNode(pmid_node),
+                    content: response,
+                }]
+            }
+            None => vec![],
         };
         failure_notifications.into_iter().chain(replication_calls.into_iter()).collect()
     }
 
-    pub fn handle_put_response(&mut self, response: ::routing::error::ResponseError,
-                               from_address: &::routing::NameType) -> Vec<::types::MethodCall> {
+    pub fn handle_put_response(&mut self,
+                               response: ::routing::error::ResponseError,
+                               from_address: &::routing::NameType)
+                               -> Vec<::types::MethodCall> {
         info!("DataManager handle_put_responsen from {:?}", from_address);
         match response {
             ::routing::error::ResponseError::FailedRequestForData(data) => {
@@ -204,9 +226,12 @@ impl DataManager {
                                 match replicate_to {
                                     Some(pmid_node) => {
                                         self.database.add_pmid_node(&name, pmid_node.clone());
-                                        return vec![::types::MethodCall::Put { location: ::routing::authority::Authority::NodeManager(pmid_node),
-                                                                      content: data }];
-                                    },
+                                        return vec![::types::MethodCall::Put {
+                                            location: ::routing::authority::Authority::NodeManager(
+                                                          pmid_node),
+                                            content: data
+                                        }];
+                                    }
                                     None => {}
                                 }
                             }
@@ -215,12 +240,12 @@ impl DataManager {
                     }
                     _ => {}
                 }
-            },
+            }
             ::routing::error::ResponseError::HadToClearSacrificial(name, _) => {
                 // giving less weight when removing a sacrificial data
                 self.resource_index = cmp::max(1, self.resource_index - 1);
                 self.database.remove_pmid_node(&name, from_address.clone());
-            },
+            }
             _ => {}
         }
         vec![]
@@ -235,12 +260,13 @@ impl DataManager {
         self.resource_index = (self.resource_index + merged_stats.resource_index()) / 2;
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &mut Vec<::routing::NameType>) -> Vec<::types::MethodCall> {
+    pub fn retrieve_all_and_reset(&mut self,
+                                  close_group: &mut Vec<::routing::NameType>)
+                                  -> Vec<::types::MethodCall> {
         // TODO: as Vault doesn't have access to what ID it is, we have to use the first one in the
         //       close group as its ID
         let mut result = self.database.retrieve_all_and_reset(close_group);
-        let data_manager_stats =
-            Stats::new(close_group[0].clone(), self.resource_index);
+        let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         let mut encoder = cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
             result.push(::types::MethodCall::Refresh {
@@ -271,7 +297,7 @@ impl DataManager {
                     }
                     return Some(close_grp_node_to_add);
                 }
-            },
+            }
             None => {}
         }
         None
@@ -287,16 +313,24 @@ mod test {
     fn handle_put_get() {
         let mut data_manager = DataManager::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
-        let mut nodes_in_table = vec![::routing::NameType::new([1u8; 64]), ::routing::NameType::new([2u8; 64]), ::routing::NameType::new([3u8; 64]), ::routing::NameType::new([4u8; 64]),
-                                      ::routing::NameType::new([5u8; 64]), ::routing::NameType::new([6u8; 64]), ::routing::NameType::new([7u8; 64]), ::routing::NameType::new([8u8; 64])];
+        let data = ::routing::immutable_data::ImmutableData::new(
+                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let mut nodes_in_table = vec![::routing::NameType::new([1u8; 64]),
+                                      ::routing::NameType::new([2u8; 64]),
+                                      ::routing::NameType::new([3u8; 64]),
+                                      ::routing::NameType::new([4u8; 64]),
+                                      ::routing::NameType::new([5u8; 64]),
+                                      ::routing::NameType::new([6u8; 64]),
+                                      ::routing::NameType::new([7u8; 64]),
+                                      ::routing::NameType::new([8u8; 64])];
         {
             let put_result = data_manager.handle_put(data.clone(), &mut nodes_in_table);
             assert_eq!(put_result.len(), super::PARALLELISM);
             for i in 0..put_result.len() {
                 match put_result[i].clone() {
                     ::types::MethodCall::Put { location, content } => {
-                        assert_eq!(location, ::routing::authority::Authority::NodeManager(nodes_in_table[i]));
+                        assert_eq!(location,
+                                   ::routing::authority::Authority::NodeManager(nodes_in_table[i]));
                         assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
                     }
                     _ => panic!("Unexpected"),
@@ -305,13 +339,15 @@ mod test {
         }
         let data_name = ::routing::NameType::new(data.name().get_id());
         {
-            let request = ::routing::data::DataRequest::ImmutableData(data_name.clone(), ::routing::immutable_data::ImmutableDataType::Normal);
+            let request = ::routing::data::DataRequest::ImmutableData(data_name.clone(),
+                              ::routing::immutable_data::ImmutableDataType::Normal);
             let get_result = data_manager.handle_get(&data_name, request.clone());
             assert_eq!(get_result.len(), super::PARALLELISM);
             for i in 0..get_result.len() {
                 match get_result[i].clone() {
                     ::types::MethodCall::Get { location, data_request } => {
-                        assert_eq!(location, ::routing::authority::Authority::ManagedNode(nodes_in_table[i]));
+                        assert_eq!(location,
+                                   ::routing::authority::Authority::ManagedNode(nodes_in_table[i]));
                         assert_eq!(data_request, request);
                     }
                     _ => panic!("Unexpected"),

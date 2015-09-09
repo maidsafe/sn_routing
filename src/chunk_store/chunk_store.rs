@@ -20,7 +20,7 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::io::{Read, Write};
 use tempdir;
-use rustc_serialize::hex::{ToHex, FromHex};
+use rustc_serialize::hex::{FromHex, ToHex};
 
 
 /// Chunkstore is a collection for holding all data chunks.
@@ -76,17 +76,17 @@ impl ChunkStore {
                                         let len = metadata.len() as usize;
                                         let _ = remove_file(entry.path());
                                         self.current_disk_usage -= len;
-                                    },
-                                    _ => ()
+                                    }
+                                    _ => (),
                                 }
                                 return
                             }
-                        },
-                        _ => ()
+                        }
+                        _ => (),
                     }
                 }
-            },
-            _ => ()
+            }
+            _ => (),
         }
     }
 
@@ -104,15 +104,15 @@ impl ChunkStore {
                                         let mut contents = Vec::<u8>::new();
                                         let _ = file.read_to_end(&mut contents);
                                         return contents;
-                                    },
+                                    }
                                     _ => (),
                                 }
                             }
-                        },
+                        }
                         _ => (),
                     }
                 }
-            },
+            }
             _ => return Vec::new(),
         }
 
@@ -138,11 +138,11 @@ impl ChunkStore {
                             if entry.file_name().to_str() == OsStr::new(&name).to_str() {
                                 return true;
                             }
-                        },
+                        }
                         _ => (),
                     }
                 }
-            },
+            }
             _ => return false,
         }
 
@@ -160,27 +160,26 @@ impl ChunkStore {
                             match entry.file_name().to_str() {
                                 Some(hex_name) => {
                                     match hex_name.from_hex() {
-                                        Ok(name) =>
-                                            names.push(::routing::NameType::new(
+                                        Ok(name) => names.push(::routing::NameType::new(
                                                 ::routing::types::vector_as_u8_64_array(name))),
                                         _ => (),
                                     }
-                                },
+                                }
                                 _ => (),
                             }
-                        },
+                        }
                         _ => (),
                     }
                 }
-            },
-            _ => ()
+            }
+            _ => (),
         }
 
         names
     }
 
     pub fn has_disk_space(&self, required_space: usize) -> bool {
-       self.current_disk_usage + required_space <= self.max_disk_usage
+        self.current_disk_usage + required_space <= self.max_disk_usage
     }
 
     fn to_hex_string(&self, name: &::routing::NameType) -> String {

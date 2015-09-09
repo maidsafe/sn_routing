@@ -21,43 +21,43 @@ mod test {
 
   static K_DEFAULT_MAX_DISK_USAGE: usize = 4 * 1024;// // 4 * OneKB;
 
-  struct NameValueContainer(Vec<(::routing::NameType, String)>);
+    struct NameValueContainer(Vec<(::routing::NameType, String)>);
 
-  fn get_random_non_empty_string(length: usize) -> String {
-      use rand::Rng;
-      let mut string = String::new();
-      for char in ::rand::thread_rng().gen_ascii_chars().take(length) {
-          string.push(char);
-      }
-      string
-  }
+    fn get_random_non_empty_string(length: usize) -> String {
+        use rand::Rng;
+        let mut string = String::new();
+        for char in ::rand::thread_rng().gen_ascii_chars().take(length) {
+            string.push(char);
+        }
+        string
+    }
 
-  fn add_random_name_value_pairs(number: usize, size: usize) -> NameValueContainer {
-      let mut i = 0usize;
-      let mut container: Vec<(::routing::NameType, String)> = Vec::with_capacity(number);
-      loop {
-          container.push((::utils::random_name(),
+    fn add_random_name_value_pairs(number: usize, size: usize) -> NameValueContainer {
+        let mut i = 0usize;
+        let mut container: Vec<(::routing::NameType, String)> = Vec::with_capacity(number);
+        loop {
+            container.push((::utils::random_name(),
                           get_random_non_empty_string(size)));
-          i += 1; // i++; is not compiling
-          if i == number {
-              break;
-          }
-      }
-      NameValueContainer(container)
-  }
+            i += 1; // i++; is not compiling
+            if i == number {
+                break;
+            }
+        }
+        NameValueContainer(container)
+    }
 
-  struct ChunkStoreTest {
-      chunk_store: ::chunk_store::ChunkStore,
-      max_disk_storage: usize
-  }
+    struct ChunkStoreTest {
+        chunk_store: ::chunk_store::ChunkStore,
+        max_disk_storage: usize,
+    }
 
   impl ChunkStoreTest {
-      pub fn new() -> ChunkStoreTest {
-          ChunkStoreTest {
-              chunk_store: ::chunk_store::ChunkStore::new(K_DEFAULT_MAX_DISK_USAGE),
-              max_disk_storage: K_DEFAULT_MAX_DISK_USAGE
-          }
-      }
+        pub fn new() -> ChunkStoreTest {
+            ChunkStoreTest {
+                chunk_store: ::chunk_store::ChunkStore::new(K_DEFAULT_MAX_DISK_USAGE),
+                max_disk_storage: K_DEFAULT_MAX_DISK_USAGE,
+            }
+        }
 
   //    pub fn delete_directory(dir_path: &str) -> bool {
   //        match remove_dir_all(dir_path) {
@@ -66,120 +66,126 @@ mod test {
   //        }
   //    }
 
-      pub fn put(&mut self, name: ::routing::NameType, value: Vec<u8>) {
-          self.chunk_store.put(name, value);
-      }
+        pub fn put(&mut self, name: ::routing::NameType, value: Vec<u8>) {
+            self.chunk_store.put(name, value);
+        }
 
-      pub fn populate_chunk_store(&mut self, num_entries: usize, disk_entries: usize) -> NameValueContainer {
-          let name_value_pairs = add_random_name_value_pairs(num_entries, ONE_KB);
-          let disk_usage = disk_entries * ONE_KB;
-          self.chunk_store = ::chunk_store::ChunkStore::new(disk_usage);
-          self.max_disk_storage = disk_usage;
-          for name_value in name_value_pairs.0.clone() {
-              let data_as_bytes = name_value.1.into_bytes();
-              self.chunk_store.put(::routing::NameType::new(name_value.0.clone().get_id()), data_as_bytes.clone());
-              let recovered = self.chunk_store.get(::routing::NameType::new(name_value.0.clone().get_id()));
-              assert!(data_as_bytes == recovered);
-          }
-          name_value_pairs
-      }
+        pub fn populate_chunk_store(&mut self,
+                                    num_entries: usize,
+                                    disk_entries: usize)
+                                    -> NameValueContainer {
+            let name_value_pairs = add_random_name_value_pairs(num_entries, ONE_KB);
+            let disk_usage = disk_entries * ONE_KB;
+            self.chunk_store = ::chunk_store::ChunkStore::new(disk_usage);
+            self.max_disk_storage = disk_usage;
+            for name_value in name_value_pairs.0.clone() {
+                let data_as_bytes = name_value.1.into_bytes();
+                self.chunk_store.put(::routing::NameType::new(name_value.0.clone().get_id()),
+                                     data_as_bytes.clone());
+                let recovered =
+                    self.chunk_store.get(::routing::NameType::new(name_value.0.clone().get_id()));
+                assert!(data_as_bytes == recovered);
+            }
+            name_value_pairs
+        }
   }
 
-  #[test]
-  fn successful_store() {
-      let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
+    #[test]
+    fn successful_store() {
+        let k_disk_size: usize = 116;
+        let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
-      let mut put = |size| {
-          let name = ::utils::random_name();
-          let data = get_random_non_empty_string(size);
-          let size_before_insert = chunk_store.current_disk_usage();
-          chunk_store.put(name, data.into_bytes());
-          assert_eq!(chunk_store.current_disk_usage(), size + size_before_insert);
-          chunk_store.current_disk_usage()
-      };
+        let mut put = |size| {
+                          let name = ::utils::random_name();
+                          let data = get_random_non_empty_string(size);
+                          let size_before_insert = chunk_store.current_disk_usage();
+                          chunk_store.put(name, data.into_bytes());
+                          assert_eq!(chunk_store.current_disk_usage(), size + size_before_insert);
+                          chunk_store.current_disk_usage()
+                      };
 
-      assert_eq!(put(1usize), 1usize);
-      assert_eq!(put(100usize), 101usize);
-      assert_eq!(put(10usize), 111usize);
-      assert_eq!(put(5usize), k_disk_size);
-  }
+        assert_eq!(put(1usize), 1usize);
+        assert_eq!(put(100usize), 101usize);
+        assert_eq!(put(10usize), 111usize);
+        assert_eq!(put(5usize), k_disk_size);
+    }
 
-  #[test]
-  #[should_panic]
-  fn should_fail_if_chunk_size_is_greater_than_max_disk_size() {
-      let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
-      let name = ::utils::random_name();
-      let data = get_random_non_empty_string(k_disk_size + 1);
-      chunk_store.put(name, data.into_bytes());
-  }
+    #[test]
+    #[should_panic]
+    fn should_fail_if_chunk_size_is_greater_than_max_disk_size() {
+        let k_disk_size: usize = 116;
+        let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
+        let name = ::utils::random_name();
+        let data = get_random_non_empty_string(k_disk_size + 1);
+        chunk_store.put(name, data.into_bytes());
+    }
 
-  #[test]
-  fn remove_from_disk_store() {
-      let k_size: usize = 1;
-      let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
+    #[test]
+    fn remove_from_disk_store() {
+        let k_size: usize = 1;
+        let k_disk_size: usize = 116;
+        let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
-      let mut put_and_delete = |size| {
-          let name = ::utils::random_name();
-          let data = get_random_non_empty_string(size);
+        let mut put_and_delete = |size| {
+                                     let name = ::utils::random_name();
+                                     let data = get_random_non_empty_string(size);
 
-          chunk_store.put(name.clone(), data.into_bytes());
-          assert_eq!(chunk_store.current_disk_usage(), size);
-          chunk_store.delete(name);
-          assert_eq!(chunk_store.current_disk_usage(), 0);
-      };
+                                     chunk_store.put(name.clone(), data.into_bytes());
+                                     assert_eq!(chunk_store.current_disk_usage(), size);
+                                     chunk_store.delete(name);
+                                     assert_eq!(chunk_store.current_disk_usage(), 0);
+                                 };
 
-      put_and_delete(k_size);
-      put_and_delete(k_disk_size);
-  }
+        put_and_delete(k_size);
+        put_and_delete(k_disk_size);
+    }
 
-  #[test]
-  #[should_panic]
-  fn should_fail_on_disk_overfill() {
-      let num_entries = 4;
-      let num_disk_entries = 4;
-      let mut chunk_store_utest = ChunkStoreTest::new();
-      let name_value_container = chunk_store_utest.populate_chunk_store(num_entries, num_disk_entries).0;
-      let name = ::utils::random_name();
-      let value = get_random_non_empty_string(2 * ONE_KB);
+    #[test]
+    #[should_panic]
+    fn should_fail_on_disk_overfill() {
+        let num_entries = 4;
+        let num_disk_entries = 4;
+        let mut chunk_store_utest = ChunkStoreTest::new();
+        let name_value_container =
+            chunk_store_utest.populate_chunk_store(num_entries, num_disk_entries).0;
+        let name = ::utils::random_name();
+        let value = get_random_non_empty_string(2 * ONE_KB);
       // let first_name: routing::::routing::NameType = name_value_container[0].0.clone();
-      let _ = name_value_container[0].0.clone();
+        let _ = name_value_container[0].0.clone();
       // let second_name: routing::::routing::NameType = name_value_container[1].0.clone();
-      let _ = name_value_container[1].0.clone();
-      chunk_store_utest.put(name, value.into_bytes());
-  }
+        let _ = name_value_container[1].0.clone();
+        chunk_store_utest.put(name, value.into_bytes());
+    }
 
-  #[test]
-  fn put_and_get_value_should_be_same() {
-      let data_size = 50;
-      let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
+    #[test]
+    fn put_and_get_value_should_be_same() {
+        let data_size = 50;
+        let k_disk_size: usize = 116;
+        let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
-      let name = ::utils::random_name();
-      let data = get_random_non_empty_string(data_size).into_bytes();
-      chunk_store.put(name.clone(), data.clone());
-      let recovered = chunk_store.get(name);
-      assert_eq!(data, recovered);
-      assert_eq!(chunk_store.current_disk_usage(), data_size);
-  }
+        let name = ::utils::random_name();
+        let data = get_random_non_empty_string(data_size).into_bytes();
+        chunk_store.put(name.clone(), data.clone());
+        let recovered = chunk_store.get(name);
+        assert_eq!(data, recovered);
+        assert_eq!(chunk_store.current_disk_usage(), data_size);
+    }
 
-  #[test]
-  fn repeatedly_storing_same_name() {
-      let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
+    #[test]
+    fn repeatedly_storing_same_name() {
+        let k_disk_size: usize = 116;
+        let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
-      let mut put = |name, size| {
-          let data = get_random_non_empty_string(size);
-          chunk_store.put(name, data.into_bytes());
-          chunk_store.current_disk_usage()
-      };
+        let mut put = |name, size| {
+                          let data = get_random_non_empty_string(size);
+                          chunk_store.put(name, data.into_bytes());
+                          chunk_store.current_disk_usage()
+                      };
 
-      let name = ::utils::random_name();
-      assert_eq!(put(name.clone(), 1usize), 1usize);
-      assert_eq!(put(name.clone(), 100usize), 100usize);
-      assert_eq!(put(name.clone(), 10usize), 10usize);
-      assert_eq!(put(name.clone(), 5usize), 5usize);  // last inserted data size
-  }
+        let name = ::utils::random_name();
+        assert_eq!(put(name.clone(), 1usize), 1usize);
+        assert_eq!(put(name.clone(), 100usize), 100usize);
+        assert_eq!(put(name.clone(), 10usize), 10usize);
+        assert_eq!(put(name.clone(), 5usize), 5usize);  // last inserted data size
+    }
 }

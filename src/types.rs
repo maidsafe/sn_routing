@@ -19,25 +19,46 @@
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum MethodCall {
     /// request to have `location` to handle put for the `content`
-    Put { location: ::routing::authority::Authority, content: ::routing::data::Data },
+    Put {
+        location: ::routing::authority::Authority,
+        content: ::routing::data::Data,
+    },
     /// request to retreive data with specified type and location from network
-    Get { location: ::routing::authority::Authority, data_request: ::routing::data::DataRequest },
+    Get {
+        location: ::routing::authority::Authority,
+        data_request: ::routing::data::DataRequest,
+    },
     // /// request to post
     // Post { destination: ::routing::NameType, content: Data },
     // /// Request delete
     // Delete { name: ::routing::NameType, data : Data },
     /// request to refresh
-    Refresh { type_tag: u64, from_group: ::routing::NameType, payload: Vec<u8> },
+    Refresh {
+        type_tag: u64,
+        from_group: ::routing::NameType,
+        payload: Vec<u8>,
+    },
     /// reply
-    Reply { data: ::routing::data::Data },
+    Reply {
+        data: ::routing::data::Data,
+    },
     /// response error indicating failed in putting data
-    FailedPut { location: ::routing::authority::Authority, data: ::routing::data::Data },
+    FailedPut {
+        location: ::routing::authority::Authority,
+        data: ::routing::data::Data,
+    },
     /// response error indicating clearing sarificial data
-    ClearSacrificial { location: ::routing::authority::Authority, name: ::routing::NameType, size: u32 },
+    ClearSacrificial {
+        location: ::routing::authority::Authority,
+        name: ::routing::NameType,
+        size: u32,
+    },
     /// response error indicating not enough allowance
     NotEnoughAllowance,
     /// response error indicating invalid request
-    InvalidRequest { data: ::routing::data::Data },
+    InvalidRequest {
+        data: ::routing::data::Data,
+    },
 }
 
 /// This trait is required for any type (normally an account) which is refreshed on a churn event.

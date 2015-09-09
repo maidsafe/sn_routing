@@ -20,49 +20,61 @@ mod database;
 pub use self::database::Account;
 
 pub struct PmidManager {
-    database : database::PmidManagerDatabase
+    database: database::PmidManagerDatabase,
 }
 
 impl PmidManager {
     pub fn new() -> PmidManager {
-        PmidManager {
-            database: database::PmidManagerDatabase::new()
-        }
+        PmidManager { database: database::PmidManagerDatabase::new() }
     }
 
-    pub fn handle_put(&mut self, pmid_node: ::routing::NameType, data: ::routing::data::Data) -> Vec<::types::MethodCall> {
+    pub fn handle_put(&mut self,
+                      pmid_node: ::routing::NameType,
+                      data: ::routing::data::Data)
+                      -> Vec<::types::MethodCall> {
         if self.database.put_data(&pmid_node, data.payload_size() as u64) {
-            vec![::types::MethodCall::Put { location: ::routing::authority::Authority::ManagedNode(pmid_node.clone()),
-                                   content: data }]
+            vec![::types::MethodCall::Put {
+                     location: ::routing::authority::Authority::ManagedNode(pmid_node.clone()),
+                     content: data
+                 }]
         } else {
             vec![]
         }
     }
 
-    pub fn handle_put_response(&mut self, from_address: &::routing::NameType,
-                               response: ::routing::error::ResponseError) -> Vec<::types::MethodCall> {
+    pub fn handle_put_response(&mut self,
+                               from_address: &::routing::NameType,
+                               response: ::routing::error::ResponseError)
+                               -> Vec<::types::MethodCall> {
         match response {
             ::routing::error::ResponseError::FailedRequestForData(data) => {
                 self.database.delete_data(from_address, data.payload_size() as u64);
-                return vec![::types::MethodCall::FailedPut { location: ::routing::authority::Authority::NaeManager(data.name()),
-                                                    data: data }];
-            },
+                return vec![::types::MethodCall::FailedPut {
+                                location: ::routing::authority::Authority::NaeManager(data.name()),
+                                data: data
+                            }];
+            }
             ::routing::error::ResponseError::HadToClearSacrificial(name, size) => {
                 self.database.delete_data(from_address, size as u64);
                 return vec![::types::MethodCall::ClearSacrificial {
-                    location: ::routing::authority::Authority::NaeManager(name), name: name, size: size }];
-            },
+                    location: ::routing::authority::Authority::NaeManager(name),
+                    name: name,
+                    size: size
+                }];
+            }
             _ => {}
         }
         vec![]
     }
 
-    pub fn handle_get_failure_notification(&mut self, from_address: &::routing::NameType,
-                                           response: ::routing::error::ResponseError) -> Vec<::types::MethodCall> {
+    pub fn handle_get_failure_notification(&mut self,
+                                           from_address: &::routing::NameType,
+                                           response: ::routing::error::ResponseError)
+                                           -> Vec<::types::MethodCall> {
         match response {
             ::routing::error::ResponseError::FailedRequestForData(data) => {
                 self.database.delete_data(from_address, data.payload_size() as u64);
-            },
+            }
             _ => {}
         }
         vec![]
@@ -72,7 +84,9 @@ impl PmidManager {
         self.database.handle_account_transfer(merged_account);
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<::routing::NameType>) -> Vec<::types::MethodCall> {
+    pub fn retrieve_all_and_reset(&mut self,
+                                  close_group: &Vec<::routing::NameType>)
+                                  -> Vec<::types::MethodCall> {
         self.database.retrieve_all_and_reset(close_group)
     }
 }
@@ -86,8 +100,10 @@ mod test {
         let mut pmid_manager = PmidManager::new();
         let dest = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
-        let put_result = pmid_manager.handle_put(dest, ::routing::data::Data::ImmutableData(data.clone()));
+        let data = ::routing::immutable_data::ImmutableData::new(
+                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let put_result =
+            pmid_manager.handle_put(dest, ::routing::data::Data::ImmutableData(data.clone()));
         assert_eq!(put_result.len(), 1);
         match put_result[0].clone() {
             ::types::MethodCall::Put { location, content } => {
