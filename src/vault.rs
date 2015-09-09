@@ -251,23 +251,28 @@ impl Vault {
 
     fn handle_put(&mut self,
                   our_authority: ::routing::authority::Authority,
-                  _from_authority: ::routing::authority::Authority,
+                  from_authority: ::routing::authority::Authority,
                   data: ::routing::data::Data,
                   response_token: Option<::routing::SignedToken>) {
         let returned_actions = match our_authority.clone() {
-            ::routing::authority::Authority::ClientManager(from_address) => self.maid_manager.handle_put(&from_address, data),
+            ::routing::authority::Authority::ClientManager(from_address) =>
+                self.maid_manager.handle_put(&from_address, from_authority, data),
             ::routing::authority::Authority::NaeManager(_) => {
                 // both DataManager and StructuredDataManager are NaeManagers
                 // client put other data (Immutable, StructuredData) will all goes to MaidManager
                 // first, then goes to DataManager (i.e. from_authority is always ClientManager)
                 match data {
-                    ::routing::data::Data::ImmutableData(data) => self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
-                    ::routing::data::Data::StructuredData(data) => self.sd_manager.handle_put(data),
+                    ::routing::data::Data::ImmutableData(data) =>
+                        self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
+                    ::routing::data::Data::StructuredData(data) =>
+                        self.sd_manager.handle_put(data),
                     _ => vec![],
                 }
             },
-            ::routing::authority::Authority::NodeManager(dest_address) => self.pmid_manager.handle_put(dest_address, data),
-            ::routing::authority::Authority::ManagedNode(pmid_node) => self.pmid_node.handle_put(pmid_node, data),
+            ::routing::authority::Authority::NodeManager(dest_address) =>
+                self.pmid_manager.handle_put(dest_address, data),
+            ::routing::authority::Authority::ManagedNode(pmid_node) =>
+                self.pmid_node.handle_put(pmid_node, data),
             _ => vec![],
         };
         self.send(our_authority, returned_actions, response_token, None, None);
@@ -464,6 +469,13 @@ impl Vault {
                            our_authority, name, size, location);
                     self.routing.put_response(our_authority.clone(), location,
                                               ::routing::error::ResponseError::HadToClearSacrificial(name, size),
+                                              response_token.clone());
+                },
+                ::types::MethodCall::LowBalance { location, data, balance } => {
+                    debug!("as {:?} failed in putting data {:?}, responding to {:?}",
+                           our_authority, data, location);
+                    self.routing.put_response(our_authority.clone(), location,
+                                              ::routing::error::ResponseError::LowBalance(data, balance),
                                               response_token.clone());
                 },
                 _ => {}

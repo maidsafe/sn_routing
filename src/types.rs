@@ -33,9 +33,11 @@ pub enum MethodCall {
     /// response error indicating failed in putting data
     FailedPut { location: ::routing::authority::Authority, data: ::routing::data::Data },
     /// response error indicating clearing sarificial data
-    ClearSacrificial { location: ::routing::authority::Authority, name: ::routing::NameType, size: u32 },
+    ClearSacrificial { location: ::routing::authority::Authority,
+                       name: ::routing::NameType, size: u32 },
     /// response error indicating not enough allowance
-    NotEnoughAllowance,
+    LowBalance{ location: ::routing::authority::Authority,
+                data: ::routing::data::Data, balance: u32},
     /// response error indicating invalid request
     InvalidRequest { data: ::routing::data::Data },
 }

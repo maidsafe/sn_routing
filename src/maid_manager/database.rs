@@ -134,6 +134,11 @@ impl MaidManagerDatabase {
         self.storage.contains_key(name)
     }
 
+    pub fn get_balance(&mut self, name: &MaidNodeName) -> u64 {
+        let default: AccountValue = Default::default();
+        self.storage.entry(name.clone()).or_insert(default).space_available()
+    }
+
     pub fn put_data(&mut self, name: &MaidNodeName, size: u64) -> bool {
         let default: AccountValue = Default::default();
         let entry = self.storage.entry(name.clone()).or_insert(default);
