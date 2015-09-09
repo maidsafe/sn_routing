@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(dead_code)]
-
 mod database;
 
 pub use self::database::Account;
@@ -70,15 +68,5 @@ mod test {
             }
             _ => panic!("Unexpected"),
         }
-    }
-
-    #[test]
-    fn handle_account_transfer() {
-        let mut maid_manager = MaidManager::new();
-        let name = ::utils::random_name();
-        let account = Account::new(name.clone(),
-            super::database::AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>()));
-        maid_manager.handle_account_transfer(account);
-        assert_eq!(maid_manager.database.exist(&name), true);
     }
 }
