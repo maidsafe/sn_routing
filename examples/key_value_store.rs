@@ -93,9 +93,10 @@ struct Args {
 
 ////////////////////////////////////////////////////////////////////////////////
 struct Node {
-    routing  : Routing,
-    receiver : Receiver<Event>,
-    db       : BTreeMap<NameType, PlainData>,
+    routing: Routing,
+    receiver: Receiver<Event>,
+    db: BTreeMap<::routing::NameType, PlainData>,
+    client_accounts: BTreeMap<::routing::NameType, u64>,
 }
 
 impl Node {
@@ -104,9 +105,10 @@ impl Node {
         let routing = Routing::new(sender);
 
         Node {
-            routing  : routing,
-            receiver : receiver,
-            db       : BTreeMap::new(),
+            routing: routing,
+            receiver: receiver,
+            db: BTreeMap::new(),
+            client_accounts: BTreeMap::new(),
         }
     }
 
@@ -120,7 +122,7 @@ impl Node {
                 }
             };
 
-            println!("Node: Received event {:?}", event);
+            info!("Node: Received event {:?}", event);
 
             match event {
                 Event::Request{request,
@@ -132,7 +134,16 @@ impl Node {
                                         from_authority,
                                         response_token);
                 },
-                _ => {}
+                Event::Connected => println!("Node is connected."),
+                Event::Churn(our_close_group) => {
+                    self.handle_churn(our_close_group);
+                },
+                Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
+                    if type_tag != 1u64 { error!("Reveived refresh for tag {:?} from {:?}",
+                        type_tag, our_authority); continue; };
+                    self.handle_refresh(our_authority, vec_of_bytes);
+                },
+                _ => {},
             }
         }
     }
@@ -186,7 +197,7 @@ impl Node {
 
     fn handle_put_request(&mut self, data            : Data,
                                      our_authority   : Authority,
-                                     _from_authority : Authority,
+                                     from_authority  : Authority,
                                      _response_token : Option<SignedToken>) {
         let plain_data = match data.clone() {
             Data::PlainData(plain_data) => plain_data,
@@ -195,18 +206,89 @@ impl Node {
 
         match our_authority {
             Authority::NaeManager(_) => {
-                debug!("Storing: key {:?}, value {:?}", plain_data.name(), plain_data);
+                println!("Storing: key {:?}, value {:?}", plain_data.name(), plain_data);
                 let _ = self.db.insert(plain_data.name(), plain_data);
             },
             Authority::ClientManager(_) => {
-                debug!("Sending: key {:?}, value {:?}", plain_data.name(), plain_data);
-                self.routing.put_request(
-                    our_authority, Authority::NaeManager(plain_data.name()), data); 
+                match from_authority {
+                    ::routing::authority::Authority::Client(_, public_key) => {
+                        let client_name = ::routing::NameType::new(
+                            ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0);
+                        *self.client_accounts.entry(client_name)
+                            .or_insert(0u64) += data.payload_size() as u64;
+                        println!("Client ({:?}) stored {:?} bytes", client_name,
+                            self.client_accounts.get(&client_name));
+                        debug!("Sending: key {:?}, value {:?}", plain_data.name(), plain_data);
+                        self.routing.put_request(
+                            our_authority, Authority::NaeManager(plain_data.name()), data);
+                    },
+                    _ => {
+                        println!("Node: Unexpected from_authority ({:?})", from_authority);
+                        assert!(false);
+                    },
+                };
+
             },
             _ => {
                 println!("Node: Unexpected our_authority ({:?})", our_authority);
                 assert!(false);
             }
+        }
+    }
+
+    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>) {
+        println!("Handle churn for close group size {:?}", _our_close_group.len());
+        // for value in self.db.values() {
+        //     println!("CHURN {:?}", value.name());
+        //     self.routing.put_request(::routing::authority::Authority::NaeManager(value.name()),
+        //         ::routing::authority::Authority::NaeManager(value.name()),
+        //         ::routing::data::Data::PlainData(value.clone()));
+        // }
+
+        for (client_name, stored) in self.client_accounts.iter() {
+            println!("REFRESH {:?} - {:?}", authority, stored);
+            self.routing.refresh_request(1u64, authority,
+                encode(&stored).unwrap());
+        }
+        // self.db = BTreeMap::new();
+    }
+
+    fn handle_refresh(&mut self, our_authority: Authority, vec_of_bytes: Vec<Vec<u8>>) {
+        let mut records : Vec<u64> = Vec::new();
+        let mut fail_parsing_count = 0usize;
+        for bytes in vec_of_bytes {
+            match decode(&bytes) {
+                Ok(record) => records.push(record),
+                Err(_) => fail_parsing_count += 1usize,
+            };
+        }
+        let median = median(records.clone());
+        println!("Refresh for {:?}: median {:?} from {:?} (errs {:?})", our_authority, median,
+            records, fail_parsing_count);
+        match our_authority {
+             ::routing::authority::Authority::ClientManager(client_name) => {
+                 let _ = self.client_accounts.insert(client_name, median);
+             },
+             _ => {},
+        };
+    }
+}
+
+/// Returns the median (rounded down to the nearest integral value) of `values` which can be
+/// unsorted.  If `values` is empty, returns `0`.
+pub fn median(mut values: Vec<u64>) -> u64 {
+    match values.len() {
+        0 => 0u64,
+        1 => values[0],
+        len if len % 2 == 0 => {
+            values.sort();
+            let lower_value = values[(len / 2) - 1];
+            let upper_value = values[len / 2];
+            (lower_value + upper_value) / 2
+        }
+        len => {
+            values.sort();
+            values[len / 2]
         }
     }
 }
