@@ -111,6 +111,7 @@ pub enum InternalRequest {
     //                 | contains the PublicId from RequestNetworkName, but mutated with
     //                 | the network assigned name
     Refresh(u64, Vec<u8>),
+    Hello{their_endpoint: Endpoint, our_id: sign::PublicKey}
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -123,6 +124,7 @@ pub enum InternalResponse {
     //                 |         |              | the original Request::RequestNetworkName
     //                 |         | the group public keys to combine FindGroup in this response
     //                 | the cached PublicId in the group
+    Hello{our_endpoint: Endpoint, their_id: sign::PublicKey}
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]

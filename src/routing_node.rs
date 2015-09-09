@@ -46,7 +46,6 @@ use utils::{encode, decode};
 use utils;
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
-use wake_up::WakeUpCaller;
 
 use messages::{RoutingMessage, SignedMessage, SignedToken, ConnectRequest, ConnectResponse,
                Content, ExternalRequest, ExternalResponse, InternalRequest, InternalResponse};
@@ -71,7 +70,6 @@ pub struct RoutingNode {
     action_sender: mpsc::Sender<Action>,
     action_receiver: mpsc::Receiver<Action>,
     event_sender: mpsc::Sender<Event>,
-    wakeup: WakeUpCaller,
     filter: ::filter::Filter,
     connection_filter: ::message_filter::MessageFilter<::NameType>,
     core: RoutingCore,
@@ -105,7 +103,6 @@ impl RoutingNode {
             action_sender: action_sender.clone(),
             action_receiver: action_receiver,
             event_sender: event_sender,
-            wakeup: WakeUpCaller::new(action_sender),
             filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
             connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
                 ::time::Duration::minutes(20)),
@@ -119,7 +116,6 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
-        self.wakeup.start(10);
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         debug!("RoutingNode started running and started bootstrap");
         loop {
@@ -139,9 +135,6 @@ impl RoutingNode {
                 },
                 Ok(Action::SetCacheOptions(cache_options)) => {
                     self.set_cache_options(cache_options);
-                },
-                Ok(Action::WakeUp) => {
-                    // ensure that the loop is blocked for maximally 10ms
                 },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
@@ -167,56 +160,22 @@ impl RoutingNode {
                                     _ => ignore(self.message_received(message)),
                             };
                         }
-                        // The message received is not a Signed Routing Message,
-                        // expect it to be an Hello message to identify a connection
-                        Err(_) => {
-                            match decode::<::direct_messages::DirectMessage>(&bytes) {
-                                Ok(direct_message) => self.direct_message_received(
-                                        direct_message, endpoint),
-                                    _ => error!("Unparsable message received on {:?}", endpoint),
-                            };
-                        }
+                        Err(_) => error!("Unparsable message received on {:?}", endpoint),
                     };
                 }
-                Ok(crust::Event::NewConnection(endpoint)) => {
-                    self.handle_new_connection(endpoint);
+                Ok(crust::Event::NewConnection(endpoint)) |
+                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                    match self.core.add_unknown_endpoint(endpoint) {
+                        Some(ep) => for endp in ep { self.connection_manager.drop_node(endp); },
+                        None => {}
+                    }
                 }
                 Ok(crust::Event::LostConnection(endpoint)) => {
                     self.handle_lost_connection(endpoint);
                 }
-                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                    self.handle_new_bootstrap_connection(endpoint);
-                }
             };
             thread::sleep_ms(1);
         }
-    }
-
-    /// When CRUST receives a connect to our listening port and establishes a new connection,
-    /// the endpoint is given here as new connection
-    fn handle_new_connection(&mut self, endpoint: Endpoint) {
-        debug!("New connection on {:?}", endpoint);
-        // only accept new connections if we are a full node
-        // FIXME(dirvine) I am not sure we should not accept connections here :16/08/2015
-        let has_bootstrap_endpoints = self.core.has_bootstrap_endpoints();
-        if !self.core.is_node() {
-            if has_bootstrap_endpoints {
-                // we are bootstrapping, refuse all normal connections
-                self.connection_manager.drop_node(endpoint);
-                return;
-            } else {
-                let assigned_name = NameType::new(crypto::hash::sha512::hash(
-                    &self.core.id().name().0).0);
-                let _ = self.core.assign_name(&assigned_name);
-            }
-        }
-
-        if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), false),
-            endpoint.clone(), None) {
-            // only fails if relay_map is full for unidentified connections
-            self.connection_manager.drop_node(endpoint.clone());
-        }
-        ignore(self.send_hello(endpoint, None));
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
@@ -226,27 +185,6 @@ impl RoutingNode {
         if connection_name.is_some() {
             self.core.drop_peer(&connection_name.unwrap());
         }
-    }
-
-    fn handle_new_bootstrap_connection(&mut self, endpoint: Endpoint) {
-        debug!("New bootstrap connection on {:?}", endpoint);
-        if !self.core.is_node() {
-            if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), true),
-                endpoint.clone(), None) {
-                // only fails if relay_map is full for unidentified connections
-                error!("New bootstrap connection on {:?} failed to be labeled as unidentified",
-                    endpoint);
-                self.connection_manager.drop_node(endpoint.clone());
-                return;
-            }
-        } else {
-            // if core is a full node, don't accept new bootstrap connections
-            error!("New bootstrap connection on {:?} but we are a node",
-                endpoint);
-            self.connection_manager.drop_node(endpoint);
-            return;
-        }
-        ignore(self.send_hello(endpoint, None));
     }
 
     // ---- Hello connection identification -------------------------------------------------------
@@ -495,7 +433,8 @@ impl RoutingNode {
                                 refresh_authority),
                             Address::Client(_) => Err(RoutingError::BadAuthority),
                         }
-                    }
+                    },
+                    InternalRequest::Hello{their_endpoint, our_id} => unimplemented!()
                 }
             }
             Content::InternalResponse(response) => {
@@ -508,6 +447,7 @@ impl RoutingNode {
                         self.handle_connect_response(response, message.from_authority,
                             message.to_authority)
                     }
+                    InternalResponse::Hello{our_endpoint, their_id} => unimplemented!()
                 }
             }
             Content::ExternalRequest(request) => {
@@ -1164,13 +1104,13 @@ impl RoutingNode {
                 None => self.data_cache =
                     Some(LruCache::<NameType, Data>::with_expiry_duration(Duration::minutes(10))),
                 Some(_) => {},
-            }    
+            }
         } else {
             self.data_cache = None;
         }
     }
 
-    fn handle_cache_put(&mut self, message: &RoutingMessage) {  
+    fn handle_cache_put(&mut self, message: &RoutingMessage) {
         match self.data_cache {
             Some(ref mut data_cache) => {
                 match message.content.clone() {
@@ -1208,7 +1148,6 @@ impl RoutingNode {
             },
             None => {}
         }
-            
     }
 
     fn handle_cache_get(&mut self, message: &RoutingMessage) -> Option<Content> {

@@ -20,6 +20,7 @@ use std::sync::mpsc::Sender;
 
 use crust;
 
+use std::collections::HashMap;
 use routing_table::{RoutingTable, NodeInfo};
 use relay::RelayMap;
 use types::Address;
@@ -32,6 +33,8 @@ use peer::Peer;
 use action::Action;
 use event::Event;
 use messages::RoutingMessage;
+use time::{Duration, SteadyTime};
+use crust::{Endpoint};
 
 /// ConnectionName labels the counterparty on a connection in relation to us
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -51,6 +54,7 @@ pub struct RoutingCore {
     network_name: Option<NameType>,
     routing_table: Option<RoutingTable>,
     relay_map: RelayMap,
+    unknown_connection_map: HashMap<Endpoint, SteadyTime>,
     // sender for signaling events and action
     event_sender: Sender<Event>,
     action_sender: Sender<Action>,
@@ -78,6 +82,7 @@ impl RoutingCore {
             network_name: None,
             routing_table: None,
             relay_map: RelayMap::new(),
+            unknown_connection_map: HashMap::new(),
             event_sender: event_sender,
             action_sender: action_sender,
         }
@@ -243,6 +248,28 @@ impl RoutingCore {
         }
     }
 
+    /// Add all connections here first, until we can match them with either a 
+    /// HelloResponse or ConnectResponse
+    /// will return any endpoints to be dropped by crust
+    pub fn add_unknown_endpoint(&mut self, endpoint : Endpoint)-> Option<Vec<Endpoint>> {
+        self.unknown_connection_map.insert(endpoint, SteadyTime::now());    
+        self.clear_old_endpoints()
+     }
+    /// check if unknown_endpoint exists (will remove from map)
+    pub fn is_unknown_endpoint(&mut self, endpoint: &Endpoint)-> bool {
+        self.unknown_connection_map.remove(endpoint).is_some()
+    }
+    // clear timed out endpoints and return to be removed from crust::connection_manager 
+    fn clear_old_endpoints(&mut self)-> Option<Vec<Endpoint>> {
+        let timed_out: Vec<_> = self.unknown_connection_map
+         .iter()
+         .filter(|&(_, &v)| v > SteadyTime::now() + Duration::minutes(10))
+         .map(|(k, _)| k.clone())
+         .collect();
+        for old in &timed_out { self.unknown_connection_map.remove(old); }    
+        if timed_out.is_empty() { None } else { Some(timed_out.clone()) }
+    }
+
     /// To be documented
     pub fn add_peer(&mut self,
                     identity: ConnectionName,
@@ -275,6 +302,7 @@ impl RoutingCore {
                                     };
                                     info!("RT({:?}) added {:?}", routing_table.size(),
                                         routing_name);                                };
+                                
                                 if added && trigger_churn {
                                     let our_close_group = routing_table.our_close_group();
                                     let mut close_group : Vec<NameType> = our_close_group.iter()
