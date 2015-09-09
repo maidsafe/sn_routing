@@ -256,7 +256,7 @@ impl RoutingCore {
         self.clear_old_endpoints()
      }
     /// check if unknown_endpoint exists (will remove from map)
-    pub fn get_unknown_endpoint(&mut self, endpoint: &Endpoint)-> bool {
+    pub fn is_unknown_endpoint(&mut self, endpoint: &Endpoint)-> bool {
         self.unknown_connection_map.remove(endpoint).is_some()
     }
     // clear timed out endpoints and return to be removed from crust::connection_manager 
