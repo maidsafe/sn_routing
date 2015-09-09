@@ -206,7 +206,7 @@ impl Node {
 
         match our_authority {
             Authority::NaeManager(_) => {
-                debug!("Storing: key {:?}, value {:?}", plain_data.name(), plain_data);
+                println!("Storing: key {:?}, value {:?}", plain_data.name(), plain_data);
                 let _ = self.db.insert(plain_data.name(), plain_data);
             },
             Authority::ClientManager(_) => {
@@ -245,9 +245,7 @@ impl Node {
         //         ::routing::data::Data::PlainData(value.clone()));
         // }
 
-        for (public_key, stored) in self.client_accounts.iter() {
-            let authority = ::routing::authority::Authority::ClientManager(
-                NameType::new(crypto::hash::sha512::hash(&public_key[..]).0));
+        for (client_name, stored) in self.client_accounts.iter() {
             println!("REFRESH {:?} - {:?}", authority, stored);
             self.routing.refresh_request(1u64, authority,
                 encode(&stored).unwrap());
@@ -267,6 +265,12 @@ impl Node {
         let median = median(records.clone());
         println!("Refresh for {:?}: median {:?} from {:?} (errs {:?})", our_authority, median,
             records, fail_parsing_count);
+        match our_authority {
+             ::routing::authority::Authority::ClientManager(client_name) => {
+                 let _ = self.client_accounts.insert(client_name, median);
+             },
+             _ => {},
+        };
     }
 }
 

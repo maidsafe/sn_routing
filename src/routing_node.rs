@@ -407,6 +407,7 @@ impl RoutingNode {
         }
 
         let message = signed_message.get_routing_message().clone();
+        let mut message_digest = ::filter::Filter::message_digest(&message);
 
         // Cache a response if from a GetRequest and caching is enabled for the Data type.
         self.handle_cache_put(&message);
@@ -458,7 +459,6 @@ impl RoutingNode {
             None => return Err(::error::RoutingError::NotEnoughSignatures),
         };
 
-        let mut message_digest = ::filter::Filter::message_digest(&message);
         let result = match message.content {
             Content::InternalRequest(request) => {
                 match request {
@@ -532,11 +532,11 @@ impl RoutingNode {
             Some(digest) => {
                 match result {
                     Ok(()) => {
-                        if self.client_restriction { self.filter.block(digest); };
+                        self.filter.block(digest);
                         Ok(())
                     },
                     Err(RoutingError::UnknownMessageType) => {
-                        if self.client_restriction { self.filter.block(digest); };
+                        self.filter.block(digest);
                         Err(RoutingError::UnknownMessageType)
                     },
                     Err(e) => Err(e),
