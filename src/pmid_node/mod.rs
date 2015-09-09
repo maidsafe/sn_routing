@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(dead_code)]
-
 use chunk_store::ChunkStore;
 
 pub struct PmidNode {
@@ -25,7 +23,7 @@ pub struct PmidNode {
 
 impl PmidNode {
     pub fn new() -> PmidNode {
-        PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
+        PmidNode { chunk_store_: ChunkStore::new(1073741824), } // TODO adjustable max_disk_space
     }
 
     pub fn handle_get(&self, name: ::routing::NameType) ->Vec<::types::MethodCall> {

@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(dead_code)]
-
 mod database;
 
 pub use self::database::Account;
@@ -59,6 +57,17 @@ impl PmidManager {
         vec![]
     }
 
+    pub fn handle_get_failure_notification(&mut self, from_address: &::routing::NameType,
+                                           response: ::routing::error::ResponseError) -> Vec<::types::MethodCall> {
+        match response {
+            ::routing::error::ResponseError::FailedRequestForData(data) => {
+                self.database.delete_data(from_address, data.payload_size() as u64);
+            },
+            _ => {}
+        }
+        vec![]
+    }
+
     pub fn handle_account_transfer(&mut self, merged_account: Account) {
         self.database.handle_account_transfer(merged_account);
     }
@@ -70,33 +79,22 @@ impl PmidManager {
 
 #[cfg(test)]
 mod test {
-  use super::*;
-
-  #[test]
-  fn handle_put() {
-    let mut pmid_manager = PmidManager::new();
-    let dest = ::utils::random_name();
-    let value = ::routing::types::generate_random_vec_u8(1024);
-    let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
-    let put_result = pmid_manager.handle_put(dest, ::routing::data::Data::ImmutableData(data.clone()));
-    assert_eq!(put_result.len(), 1);
-    match put_result[0].clone() {
-        ::types::MethodCall::Put { location, content } => {
-            assert_eq!(location, ::routing::authority::Authority::ManagedNode(dest));
-            assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
-        }
-        _ => panic!("Unexpected"),
-    }
-  }
+    use super::*;
 
     #[test]
-    fn handle_account_transfer() {
+    fn handle_put() {
         let mut pmid_manager = PmidManager::new();
-        let name = ::utils::random_name();
-        let account = Account::new(name.clone(),
-            super::database::AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>(),
-                ::rand::random::<u64>()));
-        pmid_manager.handle_account_transfer(account);
-        assert!(pmid_manager.database.exist(&name));
+        let dest = ::utils::random_name();
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+        let put_result = pmid_manager.handle_put(dest, ::routing::data::Data::ImmutableData(data.clone()));
+        assert_eq!(put_result.len(), 1);
+        match put_result[0].clone() {
+            ::types::MethodCall::Put { location, content } => {
+                assert_eq!(location, ::routing::authority::Authority::ManagedNode(dest));
+                assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
+            }
+            _ => panic!("Unexpected"),
+        }
     }
 }

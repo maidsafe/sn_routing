@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(dead_code)]
-
 use chunk_store::ChunkStore;
 use transfer_parser::transfer_tags::SD_MANAGER_ACCOUNT_TAG;
 
@@ -29,7 +27,7 @@ pub struct StructuredDataManager {
 impl StructuredDataManager {
     pub fn new() -> StructuredDataManager {
         // TODO adjustable max_disk_space
-        StructuredDataManager { chunk_store_: ChunkStore::with_max_disk_usage(1073741824) }
+        StructuredDataManager { chunk_store_: ChunkStore::new(1073741824) }
     }
 
     pub fn handle_get(&self, name: ::routing::NameType) -> Vec<::types::MethodCall> {
@@ -106,7 +104,7 @@ impl StructuredDataManager {
                 payload: data
             });
         }
-        self.chunk_store_ = ChunkStore::with_max_disk_usage(1073741824);
+        self.chunk_store_ = ChunkStore::new(1073741824);
         actions
     }
 

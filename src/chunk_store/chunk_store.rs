@@ -15,9 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(dead_code)]
-#![deny(missing_docs)]
-
 use std::fs::{File, read_dir, remove_file};
 use std::ffi::OsStr;
 use std::path::Path;
@@ -35,16 +32,8 @@ pub struct ChunkStore {
 }
 
 impl ChunkStore {
-    /// Create new chunkstore with zero allowed disk usage.
-    pub fn new() -> ChunkStore {
-        ChunkStore {
-            tempdir: tempdir::TempDir::new("safe_vault").unwrap(),
-            max_disk_usage: 0,
-            current_disk_usage: 0,
-        }
-    }
-
-    pub fn with_max_disk_usage(max_disk_usage: usize) -> ChunkStore {
+    /// Create new chunkstore with `max_disk_usage` allowed disk usage.
+    pub fn new(max_disk_usage: usize) -> ChunkStore {
         ChunkStore {
             tempdir: tempdir::TempDir::new("safe_vault").unwrap(),
             max_disk_usage: max_disk_usage,
@@ -136,11 +125,6 @@ impl ChunkStore {
 
     pub fn current_disk_usage(&self) -> usize {
         self.current_disk_usage
-    }
-
-    pub fn set_max_disk_usage(&mut self, new_max: usize) {
-        assert!(self.current_disk_usage < new_max);
-        self.max_disk_usage = new_max;
     }
 
     pub fn has_chunk(&self, name: ::routing::NameType) -> bool {

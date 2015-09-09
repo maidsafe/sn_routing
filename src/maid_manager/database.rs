@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(dead_code)]
-
 use cbor;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
@@ -101,6 +99,7 @@ impl AccountValue {
         true
     }
 
+    #[allow(dead_code)]
     pub fn delete_data(&mut self, size : u64) {
         if self.data_stored < size {
             self.space_available += self.data_stored;
@@ -128,10 +127,6 @@ pub struct MaidManagerDatabase {
 impl MaidManagerDatabase {
     pub fn new () -> MaidManagerDatabase {
         MaidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
-    }
-
-    pub fn exist(&mut self, name : &MaidNodeName) -> bool {
-        self.storage.contains_key(name)
     }
 
     pub fn get_balance(&mut self, name: &MaidNodeName) -> u64 {
@@ -169,6 +164,7 @@ impl MaidManagerDatabase {
         actions
     }
 
+    #[allow(dead_code)]
     pub fn delete_data(&mut self, name : &MaidNodeName, size: u64) {
         match self.storage.get_mut(name) {
             Some(value) => value.delete_data(size),
@@ -184,26 +180,17 @@ mod test {
     use super::*;
 
     #[test]
-    fn exist() {
-        let mut db = MaidManagerDatabase::new();
-        let name = ::utils::random_name();
-        assert_eq!(db.exist(&name), false);
-        db.put_data(&name, 1024);
-        assert_eq!(db.exist(&name), true);
-    }
-
-    #[test]
     fn put_data() {
         let mut db = MaidManagerDatabase::new();
         let name = ::utils::random_name();
-        assert_eq!(db.put_data(&name, 0), true);
-        assert_eq!(db.put_data(&name, 1), true);
-        assert_eq!(db.put_data(&name, 1073741823), true);
-        assert_eq!(db.put_data(&name, 1), false);
-        assert_eq!(db.put_data(&name, 1), false);
-        assert_eq!(db.put_data(&name, 0), true);
-        assert_eq!(db.put_data(&name, 1), false);
-        assert_eq!(db.exist(&name), true);
+        assert!(db.put_data(&name, 0));
+        assert!(db.put_data(&name, 1));
+        assert!(db.put_data(&name, 1073741823));
+        assert!(!db.put_data(&name, 1));
+        assert!(!db.put_data(&name, 1));
+        assert!(db.put_data(&name, 0));
+        assert!(!db.put_data(&name, 1));
+        assert!(db.storage.contains_key(&name));
     }
 
     #[test]
@@ -211,29 +198,29 @@ mod test {
         let mut db = MaidManagerDatabase::new();
         let name = ::utils::random_name();
         db.delete_data(&name, 0);
-        assert_eq!(db.exist(&name), false);
-        assert_eq!(db.put_data(&name, 0), true);
-        assert_eq!(db.exist(&name), true);
+        assert!(!db.storage.contains_key(&name));
+        assert!(db.put_data(&name, 0));
+        assert!(db.storage.contains_key(&name));
         db.delete_data(&name, 1);
-        assert_eq!(db.exist(&name), true);
-        assert_eq!(db.put_data(&name, 1073741824), true);
-        assert_eq!(db.put_data(&name, 1), false);
+        assert!(db.storage.contains_key(&name));
+        assert!(db.put_data(&name, 1073741824));
+        assert!(!db.put_data(&name, 1));
         db.delete_data(&name, 1);
-        assert_eq!(db.put_data(&name, 1), true);
-        assert_eq!(db.put_data(&name, 1), false);
+        assert!(db.put_data(&name, 1));
+        assert!(!db.put_data(&name, 1));
         db.delete_data(&name, 1073741825);
-        assert_eq!(db.exist(&name), true);
-        assert_eq!(db.put_data(&name, 1073741825), false);
-        assert_eq!(db.put_data(&name, 1073741824), true);
+        assert!(db.storage.contains_key(&name));
+        assert!(!db.put_data(&name, 1073741825));
+        assert!(db.put_data(&name, 1073741824));
     }
 
     #[test]
     fn handle_account_transfer() {
         let mut db = MaidManagerDatabase::new();
         let name = ::utils::random_name();
-        assert_eq!(db.put_data(&name, 0), true);
-        assert_eq!(db.put_data(&name, 1073741823), true);
-        assert_eq!(db.put_data(&name, 2), false);
+        assert!(db.put_data(&name, 0));
+        assert!(db.put_data(&name, 1073741823));
+        assert!(!db.put_data(&name, 2));
 
         let mut account_value: AccountValue = Default::default();
         account_value.put_data(1073741822);
@@ -241,16 +228,16 @@ mod test {
             let account = Account::new(name.clone(), account_value.clone());
             db.handle_account_transfer(account);
         }
-        assert_eq!(db.put_data(&name, 3), false);
-        assert_eq!(db.put_data(&name, 2), true);
+        assert!(!db.put_data(&name, 3));
+        assert!(db.put_data(&name, 2));
 
         account_value.delete_data(1073741822);
         {
             let account = Account::new(name.clone(), account_value.clone());
             db.handle_account_transfer(account);
         }
-        assert_eq!(db.put_data(&name, 1073741825), false);
-        assert_eq!(db.put_data(&name, 1073741824), true);
+        assert!(!db.put_data(&name, 1073741825));
+        assert!(db.put_data(&name, 1073741824));
     }
 
     #[test]
