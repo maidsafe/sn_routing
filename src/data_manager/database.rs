@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(dead_code)]
-
 use cbor;
 use rustc_serialize::Encodable;
 use std::collections::HashMap;
@@ -43,16 +41,6 @@ impl Account {
             data_holders: data_holders,
             preserialised_content: Vec::new(),
             has_preserialised_content: false,
-        }
-    }
-
-    pub fn with_content(name: DataName,
-                        preserialised_content: Vec<u8>) -> Account {
-        Account {
-            name: name,
-            data_holders: PmidNodes::new(),
-            preserialised_content: preserialised_content,
-            has_preserialised_content: true,
         }
     }
 

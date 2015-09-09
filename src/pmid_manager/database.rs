@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(dead_code)]
-
 use cbor;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
@@ -116,19 +114,23 @@ impl AccountValue {
         }
     }
 
+    #[allow(dead_code)]
     pub fn handle_lost_data(&mut self, size : u64) {
         self.delete_data(size);
         self.lost_total_size += size;
     }
 
+    #[allow(dead_code)]
     pub fn handle_falure(&mut self, size : u64) {
         self.handle_lost_data(size);
     }
 
+    #[allow(dead_code)]
     pub fn set_available_size(&mut self, available_size : u64) {
         self.offered_space = available_size;
     }
 
+    #[allow(dead_code)]
     pub fn update_account(&mut self, diff_size : u64) {
         if self.stored_total_size < diff_size {
             self.stored_total_size = 0;
@@ -158,10 +160,6 @@ pub struct PmidManagerDatabase {
 impl PmidManagerDatabase {
     pub fn new () -> PmidManagerDatabase {
         PmidManagerDatabase { storage: collections::HashMap::with_capacity(10000), }
-    }
-
-    pub fn exist(&mut self, name : &PmidNodeName) -> bool {
-        self.storage.contains_key(name)
     }
 
     pub fn put_data(&mut self, name : &PmidNodeName, size: u64) -> bool {
@@ -214,9 +212,9 @@ mod test {
     fn exist() {
         let mut db = PmidManagerDatabase::new();
         let name = ::utils::random_name();
-        assert_eq!(db.exist(&name), false);
+        assert!(!db.storage.contains_key(&name));
         db.put_data(&name, 1024);
-        assert_eq!(db.exist(&name), true);
+        assert!(db.storage.contains_key(&name));
     }
 
     // #[test]
@@ -238,8 +236,8 @@ mod test {
     fn handle_account_transfer() {
         let mut db = PmidManagerDatabase::new();
         let name = ::utils::random_name();
-        assert_eq!(db.put_data(&name, 1024), true);
-        assert_eq!(db.exist(&name), true);
+        assert!(db.put_data(&name, 1024));
+        assert!(db.storage.contains_key(&name));
 
         let account_value = AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>(),
                                               ::rand::random::<u64>());

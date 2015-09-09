@@ -54,7 +54,7 @@ mod test {
   impl ChunkStoreTest {
       pub fn new() -> ChunkStoreTest {
           ChunkStoreTest {
-              chunk_store: ::chunk_store::ChunkStore::with_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE),
+              chunk_store: ::chunk_store::ChunkStore::new(K_DEFAULT_MAX_DISK_USAGE),
               max_disk_storage: K_DEFAULT_MAX_DISK_USAGE
           }
       }
@@ -73,7 +73,7 @@ mod test {
       pub fn populate_chunk_store(&mut self, num_entries: usize, disk_entries: usize) -> NameValueContainer {
           let name_value_pairs = add_random_name_value_pairs(num_entries, ONE_KB);
           let disk_usage = disk_entries * ONE_KB;
-          self.chunk_store = ::chunk_store::ChunkStore::with_max_disk_usage(disk_usage);
+          self.chunk_store = ::chunk_store::ChunkStore::new(disk_usage);
           self.max_disk_storage = disk_usage;
           for name_value in name_value_pairs.0.clone() {
               let data_as_bytes = name_value.1.into_bytes();
@@ -86,17 +86,9 @@ mod test {
   }
 
   #[test]
-  fn constructor_initialization() {
-      let mut store_1 = ::chunk_store::ChunkStore::new();
-      let store_2 = ::chunk_store::ChunkStore::with_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE);
-      store_1.set_max_disk_usage(K_DEFAULT_MAX_DISK_USAGE);
-      assert_eq!(store_1.max_disk_usage(), store_2.max_disk_usage());
-  }
-
-  #[test]
   fn successful_store() {
       let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::with_max_disk_usage(k_disk_size);
+      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
       let mut put = |size| {
           let name = ::utils::random_name();
@@ -117,7 +109,7 @@ mod test {
   #[should_panic]
   fn should_fail_if_chunk_size_is_greater_than_max_disk_size() {
       let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::with_max_disk_usage(k_disk_size);
+      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
       let name = ::utils::random_name();
       let data = get_random_non_empty_string(k_disk_size + 1);
       chunk_store.put(name, data.into_bytes());
@@ -127,7 +119,7 @@ mod test {
   fn remove_from_disk_store() {
       let k_size: usize = 1;
       let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::with_max_disk_usage(k_disk_size);
+      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
       let mut put_and_delete = |size| {
           let name = ::utils::random_name();
@@ -163,7 +155,7 @@ mod test {
   fn put_and_get_value_should_be_same() {
       let data_size = 50;
       let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::with_max_disk_usage(k_disk_size);
+      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
       let name = ::utils::random_name();
       let data = get_random_non_empty_string(data_size).into_bytes();
@@ -176,7 +168,7 @@ mod test {
   #[test]
   fn repeatedly_storing_same_name() {
       let k_disk_size: usize = 116;
-      let mut chunk_store = ::chunk_store::ChunkStore::with_max_disk_usage(k_disk_size);
+      let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
       let mut put = |name, size| {
           let data = get_random_non_empty_string(size);
