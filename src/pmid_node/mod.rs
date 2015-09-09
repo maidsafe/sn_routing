@@ -18,7 +18,6 @@
 #![allow(dead_code)]
 
 use chunk_store::ChunkStore;
-use routing_types::*;
 
 pub struct PmidNode {
     chunk_store_ : ChunkStore
@@ -29,23 +28,23 @@ impl PmidNode {
         PmidNode { chunk_store_: ChunkStore::with_max_disk_usage(1073741824), } // TODO adjustable max_disk_space
     }
 
-    pub fn handle_get(&self, name: NameType) ->Vec<MethodCall> {
+    pub fn handle_get(&self, name: ::routing::NameType) ->Vec<::types::MethodCall> {
         let data = self.chunk_store_.get(name);
         if data.len() == 0 {
             return vec![];
         }
-        let sd: ImmutableData = match ::routing::utils::decode(&data) {
+        let sd: ::routing::immutable_data::ImmutableData = match ::routing::utils::decode(&data) {
             Ok(data) => data,
             Err(_) => return vec![]
         };
-        vec![MethodCall::Reply { data: Data::ImmutableData(sd) }]
+        vec![::types::MethodCall::Reply { data: ::routing::data::Data::ImmutableData(sd) }]
     }
 
-    pub fn handle_put(&mut self, pmid_node: NameType,
-                      incoming_data: Data) -> Vec<MethodCall> {
+    pub fn handle_put(&mut self, pmid_node: ::routing::NameType,
+                      incoming_data: ::routing::data::Data) -> Vec<::types::MethodCall> {
         info!("pmid_node {:?} storing {:?}", pmid_node, incoming_data.name());
         let immutable_data = match incoming_data.clone() {
-            Data::ImmutableData(data) => { data }
+            ::routing::data::Data::ImmutableData(data) => { data }
             _ => { return vec![]; }
         };
         let data = match ::routing::utils::encode(&immutable_data) {
@@ -53,7 +52,7 @@ impl PmidNode {
             Err(_) => return vec![]
         };
         let data_name_and_remove_sacrificial = match *immutable_data.get_type_tag() {
-            ImmutableDataType::Normal => (immutable_data.name(), true),
+            ::routing::immutable_data::ImmutableDataType::Normal => (immutable_data.name(), true),
             _ => (immutable_data.name(), false),
         };
         if self.chunk_store_.has_disk_space(data.len()) {
@@ -64,7 +63,7 @@ impl PmidNode {
         if !data_name_and_remove_sacrificial.1 {
             // For sacrifized data, just notify PmidManager to update the account
             // Replication shall not be carried out for it
-            return vec![MethodCall::ClearSacrificial { location: Authority::NodeManager(pmid_node),
+            return vec![::types::MethodCall::ClearSacrificial { location: ::routing::authority::Authority::NodeManager(pmid_node),
                                                        name: incoming_data.name(),
                                                        size: incoming_data.payload_size() as u32 }];
         }
@@ -74,18 +73,18 @@ impl PmidNode {
         let mut emptied_space = 0;
         for name in names.iter() {
             let fetched_data = self.chunk_store_.get(name.clone());
-            let parsed_data : ImmutableData = match ::routing::utils::decode(&fetched_data) {
+            let parsed_data : ::routing::immutable_data::ImmutableData = match ::routing::utils::decode(&fetched_data) {
                 Ok(data) => data,
                 Err(_) => return vec![],
             };
             match *parsed_data.get_type_tag() {
-                ImmutableDataType::Sacrificial => {
+                ::routing::immutable_data::ImmutableDataType::Sacrificial => {
                     emptied_space += fetched_data.len();
                     self.chunk_store_.delete(name.clone());
                     // For sacrifized data, just notify PmidManager to update the account
                     // and DataManager need to adjust its farming rate, replication shall not be carried out for it
-                    returned_calls.push(MethodCall::ClearSacrificial {
-                            location: Authority::NodeManager(pmid_node.clone()),
+                    returned_calls.push(::types::MethodCall::ClearSacrificial {
+                            location: ::routing::authority::Authority::NodeManager(pmid_node.clone()),
                             name: parsed_data.name(),
                             size: parsed_data.payload_size() as u32 });
                     if emptied_space > required_space {
@@ -97,7 +96,7 @@ impl PmidNode {
             }
         }
         // Reduplication needs to be carried out
-        returned_calls.push(MethodCall::FailedPut { location: Authority::NodeManager(pmid_node),
+        returned_calls.push(::types::MethodCall::FailedPut { location: ::routing::authority::Authority::NodeManager(pmid_node),
                                                     data: incoming_data });
         returned_calls
     }
@@ -108,25 +107,23 @@ impl PmidNode {
 mod test {
     use super::*;
 
-    use routing_types::*;
-
     #[test]
     fn handle_put_get() {
         let mut pmid_node = PmidNode::new();
-        let value = generate_random_vec_u8(1024);
-        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
         {
-            let put_result = pmid_node.handle_put(NameType::new([0u8; 64]),
-                                                  Data::ImmutableData(im_data.clone()));
+            let put_result = pmid_node.handle_put(::routing::NameType::new([0u8; 64]),
+                                                  ::routing::data::Data::ImmutableData(im_data.clone()));
             assert_eq!(put_result.len(), 0);
         }
         {
             let mut get_result = pmid_node.handle_get(im_data.name());
             assert_eq!(get_result.len(), 1);
             match get_result.remove(0) {
-                MethodCall::Reply { data } => {
+                ::types::MethodCall::Reply { data } => {
                     match data {
-                        Data::ImmutableData(fetched_im_data) => {
+                        ::routing::data::Data::ImmutableData(fetched_im_data) => {
                             assert_eq!(fetched_im_data, im_data);
                         }
                         _ => panic!("Unexpected"),

@@ -18,7 +18,6 @@
 #![allow(dead_code)]
 #![deny(missing_docs)]
 
-use routing_types::{NameType, vector_as_u8_64_array};
 use std::fs::{File, read_dir, remove_file};
 use std::ffi::OsStr;
 use std::path::Path;
@@ -53,7 +52,7 @@ impl ChunkStore {
         }
     }
 
-    pub fn put(&mut self, name: NameType, value: Vec<u8>) {
+    pub fn put(&mut self, name: ::routing::NameType, value: Vec<u8>) {
         if !self.has_disk_space(value.len()) {
             panic!("Disk space unavailable. Not enough space");
         }
@@ -74,7 +73,7 @@ impl ChunkStore {
         let _ = file.sync_all();
     }
 
-    pub fn delete(&mut self, name: NameType) {
+    pub fn delete(&mut self, name: ::routing::NameType) {
         let name = self.to_hex_string(&name);
 
         match read_dir(&self.tempdir.path()) {
@@ -102,7 +101,7 @@ impl ChunkStore {
         }
     }
 
-    pub fn get(&self, name: NameType) -> Vec<u8> {
+    pub fn get(&self, name: ::routing::NameType) -> Vec<u8> {
         let name = self.to_hex_string(&name);
 
         match read_dir(&self.tempdir.path()) {
@@ -144,7 +143,7 @@ impl ChunkStore {
         self.max_disk_usage = new_max;
     }
 
-    pub fn has_chunk(&self, name: NameType) -> bool {
+    pub fn has_chunk(&self, name: ::routing::NameType) -> bool {
         let name = self.to_hex_string(&name);
 
         match read_dir(&self.tempdir.path()) {
@@ -166,8 +165,8 @@ impl ChunkStore {
         false
     }
 
-    pub fn names(&self) -> Vec<NameType> {
-        let mut names: Vec<NameType> = Vec::new();
+    pub fn names(&self) -> Vec<::routing::NameType> {
+        let mut names: Vec<::routing::NameType> = Vec::new();
 
         match read_dir(&self.tempdir.path()) {
             Ok(dir_entries) => {
@@ -178,7 +177,8 @@ impl ChunkStore {
                                 Some(hex_name) => {
                                     match hex_name.from_hex() {
                                         Ok(name) =>
-                                            names.push(NameType::new(vector_as_u8_64_array(name))),
+                                            names.push(::routing::NameType::new(
+                                                ::routing::types::vector_as_u8_64_array(name))),
                                         _ => (),
                                     }
                                 },
@@ -199,7 +199,7 @@ impl ChunkStore {
        self.current_disk_usage + required_space <= self.max_disk_usage
     }
 
-    fn to_hex_string(&self, name: &NameType) -> String {
+    fn to_hex_string(&self, name: &::routing::NameType) -> String {
         name.get_id().to_hex()
     }
 }
