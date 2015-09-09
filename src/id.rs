@@ -81,8 +81,27 @@ impl Id {
 }
 
 
-// #[cfg(test)]
-// mod test {
+
+
+ #[cfg(test)]
+ mod test{
+    extern crate cbor;
+    use std::cmp;
+    use public_id::PublicId;
+    use test_utils::Random;
+
+    #[test]
+    fn serialisation_public_id() {
+        let obj_before = PublicId::generate_random();
+
+        let mut e = cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: PublicId = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
+    }
+
 //     use super::*;
 //     use sodiumoxide::crypto;
 //     use NameType;
@@ -131,4 +150,5 @@ impl Id {
 //         assert_eq!(before.encrypting_public_key().0.to_vec(), relocated.encrypting_public_key().0.to_vec());
 //         assert_eq!(before.signing_private_key().0.to_vec(), relocated.signing_private_key().0.to_vec());
 //     }
-// }
+
+}
