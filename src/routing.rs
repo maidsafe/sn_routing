@@ -116,6 +116,7 @@ impl Routing {
                         location: Authority,
                         response_error: ResponseError,
                         signed_token: Option<SignedToken>) {
+        if response_error == ::error::ResponseError::Abort { return; };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
@@ -127,6 +128,7 @@ impl Routing {
                          location: Authority,
                          response_error: ResponseError,
                          signed_token: Option<SignedToken>) {
+        if response_error == ::error::ResponseError::Abort { return; };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
@@ -138,6 +140,7 @@ impl Routing {
                            location: Authority,
                            response_error: ResponseError,
                            signed_token: Option<SignedToken>) {
+        if response_error == ::error::ResponseError::Abort { return; };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(ExternalResponse::Delete(response_error,
