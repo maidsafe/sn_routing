@@ -46,7 +46,6 @@ use utils::{encode, decode};
 use utils;
 use data::{Data, DataRequest};
 use authority::{Authority, our_authority};
-use wake_up::WakeUpCaller;
 
 use messages::{RoutingMessage, SignedMessage, SignedToken, ConnectRequest, ConnectResponse,
                Content, ExternalRequest, ExternalResponse, InternalRequest, InternalResponse};
@@ -71,7 +70,6 @@ pub struct RoutingNode {
     action_sender: mpsc::Sender<Action>,
     action_receiver: mpsc::Receiver<Action>,
     event_sender: mpsc::Sender<Event>,
-    wakeup: WakeUpCaller,
     filter: ::filter::Filter,
     connection_filter: ::message_filter::MessageFilter<::NameType>,
     core: RoutingCore,
@@ -105,7 +103,6 @@ impl RoutingNode {
             action_sender: action_sender.clone(),
             action_receiver: action_receiver,
             event_sender: event_sender,
-            wakeup: WakeUpCaller::new(action_sender),
             filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
             connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
                 ::time::Duration::minutes(20)),
@@ -119,7 +116,6 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
-        self.wakeup.start(10);
         self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
         debug!("RoutingNode started running and started bootstrap");
         loop {
@@ -139,9 +135,6 @@ impl RoutingNode {
                 },
                 Ok(Action::SetCacheOptions(cache_options)) => {
                     self.set_cache_options(cache_options);
-                },
-                Ok(Action::WakeUp) => {
-                    // ensure that the loop is blocked for maximally 10ms
                 },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
@@ -1164,13 +1157,13 @@ impl RoutingNode {
                 None => self.data_cache =
                     Some(LruCache::<NameType, Data>::with_expiry_duration(Duration::minutes(10))),
                 Some(_) => {},
-            }    
+            }
         } else {
             self.data_cache = None;
         }
     }
 
-    fn handle_cache_put(&mut self, message: &RoutingMessage) {  
+    fn handle_cache_put(&mut self, message: &RoutingMessage) {
         match self.data_cache {
             Some(ref mut data_cache) => {
                 match message.content.clone() {
@@ -1208,7 +1201,7 @@ impl RoutingNode {
             },
             None => {}
         }
-            
+
     }
 
     fn handle_cache_get(&mut self, message: &RoutingMessage) -> Option<Content> {
