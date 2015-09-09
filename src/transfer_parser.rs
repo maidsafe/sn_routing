@@ -17,10 +17,6 @@
 
 use rustc_serialize::{Decodable, Decoder};
 
-use data_manager::{DataManagerSendable, DataManagerStatsSendable};
-use maid_manager::MaidManagerAccountWrapper;
-use pmid_manager::PmidManagerAccountWrapper;
-
 pub mod transfer_tags {
     pub const MAIDSAFE_TRANSFER_TAG: u64 = 5483_000 + 200;
 
@@ -32,10 +28,10 @@ pub mod transfer_tags {
 }
 
 pub enum Transfer {
-    MaidManagerAccount(MaidManagerAccountWrapper),
-    DataManagerAccount(DataManagerSendable),
-    PmidManagerAccount(PmidManagerAccountWrapper),
-    DataManagerStats(DataManagerStatsSendable),
+    MaidManagerAccount(::maid_manager::Account),
+    DataManagerAccount(::data_manager::Account),
+    PmidManagerAccount(::pmid_manager::Account),
+    DataManagerStats(::data_manager::Stats),
     Unknown(u64),
 }
 
@@ -76,7 +72,7 @@ impl Decodable for Transfer {
         for _ in 0..size {
             data.push(rng.gen());
         }
-        let immutable_data = ImmutableData::new(data);
+        let immutable_data = ::routing::immutable_data::ImmutableData::new(data);
 
         let mut encoder = cbor::Encoder::from_memory();
         encoder.encode(&[&immutable_data]).unwrap();
@@ -84,7 +80,7 @@ impl Decodable for Transfer {
         let mut decoder = cbor::Decoder::from_bytes(encoder.as_bytes());
 
         match decoder.decode().next().unwrap().unwrap() {
-            Data::Immutable(immut_data) => assert_eq!(immut_data, immutable_data),
+            ::routing::data::Data::Immutable(immut_data) => assert_eq!(immut_data, immutable_data),
             _ => panic!("Unexpected!"),
         }
     }

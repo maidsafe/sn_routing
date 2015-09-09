@@ -19,76 +19,71 @@
 
 mod database;
 
-use routing_types::*;
-
-pub use self::database::{PmidManagerAccountWrapper, PmidManagerAccount};
+pub use self::database::Account;
 
 pub struct PmidManager {
-    db_ : database::PmidManagerDatabase
+    database : database::PmidManagerDatabase
 }
 
 impl PmidManager {
     pub fn new() -> PmidManager {
         PmidManager {
-            db_: database::PmidManagerDatabase::new()
+            database: database::PmidManagerDatabase::new()
         }
     }
 
-    pub fn handle_put(&mut self, pmid_node: NameType, data: Data) -> Vec<MethodCall> {
-        if self.db_.put_data(&pmid_node, data.payload_size() as u64) {
-            vec![MethodCall::Put { location: Authority::ManagedNode(pmid_node.clone()),
+    pub fn handle_put(&mut self, pmid_node: ::routing::NameType, data: ::routing::data::Data) -> Vec<::types::MethodCall> {
+        if self.database.put_data(&pmid_node, data.payload_size() as u64) {
+            vec![::types::MethodCall::Put { location: ::routing::authority::Authority::ManagedNode(pmid_node.clone()),
                                    content: data }]
         } else {
             vec![]
         }
     }
 
-    pub fn handle_put_response(&mut self, from_address: &NameType,
-                               response: ResponseError) -> Vec<MethodCall> {
+    pub fn handle_put_response(&mut self, from_address: &::routing::NameType,
+                               response: ::routing::error::ResponseError) -> Vec<::types::MethodCall> {
         match response {
-            ResponseError::FailedRequestForData(data) => {
-                self.db_.delete_data(from_address, data.payload_size() as u64);
-                return vec![MethodCall::FailedPut { location: Authority::NaeManager(data.name()),
+            ::routing::error::ResponseError::FailedRequestForData(data) => {
+                self.database.delete_data(from_address, data.payload_size() as u64);
+                return vec![::types::MethodCall::FailedPut { location: ::routing::authority::Authority::NaeManager(data.name()),
                                                     data: data }];
             },
-            ResponseError::HadToClearSacrificial(name, size) => {
-                self.db_.delete_data(from_address, size as u64);
-                return vec![MethodCall::ClearSacrificial {
-                    location: Authority::NaeManager(name), name: name, size: size }];
+            ::routing::error::ResponseError::HadToClearSacrificial(name, size) => {
+                self.database.delete_data(from_address, size as u64);
+                return vec![::types::MethodCall::ClearSacrificial {
+                    location: ::routing::authority::Authority::NaeManager(name), name: name, size: size }];
             },
             _ => {}
         }
         vec![]
     }
 
-    pub fn handle_account_transfer(&mut self, merged_account: PmidManagerAccountWrapper) {
-        self.db_.handle_account_transfer(&merged_account);
+    pub fn handle_account_transfer(&mut self, merged_account: Account) {
+        self.database.handle_account_transfer(merged_account);
     }
 
-    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<NameType>) -> Vec<MethodCall> {
-        self.db_.retrieve_all_and_reset(close_group)
+    pub fn retrieve_all_and_reset(&mut self, close_group: &Vec<::routing::NameType>) -> Vec<::types::MethodCall> {
+        self.database.retrieve_all_and_reset(close_group)
     }
 }
 
 #[cfg(test)]
 mod test {
-  use super::database::{PmidManagerAccount, PmidManagerAccountWrapper};
-  use super::PmidManager;
-
-  use routing_types::*;
+  use super::*;
 
   #[test]
   fn handle_put() {
     let mut pmid_manager = PmidManager::new();
-    let dest = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
-    let value = generate_random_vec_u8(1024);
-    let data = ImmutableData::new(ImmutableDataType::Normal, value);
-    let put_result = pmid_manager.handle_put(dest, Data::ImmutableData(data.clone()));
+    let dest = ::utils::random_name();
+    let value = ::routing::types::generate_random_vec_u8(1024);
+    let data = ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+    let put_result = pmid_manager.handle_put(dest, ::routing::data::Data::ImmutableData(data.clone()));
     assert_eq!(put_result.len(), 1);
     match put_result[0].clone() {
-        MethodCall::Put { location, content } => {
-            assert_eq!(location, Authority::ManagedNode(dest));
-            assert_eq!(content, Data::ImmutableData(data.clone()));
+        ::types::MethodCall::Put { location, content } => {
+            assert_eq!(location, ::routing::authority::Authority::ManagedNode(dest));
+            assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
         }
         _ => panic!("Unexpected"),
     }
@@ -97,9 +92,11 @@ mod test {
     #[test]
     fn handle_account_transfer() {
         let mut pmid_manager = PmidManager::new();
-        let name = NameType(vector_as_u8_64_array(generate_random_vec_u8(64)));
-        let account_wrapper = PmidManagerAccountWrapper::new(name.clone(), PmidManagerAccount::new());
-        pmid_manager.handle_account_transfer(account_wrapper);
-        assert_eq!(pmid_manager.db_.exist(&name), true);
+        let name = ::utils::random_name();
+        let account = Account::new(name.clone(),
+            super::database::AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>(),
+                ::rand::random::<u64>()));
+        pmid_manager.handle_account_transfer(account);
+        assert!(pmid_manager.database.exist(&name));
     }
 }
