@@ -584,7 +584,7 @@ pub type ResponseNotifier =
                 vault.do_run();
             });
         };
-        for i in 0..4 {
+        for i in 0..8 {
             println!("starting node {:?}", i);
             let _ = run_vault(Vault::new());
             ::std::thread::sleep_ms(1000 + i * 1000);
