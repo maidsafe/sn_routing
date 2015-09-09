@@ -532,11 +532,11 @@ impl RoutingNode {
             Some(digest) => {
                 match result {
                     Ok(()) => {
-                        self.filter.block(digest);
+                        if self.client_restriction { self.filter.block(digest); };
                         Ok(())
                     },
                     Err(RoutingError::UnknownMessageType) => {
-                        self.filter.block(digest);
+                        if self.client_restriction { self.filter.block(digest); };
                         Err(RoutingError::UnknownMessageType)
                     },
                     Err(e) => Err(e),
