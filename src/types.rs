@@ -54,7 +54,8 @@ pub enum MethodCall {
         size: u32,
     },
     /// response error indicating not enough allowance
-    NotEnoughAllowance,
+    LowBalance{ location: ::routing::authority::Authority,
+                data: ::routing::data::Data, balance: u32},
     /// response error indicating invalid request
     InvalidRequest {
         data: ::routing::data::Data,
