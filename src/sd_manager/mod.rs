@@ -18,6 +18,8 @@
 use chunk_store::ChunkStore;
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
 
+pub use ::routing::Authority::NaeManager as Authority;
+
 pub struct StructuredDataManager {
     // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV)
     // data, and put is overwritable
@@ -119,7 +121,7 @@ impl StructuredDataManager {
             let data = self.chunk_store_.get(name.clone());
             actions.push(::types::MethodCall::Refresh {
                 type_tag: ACCOUNT_TAG,
-                our_authority: ::routing::Authority::NaeManager(name),
+                our_authority: Authority(name),
                 payload: data
             });
         }

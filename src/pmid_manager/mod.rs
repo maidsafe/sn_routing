@@ -19,6 +19,7 @@ mod database;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::PmidManagerAccount as u64;
 pub use self::database::Account;
+pub use ::routing::Authority::NodeManager as Authority;
 
 pub struct PmidManager {
     database: database::PmidManagerDatabase,
@@ -35,7 +36,7 @@ impl PmidManager {
                       -> Vec<::types::MethodCall> {
         if self.database.put_data(&pmid_node, data.payload_size() as u64) {
             vec![::types::MethodCall::Put {
-                     location: ::routing::Authority::ManagedNode(pmid_node.clone()),
+                     location: ::pmid_node::Authority(pmid_node.clone()),
                      content: data
                  }]
         } else {
@@ -108,7 +109,7 @@ mod test {
         assert_eq!(put_result.len(), 1);
         match put_result[0].clone() {
             ::types::MethodCall::Put { location, content } => {
-                assert_eq!(location, ::routing::Authority::ManagedNode(dest));
+                assert_eq!(location, ::pmid_node::Authority(dest));
                 assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
             }
             _ => panic!("Unexpected"),

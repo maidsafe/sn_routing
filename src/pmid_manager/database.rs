@@ -189,11 +189,12 @@ impl PmidManagerDatabase {
         for (key, value) in self.storage.iter() {
             if close_group.iter().find(|a| **a == *key).is_some() {
                 let account = Account::new((*key).clone(), (*value).clone());
+                let our_authority = super::Authority(*account.name());
                 let mut encoder = cbor::Encoder::from_memory();
-                if encoder.encode(&[account.clone()]).is_ok() {
+                if encoder.encode(&[account]).is_ok() {
                     actions.push(::types::MethodCall::Refresh {
                         type_tag: super::ACCOUNT_TAG,
-                        our_authority: ::routing::Authority::NodeManager(*account.name()),
+                        our_authority: our_authority,
                         payload: encoder.as_bytes().to_vec()
                     });
                 }

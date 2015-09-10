@@ -166,7 +166,7 @@ impl Database {
                     info!("DataManager sends out a Get request in churn, fetching data {:?} from \
                           pmid_node {:?}", *key, pmid_node);
                     actions.push(::types::MethodCall::Get {
-                        location: ::routing::Authority::ManagedNode(pmid_node.clone()),
+                        location: ::pmid_node::Authority(pmid_node.clone()),
                         // DataManager only handles ::routing::immutable_data::ImmutableData
                         data_request:
                             ::routing::data::DataRequest::ImmutableData((*key).clone(),
@@ -175,12 +175,14 @@ impl Database {
                 }
             }
             let account = Account::new((*key).clone(), (*value).clone());
+            let our_authority = super::Authority(*account.name());
             let mut encoder = cbor::Encoder::from_memory();
-            if encoder.encode(&[account.clone()]).is_ok() {
-                debug!("DataManager sends out a refresh regarding account {:?}", account.name());
+            if encoder.encode(&[account]).is_ok() {
+                debug!("DataManager sends out a refresh regarding account {:?}",
+                       our_authority.get_location());
                 actions.push(::types::MethodCall::Refresh {
                     type_tag: super::ACCOUNT_TAG,
-                    our_authority: ::routing::Authority::NaeManager(*account.name()),
+                    our_authority: our_authority,
                     payload: encoder.as_bytes().to_vec()
                 });
             }

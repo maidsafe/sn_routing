@@ -19,8 +19,7 @@ mod database;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::MaidManagerAccount as u64;
 pub use self::database::Account;
-
-type Address = ::routing::NameType;
+pub use ::routing::Authority::ClientManager as Authority;
 
 pub struct MaidManager {
     database: database::MaidManagerDatabase,

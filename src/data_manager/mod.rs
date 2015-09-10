@@ -28,6 +28,7 @@ type Address = ::routing::NameType;
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::DataManagerAccount as u64;
 pub const STATS_TAG: u64 = ::transfer_tag::TransferTag::DataManagerStats as u64;
 pub use self::database::Account;
+pub use ::routing::Authority::NaeManager as Authority;
 
 pub static PARALLELISM: usize = 4;
 static LRU_CACHE_SIZE: usize = 1000;
@@ -126,7 +127,7 @@ impl DataManager {
         let mut forward_to_pmids = Vec::new();
         for pmid in result.iter() {
             forward_to_pmids.push(::types::MethodCall::Get {
-                location: ::routing::Authority::ManagedNode(pmid.clone()),
+                location: ::pmid_node::Authority(pmid.clone()),
                 data_request: data_request.clone()
             });
             self.on_going_gets.add((name.clone(), pmid.clone()), ::time::SteadyTime::now());
@@ -165,7 +166,7 @@ impl DataManager {
         let mut forwarding_calls: Vec<::types::MethodCall> = Vec::new();
         for pmid in dest_pmids {
             forwarding_calls.push(::types::MethodCall::Put {
-                location: ::routing::Authority::NodeManager(pmid.clone()),
+                location: ::pmid_manager::Authority(pmid.clone()),
                 content: ::routing::data::Data::ImmutableData(data.clone()),
             });
         }
@@ -184,7 +185,7 @@ impl DataManager {
                     // TODO: utilize FailedPut here as currently ResponseError only has
                     // FailedRequestForData defined
                     failure_notifications.push(::types::MethodCall::FailedPut {
-                        location: ::routing::Authority::NodeManager(failed_pmid),
+                        location: ::pmid_manager::Authority(failed_pmid),
                         data: response.clone()
                     });
                 }
@@ -197,7 +198,7 @@ impl DataManager {
             Some(pmid_node) => {
                 self.database.add_pmid_node(&response.name(), pmid_node.clone());
                 vec![::types::MethodCall::Put {
-                    location: ::routing::Authority::ManagedNode(pmid_node),
+                    location: ::pmid_node::Authority(pmid_node),
                     content: response,
                 }]
             }
@@ -228,7 +229,7 @@ impl DataManager {
                                     Some(pmid_node) => {
                                         self.database.add_pmid_node(&name, pmid_node.clone());
                                         return vec![::types::MethodCall::Put {
-                                            location: ::routing::Authority::NodeManager(pmid_node),
+                                            location: ::pmid_manager::Authority(pmid_node),
                                             content: data
                                         }];
                                     }
@@ -271,7 +272,7 @@ impl DataManager {
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
             result.push(::types::MethodCall::Refresh {
                 type_tag: STATS_TAG,
-                our_authority: ::routing::Authority::NaeManager(*data_manager_stats.name()),
+                our_authority: Authority(*data_manager_stats.name()),
                 payload: encoder.as_bytes().to_vec()
             });
         }
@@ -330,7 +331,7 @@ mod test {
             for i in 0..put_result.len() {
                 match put_result[i].clone() {
                     ::types::MethodCall::Put { location, content } => {
-                        assert_eq!(location, ::routing::Authority::NodeManager(nodes_in_table[i]));
+                        assert_eq!(location, ::pmid_manager::Authority(nodes_in_table[i]));
                         assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
                     }
                     _ => panic!("Unexpected"),
@@ -346,7 +347,7 @@ mod test {
             for i in 0..get_result.len() {
                 match get_result[i].clone() {
                     ::types::MethodCall::Get { location, data_request } => {
-                        assert_eq!(location, ::routing::Authority::ManagedNode(nodes_in_table[i]));
+                        assert_eq!(location, ::pmid_node::Authority(nodes_in_table[i]));
                         assert_eq!(data_request, request);
                     }
                     _ => panic!("Unexpected"),

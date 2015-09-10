@@ -149,11 +149,12 @@ impl MaidManagerDatabase {
         let mut actions = Vec::with_capacity(self.storage.len());
         for (key, value) in self.storage.iter() {
             let account = Account::new((*key).clone(), (*value).clone());
+            let our_authority = super::Authority(*account.name());
             let mut encoder = cbor::Encoder::from_memory();
-            if encoder.encode(&[account.clone()]).is_ok() {
+            if encoder.encode(&[account]).is_ok() {
                 actions.push(::types::MethodCall::Refresh {
                     type_tag: super::ACCOUNT_TAG,
-                    our_authority: ::routing::Authority::ClientManager(*account.name()),
+                    our_authority: our_authority,
                     payload: encoder.as_bytes().to_vec()
                 });
             }

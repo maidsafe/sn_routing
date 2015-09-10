@@ -417,7 +417,7 @@ impl Vault {
                 }
             }
             ::pmid_manager::ACCOUNT_TAG => {
-                if let ::routing::Authority::NodeManager(from_group) = our_authority {
+                if let ::pmid_manager::Authority(from_group) = our_authority {
                     if let Some(merged) = merge::<::pmid_manager::Account>(from_group, payloads) {
                         self.pmid_manager.handle_account_transfer(merged);
                     }
