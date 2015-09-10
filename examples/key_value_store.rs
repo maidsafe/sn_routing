@@ -329,7 +329,7 @@ struct Client {
     event_receiver: Receiver<Event>,
     command_receiver: Receiver<UserCommand>,
     public_id: PublicId,
-    is_done: bool,
+    exit: bool,
 }
 
 impl Client {
@@ -350,7 +350,7 @@ impl Client {
             event_receiver: event_receiver,
             command_receiver: command_receiver,
             public_id: public_id,
-            is_done: false,
+            exit: false,
         }
     }
 
@@ -362,13 +362,13 @@ impl Client {
                 self.handle_user_command(command);
             }
 
-            if self.is_done { break; }
+            if self.exit { break; }
 
             while let Ok(event) = self.event_receiver.try_recv() {
                 self.handle_routing_event(event);
             }
 
-            if self.is_done { break; }
+            if self.exit { break; }
 
             thread::sleep_ms(10);
         }
@@ -404,7 +404,7 @@ impl Client {
     fn handle_user_command(&mut self, cmd : UserCommand) {
         match cmd {
             UserCommand::Exit => {
-                self.is_done = true;
+                self.exit = true;
             }
             UserCommand::Get(what) => {
                 self.send_get_request(what);
