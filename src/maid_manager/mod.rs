@@ -30,17 +30,17 @@ impl MaidManager {
         MaidManager { database: database::MaidManagerDatabase::new() }
     }
 
-    pub fn handle_put(&mut self,
-                      from: &::routing::NameType,
-                      data: ::routing::data::Data)
-                      -> Vec<::types::MethodCall> {
+    pub fn handle_put(&mut self, from: &::routing::NameType,
+                      from_authority: ::routing::authority::Authority,
+                      data: ::routing::data::Data) -> Vec<::types::MethodCall> {
         if self.database.put_data(from, data.payload_size() as u64) {
             vec![::types::MethodCall::Put {
                      location: ::routing::authority::Authority::NaeManager(data.name()),
                      content: data
                  }]
         } else {
-            vec![::types::MethodCall::NotEnoughAllowance]
+            vec![::types::MethodCall::LowBalance { location: from_authority,
+                                                   data: data, balance: self.database.get_balance(from) as u32}]
         }
     }
 
@@ -55,17 +55,22 @@ impl MaidManager {
 
 #[cfg(test)]
 mod test {
+    use sodiumoxide::crypto;
+
     use super::*;
 
     #[test]
     fn handle_put() {
         let mut maid_manager = MaidManager::new();
         let from = ::utils::random_name();
+        let keys = crypto::sign::gen_keypair();
+        let client = ::routing::authority::Authority::Client(from, keys.0);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
-        let put_result =
-            maid_manager.handle_put(&from, ::routing::data::Data::ImmutableData(data.clone()));
+        let put_result = maid_manager.handle_put(&from, client,
+                                                 ::routing::data::Data::ImmutableData(data.clone()));
+
         assert_eq!(put_result.len(), 1);
         match put_result[0] {
             ::types::MethodCall::Put { ref location, ref content } => {
