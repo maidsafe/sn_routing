@@ -23,6 +23,6 @@ extern crate routing;
 
 /// Run a routing node.
 pub fn main () {
-    ::env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));
+    ::env_logger::init().unwrap_or_else(|e| println!("Error initialising logger: {:?}", e));
     ::routing::test_utils::node::Node::new().run();
 }

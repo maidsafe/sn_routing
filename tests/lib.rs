@@ -69,41 +69,34 @@ mod test {
 
 	#[test]
 	fn start_stop_nodes() {
-        let mut nodes = super::start_nodes(8u32);
+        let mut nodes = super::start_nodes(3u32);
 		super::stop_nodes(&mut nodes);
 	}
 
-	#[test]
-	fn start_stop_client() {
+    #[test]
+    fn client_put_get() {
+        let mut nodes = super::start_nodes(10u32);
         let mut client = ::routing::test_utils::client::Client::new();
-        client.run();
-        client.stop();
-	}
 
-    // #[test]
-    // fn client_put_get() {
-    //     let mut nodes = super::start_nodes(10u32);
-    //     let mut client = ::routing::test_utils::client::Client::new();
+        ::std::thread::sleep_ms(5000);
 
-    //     ::std::thread::sleep_ms(5000);
+        let key = ::std::string::String::from("key");
+        let value = ::std::string::String::from("value");
+        let name = super::calculate_key_name(&key.clone());
+        let data = ::routing::utils::encode(&(key, value)).unwrap();
+        let data = ::routing::data::Data::PlainData(
+                ::routing::plain_data::PlainData::new(name.clone(), data));
 
-    //     let key = ::std::string::String::from("key");
-    //     let value = ::std::string::String::from("value");
-    //     let name = super::calculate_key_name(&key.clone());
-    //     let data = ::routing::utils::encode(&(key, value)).unwrap();
-    //     let data = ::routing::data::Data::PlainData(
-    //             ::routing::plain_data::PlainData::new(name.clone(), data));
+        client.put(data.clone());
 
-    //     client.put(data.clone());
+        ::std::thread::sleep_ms(5000);
 
-    //     ::std::thread::sleep_ms(5000);
+        let recovered_data = match client.get(::routing::data::DataRequest::PlainData(name)) {
+            Some(data) => Some(data),
+            None => { debug!("Failed to recover stored data: {}.", name); None },
+        };
 
-    //     let recovered_data = match client.get(::routing::data::DataRequest::PlainData(name)) {
-    //         Some(data) => Some(data),
-    //         None => { debug!("Failed to recover stored data: {}.", name); None },
-    //     };
-
-    //     super::stop_nodes(&mut nodes);
-    //     assert_eq!(recovered_data.unwrap(), data);
-    // }
+        super::stop_nodes(&mut nodes);
+        assert_eq!(recovered_data.unwrap(), data);
+    }
 }

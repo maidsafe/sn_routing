@@ -41,8 +41,6 @@ impl Client {
         }
     }
 
-    pub fn run(&mut self) {}
-
     /// Get data from the network.
     pub fn get(&mut self, request: ::data::DataRequest) -> Option<::data::Data> {
         debug!("Get request from Client for {:?}", request);
@@ -106,9 +104,6 @@ impl Client {
 
     //     self.routing.delete_request(location, data)
     // }
-
-    /// Exit run loop.
-    pub fn stop(&mut self) {}
 
     pub fn name(&self) -> ::NameType {
         self.public_id.name()

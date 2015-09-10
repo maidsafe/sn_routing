@@ -169,60 +169,54 @@ impl Routing {
 }
 
 
-#[cfg(test)]
-mod test {
+// #[cfg(test)]
+// mod test {
 
-    extern crate env_logger;
+//     extern crate env_logger;
 
-    pub struct RoutingNetwork;
+//     pub struct RoutingNetwork;
 
-    impl RoutingNetwork {
+//     impl RoutingNetwork {
 
-        fn new(size: u32) -> RoutingNetwork {
-            env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));
+//         fn new(size: u32) -> RoutingNetwork {
+//             env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));
 
-            let node = || { let _ =
-                ::std::thread::spawn(move || ::test_utils::node::Node::new().run());
-            };
-            for i in 0..size { node(); ::std::thread::sleep_ms(1000 + i * 1000); }
-            ::std::thread::sleep_ms(size * 1000);
+//             let node = || { let _ =
+//                 ::std::thread::spawn(move || ::test_utils::node::Node::new().run());
+//             };
+//             for i in 0..size { node(); ::std::thread::sleep_ms(1000 + i * 1000); }
+//             ::std::thread::sleep_ms(size * 1000);
 
-            RoutingNetwork
-        }
-    }
+//             RoutingNetwork
+//         }
+//     }
 
-    fn calculate_key_name(key: &::std::string::String) -> ::NameType {
-        ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
-    }
+//     fn calculate_key_name(key: &::std::string::String) -> ::NameType {
+//         ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+//     }
 
-    // #[test]
-    // fn create_nodes() {
-    //     let _ = RoutingNetwork::new(10u32);
-    // }
+//     #[test]
+//     fn unit_client_put_get() {
+//         let _ = RoutingNetwork::new(10u32);
+//         let mut client = ::test_utils::client::Client::new();
 
-    #[test]
-    fn unit_client_put_get() {
-        let _ = RoutingNetwork::new(10u32);
+//         ::std::thread::sleep_ms(2000);
 
-        let mut client = ::test_utils::client::Client::new();
+//         let key = ::std::string::String::from("key");
+//         let value = ::std::string::String::from("value");
+//         let name = calculate_key_name(&key.clone());
+//         let data = ::utils::encode(&(key, value)).unwrap();
+//         let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
 
-        ::std::thread::sleep_ms(2000);
+//         client.put(data.clone());
 
-        let key = ::std::string::String::from("key");
-        let value = ::std::string::String::from("value");
-        let name = calculate_key_name(&key.clone());
-        let data = ::utils::encode(&(key, value)).unwrap();
-        let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
+//         ::std::thread::sleep_ms(5000);
 
-        client.put(data.clone());
+//         let recovered_data = match client.get(::data::DataRequest::PlainData(name)) {
+//             Some(data) => data,
+//             None => panic!("Failed to recover stored data: {}.", name),
+//         };
 
-        ::std::thread::sleep_ms(5000);
-
-        let recovered_data = match client.get(::data::DataRequest::PlainData(name)) {
-            Some(data) => data,
-            None => panic!("Failed to recover stored data: {}.", name),
-        };
-
-        assert_eq!(recovered_data, data);
-    }
-}
+//         assert_eq!(recovered_data, data);
+//     }
+// }
