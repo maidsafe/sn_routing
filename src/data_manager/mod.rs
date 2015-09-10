@@ -270,7 +270,8 @@ impl DataManager {
         let mut encoder = cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
             result.push(::types::MethodCall::Refresh {
-                type_tag: DATA_MANAGER_STATS_TAG, from_group: *data_manager_stats.name(),
+                type_tag: DATA_MANAGER_STATS_TAG,
+                our_authority: ::routing::Authority::NaeManager(*data_manager_stats.name()),
                 payload: encoder.as_bytes().to_vec()
             });
         }

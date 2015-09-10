@@ -201,7 +201,7 @@ impl MockRouting {
 
     pub fn refresh_request(&self,
                            type_tag: u64,
-                           from_group: ::routing::NameType,
+                           our_authority: ::routing::Authority,
                            content: Vec<u8>) {
         // routing is expected to accumulate the refresh requests
         // for the same group into one event request to vault
@@ -213,7 +213,7 @@ impl MockRouting {
             for _ in 2..::data_manager::PARALLELISM {
                 refresh_contents.push(content.clone());
             }
-            let _ = cloned_sender.send(Event::Refresh(type_tag, from_group, refresh_contents));
+            let _ = cloned_sender.send(Event::Refresh(type_tag, our_authority, refresh_contents));
         });
     }
 

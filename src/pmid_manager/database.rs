@@ -193,7 +193,8 @@ impl PmidManagerDatabase {
                 let mut encoder = cbor::Encoder::from_memory();
                 if encoder.encode(&[account.clone()]).is_ok() {
                     actions.push(::types::MethodCall::Refresh {
-                        type_tag: PMID_MANAGER_ACCOUNT_TAG, from_group: *account.name(),
+                        type_tag: PMID_MANAGER_ACCOUNT_TAG,
+                        our_authority: ::routing::Authority::NodeManager(*account.name()),
                         payload: encoder.as_bytes().to_vec()
                     });
                 }

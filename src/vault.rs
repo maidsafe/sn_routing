@@ -100,8 +100,8 @@ impl Vault {
                     self.on_request(request, our_authority, from_authority, response_token),
                 Event::Response{ response, our_authority, from_authority } =>
                     self.on_response(response, our_authority, from_authority),
-                Event::Refresh(type_tag, group_name, accounts) =>
-                    self.on_refresh(type_tag, group_name, accounts),
+                Event::Refresh(type_tag, our_authority, accounts) =>
+                    self.on_refresh(type_tag, our_authority, accounts),
                 Event::Churn(close_group) => self.on_churn(close_group),
                 Event::Bootstrapped => self.on_bootstrapped(),
                 Event::Connected => self.on_connected(),
@@ -160,9 +160,9 @@ impl Vault {
 
     fn on_refresh(&mut self,
                   type_tag: u64,
-                  group_name: ::routing::NameType,
+                  our_authority: ::routing::Authority,
                   accounts: Vec<Vec<u8>>) {
-        self.handle_refresh(type_tag, group_name, accounts);
+        self.handle_refresh(type_tag, our_authority, accounts);
     }
 
     fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
@@ -384,36 +384,56 @@ impl Vault {
 
     fn handle_refresh(&mut self,
                       type_tag: u64,
-                      from_group: ::routing::NameType,
+                      our_authority: ::routing::Authority,
                       payloads: Vec<Vec<u8>>) {
         // TODO: The assumption of the incoming payloads is that it is a vector of serialised
         //       account entries from the close group nodes of `from_group`
         match type_tag {
             ::transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG => {
-                if let Some(merged) = merge::<::maid_manager::Account>(from_group, payloads) {
-                    self.maid_manager.handle_account_transfer(merged)
+                if let ::routing::Authority::ClientManager(from_group) = our_authority {
+                    if let Some(merged) = merge::<::maid_manager::Account>(from_group, payloads) {
+                        self.maid_manager.handle_account_transfer(merged)
+                    }
+                } else {
+                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
                 }
             }
             ::transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG => {
-                if let Some(merged) = merge::<::data_manager::Account>(from_group, payloads) {
-                    self.data_manager.handle_account_transfer(merged);
+                if let ::routing::Authority::NaeManager(from_group) = our_authority {
+                    if let Some(merged) = merge::<::data_manager::Account>(from_group, payloads) {
+                        self.data_manager.handle_account_transfer(merged);
+                    }
+                } else {
+                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
                 }
             }
             ::transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG => {
-                if let Some(merged) = merge::<::data_manager::Stats>(from_group, payloads) {
-                    self.data_manager.handle_stats_transfer(merged);
+                if let ::routing::Authority::NaeManager(from_group) = our_authority {
+                    if let Some(merged) = merge::<::data_manager::Stats>(from_group, payloads) {
+                        self.data_manager.handle_stats_transfer(merged);
+                    }
+                } else {
+                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
                 }
             }
             ::transfer_parser::transfer_tags::PMID_MANAGER_ACCOUNT_TAG => {
-                if let Some(merged) = merge::<::pmid_manager::Account>(from_group, payloads) {
-                    self.pmid_manager.handle_account_transfer(merged);
+                if let ::routing::Authority::NodeManager(from_group) = our_authority {
+                    if let Some(merged) = merge::<::pmid_manager::Account>(from_group, payloads) {
+                        self.pmid_manager.handle_account_transfer(merged);
+                    }
+                } else {
+                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
                 }
             }
             ::transfer_parser::transfer_tags::SD_MANAGER_ACCOUNT_TAG => {
-                for payload in payloads {
-                    // TODO - pass in from_group to allow validation of payloads (should all be for
-                    // same DB entry)
-                    self.sd_manager.handle_account_transfer(payload);
+                if let ::routing::Authority::NaeManager(_from_group) = our_authority {
+                    for payload in payloads {
+                        // TODO - pass in from_group to allow validation of payloads (should all be
+                        // for same DB entry)
+                        self.sd_manager.handle_account_transfer(payload);
+                    }
+                } else {
+                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
                 }
             }
             _ => {}
@@ -472,10 +492,10 @@ impl Vault {
                         _ => {}
                     };
                 }
-                ::types::MethodCall::Refresh { type_tag, from_group, payload } => {
+                ::types::MethodCall::Refresh { type_tag, our_authority, payload } => {
                     info!("refreshing account type {:?} of group {:?} to network", type_tag,
-                          from_group);
-                    self.routing.refresh_request(type_tag, from_group, payload);
+                          our_authority);
+                    self.routing.refresh_request(type_tag, our_authority, payload);
                 }
                 ::types::MethodCall::FailedPut { location, data } => {
                     debug!("as {:?} failed in putting data {:?}, responding to {:?}",
@@ -821,10 +841,10 @@ mod test {
 
             // MaidManagerAccount
             match churn_data[0] {
-                ::types::MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
                     assert_eq!(*type_tag,
                                ::transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG);
-                    assert_eq!(*from_group, available_nodes[0]);
+                    assert_eq!(*our_authority.get_location(), available_nodes[0]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {
@@ -839,7 +859,7 @@ mod test {
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
                         payloads.push(payload.clone());
                     }
-                    vault.handle_refresh(*type_tag, *from_group, payloads);
+                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
                 }
                 _ => panic!("Refresh type expected"),
             };
@@ -862,9 +882,9 @@ mod test {
             assert_eq!(churn_data.len(), 2);
 
             match churn_data[0] {
-                ::types::MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::DATA_MANAGER_ACCOUNT_TAG);
-                    assert_eq!(*from_group, im_data.name());
+                    assert_eq!(*our_authority.get_location(), im_data.name());
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {
@@ -878,16 +898,16 @@ mod test {
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
                         payloads.push(payload.clone());
                     }
-                    vault.handle_refresh(*type_tag, *from_group, payloads);
+                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
                 }
                 ::types::MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected"),
             };
 
             match churn_data[1] {
-                ::types::MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::DATA_MANAGER_STATS_TAG);
-                    assert_eq!(*from_group, close_group[0]);
+                    assert_eq!(*our_authority.get_location(), close_group[0]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {
@@ -901,7 +921,7 @@ mod test {
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
                         payloads.push(payload.clone());
                     }
-                    vault.handle_refresh(*type_tag, *from_group, payloads);
+                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
                 }
                 ::types::MethodCall::Get { .. } => (),
                 _ => panic!("Refresh type expected"),
@@ -922,9 +942,9 @@ mod test {
             //assert_eq!(churn_data[0].0, from);
 
             match churn_data[0] {
-                ::types::MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::PMID_MANAGER_ACCOUNT_TAG);
-                    assert_eq!(*from_group, available_nodes[1]);
+                    assert_eq!(*our_authority.get_location(), available_nodes[1]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
                     if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
                         match parsed_data {
@@ -938,7 +958,7 @@ mod test {
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
                         payloads.push(payload.clone());
                     }
-                    vault.handle_refresh(*type_tag, *from_group, payloads);
+                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
                 }
                 _ => panic!("Refresh type expected"),
             };
@@ -962,9 +982,9 @@ mod test {
             assert_eq!(churn_data.len(), 2);
 
             match churn_data[0] {
-                ::types::MethodCall::Refresh{ref type_tag, ref from_group, ref payload} => {
+                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
                     assert_eq!(*type_tag, transfer_tags::SD_MANAGER_ACCOUNT_TAG);
-                    assert_eq!(*from_group, sdv.name());
+                    assert_eq!(*our_authority.get_location(), sdv.name());
                     match ::routing::utils::decode::<
                               ::routing::structured_data::StructuredData>(payload) {
                         Ok(sd) => {
@@ -976,7 +996,7 @@ mod test {
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
                         payloads.push(payload.clone());
                     }
-                    vault.handle_refresh(*type_tag, *from_group, payloads);
+                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
                 }
                 _ => panic!("Refresh type expected"),
             };
