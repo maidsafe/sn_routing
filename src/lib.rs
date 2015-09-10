@@ -61,7 +61,6 @@ mod routing_table;
 mod routing_node;
 mod routing_core;
 mod relay;
-mod wake_up;
 mod peer;
 mod refresh_accumulator;
 mod message_accumulator;
@@ -77,6 +76,7 @@ pub mod id;
 pub mod utils;
 pub mod public_id;
 pub mod error;
+// FIXME (ben 8/09/2015) make the module authority private
 pub mod authority;
 pub mod structured_data;
 pub mod immutable_data;
@@ -86,3 +86,4 @@ pub mod data;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target};
 pub use messages::{SignedToken, ExternalRequest, ExternalResponse};
+pub use authority::Authority;

@@ -62,13 +62,17 @@ impl Filter {
 
     /// Block adds the digest of the routing message to the message blocker.  A blocked
     /// message will be held back by the filter, regardless of the claimant.
-    pub fn block(&mut self, routing_message: &::messages::RoutingMessage) {
+    pub fn block(&mut self, digest: RoutingMessageFilter) {
 
-      let digest = match ::utils::encode(routing_message) {
-          Ok(bytes) => ::sodiumoxide::crypto::hash::sha256::hash(&bytes[..]),
-          Err(_) => return,
-      };
-      self.message_filter.add(digest);
+        self.message_filter.add(digest);
     }
 
+    pub fn message_digest(routing_message: &::messages::RoutingMessage)
+        -> Option<RoutingMessageFilter> {
+
+        match ::utils::encode(routing_message) {
+            Ok(bytes) => Some(::sodiumoxide::crypto::hash::sha256::hash(&bytes[..])),
+            Err(_) => None,
+        }
+    }
 }
