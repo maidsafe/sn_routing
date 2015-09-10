@@ -35,7 +35,7 @@ pub enum MethodCall {
     /// request to refresh
     Refresh {
         type_tag: u64,
-        from_group: ::routing::NameType,
+        our_authority: ::routing::Authority,
         payload: Vec<u8>,
     },
     /// reply

@@ -119,7 +119,7 @@ impl StructuredDataManager {
             let data = self.chunk_store_.get(name.clone());
             actions.push(::types::MethodCall::Refresh {
                 type_tag: SD_MANAGER_ACCOUNT_TAG,
-                from_group: name,
+                our_authority: ::routing::Authority::NaeManager(name),
                 payload: data
             });
         }
