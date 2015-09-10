@@ -34,6 +34,3 @@ Extract and place the libsodium.a file in "bin\x86_64-pc-windows-gnu" for 64bit 
 ##Todo Items
 
 General note: please document code you touch, and introduce property-based unit tests where applicable.
-
-## [0.3.8]
-- [x] [#664](https://github.com/maidsafe/routing/pull/664) update to match Crust's api change
