@@ -11,7 +11,7 @@ RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
 VaultName=$(sed -n 's/[ \t]*name[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
 VaultPath=/usr/bin/
-ConfigFilePath=/var/cache/safe_vault/
+ConfigFilePath=/var/cache/$VaultName/
 Platform=$1
 Description="SAFE Network vault"
 
@@ -261,12 +261,13 @@ cargo update
 cargo build --release
 strip "$RootDir/target/release/$VaultName"
 rm -rf "$RootDir/packages/$Platform" || true
+
+prepare_for_tar
+create_package tar
+gzip $PackageName.tar
+
 if [[ "$1" == "linux" ]]
 then
-  prepare_for_tar
-  create_package tar
-  gzip $PackageName.tar
-
   prepare_systemd_scripts
   create_package deb
   create_package rpm
@@ -276,8 +277,5 @@ then
   create_package rpm
 elif [[ "$1" == "osx" ]]
 then
-  prepare_for_tar
-  create_package tar
-
   create_package osxpkg
 fi
