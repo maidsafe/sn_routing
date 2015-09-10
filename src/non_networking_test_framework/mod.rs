@@ -72,9 +72,8 @@ impl MockRouting {
         let _ = ::std::thread::spawn(move || {
                                               let _ = cloned_sender.send(Event::Request{
                 request: ExternalRequest::Get(data_request, 0),
-                our_authority: ::routing::authority::Authority::NaeManager(name),
-                from_authority: ::routing::authority::Authority::Client(client_address,
-                                                                        client_pub_key),
+                our_authority: ::routing::Authority::NaeManager(name),
+                from_authority: ::routing::Authority::Client(client_address, client_pub_key),
                 response_token: None
             });
                                           });
@@ -90,9 +89,8 @@ impl MockRouting {
                                               ::std::thread::sleep_ms(delay_ms);
                                               let _ = cloned_sender.send(Event::Request{
                 request: ExternalRequest::Put(data),
-                our_authority: ::routing::authority::Authority::ClientManager(client_address),
-                from_authority: ::routing::authority::Authority::Client(client_address,
-                                                                        client_pub_key),
+                our_authority: ::routing::Authority::ClientManager(client_address),
+                from_authority: ::routing::Authority::Client(client_address, client_pub_key),
                 response_token: None
             });
                                           });
@@ -108,9 +106,8 @@ impl MockRouting {
                                               ::std::thread::sleep_ms(delay_ms);
                                               let _ = cloned_sender.send(Event::Request{
                 request: ExternalRequest::Post(data.clone()),
-                our_authority: ::routing::authority::Authority::NaeManager(data.name()),
-                from_authority: ::routing::authority::Authority::Client(client_address,
-                                                                        client_pub_key),
+                our_authority: ::routing::Authority::NaeManager(data.name()),
+                from_authority: ::routing::Authority::Client(client_address, client_pub_key),
                 response_token: None });
                                           });
     }
@@ -137,13 +134,13 @@ impl MockRouting {
         let cloned_client_sender = self.client_sender.clone();
         let _ = ::std::thread::spawn(move || {
             match location.clone() {
-                ::routing::authority::Authority::NaeManager(_) => {
+                ::routing::Authority::NaeManager(_) => {
                     let _ = cloned_sender.send(Event::Response{
                         response: ExternalResponse::Get(data.clone(), data_request, response_token),
                         our_authority: location, from_authority: our_authority
                     });
                 },
-                ::routing::authority::Authority::Client(_, _) => {
+                ::routing::Authority::Client(_, _) => {
                     let _ = cloned_client_sender.send(data);
                 },
                 _ => {}

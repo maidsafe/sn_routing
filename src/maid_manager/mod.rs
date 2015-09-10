@@ -31,11 +31,11 @@ impl MaidManager {
     }
 
     pub fn handle_put(&mut self, from: &::routing::NameType,
-                      from_authority: ::routing::authority::Authority,
+                      from_authority: ::routing::Authority,
                       data: ::routing::data::Data) -> Vec<::types::MethodCall> {
         if self.database.put_data(from, data.payload_size() as u64) {
             vec![::types::MethodCall::Put {
-                     location: ::routing::authority::Authority::NaeManager(data.name()),
+                     location: ::routing::Authority::NaeManager(data.name()),
                      content: data
                  }]
         } else {
@@ -64,7 +64,7 @@ mod test {
         let mut maid_manager = MaidManager::new();
         let from = ::utils::random_name();
         let keys = crypto::sign::gen_keypair();
-        let client = ::routing::authority::Authority::Client(from, keys.0);
+        let client = ::routing::Authority::Client(from, keys.0);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
@@ -74,7 +74,7 @@ mod test {
         assert_eq!(put_result.len(), 1);
         match put_result[0] {
             ::types::MethodCall::Put { ref location, ref content } => {
-                assert_eq!(*location, ::routing::authority::Authority::NaeManager(data.name()));
+                assert_eq!(*location, ::routing::Authority::NaeManager(data.name()));
                 assert_eq!(*content, ::routing::data::Data::ImmutableData(data));
             }
             _ => panic!("Unexpected"),

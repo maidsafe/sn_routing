@@ -34,7 +34,7 @@ impl PmidManager {
                       -> Vec<::types::MethodCall> {
         if self.database.put_data(&pmid_node, data.payload_size() as u64) {
             vec![::types::MethodCall::Put {
-                     location: ::routing::authority::Authority::ManagedNode(pmid_node.clone()),
+                     location: ::routing::Authority::ManagedNode(pmid_node.clone()),
                      content: data
                  }]
         } else {
@@ -50,14 +50,14 @@ impl PmidManager {
             ::routing::error::ResponseError::FailedRequestForData(data) => {
                 self.database.delete_data(from_address, data.payload_size() as u64);
                 return vec![::types::MethodCall::FailedPut {
-                                location: ::routing::authority::Authority::NaeManager(data.name()),
+                                location: ::routing::Authority::NaeManager(data.name()),
                                 data: data
                             }];
             }
             ::routing::error::ResponseError::HadToClearSacrificial(name, size) => {
                 self.database.delete_data(from_address, size as u64);
                 return vec![::types::MethodCall::ClearSacrificial {
-                    location: ::routing::authority::Authority::NaeManager(name),
+                    location: ::routing::Authority::NaeManager(name),
                     name: name,
                     size: size
                 }];
@@ -107,7 +107,7 @@ mod test {
         assert_eq!(put_result.len(), 1);
         match put_result[0].clone() {
             ::types::MethodCall::Put { location, content } => {
-                assert_eq!(location, ::routing::authority::Authority::ManagedNode(dest));
+                assert_eq!(location, ::routing::Authority::ManagedNode(dest));
                 assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
             }
             _ => panic!("Unexpected"),

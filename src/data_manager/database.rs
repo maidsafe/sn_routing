@@ -168,7 +168,7 @@ impl Database {
                     info!("DataManager sends out a Get request in churn, fetching data {:?} from \
                           pmid_node {:?}", *key, pmid_node);
                     actions.push(::types::MethodCall::Get {
-                        location: ::routing::authority::Authority::ManagedNode(pmid_node.clone()),
+                        location: ::routing::Authority::ManagedNode(pmid_node.clone()),
                         // DataManager only handles ::routing::immutable_data::ImmutableData
                         data_request:
                             ::routing::data::DataRequest::ImmutableData((*key).clone(),

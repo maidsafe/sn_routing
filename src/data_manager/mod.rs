@@ -125,7 +125,7 @@ impl DataManager {
         let mut forward_to_pmids = Vec::new();
         for pmid in result.iter() {
             forward_to_pmids.push(::types::MethodCall::Get {
-                location: ::routing::authority::Authority::ManagedNode(pmid.clone()),
+                location: ::routing::Authority::ManagedNode(pmid.clone()),
                 data_request: data_request.clone()
             });
             self.on_going_gets.add((name.clone(), pmid.clone()), ::time::SteadyTime::now());
@@ -164,7 +164,7 @@ impl DataManager {
         let mut forwarding_calls: Vec<::types::MethodCall> = Vec::new();
         for pmid in dest_pmids {
             forwarding_calls.push(::types::MethodCall::Put {
-                location: ::routing::authority::Authority::NodeManager(pmid.clone()),
+                location: ::routing::Authority::NodeManager(pmid.clone()),
                 content: ::routing::data::Data::ImmutableData(data.clone()),
             });
         }
@@ -183,7 +183,7 @@ impl DataManager {
                     // TODO: utilize FailedPut here as currently ResponseError only has
                     // FailedRequestForData defined
                     failure_notifications.push(::types::MethodCall::FailedPut {
-                        location: ::routing::authority::Authority::NodeManager(failed_pmid),
+                        location: ::routing::Authority::NodeManager(failed_pmid),
                         data: response.clone()
                     });
                 }
@@ -196,7 +196,7 @@ impl DataManager {
             Some(pmid_node) => {
                 self.database.add_pmid_node(&response.name(), pmid_node.clone());
                 vec![::types::MethodCall::Put {
-                    location: ::routing::authority::Authority::ManagedNode(pmid_node),
+                    location: ::routing::Authority::ManagedNode(pmid_node),
                     content: response,
                 }]
             }
@@ -227,8 +227,7 @@ impl DataManager {
                                     Some(pmid_node) => {
                                         self.database.add_pmid_node(&name, pmid_node.clone());
                                         return vec![::types::MethodCall::Put {
-                                            location: ::routing::authority::Authority::NodeManager(
-                                                          pmid_node),
+                                            location: ::routing::Authority::NodeManager(pmid_node),
                                             content: data
                                         }];
                                     }
@@ -330,8 +329,7 @@ mod test {
             for i in 0..put_result.len() {
                 match put_result[i].clone() {
                     ::types::MethodCall::Put { location, content } => {
-                        assert_eq!(location,
-                                   ::routing::authority::Authority::NodeManager(nodes_in_table[i]));
+                        assert_eq!(location, ::routing::Authority::NodeManager(nodes_in_table[i]));
                         assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
                     }
                     _ => panic!("Unexpected"),
@@ -347,8 +345,7 @@ mod test {
             for i in 0..get_result.len() {
                 match get_result[i].clone() {
                     ::types::MethodCall::Get { location, data_request } => {
-                        assert_eq!(location,
-                                   ::routing::authority::Authority::ManagedNode(nodes_in_table[i]));
+                        assert_eq!(location, ::routing::Authority::ManagedNode(nodes_in_table[i]));
                         assert_eq!(data_request, request);
                     }
                     _ => panic!("Unexpected"),

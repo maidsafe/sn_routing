@@ -68,7 +68,7 @@ impl PmidNode {
             // For sacrifized data, just notify PmidManager to update the account
             // Replication shall not be carried out for it
             return vec![::types::MethodCall::ClearSacrificial {
-                location: ::routing::authority::Authority::NodeManager(pmid_node),
+                location: ::routing::Authority::NodeManager(pmid_node),
                 name: incoming_data.name(),
                 size: incoming_data.payload_size() as u32
             }];
@@ -94,7 +94,7 @@ impl PmidNode {
                     // DataManager need to adjust its farming rate, replication shall not be carried
                     // out for it
                     returned_calls.push(::types::MethodCall::ClearSacrificial {
-                        location: ::routing::authority::Authority::NodeManager(pmid_node.clone()),
+                        location: ::routing::Authority::NodeManager(pmid_node.clone()),
                         name: parsed_data.name(),
                         size: parsed_data.payload_size() as u32
                     });
@@ -108,7 +108,7 @@ impl PmidNode {
         }
         // Reduplication needs to be carried out
         returned_calls.push(::types::MethodCall::FailedPut {
-            location: ::routing::authority::Authority::NodeManager(pmid_node),
+            location: ::routing::Authority::NodeManager(pmid_node),
             data: incoming_data
         });
         returned_calls

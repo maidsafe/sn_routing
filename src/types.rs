@@ -20,12 +20,12 @@
 pub enum MethodCall {
     /// request to have `location` to handle put for the `content`
     Put {
-        location: ::routing::authority::Authority,
+        location: ::routing::Authority,
         content: ::routing::data::Data,
     },
     /// request to retreive data with specified type and location from network
     Get {
-        location: ::routing::authority::Authority,
+        location: ::routing::Authority,
         data_request: ::routing::data::DataRequest,
     },
     // /// request to post
@@ -44,18 +44,21 @@ pub enum MethodCall {
     },
     /// response error indicating failed in putting data
     FailedPut {
-        location: ::routing::authority::Authority,
+        location: ::routing::Authority,
         data: ::routing::data::Data,
     },
     /// response error indicating clearing sarificial data
     ClearSacrificial {
-        location: ::routing::authority::Authority,
+        location: ::routing::Authority,
         name: ::routing::NameType,
         size: u32,
     },
     /// response error indicating not enough allowance
-    LowBalance{ location: ::routing::authority::Authority,
-                data: ::routing::data::Data, balance: u32},
+    LowBalance{
+        location: ::routing::Authority,
+        data: ::routing::data::Data,
+        balance: u32,
+    },
     /// response error indicating invalid request
     InvalidRequest {
         data: ::routing::data::Data,
