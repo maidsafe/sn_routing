@@ -25,7 +25,7 @@ extern crate sodiumoxide;
 use std::error::Error;
 
 fn start_nodes(number_of_nodes: u32) -> Vec<::std::process::Child> {
-    env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));
+    env_logger::init().unwrap_or_else(|e| println!("Error initialising logger: {:?}", e));
     let mut processes = Vec::new();
     let executable_path = match std::env::current_exe() {
         Ok(mut exe_path) => {
@@ -60,9 +60,9 @@ fn stop_nodes(processes: &mut Vec<::std::process::Child>) {
     }
 }
 
-fn calculate_key_name(key: &::std::string::String) -> ::routing::NameType {
-    ::routing::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
-}
+// fn calculate_key_name(key: &::std::string::String) -> ::routing::NameType {
+//     ::routing::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+// }
 
 #[cfg(test)]
 mod test {
@@ -73,30 +73,30 @@ mod test {
 		super::stop_nodes(&mut nodes);
 	}
 
-    #[test]
-    fn client_put_get() {
-        let mut nodes = super::start_nodes(10u32);
-        let mut client = ::routing::test_utils::client::Client::new();
+    // #[test]
+    // fn client_put_get() {
+    //     let mut nodes = super::start_nodes(10u32);
+    //     let mut client = ::routing::test_utils::client::Client::new();
 
-        ::std::thread::sleep_ms(5000);
+    //     ::std::thread::sleep_ms(5000);
 
-        let key = ::std::string::String::from("key");
-        let value = ::std::string::String::from("value");
-        let name = super::calculate_key_name(&key.clone());
-        let data = ::routing::utils::encode(&(key, value)).unwrap();
-        let data = ::routing::data::Data::PlainData(
-                ::routing::plain_data::PlainData::new(name.clone(), data));
+    //     let key = ::std::string::String::from("key");
+    //     let value = ::std::string::String::from("value");
+    //     let name = super::calculate_key_name(&key.clone());
+    //     let data = ::routing::utils::encode(&(key, value)).unwrap();
+    //     let data = ::routing::data::Data::PlainData(
+    //             ::routing::plain_data::PlainData::new(name.clone(), data));
 
-        client.put(data.clone());
+    //     client.put(data.clone());
 
-        ::std::thread::sleep_ms(5000);
+    //     ::std::thread::sleep_ms(5000);
 
-        let recovered_data = match client.get(::routing::data::DataRequest::PlainData(name)) {
-            Some(data) => Some(data),
-            None => { debug!("Failed to recover stored data: {}.", name); None },
-        };
+    //     let recovered_data = match client.get(::routing::data::DataRequest::PlainData(name)) {
+    //         Some(data) => Some(data),
+    //         None => { debug!("Failed to recover stored data: {}.", name); None },
+    //     };
 
-        super::stop_nodes(&mut nodes);
-        assert_eq!(recovered_data.unwrap(), data);
-    }
+    //     super::stop_nodes(&mut nodes);
+    //     assert_eq!(recovered_data.unwrap(), data);
+    // }
 }

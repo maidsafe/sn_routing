@@ -82,17 +82,10 @@ impl Node {
                                      our_authority: ::authority::Authority,
                                      from_authority: ::authority::Authority,
                                      response_token: Option<::SignedToken>) {
-        let name = match data_request {
-            ::data::DataRequest::PlainData(name) => name,
-            ::data::DataRequest::StructuredData(name, tag) =>
-                ::structured_data::StructuredData::compute_name(tag, &name),
-            ::data::DataRequest::ImmutableData(name, _) => name,
-        };
-
-        let data = match self.db.get(&name) {
+        let data = match self.db.get(&data_request.name()) {
             Some(data) => data.clone(),
             None => {
-                debug!("GetDataRequest failed for {:?}.", name);
+                debug!("GetDataRequest failed for {:?}.", data_request.name());
                 return
             }
         };

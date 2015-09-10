@@ -21,14 +21,15 @@ extern crate time;
 pub struct Client {
     routing_client: ::routing_client::RoutingClient,
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
-    public_id: ::public_id::PublicId,
+    id: ::id::Id,
 }
 
 impl Client {
     pub fn new() -> Client {
         let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
-
-        let id = ::id::Id::new();
+        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let encrypt_keys = ::sodiumoxide::crypto::box_::gen_keypair();
+        let id = ::id::Id::with_keys(sign_keys.clone(), encrypt_keys.clone());
         let public_id = ::public_id::PublicId::new(&id);
         let routing_client = ::routing_client::RoutingClient::new(sender, Some(id));
 
@@ -37,7 +38,7 @@ impl Client {
         Client {
             routing_client: routing_client,
             receiver: receiver,
-            public_id: public_id,
+            id: ::id::Id::with_keys(sign_keys, encrypt_keys),
         }
     }
 
@@ -106,6 +107,6 @@ impl Client {
     // }
 
     pub fn name(&self) -> ::NameType {
-        self.public_id.name()
+        self.id.name()
     }
 }
