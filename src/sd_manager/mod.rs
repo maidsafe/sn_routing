@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use chunk_store::ChunkStore;
-use transfer_parser::transfer_tags::SD_MANAGER_ACCOUNT_TAG;
+pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
 
 pub struct StructuredDataManager {
     // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV)
@@ -118,7 +118,7 @@ impl StructuredDataManager {
         for name in names {
             let data = self.chunk_store_.get(name.clone());
             actions.push(::types::MethodCall::Refresh {
-                type_tag: SD_MANAGER_ACCOUNT_TAG,
+                type_tag: ACCOUNT_TAG,
                 our_authority: ::routing::Authority::NaeManager(name),
                 payload: data
             });

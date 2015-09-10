@@ -116,7 +116,7 @@ mod maid_manager;
 mod pmid_manager;
 mod pmid_node;
 mod sd_manager;
-mod transfer_parser;
+mod transfer_tag;
 mod types;
 mod utils;
 mod vault;

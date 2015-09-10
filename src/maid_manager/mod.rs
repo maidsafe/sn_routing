@@ -17,6 +17,7 @@
 
 mod database;
 
+pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::MaidManagerAccount as u64;
 pub use self::database::Account;
 
 type Address = ::routing::NameType;
@@ -39,8 +40,10 @@ impl MaidManager {
                      content: data
                  }]
         } else {
-            vec![::types::MethodCall::LowBalance { location: from_authority,
-                                                   data: data, balance: self.database.get_balance(from) as u32}]
+            vec![::types::MethodCall::LowBalance {
+                     location: from_authority,
+                     data: data, balance: self.database.get_balance(from) as u32
+                 }]
         }
     }
 

@@ -17,6 +17,7 @@
 
 mod database;
 
+pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::PmidManagerAccount as u64;
 pub use self::database::Account;
 
 pub struct PmidManager {

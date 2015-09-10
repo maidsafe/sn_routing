@@ -389,7 +389,7 @@ impl Vault {
         // TODO: The assumption of the incoming payloads is that it is a vector of serialised
         //       account entries from the close group nodes of `from_group`
         match type_tag {
-            ::transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG => {
+            ::maid_manager::ACCOUNT_TAG => {
                 if let ::routing::Authority::ClientManager(from_group) = our_authority {
                     if let Some(merged) = merge::<::maid_manager::Account>(from_group, payloads) {
                         self.maid_manager.handle_account_transfer(merged)
@@ -398,7 +398,7 @@ impl Vault {
                     warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
                 }
             }
-            ::transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG => {
+            ::data_manager::ACCOUNT_TAG => {
                 if let ::routing::Authority::NaeManager(from_group) = our_authority {
                     if let Some(merged) = merge::<::data_manager::Account>(from_group, payloads) {
                         self.data_manager.handle_account_transfer(merged);
@@ -407,7 +407,7 @@ impl Vault {
                     warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
                 }
             }
-            ::transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG => {
+            ::data_manager::STATS_TAG => {
                 if let ::routing::Authority::NaeManager(from_group) = our_authority {
                     if let Some(merged) = merge::<::data_manager::Stats>(from_group, payloads) {
                         self.data_manager.handle_stats_transfer(merged);
@@ -416,7 +416,7 @@ impl Vault {
                     warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
                 }
             }
-            ::transfer_parser::transfer_tags::PMID_MANAGER_ACCOUNT_TAG => {
+            ::pmid_manager::ACCOUNT_TAG => {
                 if let ::routing::Authority::NodeManager(from_group) = our_authority {
                     if let Some(merged) = merge::<::pmid_manager::Account>(from_group, payloads) {
                         self.pmid_manager.handle_account_transfer(merged);
@@ -425,7 +425,7 @@ impl Vault {
                     warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
                 }
             }
-            ::transfer_parser::transfer_tags::SD_MANAGER_ACCOUNT_TAG => {
+            ::sd_manager::ACCOUNT_TAG => {
                 if let ::routing::Authority::NaeManager(_from_group) = our_authority {
                     for payload in payloads {
                         // TODO - pass in from_group to allow validation of payloads (should all be
@@ -534,7 +534,6 @@ mod test {
     use sodiumoxide::crypto;
 
     use super::*;
-    use transfer_parser::{Transfer, transfer_tags};
 
     #[cfg(feature = "use-mock-routing")]
     fn mock_env_setup() -> (super::Routing, ::std::sync::mpsc::Receiver<(::routing::data::Data)>) {
@@ -849,18 +848,15 @@ mod test {
             // MaidManagerAccount
             match churn_data[0] {
                 ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag,
-                               ::transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG);
+                    assert_eq!(*type_tag, ::maid_manager::ACCOUNT_TAG);
                     assert_eq!(*our_authority.get_location(), available_nodes[0]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Transfer::MaidManagerAccount(mm_account) => {
-                                assert_eq!(*mm_account.name(), available_nodes[0]);
-                                assert_eq!(mm_account.value().data_stored(), 1024);
-                            }
-                            _ => panic!("Unexpected"),
-                        }
+                    let result_to_option = |r: ::cbor::CborResult<::maid_manager::Account>| r.ok();
+                    if let Some(mm_account) = d.decode().next().and_then(result_to_option) {
+                        assert_eq!(*mm_account.name(), available_nodes[0]);
+                        assert_eq!(mm_account.value().data_stored(), 1024);
+                    } else {
+                        panic!("Failed to parse account during refresh.");
                     }
                     let mut payloads = vec![];
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
@@ -890,16 +886,14 @@ mod test {
 
             match churn_data[0] {
                 ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag, transfer_tags::DATA_MANAGER_ACCOUNT_TAG);
+                    assert_eq!(*type_tag, ::data_manager::ACCOUNT_TAG);
                     assert_eq!(*our_authority.get_location(), im_data.name());
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Transfer::DataManagerAccount(account) => {
-                                assert_eq!(*account.name(), im_data.name());
-                            }
-                            _ => panic!("Unexpected"),
-                        }
+                    let result_to_option = |r: ::cbor::CborResult<::data_manager::Account>| r.ok();
+                    if let Some(dm_account) = d.decode().next().and_then(result_to_option) {
+                        assert_eq!(*dm_account.name(), im_data.name());
+                    } else {
+                        panic!("Failed to parse account during refresh.");
                     }
                     let mut payloads = vec![];
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
@@ -913,16 +907,14 @@ mod test {
 
             match churn_data[1] {
                 ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag, transfer_tags::DATA_MANAGER_STATS_TAG);
+                    assert_eq!(*type_tag, ::data_manager::STATS_TAG);
                     assert_eq!(*our_authority.get_location(), close_group[0]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Transfer::DataManagerStats(stats) => {
-                                assert_eq!(stats.resource_index(), 1);
-                            }
-                            _ => panic!("Unexpected"),
-                        }
+                    let result_to_option = |r: ::cbor::CborResult<::data_manager::Stats>| r.ok();
+                    if let Some(dm_stats) = d.decode().next().and_then(result_to_option) {
+                        assert_eq!(dm_stats.resource_index(), 1);
+                    } else {
+                        panic!("Failed to parse account during refresh.");
                     }
                     let mut payloads = vec![];
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
@@ -950,16 +942,14 @@ mod test {
 
             match churn_data[0] {
                 ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag, transfer_tags::PMID_MANAGER_ACCOUNT_TAG);
+                    assert_eq!(*type_tag, ::pmid_manager::ACCOUNT_TAG);
                     assert_eq!(*our_authority.get_location(), available_nodes[1]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Transfer::PmidManagerAccount(account) => {
-                                assert_eq!(*account.name(), available_nodes[1]);
-                            }
-                            _ => panic!("Unexpected"),
-                        }
+                    let result_to_option = |r: ::cbor::CborResult<::pmid_manager::Account>| r.ok();
+                    if let Some(pm_account) = d.decode().next().and_then(result_to_option) {
+                        assert_eq!(*pm_account.name(), available_nodes[1]);
+                    } else {
+                        panic!("Failed to parse account during refresh.");
                     }
                     let mut payloads = vec![];
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
@@ -990,7 +980,7 @@ mod test {
 
             match churn_data[0] {
                 ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag, transfer_tags::SD_MANAGER_ACCOUNT_TAG);
+                    assert_eq!(*type_tag, ::sd_manager::ACCOUNT_TAG);
                     assert_eq!(*our_authority.get_location(), sdv.name());
                     match ::routing::utils::decode::<
                               ::routing::structured_data::StructuredData>(payload) {

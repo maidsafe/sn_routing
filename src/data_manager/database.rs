@@ -19,8 +19,6 @@ use cbor;
 use rustc_serialize::Encodable;
 use std::collections::HashMap;
 
-use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
-
 type PmidNode = ::routing::NameType;
 
 pub type DataName = ::routing::NameType;
@@ -181,7 +179,7 @@ impl Database {
             if encoder.encode(&[account.clone()]).is_ok() {
                 debug!("DataManager sends out a refresh regarding account {:?}", account.name());
                 actions.push(::types::MethodCall::Refresh {
-                    type_tag: DATA_MANAGER_ACCOUNT_TAG,
+                    type_tag: super::ACCOUNT_TAG,
                     our_authority: ::routing::Authority::NaeManager(*account.name()),
                     payload: encoder.as_bytes().to_vec()
                 });

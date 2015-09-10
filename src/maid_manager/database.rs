@@ -19,7 +19,6 @@ use cbor;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
 
-use transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG;
 use utils;
 
 pub type MaidNodeName = ::routing::NameType;
@@ -153,7 +152,7 @@ impl MaidManagerDatabase {
             let mut encoder = cbor::Encoder::from_memory();
             if encoder.encode(&[account.clone()]).is_ok() {
                 actions.push(::types::MethodCall::Refresh {
-                    type_tag: MAID_MANAGER_ACCOUNT_TAG,
+                    type_tag: super::ACCOUNT_TAG,
                     our_authority: ::routing::Authority::ClientManager(*account.name()),
                     payload: encoder.as_bytes().to_vec()
                 });

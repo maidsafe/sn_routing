@@ -21,11 +21,12 @@ use std::cmp;
 use cbor;
 use rustc_serialize::Encodable;
 
-use transfer_parser::transfer_tags::DATA_MANAGER_STATS_TAG;
 use utils;
 
 type Address = ::routing::NameType;
 
+pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::DataManagerAccount as u64;
+pub const STATS_TAG: u64 = ::transfer_tag::TransferTag::DataManagerStats as u64;
 pub use self::database::Account;
 
 pub static PARALLELISM: usize = 4;
@@ -269,7 +270,7 @@ impl DataManager {
         let mut encoder = cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
             result.push(::types::MethodCall::Refresh {
-                type_tag: DATA_MANAGER_STATS_TAG,
+                type_tag: STATS_TAG,
                 our_authority: ::routing::Authority::NaeManager(*data_manager_stats.name()),
                 payload: encoder.as_bytes().to_vec()
             });
