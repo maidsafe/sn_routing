@@ -150,12 +150,14 @@ impl Routing {
     /// Refresh the content in the close group nodes of group address content::name.
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
-    /// content.
-    pub fn refresh_request(&self, type_tag: u64, from_group: NameType, content: Bytes) {
-        let _ = self.action_sender.send(Action::SendContent(
-                Authority::NaeManager(from_group.clone()), Authority::NaeManager(from_group),
-                Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
-
+    /// content. If the authority provided (our_authority) is not a group, the request for refresh will be dropped.
+    pub fn refresh_request(&self, type_tag: u64, our_authority: Authority, content: Bytes) {
+        if !our_authority.is_group() {
+            error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
+                type_tag, our_authority);
+            return; };
+        let _ = self.action_sender.send(Action::SendContent(our_authority.clone(), our_authority,
+            Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
     }
 
     /// Dynamically enable/disable caching for Data types.

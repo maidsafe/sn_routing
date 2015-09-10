@@ -59,7 +59,7 @@ pub enum Event {
         location: Authority,
         interface_error: InterfaceError,
     },
-    Refresh(u64, NameType, Vec<Vec<u8>>),
+    Refresh(u64, Authority, Vec<Vec<u8>>),
     //      ~|~  ~~|~~~~~  ~~|~~~~~~~~~
     //       |     |         | payloads is a vector of serialised account records as sent out
     //       |     |         | routing has made no attempt at parsing the content
