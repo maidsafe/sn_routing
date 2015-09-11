@@ -332,7 +332,7 @@ mod test {
             from_authority : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone())),
+                some_bytes.clone(), Random::generate_random())),
         };
         assert_eq!(super::our_authority(&refresh_message, &routing_table),
             Some(Authority::NaeManager(nae_or_client_in_our_close_group.clone())));
@@ -342,7 +342,7 @@ mod test {
             from_authority : Authority::ClientManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone())),
+                some_bytes.clone(), Random::generate_random())),
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
         // assert that this is not a valid Refresh Authority
@@ -350,7 +350,7 @@ mod test {
             from_authority : Authority::NaeManager(closest_node_in_our_close_group.id.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone())),
+                some_bytes.clone(), Random::generate_random())),
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
     }

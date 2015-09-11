@@ -135,8 +135,8 @@ impl Node {
                                         response_token);
                 },
                 Event::Connected => println!("Node is connected."),
-                Event::Churn(our_close_group) => {
-                    self.handle_churn(our_close_group);
+                Event::Churn(our_close_group, cause) => {
+                    self.handle_churn(our_close_group, cause);
                 },
                 Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
                     if type_tag != 1u64 { error!("Reveived refresh for tag {:?} from {:?}",
@@ -236,7 +236,8 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>) {
+    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>,
+        cause: ::routing::NameType) {
         println!("Handle churn for close group size {:?}", _our_close_group.len());
         // for value in self.db.values() {
         //     println!("CHURN {:?}", value.name());
@@ -249,7 +250,7 @@ impl Node {
             println!("REFRESH {:?} - {:?}", client_name, stored);
             self.routing.refresh_request(1u64,
                 ::routing::authority::Authority::ClientManager(client_name.clone()),
-                encode(&stored).unwrap());
+                encode(&stored).unwrap(), cause.clone());
         }
         // self.db = BTreeMap::new();
     }
