@@ -551,7 +551,8 @@ mod test {
                                                                   vault.do_run();
                                                               });
                         };
-        let mut vault = Vault::new();
+        let (sender, _) = ::std::sync::mpsc::channel();
+        let mut vault = Vault::new(0, sender);
         let receiver = vault.routing.get_client_receiver();
         let mut routing = vault.routing.clone();
         let _ = run_vault(vault);
@@ -635,7 +636,7 @@ mod test {
             println!("starting node {:?}", i);
             let (sender, receiver) = ::std::sync::mpsc::channel();
             let _ = run_vault(Vault::new(i, sender));
-            let mut expected_events = ::std::cmp::min(i, 1);
+            let mut expected_events = i;
             while expected_events > 0 {
                 if let Ok(event) = receiver.recv() {
                     println!("received an event : {:?}", event);
@@ -700,7 +701,7 @@ mod test {
     #[test]
     fn network_put_get_test() {
         let (mut client_routing, client_receiver, client_name) = network_env_setup();
-        ::std::thread::sleep_ms(5000);
+
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
