@@ -18,7 +18,7 @@
 //! SAFE Vault provides the interface to SAFE routing.
 //! The resulting executable is the Vault node for the SAFE network.
 
-#![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
+#![doc(html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
        html_root_url = "http://maidsafe.github.io/safe_vault")]
 
