@@ -45,8 +45,8 @@ impl RefreshAccumulator {
                        payload: Bytes,
                        cause: ::NameType)
                        -> Option<Vec<Bytes>> {
+        info!("RefreshAccumulator for {:?} caused by {:?}", sender_group, cause);
         let request = (sender_group, type_tag, cause);
-
         {
             if threshold <= 1 {
                 return Some(vec![payload]);

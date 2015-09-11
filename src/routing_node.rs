@@ -565,7 +565,6 @@ impl RoutingNode {
             Content::InternalRequest(ref request) => {
                 match *request {
                     InternalRequest::Refresh(_, _, _) => {
-                        println!("SKIPPED ACCUMULATOR FOR REFRESH");
                         true
                     },
                     _ => false,
