@@ -128,7 +128,7 @@ impl RunningAverage {
 mod test {
 
     #[test]
-    fn running_average() {
+    fn running_average_exact() {
         // import the trait
         use ::rand::Rng;
 
@@ -148,6 +148,21 @@ mod test {
                 assert!(error < 0.05f64);
             }
         }
+    }
 
+    #[test]
+    fn running_average_long() {
+        // import the trait
+        use ::rand::Rng;
+        let mut rng = ::rand::thread_rng();
+        let mut running_average = super::RunningAverage::new(1000u32);
+        for i in 0..100000u32 {
+            let new_value = rng.gen::<u8>() as f64;
+            let _ = running_average.add_value(new_value);
+        }
+        let new_value = rng.gen::<u8>() as f64;
+        let result = running_average.add_value(new_value);
+        let error = (1f64 - (result / 127.5f64)).abs();
+        assert!(error < 0.01f64);
     }
 }
