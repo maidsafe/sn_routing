@@ -51,15 +51,20 @@ impl PmidManager {
         match response {
             ::routing::error::ResponseError::FailedRequestForData(data) => {
                 self.database.delete_data(from_address, data.payload_size() as u64);
-                return vec![::types::MethodCall::FailedPut {
-                                location: ::routing::Authority::NaeManager(data.name()),
-                                data: data
-                            }];
+                match data {
+                    ::routing::data::Data::ImmutableData(immutable_data) => {
+                        return vec![::types::MethodCall::FailedPut {
+                                        location: ::data_manager::Authority(immutable_data.name()),
+                                        data: ::routing::data::Data::ImmutableData(immutable_data)
+                                    }];
+                    },
+                    _ => return vec![::types::MethodCall::Deprecated],
+                }
             }
             ::routing::error::ResponseError::HadToClearSacrificial(name, size) => {
                 self.database.delete_data(from_address, size as u64);
                 return vec![::types::MethodCall::ClearSacrificial {
-                    location: ::routing::Authority::NaeManager(name),
+                    location: ::data_manager::Authority(name),
                     name: name,
                     size: size
                 }];

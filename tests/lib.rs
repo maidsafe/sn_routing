@@ -159,13 +159,13 @@ fn executable_immutable_data_churn_test() {
     let value = ::routing::types::generate_random_vec_u8(1024);
     let im_data = ::routing::immutable_data::ImmutableData::new(
         ::routing::immutable_data::ImmutableDataType::Normal, value);
-    client_routing.put_request(::routing::Authority::ClientManager(client_name),
+    client_routing.put_request(::maid_manager::Authority(client_name),
                                ::routing::data::Data::ImmutableData(im_data.clone()));
     ::std::thread::sleep_ms(5000);
 
     let mut new_vault_process = start_vaults(1);
 
-    client_routing.get_request(::routing::Authority::NaeManager(im_data.name()),
+    client_routing.get_request(::data_manager::Authority(im_data.name()),
         ::routing::data::DataRequest::ImmutableData(im_data.name(),
             ::routing::immutable_data::ImmutableDataType::Normal));
     while let Ok(data) = client_receiver.recv() {
@@ -205,13 +205,13 @@ fn executable_structured_data_churn_test() {
     let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
     let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
         value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
-    client_routing.put_request(::routing::Authority::ClientManager(client_name),
+    client_routing.put_request(::maid_manager::Authority(client_name),
                                ::routing::data::Data::StructuredData(sd.clone()));
     ::std::thread::sleep_ms(5000);
 
     let mut new_vault_process = start_vaults(1);
 
-    client_routing.get_request(::routing::Authority::NaeManager(sd.name()),
+    client_routing.get_request(::sd_manager::Authority(sd.name()),
         ::routing::data::DataRequest::StructuredData(sd.name(), 0));
     while let Ok(data) = client_receiver.recv() {
         assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));

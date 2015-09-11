@@ -34,10 +34,21 @@ impl MaidManager {
                       from_authority: ::routing::Authority,
                       data: ::routing::data::Data) -> Vec<::types::MethodCall> {
         if self.database.put_data(from, data.payload_size() as u64) {
-            vec![::types::MethodCall::Put {
-                     location: ::routing::Authority::NaeManager(data.name()),
-                     content: data
-                 }]
+            match data {
+                ::routing::data::Data::StructuredData(structured_data) => {
+                    vec![::types::MethodCall::Put {
+                             location: ::sd_manager::Authority(structured_data.name()),
+                             content: ::routing::data::Data::StructuredData(structured_data)
+                         }]
+                },
+                ::routing::data::Data::ImmutableData(immutable_data) => {
+                    vec![::types::MethodCall::Put {
+                             location: ::data_manager::Authority(immutable_data.name()),
+                             content: ::routing::data::Data::ImmutableData(immutable_data)
+                         }]
+                },
+                _ => vec![::types::MethodCall::Deprecated],
+            }
         } else {
             vec![::types::MethodCall::LowBalance {
                      location: from_authority,
@@ -76,7 +87,7 @@ mod test {
         assert_eq!(put_result.len(), 1);
         match put_result[0] {
             ::types::MethodCall::Put { ref location, ref content } => {
-                assert_eq!(*location, ::routing::Authority::NaeManager(data.name()));
+                assert_eq!(*location, ::data_manager::Authority(data.name()));
                 assert_eq!(*content, ::routing::data::Data::ImmutableData(data));
             }
             _ => panic!("Unexpected"),

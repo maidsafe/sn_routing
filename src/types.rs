@@ -63,7 +63,7 @@ pub enum MethodCall {
     InvalidRequest {
         data: ::routing::data::Data,
     },
-                                                                                                //    Deprecated,
+    Deprecated,
 }
 
 /// This trait is required for any type (normally an account) which is refreshed on a churn event.

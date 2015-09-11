@@ -239,11 +239,10 @@ impl Vault {
                     _ => vec![],
                 }
             }
-            ::routing::Authority::ManagedNode(_) => {
+            ::pmid_node::Authority(_) => {
                 match from_authority {
                     // drop the message if we don't have the data
-                    ::routing::Authority::NaeManager(name) =>
-                        self.pmid_node.handle_get(name),
+                    ::data_manager::Authority(name) => self.pmid_node.handle_get(name),
                     _ => vec![],
                 }
             }
@@ -259,7 +258,7 @@ impl Vault {
                   data: ::routing::data::Data,
                   response_token: Option<::routing::SignedToken>) {
         let returned_actions = match our_authority.clone() {
-            ::routing::Authority::ClientManager(from_address) =>
+            ::maid_manager::Authority(from_address) =>
                 self.maid_manager.handle_put(&from_address, from_authority, data),
             ::routing::Authority::NaeManager(_) => {
                 // both DataManager and StructuredDataManager are NaeManagers
@@ -273,10 +272,9 @@ impl Vault {
                     _ => vec![],
                 }
             }
-            ::routing::Authority::NodeManager(dest_address) =>
+            ::pmid_manager::Authority(dest_address) =>
                 self.pmid_manager.handle_put(dest_address, data),
-            ::routing::Authority::ManagedNode(pmid_node) =>
-                self.pmid_node.handle_put(pmid_node, data),
+            ::pmid_node::Authority(pmid_node) => self.pmid_node.handle_put(pmid_node, data),
             _ => vec![],
         };
         self.send(our_authority, returned_actions, response_token, None, None);
@@ -289,7 +287,7 @@ impl Vault {
                    data: ::routing::data::Data,
                    response_token: Option<::routing::SignedToken>) {
         let returned_actions = match our_authority {
-            ::routing::Authority::NaeManager(_) => {
+            ::sd_manager::Authority(_) => {
                 match data {
                     ::routing::data::Data::StructuredData(data) =>
                         self.sd_manager.handle_post(data),
@@ -328,8 +326,7 @@ impl Vault {
         }
         let returned_actions = match (from_authority, response.clone()) {
             // GetResponse used by DataManager to replicate data to new PN
-            (::routing::Authority::ManagedNode(pmid_node),
-                ::routing::data::Data::ImmutableData(_)) =>
+            (::pmid_node::Authority(pmid_node), ::routing::data::Data::ImmutableData(_)) =>
                 self.data_manager.handle_get_response(pmid_node, response),
             _ => vec![],
         };
@@ -344,13 +341,13 @@ impl Vault {
                            response: ::routing::error::ResponseError,
                            response_token: Option<::routing::SignedToken>) {
         let fowarding_calls = match from_authority {
-            ::routing::Authority::ManagedNode(pmid_node) =>
+            ::pmid_node::Authority(pmid_node) =>
                 self.pmid_manager.handle_put_response(&pmid_node, response),
-            ::routing::Authority::NodeManager(pmid_node) =>
+            ::pmid_manager::Authority(pmid_node) =>
                 self.data_manager.handle_put_response(response, &pmid_node),
             ::routing::Authority::NaeManager(_) => {
                 match our_authority {
-                    ::routing::Authority::NodeManager(pmid_node) =>
+                    ::pmid_manager::Authority(pmid_node) =>
                         self.pmid_manager.handle_get_failure_notification(&pmid_node, response),
                     _ => vec![],
                 }
@@ -390,7 +387,7 @@ impl Vault {
         //       account entries from the close group nodes of `from_group`
         match type_tag {
             ::maid_manager::ACCOUNT_TAG => {
-                if let ::routing::Authority::ClientManager(from_group) = our_authority {
+                if let ::maid_manager::Authority(from_group) = our_authority {
                     if let Some(merged) = merge::<::maid_manager::Account>(from_group, payloads) {
                         self.maid_manager.handle_account_transfer(merged)
                     }
@@ -399,7 +396,7 @@ impl Vault {
                 }
             }
             ::data_manager::ACCOUNT_TAG => {
-                if let ::routing::Authority::NaeManager(from_group) = our_authority {
+                if let ::data_manager::Authority(from_group) = our_authority {
                     if let Some(merged) = merge::<::data_manager::Account>(from_group, payloads) {
                         self.data_manager.handle_account_transfer(merged);
                     }
@@ -408,7 +405,7 @@ impl Vault {
                 }
             }
             ::data_manager::STATS_TAG => {
-                if let ::routing::Authority::NaeManager(from_group) = our_authority {
+                if let ::data_manager::Authority(from_group) = our_authority {
                     if let Some(merged) = merge::<::data_manager::Stats>(from_group, payloads) {
                         self.data_manager.handle_stats_transfer(merged);
                     }
@@ -426,7 +423,7 @@ impl Vault {
                 }
             }
             ::sd_manager::ACCOUNT_TAG => {
-                if let ::routing::Authority::NaeManager(_from_group) = our_authority {
+                if let ::sd_manager::Authority(_from_group) = our_authority {
                     for payload in payloads {
                         // TODO - pass in from_group to allow validation of payloads (should all be
                         // for same DB entry)
@@ -687,11 +684,11 @@ mod test {
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
-        client_routing.put_request(::routing::Authority::ClientManager(client_name),
+        client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         ::std::thread::sleep_ms(2000);
 
-        client_routing.get_request(::routing::Authority::NaeManager(im_data.name()),
+        client_routing.get_request(::data_manager::Authority(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
         while let Ok(data) = client_receiver.recv() {
@@ -710,18 +707,18 @@ mod test {
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
-        client_routing.put_request(::routing::Authority::ClientManager(client_name),
+        client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
         ::std::thread::sleep_ms(2000);
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd_new = ::routing::structured_data::StructuredData::new(0, name, 1,
             value.clone(), vec![keys.0], vec![sign_keys.0], Some(&sign_keys.1)).ok().unwrap();
-        client_routing.post_request(::routing::Authority::NaeManager(sd.name()),
+        client_routing.post_request(::sd_manager::Authority(sd.name()),
                                     ::routing::data::Data::StructuredData(sd_new.clone()));
         ::std::thread::sleep_ms(2000);
 
-        client_routing.get_request(::routing::Authority::NaeManager(sd.name()),
+        client_routing.get_request(::sd_manager::Authority(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::StructuredData(sd_new.clone()));
@@ -737,7 +734,7 @@ mod test {
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
-        client_routing.put_request(::routing::Authority::ClientManager(client_name),
+        client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         ::std::thread::sleep_ms(2000);
 
@@ -746,7 +743,7 @@ mod test {
                                           });
         ::std::thread::sleep_ms(5000);
 
-        client_routing.get_request(::routing::Authority::NaeManager(im_data.name()),
+        client_routing.get_request(::data_manager::Authority(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
         while let Ok(data) = client_receiver.recv() {
@@ -765,7 +762,7 @@ mod test {
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
-        client_routing.put_request(::routing::Authority::ClientManager(client_name),
+        client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
         ::std::thread::sleep_ms(2000);
 
@@ -774,7 +771,7 @@ mod test {
                                           });
         ::std::thread::sleep_ms(5000);
 
-        client_routing.get_request(::routing::Authority::NaeManager(sd.name()),
+        client_routing.get_request(::sd_manager::Authority(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));
@@ -786,7 +783,7 @@ mod test {
                         client: ::routing::NameType,
                         im_data: ::routing::immutable_data::ImmutableData) {
         let keys = crypto::sign::gen_keypair();
-        let _put_result = vault.handle_put(::routing::Authority::ClientManager(client),
+        let _put_result = vault.handle_put(::maid_manager::Authority(client),
                                            ::routing::Authority::Client(client, keys.0),
                                            ::routing::data::Data::ImmutableData(im_data.clone()),
                                            None);
@@ -794,8 +791,8 @@ mod test {
 
     fn data_manager_put(vault: &mut Vault, im_data: ::routing::immutable_data::ImmutableData) {
         let _put_result = vault.handle_put(
-            ::routing::Authority::NaeManager(im_data.name()),
-            ::routing::Authority::ClientManager(::routing::NameType::new([1u8; 64])),
+            ::data_manager::Authority(im_data.name()),
+            ::maid_manager::Authority(::routing::NameType::new([1u8; 64])),
             ::routing::data::Data::ImmutableData(im_data), None);
     }
 
@@ -809,15 +806,15 @@ mod test {
                         pmid_node: ::routing::NameType,
                         im_data: ::routing::immutable_data::ImmutableData) {
         let _put_result = vault.handle_put(
-            ::routing::Authority::NodeManager(pmid_node),
-            ::routing::Authority::NaeManager(im_data.name()),
+            ::pmid_manager::Authority(pmid_node),
+            ::data_manager::Authority(im_data.name()),
             ::routing::data::Data::ImmutableData(im_data), None);
     }
 
     fn sd_manager_put(vault: &mut Vault, sdv: ::routing::structured_data::StructuredData) {
         let _put_result = vault.handle_put(
-            ::routing::Authority::NaeManager(sdv.name()),
-            ::routing::Authority::ManagedNode(::routing::NameType::new([7u8; 64])),
+            ::sd_manager::Authority(sdv.name()),
+            ::pmid_node::Authority(::routing::NameType::new([7u8; 64])),
             ::routing::data::Data::StructuredData(sdv.clone()), None);
     }
 
@@ -1021,7 +1018,7 @@ mod test {
         }
 
         let put_result = vault.handle_cache_put(
-                ::routing::Authority::ManagedNode(::routing::NameType::new([6u8; 64])),
+                ::pmid_node::Authority(::routing::NameType::new([6u8; 64])),
                 ::routing::NameType::new([7u8; 64]),
                 ::routing::data::Data::ImmutableData(im_data.clone()), None);
         assert_eq!(put_result.is_err(), true);

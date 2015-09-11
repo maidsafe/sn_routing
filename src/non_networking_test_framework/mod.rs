@@ -63,16 +63,18 @@ impl MockRouting {
                       client_address: ::routing::NameType,
                       client_pub_key: crypto::sign::PublicKey,
                       data_request: ::routing::data::DataRequest) {
-        let name = match data_request {
-            ::routing::data::DataRequest::ImmutableData(name, _) => name,
-            ::routing::data::DataRequest::StructuredData(name, _) => name,
+        let (name, our_authority) = match data_request {
+            ::routing::data::DataRequest::ImmutableData(name, _) =>
+                (name.clone(), ::data_manager::Authority(name)),
+            ::routing::data::DataRequest::StructuredData(name, _) =>
+                (name.clone(), ::sd_manager::Authority(name)),
             _ => panic!("unexpected"),
         };
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
                                               let _ = cloned_sender.send(Event::Request{
                 request: ExternalRequest::Get(data_request, 0),
-                our_authority: ::routing::Authority::NaeManager(name),
+                our_authority: our_authority,
                 from_authority: ::routing::Authority::Client(client_address, client_pub_key),
                 response_token: None
             });
@@ -89,7 +91,7 @@ impl MockRouting {
                                               ::std::thread::sleep_ms(delay_ms);
                                               let _ = cloned_sender.send(Event::Request{
                 request: ExternalRequest::Put(data),
-                our_authority: ::routing::Authority::ClientManager(client_address),
+                our_authority: ::maid_manager::Authority(client_address),
                 from_authority: ::routing::Authority::Client(client_address, client_pub_key),
                 response_token: None
             });
@@ -106,7 +108,7 @@ impl MockRouting {
                                               ::std::thread::sleep_ms(delay_ms);
                                               let _ = cloned_sender.send(Event::Request{
                 request: ExternalRequest::Post(data.clone()),
-                our_authority: ::routing::Authority::NaeManager(data.name()),
+                our_authority: ::sd_manager::Authority(data.name()),
                 from_authority: ::routing::Authority::Client(client_address, client_pub_key),
                 response_token: None });
                                           });
