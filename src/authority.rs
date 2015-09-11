@@ -134,7 +134,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
                 InternalRequest::Connect(ref connect_request) => None,
                 InternalRequest::RequestNetworkName(ref public_id) => Some(public_id.name()),
                 InternalRequest::CacheNetworkName(ref public_id, _) => Some(public_id.name()),
-                InternalRequest::Refresh(_, _)                      => {
+                InternalRequest::Refresh(_, _, _)                      => {
                     let destination = message.destination();
                     if destination != message.source() { return None; };
                     if destination.is_group()

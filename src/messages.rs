@@ -110,7 +110,10 @@ pub enum InternalRequest {
     //                 |         | from it the original reply to authority can be read.
     //                 | contains the PublicId from RequestNetworkName, but mutated with
     //                 | the network assigned name
-    Refresh(u64, Vec<u8>),
+    /// Refresh allows a persona to republish account records (identified with type_tag:u64 and
+    /// the serialised payload:Vec<u8>).  The cause of the Refresh is the NameType of the node
+    //. that caused the churn event.
+    Refresh(u64, Vec<u8>, ::NameType),
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
