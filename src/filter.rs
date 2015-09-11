@@ -97,7 +97,7 @@ impl RunningAverage {
     }
 
     pub fn add_value(&mut self, value: f64) -> f64 {
-        if self.counter == self.block_size - 1 {
+        if self.counter == self.block_size {
             let next_block: f64 = self.block_counter as f64 + 1f64;
             let block_weight: f64 = (self.block_counter as f64) / next_block;
             let new_block_average: f64 = self.average / next_block
