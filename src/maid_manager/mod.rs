@@ -22,12 +22,13 @@ pub use self::database::Account;
 pub use ::routing::Authority::ClientManager as Authority;
 
 pub struct MaidManager {
+    routing: ::vault::Routing,
     database: database::MaidManagerDatabase,
 }
 
 impl MaidManager {
-    pub fn new() -> MaidManager {
-        MaidManager { database: database::MaidManagerDatabase::new() }
+    pub fn new(routing: ::vault::Routing) -> MaidManager {
+        MaidManager { routing: routing, database: database::MaidManagerDatabase::new() }
     }
 
     pub fn handle_put(&mut self, from: &::routing::NameType,
@@ -36,16 +37,18 @@ impl MaidManager {
         if self.database.put_data(from, data.payload_size() as u64) {
             match data {
                 ::routing::data::Data::StructuredData(structured_data) => {
-                    vec![::types::MethodCall::Put {
-                             location: ::sd_manager::Authority(structured_data.name()),
-                             content: ::routing::data::Data::StructuredData(structured_data)
-                         }]
+                    let our_authority = Authority(from.clone());
+                    let location = ::sd_manager::Authority(structured_data.name());
+                    let content = ::routing::data::Data::StructuredData(structured_data);
+                    self.routing.put_request(our_authority, location, content);
+                                                                vec![::types::MethodCall::Deprecated]
                 },
                 ::routing::data::Data::ImmutableData(immutable_data) => {
-                    vec![::types::MethodCall::Put {
-                             location: ::data_manager::Authority(immutable_data.name()),
-                             content: ::routing::data::Data::ImmutableData(immutable_data)
-                         }]
+                    let our_authority = Authority(from.clone());
+                    let location = ::data_manager::Authority(immutable_data.name());
+                    let content = ::routing::data::Data::ImmutableData(immutable_data);
+                    self.routing.put_request(our_authority, location, content);
+                                                                vec![::types::MethodCall::Deprecated]
                 },
                 _ => vec![::types::MethodCall::Deprecated],
             }
@@ -66,7 +69,7 @@ impl MaidManager {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use sodiumoxide::crypto;
 
@@ -74,23 +77,21 @@ mod test {
 
     #[test]
     fn handle_put() {
-        let mut maid_manager = MaidManager::new();
+        let (sender, _) = ::std::sync::mpsc::channel();
+        let routing = ::vault::Routing::new(sender);
+        let mut maid_manager = MaidManager::new(routing.clone());
         let from = ::utils::random_name();
         let keys = crypto::sign::gen_keypair();
         let client = ::routing::Authority::Client(from, keys.0);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
-        let put_result = maid_manager.handle_put(&from, client,
-                                                 ::routing::data::Data::ImmutableData(data.clone()));
-
-        assert_eq!(put_result.len(), 1);
-        match put_result[0] {
-            ::types::MethodCall::Put { ref location, ref content } => {
-                assert_eq!(*location, ::data_manager::Authority(data.name()));
-                assert_eq!(*content, ::routing::data::Data::ImmutableData(data));
-            }
-            _ => panic!("Unexpected"),
-        }
+        let _ = maid_manager.handle_put(&from, client,
+                                        ::routing::data::Data::ImmutableData(data.clone()));
+        let put_requests = routing.put_requests_given();
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].our_authority, Authority(from));
+        assert_eq!(put_requests[0].location, ::data_manager::Authority(data.name()));
+        assert_eq!(put_requests[0].data, ::routing::data::Data::ImmutableData(data));
     }
 }

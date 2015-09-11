@@ -113,6 +113,7 @@ mod chunk_store;
 mod data_manager;
 mod macros;
 mod maid_manager;
+mod mock_routing;
 mod pmid_manager;
 mod pmid_node;
 mod sd_manager;
@@ -120,9 +121,6 @@ mod transfer_tag;
 mod types;
 mod utils;
 mod vault;
-
-#[cfg(feature = "use-mock-routing")]
-mod non_networking_test_framework;
 
 /// Runs a SAFE Network vault
 pub fn main() {

@@ -15,19 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(not(feature = "use-mock-routing"))]
-type Routing = ::routing::routing::Routing;
-#[cfg(not(feature = "use-mock-routing"))]
-fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
-    ::routing::routing::Routing::new(event_sender)
-}
+#[cfg(not(all(test, feature = "use-mock-routing")))]
+pub type Routing = ::routing::routing::Routing;
 
-#[cfg(feature = "use-mock-routing")]
-type Routing = ::non_networking_test_framework::MockRouting;
-#[cfg(feature = "use-mock-routing")]
-fn get_new_routing(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Routing {
-    ::non_networking_test_framework::MockRouting::new(event_sender)
-}
+#[cfg(all(test, feature = "use-mock-routing"))]
+pub type Routing = ::mock_routing::MockRouting;
 
 fn merge<T>(from_group: ::routing::NameType, payloads: Vec<Vec<u8>>) -> Option<T>
     where T: for<'a> ::types::Refreshable + 'static {
@@ -74,9 +66,10 @@ impl Vault {
     fn new() -> Vault {
         ::sodiumoxide::init();
         let (sender, receiver) = ::std::sync::mpsc::channel();
+        let routing = Routing::new(sender);
         Vault {
             data_manager: ::data_manager::DataManager::new(),
-            maid_manager: ::maid_manager::MaidManager::new(),
+            maid_manager: ::maid_manager::MaidManager::new(routing.clone()),
             pmid_manager: ::pmid_manager::PmidManager::new(),
             pmid_node: ::pmid_node::PmidNode::new(),
             sd_manager: ::sd_manager::StructuredDataManager::new(),
@@ -86,7 +79,7 @@ impl Vault {
             request_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
                                ::time::Duration::minutes(5), 1000),
             receiver: receiver,
-            routing: get_new_routing(sender),
+            routing: routing,
         }
     }
 
@@ -533,7 +526,7 @@ mod test {
     use super::*;
 
     #[cfg(feature = "use-mock-routing")]
-    fn mock_env_setup() -> (super::Routing, ::std::sync::mpsc::Receiver<(::routing::data::Data)>) {
+    fn mock_env_setup() -> (Routing, ::std::sync::mpsc::Receiver<(::routing::data::Data)>) {
         let run_vault = |mut vault: Vault| {
                             let _ = ::std::thread::spawn(move || {
                                                                   vault.do_run();

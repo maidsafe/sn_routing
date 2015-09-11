@@ -23,7 +23,7 @@ pub enum MethodCall {
         location: ::routing::Authority,
         content: ::routing::data::Data,
     },
-    /// request to retreive data with specified type and location from network
+    /// request to retrieve data with specified type and location from network
     Get {
         location: ::routing::Authority,
         data_request: ::routing::data::DataRequest,
@@ -47,7 +47,7 @@ pub enum MethodCall {
         location: ::routing::Authority,
         data: ::routing::data::Data,
     },
-    /// response error indicating clearing sarificial data
+    /// response error indicating clearing sacrificial data
     ClearSacrificial {
         location: ::routing::Authority,
         name: ::routing::NameType,
