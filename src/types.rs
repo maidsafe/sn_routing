@@ -54,6 +54,7 @@ pub enum MethodCall {
         size: u32,
     },
     /// response error indicating not enough allowance
+                                                                                            #[allow(dead_code)]
     LowBalance{
         location: ::routing::Authority,
         data: ::routing::data::Data,

@@ -250,9 +250,12 @@ impl Vault {
                   from_authority: ::routing::Authority,
                   data: ::routing::data::Data,
                   response_token: Option<::routing::SignedToken>) {
-        let returned_actions = match our_authority.clone() {
-            ::maid_manager::Authority(from_address) =>
-                self.maid_manager.handle_put(&from_address, from_authority, data),
+                                                                                                let _ =
+        match our_authority.clone() {
+            ::maid_manager::Authority(_) => {
+                self.maid_manager.handle_put(our_authority, from_authority, data, response_token);
+                vec![::types::MethodCall::Deprecated]
+            },
             ::routing::Authority::NaeManager(_) => {
                 // both DataManager and StructuredDataManager are NaeManagers
                 // client put other data (Immutable, StructuredData) will all goes to MaidManager
@@ -270,7 +273,7 @@ impl Vault {
             ::pmid_node::Authority(pmid_node) => self.pmid_node.handle_put(pmid_node, data),
             _ => vec![],
         };
-        self.send(our_authority, returned_actions, response_token, None, None);
+                                                                //        self.send(our_authority, returned_actions, response_token, None, None);
     }
 
     // Post is only used to update the content or owners of a StructuredData

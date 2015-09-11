@@ -34,6 +34,52 @@ pub fn median(mut values: Vec<u64>) -> u64 {
     }
 }
 
+pub fn is_client_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::routing::Authority::Client(_, _) => true,
+        _ => false,
+    }
+}
+
+pub fn is_maid_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::maid_manager::Authority(_) => true,
+        _ => false,
+    }
+}
+
+                                                                                            #[allow(dead_code)]
+pub fn is_pmid_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::pmid_manager::Authority(_) => true,
+        _ => false,
+    }
+}
+
+                                                                                            #[allow(dead_code)]
+pub fn is_pmid_node_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::pmid_node::Authority(_) => true,
+        _ => false,
+    }
+}
+
+                                                                                            #[allow(dead_code)]
+pub fn is_sd_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::sd_manager::Authority(_) => true,
+        _ => false,
+    }
+}
+
+                                                                                            #[allow(dead_code)]
+pub fn is_data_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::data_manager::Authority(_) => true,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 pub fn random_name() -> ::routing::NameType {
     // TODO - once Routing provides either a compile-time value for `NameType`'s length or exposes
