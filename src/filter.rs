@@ -97,35 +97,55 @@ impl RunningAverage {
     }
 
     pub fn add_value(&mut self, value: f64) -> f64 {
+        if self.counter == self.block_size - 1 {
+            let next_block: f64 = self.block_counter as f64 + 1f64;
+            let block_weight: f64 = (self.block_counter as f64) / next_block;
+            let new_block_average: f64 = self.average / next_block
+                + block_weight * self.block_average;
+            self.block_average = new_block_average.clone();
+            self.block_counter += 1u32;
+            self.counter = 0u32;
+            self.average = 0f64;
+        }
         let next: f64 = self.counter as f64 + 1f64;
         let weight: f64 = (self.counter as f64) / next;
         let new_average: f64 = value / next + weight * self.average;
         self.average = new_average.clone();
-        self.counter = self.counter + 1u32;
-        new_average.clone()
+        self.counter += 1u32;
+        // FIXME (ben 11/9/2015) to ensure a smoother transition over blocks the exact average
+        // can be calculated, but this might induce new numerical problems with the accuracy
+        // of the weighting, so for now this largely works for our purposes with an appropriate
+        // block size chosen bigger than the range of the expected variable you will be measuring.
+        if self.block_counter > 0 {
+            self.block_average.clone()
+        } else {
+            new_average.clone()
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use ::rand::Rng;
 
     #[test]
     fn running_average() {
+        // import the trait
+        use ::rand::Rng;
+
         let mut rng = ::rand::thread_rng();
-        let mut running_average = super::RunningAverage::new(100u32);
+        let mut running_average = super::RunningAverage::new(1000u32);
         let average = |set: &Vec<f64>| {
             let sum = set.iter().fold(0f64, |acc, &item| acc + &item);
             sum / (set.len() as f64) };
         let mut set: Vec<f64> = Vec::new();
-        for i in 0..300u32 {
+        for i in 0..5000u32 {
             let new_value = rng.gen::<u8>() as f64;
             set.push(new_value.clone());
             let result = running_average.add_value(new_value);
             let average = average(&set);
             if average > 0.0000001f64 {
                 let error = (1f64 - (result / average)).abs();
-                assert!(error < 0.000000001f64);
+                assert!(error < 0.05f64);
             }
         }
 
