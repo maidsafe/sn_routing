@@ -60,19 +60,21 @@ pub struct Vault {
     #[allow(dead_code)]
     data_cache: ::lru_time_cache::LruCache<::routing::NameType, ::routing::data::Data>,
     request_cache: ::lru_time_cache::LruCache<::routing::NameType,
-                             Vec<(::routing::authority::Authority, ::routing::data::DataRequest,
- Option<::routing::SignedToken>)>>,
+            Vec<(::routing::authority::Authority, ::routing::data::DataRequest,
+                 Option<::routing::SignedToken>)>>,
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
     #[allow(dead_code)]
     routing: Routing,
+    id: u32,
+    event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>,
 }
 
 impl Vault {
-    pub fn run() {
-        Vault::new().do_run()
+    pub fn run(id: u32, event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) {
+        Vault::new(id, event_sender).do_run();
     }
 
-    fn new() -> Vault {
+    fn new(id: u32, event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Vault {
         ::sodiumoxide::init();
         let (sender, receiver) = ::std::sync::mpsc::channel();
         Vault {
@@ -88,14 +90,16 @@ impl Vault {
                                ::time::Duration::minutes(5), 1000),
             receiver: receiver,
             routing: get_new_routing(sender),
+            id: id,
+            event_sender: event_sender,
         }
     }
 
     fn do_run(&mut self) {
         use routing::event::Event;
         while let Ok(event) = self.receiver.recv() {
-            info!("Vault received an event from routing : {:?}", event);
-            match event {
+            info!("Vault {} received an event from routing : {:?}", self.id, event);
+            match event.clone() {
                 Event::Request{ request, our_authority, from_authority, response_token } =>
                     self.on_request(request, our_authority, from_authority, response_token),
                 Event::Response{ response, our_authority, from_authority } =>
@@ -104,7 +108,10 @@ impl Vault {
                     self.on_refresh(type_tag, our_authority, accounts),
                 Event::Churn(close_group) => self.on_churn(close_group),
                 Event::Bootstrapped => self.on_bootstrapped(),
-                Event::Connected => self.on_connected(),
+                Event::Connected => {
+                    let _ = self.event_sender.send(event);
+                    self.on_connected()
+                }
                 Event::Disconnected => self.on_disconnected(),
                 Event::FailedRequest{ request, our_authority, location, interface_error } =>
                     self.on_failed_request(request, our_authority, location, interface_error),
@@ -612,10 +619,8 @@ mod test {
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
-    fn network_env_setup
-                         ()
-                          -> (::routing::routing_client::RoutingClient,
- ::std::sync::mpsc::Receiver<(::routing::data::Data)>, ::routing::NameType) {
+    fn network_env_setup() -> (::routing::routing_client::RoutingClient,
+            ::std::sync::mpsc::Receiver<(::routing::data::Data)>, ::routing::NameType) {
         use routing::event::Event;
         match ::env_logger::init() {
             Ok(()) => {}
@@ -628,8 +633,18 @@ mod test {
                         };
         for i in 0..8 {
             println!("starting node {:?}", i);
-            let _ = run_vault(Vault::new());
-            ::std::thread::sleep_ms(1000 + i * 1000);
+            let (sender, receiver) = ::std::sync::mpsc::channel();
+            let _ = run_vault(Vault::new(i, sender));
+            let mut expected_events = ::std::cmp::min(i, 1);
+            while expected_events > 0 {
+                if let Ok(event) = receiver.recv() {
+                    println!("received an event : {:?}", event);
+                    match event {
+                        Event::Connected => expected_events -= 1,
+                        _ => {  }
+                    }
+                }
+            }
         }
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
@@ -685,13 +700,13 @@ mod test {
     #[test]
     fn network_put_get_test() {
         let (mut client_routing, client_receiver, client_name) = network_env_setup();
-
+        ::std::thread::sleep_ms(5000);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        ::std::thread::sleep_ms(2000);
+        ::std::thread::sleep_ms(5000);
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -743,10 +758,19 @@ mod test {
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         ::std::thread::sleep_ms(2000);
 
+        let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-                                              ::vault::Vault::run();
+                                              ::vault::Vault::run(8, sender);
                                           });
-        ::std::thread::sleep_ms(5000);
+        let mut expected_events = 8;
+        while expected_events > 0 {
+            if let Ok(event) = receiver.recv() {
+                match event {
+                    ::routing::event::Event::Connected => expected_events -= 1,
+                    _ => {}
+                }
+            }
+        }
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -771,10 +795,19 @@ mod test {
                                    ::routing::data::Data::StructuredData(sd.clone()));
         ::std::thread::sleep_ms(2000);
 
+        let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-                                              ::vault::Vault::run();
+                                              ::vault::Vault::run(8, sender);
                                           });
-        ::std::thread::sleep_ms(5000);
+        let mut expected_events = 8;
+        while expected_events > 0 {
+            if let Ok(event) = receiver.recv() {
+                match event {
+                    ::routing::event::Event::Connected => expected_events -= 1,
+                    _ => {}
+                }
+            }
+        }
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
@@ -825,7 +858,8 @@ mod test {
 
     #[test]
     fn churn_test() {
-        let mut vault = Vault::new();
+        let (sender, _) = ::std::sync::mpsc::channel();
+        let mut vault = Vault::new(0, sender);
 
         let mut available_nodes = Vec::with_capacity(30);
         for _ in 0..30 {
@@ -1018,7 +1052,8 @@ mod test {
 
     #[test]
     fn cache_test() {
-        let mut vault = Vault::new();
+        let (sender, _) = ::std::sync::mpsc::channel();
+        let mut vault = Vault::new(0, sender);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);

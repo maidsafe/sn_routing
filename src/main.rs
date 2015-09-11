@@ -130,6 +130,6 @@ pub fn main() {
         Ok(()) => {}
         Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
     }
-
-    ::vault::Vault::run();
+    let (sender, _) = ::std::sync::mpsc::channel();
+    ::vault::Vault::run(0, sender);
 }
