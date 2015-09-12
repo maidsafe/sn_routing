@@ -85,24 +85,21 @@ impl PublicId {
 mod test {
     extern crate cbor;
 
-    use super::*;
-    use test_utils::Random;
-
     #[test]
     fn serialisation_public_id() {
-        let obj_before = PublicId::generate_random();
+        let obj_before = ::public_id::PublicId::new(&::id::Id::new());
 
         let mut e = ::cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
         let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: PublicId = d.decode().next().unwrap().unwrap();
+        let obj_after: ::public_id::PublicId = d.decode().next().unwrap().unwrap();
         assert_eq!(obj_before, obj_after);
     }
 
     #[test]
     fn assign_relocated_name_public_id() {
-        let before = PublicId::generate_random();
+        let before = ::public_id::PublicId::new(&::id::Id::new());
         let original_name = before.name();
         assert_eq!(original_name,
             ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
