@@ -86,6 +86,26 @@ mod test {
     extern crate cbor;
 
     #[test]
+    fn set_name() {
+      let id = ::id::Id::new();
+      let id_name = id.name().clone();
+      let relocated_name: ::name_type::NameType = ::test_utils::Random::generate_random();      
+      let mut public_id = ::public_id::PublicId::new(&id);
+      let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();
+      
+      public_id.set_name(relocated_name);
+        
+      // set_name sets name properly
+      assert_eq!(relocated_name, public_id.name());
+      
+      // id name is not changed
+      assert_eq!(id_name, id.name());
+        
+      // set_name dit not change signing public key
+      assert_eq!(cloned_signing_public_key, public_id.signing_public_key().0.to_vec());
+    }
+        
+    #[test]
     fn serialisation_public_id() {
         let obj_before = ::public_id::PublicId::new(&::id::Id::new());
 
