@@ -711,6 +711,35 @@ mod test {
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
+    // persona_tag: 0 -- ClientManager
+    //              1 -- NaeManager
+    //              2 -- NodeManager
+    //              3 -- ManagedNode
+    //              4 -- Client
+    fn waiting_for_hits(vault_receivers: &Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
+                        persona_tag: u32, expected_hits: usize) {
+        let mut hits = 0;
+        while hits < expected_hits {
+            for receiver in vault_receivers.iter() {
+                match receiver.try_recv() {
+                    Err(_) => {}
+                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
+                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
+                              our_authority, request, from_authority, response_token == None);
+                        match (our_authority, persona_tag) {
+                            (::routing::authority::Authority::NaeManager(_), 1) => hits += 1,
+                            (::routing::authority::Authority::ManagedNode(_), 3) => hits += 1,
+                            _ => {}
+                        }
+                    }
+                    Ok(_) => {}
+                }
+            }
+            ::std::thread::sleep_ms(1);
+        }
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_put_get_test() {
         let (vault_receivers, mut client_routing, client_receiver, client_name) = network_env_setup();
@@ -720,24 +749,7 @@ mod test {
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        let mut pmid_node_storing = 0;
-        while pmid_node_storing < ::data_manager::PARALLELISM {
-            for receiver in vault_receivers.iter() {
-                match receiver.try_recv() {
-                    Err(_) => {}
-                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
-                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
-                              our_authority, request, from_authority, response_token == None);
-                        match our_authority {
-                            ::routing::authority::Authority::ManagedNode(_) => pmid_node_storing += 1,
-                            _ => {}
-                        }
-                    }
-                    Ok(_) => {}
-                }
-            }
-            ::std::thread::sleep_ms(1);
-        }
+        waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM);
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -760,48 +772,14 @@ mod test {
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        let mut sd_manager_storing = 0;
-        while sd_manager_storing < ::routing::types::GROUP_SIZE {
-            for receiver in vault_receivers.iter() {
-                match receiver.try_recv() {
-                    Err(_) => {}
-                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
-                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
-                              our_authority, request, from_authority, response_token == None);
-                        match our_authority {
-                            ::routing::authority::Authority::NaeManager(_) => sd_manager_storing += 1,
-                            _ => {}
-                        }
-                    }
-                    Ok(_) => {}
-                }
-            }
-            ::std::thread::sleep_ms(1);
-        }
+        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE);
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd_new = ::routing::structured_data::StructuredData::new(0, name, 1,
             value.clone(), vec![keys.0], vec![sign_keys.0], Some(&sign_keys.1)).ok().unwrap();
         client_routing.post_request(::routing::authority::Authority::NaeManager(sd.name()),
                                     ::routing::data::Data::StructuredData(sd_new.clone()));
-        let mut sd_manager_posting = 0;
-        while sd_manager_posting < ::routing::types::GROUP_SIZE {
-            for receiver in vault_receivers.iter() {
-                match receiver.try_recv() {
-                    Err(_) => {}
-                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
-                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
-                              our_authority, request, from_authority, response_token == None);
-                        match our_authority {
-                            ::routing::authority::Authority::NaeManager(_) => sd_manager_posting += 1,
-                            _ => {}
-                        }
-                    }
-                    Ok(_) => {}
-                }
-            }
-            ::std::thread::sleep_ms(1);
-        }
+        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE);
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
@@ -821,24 +799,7 @@ mod test {
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        let mut pmid_node_storing = 0;
-        while pmid_node_storing < ::data_manager::PARALLELISM {
-            for receiver in vault_receivers.iter() {
-                match receiver.try_recv() {
-                    Err(_) => {}
-                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
-                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
-                              our_authority, request, from_authority, response_token == None);
-                        match our_authority {
-                            ::routing::authority::Authority::ManagedNode(_) => pmid_node_storing += 1,
-                            _ => {}
-                        }
-                    }
-                    Ok(_) => {}
-                }
-            }
-            ::std::thread::sleep_ms(1);
-        }
+        waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM);
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
@@ -875,24 +836,7 @@ mod test {
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        let mut pmid_node_storing = 0;
-        while pmid_node_storing < ::data_manager::PARALLELISM {
-            for receiver in vault_receivers.iter() {
-                match receiver.try_recv() {
-                    Err(_) => {}
-                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
-                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
-                              our_authority, request, from_authority, response_token == None);
-                        match our_authority {
-                            ::routing::authority::Authority::ManagedNode(_) => pmid_node_storing += 1,
-                            _ => {}
-                        }
-                    }
-                    Ok(_) => {}
-                }
-            }
-            ::std::thread::sleep_ms(1);
-        }
+        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE);
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
