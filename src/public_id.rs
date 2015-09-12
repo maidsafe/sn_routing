@@ -132,5 +132,29 @@ mod test {
         assert_eq!(before.signing_public_key(), relocated.signing_public_key());
         assert_eq!(relocated.client_name(), original_name);
         assert_eq!(relocated.name(), relocated_name);
-    }     
+    } 
+    
+    #[test]
+    fn is_relocated() {
+        let mut public_id: ::public_id::PublicId = ::test_utils::Random::generate_random();
+        let name_before = public_id.name();
+        let relocated_name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();        
+                
+        // is not relocated
+        assert!(!public_id.is_relocated());
+        
+        public_id.assign_relocated_name(relocated_name);
+
+        // is relocated
+        assert!(public_id.is_relocated());
+        
+        // set_name dit not change signing public key
+        assert_eq!(cloned_signing_public_key, public_id.signing_public_key().0.to_vec());        
+
+        public_id.assign_relocated_name(name_before);
+
+        // is no longer relocated
+        assert!(!public_id.is_relocated());
+    }
 }
