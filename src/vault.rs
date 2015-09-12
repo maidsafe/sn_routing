@@ -106,12 +106,12 @@ impl Vault {
                     self.on_response(response, our_authority, from_authority),
                 Event::Refresh(type_tag, our_authority, accounts) =>
                     self.on_refresh(type_tag, our_authority, accounts),
-                Event::Churn(close_group) => self.on_churn(close_group),
-                Event::Bootstrapped => self.on_bootstrapped(),
-                Event::Connected => {
+                Event::Churn(close_group) => {
                     let _ = self.event_sender.send(event);
-                    self.on_connected()
+                    self.on_churn(close_group)
                 }
+                Event::Bootstrapped => self.on_bootstrapped(),
+                Event::Connected => self.on_connected(),
                 Event::Disconnected => self.on_disconnected(),
                 Event::FailedRequest{ request, our_authority, location, interface_error } =>
                     self.on_failed_request(request, our_authority, location, interface_error),
@@ -639,10 +639,9 @@ mod test {
             let mut expected_events = i;
             while expected_events > 0 {
                 if let Ok(event) = receiver.recv() {
-                    println!("received an event : {:?}", event);
                     match event {
-                        Event::Connected => expected_events -= 1,
-                        _ => {  }
+                        Event::Churn(_) => expected_events -= 1,
+                        _ => {}
                     }
                 }
             }
