@@ -63,8 +63,8 @@ pub struct Vault {
             Vec<(::routing::authority::Authority, ::routing::data::DataRequest,
                  Option<::routing::SignedToken>)>>,
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
-    #[allow(dead_code)]
     routing: Routing,
+    churn_timestamp: ::time::SteadyTime,
     id: u32,
     event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>,
 }
@@ -84,6 +84,7 @@ impl Vault {
             pmid_node: ::pmid_node::PmidNode::new(),
             sd_manager: ::sd_manager::StructuredDataManager::new(),
             nodes_in_table: Vec::new(),
+            churn_timestamp: ::time::SteadyTime::now(),
             data_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
                             ::time::Duration::minutes(10), 100),
             request_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
@@ -173,12 +174,19 @@ impl Vault {
     }
 
     fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
-        if close_group.len() > self.nodes_in_table.len() {
-            info!("vault added connected node");
+        let churn_up = close_group.len() > self.nodes_in_table.len();
+        let time_now = ::time::SteadyTime::now();
+        // During the process of joining network, the vault shall not refresh its just received info
+        if !(churn_up && (self.churn_timestamp + ::time::Duration::seconds(5) > time_now)) {
+            let refresh_calls = self.handle_churn(close_group.clone());
+            self.send(::routing::authority::Authority::NaeManager(::routing::NameType::new([0u8; 64])),
+                      refresh_calls, None, None, None);
         }
-        let refresh_calls = self.handle_churn(close_group);
-        self.send(::routing::authority::Authority::NaeManager(::routing::NameType::new([0u8; 64])),
-                  refresh_calls, None, None, None);
+        if churn_up {
+            info!("vault added connected node");
+            self.churn_timestamp = time_now;
+        }
+        self.nodes_in_table = close_group;
     }
 
     fn on_bootstrapped(&self) {
@@ -385,8 +393,6 @@ impl Vault {
         let vh = self.sd_manager.retrieve_all_and_reset();
         let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
-        self.nodes_in_table = close_group;
-
         mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
     }
 
