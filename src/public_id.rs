@@ -84,6 +84,18 @@ impl PublicId {
 #[cfg(test)]
 mod test {
     extern crate cbor;
+        
+    #[test]
+    fn serialisation_public_id() {
+        let obj_before = ::public_id::PublicId::new(&::id::Id::new());
+
+        let mut e = ::cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: ::public_id::PublicId = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
+    }
 
     #[test]
     fn set_name() {
@@ -103,18 +115,6 @@ mod test {
         
         // set_name dit not change signing public key
         assert_eq!(cloned_signing_public_key, public_id.signing_public_key().0.to_vec());
-    }
-        
-    #[test]
-    fn serialisation_public_id() {
-        let obj_before = ::public_id::PublicId::new(&::id::Id::new());
-
-        let mut e = ::cbor::Encoder::from_memory();
-        e.encode(&[&obj_before]).unwrap();
-
-        let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: ::public_id::PublicId = d.decode().next().unwrap().unwrap();
-        assert_eq!(obj_before, obj_after);
     }
 
     #[test]
