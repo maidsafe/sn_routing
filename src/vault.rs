@@ -198,7 +198,7 @@ impl Vault {
 
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
-        assert_eq!(0, self.nodes_in_table.len());
+        assert_eq!(::routing::types::GROUP_SIZE, self.nodes_in_table.len());
     }
 
     fn on_disconnected(&mut self) {
@@ -646,16 +646,9 @@ mod test {
             println!("starting node {:?}", i);
             let (sender, receiver) = ::std::sync::mpsc::channel();
             let _ = run_vault(Vault::new(Some(sender)));
-            let mut expected_events = i;
-            while expected_events > 0 {
-                if let Ok(event) = receiver.recv() {
-                    match event {
-                        Event::Churn(_) => expected_events -= 1,
-                        _ => {}
-                    }
-                }
-            }
-            vault_receivers.push(receiver);
+            let mut cur_receiver = vec![receiver];
+            waiting_for_hits(&cur_receiver, 10, i);
+            vault_receivers.push(cur_receiver.swap_remove(0));
         }
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
@@ -713,13 +706,14 @@ mod test {
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
-    // persona_tag: 0 -- ClientManager
-    //              1 -- NaeManager
-    //              2 -- NodeManager
-    //              3 -- ManagedNode
-    //              4 -- Client
+    // expected_tag: 0 -- Authority::ClientManager
+    //               1 -- Authority::NaeManager
+    //               2 -- Authority::NodeManager
+    //               3 -- Authority::ManagedNode
+    //               4 -- Authority::Client
+    //              10 -- Event::Churn
     fn waiting_for_hits(vault_receivers: &Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
-                        persona_tag: u32, expected_hits: usize) {
+                        expected_tag: u32, expected_hits: usize) {
         let mut hits = 0;
         while hits < expected_hits {
             for receiver in vault_receivers.iter() {
@@ -728,10 +722,15 @@ mod test {
                     Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
                         info!("as {:?} received request: {:?} from {:?} having token {:?}",
                               our_authority, request, from_authority, response_token == None);
-                        match (our_authority, persona_tag) {
+                        match (our_authority, expected_tag) {
                             (::routing::authority::Authority::NaeManager(_), 1) => hits += 1,
                             (::routing::authority::Authority::ManagedNode(_), 3) => hits += 1,
                             _ => {}
+                        }
+                    }
+                    Ok(::routing::event::Event::Churn(_)) => {
+                        if expected_tag == 10 {
+                            hits += 1;
                         }
                     }
                     Ok(_) => {}
@@ -807,15 +806,8 @@ mod test {
         let _ = ::std::thread::spawn(move || {
                                               ::vault::Vault::new(Some(sender)).do_run();
                                           });
-        let mut expected_events = 8;
-        while expected_events > 0 {
-            if let Ok(event) = receiver.recv() {
-                match event {
-                    ::routing::event::Event::Connected => expected_events -= 1,
-                    _ => {}
-                }
-            }
-        }
+        let new_vault_receivers = vec![receiver];
+        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1);
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -844,15 +836,8 @@ mod test {
         let _ = ::std::thread::spawn(move || {
                                               ::vault::Vault::new(Some(sender)).do_run();
                                           });
-        let mut expected_events = 8;
-        while expected_events > 0 {
-            if let Ok(event) = receiver.recv() {
-                match event {
-                    ::routing::event::Event::Connected => expected_events -= 1,
-                    _ => {}
-                }
-            }
-        }
+        let new_vault_receivers = vec![receiver];
+        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1);
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
