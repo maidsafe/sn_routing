@@ -99,6 +99,7 @@ impl Vault {
     fn do_run(&mut self) {
         use routing::event::Event;
         while let Ok(event) = self.receiver.recv() {
+            let _ = self.event_sender.send(event.clone());
             info!("Vault {} received an event from routing : {:?}", self.id, event);
             match event.clone() {
                 Event::Request{ request, our_authority, from_authority, response_token } =>
@@ -107,10 +108,7 @@ impl Vault {
                     self.on_response(response, our_authority, from_authority),
                 Event::Refresh(type_tag, our_authority, accounts) =>
                     self.on_refresh(type_tag, our_authority, accounts),
-                Event::Churn(close_group) => {
-                    let _ = self.event_sender.send(event);
-                    self.on_churn(close_group)
-                }
+                Event::Churn(close_group) => self.on_churn(close_group),
                 Event::Bootstrapped => self.on_bootstrapped(),
                 Event::Connected => self.on_connected(),
                 Event::Disconnected => self.on_disconnected(),
@@ -627,8 +625,10 @@ mod test {
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
-    fn network_env_setup() -> (::routing::routing_client::RoutingClient,
-            ::std::sync::mpsc::Receiver<(::routing::data::Data)>, ::routing::NameType) {
+    fn network_env_setup() -> (Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
+            ::routing::routing_client::RoutingClient,
+            ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
+            ::routing::NameType) {
         use routing::event::Event;
         match ::env_logger::init() {
             Ok(()) => {}
@@ -639,6 +639,7 @@ mod test {
                                                                   vault.do_run();
                                                               });
                         };
+        let mut vault_receivers = Vec::new();
         for i in 0..8 {
             println!("starting node {:?}", i);
             let (sender, receiver) = ::std::sync::mpsc::channel();
@@ -652,6 +653,7 @@ mod test {
                     }
                 }
             }
+            vault_receivers.push(receiver);
         }
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
@@ -686,7 +688,12 @@ mod test {
                                                interface_error } =>
                             info!("as {:?} received response: {:?} targeting {:?} having error /
                                   {:?}", our_authority, response, location, interface_error),
-                        Event::Bootstrapped => info!("client routing Bootstrapped"),
+                        Event::Bootstrapped => {
+                            // Send an empty data to indicate bootstrapped
+                            let _ = client_sender.clone().send(::routing::data::Data::PlainData(
+                                ::routing::plain_data::PlainData::new(::routing::NameType::new([0u8; 64]), vec![])));
+                            info!("client routing Bootstrapped");
+                        }
                         Event::Terminated => {
                             info!("client routing listening terminated");
                             break;
@@ -699,21 +706,38 @@ mod test {
         let id = ::routing::id::Id::new();
         let client_name = id.name();
         let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
-        ::std::thread::sleep_ms(1000);
-        (client_routing, client_receiver, client_name)
+        if let Ok(_) = client_receiver.recv() {}
+        (vault_receivers, client_routing, client_receiver, client_name)
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_put_get_test() {
-        let (mut client_routing, client_receiver, client_name) = network_env_setup();
+        let (vault_receivers, mut client_routing, client_receiver, client_name) = network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        ::std::thread::sleep_ms(5000);
+        let mut pmid_node_storing = 0;
+        while pmid_node_storing < ::data_manager::PARALLELISM {
+            for receiver in vault_receivers.iter() {
+                match receiver.try_recv() {
+                    Err(_) => {}
+                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
+                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
+                              our_authority, request, from_authority, response_token == None);
+                        match our_authority {
+                            ::routing::authority::Authority::ManagedNode(_) => pmid_node_storing += 1,
+                            _ => {}
+                        }
+                    }
+                    Ok(_) => {}
+                }
+            }
+            ::std::thread::sleep_ms(1);
+        }
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -727,7 +751,7 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_post_test() {
-        let (mut client_routing, client_receiver, client_name) = network_env_setup();
+        let (vault_receivers, mut client_routing, client_receiver, client_name) = network_env_setup();
 
         let name = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -736,14 +760,48 @@ mod test {
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        ::std::thread::sleep_ms(2000);
+        let mut sd_manager_storing = 0;
+        while sd_manager_storing < ::routing::types::GROUP_SIZE {
+            for receiver in vault_receivers.iter() {
+                match receiver.try_recv() {
+                    Err(_) => {}
+                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
+                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
+                              our_authority, request, from_authority, response_token == None);
+                        match our_authority {
+                            ::routing::authority::Authority::NaeManager(_) => sd_manager_storing += 1,
+                            _ => {}
+                        }
+                    }
+                    Ok(_) => {}
+                }
+            }
+            ::std::thread::sleep_ms(1);
+        }
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd_new = ::routing::structured_data::StructuredData::new(0, name, 1,
             value.clone(), vec![keys.0], vec![sign_keys.0], Some(&sign_keys.1)).ok().unwrap();
         client_routing.post_request(::routing::authority::Authority::NaeManager(sd.name()),
                                     ::routing::data::Data::StructuredData(sd_new.clone()));
-        ::std::thread::sleep_ms(2000);
+        let mut sd_manager_posting = 0;
+        while sd_manager_posting < ::routing::types::GROUP_SIZE {
+            for receiver in vault_receivers.iter() {
+                match receiver.try_recv() {
+                    Err(_) => {}
+                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
+                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
+                              our_authority, request, from_authority, response_token == None);
+                        match our_authority {
+                            ::routing::authority::Authority::NaeManager(_) => sd_manager_posting += 1,
+                            _ => {}
+                        }
+                    }
+                    Ok(_) => {}
+                }
+            }
+            ::std::thread::sleep_ms(1);
+        }
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
@@ -756,14 +814,31 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_churn_immutable_data_test() {
-        let (mut client_routing, client_receiver, client_name) = network_env_setup();
+        let (vault_receivers, mut client_routing, client_receiver, client_name) = network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        ::std::thread::sleep_ms(2000);
+        let mut pmid_node_storing = 0;
+        while pmid_node_storing < ::data_manager::PARALLELISM {
+            for receiver in vault_receivers.iter() {
+                match receiver.try_recv() {
+                    Err(_) => {}
+                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
+                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
+                              our_authority, request, from_authority, response_token == None);
+                        match our_authority {
+                            ::routing::authority::Authority::ManagedNode(_) => pmid_node_storing += 1,
+                            _ => {}
+                        }
+                    }
+                    Ok(_) => {}
+                }
+            }
+            ::std::thread::sleep_ms(1);
+        }
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
@@ -791,7 +866,7 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_churn_structured_data_test() {
-        let (mut client_routing, client_receiver, client_name) = network_env_setup();
+        let (vault_receivers, mut client_routing, client_receiver, client_name) = network_env_setup();
 
         let name = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -800,7 +875,24 @@ mod test {
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        ::std::thread::sleep_ms(2000);
+        let mut pmid_node_storing = 0;
+        while pmid_node_storing < ::data_manager::PARALLELISM {
+            for receiver in vault_receivers.iter() {
+                match receiver.try_recv() {
+                    Err(_) => {}
+                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
+                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
+                              our_authority, request, from_authority, response_token == None);
+                        match our_authority {
+                            ::routing::authority::Authority::ManagedNode(_) => pmid_node_storing += 1,
+                            _ => {}
+                        }
+                    }
+                    Ok(_) => {}
+                }
+            }
+            ::std::thread::sleep_ms(1);
+        }
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
