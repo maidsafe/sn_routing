@@ -66,15 +66,15 @@ pub struct Vault {
     routing: Routing,
     churn_timestamp: ::time::SteadyTime,
     id: ::routing::NameType,
-    event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>,
+    event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>,
 }
 
 impl Vault {
-    pub fn run(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) {
-        Vault::new(event_sender).do_run();
+    pub fn run() {
+        Vault::new(None).do_run();
     }
 
-    fn new(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Vault {
+    fn new(event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>) -> Vault {
         ::sodiumoxide::init();
         let (sender, receiver) = ::std::sync::mpsc::channel();
         Vault {
@@ -99,9 +99,12 @@ impl Vault {
     fn do_run(&mut self) {
         use routing::event::Event;
         while let Ok(event) = self.receiver.recv() {
-            let _ = self.event_sender.send(event.clone());
+            match self.event_sender.clone() {
+                Some(sender) => { let _ = sender.send(event.clone()); }
+                None => {}
+            }
             info!("Vault {} received an event from routing : {:?}", self.id, event);
-            match event.clone() {
+            match event {
                 Event::Request{ request, our_authority, from_authority, response_token } =>
                     self.on_request(request, our_authority, from_authority, response_token),
                 Event::Response{ response, our_authority, from_authority } =>
@@ -556,8 +559,7 @@ mod test {
                                                                   vault.do_run();
                                                               });
                         };
-        let (sender, _) = ::std::sync::mpsc::channel();
-        let mut vault = Vault::new(sender);
+        let mut vault = Vault::new(None);
         let receiver = vault.routing.get_client_receiver();
         let mut routing = vault.routing.clone();
         let _ = run_vault(vault);
@@ -643,7 +645,7 @@ mod test {
         for i in 0..8 {
             println!("starting node {:?}", i);
             let (sender, receiver) = ::std::sync::mpsc::channel();
-            let _ = run_vault(Vault::new(sender));
+            let _ = run_vault(Vault::new(Some(sender)));
             let mut expected_events = i;
             while expected_events > 0 {
                 if let Ok(event) = receiver.recv() {
@@ -803,7 +805,7 @@ mod test {
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-                                              ::vault::Vault::run(sender);
+                                              ::vault::Vault::new(Some(sender)).do_run();
                                           });
         let mut expected_events = 8;
         while expected_events > 0 {
@@ -840,7 +842,7 @@ mod test {
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-                                              ::vault::Vault::run(sender);
+                                              ::vault::Vault::new(Some(sender)).do_run();
                                           });
         let mut expected_events = 8;
         while expected_events > 0 {
@@ -901,8 +903,7 @@ mod test {
 
     #[test]
     fn churn_test() {
-        let (sender, _) = ::std::sync::mpsc::channel();
-        let mut vault = Vault::new(sender);
+        let mut vault = Vault::new(None);
 
         let mut available_nodes = Vec::with_capacity(30);
         for _ in 0..30 {
@@ -1090,13 +1091,11 @@ mod test {
             assert_eq!(churn_data[0], re_churn_data[0]);
             assert!(vault.sd_manager.retrieve_all_and_reset().is_empty());
         }
-
     }
 
     #[test]
     fn cache_test() {
-        let (sender, _) = ::std::sync::mpsc::channel();
-        let mut vault = Vault::new(sender);
+        let mut vault = Vault::new(None);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
