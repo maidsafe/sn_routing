@@ -65,16 +65,16 @@ pub struct Vault {
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
     routing: Routing,
     churn_timestamp: ::time::SteadyTime,
-    id: u32,
+    id: ::routing::NameType,
     event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>,
 }
 
 impl Vault {
-    pub fn run(id: u32, event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) {
-        Vault::new(id, event_sender).do_run();
+    pub fn run(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) {
+        Vault::new(event_sender).do_run();
     }
 
-    fn new(id: u32, event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Vault {
+    fn new(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> Vault {
         ::sodiumoxide::init();
         let (sender, receiver) = ::std::sync::mpsc::channel();
         Vault {
@@ -91,7 +91,7 @@ impl Vault {
                                ::time::Duration::minutes(5), 1000),
             receiver: receiver,
             routing: get_new_routing(sender),
-            id: id,
+            id: ::routing::NameType::new([0u8; 64]),
             event_sender: event_sender,
         }
     }
@@ -186,6 +186,7 @@ impl Vault {
             info!("vault added connected node");
             self.churn_timestamp = time_now;
         }
+        self.id = close_group[0].clone();
         self.nodes_in_table = close_group;
     }
 
@@ -558,7 +559,7 @@ mod test {
                                                               });
                         };
         let (sender, _) = ::std::sync::mpsc::channel();
-        let mut vault = Vault::new(0, sender);
+        let mut vault = Vault::new(sender);
         let receiver = vault.routing.get_client_receiver();
         let mut routing = vault.routing.clone();
         let _ = run_vault(vault);
@@ -641,7 +642,7 @@ mod test {
         for i in 0..8 {
             println!("starting node {:?}", i);
             let (sender, receiver) = ::std::sync::mpsc::channel();
-            let _ = run_vault(Vault::new(i, sender));
+            let _ = run_vault(Vault::new(sender));
             let mut expected_events = i;
             while expected_events > 0 {
                 if let Ok(event) = receiver.recv() {
@@ -766,7 +767,7 @@ mod test {
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-                                              ::vault::Vault::run(8, sender);
+                                              ::vault::Vault::run(sender);
                                           });
         let mut expected_events = 8;
         while expected_events > 0 {
@@ -803,7 +804,7 @@ mod test {
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-                                              ::vault::Vault::run(8, sender);
+                                              ::vault::Vault::run(sender);
                                           });
         let mut expected_events = 8;
         while expected_events > 0 {
@@ -865,7 +866,7 @@ mod test {
     #[test]
     fn churn_test() {
         let (sender, _) = ::std::sync::mpsc::channel();
-        let mut vault = Vault::new(0, sender);
+        let mut vault = Vault::new(sender);
 
         let mut available_nodes = Vec::with_capacity(30);
         for _ in 0..30 {
@@ -1059,7 +1060,7 @@ mod test {
     #[test]
     fn cache_test() {
         let (sender, _) = ::std::sync::mpsc::channel();
-        let mut vault = Vault::new(0, sender);
+        let mut vault = Vault::new(sender);
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
