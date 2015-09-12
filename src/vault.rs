@@ -247,7 +247,7 @@ impl Vault {
                         } else {
                             debug!("DataManager handle_get created original request {:?} from {:?} /
                                    as entry {:?}", data_request, from_authority, name);
-                            self.request_cache.add(name, vec![(from_authority.clone(),
+                            let _ = self.request_cache.insert(name, vec![(from_authority.clone(),
                                 data_request.clone(), response_token.clone())]);
                         }
                         self.data_manager.handle_get(&name, data_request.clone())
@@ -478,7 +478,7 @@ impl Vault {
                         data: ::routing::data::Data,
                         _: Option<::routing::SignedToken>)
                         -> Result<::types::MethodCall, ::routing::error::ResponseError> {
-        self.data_cache.add(data.name(), data);
+        let _ = self.data_cache.insert(data.name(), data);
         Err(::routing::error::ResponseError::Abort)
     }
 

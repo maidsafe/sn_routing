@@ -110,7 +110,7 @@ impl DataManager {
                         None => error!("Failed to insert failed_pmid in the cache."),
                     };
                 } else {
-                    self.failed_pmids.add(name.clone(), vec![(on_going_get.0).1.clone()]);
+                    let _ = self.failed_pmids.insert(name.clone(), vec![(on_going_get.0).1.clone()]);
                 }
             }
         }
@@ -128,7 +128,7 @@ impl DataManager {
                 location: ::routing::authority::Authority::ManagedNode(pmid.clone()),
                 data_request: data_request.clone()
             });
-            self.on_going_gets.add((name.clone(), pmid.clone()), ::time::SteadyTime::now());
+            let _ = self.on_going_gets.insert((name.clone(), pmid.clone()), ::time::SteadyTime::now());
         }
         forward_to_pmids
     }
