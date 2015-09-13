@@ -200,7 +200,7 @@ impl SignedMessage {
         let mut rng = ::rand::thread_rng();
         let random_bits = rng.gen::<u8>();
         let encoded_body = try!(utils::encode(&(&message, &claimant, &random_bits)));
-        let signature    = sign::sign_detached(&encoded_body, private_sign_key);
+        let signature = sign::sign_detached(&encoded_body, private_sign_key);
 
         Ok(SignedMessage { body: message, claimant: claimant,
             random_bits: random_bits, signature: signature })
@@ -377,6 +377,33 @@ mod test{
     }
 
     #[test]
+    fn invalid_signed_message_new() {
+        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let routing_message = random_routing_message(&keys.0, &keys.1);
+        let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let signed_message =
+            super::SignedMessage::new(claimant.clone(), routing_message.clone(), &invalid_keys.1);
+
+        assert!(signed_message.is_ok());
+
+        let signed_message = signed_message.unwrap();
+
+        assert_eq!(signed_message.get_routing_message(), &routing_message);
+        assert_eq!(signed_message.claimant(), &claimant);
+
+        let encoded_body = signed_message.encoded_body();
+
+        assert!(encoded_body.is_ok());
+
+        let encoded_body = encoded_body.unwrap();
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
+
+        assert!(signed_message.signature() != &signature);
+        assert!(!signed_message.verify_signature(&keys.0));
+    }
+
+    #[test]
     fn signed_message_with_signature() {
         let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
@@ -466,7 +493,7 @@ mod test{
         let signed_token = super::SignedToken {
             serialised_request: encoded_body.clone(), signature:  signature
         };
-        let signed_message = super::SignedMessage::new_from_token(signed_token);
+        let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
 
         assert!(signed_message.is_ok());
 
@@ -488,6 +515,11 @@ mod test{
 
         assert_eq!(signed_message.signature(), &signature);
         assert!(signed_message.verify_signature(&keys.0));
+
+        let signed_message_as_token = signed_message.as_token();
+
+        assert!(signed_message_as_token.is_ok());
+        assert_eq!(signed_message_as_token.unwrap(), signed_token);
     }
 
     #[test]
@@ -507,7 +539,7 @@ mod test{
         let signed_token = super::SignedToken {
             serialised_request: encoded_body.clone(), signature:  signature
         };
-        let signed_message = super::SignedMessage::new_from_token(signed_token);
+        let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
 
         assert!(signed_message.is_ok());
 
@@ -529,5 +561,10 @@ mod test{
 
         assert!(signed_message.signature() != &signature);
         assert!(!signed_message.verify_signature(&keys.0));
+
+        let signed_message_as_token = signed_message.as_token();
+
+        assert!(signed_message_as_token.is_ok());
+        assert_eq!(signed_message_as_token.unwrap(), signed_token);
     }
 }
