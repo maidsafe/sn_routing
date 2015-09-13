@@ -18,27 +18,21 @@
 
 #[cfg(test)]
 pub mod test {
-    use messages;
-    use crust::Endpoint;
-    use sodiumoxide::crypto;
-    use rand::distributions::{IndependentSample, Range};
-    use rand::{random, thread_rng};
-    use types;
-    use super::super::random_trait::Random;
 
-// TODO: Use IPv6 and non-TCP
-    pub fn random_endpoint() -> Endpoint {
-        use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
-        Endpoint::Tcp(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(random::<u8>(),
-                                                                     random::<u8>(),
-                                                                     random::<u8>(),
-                                                                     random::<u8>()),
-                                                       random::<u16>())))
+    // TODO: Use IPv6 and non-TCP
+    pub fn random_endpoint() -> ::crust::Endpoint {
+        ::crust::Endpoint::Tcp(::std::net::SocketAddr::V4(::std::net::SocketAddrV4::new(
+            ::std::net::Ipv4Addr::new(::rand::random::<u8>(),
+                                      ::rand::random::<u8>(),
+                                      ::rand::random::<u8>(),
+                                      ::rand::random::<u8>()),
+            ::rand::random::<u16>())))
     }
 
-    pub fn random_endpoints() -> Vec<Endpoint> {
-        let range = Range::new(1, 10);
-        let mut rng = thread_rng();
+    pub fn random_endpoints() -> Vec<::crust::Endpoint> {
+        use rand::distributions::IndependentSample;
+        let range = ::rand::distributions::Range::new(1, 10);
+        let mut rng = ::rand::thread_rng();
         let count = range.ind_sample(&mut rng);
         let mut endpoints = vec![];
         for _ in 0..count {
@@ -47,25 +41,23 @@ pub mod test {
         endpoints
     }
 
-impl Random for messages::ConnectRequest {
-        fn generate_random() -> messages::ConnectRequest {
-            messages::ConnectRequest {
-                local_endpoints: random_endpoints(),
-                external_endpoints: random_endpoints(),
-                requester_fob: Random::generate_random(),
+    impl super::super::random_trait::Random for ::messages::ConnectRequest {
+            fn generate_random() -> ::messages::ConnectRequest {
+                ::messages::ConnectRequest {
+                    local_endpoints: random_endpoints(),
+                    external_endpoints: random_endpoints(),
+                    requester_fob: super::super::random_trait::Random::generate_random(),
+                }
             }
-        }
-}
+    }
 
-impl Random for messages::ConnectResponse {
-        fn generate_random() -> messages::ConnectResponse {
-
-            messages::ConnectResponse {
-                local_endpoints: random_endpoints(),
-                external_endpoints: random_endpoints(),
-                receiver_fob: Random::generate_random(),
+    impl super::super::random_trait::Random for ::messages::ConnectResponse {
+            fn generate_random() -> ::messages::ConnectResponse {
+                ::messages::ConnectResponse {
+                    local_endpoints: random_endpoints(),
+                    external_endpoints: random_endpoints(),
+                    receiver_fob: super::super::random_trait::Random::generate_random(),
+                }
             }
-        }
-}
-
+    }
 }

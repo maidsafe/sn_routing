@@ -79,6 +79,7 @@ impl Filter {
 
 #[cfg(test)]
 mod test {
+
     // TODO Brian: Find a unique access point for the following fn's, repeated in messages.rs.
     fn generate_random_u8() -> u8 {
         use rand::Rng;
