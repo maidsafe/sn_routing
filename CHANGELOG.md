@@ -1,4 +1,7 @@
 # Routing - Change Log
+## [0.3.10]
+- [#685](https://github.com/maidsafe/routing/pull/685) use latest accumulator
+
 ## [0.3.9]
 - [MAID-1349](https://maidsafe.atlassian.net/browse/MAID-1349) refresh_request to use authority
 - [MAID-1363](https://maidsafe.atlassian.net/browse/MAID-1363) remove wake_up.rs

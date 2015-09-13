@@ -1,6 +1,6 @@
 [package]
 name = "routing"
-version = "0.3.9"
+version = "0.3.10"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A secured storage DHT"
 documentation = "http://maidsafe.net/routing/latest"
@@ -16,7 +16,7 @@ time = "*"
 rand = "*"
 message_filter = "0.1.*"
 lru_time_cache = "0.2.*"
-accumulator = "0.0.*"
+accumulator = "0.1.*"
 docopt = "*"
 itertools = "*"
 log = "*"
