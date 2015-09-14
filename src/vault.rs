@@ -650,7 +650,7 @@ mod test {
             let (sender, receiver) = ::std::sync::mpsc::channel();
             let _ = run_vault(Vault::new(Some(sender)));
             let mut cur_receiver = vec![receiver];
-            waiting_for_hits(&cur_receiver, 10, i);
+            waiting_for_hits(&cur_receiver, 10, i, ::time::Duration::seconds(10 * (i + 1) as i64));
             vault_receivers.push(cur_receiver.swap_remove(0));
         }
         let (sender, receiver) = ::std::sync::mpsc::channel();
@@ -716,8 +716,9 @@ mod test {
     //               4 -- Authority::Client
     //              10 -- Event::Churn
     fn waiting_for_hits(vault_receivers: &Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
-                        expected_tag: u32, expected_hits: usize) {
+                        expected_tag: u32, expected_hits: usize, time_limit: ::time::Duration) {
         let mut hits = 0;
+        let starting_time = ::time::SteadyTime::now();
         while hits < expected_hits {
             for receiver in vault_receivers.iter() {
                 match receiver.try_recv() {
@@ -740,6 +741,12 @@ mod test {
                 }
             }
             ::std::thread::sleep_ms(1);
+            if starting_time + time_limit < ::time::SteadyTime::now() {
+                // As this function is only to be used in testing code, and a particially established
+                // environment / testing result having a high chance indicates a failure in code
+                // So here use panic to terminate the testing directly.
+                panic!("waiting_for_hits can't resolve within the expected duration");
+            }
         }
     }
 
@@ -753,7 +760,7 @@ mod test {
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM);
+        waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM, ::time::Duration::minutes(1));
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -776,14 +783,14 @@ mod test {
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE);
+        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::seconds(30));
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd_new = ::routing::structured_data::StructuredData::new(0, name, 1,
             value.clone(), vec![keys.0], vec![sign_keys.0], Some(&sign_keys.1)).ok().unwrap();
         client_routing.post_request(::routing::authority::Authority::NaeManager(sd.name()),
                                     ::routing::data::Data::StructuredData(sd_new.clone()));
-        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE);
+        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::seconds(30));
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
@@ -803,14 +810,14 @@ mod test {
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM);
+        waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM, ::time::Duration::minutes(1));
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
                                               ::vault::Vault::new(Some(sender)).do_run();
                                           });
         let new_vault_receivers = vec![receiver];
-        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1);
+        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1, ::time::Duration::seconds(30));
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -833,14 +840,14 @@ mod test {
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
         client_routing.put_request(::routing::authority::Authority::ClientManager(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE);
+        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::seconds(30));
 
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
                                               ::vault::Vault::new(Some(sender)).do_run();
                                           });
         let new_vault_receivers = vec![receiver];
-        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1);
+        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1, ::time::Duration::seconds(30));
 
         client_routing.get_request(::routing::authority::Authority::NaeManager(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
