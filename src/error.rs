@@ -328,5 +328,32 @@ mod test {
         // from() returns Abort for a CborError
         assert_eq!(::error::ResponseError::Abort, ::error::ResponseError::from(e));
     }
-    
+
+    #[test]
+    fn response_error_description() {
+        assert_eq!("Abort", ::std::error::Error::description(& ::error::ResponseError::Abort));
+
+        match create_data() {
+            Ok(d) => assert_eq!("LowBalance",
+                ::std::error::Error::description(& ::error::ResponseError::LowBalance(::data::Data::StructuredData(d), 0u32))),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+
+        match create_data() {
+            Ok(d) => assert_eq!("Invalid request",
+                ::std::error::Error::description(& ::error::ResponseError::InvalidRequest(::data::Data::StructuredData(d)))),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+
+        match create_data() {
+            Ok(d) => assert_eq!("Failed request for data",
+                ::std::error::Error::description(& ::error::ResponseError::FailedRequestForData(::data::Data::StructuredData(d)))),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+
+        //FIXME is that error str meant to be with newline???
+        let name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        assert_eq!("Had to clear Sacrificial data to\n              complete request",
+            ::std::error::Error::description(& ::error::ResponseError::HadToClearSacrificial(name, 0u32)));
+    }
 }
