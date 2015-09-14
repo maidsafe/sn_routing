@@ -860,7 +860,7 @@ mod test {
     fn sd_manager_put(vault: &mut Vault, sdv: ::routing::structured_data::StructuredData) {
         let _put_result = vault.handle_put(
             ::sd_manager::Authority(sdv.name()),
-            ::pmid_node::Authority(::routing::NameType::new([7u8; 64])),
+            ::maid_manager::Authority(::routing::NameType::new([7u8; 64])),
             ::routing::data::Data::StructuredData(sdv.clone()), None);
     }
 
