@@ -20,7 +20,7 @@ pub mod client;
 
 mod random_trait;
 mod types_util;
-mod messages_util;
+pub mod messages_util;
 
 pub use self::node::*;
 pub use self::client::*;

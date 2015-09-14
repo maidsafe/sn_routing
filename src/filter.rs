@@ -18,10 +18,10 @@
 pub type ClaimantFilter = ::sodiumoxide::crypto::sign::Signature;
 pub type RoutingMessageFilter = ::sodiumoxide::crypto::hash::sha256::Digest;
 
-/// Filter combines a double filter.  The first layer validates that this exact message,
-/// as sent by the claimant has not been seen before.  The second layer validates that
-/// the routing message (which is content and source plus destination) is not already
-/// already resolved and as such should no longer be handled.
+/// Filter combines a double filter.  The first layer validates that this exact message, as sent by
+/// the claimant has not been seen before.  The second layer validates that the routing message
+/// (which is content and source plus destination) is not already already resolved and as such
+/// should no longer be handled.
 pub struct Filter {
     claimant_filter: ::message_filter::MessageFilter<ClaimantFilter>,
     message_filter: ::message_filter::MessageFilter<RoutingMessageFilter>,
@@ -36,10 +36,10 @@ impl Filter {
         }
     }
 
-    /// Returns true if this message is to be processed.  It will check if the signature of
-    /// the message has been seen before, which filters on repeated signed messages.
-    /// If this is a new signed message, it will store the signature to the filter.
-    /// Secondly the hash of the contained routing message is calculated and checked.
+    /// Returns true if this message is to be processed.  It will check if the signature of the
+    /// message has been seen before, which filters on repeated signed messages.  If this is a new
+    /// signed message, it will store the signature to the filter.  Secondly the hash of the
+    /// contained routing message is calculated and checked.
     pub fn check(&mut self, signed_message: &::messages::SignedMessage) -> bool {
 
         // if the signature has been stored, we have processed this message before
@@ -60,8 +60,8 @@ impl Filter {
         !blocked
     }
 
-    /// Block adds the digest of the routing message to the message blocker.  A blocked
-    /// message will be held back by the filter, regardless of the claimant.
+    /// Block adds the digest of the routing message to the message blocker.  A blocked message will
+    /// be held back by the filter, regardless of the claimant.
     pub fn block(&mut self, digest: RoutingMessageFilter) {
 
         self.message_filter.add(digest);
@@ -74,5 +74,95 @@ impl Filter {
             Ok(bytes) => Some(::sodiumoxide::crypto::hash::sha256::hash(&bytes[..])),
             Err(_) => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn filter_check_before_duration_end() {
+        let duration = ::time::Duration::seconds(3);
+        let mut filter = super::Filter::with_expiry_duration(duration);
+        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let signed_message =
+            ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
+        let signed_message = signed_message.unwrap();
+
+        assert!(filter.check(&signed_message));
+        assert!(!filter.check(&signed_message));
+    }
+
+    #[test]
+    fn filter_check_after_duration_end() {
+        let duration = ::time::Duration::milliseconds(1);
+        let mut filter = super::Filter::with_expiry_duration(duration);
+        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let signed_message =
+            ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
+        let signed_message = signed_message.unwrap();
+
+        assert!(filter.check(&signed_message));
+        ::std::thread::sleep_ms(2);
+        assert!(filter.check(&signed_message));
+    }
+
+    #[test]
+    fn filter_check_message_digest() {
+        let duration = ::time::Duration::seconds(3);
+        let mut filter = super::Filter::with_expiry_duration(duration);
+        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let signed_message =
+            ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
+        let signed_message = signed_message.unwrap();
+
+        assert!(filter.check(&signed_message));
+
+        let signed_message_routing_message = signed_message.get_routing_message();
+        let encode_message = ::utils::encode(signed_message_routing_message);
+
+        assert!(encode_message.is_ok());
+
+        let encode_message = encode_message.unwrap();
+        let message_digest = ::sodiumoxide::crypto::hash::sha256::hash(&encode_message[..]);
+        let filter_message_digest = super::Filter::message_digest(&routing_message);
+
+        assert!(filter_message_digest.is_some());
+
+        let filter_message_digest = filter_message_digest.unwrap();
+
+        assert_eq!(filter_message_digest, message_digest);
+    }
+
+    #[test]
+    fn filter_block() {
+        let duration = ::time::Duration::seconds(3);
+        let mut filter = super::Filter::with_expiry_duration(duration);
+        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let signed_message =
+            ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
+        let signed_message = signed_message.unwrap();
+        let encode_message = ::utils::encode(&routing_message);
+
+        assert!(encode_message.is_ok());
+
+        let encode_message = encode_message.unwrap();
+        let message_digest = ::sodiumoxide::crypto::hash::sha256::hash(&encode_message[..]);
+
+        filter.block(message_digest);
+
+        assert!(!filter.check(&signed_message));
     }
 }
