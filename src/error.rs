@@ -295,7 +295,7 @@ mod test {
     
 
     #[test]
-    fn serialization_response_error() {
+    fn response_error_serialization() {
         // test serialization of ResponseError::Abort
         test_object(::error::ResponseError::Abort);
         
@@ -321,4 +321,12 @@ mod test {
         let name = ::name_type::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
         test_object(::error::ResponseError::HadToClearSacrificial(name, 0u32));       
     }
+    
+    #[test]
+    fn response_error_from() {
+        let e = ::cbor::CborError::UnexpectedEOF;
+        // from() returns Abort for a CborError
+        assert_eq!(::error::ResponseError::Abort, ::error::ResponseError::from(e));
+    }
+    
 }
