@@ -15,6 +15,86 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+pub fn generate_random_u8() -> u8 {
+    use rand::Rng;
+
+    let mut rng = ::rand::thread_rng();
+    rng.gen::<u8>()
+}
+
+fn generate_random_nametype() -> ::NameType {
+    ::NameType(::types::vector_as_u8_64_array(::types::generate_random_vec_u8(64)))
+}
+
+fn generate_random_authority(name: ::NameType, key: &::sodiumoxide::crypto::sign::PublicKey)
+        -> ::authority::Authority {
+    use rand::distributions::IndependentSample;
+    use rand::Rng;
+
+    let mut rng = ::rand::thread_rng();
+    let range = ::rand::distributions::Range::new(0, 5);
+    let index = range.ind_sample(&mut rng);
+
+    match index {
+        0 => return ::authority::Authority::ClientManager(name),
+        1 => return ::authority::Authority::NaeManager(name),
+        2 => return ::authority::Authority::NodeManager(name),
+        3 => return ::authority::Authority::ManagedNode(name),
+        4 => return ::authority::Authority::Client(name, key.clone()),
+        _ => panic!("Unexpected index.")
+    }
+}
+
+fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey,
+                        secret_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
+        -> ::data::Data {
+    use rand::distributions::IndependentSample;
+    use rand::Rng;
+
+    let mut rng = ::rand::thread_rng();
+    let range = ::rand::distributions::Range::new(0, 3);
+    let index = range.ind_sample(&mut rng);
+
+    match index {
+        0 => {
+            let structured_data =
+                match ::structured_data::StructuredData::new(0, generate_random_nametype(), 0,
+                        vec![], vec![public_sign_key.clone()], vec![], Some(&secret_sign_key)) {
+                    Ok(structured_data) => structured_data,
+                    Err(error) => panic!("StructuredData error: {:?}", error),
+            };
+            return ::data::Data::StructuredData(structured_data)
+        },
+        1 => {
+            let type_tag = ::immutable_data::ImmutableDataType::Normal;
+            let immutable_data = ::immutable_data::ImmutableData::new(
+                    type_tag, ::types::generate_random_vec_u8(1025));
+            return ::data::Data::ImmutableData(immutable_data)
+        },
+        2 => {
+            let plain_data = ::plain_data::PlainData::new(
+                generate_random_nametype(), ::types::generate_random_vec_u8(1025));
+            return ::data::Data::PlainData(plain_data)
+        },
+        _ => panic!("Unexpected index.")
+    }
+}
+
+// TODO Brian: Randomize Content and rename to random_routing_message.
+pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::PublicKey,
+                          secret_key: &::sodiumoxide::crypto::sign::SecretKey)
+        -> ::messages::RoutingMessage {
+    let from_authority = generate_random_authority(generate_random_nametype(), public_key);
+    let to_authority = generate_random_authority(generate_random_nametype(), public_key);
+    let data = generate_random_data(public_key, secret_key);
+    let content = ::messages::Content::ExternalRequest(::messages::ExternalRequest::Put(data));
+
+    ::messages::RoutingMessage {
+        from_authority: from_authority,
+        to_authority: to_authority,
+        content: content,
+    }
+}
 
 #[cfg(test)]
 pub mod test {

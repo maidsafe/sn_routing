@@ -250,104 +250,12 @@ impl SignedMessage {
 #[cfg(test)]
 mod test{
 
-    // TODO Brian: Find a unique access point for the following fn's, repeated in filter.rs.
-    fn generate_random_u8() -> u8 {
-        use rand::Rng;
-
-        let mut rng = ::rand::thread_rng();
-        rng.gen::<u8>()
-    }
-
-    fn generate_random_vec() -> ::std::vec::Vec<u8> {
-        use rand::Rng;
-
-        let size = 1025;
-        let mut data = ::std::vec::Vec::with_capacity(size);
-        let mut rng = ::rand::thread_rng();
-        for _ in 0..size {
-            data.push(rng.gen::<u8>());
-        }
-        data
-    }
-
-    fn generate_random_authority(name: ::NameType, key: &::sodiumoxide::crypto::sign::PublicKey)
-            -> ::authority::Authority {
-        use rand::distributions::IndependentSample;
-        use rand::Rng;
-
-        let mut rng = ::rand::thread_rng();
-        let range = ::rand::distributions::Range::new(0, 5);
-        let index = range.ind_sample(&mut rng);
-
-        match index {
-            0 => return ::authority::Authority::ClientManager(name),
-            1 => return ::authority::Authority::NaeManager(name),
-            2 => return ::authority::Authority::NodeManager(name),
-            3 => return ::authority::Authority::ManagedNode(name),
-            4 => return ::authority::Authority::Client(name, key.clone()),
-            _ => panic!("Unexpected index.")
-        }
-    }
-
-    fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey,
-                            secret_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
-            -> ::data::Data {
-        use rand::distributions::IndependentSample;
-        use rand::Rng;
-
-        let mut rng = ::rand::thread_rng();
-        let range = ::rand::distributions::Range::new(0, 3);
-        let index = range.ind_sample(&mut rng);
-
-        match index {
-            0 => {
-                let structured_data =
-                    match ::structured_data::StructuredData::new(0,
-                                ::test_utils::Random::generate_random(), 0, vec![],
-                                vec![public_sign_key.clone()], vec![], Some(&secret_sign_key)) {
-                        Ok(structured_data) => structured_data,
-                        Err(error) => panic!("StructuredData error: {:?}", error),
-                };
-                return ::data::Data::StructuredData(structured_data)
-            },
-            1 => {
-                let type_tag = ::immutable_data::ImmutableDataType::Normal;
-                let immutable_data =
-                        ::immutable_data::ImmutableData::new(type_tag, generate_random_vec());
-                return ::data::Data::ImmutableData(immutable_data)
-            },
-            2 => {
-                let plain_data = ::plain_data::PlainData::new(
-                        ::test_utils::Random::generate_random(), generate_random_vec());
-                return ::data::Data::PlainData(plain_data)
-            },
-            _ => panic!("Unexpected index.")
-        }
-    }
-
-    // TODO Brian: Randomize Content and rename to random_routing_message.
-    fn arbtrary_routing_message(public_key: &::sodiumoxide::crypto::sign::PublicKey,
-                                secret_key: &::sodiumoxide::crypto::sign::SecretKey)
-            -> super::RoutingMessage {
-        let from_authority =
-                generate_random_authority(::test_utils::Random::generate_random(), public_key);
-        let to_authority =
-                generate_random_authority(::test_utils::Random::generate_random(), public_key);
-        let data = generate_random_data(public_key, secret_key);
-        let content = super::Content::ExternalRequest(super::ExternalRequest::Put(data));
-
-        super::RoutingMessage {
-            from_authority: from_authority,
-            to_authority: to_authority,
-            content: content,
-        }
-    }
-
     #[test]
     fn signed_message_new() {
         let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = arbtrary_routing_message(&keys.0, &keys.1);
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
         let signed_message =
             super::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
 
@@ -373,7 +281,8 @@ mod test{
     fn invalid_signed_message_new() {
         let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = arbtrary_routing_message(&keys.0, &keys.1);
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
         let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let signed_message =
             super::SignedMessage::new(claimant.clone(), routing_message.clone(), &invalid_keys.1);
@@ -400,8 +309,9 @@ mod test{
     fn signed_message_with_signature() {
         let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = arbtrary_routing_message(&keys.0, &keys.1);
-        let random_bits = generate_random_u8();
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let random_bits = ::test_utils::messages_util::generate_random_u8();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
@@ -437,8 +347,9 @@ mod test{
     fn invalid_signed_message_with_signature() {
         let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = arbtrary_routing_message(&keys.0, &keys.1);
-        let random_bits = generate_random_u8();
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let random_bits = ::test_utils::messages_util::generate_random_u8();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
@@ -475,8 +386,9 @@ mod test{
     fn signed_message_new_from_token() {
         let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = arbtrary_routing_message(&keys.0, &keys.1);
-        let random_bits = generate_random_u8();
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let random_bits = ::test_utils::messages_util::generate_random_u8();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
@@ -519,8 +431,9 @@ mod test{
     fn invalid_signed_message_new_from_token() {
         let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = arbtrary_routing_message(&keys.0, &keys.1);
-        let random_bits = generate_random_u8();
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let random_bits = ::test_utils::messages_util::generate_random_u8();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
