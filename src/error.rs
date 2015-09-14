@@ -363,4 +363,17 @@ mod test {
             Some(cause) => assert!(false)
         }
     }
+
+    #[test]
+    fn interface_error_description() {
+        assert_eq!("Not Connected", ::std::error::Error::description(& ::error::InterfaceError::NotConnected));
+    }
+
+    #[test]
+    fn inferface_error_cause() {
+        match ::std::error::Error::cause(&::error::InterfaceError::NotConnected) {
+            None => {},
+            Some(cause) => assert!(false)
+        }
+    }
 }
