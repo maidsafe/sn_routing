@@ -208,7 +208,6 @@ impl RoutingCore {
                         if routing_table_count_prior == 1usize {
                             error!("Routing Node has disconnected.");
                             let _ = self.event_sender.send(Event::Disconnected);
-                            let _ = self.action_sender.send(Action::Terminate);
                         };
                         info!("RT({:?}) dropped node {:?}", routing_table.size(), name);
                         if trigger_churn {
@@ -236,7 +235,6 @@ impl RoutingCore {
                 if !bootstrapped_posterior && bootstrapped_prior && !self.is_node() {
                     error!("Routing Client has disconnected.");
                     let _ = self.event_sender.send(Event::Disconnected);
-                    let _ = self.action_sender.send(Action::Terminate);
                 };
                 dropped_peer
             }
@@ -269,7 +267,7 @@ impl RoutingCore {
                                 let (added, _) = routing_table.add_node(node_info);
                                 if added {
                                     // if we transition from zero to one routing connection
-                                    if routing_table_count_prior == 0usize {
+                                    if routing_table_count_prior == ::types::GROUP_SIZE - 1usize {
                                         info!("Routing Node has connected.");
                                         let _ = self.event_sender.send(Event::Connected);
                                     };
