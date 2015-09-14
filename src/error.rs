@@ -270,23 +270,55 @@ impl fmt::Display for RoutingError {
 
 #[cfg(test)]
 mod test {
-    //FIXME (ben 18/08/2015) Tests can be expanded
-    use super::*;
-    use rustc_serialize::{Decodable, Encodable};
-    use cbor;
 
     fn test_object<T>(obj_before: T)
-        where T: for<'a> Encodable + Decodable + Eq
+        where T: for<'a> ::rustc_serialize::Encodable + ::rustc_serialize::Decodable + Eq
     {
-        let mut e = cbor::Encoder::from_memory();
+        let mut e = ::cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
-        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
         let obj_after: T = d.decode().next().unwrap().unwrap();
         assert_eq!(obj_after == obj_before, true)
     }
+    
+    fn create_data() -> Result<::structured_data::StructuredData, ::error::RoutingError> {
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+        ::structured_data::StructuredData::new(0,
+                                  ::test_utils::Random::generate_random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&keys.1))   
+    }
+    
 
     #[test]
-    fn test_response_error() {
-        test_object(ResponseError::Abort)
+    fn serialization_response_error() {
+        // test serialization of ResponseError::Abort
+        test_object(::error::ResponseError::Abort);
+        
+        // test serialization of LowBalance(Data, u32)
+        match create_data() {
+            Ok(d) => test_object(::error::ResponseError::LowBalance(::data::Data::StructuredData(d), 0u32)),
+            Err(error) => panic!("Error: {:?}", error),                                 
+        }
+
+        // test serialization of InvalidRequest(Data)
+        match create_data() {
+            Ok(d) => test_object(::error::ResponseError::InvalidRequest(::data::Data::StructuredData(d))),
+            Err(error) => panic!("Error: {:?}", error),                                 
+        }
+        
+        // test serialization of FailedRequestForData(Data)
+        match create_data() {
+            Ok(d) => test_object(::error::ResponseError::FailedRequestForData(::data::Data::StructuredData(d))),
+            Err(error) => panic!("Error: {:?}", error),                                 
+        }        
+        
+        // test serialization of HadToClearSacrificial(::NameType, u32)
+        let name = ::name_type::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        test_object(::error::ResponseError::HadToClearSacrificial(name, 0u32));       
     }
 }
