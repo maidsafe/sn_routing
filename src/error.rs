@@ -292,7 +292,6 @@ mod test {
                                   vec![],
                                   Some(&keys.1))   
     }
-    
 
     #[test]
     fn response_error_serialization() {
@@ -318,7 +317,7 @@ mod test {
         }        
         
         // test serialization of HadToClearSacrificial(::NameType, u32)
-        let name = ::name_type::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name: ::name_type::NameType = ::test_utils::Random::generate_random();
         test_object(::error::ResponseError::HadToClearSacrificial(name, 0u32));       
     }
     
@@ -355,5 +354,13 @@ mod test {
         let name: ::name_type::NameType = ::test_utils::Random::generate_random();
         assert_eq!("Had to clear Sacrificial data to\n              complete request",
             ::std::error::Error::description(& ::error::ResponseError::HadToClearSacrificial(name, 0u32)));
+    }
+
+    #[test]
+    fn response_error_cause() {
+        match ::std::error::Error::cause(&::error::ResponseError::Abort) {
+            None => {},
+            Some(cause) => assert!(false)
+        }
     }
 }
