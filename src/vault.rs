@@ -202,7 +202,10 @@ impl Vault {
     }
 
     fn on_disconnected(&mut self) {
-        unimplemented!();
+        self.routing.stop();
+        let (sender, receiver) = ::std::sync::mpsc::channel();
+        self.routing = get_new_routing(sender);
+        self.receiver = receiver;
     }
 
     fn on_failed_request(&mut self,
