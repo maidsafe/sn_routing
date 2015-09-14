@@ -48,7 +48,6 @@ pub struct Vault {
     pmid_manager: ::pmid_manager::PmidManager,
     pmid_node: ::pmid_node::PmidNode,
     sd_manager: ::sd_manager::StructuredDataManager,
-    nodes_in_table: Vec<::routing::NameType>,
     #[allow(dead_code)]
     data_cache: ::lru_time_cache::LruCache<::routing::NameType, ::routing::data::Data>,
     request_cache: ::lru_time_cache::LruCache<::routing::NameType,
@@ -73,7 +72,6 @@ impl Vault {
             pmid_manager: ::pmid_manager::PmidManager::new(),
             pmid_node: ::pmid_node::PmidNode::new(),
             sd_manager: ::sd_manager::StructuredDataManager::new(),
-            nodes_in_table: Vec::new(),
             data_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
                             ::time::Duration::minutes(10), 100),
             request_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
@@ -117,7 +115,6 @@ impl Vault {
                 self.handle_get(our_authority, from_authority, data_request, response_token);
             }
             ::routing::ExternalRequest::Put(data) => {
-                // TODO - remove 'let _ = '
                 self.handle_put(our_authority, from_authority, data, response_token);
             }
             ::routing::ExternalRequest::Post(data) => {
@@ -158,9 +155,6 @@ impl Vault {
     }
 
     fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
-        if close_group.len() > self.nodes_in_table.len() {
-            info!("vault added connected node");
-        }
         let refresh_calls = self.handle_churn(close_group);
         self.send(::routing::Authority::NaeManager(::routing::NameType::new([0u8; 64])),
                   refresh_calls, None, None, None);
@@ -168,12 +162,10 @@ impl Vault {
 
     fn on_bootstrapped(&self) {
         // TODO: what is expected to be done here?
-        assert_eq!(0, self.nodes_in_table.len());
     }
 
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
-        assert_eq!(0, self.nodes_in_table.len());
     }
 
     fn on_disconnected(&mut self) {
@@ -250,30 +242,15 @@ impl Vault {
                   from_authority: ::routing::Authority,
                   data: ::routing::data::Data,
                   response_token: Option<::routing::SignedToken>) {
-                                                                                                let _ =
-        match our_authority.clone() {
-            ::maid_manager::Authority(_) => {
-                self.maid_manager.handle_put(our_authority, from_authority, data, response_token);
-                vec![::types::MethodCall::Deprecated]
-            },
-            ::routing::Authority::NaeManager(_) => {
-                // both DataManager and StructuredDataManager are NaeManagers
-                // client put other data (Immutable, StructuredData) will all goes to MaidManager
-                // first, then goes to DataManager (i.e. from_authority is always ClientManager)
-                match data {
-                    ::routing::data::Data::ImmutableData(data) =>
-                        self.data_manager.handle_put(data, &mut (self.nodes_in_table)),
-                    ::routing::data::Data::StructuredData(data) =>
-                        self.sd_manager.handle_put(data),
-                    _ => vec![],
-                }
-            }
-            ::pmid_manager::Authority(dest_address) =>
-                self.pmid_manager.handle_put(dest_address, data),
-            ::pmid_node::Authority(pmid_node) => self.pmid_node.handle_put(pmid_node, data),
-            _ => vec![],
-        };
-                                                                //        self.send(our_authority, returned_actions, response_token, None, None);
+        let _ = self.maid_manager.handle_put(our_authority, from_authority, data, response_token)
+                    .or_else(|| self.data_manager.handle_put(our_authority, from_authority, data,
+                                                             response_token))
+                    .or_else(|| self.sd_manager.handle_put(our_authority, from_authority, data,
+                                                           response_token))
+                    .or_else(|| self.pmid_manager.handle_put(our_authority, from_authority, data,
+                                                             response_token))
+                    .or_else(|| self.pmid_node.handle_put(our_authority, from_authority, data,
+                                                          response_token));
     }
 
     // Post is only used to update the content or owners of a StructuredData

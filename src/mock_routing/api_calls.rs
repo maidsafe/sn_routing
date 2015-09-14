@@ -31,6 +31,51 @@ impl GetRequest {
 }
 
 #[derive(Clone)]
+pub struct PutRequest {
+    pub our_authority: ::routing::Authority,
+    pub location: ::routing::Authority,
+    pub data: ::routing::data::Data,
+}
+
+impl PutRequest {
+    pub fn new(our_authority: ::routing::Authority,
+               location: ::routing::Authority,
+               data: ::routing::data::Data) -> PutRequest {
+        PutRequest { our_authority: our_authority, location: location, data: data }
+    }
+}
+
+#[derive(Clone)]
+pub struct PostRequest {
+    pub our_authority: ::routing::Authority,
+    pub location: ::routing::Authority,
+    pub data: ::routing::data::Data,
+}
+
+impl PostRequest {
+    pub fn new(our_authority: ::routing::Authority,
+               location: ::routing::Authority,
+               data: ::routing::data::Data) -> PostRequest {
+        PostRequest { our_authority: our_authority, location: location, data: data }
+    }
+}
+
+#[derive(Clone)]
+pub struct DeleteRequest {
+    pub our_authority: ::routing::Authority,
+    pub location: ::routing::Authority,
+    pub data: ::routing::data::Data,
+}
+
+impl DeleteRequest {
+    pub fn new(our_authority: ::routing::Authority,
+               location: ::routing::Authority,
+               data: ::routing::data::Data) -> DeleteRequest {
+        DeleteRequest { our_authority: our_authority, location: location, data: data }
+    }
+}
+
+#[derive(Clone)]
 pub struct GetResponse {
     pub our_authority: ::routing::Authority,
     pub location: ::routing::Authority,
@@ -56,21 +101,6 @@ impl GetResponse {
 }
 
 #[derive(Clone)]
-pub struct PutRequest {
-    pub our_authority: ::routing::Authority,
-    pub location: ::routing::Authority,
-    pub data: ::routing::data::Data,
-}
-
-impl PutRequest {
-    pub fn new(our_authority: ::routing::Authority,
-               location: ::routing::Authority,
-               data: ::routing::data::Data) -> PutRequest {
-        PutRequest { our_authority: our_authority, location: location, data: data }
-    }
-}
-
-#[derive(Clone)]
 pub struct PutResponse {
     pub our_authority: ::routing::Authority,
     pub location: ::routing::Authority,
@@ -84,6 +114,50 @@ impl PutResponse {
                response_error: ::routing::error::ResponseError,
                signed_token: Option<::routing::SignedToken>) -> PutResponse {
         PutResponse {
+            our_authority: our_authority,
+            location: location,
+            response_error: response_error,
+            signed_token: signed_token
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PostResponse {
+    pub our_authority: ::routing::Authority,
+    pub location: ::routing::Authority,
+    pub response_error: ::routing::error::ResponseError,
+    pub signed_token: Option<::routing::SignedToken>,
+}
+
+impl PostResponse {
+    pub fn new(our_authority: ::routing::Authority,
+               location: ::routing::Authority,
+               response_error: ::routing::error::ResponseError,
+               signed_token: Option<::routing::SignedToken>) -> PostResponse {
+        PostResponse {
+            our_authority: our_authority,
+            location: location,
+            response_error: response_error,
+            signed_token: signed_token
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct DeleteResponse {
+    pub our_authority: ::routing::Authority,
+    pub location: ::routing::Authority,
+    pub response_error: ::routing::error::ResponseError,
+    pub signed_token: Option<::routing::SignedToken>,
+}
+
+impl DeleteResponse {
+    pub fn new(our_authority: ::routing::Authority,
+               location: ::routing::Authority,
+               response_error: ::routing::error::ResponseError,
+               signed_token: Option<::routing::SignedToken>) -> DeleteResponse {
+        DeleteResponse {
             our_authority: our_authority,
             location: location,
             response_error: response_error,

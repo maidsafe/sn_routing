@@ -72,7 +72,6 @@ pub fn is_sd_manager_authority_type(provided_authority: &::routing::Authority) -
     }
 }
 
-                                                                                            #[allow(dead_code)]
 pub fn is_data_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
     match provided_authority {
         &::data_manager::Authority(_) => true,

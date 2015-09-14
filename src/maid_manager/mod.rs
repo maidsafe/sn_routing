@@ -35,11 +35,16 @@ impl MaidManager {
                       our_authority: ::routing::Authority,
                       from_authority: ::routing::Authority,
                       data: ::routing::data::Data,
-                      response_token: Option<::routing::SignedToken>) {
-        debug_assert!(::utils::is_maid_manager_authority_type(&our_authority),
-                      "Invalid authority type.");
+                      response_token: Option<::routing::SignedToken>) -> Option<()> {
+        // Check if this is for this persona.
+        if !::utils::is_maid_manager_authority_type(&our_authority) {
+            return None;
+        }
+
+        // Validate from authority.
         if ! ::utils::is_client_authority_type(&from_authority) {
             warn!("Invalid authority for PUT at MaidManager: {:?}", from_authority);
+            return Some(());
         }
 
         if self.database.put_data(our_authority.get_location(), data.payload_size() as u64) {
@@ -65,6 +70,7 @@ impl MaidManager {
                             self.database.get_balance(our_authority.get_location()) as u32);
             self.routing.put_response(our_authority, from_authority, error, response_token);
         }
+        Some(())
     }
 
     pub fn handle_account_transfer(&mut self, merged_account: Account) {

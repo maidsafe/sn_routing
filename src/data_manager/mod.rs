@@ -35,16 +35,6 @@ static LRU_CACHE_SIZE: usize = 1000;
 
 type ChunkNameAndPmidNode = (::routing::NameType, ::routing::NameType);
 
-pub struct DataManager {
-    database: database::Database,
-    // the higher the index is, the slower the farming rate will be
-    resource_index: u64,
-    // key is pair of chunk_name and pmid_node, value is inserting time
-    on_going_gets: ::lru_time_cache::LruCache<ChunkNameAndPmidNode, ::time::SteadyTime>,
-    // key is chunk_name and value is failing pmids
-    failed_pmids: ::lru_time_cache::LruCache<::routing::NameType, Vec<::routing::NameType>>,
-}
-
 #[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
 pub struct Stats {
     name: ::routing::NameType,
@@ -85,12 +75,26 @@ impl ::types::Refreshable for Stats {
 
 
 
+pub struct DataManager {
+    routing: ::vault::Routing,
+    database: database::Database,
+    nodes_in_table: Vec<::routing::NameType>,
+    // the higher the index is, the slower the farming rate will be
+    resource_index: u64,
+    // key is pair of chunk_name and pmid_node, value is insertion time
+    ongoing_gets: ::lru_time_cache::LruCache<ChunkNameAndPmidNode, ::time::SteadyTime>,
+    // key is chunk_name and value is failing pmid nodes
+    failed_pmids: ::lru_time_cache::LruCache<::routing::NameType, Vec<::routing::NameType>>,
+}
+
 impl DataManager {
-    pub fn new() -> DataManager {
+    pub fn new(routing: ::vault::Routing) -> DataManager {
         DataManager {
+            routing: routing,
             database: database::Database::new(),
+            nodes_in_table: vec![],
             resource_index: 1,
-            on_going_gets: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
+            ongoing_gets: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
             failed_pmids: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
         }
     }
@@ -100,9 +104,9 @@ impl DataManager {
                       data_request: ::routing::data::DataRequest)
                       -> Vec<::types::MethodCall> {
         // before querying in the records, first ensure all records are valid
-        let on_going_gets = self.on_going_gets.retrieve_all();
+        let ongoing_gets = self.ongoing_gets.retrieve_all();
         let mut failing_entries = Vec::new();
-        for on_going_get in on_going_gets {
+        for on_going_get in ongoing_gets {
             if on_going_get.1 + ::time::Duration::seconds(10) < ::time::SteadyTime::now() {
                 self.database.remove_pmid_node(&(on_going_get.0).0, (on_going_get.0).1.clone());
                 failing_entries.push(on_going_get.0.clone());
@@ -117,7 +121,7 @@ impl DataManager {
             }
         }
         for failed_entry in failing_entries {
-            let _ = self.on_going_gets.remove(&failed_entry);
+            let _ = self.ongoing_gets.remove(&failed_entry);
         }
 
         let result = self.database.get_pmid_nodes(name);
@@ -130,39 +134,59 @@ impl DataManager {
                 location: ::pmid_node::Authority(pmid.clone()),
                 data_request: data_request.clone()
             });
-            self.on_going_gets.add((name.clone(), pmid.clone()), ::time::SteadyTime::now());
+            self.ongoing_gets.add((name.clone(), pmid.clone()), ::time::SteadyTime::now());
         }
         forward_to_pmids
     }
 
     pub fn handle_put(&mut self,
-                      data: ::routing::immutable_data::ImmutableData,
-                      nodes_in_table: &mut Vec<::routing::NameType>)
-                      -> Vec<::types::MethodCall> {
-        let data_name = data.name();
-        if self.database.exist(&data_name) {
-            return vec![];
+                      our_authority: ::routing::Authority,
+                      from_authority: ::routing::Authority,
+                      data: ::routing::data::Data,
+                      response_token: Option<::routing::SignedToken>) -> Option<()> {
+        // Check if this is for this persona, and that the Data is ImmutableData.
+        if !::utils::is_data_manager_authority_type(&our_authority) {
+            return None;
+        }
+        let immutable_data = match data {
+            ::routing::immutable_data::ImmutableData(immutable_data) = immutable_data,
+            _ => return None;
         }
 
-        nodes_in_table.sort_by(|a, b|
-          if ::routing::closer_to_target(&a, &b, &data_name) {
+        // Validate from authority.
+        if ! ::utils::is_maid_manager_authority_type(&from_authority) {
+            warn!("Invalid authority for PUT at DataManager: {:?}", from_authority);
+            return Some(());
+        }
+
+        // If the data already exists, there's no more to do.
+        let data_name = immutable_data.name();
+        if self.database.exist(&data_name) {
+            return Some(());
+        }
+
+        // Choose the PmidNodes to store the data on, and add them in a new database entry.
+        self.nodes_in_table.sort_by(|a, b|
+        if ::routing::closer_to_target(&a, &b, &data_name) {
             cmp::Ordering::Less
-          } else {
+        } else {
             cmp::Ordering::Greater
-          });
-        let pmid_nodes_num = cmp::min(nodes_in_table.len(), PARALLELISM);
+        });
+        let pmid_nodes_num = cmp::min(self.nodes_in_table.len(), PARALLELISM);
         let mut dest_pmids: Vec<::routing::NameType> = Vec::new();
         for index in 0..pmid_nodes_num {
-            dest_pmids.push(nodes_in_table[index].clone());
+            dest_pmids.push(self.nodes_in_table[index].clone());
         }
         self.database.put_pmid_nodes(&data_name, dest_pmids.clone());
-        match *data.get_type_tag() {
+        match *immutable_data.get_type_tag() {
             ::routing::immutable_data::ImmutableDataType::Sacrificial => {
                 self.resource_index = cmp::min(1048576,
                                                self.resource_index + dest_pmids.len() as u64);
             }
             _ => {}
         }
+
+        // Send the message on to the PmidNodes' managers.
         let mut forwarding_calls: Vec<::types::MethodCall> = Vec::new();
         for pmid in dest_pmids {
             forwarding_calls.push(::types::MethodCall::Put {
@@ -177,7 +201,7 @@ impl DataManager {
                                from: ::routing::NameType,
                                response: ::routing::data::Data)
                                -> Vec<::types::MethodCall> {
-        let _ = self.on_going_gets.remove(&(from.clone(), response.name()));
+        let _ = self.ongoing_gets.remove(&(from.clone(), response.name()));
         let mut failure_notifications = Vec::new();
         match self.failed_pmids.remove(&response.name()) {
             Some(failed_pmids) => {
