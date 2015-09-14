@@ -140,29 +140,39 @@ impl PmidNode {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
 
     #[test]
     fn handle_put_get() {
-        let mut pmid_node = PmidNode::new();
+        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
+        let mut pmid_node = PmidNode::new(routing.clone());
+
+        let us = ::utils::random_name();
+        let our_authority = Authority(us.clone());
+
+        let from_authority = ::pmid_manager::Authority(us.clone());
+
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data = ::routing::immutable_data::ImmutableData::new(
-                          ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data = ::routing::immutable_data::ImmutableData::new(
+                       ::routing::immutable_data::ImmutableDataType::Normal, value);
         {
-            let put_result = pmid_node.handle_put(::routing::NameType::new([0u8; 64]),
-                                     ::routing::data::Data::ImmutableData(im_data.clone()));
-            assert_eq!(put_result.len(), 0);
+            assert_eq!(::utils::HANDLED,
+                pmid_node.handle_put(&our_authority, &from_authority,
+                                     &::routing::data::Data::ImmutableData(data.clone()), &None));
+            assert_eq!(0, routing.put_requests_given().len());
+            assert_eq!(0, routing.put_responses_given().len());
         }
         {
-            let mut get_result = pmid_node.handle_get(im_data.name());
+            let mut get_result = pmid_node.handle_get(data.name());
             assert_eq!(get_result.len(), 1);
+            let original_data = data;
             match get_result.remove(0) {
                 ::types::MethodCall::Reply { data } => {
                     match data {
                         ::routing::data::Data::ImmutableData(fetched_im_data) => {
-                            assert_eq!(fetched_im_data, im_data);
+                            assert_eq!(fetched_im_data, original_data);
                         }
                         _ => panic!("Unexpected"),
                     }

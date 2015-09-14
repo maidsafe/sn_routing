@@ -78,7 +78,7 @@ fn start_client
                 match event {
                     ::routing::event::Event::Request{
                         request, our_authority, from_authority, response_token
-                    } => println!("client as {:?} received request: {:?} from {:?} having token /
+                    } => println!("client as {:?} received request: {:?} from {:?} having token \
                                   {:?}",
                                   our_authority, request, from_authority, response_token == None),
                     ::routing::event::Event::Response{
@@ -101,11 +101,11 @@ fn start_client
                     ::routing::event::Event::Disconnected => println!("client disconnected"),
                     ::routing::event::Event::FailedRequest{
                         request, our_authority, location, interface_error
-                    } => println!("client as {:?} received request: {:?} targeting {:?} having /
+                    } => println!("client as {:?} received request: {:?} targeting {:?} having \
                                   error {:?}", our_authority, request, location, interface_error),
                     ::routing::event::Event::FailedResponse{
                         response, our_authority, location, interface_error
-                    } => println!("client as {:?} received response: {:?} targeting {:?} having /
+                    } => println!("client as {:?} received response: {:?} targeting {:?} having \
                                   error {:?}", our_authority, response, location, interface_error),
                     ::routing::event::Event::Bootstrapped =>
                         println!("client routing Bootstrapped"),

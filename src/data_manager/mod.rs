@@ -143,23 +143,22 @@ impl DataManager {
                       our_authority: &::routing::Authority,
                       from_authority: &::routing::Authority,
                       data: &::routing::data::Data) -> Option<()> {
-        // Check if this is for this persona.
+        // Check if this is for this persona and that the Data is Immutable
         if !::utils::is_data_manager_authority_type(&our_authority) {
             return ::utils::NOT_HANDLED;
-        }
-
-        // Validate from authority, and that the Data is ImmutableData.
-        if !::utils::is_maid_manager_authority_type(&from_authority) {
-            warn!("Invalid authority for PUT at DataManager: {:?}", from_authority);
-            return ::utils::HANDLED;
         }
         let immutable_data = match data {
             &::routing::data::Data::ImmutableData(ref immutable_data) => immutable_data,
             _ => {
-                warn!("Invalid data type for PUT at DataManager: {:?}", data);
-                return ::utils::HANDLED;
+                return ::utils::NOT_HANDLED;
             }
         };
+
+        // Validate from authority.
+        if !::utils::is_maid_manager_authority_type(&from_authority) {
+            warn!("Invalid authority for PUT at DataManager: {:?}", from_authority);
+            return ::utils::HANDLED;
+        }
 
         // If the data already exists, there's no more to do.
         let data_name = immutable_data.name();
@@ -169,11 +168,11 @@ impl DataManager {
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
         self.nodes_in_table.sort_by(|a, b|
-        if ::routing::closer_to_target(&a, &b, &data_name) {
-            cmp::Ordering::Less
-        } else {
-            cmp::Ordering::Greater
-        });
+            if ::routing::closer_to_target(&a, &b, &data_name) {
+                cmp::Ordering::Less
+            } else {
+                cmp::Ordering::Greater
+            });
         let pmid_nodes_num = cmp::min(self.nodes_in_table.len(), PARALLELISM);
         let mut dest_pmids: Vec<::routing::NameType> = Vec::new();
         for index in 0..pmid_nodes_num {
@@ -286,11 +285,11 @@ impl DataManager {
     }
 
     pub fn retrieve_all_and_reset(&mut self,
-                                  close_group: &mut Vec<::routing::NameType>)
+                                  close_group: Vec<::routing::NameType>)
                                   -> Vec<::types::MethodCall> {
         // TODO: as Vault doesn't have access to what ID it is, we have to use the first one in the
         //       close group as its ID
-        let mut result = self.database.retrieve_all_and_reset(close_group);
+        let mut result = self.database.retrieve_all_and_reset();
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         let mut encoder = cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
@@ -300,7 +299,19 @@ impl DataManager {
                 payload: encoder.as_bytes().to_vec()
             });
         }
+        self.nodes_in_table = close_group;
         result
+    }
+
+    pub fn nodes_in_table_len(&self) -> usize {
+        self.nodes_in_table.len()
+    }
+
+    #[cfg(test)]
+    pub fn add_nodes_to_table(&mut self, nodes: &Vec<::routing::NameType>) {
+        for node in nodes {
+            self.nodes_in_table.push(node.clone());
+        }
     }
 
     fn replicate_to(&mut self, name: &::routing::NameType) -> Option<::routing::NameType> {
@@ -330,36 +341,45 @@ impl DataManager {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
-    use super::{DataManager, Stats};
-    use super::database::Account;
+    use super::*;
 
     #[test]
     fn handle_put_get() {
-        let mut data_manager = DataManager::new();
+        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
+        let mut data_manager = DataManager::new(routing.clone());
+
+        let us = ::utils::random_name();
+        let our_authority = Authority(us.clone());
+
+        let from = ::utils::random_name();
+        let from_authority = ::maid_manager::Authority(from.clone());
+
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
-        let mut nodes_in_table = vec![::routing::NameType::new([1u8; 64]),
-                                      ::routing::NameType::new([2u8; 64]),
-                                      ::routing::NameType::new([3u8; 64]),
-                                      ::routing::NameType::new([4u8; 64]),
-                                      ::routing::NameType::new([5u8; 64]),
-                                      ::routing::NameType::new([6u8; 64]),
-                                      ::routing::NameType::new([7u8; 64]),
-                                      ::routing::NameType::new([8u8; 64])];
+        data_manager.nodes_in_table = vec![::routing::NameType::new([1u8; 64]),
+                                           ::routing::NameType::new([2u8; 64]),
+                                           ::routing::NameType::new([3u8; 64]),
+                                           ::routing::NameType::new([4u8; 64]),
+                                           ::routing::NameType::new([5u8; 64]),
+                                           ::routing::NameType::new([6u8; 64]),
+                                           ::routing::NameType::new([7u8; 64]),
+                                           ::routing::NameType::new([8u8; 64])];
+
         {
-            let put_result = data_manager.handle_put(data.clone(), &mut nodes_in_table);
-            assert_eq!(put_result.len(), super::PARALLELISM);
-            for i in 0..put_result.len() {
-                match put_result[i].clone() {
-                    ::types::MethodCall::Put { location, content } => {
-                        assert_eq!(location, ::pmid_manager::Authority(nodes_in_table[i]));
-                        assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
-                    }
-                    _ => panic!("Unexpected"),
-                }
+            assert_eq!(::utils::HANDLED,
+                data_manager.handle_put(&our_authority, &from_authority,
+                                        &::routing::data::Data::ImmutableData(data.clone())));
+            let put_requests = routing.put_requests_given();
+            assert_eq!(put_requests.len(), PARALLELISM);
+            for i in 0..put_requests.len() {
+                assert_eq!(put_requests[i].our_authority, our_authority);
+                assert_eq!(put_requests[i].location,
+                           ::pmid_manager::Authority(data_manager.nodes_in_table[i]));
+                assert_eq!(put_requests[i].data,
+                           ::routing::data::Data::ImmutableData(data.clone()));
             }
         }
         let data_name = ::routing::NameType::new(data.name().get_id());
@@ -367,11 +387,12 @@ mod test {
             let request = ::routing::data::DataRequest::ImmutableData(data_name.clone(),
                               ::routing::immutable_data::ImmutableDataType::Normal);
             let get_result = data_manager.handle_get(&data_name, request.clone());
-            assert_eq!(get_result.len(), super::PARALLELISM);
+            assert_eq!(get_result.len(), PARALLELISM);
             for i in 0..get_result.len() {
                 match get_result[i].clone() {
                     ::types::MethodCall::Get { location, data_request } => {
-                        assert_eq!(location, ::pmid_node::Authority(nodes_in_table[i]));
+                        assert_eq!(location,
+                                   ::pmid_node::Authority(data_manager.nodes_in_table[i]));
                         assert_eq!(data_request, request);
                     }
                     _ => panic!("Unexpected"),
@@ -382,7 +403,8 @@ mod test {
 
     #[test]
     fn handle_account_transfer() {
-        let mut data_manager = DataManager::new();
+        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
+        let mut data_manager = DataManager::new(routing.clone());
         let name = ::utils::random_name();
         let account = Account::new(name.clone(), vec![]);
         data_manager.handle_account_transfer(account);
@@ -391,7 +413,8 @@ mod test {
 
     #[test]
     fn handle_stats_transfer() {
-        let mut data_manager = DataManager::new();
+        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
+        let mut data_manager = DataManager::new(routing.clone());
         let name = ::utils::random_name();
         let stats = Stats::new(name.clone(), 1023);
         data_manager.handle_stats_transfer(stats);

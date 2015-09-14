@@ -94,16 +94,20 @@ mod test {
     fn handle_put() {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let mut maid_manager = MaidManager::new(routing.clone());
+
         let from = ::utils::random_name();
         let our_authority = Authority(from.clone());
+
         let keys = crypto::sign::gen_keypair();
         let client = ::routing::Authority::Client(from, keys.0);
+
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
 
-        maid_manager.handle_put(our_authority.clone(), client,
-                                ::routing::data::Data::ImmutableData(data.clone()), None);
+        assert_eq!(::utils::HANDLED,
+            maid_manager.handle_put(&our_authority, &client,
+                                    &::routing::data::Data::ImmutableData(data.clone()), &None));
 
         let put_requests = routing.put_requests_given();
         assert_eq!(put_requests.len(), 1);

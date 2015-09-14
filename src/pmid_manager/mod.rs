@@ -117,26 +117,33 @@ impl PmidManager {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
 
     #[test]
     fn handle_put() {
-        let mut pmid_manager = PmidManager::new();
+        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
+        let mut pmid_manager = PmidManager::new(routing.clone());
+
         let dest = ::utils::random_name();
+        let our_authority = Authority(dest.clone());
+
+        let from = ::utils::random_name();
+        let from_authority = ::data_manager::Authority(from.clone());
+
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
-        let put_result =
-            pmid_manager.handle_put(dest, ::routing::data::Data::ImmutableData(data.clone()));
-        assert_eq!(put_result.len(), 1);
-        match put_result[0].clone() {
-            ::types::MethodCall::Put { location, content } => {
-                assert_eq!(location, ::pmid_node::Authority(dest));
-                assert_eq!(content, ::routing::data::Data::ImmutableData(data.clone()));
-            }
-            _ => panic!("Unexpected"),
-        }
+
+        assert_eq!(::utils::HANDLED,
+            pmid_manager.handle_put(&our_authority, &from_authority,
+                                    &::routing::data::Data::ImmutableData(data.clone())));
+
+        let put_requests = routing.put_requests_given();
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].our_authority, our_authority);
+        assert_eq!(put_requests[0].location, ::pmid_node::Authority(dest));
+        assert_eq!(put_requests[0].data, ::routing::data::Data::ImmutableData(data));
     }
 }

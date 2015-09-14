@@ -53,6 +53,7 @@ pub struct PostRequest {
 }
 
 impl PostRequest {
+                                                                                                    #[allow(dead_code)]
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
                data: ::routing::data::Data) -> PostRequest {
@@ -68,6 +69,7 @@ pub struct DeleteRequest {
 }
 
 impl DeleteRequest {
+                                                                                                    #[allow(dead_code)]
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
                data: ::routing::data::Data) -> DeleteRequest {
@@ -131,6 +133,7 @@ pub struct PostResponse {
 }
 
 impl PostResponse {
+                                                                                                    #[allow(dead_code)]
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
                response_error: ::routing::error::ResponseError,
@@ -153,6 +156,7 @@ pub struct DeleteResponse {
 }
 
 impl DeleteResponse {
+                                                                                                    #[allow(dead_code)]
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
                response_error: ::routing::error::ResponseError,

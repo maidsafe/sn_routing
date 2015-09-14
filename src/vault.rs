@@ -165,30 +165,33 @@ impl Vault {
     }
 
     fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
-                                                                                    let churn_up = true; //close_group.len() > self.nodes_in_table.len();
+        self.id = close_group[0].clone();
+        let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
         let time_now = ::time::SteadyTime::now();
         // During the process of joining network, the vault shall not refresh its just received info
         if !(churn_up && (self.churn_timestamp + ::time::Duration::seconds(5) > time_now)) {
             let refresh_calls = self.handle_churn(close_group.clone());
             self.send(::routing::Authority::NaeManager(::routing::NameType::new([0u8; 64])),
                       refresh_calls, None, None, None);
+        } else {
+            // We need to pass the close_group to data_manager to hold.
+            let retrieved = self.data_manager.retrieve_all_and_reset(close_group);
+            assert_eq!(1, retrieved.len());  // Should only be the stats - there shouldn't be any accounts
         }
         if churn_up {
-            info!("vault added connected node");
+            info!("Vault added connected node");
             self.churn_timestamp = time_now;
         }
-        self.id = close_group[0].clone();
-//                                                                          self.nodes_in_table = close_group;
     }
 
     fn on_bootstrapped(&self) {
         // TODO: what is expected to be done here?
-//                                                                          assert_eq!(0, self.nodes_in_table.len());
+        assert_eq!(0, self.data_manager.nodes_in_table_len());
     }
 
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
-//                                                                          assert_eq!(::routing::types::GROUP_SIZE, self.nodes_in_table.len());
+        assert_eq!(::routing::types::GROUP_SIZE, self.data_manager.nodes_in_table_len());
     }
 
     fn on_disconnected(&mut self) {
@@ -226,7 +229,7 @@ impl Vault {
                         // Only remember the request from client for Immutable Data
                         // as StructuredData will get replied immediately from SDManager
                         if self.request_cache.contains_key(&name) {
-                            debug!("DataManager handle_get inserting original request {:?} from /
+                            debug!("DataManager handle_get inserting original request {:?} from \
                                    {:?} into {:?} ", data_request, from_authority, name);
                             match self.request_cache.get_mut(&name) {
                                 Some(ref mut request) => request.push((from_authority.clone(),
@@ -235,7 +238,7 @@ impl Vault {
                                 None => error!("Failed to insert get request in the cache."),
                             };
                         } else {
-                            debug!("DataManager handle_get created original request {:?} from {:?} /
+                            debug!("DataManager handle_get created original request {:?} from {:?} \
                                    as entry {:?}", data_request, from_authority, name);
                             let _ = self.request_cache.insert(name, vec![(from_authority.clone(),
                                 data_request.clone(), response_token.clone())]);
@@ -361,15 +364,11 @@ impl Vault {
         vec![]
     }
 
-    fn handle_churn(&mut self,
-                    mut close_group: Vec<::routing::NameType>)
-                    -> Vec<::types::MethodCall> {
+    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) -> Vec<::types::MethodCall> {
         let mm = self.maid_manager.retrieve_all_and_reset();
         let vh = self.sd_manager.retrieve_all_and_reset();
         let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
-        let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
-//                                                                                          self.nodes_in_table = close_group;
-
+        let dm = self.data_manager.retrieve_all_and_reset(close_group);
         mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
     }
 
@@ -474,7 +473,7 @@ impl Vault {
                 ::types::MethodCall::Reply { data } => {
                     match (&optional_reply_to, &optional_original_data_request) {
                         (&Some(ref reply_to), &Some(ref original_data_request)) => {
-                            debug!("as {:?} sending data {:?} to {:?} in responding to the /
+                            debug!("as {:?} sending data {:?} to {:?} in responding to the \
                                    ori_data_request {:?}",
                                    our_authority, data, reply_to, original_data_request);
                             self.routing.get_response(our_authority.clone(), reply_to.clone(), data,
@@ -655,7 +654,7 @@ mod test {
                                   our_authority, request, location, interface_error),
                         Event::FailedResponse{ response, our_authority, location,
                                                interface_error } =>
-                            info!("as {:?} received response: {:?} targeting {:?} having error /
+                            info!("as {:?} received response: {:?} targeting {:?} having error \
                                   {:?}", our_authority, response, location, interface_error),
                         Event::Bootstrapped => {
                             // Send an empty data to indicate bootstrapped
@@ -838,11 +837,9 @@ mod test {
             ::routing::data::Data::ImmutableData(im_data), None);
     }
 
-                                                                                                // fn add_nodes_to_table(vault: &mut Vault, nodes: &Vec<::routing::NameType>) {
-                                                                                                //     for node in nodes {
-                                                                                                //         vault.nodes_in_table.push(node.clone());
-                                                                                                //     }
-                                                                                                // }
+    fn add_nodes_to_table(vault: &mut Vault, nodes: &Vec<::routing::NameType>) {
+        vault.data_manager.add_nodes_to_table(nodes)
+    }
 
     fn pmid_manager_put(vault: &mut Vault,
                         pmid_node: ::routing::NameType,
@@ -890,14 +887,12 @@ mod test {
                     assert_eq!(*type_tag, ::maid_manager::ACCOUNT_TAG);
                     assert_eq!(*our_authority.get_location(), available_nodes[0]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Transfer::MaidManagerAccount(mm_account) => {
-                                assert_eq!(*mm_account.name(), available_nodes[0]);
-                                assert_eq!(mm_account.value().data_stored(), 1024);
-                            }
-                            _ => panic!("Unexpected"),
-                        }
+                    let result_to_option = |r: ::cbor::CborResult<::maid_manager::Account>| r.ok();
+                    if let Some(mm_account) = d.decode().next().and_then(result_to_option) {
+                        assert_eq!(*mm_account.name(), available_nodes[0]);
+                        assert_eq!(mm_account.value().data_stored(), 1024);
+                    } else {
+                        panic!("Failed to parse account during refresh.");
                     }
                     let mut payloads = vec![];
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
@@ -930,15 +925,12 @@ mod test {
                     assert_eq!(*type_tag, ::data_manager::ACCOUNT_TAG);
                     assert_eq!(*our_authority.get_location(), im_data.name());
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Transfer::DataManagerAccount(account) => {
-                                assert_eq!(*account.name(), im_data.name());
-                            }
-                            _ => panic!("Unexpected"),
-                        }
-                    }
-                    let mut payloads = vec![];
+                    let result_to_option = |r: ::cbor::CborResult<::data_manager::Account>| r.ok();
+                    if let Some(dm_account) = d.decode().next().and_then(result_to_option) {
+                        assert_eq!(*dm_account.name(), im_data.name());
+                    } else {
+                        panic!("Failed to parse account during refresh.");
+                    }                    let mut payloads = vec![];
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
                         payloads.push(payload.clone());
                     }
@@ -953,13 +945,11 @@ mod test {
                     assert_eq!(*type_tag, ::data_manager::STATS_TAG);
                     assert_eq!(*our_authority.get_location(), close_group[0]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Transfer::DataManagerStats(stats) => {
-                                assert_eq!(stats.resource_index(), 1);
-                            }
-                            _ => panic!("Unexpected"),
-                        }
+                    let result_to_option = |r: ::cbor::CborResult<::data_manager::Stats>| r.ok();
+                    if let Some(dm_stats) = d.decode().next().and_then(result_to_option) {
+                        assert_eq!(dm_stats.resource_index(), 1);
+                    } else {
+                        panic!("Failed to parse account during refresh.");
                     }
                     let mut payloads = vec![];
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {
@@ -975,7 +965,7 @@ mod test {
             assert_eq!(churn_data[0], re_churn_data[0]);
             assert_eq!(churn_data[1], re_churn_data[1]);
             // DataManagerStatsTransfer will always be included in the return
-            assert_eq!(vault.data_manager.retrieve_all_and_reset(&mut close_group).len(), 1);
+            assert_eq!(vault.data_manager.retrieve_all_and_reset(close_group).len(), 1);
         }
 
         {// PmidManager - churn handling
@@ -990,13 +980,11 @@ mod test {
                     assert_eq!(*type_tag, ::pmid_manager::ACCOUNT_TAG);
                     assert_eq!(*our_authority.get_location(), available_nodes[1]);
                     let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    if let Some(parsed_data) = d.decode().next().and_then(|result| result.ok()) {
-                        match parsed_data {
-                            Transfer::PmidManagerAccount(account) => {
-                                assert_eq!(*account.name(), available_nodes[1]);
-                            }
-                            _ => panic!("Unexpected"),
-                        }
+                    let result_to_option = |r: ::cbor::CborResult<::pmid_manager::Account>| r.ok();
+                    if let Some(pm_account) = d.decode().next().and_then(result_to_option) {
+                        assert_eq!(*pm_account.name(), available_nodes[1]);
+                    } else {
+                        panic!("Failed to parse account during refresh.");
                     }
                     let mut payloads = vec![];
                     for _ in 0..(::routing::types::GROUP_SIZE - 1) {

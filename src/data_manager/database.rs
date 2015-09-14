@@ -155,9 +155,7 @@ impl Database {
               merged_account.name(), merged_account.data_holders());
     }
 
-    pub fn retrieve_all_and_reset(&mut self,
-                                  _close_group: &mut Vec<::routing::NameType>)
-                                  -> Vec<::types::MethodCall> {
+    pub fn retrieve_all_and_reset(&mut self) -> Vec<::types::MethodCall> {
         self.temp_storage_after_churn = self.storage.clone();
         let mut actions = Vec::<::types::MethodCall>::new();
         for (key, value) in self.storage.iter() {
