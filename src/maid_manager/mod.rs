@@ -32,32 +32,33 @@ impl MaidManager {
     }
 
     pub fn handle_put(&mut self,
-                      our_authority: ::routing::Authority,
-                      from_authority: ::routing::Authority,
-                      data: ::routing::data::Data,
-                      response_token: Option<::routing::SignedToken>) -> Option<()> {
+                      our_authority: &::routing::Authority,
+                      from_authority: &::routing::Authority,
+                      data: &::routing::data::Data,
+                      response_token: &Option<::routing::SignedToken>) -> Option<()> {
         // Check if this is for this persona.
         if !::utils::is_maid_manager_authority_type(&our_authority) {
-            return None;
+            return ::utils::NOT_HANDLED;
         }
 
         // Validate from authority.
-        if ! ::utils::is_client_authority_type(&from_authority) {
+        if !::utils::is_client_authority_type(&from_authority) {
             warn!("Invalid authority for PUT at MaidManager: {:?}", from_authority);
-            return Some(());
+            return ::utils::HANDLED;
         }
 
+        // Handle the request by sending on to the DM or SDM, or replying with error to the client.
         if self.database.put_data(our_authority.get_location(), data.payload_size() as u64) {
             match data {
-                ::routing::data::Data::StructuredData(structured_data) => {
+                &::routing::data::Data::StructuredData(ref structured_data) => {
                     let location = ::sd_manager::Authority(structured_data.name());
-                    let content = ::routing::data::Data::StructuredData(structured_data);
-                    self.routing.put_request(our_authority, location, content);
+                    let content = ::routing::data::Data::StructuredData(structured_data.clone());
+                    self.routing.put_request(our_authority.clone(), location, content);
                 },
-                ::routing::data::Data::ImmutableData(immutable_data) => {
+                &::routing::data::Data::ImmutableData(ref immutable_data) => {
                     let location = ::data_manager::Authority(immutable_data.name());
-                    let content = ::routing::data::Data::ImmutableData(immutable_data);
-                    self.routing.put_request(our_authority, location, content);
+                    let content = ::routing::data::Data::ImmutableData(immutable_data.clone());
+                    self.routing.put_request(our_authority.clone(), location, content);
                 },
                 _ => {
                     warn!("Invalid PUT request data type.");
@@ -66,11 +67,12 @@ impl MaidManager {
         } else {
             debug!("As {:?}, failed in putting data {:?}, responding to {:?}",
                    our_authority, data, from_authority);
-            let error = ::routing::error::ResponseError::LowBalance(data,
+            let error = ::routing::error::ResponseError::LowBalance(data.clone(),
                             self.database.get_balance(our_authority.get_location()) as u32);
-            self.routing.put_response(our_authority, from_authority, error, response_token);
+            self.routing.put_response(our_authority.clone(), from_authority.clone(), error,
+                                      response_token.clone());
         }
-        Some(())
+        ::utils::HANDLED
     }
 
     pub fn handle_account_transfer(&mut self, merged_account: Account) {

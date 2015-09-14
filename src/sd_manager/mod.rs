@@ -21,21 +21,23 @@ pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerA
 pub use ::routing::Authority::NaeManager as Authority;
 
 pub struct StructuredDataManager {
+                                                                                                    #[allow(dead_code)]
+    routing: ::vault::Routing,
     // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV)
     // data, and put is overwritable
-    // If such assumption becomes in-valid, LruCache or Sqlite based persona specific
+    // If such assumption becomes invalid, LruCache or Sqlite based persona specific
     // database shall be used
-    chunk_store_: ChunkStore,
+    chunk_store: ChunkStore,
 }
 
 impl StructuredDataManager {
-    pub fn new() -> StructuredDataManager {
+    pub fn new(routing: ::vault::Routing) -> StructuredDataManager {
         // TODO adjustable max_disk_space
-        StructuredDataManager { chunk_store_: ChunkStore::new(1073741824) }
+        StructuredDataManager { routing: routing, chunk_store: ChunkStore::new(1073741824) }
     }
 
     pub fn handle_get(&self, name: ::routing::NameType) -> Vec<::types::MethodCall> {
-        let data = self.chunk_store_.get(name);
+        let data = self.chunk_store.get(name);
         if data.len() == 0 {
             return vec![];
         }
@@ -48,25 +50,38 @@ impl StructuredDataManager {
     }
 
     pub fn handle_put(&mut self,
-                      structured_data: ::routing::structured_data::StructuredData)
-                      -> Vec<::types::MethodCall> {
+                      our_authority: &::routing::Authority,
+                      from_authority: &::routing::Authority,
+                      data: &::routing::data::Data) -> Option<()> {
+        // Check if this is for this persona.
+        if !::utils::is_sd_manager_authority_type(&our_authority) {
+            return ::utils::NOT_HANDLED;
+        }
+
+        // Validate from authority, and that the Data is StructuredData.
+        if !::utils::is_maid_manager_authority_type(&from_authority) {
+            warn!("Invalid authority for PUT at StructuredDataManager: {:?}", from_authority);
+            return ::utils::HANDLED;
+        }
+        let structured_data = match data {
+            &::routing::data::Data::StructuredData(ref structured_data) => structured_data,
+            _ => {
+                warn!("Invalid data type for PUT at StructuredDataManager: {:?}", data);
+                return ::utils::HANDLED;
+            }
+        };
+
         // TODO: SD using PUT for the first copy, then POST to update and transfer in case of churn
         //       so if the data exists, then the put shall be rejected
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
-        if self.chunk_store_.has_chunk(structured_data.name()) {
-            vec![]
-        } else {
+        if !self.chunk_store.has_chunk(structured_data.name()) {
             if let Ok(serialised_data) = ::routing::utils::encode(&structured_data) {
-                self.chunk_store_.put(structured_data.name(), serialised_data);
-                vec![::types::MethodCall::Reply {
-                         data: ::routing::data::Data::StructuredData(structured_data)
-                     }]
-            } else {
-                vec![]
+                self.chunk_store.put(structured_data.name(), serialised_data);
             }
         }
+        ::utils::HANDLED
     }
 
     pub fn handle_post(&mut self,
@@ -77,7 +92,7 @@ impl StructuredDataManager {
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
-        let data = self.chunk_store_.get(in_coming_data.name());
+        let data = self.chunk_store.get(in_coming_data.name());
         if data.len() == 0 {
             return vec![::types::MethodCall::InvalidRequest {
                             data: ::routing::data::Data::StructuredData(in_coming_data)
@@ -95,7 +110,7 @@ impl StructuredDataManager {
                 }
             }
             if let Ok(serialised_data) = ::routing::utils::encode(&sd) {
-                self.chunk_store_.put(in_coming_data.name(), serialised_data);
+                self.chunk_store.put(in_coming_data.name(), serialised_data);
             }
         }
         vec![]
@@ -110,22 +125,22 @@ impl StructuredDataManager {
                 Err(_) => return,
             };
         info!("SdManager transferred structured_data {:?} in", sd.name());
-        self.chunk_store_.delete(sd.name());
-        self.chunk_store_.put(sd.name(), in_coming_sd);
+        self.chunk_store.delete(sd.name());
+        self.chunk_store.put(sd.name(), in_coming_sd);
     }
 
     pub fn retrieve_all_and_reset(&mut self) -> Vec<::types::MethodCall> {
-        let names = self.chunk_store_.names();
+        let names = self.chunk_store.names();
         let mut actions = Vec::with_capacity(names.len());
         for name in names {
-            let data = self.chunk_store_.get(name.clone());
+            let data = self.chunk_store.get(name.clone());
             actions.push(::types::MethodCall::Refresh {
                 type_tag: ACCOUNT_TAG,
                 our_authority: Authority(name),
                 payload: data
             });
         }
-        self.chunk_store_ = ChunkStore::new(1073741824);
+        self.chunk_store = ChunkStore::new(1073741824);
         actions
     }
 
@@ -268,7 +283,7 @@ mod test {
             Err(_) => panic!("Unexpected"),
         };
         sd_manager.handle_account_transfer(serialised_data);
-        assert!(sd_manager.chunk_store_.has_chunk(
+        assert!(sd_manager.chunk_store.has_chunk(
             ::routing::structured_data::StructuredData::compute_name(0,
                 &::routing::NameType([3u8; 64]))));
     }

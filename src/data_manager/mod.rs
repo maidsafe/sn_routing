@@ -140,29 +140,31 @@ impl DataManager {
     }
 
     pub fn handle_put(&mut self,
-                      our_authority: ::routing::Authority,
-                      from_authority: ::routing::Authority,
-                      data: ::routing::data::Data,
-                      response_token: Option<::routing::SignedToken>) -> Option<()> {
-        // Check if this is for this persona, and that the Data is ImmutableData.
+                      our_authority: &::routing::Authority,
+                      from_authority: &::routing::Authority,
+                      data: &::routing::data::Data) -> Option<()> {
+        // Check if this is for this persona.
         if !::utils::is_data_manager_authority_type(&our_authority) {
-            return None;
-        }
-        let immutable_data = match data {
-            ::routing::immutable_data::ImmutableData(immutable_data) = immutable_data,
-            _ => return None;
+            return ::utils::NOT_HANDLED;
         }
 
-        // Validate from authority.
-        if ! ::utils::is_maid_manager_authority_type(&from_authority) {
+        // Validate from authority, and that the Data is ImmutableData.
+        if !::utils::is_maid_manager_authority_type(&from_authority) {
             warn!("Invalid authority for PUT at DataManager: {:?}", from_authority);
-            return Some(());
+            return ::utils::HANDLED;
         }
+        let immutable_data = match data {
+            &::routing::data::Data::ImmutableData(ref immutable_data) => immutable_data,
+            _ => {
+                warn!("Invalid data type for PUT at DataManager: {:?}", data);
+                return ::utils::HANDLED;
+            }
+        };
 
         // If the data already exists, there's no more to do.
         let data_name = immutable_data.name();
         if self.database.exist(&data_name) {
-            return Some(());
+            return ::utils::HANDLED;
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
@@ -187,14 +189,12 @@ impl DataManager {
         }
 
         // Send the message on to the PmidNodes' managers.
-        let mut forwarding_calls: Vec<::types::MethodCall> = Vec::new();
         for pmid in dest_pmids {
-            forwarding_calls.push(::types::MethodCall::Put {
-                location: ::pmid_manager::Authority(pmid.clone()),
-                content: ::routing::data::Data::ImmutableData(data.clone()),
-            });
+            let location = ::pmid_manager::Authority(pmid);
+            let content = ::routing::data::Data::ImmutableData(immutable_data.clone());
+            self.routing.put_request(our_authority.clone(), location, content);
         }
-        forwarding_calls
+        ::utils::HANDLED
     }
 
     pub fn handle_get_response(&mut self,

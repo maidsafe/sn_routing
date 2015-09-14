@@ -22,26 +22,45 @@ pub use self::database::Account;
 pub use ::routing::Authority::NodeManager as Authority;
 
 pub struct PmidManager {
+    routing: ::vault::Routing,
     database: database::PmidManagerDatabase,
 }
 
 impl PmidManager {
-    pub fn new() -> PmidManager {
-        PmidManager { database: database::PmidManagerDatabase::new() }
+    pub fn new(routing: ::vault::Routing) -> PmidManager {
+        PmidManager { routing: routing, database: database::PmidManagerDatabase::new() }
     }
 
     pub fn handle_put(&mut self,
-                      pmid_node: ::routing::NameType,
-                      data: ::routing::data::Data)
-                      -> Vec<::types::MethodCall> {
-        if self.database.put_data(&pmid_node, data.payload_size() as u64) {
-            vec![::types::MethodCall::Put {
-                     location: ::pmid_node::Authority(pmid_node.clone()),
-                     content: data
-                 }]
-        } else {
-            vec![]
+                      our_authority: &::routing::Authority,
+                      from_authority: &::routing::Authority,
+                      data: &::routing::data::Data) -> Option<()> {
+        // Check if this is for this persona.
+        if !::utils::is_pmid_manager_authority_type(&our_authority) {
+            return ::utils::NOT_HANDLED;
         }
+
+        // Validate from authority, and that the Data is ImmutableData.
+        if !::utils::is_data_manager_authority_type(&from_authority) {
+            warn!("Invalid authority for PUT at PmidManager: {:?}", from_authority);
+            return ::utils::HANDLED;
+        }
+        let immutable_data = match data {
+            &::routing::data::Data::ImmutableData(ref immutable_data) => immutable_data,
+            _ => {
+                warn!("Invalid data type for PUT at PmidManager: {:?}", data);
+                return ::utils::HANDLED;
+            }
+        };
+
+        // Handle the request and send on
+        let pmid_node = our_authority.get_location();
+        if self.database.put_data(pmid_node, immutable_data.payload_size() as u64) {
+            let location = ::pmid_node::Authority(pmid_node.clone());
+            let content = ::routing::data::Data::ImmutableData(immutable_data.clone());
+            self.routing.put_request(our_authority.clone(), location, content);
+        }
+        ::utils::HANDLED
     }
 
     pub fn handle_put_response(&mut self,

@@ -15,6 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+/// Indicates a "handle_xxx" function of a persona has dealt with the request (i.e. it was for that
+/// persona).  It doesn't indicate success or failure - only that the request has been handled.
+pub const HANDLED: Option<()> = Some(());
+
+/// Indicates a "handle_xxx" function of a persona has NOT dealt with the request (i.e. it was not
+/// for that persona).
+pub const NOT_HANDLED: Option<()> = None;
+
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
 /// unsorted.  If `values` is empty, returns `0`.
 pub fn median(mut values: Vec<u64>) -> u64 {
@@ -48,7 +56,6 @@ pub fn is_maid_manager_authority_type(provided_authority: &::routing::Authority)
     }
 }
 
-                                                                                            #[allow(dead_code)]
 pub fn is_pmid_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
     match provided_authority {
         &::pmid_manager::Authority(_) => true,
@@ -56,7 +63,6 @@ pub fn is_pmid_manager_authority_type(provided_authority: &::routing::Authority)
     }
 }
 
-                                                                                            #[allow(dead_code)]
 pub fn is_pmid_node_authority_type(provided_authority: &::routing::Authority) -> bool {
     match provided_authority {
         &::pmid_node::Authority(_) => true,
@@ -64,7 +70,6 @@ pub fn is_pmid_node_authority_type(provided_authority: &::routing::Authority) ->
     }
 }
 
-                                                                                            #[allow(dead_code)]
 pub fn is_sd_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
     match provided_authority {
         &::sd_manager::Authority(_) => true,

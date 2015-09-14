@@ -70,11 +70,11 @@ impl Vault {
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let routing = Routing::new(sender);
         Vault {
-            data_manager: ::data_manager::DataManager::new(),
+            data_manager: ::data_manager::DataManager::new(routing.clone()),
             maid_manager: ::maid_manager::MaidManager::new(routing.clone()),
-            pmid_manager: ::pmid_manager::PmidManager::new(),
-            pmid_node: ::pmid_node::PmidNode::new(),
-            sd_manager: ::sd_manager::StructuredDataManager::new(),
+            pmid_manager: ::pmid_manager::PmidManager::new(routing.clone()),
+            pmid_node: ::pmid_node::PmidNode::new(routing.clone()),
+            sd_manager: ::sd_manager::StructuredDataManager::new(routing.clone()),
             churn_timestamp: ::time::SteadyTime::now(),
             data_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
                             ::time::Duration::minutes(10), 100),
@@ -165,12 +165,12 @@ impl Vault {
     }
 
     fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
-        let churn_up = close_group.len() > self.nodes_in_table.len();
+                                                                                    let churn_up = true; //close_group.len() > self.nodes_in_table.len();
         let time_now = ::time::SteadyTime::now();
         // During the process of joining network, the vault shall not refresh its just received info
         if !(churn_up && (self.churn_timestamp + ::time::Duration::seconds(5) > time_now)) {
             let refresh_calls = self.handle_churn(close_group.clone());
-            self.send(::routing::authority::Authority::NaeManager(::routing::NameType::new([0u8; 64])),
+            self.send(::routing::Authority::NaeManager(::routing::NameType::new([0u8; 64])),
                       refresh_calls, None, None, None);
         }
         if churn_up {
@@ -178,17 +178,17 @@ impl Vault {
             self.churn_timestamp = time_now;
         }
         self.id = close_group[0].clone();
-        self.nodes_in_table = close_group;
+//                                                                          self.nodes_in_table = close_group;
     }
 
     fn on_bootstrapped(&self) {
         // TODO: what is expected to be done here?
-        assert_eq!(0, self.nodes_in_table.len());
+//                                                                          assert_eq!(0, self.nodes_in_table.len());
     }
 
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
-        assert_eq!(::routing::types::GROUP_SIZE, self.nodes_in_table.len());
+//                                                                          assert_eq!(::routing::types::GROUP_SIZE, self.nodes_in_table.len());
     }
 
     fn on_disconnected(&mut self) {
@@ -265,15 +265,13 @@ impl Vault {
                   from_authority: ::routing::Authority,
                   data: ::routing::data::Data,
                   response_token: Option<::routing::SignedToken>) {
-        let _ = self.maid_manager.handle_put(our_authority, from_authority, data, response_token)
-                    .or_else(|| self.data_manager.handle_put(our_authority, from_authority, data,
-                                                             response_token))
-                    .or_else(|| self.sd_manager.handle_put(our_authority, from_authority, data,
-                                                           response_token))
-                    .or_else(|| self.pmid_manager.handle_put(our_authority, from_authority, data,
-                                                             response_token))
-                    .or_else(|| self.pmid_node.handle_put(our_authority, from_authority, data,
-                                                          response_token));
+        let _ =
+            self.maid_manager.handle_put(&our_authority, &from_authority, &data, &response_token)
+                .or_else(|| self.data_manager.handle_put(&our_authority, &from_authority, &data))
+                .or_else(|| self.sd_manager.handle_put(&our_authority, &from_authority, &data))
+                .or_else(|| self.pmid_manager.handle_put(&our_authority, &from_authority, &data))
+                .or_else(|| self.pmid_node.handle_put(&our_authority, &from_authority, &data,
+                                                      &response_token));
     }
 
     // Post is only used to update the content or owners of a StructuredData
@@ -370,7 +368,7 @@ impl Vault {
         let vh = self.sd_manager.retrieve_all_and_reset();
         let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
         let dm = self.data_manager.retrieve_all_and_reset(&mut close_group);
-        self.nodes_in_table = close_group;
+//                                                                                          self.nodes_in_table = close_group;
 
         mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
     }
@@ -699,8 +697,8 @@ mod test {
                         info!("as {:?} received request: {:?} from {:?} having token {:?}",
                               our_authority, request, from_authority, response_token == None);
                         match (our_authority, expected_tag) {
-                            (::routing::authority::Authority::NaeManager(_), 1) => hits += 1,
-                            (::routing::authority::Authority::ManagedNode(_), 3) => hits += 1,
+                            (::routing::Authority::NaeManager(_), 1) => hits += 1,
+                            (::routing::Authority::ManagedNode(_), 3) => hits += 1,
                             _ => {}
                         }
                     }
@@ -840,11 +838,11 @@ mod test {
             ::routing::data::Data::ImmutableData(im_data), None);
     }
 
-    fn add_nodes_to_table(vault: &mut Vault, nodes: &Vec<::routing::NameType>) {
-        for node in nodes {
-            vault.nodes_in_table.push(node.clone());
-        }
-    }
+                                                                                                // fn add_nodes_to_table(vault: &mut Vault, nodes: &Vec<::routing::NameType>) {
+                                                                                                //     for node in nodes {
+                                                                                                //         vault.nodes_in_table.push(node.clone());
+                                                                                                //     }
+                                                                                                // }
 
     fn pmid_manager_put(vault: &mut Vault,
                         pmid_node: ::routing::NameType,
