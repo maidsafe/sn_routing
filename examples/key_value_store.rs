@@ -149,8 +149,8 @@ impl Node {
                     self.handle_refresh(our_authority, vec_of_bytes);
                 },
                 Event::Terminated => {
-                    break,
-                }
+                    break;
+                },
                 _ => {},
             }
         }
