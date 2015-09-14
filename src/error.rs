@@ -376,4 +376,107 @@ mod test {
             Some(cause) => assert!(false)
         }
     }
+
+    #[test]
+    fn routing_error_description() {
+        assert_eq!("Not bootstrapped", ::std::error::Error::description(& ::error::RoutingError::NotBootstrapped));
+        assert_eq!("Invalid authority", ::std::error::Error::description(& ::error::RoutingError::BadAuthority));
+        assert_eq!("Already connected", ::std::error::Error::description(& ::error::RoutingError::AlreadyConnected));
+        assert_eq!("Invalid message type", ::std::error::Error::description(& ::error::RoutingError::UnknownMessageType));
+        assert_eq!("Filter check failure", ::std::error::Error::description(& ::error::RoutingError::FilterCheckFailed));
+        assert_eq!("Signature check failure", ::std::error::Error::description(& ::error::RoutingError::FailedSignature));
+        assert_eq!("Not enough signatures", ::std::error::Error::description(& ::error::RoutingError::NotEnoughSignatures));
+        // FIXME the impl should be "Dublicate signatures", right???
+        //assert_eq!("Dublicate signatures", ::std::error::Error::description(& ::error::RoutingError::DuplicateSignatures));
+        assert_eq!("Could not bootstrap", ::std::error::Error::description(& ::error::RoutingError::FailedToBootstrap));
+        assert_eq!("Routing table empty", ::std::error::Error::description(& ::error::RoutingError::RoutingTableEmpty));
+        assert_eq!("Rejected Public Id", ::std::error::Error::description(& ::error::RoutingError::RejectedPublicId));
+        assert_eq!("Refused from routing table", ::std::error::Error::description(& ::error::RoutingError::RefusedFromRoutingTable));
+        assert_eq!("Refresh message not from group", ::std::error::Error::description(& ::error::RoutingError::RefreshNotFromGroup));
+        // FIXME could not create a Utf8Error-struct
+        //let utf8 = ::std::str::Utf8Error::new();
+        //assert_eq!("String/Utf8 error", ::std::error::Error::description(& ::error::RoutingError::Utf8Error(utf8)));
+        assert_eq!("Interface error",
+            ::std::error::Error::description(& ::error::RoutingError::Interface(::error::InterfaceError::NotConnected)));
+        assert_eq!("I/O error",
+            ::std::error::Error::description(& ::error::RoutingError::Io(::std::io::Error::new(::std::io::ErrorKind::Other, "I/O error"))));
+        assert_eq!("Serialisation error",
+            ::std::error::Error::description(& ::error::RoutingError::Cbor(::cbor::CborError::UnexpectedEOF)));
+        assert_eq!("Response error",
+            ::std::error::Error::description(& ::error::RoutingError::Response(::error::ResponseError::Abort)));
+    }
+    
+    #[test]
+    fn routing_error_cause() {
+        match ::std::error::Error::cause(&::error::RoutingError::NotBootstrapped) {
+            None => {},
+            Some(err) => assert!(false)
+        }        
+        match ::std::error::Error::cause(&::error::RoutingError::BadAuthority) {
+            None => {},
+            Some(err) => assert!(false)
+        }        
+        match ::std::error::Error::cause(&::error::RoutingError::AlreadyConnected) {
+            None => {},
+            Some(err) => assert!(false)
+        }        
+        match ::std::error::Error::cause(&::error::RoutingError::FilterCheckFailed) {
+            None => {},
+            Some(err) => assert!(false)
+        }        
+        match ::std::error::Error::cause(&::error::RoutingError::FailedSignature) {
+            None => {},
+            Some(err) => assert!(false)
+        }        
+        match ::std::error::Error::cause(&::error::RoutingError::NotEnoughSignatures) {
+            None => {},
+            Some(err) => assert!(false)
+        }        
+        match ::std::error::Error::cause(&::error::RoutingError::DuplicateSignatures) {
+            None => {},
+            Some(err) => assert!(false)
+        }        
+        match ::std::error::Error::cause(&::error::RoutingError::FailedToBootstrap) {
+            None => {},
+            Some(err) => assert!(false)
+        }        
+        match ::std::error::Error::cause(&::error::RoutingError::RoutingTableEmpty) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::RejectedPublicId) {
+            None => {},
+            Some(err) => assert!(false)
+        }               
+        match ::std::error::Error::cause(&::error::RoutingError::RefusedFromRoutingTable) {
+            None => {},
+            Some(err) => assert!(false)
+        }               
+        match ::std::error::Error::cause(&::error::RoutingError::RefreshNotFromGroup) {
+            None => {},
+            Some(err) => assert!(false)
+        }               
+        match ::std::error::Error::cause(&::error::RoutingError::Interface(::error::InterfaceError::NotConnected)) {
+            Some(err) => {},
+            None => assert!(false)
+        }
+        // FIXME could not create a Utf8Error-struct
+        //let utf8 = ::std::str::Utf8Error::new();        
+        //match ::std::error::Error::cause(&::error::RoutingError::Utf8(utf8)) {
+        //    None => {},
+        //    Some(err) => assert!(false)
+        //}               
+        match ::std::error::Error::cause(&::error::RoutingError::Io(::std::io::Error::new(::std::io::ErrorKind::Other, "I/O error"))) {
+            Some(err) => {},
+            None => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::Response(::error::ResponseError::Abort)) {
+            Some(err) => {},
+            None => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::Cbor(::cbor::CborError::UnexpectedEOF)) {
+            None => {},
+            Some(err) => assert!(false)
+        }        
+    }   
 }
