@@ -98,7 +98,7 @@ mod test {
 
     #[test]
     fn filter_check_after_duration_end() {
-        let duration = ::time::Duration::nanoseconds(1);
+        let duration = ::time::Duration::milliseconds(1);
         let mut filter = super::Filter::with_expiry_duration(duration);
         let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
@@ -109,6 +109,7 @@ mod test {
         let signed_message = signed_message.unwrap();
 
         assert!(filter.check(&signed_message));
+        ::std::thread::sleep_ms(2);
         assert!(filter.check(&signed_message));
     }
 
