@@ -402,7 +402,7 @@ impl RoutingNode {
         }
 
         let message = signed_message.get_routing_message().clone();
-        let mut message_digest = ::filter::Filter::message_digest(&message);
+        let message_digest = ::filter::Filter::message_digest(&message);
 
         // Cache a response if from a GetRequest and caching is enabled for the Data type.
         self.handle_cache_put(&message);
@@ -483,9 +483,6 @@ impl RoutingNode {
                             },
                             None => return Err(RoutingError::BadAuthority),
                         };
-                        // FIXME (ben 8/09/2015) Exclude refresh message from being blocked
-                        // after succesful resolution
-                        message_digest = None;
                         match *signed_message.claimant() {
                             // TODO (ben 23/08/2015) later consider whether we need to restrict it
                             // to only from nodes within our close group
