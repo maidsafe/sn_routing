@@ -22,7 +22,7 @@ type Map<K,V> = BTreeMap<K,V>;
 pub type Bytes = Vec<u8>;
 //                     +-> Source and target group
 //                     |
-pub type Request = (::authority::Authority, u64);
+pub type Request = (::authority::Authority, u64, ::NameType);
 pub struct RefreshAccumulator {
     //                                 +-> Who sent it
     //                                 |
@@ -42,10 +42,11 @@ impl RefreshAccumulator {
                        type_tag: u64,
                        sender_node: ::NameType,
                        sender_group: ::authority::Authority,
-                       payload: Bytes)
+                       payload: Bytes,
+                       cause: ::NameType)
                        -> Option<Vec<Bytes>> {
-        let request = (sender_group, type_tag);
-
+        info!("RefreshAccumulator for {:?} caused by {:?}", sender_group, cause);
+        let request = (sender_group, type_tag, cause);
         {
             if threshold <= 1 {
                 return Some(vec![payload]);

@@ -131,8 +131,8 @@ impl RoutingNode {
                     debug!("ClientSendContent received for {:?}", content);
                     let _ = self.client_send_content(to_authority, content);
                 },
-                Ok(Action::Churn(our_close_group, targets)) => {
-                    let _ = self.generate_churn(our_close_group, targets);
+                Ok(Action::Churn(our_close_group, targets, cause)) => {
+                    let _ = self.generate_churn(our_close_group, targets, cause);
                 },
                 Ok(Action::SetCacheOptions(cache_options)) => {
                     self.set_cache_options(cache_options);
@@ -474,7 +474,7 @@ impl RoutingNode {
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     }
-                    InternalRequest::Refresh(type_tag, bytes) => {
+                    InternalRequest::Refresh(type_tag, bytes, cause) => {
                         let refresh_authority = match our_authority {
                             Some(authority) => {
                                 if !authority.is_group() { return Err(RoutingError::BadAuthority) };
@@ -489,7 +489,7 @@ impl RoutingNode {
                             // TODO (ben 23/08/2015) later consider whether we need to restrict it
                             // to only from nodes within our close group
                             Address::Node(name) => self.handle_refresh(type_tag, name, bytes,
-                                refresh_authority),
+                                refresh_authority, cause),
                             Address::Client(_) => Err(RoutingError::BadAuthority),
                         }
                     }
@@ -564,8 +564,7 @@ impl RoutingNode {
         let skip_accumulator = match message.content {
             Content::InternalRequest(ref request) => {
                 match *request {
-                    InternalRequest::Refresh(_, _) => {
-                        println!("SKIPPED ACCUMULATOR FOR REFRESH");
+                    InternalRequest::Refresh(_, _, _) => {
                         true
                     },
                     _ => false,
@@ -626,8 +625,8 @@ impl RoutingNode {
 
     // ---- Churn ---------------------------------------------------------------------------------
 
-    fn generate_churn(&self, churn: ::direct_messages::Churn, target: Vec<::crust::Endpoint>)
-        -> RoutingResult {
+    fn generate_churn(&self, churn: ::direct_messages::Churn, target: Vec<::crust::Endpoint>,
+        cause: ::NameType) -> RoutingResult {
         debug!("CHURN: sending {:?} names to {:?} close nodes",
             churn.close_group.len(), target.len());
         // send Churn to all our close group nodes
@@ -642,7 +641,7 @@ impl RoutingNode {
             ignore(self.connection_manager.send(endpoint, bytes.clone()));
         }
         // notify the user
-        let _ = self.event_sender.send(::event::Event::Churn(churn.close_group));
+        let _ = self.event_sender.send(::event::Event::Churn(churn.close_group, cause));
         Ok(())
     }
 
@@ -1133,11 +1132,12 @@ impl RoutingNode {
     fn handle_refresh(&mut self, type_tag: u64,
                                  sender: NameType,
                                  payload: Bytes,
-                                 our_authority: Authority) -> RoutingResult {
+                                 our_authority: Authority,
+                                 cause: ::NameType) -> RoutingResult {
         debug_assert!(our_authority.is_group());
         let threshold = self.group_threshold();
         match self.refresh_accumulator.add_message(threshold,
-            type_tag.clone(), sender, our_authority.clone(), payload) {
+            type_tag.clone(), sender, our_authority.clone(), payload, cause) {
             Some(vec_of_bytes) => {
                 let _ = self.event_sender.send(Event::Refresh(type_tag, our_authority,
                     vec_of_bytes));

@@ -65,7 +65,7 @@ pub enum Event {
     //       |     |         | routing has made no attempt at parsing the content
     //       |     | from group
     //       | type tag
-    Churn(Vec<NameType>),
+    Churn(Vec<NameType>, ::NameType),
     //    ~~|~~~~~~~~~~
     //      | our close group sorted from our name; always including our name
     //      | if size > 1, we are connected to the network
