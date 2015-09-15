@@ -212,7 +212,7 @@ impl error::Error for RoutingError {
             RoutingError::FilterCheckFailed => "Filter check failure",
             RoutingError::FailedSignature => "Signature check failure",
             RoutingError::NotEnoughSignatures => "Not enough signatures",
-            RoutingError::DuplicateSignatures => "Not enough signatures",
+            RoutingError::DuplicateSignatures => "Duplicated signatures",
             RoutingError::FailedToBootstrap => "Could not bootstrap",
             RoutingError::RoutingTableEmpty => "Routing table empty",
             RoutingError::RejectedPublicId => "Rejected Public Id",
@@ -419,7 +419,7 @@ mod test {
             ::std::error::Error::description(& ::error::RoutingError::NotEnoughSignatures)
         );
         assert_eq!(
-            "Dublicate signatures",
+            "Duplicated signatures",
             ::std::error::Error::description(& ::error::RoutingError::DuplicateSignatures)
         );
         assert_eq!(
