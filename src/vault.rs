@@ -21,26 +21,6 @@ pub type Routing = ::routing::routing::Routing;
 #[cfg(all(test, feature = "use-mock-routing"))]
 pub type Routing = ::mock_routing::MockRouting;
 
-fn merge<T>(from_group: ::routing::NameType, payloads: Vec<Vec<u8>>) -> Option<T>
-    where T: for<'a> ::types::Refreshable + 'static {
-    let mut transfer_entries = Vec::<T>::new();
-    for it in payloads.iter() {
-        let mut decoder = ::cbor::Decoder::from_bytes(&it[..]);
-        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
-            transfer_entries.push(parsed_entry);
-        }
-    }
-    T::merge(from_group, transfer_entries).and_then(|result| {
-        let mut decoder = ::cbor::Decoder::from_bytes(&result.serialised_contents()[..]);
-        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
-            let parsed: T = parsed_entry;
-            Some(parsed)
-        } else {
-            None
-        }
-    })
-}
-
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
     data_manager: ::data_manager::DataManager,
@@ -374,56 +354,11 @@ impl Vault {
                       payloads: Vec<Vec<u8>>) {
         // TODO: The assumption of the incoming payloads is that it is a vector of serialised
         //       account entries from the close group nodes of `from_group`
-        match type_tag {
-            ::maid_manager::ACCOUNT_TAG => {
-                if let ::maid_manager::Authority(from_group) = our_authority {
-                    if let Some(merged) = merge::<::maid_manager::Account>(from_group, payloads) {
-                        self.maid_manager.handle_account_transfer(merged)
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            ::data_manager::ACCOUNT_TAG => {
-                if let ::data_manager::Authority(from_group) = our_authority {
-                    if let Some(merged) = merge::<::data_manager::Account>(from_group, payloads) {
-                        self.data_manager.handle_account_transfer(merged);
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            ::data_manager::STATS_TAG => {
-                if let ::data_manager::Authority(from_group) = our_authority {
-                    if let Some(merged) = merge::<::data_manager::Stats>(from_group, payloads) {
-                        self.data_manager.handle_stats_transfer(merged);
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            ::pmid_manager::ACCOUNT_TAG => {
-                if let ::pmid_manager::Authority(from_group) = our_authority {
-                    if let Some(merged) = merge::<::pmid_manager::Account>(from_group, payloads) {
-                        self.pmid_manager.handle_account_transfer(merged);
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            ::sd_manager::ACCOUNT_TAG => {
-                if let ::sd_manager::Authority(_from_group) = our_authority {
-                    for payload in payloads {
-                        // TODO - pass in from_group to allow validation of payloads (should all be
-                        // for same DB entry)
-                        self.sd_manager.handle_account_transfer(payload);
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            _ => {}
-        }
+        debug!("refresh tag {:?} & authority {:?}", type_tag, our_authority);
+        let _ = self.maid_manager.handle_refresh(&type_tag, &our_authority, &payloads)
+                .or_else(|| self.data_manager.handle_refresh(&type_tag, &our_authority, &payloads))
+                .or_else(|| self.pmid_manager.handle_refresh(&type_tag, &our_authority, &payloads))
+                .or_else(|| self.sd_manager.handle_refresh(&type_tag, &our_authority, &payloads));
     }
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do

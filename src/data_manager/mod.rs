@@ -275,11 +275,35 @@ impl DataManager {
         vec![]
     }
 
-    pub fn handle_account_transfer(&mut self, merged_account: Account) {
+    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
+                          payloads: &Vec<Vec<u8>>) -> Option<()> {
+        if let &Authority(from_group) = our_authority {
+            match type_tag.clone() {
+                ACCOUNT_TAG => {
+                    if let Some(merged) =
+                            ::utils::merge::<Account>(from_group, payloads.clone()) {
+                        self.handle_account_transfer(merged);
+                        return ::utils::HANDLED;
+                    }
+                }
+                STATS_TAG => {
+                    if let Some(merged) =
+                            ::utils::merge::<Stats>(from_group, payloads.clone()) {
+                        self.handle_stats_transfer(merged);
+                        return ::utils::HANDLED;
+                    }
+                }
+                _ => {}
+            }
+        }
+        ::utils::NOT_HANDLED
+    }
+
+    fn handle_account_transfer(&mut self, merged_account: Account) {
         self.database.handle_account_transfer(merged_account);
     }
 
-    pub fn handle_stats_transfer(&mut self, merged_stats: Stats) {
+    fn handle_stats_transfer(&mut self, merged_stats: Stats) {
         // TODO: shall give more priority to the incoming stats?
         self.resource_index = (self.resource_index + merged_stats.resource_index()) / 2;
     }

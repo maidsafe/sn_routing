@@ -116,7 +116,23 @@ impl StructuredDataManager {
         vec![]
     }
 
-    pub fn handle_account_transfer(&mut self, in_coming_sd: Vec<u8>) {
+    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
+                          payloads: &Vec<Vec<u8>>) -> Option<()> {
+        if *type_tag == ACCOUNT_TAG {
+            if let &Authority(from_group) = our_authority {
+                info!("SdManager received a transfer regarding {:?}", from_group);
+                // TODO - pass in from_group to allow validation of payloads (should all be
+                // for same DB entry)
+                for payload in payloads {
+                    self.handle_account_transfer(payload.clone());
+                }
+                return ::utils::HANDLED;
+            }
+        }
+        ::utils::NOT_HANDLED
+    }
+
+    fn handle_account_transfer(&mut self, in_coming_sd: Vec<u8>) {
         let sd: ::routing::structured_data::StructuredData =
             match ::routing::utils::decode(&in_coming_sd) {
                 Ok(result) => {
