@@ -217,4 +217,6 @@ impl MockRouting {
         });
     }
 
+    pub fn stop(&self) {}
+
 }

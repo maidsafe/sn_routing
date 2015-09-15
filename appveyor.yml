@@ -31,3 +31,5 @@ test_script:
         }
   - cargo build --verbose --features "use-mock-routing" %config_flags%
   - cargo test --verbose --features "use-mock-routing"
+  - cargo test -- --nocapture vault::test::network_put_get_test
+  - cargo test -- --nocapture vault::test::network_post_test
