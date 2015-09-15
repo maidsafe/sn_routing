@@ -117,31 +117,67 @@ impl PmidManager {
 
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
+    use cbor;
+
     use super::*;
 
-    #[test]
-    fn handle_put() {
+    fn env_setup() -> (::routing::Authority, ::vault::Routing, PmidManager,
+                       ::routing::Authority, ::routing::immutable_data::ImmutableData) {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-        let mut pmid_manager = PmidManager::new(routing.clone());
-
-        let dest = ::utils::random_name();
-        let our_authority = Authority(dest.clone());
-
-        let from = ::utils::random_name();
-        let from_authority = ::data_manager::Authority(from.clone());
-
+        let pmid_manager = PmidManager::new(routing.clone());
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
+        (Authority(::utils::random_name()), routing, pmid_manager,
+         ::data_manager::Authority(::utils::random_name()), data)
+    }
 
+    #[test]
+    fn handle_put() {
+        let (our_authority, routing, mut pmid_manager, from_authority, data) = env_setup();
         assert_eq!(::utils::HANDLED,
             pmid_manager.handle_put(&our_authority, &from_authority,
                                     &::routing::data::Data::ImmutableData(data.clone())));
-
         let put_requests = routing.put_requests_given();
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].our_authority, our_authority);
-        assert_eq!(put_requests[0].location, ::pmid_node::Authority(dest));
+        assert_eq!(put_requests[0].location,
+                   ::pmid_node::Authority(our_authority.get_location().clone()));
         assert_eq!(put_requests[0].data, ::routing::data::Data::ImmutableData(data));
+    }
+
+    #[test]
+    fn handle_churn_and_account_transfer() {
+        let (our_authority, routing, mut pmid_manager, from_authority, data) = env_setup();
+        assert_eq!(::utils::HANDLED,
+            pmid_manager.handle_put(&our_authority, &from_authority,
+                                    &::routing::data::Data::ImmutableData(data.clone())));
+        let close_group = vec![::routing::NameType::new([1u8; 64]),
+                               ::routing::NameType::new([2u8; 64]),
+                               ::routing::NameType::new([3u8; 64]),
+                               ::routing::NameType::new([4u8; 64]),
+                               our_authority.get_location().clone(),
+                               ::routing::NameType::new([5u8; 64]),
+                               ::routing::NameType::new([6u8; 64]),
+                               ::routing::NameType::new([7u8; 64]),
+                               ::routing::NameType::new([8u8; 64])];
+        pmid_manager.handle_churn(&close_group);
+        let refresh_requests = routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 1);
+        assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
+        assert_eq!(refresh_requests[0].our_authority.get_location(), our_authority.get_location());
+
+        let mut d = cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
+        if let Some(pm_account) = d.decode().next().and_then(|result| result.ok()) {
+            pmid_manager.handle_account_transfer(pm_account);
+        }
+        pmid_manager.handle_churn(&close_group);
+        let refresh_requests = routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 2);
+        assert_eq!(refresh_requests[0], refresh_requests[1]);
+
+        pmid_manager.handle_churn(&close_group);
+        let refresh_requests = routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 2);
     }
 }
