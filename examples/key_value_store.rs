@@ -144,10 +144,16 @@ impl Node {
                     self.handle_churn(our_close_group, cause);
                 },
                 Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
-                    if type_tag != 1u64 { error!("Reveived refresh for tag {:?} from {:?}",
+                    if type_tag != 1u64 { error!("Received refresh for tag {:?} from {:?}",
                         type_tag, our_authority); continue; };
                     self.handle_refresh(our_authority, vec_of_bytes);
                 },
+                Event::DoRefresh(type_tag, our_authority, cause) => {
+                    // on DoRefresh, refresh the explicit record provided with that cause
+                    if type_tag != 1u64 { error!("Received DoRefresh for tag {:?} from {:?}",
+                        type_tag, our_authority); continue; };
+                    self.handle_do_refresh(our_authority, cause);
+                }
                 Event::Terminated => {
                     break;
                 },
@@ -292,6 +298,25 @@ impl Node {
                  let _ = self.client_accounts.insert(client_name, median);
              },
              _ => {},
+        };
+    }
+
+    fn handle_do_refresh(&self, our_authority: ::routing::authority::Authority,
+        cause: ::routing::NameType) {
+        match our_authority {
+            ::routing::authority::Authority::ClientManager(client_name) => {
+                match self.client_accounts.get(&client_name) {
+                    Some(stored) => {
+                        println!("DoRefresh for client {:?} storing {:?} caused by {:?}",
+                            client_name, stored, cause);
+                        self.routing.refresh_request(1u64,
+                            ::routing::authority::Authority::ClientManager(client_name.clone()),
+                            encode(&stored).unwrap(), cause.clone());
+                    },
+                    None => {},
+                };
+            },
+            _ => {},
         };
     }
 }
