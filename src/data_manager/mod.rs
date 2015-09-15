@@ -332,17 +332,10 @@ impl DataManager {
 mod test {
     use super::*;
 
-    #[test]
-    fn handle_put_get() {
+    fn env_setup() -> (::routing::Authority, ::vault::Routing, DataManager,
+                       ::routing::Authority, ::routing::immutable_data::ImmutableData) {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let mut data_manager = DataManager::new(routing.clone());
-
-        let us = ::utils::random_name();
-        let our_authority = Authority(us.clone());
-
-        let from = ::utils::random_name();
-        let from_authority = ::maid_manager::Authority(from.clone());
-
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
@@ -354,7 +347,13 @@ mod test {
                                            ::routing::NameType::new([6u8; 64]),
                                            ::routing::NameType::new([7u8; 64]),
                                            ::routing::NameType::new([8u8; 64])];
+        (Authority(::utils::random_name()), routing, data_manager,
+         ::maid_manager::Authority(::utils::random_name()), data)
+    }
 
+    #[test]
+    fn handle_put_get() {
+        let (our_authority, routing, mut data_manager, from_authority, data) = env_setup();
         {
             assert_eq!(::utils::HANDLED,
                 data_manager.handle_put(&our_authority, &from_authority,
@@ -386,6 +385,23 @@ mod test {
                 }
             }
         }
+    }
+
+    #[test]
+    fn handle_churn() {
+        let (our_authority, routing, mut data_manager, from_authority, data) = env_setup();
+        assert_eq!(::utils::HANDLED,
+            data_manager.handle_put(&our_authority, &from_authority,
+                                    &::routing::data::Data::ImmutableData(data.clone())));
+        let close_group = vec![our_authority.get_location().clone()].into_iter().chain(
+                data_manager.nodes_in_table.clone().into_iter()).collect();
+        data_manager.handle_churn(close_group);
+        let refresh_requests = routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 2);
+        assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
+        assert_eq!(refresh_requests[0].our_authority.get_location().clone(), data.name());
+        assert_eq!(refresh_requests[1].type_tag, STATS_TAG);
+        assert_eq!(refresh_requests[1].our_authority, our_authority);
     }
 
     #[test]
