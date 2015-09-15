@@ -301,13 +301,6 @@ impl DataManager {
         self.nodes_in_table.len()
     }
 
-    #[cfg(test)]
-    pub fn add_nodes_to_table(&mut self, nodes: &Vec<::routing::NameType>) {
-        for node in nodes {
-            self.nodes_in_table.push(node.clone());
-        }
-    }
-
     fn replicate_to(&mut self, name: &::routing::NameType) -> Option<::routing::NameType> {
         match self.database.temp_storage_after_churn.get(name) {
             Some(pmid_nodes) => {
