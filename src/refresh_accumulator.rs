@@ -85,7 +85,7 @@ impl RefreshAccumulator {
         })
     }
 
-    pub fn register_cause(&mut self, cause: ::NameType) {
-        self.causes.add(cause);
+    pub fn register_cause(&mut self, cause: &::NameType) {
+        self.causes.add(cause.clone());
     }
 }
