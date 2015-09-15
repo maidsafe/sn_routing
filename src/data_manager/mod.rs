@@ -284,23 +284,17 @@ impl DataManager {
         self.resource_index = (self.resource_index + merged_stats.resource_index()) / 2;
     }
 
-    pub fn retrieve_all_and_reset(&mut self,
-                                  close_group: Vec<::routing::NameType>)
-                                  -> Vec<::types::MethodCall> {
-        // TODO: as Vault doesn't have access to what ID it is, we have to use the first one in the
-        //       close group as its ID
-        let mut result = self.database.retrieve_all_and_reset();
+    pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
+        // TODO: close_group[0] is supposed to be the vault id
+        let our_authority = Authority(close_group[0].clone());
+        self.database.handle_churn(&our_authority, &self.routing);
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         let mut encoder = cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
-            result.push(::types::MethodCall::Refresh {
-                type_tag: STATS_TAG,
-                our_authority: Authority(*data_manager_stats.name()),
-                payload: encoder.as_bytes().to_vec()
-            });
+            self.routing.refresh_request(STATS_TAG, our_authority,
+                                         encoder.as_bytes().to_vec());
         }
         self.nodes_in_table = close_group;
-        result
     }
 
     pub fn nodes_in_table_len(&self) -> usize {

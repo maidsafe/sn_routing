@@ -155,39 +155,31 @@ impl Database {
               merged_account.name(), merged_account.data_holders());
     }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<::types::MethodCall> {
+    pub fn handle_churn(&mut self, our_authority: &::routing::Authority,
+                        routing: &::vault::Routing) {
         self.temp_storage_after_churn = self.storage.clone();
-        let mut actions = Vec::<::types::MethodCall>::new();
         for (key, value) in self.storage.iter() {
             if value.len() < 3 {
                 for pmid_node in value.iter() {
-                    info!("DataManager sends out a Get request in churn, fetching data {:?} from \
-                          pmid_node {:?}", *key, pmid_node);
-                    actions.push(::types::MethodCall::Get {
-                        location: ::pmid_node::Authority(pmid_node.clone()),
-                        // DataManager only handles ::routing::immutable_data::ImmutableData
-                        data_request:
+                    info!("DataManager sends out a Get request in churn, \
+                           fetching data {:?} from pmid_node {:?}", *key, pmid_node);
+                    routing.get_request(our_authority.clone(),
+                            ::pmid_node::Authority(pmid_node.clone()),
                             ::routing::data::DataRequest::ImmutableData((*key).clone(),
-                                ::routing::immutable_data::ImmutableDataType::Normal)
-                    });
+                                    ::routing::immutable_data::ImmutableDataType::Normal));
                 }
             }
             let account = Account::new((*key).clone(), (*value).clone());
-            let our_authority = super::Authority(*account.name());
+            let target_authority = super::Authority(*account.name());
             let mut encoder = cbor::Encoder::from_memory();
             if encoder.encode(&[account]).is_ok() {
                 debug!("DataManager sends out a refresh regarding account {:?}",
-                       our_authority.get_location());
-                actions.push(::types::MethodCall::Refresh {
-                    type_tag: super::ACCOUNT_TAG,
-                    our_authority: our_authority,
-                    payload: encoder.as_bytes().to_vec()
-                });
+                       target_authority.get_location());
+                routing.refresh_request(super::ACCOUNT_TAG, target_authority,
+                                        encoder.as_bytes().to_vec());
             }
         }
         self.storage.clear();
-        debug!("DataManager storage cleaned in churn with actions.len() = {:?}", actions.len());
-        actions
     }
 }
 

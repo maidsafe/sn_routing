@@ -170,13 +170,10 @@ impl Vault {
         let time_now = ::time::SteadyTime::now();
         // During the process of joining network, the vault shall not refresh its just received info
         if !(churn_up && (self.churn_timestamp + ::time::Duration::seconds(5) > time_now)) {
-            let refresh_calls = self.handle_churn(close_group.clone());
-            self.send(::routing::Authority::NaeManager(::routing::NameType::new([0u8; 64])),
-                      refresh_calls, None, None, None);
+            self.handle_churn(close_group);
         } else {
             // We need to pass the close_group to data_manager to hold.
-            let retrieved = self.data_manager.retrieve_all_and_reset(close_group);
-            assert_eq!(1, retrieved.len());  // Should only be the stats - there shouldn't be any accounts
+            self.data_manager.handle_churn(close_group);
         }
         if churn_up {
             info!("Vault added connected node");
@@ -364,12 +361,11 @@ impl Vault {
         vec![]
     }
 
-    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) -> Vec<::types::MethodCall> {
-        let mm = self.maid_manager.retrieve_all_and_reset();
-        let vh = self.sd_manager.retrieve_all_and_reset();
-        let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
-        let dm = self.data_manager.retrieve_all_and_reset(close_group);
-        mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
+    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
+        self.maid_manager.handle_churn();
+        self.sd_manager.handle_churn();
+        self.pmid_manager.handle_churn(&close_group);
+        self.data_manager.handle_churn(close_group);
     }
 
     fn handle_refresh(&mut self,
@@ -481,11 +477,6 @@ impl Vault {
                         }
                         _ => {}
                     };
-                }
-                ::types::MethodCall::Refresh { type_tag, our_authority, payload } => {
-                    info!("refreshing account type {:?} of group {:?} to network", type_tag,
-                          our_authority);
-                    self.routing.refresh_request(type_tag, our_authority, payload);
                 }
                 ::types::MethodCall::FailedPut { location, data } => {
                     debug!("as {:?} failed in putting data {:?}, responding to {:?}",

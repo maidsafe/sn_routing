@@ -129,19 +129,14 @@ impl StructuredDataManager {
         self.chunk_store.put(sd.name(), in_coming_sd);
     }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<::types::MethodCall> {
+    pub fn handle_churn(&mut self) {
         let names = self.chunk_store.names();
-        let mut actions = Vec::with_capacity(names.len());
         for name in names {
             let data = self.chunk_store.get(name.clone());
-            actions.push(::types::MethodCall::Refresh {
-                type_tag: ACCOUNT_TAG,
-                our_authority: Authority(name),
-                payload: data
-            });
+            debug!("SDManager sends out a refresh regarding data {:?}", name);
+            self.routing.refresh_request(ACCOUNT_TAG, Authority(name), data);
         }
         self.chunk_store = ChunkStore::new(1073741824);
-        actions
     }
 
 }

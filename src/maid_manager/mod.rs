@@ -79,8 +79,8 @@ impl MaidManager {
         self.database.handle_account_transfer(merged_account);
     }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<::types::MethodCall> {
-        self.database.retrieve_all_and_reset()
+    pub fn handle_churn(&mut self) {
+        self.database.handle_churn(&self.routing);
     }
 }
 

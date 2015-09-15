@@ -33,11 +33,11 @@ pub enum MethodCall {
     // /// Request delete
     // Delete { name: ::routing::NameType, data : Data },
     /// request to refresh
-    Refresh {
-        type_tag: u64,
-        our_authority: ::routing::Authority,
-        payload: Vec<u8>,
-    },
+    // Refresh {
+    //     type_tag: u64,
+    //     our_authority: ::routing::Authority,
+    //     payload: Vec<u8>,
+    // },
     /// reply
     Reply {
         data: ::routing::data::Data,

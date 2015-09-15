@@ -110,10 +110,8 @@ impl PmidManager {
         self.database.handle_account_transfer(merged_account);
     }
 
-    pub fn retrieve_all_and_reset(&mut self,
-                                  close_group: &Vec<::routing::NameType>)
-                                  -> Vec<::types::MethodCall> {
-        self.database.retrieve_all_and_reset(close_group)
+    pub fn handle_churn(&mut self, close_group: &Vec<::routing::NameType>) {
+        self.database.handle_churn(close_group, &self.routing);
     }
 }
 
