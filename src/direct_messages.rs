@@ -81,3 +81,35 @@ impl DirectMessage {
         ::utils::encode(&self.content)
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn verify_signature() {
+        let address = ::types::Address::Node(::name_type::NameType(
+            ::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0));
+        let public_id: ::public_id::PublicId = ::test_utils::Random::generate_random();
+        let none_address: Option<::types::Address> = None;
+        let hello = ::direct_messages::Hello {
+            address:       address,
+            public_id:     public_id,
+            confirmed_you: none_address
+        };
+        let content = ::direct_messages::Content::Hello(hello);
+        let key = ::sodiumoxide::crypto::sign::gen_keypair();
+        let other_key = ::sodiumoxide::crypto::sign::gen_keypair();
+
+        match ::direct_messages::DirectMessage::new(content, &key.1) {
+            Ok(message) => {
+                // verify_signature returns true for correct public key
+                assert!(message.verify_signature(&key.0));
+
+                // verify_signature returns false for other public key
+                assert!(!message.verify_signature(&other_key.0));
+            },
+            Err(error) => panic!("Error: {:?}", error)
+        }
+    }
+
+}
