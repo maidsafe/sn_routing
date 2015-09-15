@@ -50,8 +50,6 @@ pub struct Vault {
     sd_manager: ::sd_manager::StructuredDataManager,
     #[allow(dead_code)]
     data_cache: ::lru_time_cache::LruCache<::routing::NameType, ::routing::data::Data>,
-    request_cache: ::lru_time_cache::LruCache<::routing::NameType,
-        Vec<(::routing::Authority, ::routing::data::DataRequest, Option<::routing::SignedToken>)>>,
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
     #[allow(dead_code)]
     routing: Routing,
@@ -78,8 +76,6 @@ impl Vault {
             churn_timestamp: ::time::SteadyTime::now(),
             data_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
                             ::time::Duration::minutes(10), 100),
-            request_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
-                               ::time::Duration::minutes(5), 1000),
             receiver: receiver,
             routing: routing,
             id: ::routing::NameType::new([0u8; 64]),
@@ -219,48 +215,13 @@ impl Vault {
                   from_authority: ::routing::Authority,
                   data_request: ::routing::data::DataRequest,
                   response_token: Option<::routing::SignedToken>) {
-        let returned_actions = match our_authority.clone() {
-            ::routing::Authority::NaeManager(name) => {
-                // both DataManager and StructuredDataManager are NaeManagers and Get request to
-                // them are both from Node
-                match data_request.clone() {
-                    // drop the message if we don't have the data
-                    ::routing::data::DataRequest::ImmutableData(_, _) => {
-                        // Only remember the request from client for Immutable Data
-                        // as StructuredData will get replied immediately from SDManager
-                        if self.request_cache.contains_key(&name) {
-                            debug!("DataManager handle_get inserting original request {:?} from \
-                                   {:?} into {:?} ", data_request, from_authority, name);
-                            match self.request_cache.get_mut(&name) {
-                                Some(ref mut request) => request.push((from_authority.clone(),
-                                                                       data_request.clone(),
-                                                                       response_token.clone())),
-                                None => error!("Failed to insert get request in the cache."),
-                            };
-                        } else {
-                            debug!("DataManager handle_get created original request {:?} from {:?} \
-                                   as entry {:?}", data_request, from_authority, name);
-                            let _ = self.request_cache.insert(name, vec![(from_authority.clone(),
-                                data_request.clone(), response_token.clone())]);
-                        }
-                        self.data_manager.handle_get(&name, data_request.clone())
-                    }
-                    ::routing::data::DataRequest::StructuredData(_, _) =>
-                        self.sd_manager.handle_get(name),
-                    _ => vec![],
-                }
-            }
-            ::pmid_node::Authority(_) => {
-                match from_authority {
-                    // drop the message if we don't have the data
-                    ::data_manager::Authority(name) => self.pmid_node.handle_get(name),
-                    _ => vec![],
-                }
-            }
-            _ => vec![],
-        };
-        self.send(our_authority, returned_actions, response_token, Some(from_authority),
-                  Some(data_request));
+        let _ =
+            self.data_manager.handle_get(&our_authority, &from_authority, &data_request,
+                                         &response_token)
+                .or_else(|| self.sd_manager.handle_get(&our_authority, &from_authority,
+                                                       &data_request, &response_token))
+                .or_else(|| self.pmid_node.handle_get(&our_authority, &from_authority,
+                                                      &data_request, &response_token));
     }
 
     fn handle_put(&mut self,
@@ -301,33 +262,8 @@ impl Vault {
                            from_authority: ::routing::Authority,
                            response: ::routing::data::Data,
                            response_token: Option<::routing::SignedToken>) {
-        match our_authority.clone() {
-            // Lookup in the request_cache and reply to the clients
-            ::routing::Authority::NaeManager(name) => {
-                if self.request_cache.contains_key(&name) {
-                    match self.request_cache.remove(&name) {
-                        Some(requests) => {
-                            for request in requests {
-                                self.send(our_authority.clone(), vec![::types::MethodCall::Reply {
-                                    data: response.clone() }], request.2, Some(request.0),
-                                    Some(request.1));
-                            }
-                        }
-                        None => debug!("Failed to find any requests for get response from {:?}
-                            with our authority {:?}: {:?}.", from_authority,  our_authority,
-                            response),
-                    };
-                }
-            }
-            _ => {}
-        }
-        let returned_actions = match (from_authority, response.clone()) {
-            // GetResponse used by DataManager to replicate data to new PN
-            (::pmid_node::Authority(pmid_node), ::routing::data::Data::ImmutableData(_)) =>
-                self.data_manager.handle_get_response(pmid_node, response),
-            _ => vec![],
-        };
-        self.send(our_authority, returned_actions, response_token, None, None);
+        let _ = self.data_manager.handle_get_response(&our_authority, &from_authority, &response,
+                                                      &response_token);
     }
 
     // DataManager doesn't need to carry out replication in case of sacrificial copy
@@ -527,6 +463,7 @@ mod test {
 
     #[cfg(feature = "use-mock-routing")]
     fn mock_env_setup() -> (Routing, ::std::sync::mpsc::Receiver<(::routing::data::Data)>) {
+        ::utils::initialise_logger();
         let run_vault = |mut vault: Vault| {
                             let _ = ::std::thread::spawn(move || {
                                                                   vault.do_run();
@@ -604,6 +541,7 @@ mod test {
             ::routing::routing_client::RoutingClient,
             ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
             ::routing::NameType) {
+        ::utils::initialise_logger();
         use routing::event::Event;
         match ::env_logger::init() {
             Ok(()) => {}

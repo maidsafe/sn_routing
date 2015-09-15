@@ -53,7 +53,7 @@ impl PmidManager {
             }
         };
 
-        // Handle the request and send on
+        // Handle the request and send on.
         let pmid_node = our_authority.get_location();
         if self.database.put_data(pmid_node, immutable_data.payload_size() as u64) {
             let location = ::pmid_node::Authority(pmid_node.clone());

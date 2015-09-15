@@ -36,17 +36,48 @@ impl StructuredDataManager {
         StructuredDataManager { routing: routing, chunk_store: ChunkStore::new(1073741824) }
     }
 
-    pub fn handle_get(&self, name: ::routing::NameType) -> Vec<::types::MethodCall> {
-        let data = self.chunk_store.get(name);
-        if data.len() == 0 {
-            return vec![];
+    pub fn handle_get(&mut self,
+                      our_authority: &::routing::Authority,
+                      from_authority: &::routing::Authority,
+                      data_request: &::routing::data::DataRequest,
+                      response_token: &Option<::routing::SignedToken>)
+                       -> Option<()> {
+        // Check if this is for this persona, and that the Data is StructuredData.
+        if !::utils::is_sd_manager_authority_type(&our_authority) {
+            return ::utils::NOT_HANDLED;
         }
-        let sd: ::routing::structured_data::StructuredData =
-            match ::routing::utils::decode(&data) {
-                Ok(data) => data,
-                Err(_) => return vec![],
-            };
-        vec![::types::MethodCall::Reply { data: ::routing::data::Data::StructuredData(sd) }]
+        let structured_data_name_and_type = match data_request {
+            &::routing::data::DataRequest::StructuredData(ref data_name, ref data_type) =>
+                (data_name, data_type),
+            _ => return ::utils::NOT_HANDLED,
+        };
+
+        // Validate from authority.
+        if !::utils::is_client_authority_type(&from_authority) {
+            warn!("Invalid authority for GET at StructuredDataManager: {:?}", from_authority);
+            return ::utils::HANDLED;
+        }
+
+        let data = self.chunk_store.get(*structured_data_name_and_type.0);
+        if data.len() == 0 {
+            warn!("Failed to GET data with name {:?}", structured_data_name_and_type.0);
+            return ::utils::HANDLED;
+        }
+        let decoded: ::routing::structured_data::StructuredData =
+                match ::routing::utils::decode(&data) {
+            Ok(data) => data,
+            Err(_) => {
+                warn!("Failed to parse data with name {:?}", structured_data_name_and_type.0);
+                return ::utils::HANDLED;
+            },
+        };
+        debug!("As {:?} sending data {:?} to {:?} in response to the original request {:?}",
+               our_authority, ::routing::data::Data::StructuredData(decoded.clone()),
+               from_authority, data_request);
+        self.routing.get_response(our_authority.clone(), from_authority.clone(),
+                                  ::routing::data::Data::StructuredData(decoded),
+                                  data_request.clone(), response_token.clone());
+        ::utils::HANDLED
     }
 
     pub fn handle_put(&mut self,
@@ -59,10 +90,7 @@ impl StructuredDataManager {
         }
         let structured_data = match data {
             &::routing::data::Data::StructuredData(ref structured_data) => structured_data,
-            _ => {
-                warn!("Invalid data type for PUT at StructuredDataManager: {:?}", data);
-                return ::utils::NOT_HANDLED;
-            }
+            _ => return ::utils::NOT_HANDLED,
         };
 
         // Validate from authority.
@@ -178,24 +206,20 @@ mod test {
             assert_eq!(0, routing.put_responses_given().len());
         }
         {
-            let data_name = ::routing::NameType::new(sdv.name().0);
-            let mut get_result = sd_manager.handle_get(data_name);
-            assert_eq!(get_result.len(), 1);
-            match get_result.remove(0) {
-                ::types::MethodCall::Reply { data } => {
-                    match data {
-                        ::routing::data::Data::StructuredData(sd) => {
-                            assert_eq!(sd, sdv);
-                            assert_eq!(sd.name(),
-                                ::routing::structured_data::StructuredData::compute_name(0,
-                                    &::routing::NameType([3u8; 64])));
-                            assert_eq!(*sd.get_data(), value);
-                        }
-                        _ => panic!("Unexpected"),
-                    }
-                }
-                _ => panic!("Unexpected"),
-            }
+            let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+            let client = ::routing::Authority::Client(from, keys.0);
+
+            let request = ::routing::data::DataRequest::StructuredData(sdv.name().clone(), 0);
+
+            assert_eq!(::utils::HANDLED,
+                       sd_manager.handle_get(&our_authority, &client, &request, &None));
+            let get_responses = routing.get_responses_given();
+            assert_eq!(get_responses.len(), 1);
+            assert_eq!(get_responses[0].our_authority, our_authority);
+            assert_eq!(get_responses[0].location, client);
+            assert_eq!(get_responses[0].data, ::routing::data::Data::StructuredData(sdv.clone()));
+            assert_eq!(get_responses[0].data_request, request);
+            assert_eq!(get_responses[0].response_token, None);
         }
     }
 

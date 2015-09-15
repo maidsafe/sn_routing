@@ -94,6 +94,14 @@ pub fn random_name() -> ::routing::NameType {
 }
 
 #[cfg(test)]
+pub fn initialise_logger() {
+    match ::env_logger::init() {
+        Ok(()) => { println!(""); }
+        Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
+    }
+}
+
+#[cfg(test)]
 mod test {
     use super::*;
 

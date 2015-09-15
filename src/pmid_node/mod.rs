@@ -30,16 +30,51 @@ impl PmidNode {
         PmidNode { routing: routing, chunk_store: ChunkStore::new(1073741824) }
     }
 
-    pub fn handle_get(&self, name: ::routing::NameType) -> Vec<::types::MethodCall> {
-        let data = self.chunk_store.get(name);
-        if data.len() == 0 {
-            return vec![];
+    pub fn handle_get(&mut self,
+                      our_authority: &::routing::Authority,
+                      from_authority: &::routing::Authority,
+                      data_request: &::routing::data::DataRequest,
+                      response_token: &Option<::routing::SignedToken>)
+                      -> Option<()> {
+        // Check if this is for this persona.
+        if !::utils::is_pmid_node_authority_type(&our_authority) {
+            return ::utils::NOT_HANDLED;
         }
-        let sd: ::routing::immutable_data::ImmutableData = match ::routing::utils::decode(&data) {
-            Ok(data) => data,
-            Err(_) => return vec![],
+
+        // Validate from authority, and that the Data is ImmutableData.
+        if !::utils::is_data_manager_authority_type(&from_authority) {
+            warn!("Invalid authority for GET at PmidNode: {:?}", from_authority);
+            return ::utils::HANDLED;
+        }
+        let immutable_data_name_and_type = match data_request {
+            &::routing::data::DataRequest::ImmutableData(ref immutable_data, ref data_type) =>
+                (immutable_data, data_type),
+            _ => {
+                warn!("Invalid data type for GET at PmidNode: {:?}", data_request);
+                return ::utils::HANDLED;
+            }
         };
-        vec![::types::MethodCall::Reply { data: ::routing::data::Data::ImmutableData(sd) }]
+
+        let data = self.chunk_store.get(*immutable_data_name_and_type.0);
+        if data.len() == 0 {
+            warn!("Failed to GET data with name {:?}", immutable_data_name_and_type.0);
+            return ::utils::HANDLED;
+        }
+        let decoded: ::routing::immutable_data::ImmutableData =
+                match ::routing::utils::decode(&data) {
+            Ok(data) => data,
+            Err(_) => {
+                warn!("Failed to parse data with name {:?}", immutable_data_name_and_type.0);
+                return ::utils::HANDLED;
+            },
+        };
+        debug!("As {:?} sending data {:?} to {:?} in response to the original request {:?}",
+               our_authority, ::routing::data::Data::ImmutableData(decoded.clone()), from_authority,
+               data_request);
+        self.routing.get_response(our_authority.clone(), from_authority.clone(),
+                                  ::routing::data::Data::ImmutableData(decoded),
+                                  data_request.clone(), response_token.clone());
+        ::utils::HANDLED
     }
 
     pub fn handle_put(&mut self,
@@ -165,20 +200,21 @@ mod test {
             assert_eq!(0, routing.put_responses_given().len());
         }
         {
-            let mut get_result = pmid_node.handle_get(data.name());
-            assert_eq!(get_result.len(), 1);
-            let original_data = data;
-            match get_result.remove(0) {
-                ::types::MethodCall::Reply { data } => {
-                    match data {
-                        ::routing::data::Data::ImmutableData(fetched_im_data) => {
-                            assert_eq!(fetched_im_data, original_data);
-                        }
-                        _ => panic!("Unexpected"),
-                    }
-                }
-                _ => panic!("Unexpected"),
-            }
+            let from = ::utils::random_name();
+            let from_authority = ::data_manager::Authority(from.clone());
+
+            let request = ::routing::data::DataRequest::ImmutableData(data.name().clone(),
+                              ::routing::immutable_data::ImmutableDataType::Normal);
+
+            assert_eq!(::utils::HANDLED,
+                       pmid_node.handle_get(&our_authority, &from_authority, &request, &None));
+            let get_responses = routing.get_responses_given();
+            assert_eq!(get_responses.len(), 1);
+            assert_eq!(get_responses[0].our_authority, our_authority);
+            assert_eq!(get_responses[0].location, from_authority);
+            assert_eq!(get_responses[0].data, ::routing::data::Data::ImmutableData(data.clone()));
+            assert_eq!(get_responses[0].data_request, request);
+            assert_eq!(get_responses[0].response_token, None);
         }
     }
 }
