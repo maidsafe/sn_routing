@@ -77,3 +77,31 @@ pub trait Refreshable : ::rustc_serialize::Encodable + ::rustc_serialize::Decoda
     /// Merge multiple refreshable objects into one
     fn merge(from_group: ::routing::NameType, responses: Vec<Self>) -> Option<Self>;
 }
+
+impl Refreshable for ::routing::structured_data::StructuredData {
+    fn merge(from_group: ::routing::NameType,
+             responses: Vec<::routing::structured_data::StructuredData>)
+                    -> Option<::routing::structured_data::StructuredData> {
+        let mut sds = Vec::<(::routing::structured_data::StructuredData, u64)>::new();
+        for response in responses {
+            if response.name() == from_group {
+                let push_in_vec = match sds.iter_mut().find(|a| a.0 == response) {
+                    Some(find_res) => {
+                        find_res.1 += 1;
+                        false
+                    }
+                    None => true,
+                };
+                if push_in_vec {
+                    sds.push((response.clone(), 1));
+                }
+            }
+        }
+        sds.sort_by(|a, b| b.1.cmp(&a.1));
+        let (sd, count) = sds[0].clone();
+        if count >= (::routing::types::GROUP_SIZE as u64 + 1) / 2 {
+            return Some(sd);
+        }
+        None
+    }
+}
