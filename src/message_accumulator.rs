@@ -23,8 +23,6 @@ use NameType;
 type Set<K> = BTreeSet<K>;
 pub type Bytes = Vec<u8>;
 
-const MAX_REQUEST_COUNT: usize = 1000;
-
 pub struct MessageAccumulator {
     //                                       +-> Who sent it
     //                                       |
@@ -33,8 +31,8 @@ pub struct MessageAccumulator {
 
 impl MessageAccumulator {
 
-    pub fn new() -> MessageAccumulator {
-        MessageAccumulator { requests: LruCache::with_capacity(MAX_REQUEST_COUNT) }
+    pub fn with_expiry_duration(duration: ::time::Duration) -> MessageAccumulator {
+        MessageAccumulator { requests: LruCache::with_expiry_duration(duration) }
     }
 
     pub fn add_message(&mut self,

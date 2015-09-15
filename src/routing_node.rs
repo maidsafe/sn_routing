@@ -102,14 +102,15 @@ impl RoutingNode {
             client_restriction: client_restriction,
             action_sender: action_sender.clone(),
             action_receiver: action_receiver,
-            event_sender: event_sender,
+            event_sender: event_sender.clone(),
             filter: ::filter::Filter::with_expiry_duration(Duration::minutes(20)),
             connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
                 ::time::Duration::minutes(20)),
             core: core,
             public_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-            accumulator: MessageAccumulator::new(),
-            refresh_accumulator: RefreshAccumulator::new(),
+            accumulator: MessageAccumulator::with_expiry_duration(::time::Duration::minutes(5)),
+            refresh_accumulator: RefreshAccumulator::with_expiry_duration(
+                ::time::Duration::minutes(5), event_sender),
             cache_options: CacheOptions::no_caching(),
             data_cache: None,
         }
