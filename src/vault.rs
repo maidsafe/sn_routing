@@ -21,26 +21,6 @@ pub type Routing = ::routing::routing::Routing;
 #[cfg(all(test, feature = "use-mock-routing"))]
 pub type Routing = ::mock_routing::MockRouting;
 
-fn merge<T>(from_group: ::routing::NameType, payloads: Vec<Vec<u8>>) -> Option<T>
-    where T: for<'a> ::types::Refreshable + 'static {
-    let mut transfer_entries = Vec::<T>::new();
-    for it in payloads.iter() {
-        let mut decoder = ::cbor::Decoder::from_bytes(&it[..]);
-        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
-            transfer_entries.push(parsed_entry);
-        }
-    }
-    T::merge(from_group, transfer_entries).and_then(|result| {
-        let mut decoder = ::cbor::Decoder::from_bytes(&result.serialised_contents()[..]);
-        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
-            let parsed: T = parsed_entry;
-            Some(parsed)
-        } else {
-            None
-        }
-    })
-}
-
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
     data_manager: ::data_manager::DataManager,
@@ -166,13 +146,10 @@ impl Vault {
         let time_now = ::time::SteadyTime::now();
         // During the process of joining network, the vault shall not refresh its just received info
         if !(churn_up && (self.churn_timestamp + ::time::Duration::seconds(5) > time_now)) {
-            let refresh_calls = self.handle_churn(close_group.clone());
-            self.send(::routing::Authority::NaeManager(::routing::NameType::new([0u8; 64])),
-                      refresh_calls, None, None, None);
+            self.handle_churn(close_group);
         } else {
             // We need to pass the close_group to data_manager to hold.
-            let retrieved = self.data_manager.retrieve_all_and_reset(close_group);
-            assert_eq!(1, retrieved.len());  // Should only be the stats - there shouldn't be any accounts
+            self.data_manager.handle_churn(close_group);
         }
         if churn_up {
             info!("Vault added connected node");
@@ -303,12 +280,11 @@ impl Vault {
         vec![]
     }
 
-    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) -> Vec<::types::MethodCall> {
-        let mm = self.maid_manager.retrieve_all_and_reset();
-        let vh = self.sd_manager.retrieve_all_and_reset();
-        let pm = self.pmid_manager.retrieve_all_and_reset(&close_group);
-        let dm = self.data_manager.retrieve_all_and_reset(close_group);
-        mm.into_iter().chain(vh.into_iter().chain(pm.into_iter().chain(dm.into_iter()))).collect()
+    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
+        self.maid_manager.handle_churn();
+        self.sd_manager.handle_churn();
+        self.pmid_manager.handle_churn(&close_group);
+        self.data_manager.handle_churn(close_group);
     }
 
     fn handle_refresh(&mut self,
@@ -317,56 +293,11 @@ impl Vault {
                       payloads: Vec<Vec<u8>>) {
         // TODO: The assumption of the incoming payloads is that it is a vector of serialised
         //       account entries from the close group nodes of `from_group`
-        match type_tag {
-            ::maid_manager::ACCOUNT_TAG => {
-                if let ::maid_manager::Authority(from_group) = our_authority {
-                    if let Some(merged) = merge::<::maid_manager::Account>(from_group, payloads) {
-                        self.maid_manager.handle_account_transfer(merged)
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            ::data_manager::ACCOUNT_TAG => {
-                if let ::data_manager::Authority(from_group) = our_authority {
-                    if let Some(merged) = merge::<::data_manager::Account>(from_group, payloads) {
-                        self.data_manager.handle_account_transfer(merged);
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            ::data_manager::STATS_TAG => {
-                if let ::data_manager::Authority(from_group) = our_authority {
-                    if let Some(merged) = merge::<::data_manager::Stats>(from_group, payloads) {
-                        self.data_manager.handle_stats_transfer(merged);
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            ::pmid_manager::ACCOUNT_TAG => {
-                if let ::pmid_manager::Authority(from_group) = our_authority {
-                    if let Some(merged) = merge::<::pmid_manager::Account>(from_group, payloads) {
-                        self.pmid_manager.handle_account_transfer(merged);
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            ::sd_manager::ACCOUNT_TAG => {
-                if let ::sd_manager::Authority(_from_group) = our_authority {
-                    for payload in payloads {
-                        // TODO - pass in from_group to allow validation of payloads (should all be
-                        // for same DB entry)
-                        self.sd_manager.handle_account_transfer(payload);
-                    }
-                } else {
-                    warn!("Mismatch of refresh tag {:?} & authority {:?}", type_tag, our_authority);
-                }
-            }
-            _ => {}
-        }
+        debug!("refresh tag {:?} & authority {:?}", type_tag, our_authority);
+        let _ = self.maid_manager.handle_refresh(&type_tag, &our_authority, &payloads)
+                .or_else(|| self.data_manager.handle_refresh(&type_tag, &our_authority, &payloads))
+                .or_else(|| self.pmid_manager.handle_refresh(&type_tag, &our_authority, &payloads))
+                .or_else(|| self.sd_manager.handle_refresh(&type_tag, &our_authority, &payloads));
     }
 
     // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
@@ -421,11 +352,6 @@ impl Vault {
                         _ => {}
                     };
                 }
-                ::types::MethodCall::Refresh { type_tag, our_authority, payload } => {
-                    info!("refreshing account type {:?} of group {:?} to network", type_tag,
-                          our_authority);
-                    self.routing.refresh_request(type_tag, our_authority, payload);
-                }
                 ::types::MethodCall::FailedPut { location, data } => {
                     debug!("as {:?} failed in putting data {:?}, responding to {:?}",
                            our_authority, data, location);
@@ -459,9 +385,6 @@ pub type ResponseNotifier =
 
 #[cfg(test)]
 mod test {
-    use cbor;
-    use sodiumoxide::crypto;
-
     use super::*;
 
     #[cfg(feature = "use-mock-routing")]
@@ -544,8 +467,8 @@ mod test {
             ::routing::routing_client::RoutingClient,
             ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
             ::routing::NameType) {
-        ::utils::initialise_logger();
         use routing::event::Event;
+        ::utils::initialise_logger();
         match ::env_logger::init() {
             Ok(()) => {}
             Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
@@ -772,225 +695,6 @@ mod test {
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));
             break;
-        }
-    }
-
-    fn maid_manager_put(vault: &mut Vault,
-                        client: ::routing::NameType,
-                        im_data: ::routing::immutable_data::ImmutableData) {
-        let keys = crypto::sign::gen_keypair();
-        let _put_result = vault.handle_put(::maid_manager::Authority(client),
-                                           ::routing::Authority::Client(client, keys.0),
-                                           ::routing::data::Data::ImmutableData(im_data.clone()),
-                                           None);
-    }
-
-    fn data_manager_put(vault: &mut Vault, im_data: ::routing::immutable_data::ImmutableData) {
-        let _put_result = vault.handle_put(
-            ::data_manager::Authority(im_data.name()),
-            ::maid_manager::Authority(::routing::NameType::new([1u8; 64])),
-            ::routing::data::Data::ImmutableData(im_data), None);
-    }
-
-    fn add_nodes_to_table(vault: &mut Vault, nodes: &Vec<::routing::NameType>) {
-        vault.data_manager.add_nodes_to_table(nodes)
-    }
-
-    fn pmid_manager_put(vault: &mut Vault,
-                        pmid_node: ::routing::NameType,
-                        im_data: ::routing::immutable_data::ImmutableData) {
-        let _put_result = vault.handle_put(
-            ::pmid_manager::Authority(pmid_node),
-            ::data_manager::Authority(im_data.name()),
-            ::routing::data::Data::ImmutableData(im_data), None);
-    }
-
-    fn sd_manager_put(vault: &mut Vault, sdv: ::routing::structured_data::StructuredData) {
-        let _put_result = vault.handle_put(
-            ::sd_manager::Authority(sdv.name()),
-            ::maid_manager::Authority(::routing::NameType::new([7u8; 64])),
-            ::routing::data::Data::StructuredData(sdv.clone()), None);
-    }
-
-    #[test]
-    fn churn_test() {
-        let mut vault = Vault::new(None);
-
-        let mut available_nodes = Vec::with_capacity(30);
-        for _ in 0..30 {
-            available_nodes.push(::utils::random_name());
-        }
-
-        let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data = ::routing::immutable_data::ImmutableData::new(
-                          ::routing::immutable_data::ImmutableDataType::Normal, value);
-
-        let mut small_close_group = Vec::with_capacity(5);
-        for i in 0..5 {
-            small_close_group.push(available_nodes[i].clone());
-        }
-
-        {// MaidManager - churn handling
-            maid_manager_put(&mut vault, available_nodes[0].clone(), im_data.clone());
-            let churn_data = vault.handle_churn(small_close_group.clone());
-            // DataManagerStatsTransfer will always be included in the return
-            assert!(churn_data.len() == 2);
-
-            // MaidManagerAccount
-            match churn_data[0] {
-                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag, ::maid_manager::ACCOUNT_TAG);
-                    assert_eq!(*our_authority.get_location(), available_nodes[0]);
-                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    let result_to_option = |r: ::cbor::CborResult<::maid_manager::Account>| r.ok();
-                    if let Some(mm_account) = d.decode().next().and_then(result_to_option) {
-                        assert_eq!(*mm_account.name(), available_nodes[0]);
-                        assert_eq!(mm_account.value().data_stored(), 1024);
-                    } else {
-                        panic!("Failed to parse account during refresh.");
-                    }
-                    let mut payloads = vec![];
-                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
-                        payloads.push(payload.clone());
-                    }
-                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
-                }
-                _ => panic!("Refresh type expected"),
-            };
-            add_nodes_to_table(&mut vault, &Vec::<::routing::NameType>::new());
-            let re_churn_data = vault.handle_churn(small_close_group.clone());
-            assert_eq!(churn_data[0], re_churn_data[0]);
-            assert!(vault.maid_manager.retrieve_all_and_reset().is_empty());
-        }
-
-        add_nodes_to_table(&mut vault, &available_nodes);
-
-        {// DataManager - churn handling
-            data_manager_put(&mut vault, im_data.clone());
-            let mut close_group = Vec::with_capacity(20);
-            for i in 10..30 {
-                close_group.push(available_nodes[i].clone());
-            }
-            // DataManagerStatsTransfer will always be included in the return
-            let churn_data = vault.handle_churn(close_group.clone());
-            assert_eq!(churn_data.len(), 2);
-
-            match churn_data[0] {
-                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag, ::data_manager::ACCOUNT_TAG);
-                    assert_eq!(*our_authority.get_location(), im_data.name());
-                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    let result_to_option = |r: ::cbor::CborResult<::data_manager::Account>| r.ok();
-                    if let Some(dm_account) = d.decode().next().and_then(result_to_option) {
-                        assert_eq!(*dm_account.name(), im_data.name());
-                    } else {
-                        panic!("Failed to parse account during refresh.");
-                    }                    let mut payloads = vec![];
-                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
-                        payloads.push(payload.clone());
-                    }
-                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
-                }
-                ::types::MethodCall::Get { .. } => (),
-                _ => panic!("Refresh type expected"),
-            };
-
-            match churn_data[1] {
-                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag, ::data_manager::STATS_TAG);
-                    assert_eq!(*our_authority.get_location(), close_group[0]);
-                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    let result_to_option = |r: ::cbor::CborResult<::data_manager::Stats>| r.ok();
-                    if let Some(dm_stats) = d.decode().next().and_then(result_to_option) {
-                        assert_eq!(dm_stats.resource_index(), 1);
-                    } else {
-                        panic!("Failed to parse account during refresh.");
-                    }
-                    let mut payloads = vec![];
-                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
-                        payloads.push(payload.clone());
-                    }
-                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
-                }
-                ::types::MethodCall::Get { .. } => (),
-                _ => panic!("Refresh type expected"),
-            };
-            add_nodes_to_table(&mut vault, &available_nodes);
-            let re_churn_data = vault.handle_churn(close_group.clone());
-            assert_eq!(churn_data[0], re_churn_data[0]);
-            assert_eq!(churn_data[1], re_churn_data[1]);
-            // DataManagerStatsTransfer will always be included in the return
-            assert_eq!(vault.data_manager.retrieve_all_and_reset(close_group).len(), 1);
-        }
-
-        {// PmidManager - churn handling
-            pmid_manager_put(&mut vault, available_nodes[1].clone(), im_data.clone());
-            let churn_data = vault.handle_churn(small_close_group.clone());
-            // DataManagerStatsTransfer will always be included in the return
-            assert_eq!(churn_data.len(), 2);
-            //assert_eq!(churn_data[0].0, from);
-
-            match churn_data[0] {
-                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag, ::pmid_manager::ACCOUNT_TAG);
-                    assert_eq!(*our_authority.get_location(), available_nodes[1]);
-                    let mut d = cbor::Decoder::from_bytes(&payload[..]);
-                    let result_to_option = |r: ::cbor::CborResult<::pmid_manager::Account>| r.ok();
-                    if let Some(pm_account) = d.decode().next().and_then(result_to_option) {
-                        assert_eq!(*pm_account.name(), available_nodes[1]);
-                    } else {
-                        panic!("Failed to parse account during refresh.");
-                    }
-                    let mut payloads = vec![];
-                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
-                        payloads.push(payload.clone());
-                    }
-                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
-                }
-                _ => panic!("Refresh type expected"),
-            };
-            add_nodes_to_table(&mut vault, &Vec::<::routing::NameType>::new());
-            let re_churn_data = vault.handle_churn(small_close_group.clone());
-            assert_eq!(churn_data[0], re_churn_data[0]);
-            assert!(vault.pmid_manager.retrieve_all_and_reset(&Vec::new()).is_empty());
-        }
-
-        {// StructuredDataManager - churn handling
-            let name = ::routing::NameType([3u8; 64]);
-            let value = ::routing::types::generate_random_vec_u8(1024);
-            let keys = crypto::sign::gen_keypair();
-            let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value,
-                                                                      vec![keys.0], vec![],
-                                                                      Some(&keys.1)).ok().unwrap();
-
-            sd_manager_put(&mut vault, sdv.clone());
-            let churn_data = vault.handle_churn(small_close_group.clone());
-            // DataManagerStatsTransfer will always be included in the return
-            assert_eq!(churn_data.len(), 2);
-
-            match churn_data[0] {
-                ::types::MethodCall::Refresh{ref type_tag, ref our_authority, ref payload} => {
-                    assert_eq!(*type_tag, ::sd_manager::ACCOUNT_TAG);
-                    assert_eq!(*our_authority.get_location(), sdv.name());
-                    match ::routing::utils::decode::<
-                              ::routing::structured_data::StructuredData>(payload) {
-                        Ok(sd) => {
-                            assert_eq!(sd, sdv);
-                        }
-                        Err(_) => panic!("Unexpected"),
-                    };
-                    let mut payloads = vec![];
-                    for _ in 0..(::routing::types::GROUP_SIZE - 1) {
-                        payloads.push(payload.clone());
-                    }
-                    vault.handle_refresh(*type_tag, our_authority.clone(), payloads);
-                }
-                _ => panic!("Refresh type expected"),
-            };
-            add_nodes_to_table(&mut vault, &Vec::<::routing::NameType>::new());
-            let re_churn_data = vault.handle_churn(small_close_group.clone());
-            assert_eq!(churn_data[0], re_churn_data[0]);
-            assert!(vault.sd_manager.retrieve_all_and_reset().is_empty());
         }
     }
 

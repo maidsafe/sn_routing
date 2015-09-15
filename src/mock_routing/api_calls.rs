@@ -170,7 +170,7 @@ impl DeleteResponse {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefreshRequest {
     pub type_tag: u64,
     pub our_authority: ::routing::Authority,

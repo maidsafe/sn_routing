@@ -145,22 +145,19 @@ impl MaidManagerDatabase {
               merged_account.name(), merged_account.value());
     }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<::types::MethodCall> {
-        let mut actions = Vec::with_capacity(self.storage.len());
+    pub fn handle_churn(&mut self, routing: &::vault::Routing) {
         for (key, value) in self.storage.iter() {
             let account = Account::new((*key).clone(), (*value).clone());
             let our_authority = super::Authority(*account.name());
             let mut encoder = cbor::Encoder::from_memory();
             if encoder.encode(&[account]).is_ok() {
-                actions.push(::types::MethodCall::Refresh {
-                    type_tag: super::ACCOUNT_TAG,
-                    our_authority: our_authority,
-                    payload: encoder.as_bytes().to_vec()
-                });
+                debug!("MaidManager sends out a refresh regarding account {:?}",
+                       our_authority.get_location());
+                routing.refresh_request(super::ACCOUNT_TAG, our_authority,
+                                        encoder.as_bytes().to_vec());
             }
         }
         self.storage.clear();
-        actions
     }
 
     #[allow(dead_code)]

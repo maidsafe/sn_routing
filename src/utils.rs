@@ -42,6 +42,26 @@ pub fn median(mut values: Vec<u64>) -> u64 {
     }
 }
 
+pub fn merge<T>(from_group: ::routing::NameType, payloads: Vec<Vec<u8>>) -> Option<T>
+    where T: for<'a> ::types::Refreshable + 'static {
+    let mut transfer_entries = Vec::<T>::new();
+    for it in payloads.iter() {
+        let mut decoder = ::cbor::Decoder::from_bytes(&it[..]);
+        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
+            transfer_entries.push(parsed_entry);
+        }
+    }
+    T::merge(from_group, transfer_entries).and_then(|result| {
+        let mut decoder = ::cbor::Decoder::from_bytes(&result.serialised_contents()[..]);
+        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
+            let parsed: T = parsed_entry;
+            Some(parsed)
+        } else {
+            None
+        }
+    })
+}
+
 pub fn is_client_authority_type(provided_authority: &::routing::Authority) -> bool {
     match provided_authority {
         &::routing::Authority::Client(_, _) => true,

@@ -342,43 +342,54 @@ impl DataManager {
         vec![]
     }
 
-    pub fn handle_account_transfer(&mut self, merged_account: Account) {
+    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
+                          payloads: &Vec<Vec<u8>>) -> Option<()> {
+        if let &Authority(from_group) = our_authority {
+            match type_tag.clone() {
+                ACCOUNT_TAG => {
+                    if let Some(merged) =
+                            ::utils::merge::<Account>(from_group, payloads.clone()) {
+                        self.handle_account_transfer(merged);
+                        return ::utils::HANDLED;
+                    }
+                }
+                STATS_TAG => {
+                    if let Some(merged) =
+                            ::utils::merge::<Stats>(from_group, payloads.clone()) {
+                        self.handle_stats_transfer(merged);
+                        return ::utils::HANDLED;
+                    }
+                }
+                _ => {}
+            }
+        }
+        ::utils::NOT_HANDLED
+    }
+
+    fn handle_account_transfer(&mut self, merged_account: Account) {
         self.database.handle_account_transfer(merged_account);
     }
 
-    pub fn handle_stats_transfer(&mut self, merged_stats: Stats) {
+    fn handle_stats_transfer(&mut self, merged_stats: Stats) {
         // TODO: shall give more priority to the incoming stats?
         self.resource_index = (self.resource_index + merged_stats.resource_index()) / 2;
     }
 
-    pub fn retrieve_all_and_reset(&mut self,
-                                  close_group: Vec<::routing::NameType>)
-                                  -> Vec<::types::MethodCall> {
-        // TODO: as Vault doesn't have access to what ID it is, we have to use the first one in the
-        //       close group as its ID
-        let mut result = self.database.retrieve_all_and_reset();
+    pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
+        // TODO: close_group[0] is supposed to be the vault id
+        let our_authority = Authority(close_group[0].clone());
+        self.database.handle_churn(&our_authority, &self.routing);
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         let mut encoder = cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
-            result.push(::types::MethodCall::Refresh {
-                type_tag: STATS_TAG,
-                our_authority: Authority(*data_manager_stats.name()),
-                payload: encoder.as_bytes().to_vec()
-            });
+            self.routing.refresh_request(STATS_TAG, our_authority,
+                                         encoder.as_bytes().to_vec());
         }
         self.nodes_in_table = close_group;
-        result
     }
 
     pub fn nodes_in_table_len(&self) -> usize {
         self.nodes_in_table.len()
-    }
-
-    #[cfg(test)]
-    pub fn add_nodes_to_table(&mut self, nodes: &Vec<::routing::NameType>) {
-        for node in nodes {
-            self.nodes_in_table.push(node.clone());
-        }
     }
 
     fn replicate_to(&mut self, name: &::routing::NameType) -> Option<::routing::NameType> {
@@ -412,17 +423,10 @@ impl DataManager {
 mod test {
     use super::*;
 
-    #[test]
-    fn handle_put_get() {
+    fn env_setup() -> (::routing::Authority, ::vault::Routing, DataManager,
+                       ::routing::Authority, ::routing::immutable_data::ImmutableData) {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let mut data_manager = DataManager::new(routing.clone());
-
-        let us = ::utils::random_name();
-        let our_authority = Authority(us.clone());
-
-        let from = ::utils::random_name();
-        let from_authority = ::maid_manager::Authority(from.clone());
-
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
@@ -434,7 +438,13 @@ mod test {
                                            ::routing::NameType::new([6u8; 64]),
                                            ::routing::NameType::new([7u8; 64]),
                                            ::routing::NameType::new([8u8; 64])];
+        (Authority(::utils::random_name()), routing, data_manager,
+         ::maid_manager::Authority(::utils::random_name()), data)
+    }
 
+    #[test]
+    fn handle_put_get() {
+        let (our_authority, routing, mut data_manager, from_authority, data) = env_setup();
         {
             assert_eq!(::utils::HANDLED,
                 data_manager.handle_put(&our_authority, &from_authority,
@@ -450,6 +460,7 @@ mod test {
             }
         }
         {
+            let from = ::utils::random_name();
             let keys = ::sodiumoxide::crypto::sign::gen_keypair();
             let client = ::routing::Authority::Client(from, keys.0);
 
@@ -467,6 +478,23 @@ mod test {
                 assert_eq!(get_requests[i].request_for, request);
             }
         }
+    }
+
+    #[test]
+    fn handle_churn() {
+        let (our_authority, routing, mut data_manager, from_authority, data) = env_setup();
+        assert_eq!(::utils::HANDLED,
+            data_manager.handle_put(&our_authority, &from_authority,
+                                    &::routing::data::Data::ImmutableData(data.clone())));
+        let close_group = vec![our_authority.get_location().clone()].into_iter().chain(
+                data_manager.nodes_in_table.clone().into_iter()).collect();
+        data_manager.handle_churn(close_group);
+        let refresh_requests = routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 2);
+        assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
+        assert_eq!(refresh_requests[0].our_authority.get_location().clone(), data.name());
+        assert_eq!(refresh_requests[1].type_tag, STATS_TAG);
+        assert_eq!(refresh_requests[1].our_authority, our_authority);
     }
 
     #[test]

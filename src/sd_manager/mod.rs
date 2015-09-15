@@ -144,7 +144,23 @@ impl StructuredDataManager {
         vec![]
     }
 
-    pub fn handle_account_transfer(&mut self, in_coming_sd: Vec<u8>) {
+    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
+                          payloads: &Vec<Vec<u8>>) -> Option<()> {
+        if *type_tag == ACCOUNT_TAG {
+            if let &Authority(from_group) = our_authority {
+                info!("SdManager received a transfer regarding {:?}", from_group);
+                // TODO - pass in from_group to allow validation of payloads (should all be
+                // for same DB entry)
+                for payload in payloads {
+                    self.handle_account_transfer(payload.clone());
+                }
+                return ::utils::HANDLED;
+            }
+        }
+        ::utils::NOT_HANDLED
+    }
+
+    fn handle_account_transfer(&mut self, in_coming_sd: Vec<u8>) {
         let sd: ::routing::structured_data::StructuredData =
             match ::routing::utils::decode(&in_coming_sd) {
                 Ok(result) => {
@@ -157,19 +173,14 @@ impl StructuredDataManager {
         self.chunk_store.put(sd.name(), in_coming_sd);
     }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<::types::MethodCall> {
+    pub fn handle_churn(&mut self) {
         let names = self.chunk_store.names();
-        let mut actions = Vec::with_capacity(names.len());
         for name in names {
             let data = self.chunk_store.get(name.clone());
-            actions.push(::types::MethodCall::Refresh {
-                type_tag: ACCOUNT_TAG,
-                our_authority: Authority(name),
-                payload: data
-            });
+            debug!("SDManager sends out a refresh regarding data {:?}", name);
+            self.routing.refresh_request(ACCOUNT_TAG, Authority(name), data);
         }
         self.chunk_store = ChunkStore::new(1073741824);
-        actions
     }
 
 }
@@ -180,24 +191,25 @@ impl StructuredDataManager {
 mod test {
     use super::*;
 
-    #[test]
-    fn handle_put_get() {
+    fn env_setup() -> (::routing::Authority, ::vault::Routing, StructuredDataManager,
+                       ::routing::Authority, ::routing::structured_data::StructuredData,
+                       ::routing::NameType, (::sodiumoxide::crypto::sign::PublicKey,
+                                             ::sodiumoxide::crypto::sign::SecretKey)) {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-        let mut sd_manager = StructuredDataManager::new(routing.clone());
-
-        let us = ::utils::random_name();
-        let our_authority = Authority(us.clone());
-
-        let from = ::utils::random_name();
-        let from_authority = ::maid_manager::Authority(from.clone());
-
+        let sd_manager = StructuredDataManager::new(routing.clone());
         let name = ::routing::NameType([3u8; 64]);
         let value = ::routing::types::generate_random_vec_u8(1024);
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value.clone(),
-                                                                  vec![keys.0], vec![],
-                                                                  Some(&keys.1)).ok().unwrap();
+        let sd = ::routing::structured_data::StructuredData::new(0,
+                name, 0, value.clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
+        (Authority(sd.name().clone()), routing, sd_manager,
+         ::maid_manager::Authority(::utils::random_name()), sd, name, keys)
+    }
+
+    #[test]
+    fn handle_put_get() {
+        let (our_authority, routing, mut sd_manager, from_authority, sdv, _, _) = env_setup();
         {
             assert_eq!(::utils::HANDLED,
                        sd_manager.handle_put(&our_authority, &from_authority,
@@ -206,6 +218,7 @@ mod test {
             assert_eq!(0, routing.put_responses_given().len());
         }
         {
+            let from = ::utils::random_name();
             let keys = ::sodiumoxide::crypto::sign::gen_keypair();
             let client = ::routing::Authority::Client(from, keys.0);
 
@@ -225,23 +238,8 @@ mod test {
 
     #[test]
     fn handle_post() {
-        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-        let mut sd_manager = StructuredDataManager::new(routing.clone());
-
-        let us = ::utils::random_name();
-        let our_authority = Authority(us.clone());
-
-        let from = ::utils::random_name();
-        let from_authority = ::maid_manager::Authority(from.clone());
-
-        let name = ::routing::NameType([3u8; 64]);
-        let value = ::routing::types::generate_random_vec_u8(1024);
-
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value.clone(),
-                                                                  vec![keys.0], vec![],
-                                                                  Some(&keys.1)).ok().unwrap();
-
+        let (our_authority, _, mut sd_manager,
+             from_authority, sdv, name, keys) = env_setup();
         { // posting to non-existent data
             assert_eq!(sd_manager.handle_post(sdv.clone())[0],
                        ::types::MethodCall::InvalidRequest {
@@ -254,42 +252,55 @@ mod test {
                                              &::routing::data::Data::StructuredData(sdv.clone())));
         }
         { // incorrect version
-            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 3, value.clone(),
-                                                                          vec![keys.0], vec![],
-                                                                          Some(&keys.1)).ok()
-                                                                          .unwrap();
+            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 3,
+                sdv.get_data().clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
             assert_eq!(sd_manager.handle_post(sdv_new.clone())[0],
                        ::types::MethodCall::InvalidRequest {
                            data: ::routing::data::Data::StructuredData(sdv_new)
                        });
         }
         { // correct version
-            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 1, value.clone(),
-                                                                          vec![keys.0], vec![],
-                                                                          Some(&keys.1)).ok()
-                                                                          .unwrap();
+            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 1,
+                sdv.get_data().clone(), vec![keys.0], vec![], Some(&keys.1)).ok().unwrap();
             assert_eq!(sd_manager.handle_post(sdv_new.clone()).len(), 0);
         }
         let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
         { // update to a new owner, wrong signature
-            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 2, value.clone(),
-                                                                          vec![keys2.0],
-                                                                          vec![keys.0],
-                                                                          Some(&keys2.1)).ok()
-                                                                          .unwrap();
+            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 2,
+                sdv.get_data().clone(), vec![keys2.0], vec![keys.0], Some(&keys2.1)).ok().unwrap();
             assert_eq!(sd_manager.handle_post(sdv_new.clone())[0],
                        ::types::MethodCall::InvalidRequest {
                            data: ::routing::data::Data::StructuredData(sdv_new)
                        });
         }
         { // update to a new owner, correct signature
-            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 2, value.clone(),
-                                                                          vec![keys2.0],
-                                                                          vec![keys.0],
-                                                                          Some(&keys.1)).ok()
-                                                                          .unwrap();
+            let sdv_new = ::routing::structured_data::StructuredData::new(0, name, 2,
+                sdv.get_data().clone(), vec![keys2.0], vec![keys.0], Some(&keys.1)).ok().unwrap();
             assert_eq!(sd_manager.handle_post(sdv_new.clone()).len(), 0);
         }
+    }
+
+    #[test]
+    fn handle_churn_and_account_transfer() {
+        let (our_authority, routing, mut sd_manager, from_authority, sdv, _, _) = env_setup();
+        assert_eq!(::utils::HANDLED,
+                   sd_manager.handle_put(&our_authority, &from_authority,
+                                         &::routing::data::Data::StructuredData(sdv.clone())));
+        sd_manager.handle_churn();
+        let refresh_requests = routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 1);
+        assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
+        assert_eq!(refresh_requests[0].our_authority, our_authority);
+
+        sd_manager.handle_account_transfer(refresh_requests[0].content.clone());
+        sd_manager.handle_churn();
+        let refresh_requests = routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 2);
+        assert_eq!(refresh_requests[0], refresh_requests[1]);
+
+        sd_manager.handle_churn();
+        let refresh_requests = routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 2);
     }
 
     #[test]

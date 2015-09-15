@@ -24,6 +24,7 @@ pub enum MethodCall {
         content: ::routing::data::Data,
     },
     /// request to retrieve data with specified type and location from network
+                                                                                            #[allow(dead_code)]
     Get {
         location: ::routing::Authority,
         data_request: ::routing::data::DataRequest,
@@ -33,11 +34,11 @@ pub enum MethodCall {
     // /// Request delete
     // Delete { name: ::routing::NameType, data : Data },
     /// request to refresh
-    Refresh {
-        type_tag: u64,
-        our_authority: ::routing::Authority,
-        payload: Vec<u8>,
-    },
+    // Refresh {
+    //     type_tag: u64,
+    //     our_authority: ::routing::Authority,
+    //     payload: Vec<u8>,
+    // },
     /// reply
     Reply {
         data: ::routing::data::Data,
