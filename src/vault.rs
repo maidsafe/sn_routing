@@ -191,7 +191,10 @@ impl Vault {
     }
 
     fn on_disconnected(&mut self) {
-        unimplemented!();
+        self.routing.stop();
+        let (sender, receiver) = ::std::sync::mpsc::channel();
+        self.routing = Routing::new(sender);
+        self.receiver = receiver;
     }
 
     fn on_failed_request(&mut self,
@@ -666,10 +669,11 @@ mod test {
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
+        println!("network_put_get_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM, ::time::Duration::minutes(1));
-
+        println!("network_put_get_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
@@ -689,17 +693,19 @@ mod test {
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+        println!("network_post_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::seconds(30));
+        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::minutes(1));
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd_new = ::routing::structured_data::StructuredData::new(0, name, 1,
             value.clone(), vec![keys.0], vec![sign_keys.0], Some(&sign_keys.1)).ok().unwrap();
+        println!("network_post_test posting data");
         client_routing.post_request(::sd_manager::Authority(sd.name()),
                                     ::routing::data::Data::StructuredData(sd_new.clone()));
-        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::seconds(30));
-
+        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::minutes(1));
+        println!("network_post_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
         while let Ok(data) = client_receiver.recv() {
@@ -716,17 +722,19 @@ mod test {
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
+        println!("network_churn_immutable_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM, ::time::Duration::minutes(1));
 
+        println!("network_churn_immutable_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
                                               ::vault::Vault::new(Some(sender)).do_run();
                                           });
         let new_vault_receivers = vec![receiver];
         waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1, ::time::Duration::seconds(30));
-
+        println!("network_churn_immutable_data_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
@@ -746,17 +754,19 @@ mod test {
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
             value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+        println!("network_churn_structured_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::seconds(30));
+        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::minutes(1));
 
+        println!("network_churn_structured_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
                                               ::vault::Vault::new(Some(sender)).do_run();
                                           });
         let new_vault_receivers = vec![receiver];
-        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1, ::time::Duration::seconds(30));
-
+        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1, ::time::Duration::minutes(1));
+        println!("network_churn_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
         while let Ok(data) = client_receiver.recv() {

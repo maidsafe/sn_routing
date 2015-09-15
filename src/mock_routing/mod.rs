@@ -129,4 +129,6 @@ impl MockRouting {
                            content: Vec<u8>) {
         self.pimpl.lock().unwrap().refresh_request(type_tag, our_authority, content)
     }
+
+    pub fn stop(&self) {}
 }
