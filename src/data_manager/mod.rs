@@ -59,13 +59,8 @@ impl ::types::Refreshable for Stats {
     fn merge(from_group: ::routing::NameType, responses: Vec<Stats>) -> Option<Stats> {
         let mut resource_indexes: Vec<u64> = Vec::new();
         for value in responses {
-            match ::routing::utils::decode::<Stats>(&value.serialised_contents()) {
-                Ok(refreshable) => {
-                    if *refreshable.name() == from_group {
-                        resource_indexes.push(refreshable.resource_index());
-                    }
-                }
-                Err(_) => {}
+            if *value.name() == from_group {
+                resource_indexes.push(value.resource_index());
             }
         }
         Some(Stats::new(::routing::NameType([0u8; 64]), utils::median(resource_indexes)))
