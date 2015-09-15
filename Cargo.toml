@@ -44,3 +44,9 @@ name = "node"
 path = "tests/node.rs"
 test = true
 bench = false
+
+[[bin]]
+name = "churn_node"
+path = "tests/churn_node.rs"
+test = true
+bench = false

@@ -19,17 +19,19 @@
 pub struct Node {
     routing: ::routing::Routing,
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
+    sender: ::std::sync::mpsc::Sender<::event::Event>,
     db: ::std::collections::BTreeMap<::NameType, ::data::Data>,
 }
 
 impl Node {
     pub fn new() -> Node {
         let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
-        let routing = ::routing::Routing::new(sender);
+        let routing = ::routing::Routing::new(sender.clone());
 
         Node {
             routing: routing,
             receiver: receiver,
+            sender: sender,
             db: ::std::collections::BTreeMap::new(),
         }
     }
@@ -52,10 +54,19 @@ impl Node {
                 //     self.on_failed_request(request, our_authority, location, interface_error),
                 // Event::FailedResponse{ response, our_authority, location, interface_error } =>
                 //     self.on_failed_response(response, our_authority, location, interface_error),
-                ::event::Event::Terminated => break,
+                ::event::Event::Terminated => { debug!("Received terminate event"); break },
                 _ => debug!("Received unhandled event"),
             };
         }
+    }
+
+    pub fn get_sender(&self) -> ::std::sync::mpsc::Sender<::event::Event> {
+        self.sender.clone()
+    }
+
+    pub fn stop(&mut self) {
+        debug!("Node terminating.");
+        self.routing.stop();
     }
 
     fn handle_request(&mut self, request: ::ExternalRequest,
