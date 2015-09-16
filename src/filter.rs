@@ -25,6 +25,7 @@ pub type RoutingMessageFilter = ::sodiumoxide::crypto::hash::sha256::Digest;
 pub struct Filter {
     claimant_filter: ::message_filter::MessageFilter<ClaimantFilter>,
     message_filter: ::message_filter::MessageFilter<RoutingMessageFilter>,
+    threshold: SimpleThresholdCalculator,
 }
 
 impl Filter {
@@ -33,6 +34,7 @@ impl Filter {
         Filter {
             claimant_filter: ::message_filter::MessageFilter::with_expiry_duration(duration),
             message_filter: ::message_filter::MessageFilter::with_expiry_duration(duration),
+            threshold: SimpleThresholdCalculator::new(100u16, ::types::QUORUM_SIZE / 2 + 1 ),
         }
     }
 
@@ -53,29 +55,78 @@ impl Filter {
         };
         // already get the return value, but continue processing the analytics
         let blocked = self.message_filter.check(&digest);
-
-        // TODO (ben 24/08/2015) calculate the effective group size to set the
-        // accumulator threshold
-
+        self.threshold.hit_message(blocked);
         !blocked
     }
 
     /// Block adds the digest of the routing message to the message blocker.  A blocked message will
     /// be held back by the filter, regardless of the claimant.
-    pub fn block(&mut self, digest: RoutingMessageFilter) {
+    pub fn block(&mut self, routing_message: &::messages::RoutingMessage) {
 
+        let digest = match ::utils::encode(routing_message) {
+            Ok(bytes) => ::sodiumoxide::crypto::hash::sha256::hash(&bytes[..]),
+            Err(_) => return,
+        };
+
+        if routing_message.from_authority.is_group()
+            && !self.message_filter.check(&digest) {
+            self.threshold.hit_uniquemessage();
+        };
         self.message_filter.add(digest);
     }
+}
 
-    /// Generate the SHA256 digest of the routing message.  If it fails to encode the
-    /// routing message, None is returned.
-    pub fn message_digest(routing_message: &::messages::RoutingMessage)
-        -> Option<RoutingMessageFilter> {
+pub struct SimpleThresholdCalculator {
+    total_messages: u32,
+    total_blockedmessages: u32,
+    total_uniquemessages: u32,
+    blocked_percentage: RunningAverage,
+    cap: u32,
+    current_threshold: usize,
+}
 
-        match ::utils::encode(routing_message) {
-            Ok(bytes) => Some(::sodiumoxide::crypto::hash::sha256::hash(&bytes[..])),
-            Err(_) => None,
+impl SimpleThresholdCalculator {
+    /// start a new calculator
+    pub fn new(cap: u16, start_threshold: usize) -> SimpleThresholdCalculator {
+        SimpleThresholdCalculator {
+            total_messages: 0u32,
+            total_blockedmessages: 0u32,
+            total_uniquemessages: 0u32,
+            blocked_percentage: RunningAverage::new(10000u32),
+            cap: cap as u32,
+            current_threshold: start_threshold,
         }
+    }
+
+    /// register a new (bool)blocked message
+    pub fn hit_message(&mut self, blocked: bool) {
+        if blocked { self.total_blockedmessages += 1u32; };
+        self.total_messages += 1u32;
+        let debug_average = self.total_blockedmessages as f64 / self.total_messages as f64;
+        println!("BLOCKED {:?}% of group messages ({:?}/{:?})", (debug_average * 100f64).round(),
+            self.total_blockedmessages, self.total_messages);
+        if self.total_messages >= self.cap {
+            self.calculate_average();
+        }
+    }
+
+    /// register a new unique message
+    pub fn hit_uniquemessage(&mut self) {
+        self.total_uniquemessages += 1u32;
+        let message_multiplicity = self.total_messages as f64 / self.total_uniquemessages as f64;
+        println!("MULTIPLICITY {:?} for group messages ({:?}/{:?})",
+            (message_multiplicity * 100f64).round()/ 100f64,
+            self.total_messages, self.total_uniquemessages);
+    }
+
+    fn calculate_average(&mut self) {
+        let average_blocked: f64 = self.total_blockedmessages as f64
+            / self.total_messages as f64;
+        let running_average = self.blocked_percentage.add_value(average_blocked);
+        // let average =
+        // info!
+        self.total_messages = 0u32;
+        self.total_blockedmessages = 0u32;
     }
 }
 
