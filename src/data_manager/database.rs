@@ -63,27 +63,17 @@ impl ::types::Refreshable for Account {
     fn merge(from_group: ::routing::NameType, responses: Vec<Account>) -> Option<Account> {
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for response in responses {
-            let account =
-                match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
-                    Ok(result) => {
-                        if *result.name() != from_group {
-                            continue;
-                        }
-                        result
+            if *response.name() == from_group {
+                let push_in_vec = match stats.iter_mut().find(|a| a.0 == *response.data_holders()) {
+                    Some(find_res) => {
+                        find_res.1 += 1;
+                        false
                     }
-                    Err(_) => continue,
+                    None => true,
                 };
-            let push_in_vec = match stats.iter_mut().find(|a| a.0 == *account.data_holders()) {
-                Some(find_res) => {
-                    find_res.1 += 1;
-                    false
+                if push_in_vec {
+                    stats.push((response.data_holders().clone(), 1));
                 }
-                None => {
-                    true
-                }
-            };
-            if push_in_vec {
-                stats.push((account.data_holders().clone(), 1));
             }
         }
         stats.sort_by(|a, b| b.1.cmp(&a.1));

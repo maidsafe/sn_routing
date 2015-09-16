@@ -48,18 +48,10 @@ impl ::types::Refreshable for Account {
         let mut data_stored: Vec<u64> = Vec::new();
         let mut space_available: Vec<u64> = Vec::new();
         for response in responses {
-            let account =
-                match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
-                    Ok(result) => {
-                        if *result.name() != from_group {
-                            continue;
-                        }
-                        result
-                    }
-                    Err(_) => continue,
-                };
-            data_stored.push(account.value().data_stored());
-            space_available.push(account.value().space_available());
+            if *response.name() == from_group {
+                data_stored.push(response.value().data_stored());
+                space_available.push(response.value().space_available());
+            }
         }
         Some(Account::new(from_group,
                           AccountValue::new(utils::median(data_stored),

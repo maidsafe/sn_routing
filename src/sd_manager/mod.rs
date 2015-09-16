@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use chunk_store::ChunkStore;
+use types::Refreshable;
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
 
 pub use ::routing::Authority::NaeManager as Authority;
@@ -148,29 +149,20 @@ impl StructuredDataManager {
                           payloads: &Vec<Vec<u8>>) -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
             if let &Authority(from_group) = our_authority {
-                info!("SdManager received a transfer regarding {:?}", from_group);
-                // TODO - pass in from_group to allow validation of payloads (should all be
-                // for same DB entry)
-                for payload in payloads {
-                    self.handle_account_transfer(payload.clone());
+                if let Some(merged) =
+                        ::utils::merge::<::routing::structured_data::StructuredData>(
+                                from_group, payloads.clone()) {
+                    self.handle_account_transfer(merged);
+                    return ::utils::HANDLED;
                 }
-                return ::utils::HANDLED;
             }
         }
         ::utils::NOT_HANDLED
     }
 
-    fn handle_account_transfer(&mut self, in_coming_sd: Vec<u8>) {
-        let sd: ::routing::structured_data::StructuredData =
-            match ::routing::utils::decode(&in_coming_sd) {
-                Ok(result) => {
-                    result
-                }
-                Err(_) => return,
-            };
-        info!("SdManager transferred structured_data {:?} in", sd.name());
+    fn handle_account_transfer(&mut self, sd: ::routing::structured_data::StructuredData) {
         self.chunk_store.delete(sd.name());
-        self.chunk_store.put(sd.name(), in_coming_sd);
+        self.chunk_store.put(sd.name(), sd.serialised_contents());
     }
 
     pub fn handle_churn(&mut self) {
@@ -185,10 +177,10 @@ impl StructuredDataManager {
 
 }
 
-
-
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
+    use cbor;
+
     use super::*;
 
     fn env_setup() -> (::routing::Authority, ::vault::Routing, StructuredDataManager,
@@ -292,7 +284,10 @@ mod test {
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
         assert_eq!(refresh_requests[0].our_authority, our_authority);
 
-        sd_manager.handle_account_transfer(refresh_requests[0].content.clone());
+        let mut d = cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
+        if let Some(sd_account) = d.decode().next().and_then(|result| result.ok()) {
+            sd_manager.handle_account_transfer(sd_account);
+        }
         sd_manager.handle_churn();
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
@@ -301,26 +296,5 @@ mod test {
         sd_manager.handle_churn();
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
-    }
-
-    #[test]
-    fn handle_account_transfer() {
-        let name = ::routing::NameType([3u8; 64]);
-        let value = ::routing::types::generate_random_vec_u8(1024);
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sdv = ::routing::structured_data::StructuredData::new(0, name, 0, value, vec![keys.0],
-                                                                  vec![], Some(&keys.1)).ok()
-                                                                  .unwrap();
-
-        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-        let mut sd_manager = StructuredDataManager::new(routing.clone());
-        let serialised_data = match ::routing::utils::encode(&sdv) {
-            Ok(result) => result,
-            Err(_) => panic!("Unexpected"),
-        };
-        sd_manager.handle_account_transfer(serialised_data);
-        assert!(sd_manager.chunk_store.has_chunk(
-            ::routing::structured_data::StructuredData::compute_name(0,
-                &::routing::NameType([3u8; 64]))));
     }
 }

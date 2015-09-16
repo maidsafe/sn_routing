@@ -49,19 +49,11 @@ impl ::types::Refreshable for Account {
         let mut lost_total_size: Vec<u64> = Vec::new();
         let mut offered_space: Vec<u64> = Vec::new();
         for response in responses {
-            let account =
-                match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
-                    Ok(result) => {
-                        if *result.name() != from_group {
-                            continue;
-                        }
-                        result
-                    }
-                    Err(_) => continue,
-                };
-            stored_total_size.push(account.value().stored_total_size());
-            lost_total_size.push(account.value().lost_total_size());
-            offered_space.push(account.value().offered_space());
+            if *response.name() == from_group {
+                stored_total_size.push(response.value().stored_total_size());
+                lost_total_size.push(response.value().lost_total_size());
+                offered_space.push(response.value().offered_space());
+            }
         }
         Some(Account::new(from_group,
                           AccountValue::new(utils::median(stored_total_size),
