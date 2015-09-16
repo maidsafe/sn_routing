@@ -384,6 +384,13 @@ impl DataManager {
         self.nodes_in_table = close_group;
     }
 
+    pub fn do_refresh(&mut self,
+                      type_tag: &u64,
+                      our_authority: &::routing::Authority,
+                      churn_node: &::routing::NameType) -> Option<()> {
+        self.database.do_refresh(type_tag, our_authority, churn_node, &self.routing)
+    }
+
     pub fn nodes_in_table_len(&self) -> usize {
         self.nodes_in_table.len()
     }

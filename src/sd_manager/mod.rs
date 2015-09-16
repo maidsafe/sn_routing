@@ -179,6 +179,25 @@ impl StructuredDataManager {
         }
         self.chunk_store = ChunkStore::new(1073741824);
     }
+
+    pub fn do_refresh(&mut self,
+                      type_tag: &u64,
+                      our_authority: &::routing::Authority,
+                      churn_node: &::routing::NameType) -> Option<()> {
+        if type_tag == &ACCOUNT_TAG {
+            let names = self.chunk_store.names();
+            for name in names {
+                if *our_authority.get_location() == name {
+                    let data = self.chunk_store.get(name.clone());
+                    debug!("SDManager on-request sends out a refresh regarding data {:?}", name);
+                    self.routing.refresh_request(ACCOUNT_TAG, our_authority.clone(),
+                                                 data, churn_node.clone());
+                }
+            }
+            return ::utils::HANDLED;
+        }
+        ::utils::NOT_HANDLED
+    }
 }
 
 #[cfg(all(test, feature = "use-mock-routing"))]

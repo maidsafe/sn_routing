@@ -153,6 +153,29 @@ impl MaidManagerDatabase {
         self.storage.clear();
     }
 
+    pub fn do_refresh(&mut self,
+                      type_tag: &u64,
+                      our_authority: &::routing::Authority,
+                      churn_node: &::routing::NameType,
+                      routing: &::vault::Routing) -> Option<()> {
+        if type_tag == &super::ACCOUNT_TAG {
+            for (key, value) in self.storage.iter() {
+                if key == our_authority.get_location() {
+                    let account = Account::new((*key).clone(), (*value).clone());
+                    let mut encoder = cbor::Encoder::from_memory();
+                    if encoder.encode(&[account]).is_ok() {
+                        debug!("MaidManager on-request sends out a refresh regarding account {:?}",
+                               our_authority.get_location());
+                        routing.refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
+                                                encoder.as_bytes().to_vec(), churn_node.clone());
+                    }
+                }
+            }
+            return ::utils::HANDLED;
+        }
+        ::utils::NOT_HANDLED
+    }
+
     #[allow(dead_code)]
     pub fn delete_data(&mut self, name: &MaidNodeName, size: u64) {
         match self.storage.get_mut(name) {

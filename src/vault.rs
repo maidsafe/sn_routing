@@ -79,7 +79,8 @@ impl Vault {
                 Event::Refresh(type_tag, our_authority, accounts) =>
                     self.on_refresh(type_tag, our_authority, accounts),
                 Event::Churn(close_group, churn_node) => self.on_churn(close_group, churn_node),
-                Event::DoRefresh(_, _, _) => {}
+                Event::DoRefresh(type_tag, our_authority, churn_node) =>
+                    self.on_do_refresh(type_tag, our_authority, churn_node),
                 Event::Bootstrapped => self.on_bootstrapped(),
                 Event::Connected => self.on_connected(),
                 Event::Disconnected => self.on_disconnected(),
@@ -157,6 +158,14 @@ impl Vault {
             info!("Vault added connected node");
             self.churn_timestamp = time_now;
         }
+    }
+
+    fn on_do_refresh(&mut self, type_tag: u64, our_authority: ::routing::Authority,
+                     churn_node: ::routing::NameType) {
+        let _ = self.maid_manager.do_refresh(&type_tag, &our_authority, &churn_node)
+                .or_else(|| self.data_manager.do_refresh(&type_tag, &our_authority, &churn_node))
+                .or_else(|| self.sd_manager.do_refresh(&type_tag, &our_authority, &churn_node))
+                .or_else(|| self.pmid_manager.do_refresh(&type_tag, &our_authority, &churn_node));
     }
 
     fn on_bootstrapped(&self) {
