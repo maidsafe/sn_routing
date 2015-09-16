@@ -34,7 +34,7 @@ impl Filter {
         Filter {
             claimant_filter: ::message_filter::MessageFilter::with_expiry_duration(duration),
             message_filter: ::message_filter::MessageFilter::with_expiry_duration(duration),
-            threshold: SimpleThresholdCalculator::new(100u16, ::types::QUORUM_SIZE / 2 + 1 ),
+            threshold: SimpleThresholdCalculator::new(10000u16, ::types::QUORUM_SIZE / 2 + 1 ),
         }
     }
 
