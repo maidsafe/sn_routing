@@ -37,12 +37,12 @@ impl MaidManager {
                       data: &::routing::data::Data,
                       response_token: &Option<::routing::SignedToken>) -> Option<()> {
         // Check if this is for this persona.
-        if !::utils::is_maid_manager_authority_type(&our_authority) {
+        if !::utils::is_maid_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
 
         // Validate from authority.
-        if !::utils::is_client_authority_type(&from_authority) {
+        if !::utils::is_client_authority_type(from_authority) {
             warn!("Invalid authority for PUT at MaidManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }

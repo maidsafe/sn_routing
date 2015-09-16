@@ -37,12 +37,12 @@ impl PmidNode {
                       response_token: &Option<::routing::SignedToken>)
                       -> Option<()> {
         // Check if this is for this persona.
-        if !::utils::is_pmid_node_authority_type(&our_authority) {
+        if !::utils::is_pmid_node_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
 
         // Validate from authority, and that the Data is ImmutableData.
-        if !::utils::is_data_manager_authority_type(&from_authority) {
+        if !::utils::is_data_manager_authority_type(from_authority) {
             warn!("Invalid authority for GET at PmidNode: {:?}", from_authority);
             return ::utils::HANDLED;
         }
@@ -83,12 +83,12 @@ impl PmidNode {
                       data: &::routing::data::Data,
                       response_token: &Option<::routing::SignedToken>) -> Option<()> {
         // Check if this is for this persona.
-        if !::utils::is_pmid_node_authority_type(&our_authority) {
+        if !::utils::is_pmid_node_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
 
         // Validate from authority, and that the Data is ImmutableData.
-        if !::utils::is_pmid_manager_authority_type(&from_authority) {
+        if !::utils::is_pmid_manager_authority_type(from_authority) {
             warn!("Invalid authority for PUT at PmidNode: {:?}", from_authority);
             return ::utils::HANDLED;
         }

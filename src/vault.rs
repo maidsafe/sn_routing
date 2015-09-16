@@ -243,21 +243,10 @@ impl Vault {
                            from_authority: ::routing::Authority,
                            response: ::routing::error::ResponseError,
                            response_token: Option<::routing::SignedToken>) {
-        let fowarding_calls = match from_authority {
-            ::pmid_node::Authority(pmid_node) =>
-                self.pmid_manager.handle_put_response(&pmid_node, response),
-            ::pmid_manager::Authority(pmid_node) =>
-                self.data_manager.handle_put_response(response, &pmid_node),
-            ::routing::Authority::NaeManager(_) => {
-                match our_authority {
-                    ::pmid_manager::Authority(pmid_node) =>
-                        self.pmid_manager.handle_get_failure_notification(&pmid_node, response),
-                    _ => vec![],
-                }
-            }
-            _ => vec![],
-        };
-        self.send(our_authority, fowarding_calls, response_token, None, None);
+        let _ = self.data_manager.handle_put_response(&our_authority, &from_authority, &response)
+                    .or_else(|| self.pmid_manager.handle_put_response(&our_authority,
+                                                                      &from_authority, &response,
+                                                                      &response_token));
     }
 
     // https://maidsafe.atlassian.net/browse/MAID-1111 post_response is not required on vault
@@ -314,58 +303,6 @@ impl Vault {
                         -> Result<::types::MethodCall, ::routing::error::ResponseError> {
         let _ = self.data_cache.insert(data.name(), data);
         Err(::routing::error::ResponseError::Abort)
-    }
-
-    fn send(&mut self,
-            our_authority: ::routing::Authority,
-            actions: Vec<::types::MethodCall>,
-            response_token: Option<::routing::SignedToken>,
-            optional_reply_to: Option<::routing::Authority>,
-            optional_original_data_request: Option<::routing::data::DataRequest>) {
-        for action in actions {
-            match action {
-                ::types::MethodCall::Get { location, data_request } => {
-                    self.routing.get_request(our_authority.clone(), location, data_request);
-                }
-                ::types::MethodCall::Put { location, content } => {
-                    self.routing.put_request(our_authority.clone(), location, content);
-                }
-                ::types::MethodCall::Reply { data } => {
-                    match (&optional_reply_to, &optional_original_data_request) {
-                        (&Some(ref reply_to), &Some(ref original_data_request)) => {
-                            debug!("as {:?} sending data {:?} to {:?} in responding to the \
-                                   ori_data_request {:?}",
-                                   our_authority, data, reply_to, original_data_request);
-                            self.routing.get_response(our_authority.clone(), reply_to.clone(), data,
-                                original_data_request.clone(), response_token.clone());
-                        }
-                        _ => {}
-                    };
-                }
-                ::types::MethodCall::FailedPut { location, data } => {
-                    debug!("as {:?} failed in putting data {:?}, responding to {:?}",
-                           our_authority, data, location);
-                    self.routing.put_response(our_authority.clone(), location,
-                        ::routing::error::ResponseError::FailedRequestForData(data),
-                        response_token.clone());
-                }
-                ::types::MethodCall::ClearSacrificial { location, name, size } => {
-                    debug!("as {:?} sacrifize data {:?} freeing space {:?}, notifying {:?}",
-                           our_authority, name, size, location);
-                    self.routing.put_response(our_authority.clone(), location,
-                        ::routing::error::ResponseError::HadToClearSacrificial(name, size),
-                        response_token.clone());
-                }
-                ::types::MethodCall::LowBalance { location, data, balance } => {
-                    debug!("as {:?} failed in putting data {:?}, responding to {:?}",
-                           our_authority, data, location);
-                    self.routing.put_response(our_authority.clone(), location,
-                                              ::routing::error::ResponseError::LowBalance(data, balance),
-                                              response_token.clone());
-                },
-                _ => {}
-            }
-        }
     }
 }
 

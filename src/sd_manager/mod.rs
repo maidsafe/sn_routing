@@ -43,7 +43,7 @@ impl StructuredDataManager {
                       response_token: &Option<::routing::SignedToken>)
                        -> Option<()> {
         // Check if this is for this persona, and that the Data is StructuredData.
-        if !::utils::is_sd_manager_authority_type(&our_authority) {
+        if !::utils::is_sd_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
         let structured_data_name_and_type = match data_request {
@@ -53,7 +53,7 @@ impl StructuredDataManager {
         };
 
         // Validate from authority.
-        if !::utils::is_client_authority_type(&from_authority) {
+        if !::utils::is_client_authority_type(from_authority) {
             warn!("Invalid authority for GET at StructuredDataManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }
@@ -85,7 +85,7 @@ impl StructuredDataManager {
                       from_authority: &::routing::Authority,
                       data: &::routing::data::Data) -> Option<()> {
         // Check if this is for this persona, and that the Data is StructuredData.
-        if !::utils::is_sd_manager_authority_type(&our_authority) {
+        if !::utils::is_sd_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
         let structured_data = match data {
@@ -94,7 +94,7 @@ impl StructuredDataManager {
         };
 
         // Validate from authority.
-        if !::utils::is_maid_manager_authority_type(&from_authority) {
+        if !::utils::is_maid_manager_authority_type(from_authority) {
             warn!("Invalid authority for PUT at StructuredDataManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }
@@ -121,12 +121,12 @@ impl StructuredDataManager {
                        from_authority: &::routing::Authority,
                        data: &::routing::data::Data) -> Option<()> {
         // Check if this is for this persona.
-        if !::utils::is_sd_manager_authority_type(&our_authority) {
+        if !::utils::is_sd_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
 
         // Validate from authority, and that the Data is StructuredData.
-        if !::utils::is_client_authority_type(&from_authority) {
+        if !::utils::is_client_authority_type(from_authority) {
             warn!("Invalid authority for POST at StructuredDataManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }

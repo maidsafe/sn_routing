@@ -19,6 +19,7 @@
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum MethodCall {
     /// request to have `location` to handle put for the `content`
+                                                                                            #[allow(dead_code)]
     Put {
         location: ::routing::Authority,
         content: ::routing::data::Data,
@@ -40,15 +41,18 @@ pub enum MethodCall {
     //     payload: Vec<u8>,
     // },
     /// reply
+                                                                                            #[allow(dead_code)]
     Reply {
         data: ::routing::data::Data,
     },
     /// response error indicating failed in putting data
+                                                                                            #[allow(dead_code)]
     FailedPut {
         location: ::routing::Authority,
         data: ::routing::data::Data,
     },
     /// response error indicating clearing sacrificial data
+                                                                                            #[allow(dead_code)]
     ClearSacrificial {
         location: ::routing::Authority,
         name: ::routing::NameType,
@@ -66,7 +70,6 @@ pub enum MethodCall {
     InvalidRequest {
         data: ::routing::data::Data,
     },
-    Deprecated,
 }
 
 /// This trait is required for any type (normally an account) which is refreshed on a churn event.

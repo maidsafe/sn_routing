@@ -36,12 +36,12 @@ impl PmidManager {
                       from_authority: &::routing::Authority,
                       data: &::routing::data::Data) -> Option<()> {
         // Check if this is for this persona.
-        if !::utils::is_pmid_manager_authority_type(&our_authority) {
+        if !::utils::is_pmid_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
 
         // Validate from authority, and that the Data is ImmutableData.
-        if !::utils::is_data_manager_authority_type(&from_authority) {
+        if !::utils::is_data_manager_authority_type(from_authority) {
             warn!("Invalid authority for PUT at PmidManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }
@@ -64,46 +64,28 @@ impl PmidManager {
     }
 
     pub fn handle_put_response(&mut self,
-                               from_address: &::routing::NameType,
-                               response: ::routing::error::ResponseError)
-                               -> Vec<::types::MethodCall> {
-        match response {
-            ::routing::error::ResponseError::FailedRequestForData(data) => {
-                self.database.delete_data(from_address, data.payload_size() as u64);
-                match data {
-                    ::routing::data::Data::ImmutableData(immutable_data) => {
-                        return vec![::types::MethodCall::FailedPut {
-                                        location: ::data_manager::Authority(immutable_data.name()),
-                                        data: ::routing::data::Data::ImmutableData(immutable_data)
-                                    }];
-                    },
-                    _ => return vec![::types::MethodCall::Deprecated],
-                }
-            }
-            ::routing::error::ResponseError::HadToClearSacrificial(name, size) => {
-                self.database.delete_data(from_address, size as u64);
-                return vec![::types::MethodCall::ClearSacrificial {
-                    location: ::data_manager::Authority(name),
-                    name: name,
-                    size: size
-                }];
-            }
-            _ => {}
-        }
-        vec![]
-    }
+                               our_authority: &::routing::Authority,
+                               from_authority: &::routing::Authority,
+                               response: &::routing::error::ResponseError,
+                               response_token: &Option<::routing::SignedToken>)
+                               -> Option<()> {
+        // Check if this is for this persona.
+        let pmid_node_name = match our_authority {
+            &::pmid_node::Authority(name) => name.clone(),
+            _ => return ::utils::NOT_HANDLED,
+        };
 
-    pub fn handle_get_failure_notification(&mut self,
-                                           from_address: &::routing::NameType,
-                                           response: ::routing::error::ResponseError)
-                                           -> Vec<::types::MethodCall> {
-        match response {
-            ::routing::error::ResponseError::FailedRequestForData(data) => {
-                self.database.delete_data(from_address, data.payload_size() as u64);
-            }
-            _ => {}
+        match from_authority {
+            &::pmid_node::Authority(from_address) => {
+                self.handle_put_response_from_pmid_node(our_authority.clone(), from_address,
+                                                        response.clone(), response_token.clone());
+            },
+            &::data_manager::Authority(_) => {
+                self.handle_put_response_from_data_manager(pmid_node_name, response.clone());
+            },
+            _ => warn!("Invalid authority for PUT RESPONSE at PmidManager: {:?}", from_authority),
         }
-        vec![]
+        ::utils::HANDLED
     }
 
     pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
@@ -125,6 +107,48 @@ impl PmidManager {
 
     pub fn handle_churn(&mut self, close_group: &Vec<::routing::NameType>) {
         self.database.handle_churn(close_group, &self.routing);
+    }
+
+    fn handle_put_response_from_pmid_node(&mut self,
+                                          our_authority: ::routing::Authority,
+                                          from_address: ::routing::NameType,
+                                          response: ::routing::error::ResponseError,
+                                          response_token: Option<::routing::SignedToken>) {
+        match response {
+            ::routing::error::ResponseError::FailedRequestForData(data) => {
+                let payload_size = data.payload_size() as u64;
+                match data {
+                    ::routing::data::Data::ImmutableData(immutable_data) => {
+                        self.database.delete_data(&from_address, payload_size);
+                        let location = ::data_manager::Authority(immutable_data.name());
+                        let response = ::routing::error::ResponseError::FailedRequestForData(
+                            ::routing::data::Data::ImmutableData(immutable_data));
+                        self.routing.put_response(our_authority, location, response,
+                                                  response_token);
+                    },
+                    _ => warn!("Invalid data type for PUT RESPONSE at PmidManager: {:?}", data),
+                }
+            }
+            ::routing::error::ResponseError::HadToClearSacrificial(data_name, data_size) => {
+                self.database.delete_data(&from_address, data_size as u64);
+                let location = ::data_manager::Authority(data_name.clone());
+                let response = ::routing::error::ResponseError::HadToClearSacrificial(data_name,
+                                                                                      data_size);
+                self.routing.put_response(our_authority, location, response, response_token);
+            }
+            _ => warn!("Invalid response type from PmidNode for PUT RESPONSE at PmidManager"),
+        }
+    }
+
+    fn handle_put_response_from_data_manager(&mut self,
+                                             pmid_node_name: ::routing::NameType,
+                                             response: ::routing::error::ResponseError) {
+        match response {
+            ::routing::error::ResponseError::FailedRequestForData(data) => {
+                self.database.delete_data(&pmid_node_name, data.payload_size() as u64);
+            }
+            _ => warn!("Invalid response type from DataManager for PUT RESPONSE at PmidManager"),
+        }
     }
 }
 

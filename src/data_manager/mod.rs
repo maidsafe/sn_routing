@@ -106,7 +106,7 @@ impl DataManager {
                       response_token: &Option<::routing::SignedToken>)
                        -> Option<()> {
         // Check if this is for this persona and that the Data is Immutable
-        if !::utils::is_data_manager_authority_type(&our_authority) {
+        if !::utils::is_data_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
         let immutable_data_name_and_type = match data_request {
@@ -116,7 +116,7 @@ impl DataManager {
         };
 
         // Validate from authority and ImmutableDataType
-        if !::utils::is_client_authority_type(&from_authority) {
+        if !::utils::is_client_authority_type(from_authority) {
             warn!("Invalid authority for GET at DataManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }
@@ -180,7 +180,7 @@ impl DataManager {
                       from_authority: &::routing::Authority,
                       data: &::routing::data::Data) -> Option<()> {
         // Check if this is for this persona and that the Data is Immutable.
-        if !::utils::is_data_manager_authority_type(&our_authority) {
+        if !::utils::is_data_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
         let immutable_data = match data {
@@ -189,7 +189,7 @@ impl DataManager {
         };
 
         // Validate from authority.
-        if !::utils::is_maid_manager_authority_type(&from_authority) {
+        if !::utils::is_maid_manager_authority_type(from_authority) {
             warn!("Invalid authority for PUT at DataManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }
@@ -236,13 +236,13 @@ impl DataManager {
                                response: &::routing::data::Data,
                                response_token: &Option<::routing::SignedToken>)
                                -> Option<()> {
-        // Check if this is for this persona and that the Data is Immutable
-        if !::utils::is_data_manager_authority_type(&our_authority) {
+        // Check if this is for this persona.
+        if !::utils::is_data_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
 
         // Validate from authority, and that the Data is ImmutableData.
-        if !::utils::is_pmid_node_authority_type(&from_authority) {
+        if !::utils::is_pmid_node_authority_type(from_authority) {
             warn!("Invalid authority for GET response at DataManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }
@@ -254,7 +254,7 @@ impl DataManager {
             },
         };
 
-        // Respond if there is a corresponding cached request
+        // Respond if there is a corresponding cached request.
         if self.request_cache.contains_key(&response.name()) {
             match self.request_cache.remove(&response.name()) {
                 Some(requests) => {
@@ -293,48 +293,34 @@ impl DataManager {
     }
 
     pub fn handle_put_response(&mut self,
-                               response: ::routing::error::ResponseError,
-                               from_address: &::routing::NameType)
-                               -> Vec<::types::MethodCall> {
-        info!("DataManager handle_put_responsen from {:?}", from_address);
-        match response {
-            ::routing::error::ResponseError::FailedRequestForData(data) => {
-                // TODO: giving more weight when failed in storing a Normal immutable data ?
-                self.resource_index = cmp::max(1, self.resource_index - 4);
-                match data.clone() {
-                    // DataManager shall only handle Immutable data
-                    // Structured Data shall be handled in StructuredDataManager
-                    ::routing::data::Data::ImmutableData(immutable_data) => {
-                        let name = data.name();
-                        self.database.remove_pmid_node(&name, from_address.clone());
-                        match *immutable_data.get_type_tag() {
-                            ::routing::immutable_data::ImmutableDataType::Normal => {
-                                let replicate_to = self.replicate_to(&name);
-                                match replicate_to {
-                                    Some(pmid_node) => {
-                                        self.database.add_pmid_node(&name, pmid_node.clone());
-                                        return vec![::types::MethodCall::Put {
-                                            location: ::pmid_manager::Authority(pmid_node),
-                                            content: data
-                                        }];
-                                    }
-                                    None => {}
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            ::routing::error::ResponseError::HadToClearSacrificial(name, _) => {
-                // giving less weight when removing a sacrificial data
-                self.resource_index = cmp::max(1, self.resource_index - 1);
-                self.database.remove_pmid_node(&name, from_address.clone());
-            }
-            _ => {}
+                               our_authority: &::routing::Authority,
+                               from_authority: &::routing::Authority,
+                               response: &::routing::error::ResponseError) -> Option<()> {
+        // Check if this is for this persona.
+        if !::utils::is_data_manager_authority_type(our_authority) {
+            return ::utils::NOT_HANDLED;
         }
-        vec![]
+        info!("DataManager handle_put_responsen from {:?}", from_authority);
+
+        // Validate from authority.
+        let pmid_node_name = match from_authority {
+            &::pmid_manager::Authority(name) => name,
+            _ => {
+                warn!("Invalid authority for PUT response at DataManager: {:?}", from_authority);
+                return ::utils::HANDLED;
+            },
+        };
+
+        match response.clone() {
+            ::routing::error::ResponseError::FailedRequestForData(data) => {
+                self.handle_failed_request_for_data(data, pmid_node_name, our_authority.clone());
+            },
+            ::routing::error::ResponseError::HadToClearSacrificial(data_name, _) => {
+                self.handle_had_to_clear_sacrificial(data_name, pmid_node_name);
+            },
+            _ => warn!("Invalid response type for PUT response at DataManager: {:?}", response),
+        }
+        ::utils::HANDLED
     }
 
     pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
@@ -411,6 +397,47 @@ impl DataManager {
             None => {}
         }
         None
+    }
+
+    fn handle_failed_request_for_data(&mut self,
+                                      data: ::routing::data::Data,
+                                      pmid_node_name: ::routing::NameType,
+                                      our_authority: ::routing::Authority,) {
+        // Validate that the Data is ImmutableData.
+        let immutable_data = match data {
+            ::routing::data::Data::ImmutableData(immutable_data) => immutable_data,
+            _ => return,
+        };
+
+        // TODO: giving more weight when failed in storing a Normal immutable data ?
+        self.resource_index = cmp::max(1, self.resource_index - 4);
+
+        let data_name = immutable_data.name();
+        self.database.remove_pmid_node(&data_name, pmid_node_name);
+        match *immutable_data.get_type_tag() {
+            ::routing::immutable_data::ImmutableDataType::Normal => {
+                match self.replicate_to(&data_name) {
+                    Some(pmid_node) => {
+                        self.database.add_pmid_node(&data_name, pmid_node.clone());
+                        let location = ::pmid_manager::Authority(pmid_node);
+                        let content = ::routing::data::Data::ImmutableData(immutable_data);
+                        self.routing.put_request(our_authority, location, content);
+                    }
+                    None => {
+                        warn!("Failed to find nodes to replicate data to.");
+                    }
+                }
+            }
+            _ => {}  // Don't need to replicate Backup or Sacrificial chunks
+        }
+    }
+
+    fn handle_had_to_clear_sacrificial(&mut self,
+                                       data_name: ::routing::NameType,
+                                       pmid_node_name: ::routing::NameType) {
+        // giving less weight when removing a sacrificial data
+        self.resource_index = cmp::max(1, self.resource_index - 1);
+        self.database.remove_pmid_node(&data_name, pmid_node_name);
     }
 }
 
