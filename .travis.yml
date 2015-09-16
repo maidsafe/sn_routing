@@ -27,7 +27,7 @@ script:
   - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/build_and_run_tests.sh | bash
   - if [ "$TRAVIS_OS_NAME" == "linux" ]; then
     cargo test -- --nocapture vault::test::network_put_get_test;
-    cargo test -- --nocapture vault::test::network_post_test
+    cargo test -- --nocapture vault::test::network_post_test;
     cargo test -- --nocapture vault::test::network_churn_immutable_data_test;
     cargo test -- --nocapture vault::test::network_churn_structured_data_test;
     fi
