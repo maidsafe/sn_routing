@@ -151,13 +151,14 @@ impl Routing {
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content. If the authority provided (our_authority) is not a group, the request for refresh will be dropped.
-    pub fn refresh_request(&self, type_tag: u64, our_authority: Authority, content: Bytes) {
+    pub fn refresh_request(&self, type_tag: u64, our_authority: Authority, content: Bytes,
+        cause: ::NameType) {
         if !our_authority.is_group() {
             error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
                 type_tag, our_authority);
             return; };
         let _ = self.action_sender.send(Action::SendContent(our_authority.clone(), our_authority,
-            Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
+            Content::InternalRequest(InternalRequest::Refresh(type_tag, content, cause))));
     }
 
     /// Dynamically enable/disable caching for Data types.

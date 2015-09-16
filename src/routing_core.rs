@@ -221,7 +221,7 @@ impl RoutingCore {
                                 .collect::<Vec<::crust::Endpoint>>();
                             let _ = self.action_sender.send(Action::Churn(
                                 ::direct_messages::Churn{ close_group: close_group },
-                                target_endpoints ));
+                                target_endpoints, name ));
                         };
                         None
                     }
@@ -285,7 +285,7 @@ impl RoutingCore {
                                         .collect::<Vec<::crust::Endpoint>>();
                                     let _ = self.action_sender.send(Action::Churn(
                                         ::direct_messages::Churn{ close_group: close_group },
-                                        target_endpoints ));
+                                        target_endpoints, routing_name ));
                                 };
                                 added
                             }
