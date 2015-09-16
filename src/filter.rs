@@ -82,6 +82,7 @@ pub struct SimpleThresholdCalculator {
     total_blockedmessages: u32,
     total_uniquemessages: u32,
     blocked_percentage: RunningAverage,
+    multiplicity: RunningAverage,
     cap: u32,
     current_threshold: usize,
 }
@@ -94,6 +95,7 @@ impl SimpleThresholdCalculator {
             total_blockedmessages: 0u32,
             total_uniquemessages: 0u32,
             blocked_percentage: RunningAverage::new(10000u32),
+            multiplicity: RunningAverage::new(10000u32),
             cap: cap as u32,
             current_threshold: start_threshold,
         }
@@ -115,19 +117,31 @@ impl SimpleThresholdCalculator {
     pub fn hit_uniquemessage(&mut self) {
         self.total_uniquemessages += 1u32;
         let message_multiplicity = self.total_messages as f64 / self.total_uniquemessages as f64;
+        let debug_blocked = self.total_blockedmessages as f64 / self.total_messages as f64;
+        let debug_threshold = message_multiplicity * debug_blocked;
         println!("MULTIPLICITY {:?} for group messages ({:?}/{:?})",
-            (message_multiplicity * 100f64).round()/ 100f64,
+            (message_multiplicity * 100f64).round() / 100f64,
             self.total_messages, self.total_uniquemessages);
+        println!("DEBUG THRESHOLD would be {:?} - NOT EFFECTUATED",
+            debug_threshold);
+        println!("RUNNING AVERAGE BLOCKED {:?} - MULTIPLICITY {:?}",
+            self.blocked_percentage.get_average(),
+            self.multiplicity.get_average());
     }
 
     fn calculate_average(&mut self) {
         let average_blocked: f64 = self.total_blockedmessages as f64
             / self.total_messages as f64;
         let running_average = self.blocked_percentage.add_value(average_blocked);
-        // let average =
-        // info!
+
+        if self.total_uniquemessages > 0u32 {
+            let message_multiplicity = self.total_messages as f64
+                / self.total_uniquemessages as f64;
+            let running_multiplicity = self.multiplicity.add_value(message_multiplicity);
+        };
         self.total_messages = 0u32;
         self.total_blockedmessages = 0u32;
+        self.total_uniquemessages = 0u32;
     }
 }
 
@@ -176,6 +190,14 @@ impl RunningAverage {
             new_average.clone()
         }
     }
+
+    pub fn get_average(&self) -> f64 {
+        if self.block_counter > 0 {
+            self.block_average.clone()
+        } else {
+            self.average.clone()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -214,35 +236,38 @@ mod test {
         assert!(filter.check(&signed_message));
     }
 
-    #[test]
-    fn filter_check_message_digest() {
-        let duration = ::time::Duration::seconds(3);
-        let mut filter = super::Filter::with_expiry_duration(duration);
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let signed_message =
-            ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
-        let signed_message = signed_message.unwrap();
-
-        assert!(filter.check(&signed_message));
-
-        let signed_message_routing_message = signed_message.get_routing_message();
-        let encode_message = ::utils::encode(signed_message_routing_message);
-
-        assert!(encode_message.is_ok());
-
-        let encode_message = encode_message.unwrap();
-        let message_digest = ::sodiumoxide::crypto::hash::sha256::hash(&encode_message[..]);
-        let filter_message_digest = super::Filter::message_digest(&routing_message);
-
-        assert!(filter_message_digest.is_some());
-
-        let filter_message_digest = filter_message_digest.unwrap();
-
-        assert_eq!(filter_message_digest, message_digest);
-    }
+    // FIXME (ben 16/09/2015) this function ::message_digest has been deprecated and removed
+    // and is integrated inside ::block
+    // #[test]
+    // #[ignore]
+    // fn filter_check_message_digest() {
+    //     let duration = ::time::Duration::seconds(3);
+    //     let mut filter = super::Filter::with_expiry_duration(duration);
+    //     let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+    //     let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+    //     let routing_message =
+    //         ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+    //     let signed_message =
+    //         ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
+    //     let signed_message = signed_message.unwrap();
+    //
+    //     assert!(filter.check(&signed_message));
+    //
+    //     let signed_message_routing_message = signed_message.get_routing_message();
+    //     let encode_message = ::utils::encode(signed_message_routing_message);
+    //
+    //     assert!(encode_message.is_ok());
+    //
+    //     let encode_message = encode_message.unwrap();
+    //     let message_digest = ::sodiumoxide::crypto::hash::sha256::hash(&encode_message[..]);
+    //     let filter_message_digest = super::Filter::message_digest(&routing_message);
+    //
+    //     assert!(filter_message_digest.is_some());
+    //
+    //     let filter_message_digest = filter_message_digest.unwrap();
+    //
+    //     assert_eq!(filter_message_digest, message_digest);
+    // }
 
     #[test]
     fn filter_block() {
@@ -262,7 +287,7 @@ mod test {
         let encode_message = encode_message.unwrap();
         let message_digest = ::sodiumoxide::crypto::hash::sha256::hash(&encode_message[..]);
 
-        filter.block(message_digest);
+        filter.block(signed_message.get_routing_message());
 
         assert!(!filter.check(&signed_message));
     }
