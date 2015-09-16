@@ -495,12 +495,13 @@ mod test {
                                     &::routing::data::Data::ImmutableData(data.clone())));
         let close_group = vec![our_authority.get_location().clone()].into_iter().chain(
                 data_manager.nodes_in_table.clone().into_iter()).collect();
-        data_manager.handle_churn(close_group, &::utils::random_name());
+        let churn_node = ::utils::random_name();
+        data_manager.handle_churn(close_group, &churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
         assert_eq!(refresh_requests[0].our_authority.get_location().clone(), data.name());
         assert_eq!(refresh_requests[1].type_tag, STATS_TAG);
-        assert_eq!(refresh_requests[1].our_authority, our_authority);
+        assert_eq!(refresh_requests[1].our_authority.get_location().clone(), churn_node);
     }
 }
