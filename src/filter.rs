@@ -55,7 +55,8 @@ impl Filter {
         };
         // already get the return value, but continue processing the analytics
         let blocked = self.message_filter.check(&digest);
-        self.threshold.hit_message(blocked);
+        if signed_message.get_routing_message().from_authority.is_group() {
+            self.threshold.hit_message(blocked); };
         !blocked
     }
 
