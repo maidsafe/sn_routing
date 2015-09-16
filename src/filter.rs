@@ -67,6 +67,8 @@ impl Filter {
         self.message_filter.add(digest);
     }
 
+    /// Generate the SHA256 digest of the routing message.  If it fails to encode the
+    /// routing message, None is returned.
     pub fn message_digest(routing_message: &::messages::RoutingMessage)
         -> Option<RoutingMessageFilter> {
 

@@ -22,19 +22,29 @@ type Map<K,V> = BTreeMap<K,V>;
 pub type Bytes = Vec<u8>;
 //                     +-> Source and target group
 //                     |
-pub type Request = (::authority::Authority, u64);
+pub type Request = (::authority::Authority, u64, ::NameType);
 pub struct RefreshAccumulator {
     //                                 +-> Who sent it
     //                                 |
     requests: LruCache<Request, Map<::NameType, Bytes>>,
+    /// causes keeps a recent blocking history on whether the user has already been
+    /// asked to do a full refresh for a given cause.  When core initiates a generate_churn
+    /// in routing_node, the cause will be registered in the RefreshAccumulator here.
+    /// Consequently, if the RefreshAccumulator sees a RefreshMessage for a cause it has not
+    /// yet seen, then it can ask the user to perform an Event::DoRefresh for that account.
+    causes: ::message_filter::MessageFilter<::NameType>,
+    event_sender: ::std::sync::mpsc::Sender<::event::Event>,
 }
-
-const MAX_REQUEST_COUNT: usize = 1000;
 
 impl RefreshAccumulator {
 
-    pub fn new() -> RefreshAccumulator {
-        RefreshAccumulator { requests: LruCache::with_capacity(MAX_REQUEST_COUNT) }
+    pub fn with_expiry_duration(duration: ::time::Duration,
+        event_sender: ::std::sync::mpsc::Sender<::event::Event>) -> RefreshAccumulator {
+        RefreshAccumulator {
+            requests: LruCache::with_expiry_duration(duration.clone()),
+            causes: ::message_filter::MessageFilter::with_expiry_duration(duration),
+            event_sender: event_sender,
+        }
     }
 
     pub fn add_message(&mut self,
@@ -42,10 +52,19 @@ impl RefreshAccumulator {
                        type_tag: u64,
                        sender_node: ::NameType,
                        sender_group: ::authority::Authority,
-                       payload: Bytes)
+                       payload: Bytes,
+                       cause: ::NameType)
                        -> Option<Vec<Bytes>> {
-        let request = (sender_group, type_tag);
-
+        info!("RefreshAccumulator for {:?} caused by {:?}", sender_group, cause);
+        // if the cause was outside our close group
+        let unknown_cause = !self.causes.check(&cause);
+        let request = (sender_group, type_tag, cause);
+        // if this is the first instance of a new refresh request
+        let first_request = !self.requests.contains_key(&request);
+        if unknown_cause && first_request {
+            let _ = self.event_sender.send(::event::Event::DoRefresh(request.1.clone(),
+            request.0.clone(), request.2.clone()));
+        }
         {
             if threshold <= 1 {
                 return Some(vec![payload]);
@@ -64,5 +83,9 @@ impl RefreshAccumulator {
             self.requests.remove(&request);
             messages
         })
+    }
+
+    pub fn register_cause(&mut self, cause: &::NameType) {
+        self.causes.add(cause.clone());
     }
 }
