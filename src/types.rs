@@ -15,63 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-/// MethodCall denotes a specific request to be carried out by routing.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum MethodCall {
-    /// request to have `location` to handle put for the `content`
-                                                                                            #[allow(dead_code)]
-    Put {
-        location: ::routing::Authority,
-        content: ::routing::data::Data,
-    },
-    /// request to retrieve data with specified type and location from network
-                                                                                            #[allow(dead_code)]
-    Get {
-        location: ::routing::Authority,
-        data_request: ::routing::data::DataRequest,
-    },
-    // /// request to post
-    // Post { destination: ::routing::NameType, content: Data },
-    // /// Request delete
-    // Delete { name: ::routing::NameType, data : Data },
-    /// request to refresh
-    // Refresh {
-    //     type_tag: u64,
-    //     our_authority: ::routing::Authority,
-    //     payload: Vec<u8>,
-    // },
-    /// reply
-                                                                                            #[allow(dead_code)]
-    Reply {
-        data: ::routing::data::Data,
-    },
-    /// response error indicating failed in putting data
-                                                                                            #[allow(dead_code)]
-    FailedPut {
-        location: ::routing::Authority,
-        data: ::routing::data::Data,
-    },
-    /// response error indicating clearing sacrificial data
-                                                                                            #[allow(dead_code)]
-    ClearSacrificial {
-        location: ::routing::Authority,
-        name: ::routing::NameType,
-        size: u32,
-    },
-    /// response error indicating not enough allowance
-                                                                                            #[allow(dead_code)]
-    LowBalance{
-        location: ::routing::Authority,
-        data: ::routing::data::Data,
-        balance: u32,
-    },
-    /// response error indicating invalid request
-                                                                                            #[allow(dead_code)]
-    InvalidRequest {
-        data: ::routing::data::Data,
-    },
-}
-
 /// This trait is required for any type (normally an account) which is refreshed on a churn event.
 pub trait Refreshable : ::rustc_serialize::Encodable + ::rustc_serialize::Decodable {
     /// The serialised contents

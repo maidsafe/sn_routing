@@ -28,10 +28,7 @@ pub struct Vault {
     pmid_manager: ::pmid_manager::PmidManager,
     pmid_node: ::pmid_node::PmidNode,
     sd_manager: ::sd_manager::StructuredDataManager,
-    #[allow(dead_code)]
-    data_cache: ::lru_time_cache::LruCache<::routing::NameType, ::routing::data::Data>,
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
-    #[allow(dead_code)]
     routing: Routing,
     churn_timestamp: ::time::SteadyTime,
     id: ::routing::NameType,
@@ -54,8 +51,6 @@ impl Vault {
             pmid_node: ::pmid_node::PmidNode::new(routing.clone()),
             sd_manager: ::sd_manager::StructuredDataManager::new(routing.clone()),
             churn_timestamp: ::time::SteadyTime::now(),
-            data_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
-                            ::time::Duration::minutes(10), 100),
             receiver: receiver,
             routing: routing,
             id: ::routing::NameType::new([0u8; 64]),
@@ -254,10 +249,7 @@ impl Vault {
     fn handle_post_response(&mut self,
                             _: ::routing::Authority, // from_authority
                             _: ::routing::error::ResponseError,
-                            _: Option<::routing::SignedToken>)
-                            -> Vec<::types::MethodCall> {
-        vec![]
-    }
+                            _: Option<::routing::SignedToken>) {}
 
     fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
         self.maid_manager.handle_churn();
@@ -278,37 +270,7 @@ impl Vault {
                 .or_else(|| self.pmid_manager.handle_refresh(&type_tag, &our_authority, &payloads))
                 .or_else(|| self.sd_manager.handle_refresh(&type_tag, &our_authority, &payloads));
     }
-
-    // The cache handling in vault is roleless, i.e. vault will do whatever routing tells it to do
-    #[allow(dead_code)]
-    fn handle_cache_get(&mut self,
-                        _: ::routing::data::DataRequest, // data_request
-                        data_location: ::routing::NameType,
-                        _: ::routing::NameType,
-                        _: Option<::routing::SignedToken>)
-                        -> Result<::types::MethodCall, ::routing::error::ResponseError> {
-        match self.data_cache.get(&data_location) {
-            Some(data) => Ok(::types::MethodCall::Reply { data: data.clone() }),
-            // TODO: NoData may still be preferred here
-            None => Err(::routing::error::ResponseError::Abort),
-        }
-    }
-
-    #[allow(dead_code)]
-    fn handle_cache_put(&mut self,
-                        _: ::routing::Authority, // from_authority
-                        _: ::routing::NameType, // from_address
-                        data: ::routing::data::Data,
-                        _: Option<::routing::SignedToken>)
-                        -> Result<::types::MethodCall, ::routing::error::ResponseError> {
-        let _ = self.data_cache.insert(data.name(), data);
-        Err(::routing::error::ResponseError::Abort)
-    }
 }
-
-pub type ResponseNotifier =
-    ::std::sync::Arc<(::std::sync::Mutex<Result<Vec<::types::MethodCall>,
-                      ::routing::error::ResponseError>>, ::std::sync::Condvar)>;
 
 #[cfg(test)]
 mod test {
@@ -622,58 +584,6 @@ mod test {
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));
             break;
-        }
-    }
-
-    #[test]
-    fn cache_test() {
-        let mut vault = Vault::new(None);
-        let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data = ::routing::immutable_data::ImmutableData::new(
-                          ::routing::immutable_data::ImmutableDataType::Normal, value);
-        {
-            let get_result = vault.handle_cache_get(
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                im_data.get_type_tag().clone()), im_data.name().clone(),
-                ::routing::NameType::new([7u8; 64]), None);
-            assert_eq!(get_result.is_err(), true);
-            assert_eq!(get_result.err().unwrap(), ::routing::error::ResponseError::Abort);
-        }
-
-        let put_result = vault.handle_cache_put(
-                ::pmid_node::Authority(::routing::NameType::new([6u8; 64])),
-                ::routing::NameType::new([7u8; 64]),
-                ::routing::data::Data::ImmutableData(im_data.clone()), None);
-        assert_eq!(put_result.is_err(), true);
-        match put_result.err().unwrap() {
-            ::routing::error::ResponseError::Abort => {}
-            _ => panic!("Unexpected"),
-        }
-        {
-            let get_result = vault.handle_cache_get(
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                                                            im_data.get_type_tag().clone()),
-                im_data.name().clone(), ::routing::NameType::new([7u8; 64]), None);
-            assert_eq!(get_result.is_err(), false);
-            match get_result.ok().unwrap() {
-                ::types::MethodCall::Reply { data } => {
-                    match data {
-                        ::routing::data::Data::ImmutableData(fetched_im_data) => {
-                            assert_eq!(fetched_im_data, im_data);
-                        }
-                        _ => panic!("Unexpected"),
-                    }
-                }
-                _ => panic!("Unexpected"),
-            }
-        }
-        {
-            let get_result = vault.handle_cache_get(
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                                                            im_data.get_type_tag().clone()),
-                ::routing::NameType::new([7u8; 64]), ::routing::NameType::new([7u8; 64]), None);
-            assert_eq!(get_result.is_err(), true);
-            assert_eq!(get_result.err().unwrap(), ::routing::error::ResponseError::Abort);
         }
     }
 }
