@@ -151,13 +151,14 @@ impl Routing {
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content. If the authority provided (our_authority) is not a group, the request for refresh will be dropped.
-    pub fn refresh_request(&self, type_tag: u64, our_authority: Authority, content: Bytes) {
+    pub fn refresh_request(&self, type_tag: u64, our_authority: Authority, content: Bytes,
+        cause: ::NameType) {
         if !our_authority.is_group() {
             error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
                 type_tag, our_authority);
             return; };
         let _ = self.action_sender.send(Action::SendContent(our_authority.clone(), our_authority,
-            Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
+            Content::InternalRequest(InternalRequest::Refresh(type_tag, content, cause))));
     }
 
     /// Dynamically enable/disable caching for Data types.
@@ -172,3 +173,56 @@ impl Routing {
         let _ = self.action_sender.send(Action::Terminate);
     }
 }
+
+
+// #[cfg(test)]
+// mod test {
+
+//     extern crate env_logger;
+
+//     pub struct RoutingNetwork;
+
+//     impl RoutingNetwork {
+
+//         fn new(size: u32) -> RoutingNetwork {
+//             env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));
+
+//             let node = || { let _ =
+//                 ::std::thread::spawn(move || ::test_utils::node::Node::new().run());
+//             };
+//             for i in 0..size { node(); ::std::thread::sleep_ms(1000 + i * 1000); }
+//             ::std::thread::sleep_ms(size * 1000);
+
+//             RoutingNetwork
+//         }
+//     }
+
+//     fn calculate_key_name(key: &::std::string::String) -> ::NameType {
+//         ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+//     }
+
+//     #[test]
+//     fn unit_client_put_get() {
+//         let _ = RoutingNetwork::new(10u32);
+//         let mut client = ::test_utils::client::Client::new();
+
+//         ::std::thread::sleep_ms(2000);
+
+//         let key = ::std::string::String::from("key");
+//         let value = ::std::string::String::from("value");
+//         let name = calculate_key_name(&key.clone());
+//         let data = ::utils::encode(&(key, value)).unwrap();
+//         let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
+
+//         client.put(data.clone());
+
+//         ::std::thread::sleep_ms(5000);
+
+//         let recovered_data = match client.get(::data::DataRequest::PlainData(name)) {
+//             Some(data) => data,
+//             None => panic!("Failed to recover stored data: {}.", name),
+//         };
+
+//         assert_eq!(recovered_data, data);
+//     }
+// }

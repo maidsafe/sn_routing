@@ -83,23 +83,49 @@ impl PublicId {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use NameType;
-    use test_utils::Random;
-    use sodiumoxide::crypto;
-    use utils;
-    use std::cmp;
-    use name_type::closer_to_target;
-    use types::GROUP_SIZE;
+    extern crate cbor;
+
+    #[test]
+    fn serialisation_public_id() {
+        let obj_before = ::public_id::PublicId::new(&::id::Id::new());
+
+        let mut e = ::cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: ::public_id::PublicId = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
+    }
+
+    #[test]
+    fn set_name() {
+        let id = ::id::Id::new();
+        let id_name = id.name().clone();
+        let relocated_name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let mut public_id = ::public_id::PublicId::new(&id);
+        let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();
+
+        public_id.set_name(relocated_name);
+
+        // set_name sets name properly
+        assert_eq!(relocated_name, public_id.name());
+
+        // id name is not changed
+        assert_eq!(id_name, id.name());
+
+        // set_name dit not change signing public key
+        assert_eq!(cloned_signing_public_key, public_id.signing_public_key().0.to_vec());
+    }
 
     #[test]
     fn assign_relocated_name_public_id() {
-        let before = PublicId::generate_random();
+        let before = ::public_id::PublicId::new(&::id::Id::new());
         let original_name = before.name();
         assert_eq!(original_name,
-            NameType::new(crypto::hash::sha512::hash(&before.signing_public_key()[..]).0));
+            ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
+                &before.signing_public_key()[..]).0));
         assert!(!before.is_relocated());
-        let relocated_name: NameType = Random::generate_random();
+        let relocated_name: ::NameType = ::test_utils::Random::generate_random();
         let mut relocated = before.clone();
         relocated.assign_relocated_name(relocated_name.clone());
         assert!(relocated.is_relocated());
@@ -109,76 +135,26 @@ mod test {
     }
 
     #[test]
-    fn calculate_relocated_name() {
-        let original_name : NameType = Random::generate_random();
+    fn is_relocated() {
+        let mut public_id: ::public_id::PublicId = ::test_utils::Random::generate_random();
+        let name_before = public_id.name();
+        let relocated_name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();
 
-        // empty close nodes
-        assert!(utils::calculate_relocated_name(Vec::new(), &original_name).is_err());
+        // is not relocated
+        assert!(!public_id.is_relocated());
 
-        // one entry
-        let mut close_nodes_one_entry : Vec<NameType> = Vec::new();
-        close_nodes_one_entry.push(Random::generate_random());
-        let actual_relocated_name_one_entry = utils::calculate_relocated_name(close_nodes_one_entry.clone(),
-        &original_name).unwrap();
-        assert!(original_name != actual_relocated_name_one_entry);
+        public_id.assign_relocated_name(relocated_name);
 
-        let mut combined_one_node_vec : Vec<NameType> = Vec::new();
-        combined_one_node_vec.push(original_name.clone());
-        combined_one_node_vec.push(close_nodes_one_entry[0].clone());
+        // is relocated
+        assert!(public_id.is_relocated());
 
-        let mut combined_one_node: Vec<u8> = Vec::new();
-        for node_id in combined_one_node_vec {
-            for i in node_id.get_id().iter() {
-                combined_one_node.push(*i);
-            }
-        }
+        // set_name dit not change signing public key
+        assert_eq!(cloned_signing_public_key, public_id.signing_public_key().0.to_vec());
 
-        let expected_relocated_name_one_node =
-            NameType(crypto::hash::sha512::hash(&combined_one_node).0);
+        public_id.assign_relocated_name(name_before);
 
-        assert_eq!(actual_relocated_name_one_entry, expected_relocated_name_one_node);
-
-        // populated closed nodes
-        let mut close_nodes : Vec<NameType> = Vec::new();
-        for _ in 0..GROUP_SIZE {
-            close_nodes.push(Random::generate_random());
-        }
-        let actual_relocated_name = utils::calculate_relocated_name(close_nodes.clone(),
-        &original_name).unwrap();
-        assert!(original_name != actual_relocated_name);
-        close_nodes.sort_by(|a, b| if closer_to_target(&a, &b, &original_name) {
-            cmp::Ordering::Less
-        } else {
-            cmp::Ordering::Greater
-        });
-        let first_closest = close_nodes[0].clone();
-        let second_closest = close_nodes[1].clone();
-        let mut combined: Vec<u8> = Vec::new();
-
-        for i in original_name.get_id().into_iter() {
-            combined.push(*i);
-        }
-        for i in first_closest.get_id().into_iter() {
-            combined.push(*i);
-        }
-        for i in second_closest.get_id().into_iter() {
-            combined.push(*i);
-        }
-
-        let expected_relocated_name = NameType(crypto::hash::sha512::hash(&combined).0);
-        assert_eq!(expected_relocated_name, actual_relocated_name);
-
-        let mut invalid_combined: Vec<u8> = Vec::new();
-        for i in first_closest.get_id().into_iter() {
-            invalid_combined.push(*i);
-        }
-        for i in second_closest.get_id().into_iter() {
-            invalid_combined.push(*i);
-        }
-        for i in original_name.get_id().into_iter() {
-            invalid_combined.push(*i);
-        }
-        let invalid_relocated_name = NameType(crypto::hash::sha512::hash(&invalid_combined).0);
-        assert!(invalid_relocated_name != actual_relocated_name);
+        // is no longer relocated
+        assert!(!public_id.is_relocated());
     }
 }

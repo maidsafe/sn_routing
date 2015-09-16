@@ -27,7 +27,7 @@
 //! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
 //!
 
-#![doc(html_logo_url = "http://maidsafe.net/img/Resources/branding/maidsafe_logo.fab2.png",
+#![doc(html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
        html_root_url = "http://maidsafe.github.io/routing")]
 // #![warn(missing_docs)]
@@ -84,6 +84,6 @@ pub mod plain_data;
 pub mod data;
 
 /// NameType is a 512bit name to address elements on the DHT network.
-pub use name_type::{NameType, closer_to_target};
+pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 pub use messages::{SignedToken, ExternalRequest, ExternalResponse};
 pub use authority::Authority;

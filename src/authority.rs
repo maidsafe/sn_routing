@@ -134,7 +134,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
                 InternalRequest::Connect(ref connect_request) => None,
                 InternalRequest::RequestNetworkName(ref public_id) => Some(public_id.name()),
                 InternalRequest::CacheNetworkName(ref public_id, _) => Some(public_id.name()),
-                InternalRequest::Refresh(_, _)                      => {
+                InternalRequest::Refresh(_, _, _)                      => {
                     let destination = message.destination();
                     if destination != message.source() { return None; };
                     if destination.is_group()
@@ -332,7 +332,7 @@ mod test {
             from_authority : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone())),
+                some_bytes.clone(), Random::generate_random())),
         };
         assert_eq!(super::our_authority(&refresh_message, &routing_table),
             Some(Authority::NaeManager(nae_or_client_in_our_close_group.clone())));
@@ -342,7 +342,7 @@ mod test {
             from_authority : Authority::ClientManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone())),
+                some_bytes.clone(), Random::generate_random())),
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
         // assert that this is not a valid Refresh Authority
@@ -350,7 +350,7 @@ mod test {
             from_authority : Authority::NaeManager(closest_node_in_our_close_group.id.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone())),
+                some_bytes.clone(), Random::generate_random())),
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
     }

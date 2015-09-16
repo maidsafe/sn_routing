@@ -132,8 +132,8 @@ impl Node {
                                         from_authority,
                                         response_token);
                 },
-                Event::Churn(our_close_group) => {
-                    self.handle_churn(our_close_group);
+                Event::Churn(our_close_group, cause) => {
+                    self.handle_churn(our_close_group, cause);
                 }
                 _ => {}
             }
@@ -208,7 +208,8 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>) {
+    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>,
+        _cause: ::routing::NameType) {
         info!("Handle churn for close group size {:?}", _our_close_group.len());
         for value in self.db.values() {
             println!("CHURN {:?}", value.name());

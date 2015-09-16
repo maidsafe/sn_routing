@@ -97,6 +97,7 @@ struct Node {
     receiver: Receiver<Event>,
     db: BTreeMap<::routing::NameType, PlainData>,
     client_accounts: BTreeMap<::routing::NameType, u64>,
+    connected: bool,
 }
 
 impl Node {
@@ -109,6 +110,7 @@ impl Node {
             receiver: receiver,
             db: BTreeMap::new(),
             client_accounts: BTreeMap::new(),
+            connected: false,
         }
     }
 
@@ -134,14 +136,26 @@ impl Node {
                                         from_authority,
                                         response_token);
                 },
-                Event::Connected => println!("Node is connected."),
-                Event::Churn(our_close_group) => {
-                    self.handle_churn(our_close_group);
+                Event::Connected => {
+                    self.connected = true;
+                    println!("Node is connected.")
+                },
+                Event::Churn(our_close_group, cause) => {
+                    self.handle_churn(our_close_group, cause);
                 },
                 Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
-                    if type_tag != 1u64 { error!("Reveived refresh for tag {:?} from {:?}",
+                    if type_tag != 1u64 { error!("Received refresh for tag {:?} from {:?}",
                         type_tag, our_authority); continue; };
                     self.handle_refresh(our_authority, vec_of_bytes);
+                },
+                Event::DoRefresh(type_tag, our_authority, cause) => {
+                    // on DoRefresh, refresh the explicit record provided with that cause
+                    if type_tag != 1u64 { error!("Received DoRefresh for tag {:?} from {:?}",
+                        type_tag, our_authority); continue; };
+                    self.handle_do_refresh(our_authority, cause);
+                }
+                Event::Terminated => {
+                    break;
                 },
                 _ => {},
             }
@@ -236,8 +250,20 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>) {
-        println!("Handle churn for close group size {:?}", _our_close_group.len());
+    fn handle_churn(&mut self, our_close_group: Vec<::routing::NameType>,
+        cause: ::routing::NameType) {
+        let mut exit = false;
+        if our_close_group.len() < ::routing::types::GROUP_SIZE {
+            if self.connected {
+                println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
+                    our_close_group.len(), ::routing::types::GROUP_SIZE);
+                exit = true;
+            } else {
+                println!("Ignoring churn as we are not yet connected.");
+                return;
+            }
+        }
+        println!("Handle churn for close group size {:?}", our_close_group.len());
         // for value in self.db.values() {
         //     println!("CHURN {:?}", value.name());
         //     self.routing.put_request(::routing::authority::Authority::NaeManager(value.name()),
@@ -249,9 +275,10 @@ impl Node {
             println!("REFRESH {:?} - {:?}", client_name, stored);
             self.routing.refresh_request(1u64,
                 ::routing::authority::Authority::ClientManager(client_name.clone()),
-                encode(&stored).unwrap());
+                encode(&stored).unwrap(), cause.clone());
         }
         // self.db = BTreeMap::new();
+        if exit { self.routing.stop(); };
     }
 
     fn handle_refresh(&mut self, our_authority: Authority, vec_of_bytes: Vec<Vec<u8>>) {
@@ -271,6 +298,25 @@ impl Node {
                  let _ = self.client_accounts.insert(client_name, median);
              },
              _ => {},
+        };
+    }
+
+    fn handle_do_refresh(&self, our_authority: ::routing::authority::Authority,
+        cause: ::routing::NameType) {
+        match our_authority {
+            ::routing::authority::Authority::ClientManager(client_name) => {
+                match self.client_accounts.get(&client_name) {
+                    Some(stored) => {
+                        println!("DoRefresh for client {:?} storing {:?} caused by {:?}",
+                            client_name, stored, cause);
+                        self.routing.refresh_request(1u64,
+                            ::routing::authority::Authority::ClientManager(client_name.clone()),
+                            encode(&stored).unwrap(), cause.clone());
+                    },
+                    None => {},
+                };
+            },
+            _ => {},
         };
     }
 }
@@ -329,7 +375,7 @@ struct Client {
     event_receiver: Receiver<Event>,
     command_receiver: Receiver<UserCommand>,
     public_id: PublicId,
-    is_done: bool,
+    exit: bool,
 }
 
 impl Client {
@@ -350,7 +396,7 @@ impl Client {
             event_receiver: event_receiver,
             command_receiver: command_receiver,
             public_id: public_id,
-            is_done: false,
+            exit: false,
         }
     }
 
@@ -362,13 +408,13 @@ impl Client {
                 self.handle_user_command(command);
             }
 
-            if self.is_done { break; }
+            if self.exit { break; }
 
             while let Ok(event) = self.event_receiver.try_recv() {
                 self.handle_routing_event(event);
             }
 
-            if self.is_done { break; }
+            if self.exit { break; }
 
             thread::sleep_ms(10);
         }
@@ -404,7 +450,7 @@ impl Client {
     fn handle_user_command(&mut self, cmd : UserCommand) {
         match cmd {
             UserCommand::Exit => {
-                self.is_done = true;
+                self.exit = true;
             }
             UserCommand::Get(what) => {
                 self.send_get_request(what);
