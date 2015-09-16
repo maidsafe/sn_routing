@@ -19,7 +19,7 @@ use chunk_store::ChunkStore;
 use types::Refreshable;
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
 
-pub use ::routing::Authority::NaeManager as Authority;
+pub use routing::Authority::NaeManager as Authority;
 
 pub struct StructuredDataManager {
     routing: ::vault::Routing,
@@ -41,7 +41,7 @@ impl StructuredDataManager {
                       from_authority: &::routing::Authority,
                       data_request: &::routing::data::DataRequest,
                       response_token: &Option<::routing::SignedToken>)
-                       -> Option<()> {
+                      -> Option<()> {
         // Check if this is for this persona, and that the Data is StructuredData.
         if !::utils::is_sd_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
@@ -64,26 +64,29 @@ impl StructuredDataManager {
             return ::utils::HANDLED;
         }
         let decoded: ::routing::structured_data::StructuredData =
-                match ::routing::utils::decode(&data) {
-            Ok(data) => data,
-            Err(_) => {
-                warn!("Failed to parse data with name {:?}", structured_data_name_and_type.0);
-                return ::utils::HANDLED;
-            },
-        };
+            match ::routing::utils::decode(&data) {
+                Ok(data) => data,
+                Err(_) => {
+                    warn!("Failed to parse data with name {:?}", structured_data_name_and_type.0);
+                    return ::utils::HANDLED;
+                }
+            };
         debug!("As {:?} sending data {:?} to {:?} in response to the original request {:?}",
                our_authority, ::routing::data::Data::StructuredData(decoded.clone()),
                from_authority, data_request);
-        self.routing.get_response(our_authority.clone(), from_authority.clone(),
+        self.routing.get_response(our_authority.clone(),
+                                  from_authority.clone(),
                                   ::routing::data::Data::StructuredData(decoded),
-                                  data_request.clone(), response_token.clone());
+                                  data_request.clone(),
+                                  response_token.clone());
         ::utils::HANDLED
     }
 
     pub fn handle_put(&mut self,
                       our_authority: &::routing::Authority,
                       from_authority: &::routing::Authority,
-                      data: &::routing::data::Data) -> Option<()> {
+                      data: &::routing::data::Data)
+                      -> Option<()> {
         // Check if this is for this persona, and that the Data is StructuredData.
         if !::utils::is_sd_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
@@ -119,7 +122,8 @@ impl StructuredDataManager {
     pub fn handle_post(&mut self,
                        our_authority: &::routing::Authority,
                        from_authority: &::routing::Authority,
-                       data: &::routing::data::Data) -> Option<()> {
+                       data: &::routing::data::Data)
+                       -> Option<()> {
         // Check if this is for this persona.
         if !::utils::is_sd_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
@@ -159,8 +163,11 @@ impl StructuredDataManager {
         ::utils::HANDLED
     }
 
-    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
-                          payloads: &Vec<Vec<u8>>) -> Option<()> {
+    pub fn handle_refresh(&mut self,
+                          type_tag: &u64,
+                          our_authority: &::routing::Authority,
+                          payloads: &Vec<Vec<u8>>)
+                          -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
             if let &Authority(from_group) = our_authority {
                 if let Some(merged_structured_data) =
@@ -203,7 +210,8 @@ mod test {
         pub routing: ::vault::Routing,
         pub sd_manager: StructuredDataManager,
         pub data_name: ::routing::NameType,
-        pub keys: (::sodiumoxide::crypto::sign::PublicKey, ::sodiumoxide::crypto::sign::SecretKey),
+        pub keys: (::sodiumoxide::crypto::sign::PublicKey,
+ ::sodiumoxide::crypto::sign::SecretKey),
         pub structured_data: ::routing::structured_data::StructuredData,
         pub data: ::routing::data::Data,
         pub us: ::routing::Authority,
@@ -235,7 +243,8 @@ mod test {
             }
         }
 
-        pub fn get_from_chunkstore(&self, data_name: &::routing::NameType)
+        pub fn get_from_chunkstore(&self,
+                                   data_name: &::routing::NameType)
                                    -> Option<::routing::structured_data::StructuredData> {
             let data = self.sd_manager.chunk_store.get(*data_name);
             if data.len() == 0 {
@@ -280,8 +289,17 @@ mod test {
 
         // incorrect version
         let mut sd_new_bad = ::routing::structured_data::StructuredData::new(0,
-            *env.structured_data.get_identifier(), 3, env.structured_data.get_data().clone(),
-            vec![env.keys.0], vec![], Some(&env.keys.1)).ok().unwrap();
+                                                                             *env.structured_data
+                                                                                 .get_identifier(),
+                                                                             3,
+                                                                             env.structured_data
+                                                                                .get_data()
+                                                                                .clone(),
+                                                                             vec![env.keys.0],
+                                                                             vec![],
+                                                                             Some(&env.keys.1))
+                                 .ok()
+                                 .unwrap();
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_post(&env.us, &env.client,
                        &::routing::data::Data::StructuredData(sd_new_bad)));
@@ -289,8 +307,17 @@ mod test {
 
         // correct version
         let mut sd_new = ::routing::structured_data::StructuredData::new(0,
-            *env.structured_data.get_identifier(), 1, env.structured_data.get_data().clone(),
-            vec![env.keys.0], vec![], Some(&env.keys.1)) .ok().unwrap();
+                                                                         *env.structured_data
+                                                                             .get_identifier(),
+                                                                         1,
+                                                                         env.structured_data
+                                                                            .get_data()
+                                                                            .clone(),
+                                                                         vec![env.keys.0],
+                                                                         vec![],
+                                                                         Some(&env.keys.1))
+                             .ok()
+                             .unwrap();
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_post(&env.us, &env.client,
                        &::routing::data::Data::StructuredData(sd_new.clone())));
@@ -299,8 +326,17 @@ mod test {
         // update to a new owner, wrong signature
         let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
         sd_new_bad = ::routing::structured_data::StructuredData::new(0,
-            *env.structured_data.get_identifier(), 2, env.structured_data.get_data().clone(),
-            vec![keys2.0], vec![env.keys.0], Some(&keys2.1)).ok().unwrap();
+                                                                     *env.structured_data
+                                                                         .get_identifier(),
+                                                                     2,
+                                                                     env.structured_data
+                                                                        .get_data()
+                                                                        .clone(),
+                                                                     vec![keys2.0],
+                                                                     vec![env.keys.0],
+                                                                     Some(&keys2.1))
+                         .ok()
+                         .unwrap();
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_post(&env.us, &env.client,
                        &::routing::data::Data::StructuredData(sd_new_bad.clone())));
@@ -308,8 +344,17 @@ mod test {
 
         // update to a new owner, correct signature
         sd_new = ::routing::structured_data::StructuredData::new(0,
-            *env.structured_data.get_identifier(), 2, env.structured_data.get_data().clone(),
-            vec![keys2.0], vec![env.keys.0], Some(&env.keys.1)).ok().unwrap();
+                                                                 *env.structured_data
+                                                                     .get_identifier(),
+                                                                 2,
+                                                                 env.structured_data
+                                                                    .get_data()
+                                                                    .clone(),
+                                                                 vec![keys2.0],
+                                                                 vec![env.keys.0],
+                                                                 Some(&env.keys.1))
+                     .ok()
+                     .unwrap();
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_post(&env.us, &env.client,
                        &::routing::data::Data::StructuredData(sd_new.clone())));

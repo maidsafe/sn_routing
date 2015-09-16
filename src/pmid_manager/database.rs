@@ -174,7 +174,8 @@ impl PmidManagerDatabase {
               merged_account.name(), merged_account.value());
     }
 
-    pub fn handle_churn(&mut self, close_group: &Vec<::routing::NameType>,
+    pub fn handle_churn(&mut self,
+                        close_group: &Vec<::routing::NameType>,
                         routing: &::vault::Routing) {
         for (key, value) in self.storage.iter() {
             if close_group.iter().find(|a| **a == *key).is_some() {
@@ -184,8 +185,9 @@ impl PmidManagerDatabase {
                 if encoder.encode(&[account]).is_ok() {
                     debug!("PmidManager sends out a refresh regarding account {:?}",
                            our_authority.get_location());
-                routing.refresh_request(super::ACCOUNT_TAG, our_authority,
-                                        encoder.as_bytes().to_vec());
+                    routing.refresh_request(super::ACCOUNT_TAG,
+                                            our_authority,
+                                            encoder.as_bytes().to_vec());
                 }
             }
         }

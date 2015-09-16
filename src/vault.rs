@@ -62,7 +62,9 @@ impl Vault {
         use routing::event::Event;
         while let Ok(event) = self.receiver.recv() {
             match self.event_sender.clone() {
-                Some(sender) => { let _ = sender.send(event.clone()); }
+                Some(sender) => {
+                    let _ = sender.send(event.clone());
+                }
                 None => {}
             }
             info!("Vault {} received an event from routing : {:?}", self.id, event);
@@ -71,8 +73,9 @@ impl Vault {
                     self.on_request(request, our_authority, from_authority, response_token),
                 Event::Response{ response, our_authority, from_authority } =>
                     self.on_response(response, our_authority, from_authority),
-                Event::Refresh(type_tag, our_authority, accounts) =>
-                    self.on_refresh(type_tag, our_authority, accounts),
+                Event::Refresh(type_tag, our_authority, accounts) => self.on_refresh(type_tag,
+                                                                                     our_authority,
+                                                                                     accounts),
                 Event::Churn(close_group) => self.on_churn(close_group),
                 Event::Bootstrapped => self.on_bootstrapped(),
                 Event::Connected => self.on_connected(),
@@ -116,7 +119,9 @@ impl Vault {
                 self.handle_get_response(our_authority, from_authority, data, response_token);
             }
             ::routing::ExternalResponse::Put(response_error, response_token) => {
-                self.handle_put_response(our_authority, from_authority, response_error,
+                self.handle_put_response(our_authority,
+                                         from_authority,
+                                         response_error,
                                          response_token);
             }
             ::routing::ExternalResponse::Post(/*response_error*/_, /*response_token*/_) => {
@@ -190,13 +195,20 @@ impl Vault {
                   from_authority: ::routing::Authority,
                   data_request: ::routing::data::DataRequest,
                   response_token: Option<::routing::SignedToken>) {
-        let _ =
-            self.data_manager.handle_get(&our_authority, &from_authority, &data_request,
-                                         &response_token)
-                .or_else(|| self.sd_manager.handle_get(&our_authority, &from_authority,
-                                                       &data_request, &response_token))
-                .or_else(|| self.pmid_node.handle_get(&our_authority, &from_authority,
-                                                      &data_request, &response_token));
+        let _ = self.data_manager
+                    .handle_get(&our_authority, &from_authority, &data_request, &response_token)
+                    .or_else(|| {
+                        self.sd_manager.handle_get(&our_authority,
+                                                   &from_authority,
+                                                   &data_request,
+                                                   &response_token)
+                    })
+                    .or_else(|| {
+                        self.pmid_node.handle_get(&our_authority,
+                                                  &from_authority,
+                                                  &data_request,
+                                                  &response_token)
+                    });
     }
 
     fn handle_put(&mut self,
@@ -204,13 +216,19 @@ impl Vault {
                   from_authority: ::routing::Authority,
                   data: ::routing::data::Data,
                   response_token: Option<::routing::SignedToken>) {
-        let _ =
-            self.maid_manager.handle_put(&our_authority, &from_authority, &data, &response_token)
-                .or_else(|| self.data_manager.handle_put(&our_authority, &from_authority, &data))
-                .or_else(|| self.sd_manager.handle_put(&our_authority, &from_authority, &data))
-                .or_else(|| self.pmid_manager.handle_put(&our_authority, &from_authority, &data))
-                .or_else(|| self.pmid_node.handle_put(&our_authority, &from_authority, &data,
-                                                      &response_token));
+        let _ = self.maid_manager
+                    .handle_put(&our_authority, &from_authority, &data, &response_token)
+                    .or_else(|| {
+                        self.data_manager.handle_put(&our_authority, &from_authority, &data)
+                    })
+                    .or_else(|| self.sd_manager.handle_put(&our_authority, &from_authority, &data))
+                    .or_else(|| {
+                        self.pmid_manager.handle_put(&our_authority, &from_authority, &data)
+                    })
+                    .or_else(|| {
+                        self.pmid_node
+                            .handle_put(&our_authority, &from_authority, &data, &response_token)
+                    });
     }
 
     // Post is only used to update the content or owners of a StructuredData
@@ -227,7 +245,9 @@ impl Vault {
                            from_authority: ::routing::Authority,
                            response: ::routing::data::Data,
                            response_token: Option<::routing::SignedToken>) {
-        let _ = self.data_manager.handle_get_response(&our_authority, &from_authority, &response,
+        let _ = self.data_manager.handle_get_response(&our_authority,
+                                                      &from_authority,
+                                                      &response,
                                                       &response_token);
     }
 
@@ -238,10 +258,14 @@ impl Vault {
                            from_authority: ::routing::Authority,
                            response: ::routing::error::ResponseError,
                            response_token: Option<::routing::SignedToken>) {
-        let _ = self.data_manager.handle_put_response(&our_authority, &from_authority, &response)
-                    .or_else(|| self.pmid_manager.handle_put_response(&our_authority,
-                                                                      &from_authority, &response,
-                                                                      &response_token));
+        let _ = self.data_manager
+                    .handle_put_response(&our_authority, &from_authority, &response)
+                    .or_else(|| {
+                        self.pmid_manager.handle_put_response(&our_authority,
+                                                              &from_authority,
+                                                              &response,
+                                                              &response_token)
+                    });
     }
 
     // https://maidsafe.atlassian.net/browse/MAID-1111 post_response is not required on vault
@@ -249,7 +273,8 @@ impl Vault {
     fn handle_post_response(&mut self,
                             _: ::routing::Authority, // from_authority
                             _: ::routing::error::ResponseError,
-                            _: Option<::routing::SignedToken>) {}
+                            _: Option<::routing::SignedToken>) {
+    }
 
     fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
         self.maid_manager.handle_churn();
@@ -265,10 +290,17 @@ impl Vault {
         // TODO: The assumption of the incoming payloads is that it is a vector of serialised
         //       account entries from the close group nodes of `from_group`
         debug!("refresh tag {:?} & authority {:?}", type_tag, our_authority);
-        let _ = self.maid_manager.handle_refresh(&type_tag, &our_authority, &payloads)
-                .or_else(|| self.data_manager.handle_refresh(&type_tag, &our_authority, &payloads))
-                .or_else(|| self.pmid_manager.handle_refresh(&type_tag, &our_authority, &payloads))
-                .or_else(|| self.sd_manager.handle_refresh(&type_tag, &our_authority, &payloads));
+        let _ = self.maid_manager
+                    .handle_refresh(&type_tag, &our_authority, &payloads)
+                    .or_else(|| {
+                        self.data_manager.handle_refresh(&type_tag, &our_authority, &payloads)
+                    })
+                    .or_else(|| {
+                        self.pmid_manager.handle_refresh(&type_tag, &our_authority, &payloads)
+                    })
+                    .or_else(|| {
+                        self.sd_manager.handle_refresh(&type_tag, &our_authority, &payloads)
+                    });
     }
 }
 
@@ -280,10 +312,10 @@ mod test {
     fn mock_env_setup() -> (Routing, ::std::sync::mpsc::Receiver<(::routing::data::Data)>) {
         ::utils::initialise_logger();
         let run_vault = |mut vault: Vault| {
-                            let _ = ::std::thread::spawn(move || {
-                                                                  vault.do_run();
-                                                              });
-                        };
+            let _ = ::std::thread::spawn(move || {
+                vault.do_run();
+            });
+        };
         let mut vault = Vault::new(None);
         let receiver = vault.routing.get_client_receiver();
         let mut routing = vault.routing.clone();
@@ -307,8 +339,9 @@ mod test {
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
-        routing.client_put(client_name, sign_keys.0,
-            ::routing::data::Data::ImmutableData(im_data.clone()));
+        routing.client_put(client_name,
+                           sign_keys.0,
+                           ::routing::data::Data::ImmutableData(im_data.clone()));
         ::std::thread::sleep_ms(2000);
 
         let data_request = ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -328,19 +361,35 @@ mod test {
         let name = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
-            value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+        let sd = ::routing::structured_data::StructuredData::new(0,
+                                                                 name,
+                                                                 0,
+                                                                 value.clone(),
+                                                                 vec![sign_keys.0],
+                                                                 vec![],
+                                                                 Some(&sign_keys.1))
+                     .ok()
+                     .unwrap();
 
         let client_name = ::utils::random_name();
-        routing.client_put(client_name, sign_keys.0,
-            ::routing::data::Data::StructuredData(sd.clone()));
+        routing.client_put(client_name,
+                           sign_keys.0,
+                           ::routing::data::Data::StructuredData(sd.clone()));
         ::std::thread::sleep_ms(2000);
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd_new = ::routing::structured_data::StructuredData::new(0, name, 1,
-            value.clone(), vec![keys.0], vec![sign_keys.0], Some(&sign_keys.1)).ok().unwrap();
-        routing.client_post(client_name, sign_keys.0,
-            ::routing::data::Data::StructuredData(sd_new.clone()));
+        let sd_new = ::routing::structured_data::StructuredData::new(0,
+                                                                     name,
+                                                                     1,
+                                                                     value.clone(),
+                                                                     vec![keys.0],
+                                                                     vec![sign_keys.0],
+                                                                     Some(&sign_keys.1))
+                         .ok()
+                         .unwrap();
+        routing.client_post(client_name,
+                            sign_keys.0,
+                            ::routing::data::Data::StructuredData(sd_new.clone()));
         ::std::thread::sleep_ms(2000);
 
         let data_request = ::routing::data::DataRequest::StructuredData(sd.name(), 0);
@@ -363,10 +412,10 @@ mod test {
             Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
         }
         let run_vault = |mut vault: Vault| {
-                            let _ = ::std::thread::spawn(move || {
-                                                                  vault.do_run();
-                                                              });
-                        };
+            let _ = ::std::thread::spawn(move || {
+                vault.do_run();
+            });
+        };
         let mut vault_receivers = Vec::new();
         for i in 0..8 {
             println!("starting node {:?}", i);
@@ -412,7 +461,8 @@ mod test {
                         Event::Bootstrapped => {
                             // Send an empty data to indicate bootstrapped
                             let _ = client_sender.clone().send(::routing::data::Data::PlainData(
-                                ::routing::plain_data::PlainData::new(::routing::NameType::new([0u8; 64]), vec![])));
+                                ::routing::plain_data::PlainData::new(
+                                    ::routing::NameType::new([0u8; 64]), vec![])));
                             info!("client routing Bootstrapped");
                         }
                         Event::Terminated => {
@@ -438,15 +488,19 @@ mod test {
     //               3 -- Authority::ManagedNode
     //               4 -- Authority::Client
     //              10 -- Event::Churn
-    fn waiting_for_hits(vault_receivers: &Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
-                        expected_tag: u32, expected_hits: usize, time_limit: ::time::Duration) {
+    fn waiting_for_hits(
+            vault_receivers: &Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
+            expected_tag: u32,
+            expected_hits: usize,
+            time_limit: ::time::Duration) {
         let mut hits = 0;
         let starting_time = ::time::SteadyTime::now();
         while hits < expected_hits {
             for receiver in vault_receivers.iter() {
                 match receiver.try_recv() {
                     Err(_) => {}
-                    Ok(::routing::event::Event::Request{ request, our_authority, from_authority, response_token }) => {
+                    Ok(::routing::event::Event::Request{ request, our_authority,
+                                                         from_authority, response_token }) => {
                         info!("as {:?} received request: {:?} from {:?} having token {:?}",
                               our_authority, request, from_authority, response_token == None);
                         match (our_authority, expected_tag) {
@@ -465,9 +519,9 @@ mod test {
             }
             ::std::thread::sleep_ms(1);
             if starting_time + time_limit < ::time::SteadyTime::now() {
-                // As this function is only to be used in testing code, and a particially established
-                // environment / testing result having a high chance indicates a failure in code
-                // So here use panic to terminate the testing directly.
+                // As this function is only to be used in testing code, and a particially
+                // established environment / testing result having a high chance indicates a failure
+                // in code.  So here use panic to terminate the testing directly.
                 panic!("waiting_for_hits can't resolve within the expected duration");
             }
         }
@@ -476,7 +530,8 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_put_get_test() {
-        let (vault_receivers, mut client_routing, client_receiver, client_name) = network_env_setup();
+        let (vault_receivers, mut client_routing, client_receiver, client_name) =
+            network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
@@ -484,10 +539,13 @@ mod test {
         println!("network_put_get_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM, ::time::Duration::minutes(1));
+        waiting_for_hits(&vault_receivers,
+                         3,
+                         ::data_manager::PARALLELISM,
+                         ::time::Duration::minutes(1));
         println!("network_put_get_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
-            ::routing::data::DataRequest::ImmutableData(im_data.name(),
+                                   ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::ImmutableData(im_data.clone()));
@@ -498,28 +556,49 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_post_test() {
-        let (vault_receivers, mut client_routing, client_receiver, client_name) = network_env_setup();
+        let (vault_receivers, mut client_routing, client_receiver, client_name) =
+            network_env_setup();
 
         let name = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
-            value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+        let sd = ::routing::structured_data::StructuredData::new(0,
+                                                                 name,
+                                                                 0,
+                                                                 value.clone(),
+                                                                 vec![sign_keys.0],
+                                                                 vec![],
+                                                                 Some(&sign_keys.1))
+                     .ok()
+                     .unwrap();
         println!("network_post_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::minutes(1));
+        waiting_for_hits(&vault_receivers,
+                         1,
+                         ::routing::types::GROUP_SIZE,
+                         ::time::Duration::minutes(1));
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd_new = ::routing::structured_data::StructuredData::new(0, name, 1,
-            value.clone(), vec![keys.0], vec![sign_keys.0], Some(&sign_keys.1)).ok().unwrap();
+        let sd_new = ::routing::structured_data::StructuredData::new(0,
+                                                                     name,
+                                                                     1,
+                                                                     value.clone(),
+                                                                     vec![keys.0],
+                                                                     vec![sign_keys.0],
+                                                                     Some(&sign_keys.1))
+                         .ok()
+                         .unwrap();
         println!("network_post_test posting data");
         client_routing.post_request(::sd_manager::Authority(sd.name()),
                                     ::routing::data::Data::StructuredData(sd_new.clone()));
-        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::minutes(1));
+        waiting_for_hits(&vault_receivers,
+                         1,
+                         ::routing::types::GROUP_SIZE,
+                         ::time::Duration::minutes(1));
         println!("network_post_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
-            ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+                                   ::routing::data::DataRequest::StructuredData(sd.name(), 0));
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::StructuredData(sd_new.clone()));
             break;
@@ -529,7 +608,8 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_churn_immutable_data_test() {
-        let (vault_receivers, mut client_routing, client_receiver, client_name) = network_env_setup();
+        let (vault_receivers, mut client_routing, client_receiver, client_name) =
+            network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
@@ -537,18 +617,24 @@ mod test {
         println!("network_churn_immutable_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        waiting_for_hits(&vault_receivers, 3, ::data_manager::PARALLELISM, ::time::Duration::minutes(1));
+        waiting_for_hits(&vault_receivers,
+                         3,
+                         ::data_manager::PARALLELISM,
+                         ::time::Duration::minutes(1));
 
         println!("network_churn_immutable_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-                                              ::vault::Vault::new(Some(sender)).do_run();
-                                          });
+            ::vault::Vault::new(Some(sender)).do_run();
+        });
         let new_vault_receivers = vec![receiver];
-        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1, ::time::Duration::seconds(30));
+        waiting_for_hits(&new_vault_receivers,
+                         10,
+                         ::routing::types::GROUP_SIZE - 1,
+                         ::time::Duration::seconds(30));
         println!("network_churn_immutable_data_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
-            ::routing::data::DataRequest::ImmutableData(im_data.name(),
+                                   ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::ImmutableData(im_data.clone()));
@@ -559,28 +645,42 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_churn_structured_data_test() {
-        let (vault_receivers, mut client_routing, client_receiver, client_name) = network_env_setup();
+        let (vault_receivers, mut client_routing, client_receiver, client_name) =
+            network_env_setup();
 
         let name = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd = ::routing::structured_data::StructuredData::new(0, name, 0,
-            value.clone(), vec![sign_keys.0], vec![], Some(&sign_keys.1)).ok().unwrap();
+        let sd = ::routing::structured_data::StructuredData::new(0,
+                                                                 name,
+                                                                 0,
+                                                                 value.clone(),
+                                                                 vec![sign_keys.0],
+                                                                 vec![],
+                                                                 Some(&sign_keys.1))
+                     .ok()
+                     .unwrap();
         println!("network_churn_structured_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        waiting_for_hits(&vault_receivers, 1, ::routing::types::GROUP_SIZE, ::time::Duration::minutes(1));
+        waiting_for_hits(&vault_receivers,
+                         1,
+                         ::routing::types::GROUP_SIZE,
+                         ::time::Duration::minutes(1));
 
         println!("network_churn_structured_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-                                              ::vault::Vault::new(Some(sender)).do_run();
-                                          });
+            ::vault::Vault::new(Some(sender)).do_run();
+        });
         let new_vault_receivers = vec![receiver];
-        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1, ::time::Duration::minutes(1));
+        waiting_for_hits(&new_vault_receivers,
+                         10,
+                         ::routing::types::GROUP_SIZE - 1,
+                         ::time::Duration::minutes(1));
         println!("network_churn_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
-            ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+                                   ::routing::data::DataRequest::StructuredData(sd.name(), 0));
         while let Ok(data) = client_receiver.recv() {
             assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));
             break;

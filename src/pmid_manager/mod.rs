@@ -19,7 +19,7 @@ mod database;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::PmidManagerAccount as u64;
 pub use self::database::Account;
-pub use ::routing::Authority::NodeManager as Authority;
+pub use routing::Authority::NodeManager as Authority;
 
 pub struct PmidManager {
     routing: ::vault::Routing,
@@ -34,7 +34,8 @@ impl PmidManager {
     pub fn handle_put(&mut self,
                       our_authority: &::routing::Authority,
                       from_authority: &::routing::Authority,
-                      data: &::routing::data::Data) -> Option<()> {
+                      data: &::routing::data::Data)
+                      -> Option<()> {
         // Check if this is for this persona.
         if !::utils::is_pmid_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
@@ -77,19 +78,24 @@ impl PmidManager {
 
         match from_authority {
             &::pmid_node::Authority(from_address) => {
-                self.handle_put_response_from_pmid_node(our_authority.clone(), from_address,
-                                                        response.clone(), response_token.clone());
-            },
+                self.handle_put_response_from_pmid_node(our_authority.clone(),
+                                                        from_address,
+                                                        response.clone(),
+                                                        response_token.clone());
+            }
             &::data_manager::Authority(_) => {
                 self.handle_put_response_from_data_manager(pmid_node_name, response.clone());
-            },
+            }
             _ => warn!("Invalid authority for PUT RESPONSE at PmidManager: {:?}", from_authority),
         }
         ::utils::HANDLED
     }
 
-    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
-                          payloads: &Vec<Vec<u8>>) -> Option<()> {
+    pub fn handle_refresh(&mut self,
+                          type_tag: &u64,
+                          our_authority: &::routing::Authority,
+                          payloads: &Vec<Vec<u8>>)
+                          -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
             if let &Authority(from_group) = our_authority {
                 if let Some(merged_account) = ::utils::merge::<Account>(from_group,
@@ -123,9 +129,9 @@ impl PmidManager {
                         let location = ::data_manager::Authority(immutable_data.name());
                         let response = ::routing::error::ResponseError::FailedRequestForData(
                             ::routing::data::Data::ImmutableData(immutable_data));
-                        self.routing.put_response(our_authority, location, response,
-                                                  response_token);
-                    },
+                        self.routing
+                            .put_response(our_authority, location, response, response_token);
+                    }
                     _ => warn!("Invalid data type for PUT RESPONSE at PmidManager: {:?}", data),
                 }
             }
@@ -158,15 +164,18 @@ mod test {
 
     use super::*;
 
-    fn env_setup() -> (::routing::Authority, ::vault::Routing, PmidManager,
-                       ::routing::Authority, ::routing::immutable_data::ImmutableData) {
+    fn env_setup() -> (::routing::Authority, ::vault::Routing, PmidManager, ::routing::Authority,
+                       ::routing::immutable_data::ImmutableData) {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let pmid_manager = PmidManager::new(routing.clone());
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
-        (Authority(::utils::random_name()), routing, pmid_manager,
-         ::data_manager::Authority(::utils::random_name()), data)
+        (Authority(::utils::random_name()),
+         routing,
+         pmid_manager,
+         ::data_manager::Authority(::utils::random_name()),
+         data)
     }
 
     #[test]

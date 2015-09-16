@@ -17,7 +17,7 @@
 
 use chunk_store::ChunkStore;
 
-pub use ::routing::Authority::ManagedNode as Authority;
+pub use routing::Authority::ManagedNode as Authority;
 
 pub struct PmidNode {
     routing: ::vault::Routing,
@@ -61,19 +61,21 @@ impl PmidNode {
             return ::utils::HANDLED;
         }
         let decoded: ::routing::immutable_data::ImmutableData =
-                match ::routing::utils::decode(&data) {
-            Ok(data) => data,
-            Err(_) => {
-                warn!("Failed to parse data with name {:?}", immutable_data_name_and_type.0);
-                return ::utils::HANDLED;
-            },
-        };
+            match ::routing::utils::decode(&data) {
+                Ok(data) => data,
+                Err(_) => {
+                    warn!("Failed to parse data with name {:?}", immutable_data_name_and_type.0);
+                    return ::utils::HANDLED;
+                }
+            };
         debug!("As {:?} sending data {:?} to {:?} in response to the original request {:?}",
                our_authority, ::routing::data::Data::ImmutableData(decoded.clone()), from_authority,
                data_request);
-        self.routing.get_response(our_authority.clone(), from_authority.clone(),
+        self.routing.get_response(our_authority.clone(),
+                                  from_authority.clone(),
                                   ::routing::data::Data::ImmutableData(decoded),
-                                  data_request.clone(), response_token.clone());
+                                  data_request.clone(),
+                                  response_token.clone());
         ::utils::HANDLED
     }
 
@@ -81,7 +83,8 @@ impl PmidNode {
                       our_authority: &::routing::Authority,
                       from_authority: &::routing::Authority,
                       data: &::routing::data::Data,
-                      response_token: &Option<::routing::SignedToken>) -> Option<()> {
+                      response_token: &Option<::routing::SignedToken>)
+                      -> Option<()> {
         // Check if this is for this persona.
         if !::utils::is_pmid_node_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
@@ -115,7 +118,8 @@ impl PmidNode {
         // If we can't store the data and it's a Backup or Sacrificial copy, just notify PmidManager
         // to update the account - replication shall not be carried out for it.
         if *immutable_data.get_type_tag() != ::routing::immutable_data::ImmutableDataType::Normal {
-            self.notify_managers_of_sacrifice(our_authority, immutable_data.clone(),
+            self.notify_managers_of_sacrifice(our_authority,
+                                              immutable_data.clone(),
                                               response_token);
             return ::utils::HANDLED;
         }
@@ -132,7 +136,8 @@ impl PmidNode {
             let parsed_data: ::routing::immutable_data::ImmutableData =
                 match ::routing::utils::decode(&fetched_data) {
                     Ok(data) => data,
-                    Err(_) => return ::utils::HANDLED,  // FIXME - remove this chunk and continue?
+                    // FIXME - for error case, remove this chunk and continue?
+                    Err(_) => return ::utils::HANDLED,
                 };
             match *parsed_data.get_type_tag() {
                 ::routing::immutable_data::ImmutableDataType::Sacrificial => {

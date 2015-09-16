@@ -145,7 +145,8 @@ impl MaidManagerDatabase {
             if encoder.encode(&[account]).is_ok() {
                 debug!("MaidManager sends out a refresh regarding account {:?}",
                        our_authority.get_location());
-                routing.refresh_request(super::ACCOUNT_TAG, our_authority,
+                routing.refresh_request(super::ACCOUNT_TAG,
+                                        our_authority,
                                         encoder.as_bytes().to_vec());
             }
         }

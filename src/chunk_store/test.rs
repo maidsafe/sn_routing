@@ -36,8 +36,7 @@ mod test {
         let mut i = 0usize;
         let mut container: Vec<(::routing::NameType, String)> = Vec::with_capacity(number);
         loop {
-            container.push((::utils::random_name(),
-                          get_random_non_empty_string(size)));
+            container.push((::utils::random_name(), get_random_non_empty_string(size)));
             i += 1; // i++; is not compiling
             if i == number {
                 break;
@@ -82,8 +81,8 @@ mod test {
                 let data_as_bytes = name_value.1.into_bytes();
                 self.chunk_store.put(::routing::NameType::new(name_value.0.clone().get_id()),
                                      data_as_bytes.clone());
-                let recovered =
-                    self.chunk_store.get(::routing::NameType::new(name_value.0.clone().get_id()));
+                let recovered = self.chunk_store
+                                    .get(::routing::NameType::new(name_value.0.clone().get_id()));
                 assert!(data_as_bytes == recovered);
             }
             name_value_pairs
@@ -96,13 +95,13 @@ mod test {
         let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
         let mut put = |size| {
-                          let name = ::utils::random_name();
-                          let data = get_random_non_empty_string(size);
-                          let size_before_insert = chunk_store.current_disk_usage();
-                          chunk_store.put(name, data.into_bytes());
-                          assert_eq!(chunk_store.current_disk_usage(), size + size_before_insert);
-                          chunk_store.current_disk_usage()
-                      };
+            let name = ::utils::random_name();
+            let data = get_random_non_empty_string(size);
+            let size_before_insert = chunk_store.current_disk_usage();
+            chunk_store.put(name, data.into_bytes());
+            assert_eq!(chunk_store.current_disk_usage(), size + size_before_insert);
+            chunk_store.current_disk_usage()
+        };
 
         assert_eq!(put(1usize), 1usize);
         assert_eq!(put(100usize), 101usize);
@@ -127,14 +126,14 @@ mod test {
         let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
         let mut put_and_delete = |size| {
-                                     let name = ::utils::random_name();
-                                     let data = get_random_non_empty_string(size);
+            let name = ::utils::random_name();
+            let data = get_random_non_empty_string(size);
 
-                                     chunk_store.put(name.clone(), data.into_bytes());
-                                     assert_eq!(chunk_store.current_disk_usage(), size);
-                                     chunk_store.delete(name);
-                                     assert_eq!(chunk_store.current_disk_usage(), 0);
-                                 };
+            chunk_store.put(name.clone(), data.into_bytes());
+            assert_eq!(chunk_store.current_disk_usage(), size);
+            chunk_store.delete(name);
+            assert_eq!(chunk_store.current_disk_usage(), 0);
+        };
 
         put_and_delete(k_size);
         put_and_delete(k_disk_size);
@@ -146,8 +145,9 @@ mod test {
         let num_entries = 4;
         let num_disk_entries = 4;
         let mut chunk_store_utest = ChunkStoreTest::new();
-        let name_value_container =
-            chunk_store_utest.populate_chunk_store(num_entries, num_disk_entries).0;
+        let name_value_container = chunk_store_utest.populate_chunk_store(num_entries,
+                                                                          num_disk_entries)
+                                                    .0;
         let name = ::utils::random_name();
         let value = get_random_non_empty_string(2 * ONE_KB);
       // let first_name: routing::::routing::NameType = name_value_container[0].0.clone();
@@ -177,10 +177,10 @@ mod test {
         let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size);
 
         let mut put = |name, size| {
-                          let data = get_random_non_empty_string(size);
-                          chunk_store.put(name, data.into_bytes());
-                          chunk_store.current_disk_usage()
-                      };
+            let data = get_random_non_empty_string(size);
+            chunk_store.put(name, data.into_bytes());
+            chunk_store.current_disk_usage()
+        };
 
         let name = ::utils::random_name();
         assert_eq!(put(name.clone(), 1usize), 1usize);

@@ -64,7 +64,8 @@ impl ::types::Refreshable for Account {
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for response in responses {
             if *response.name() == from_group {
-                let push_in_vec = match stats.iter_mut().find(|a| a.0 == *response.data_holders()) {
+                let push_in_vec = match stats.iter_mut()
+                                             .find(|a| a.0 == *response.data_holders()) {
                     Some(find_res) => {
                         find_res.1 += 1;
                         false
@@ -145,7 +146,8 @@ impl Database {
               merged_account.name(), merged_account.data_holders());
     }
 
-    pub fn handle_churn(&mut self, our_authority: &::routing::Authority,
+    pub fn handle_churn(&mut self,
+                        our_authority: &::routing::Authority,
                         routing: &::vault::Routing) {
         self.temp_storage_after_churn = self.storage.clone();
         for (key, value) in self.storage.iter() {
@@ -165,7 +167,8 @@ impl Database {
             if encoder.encode(&[account]).is_ok() {
                 debug!("DataManager sends out a refresh regarding account {:?}",
                        target_authority.get_location());
-                routing.refresh_request(super::ACCOUNT_TAG, target_authority,
+                routing.refresh_request(super::ACCOUNT_TAG,
+                                        target_authority,
                                         encoder.as_bytes().to_vec());
             }
         }
