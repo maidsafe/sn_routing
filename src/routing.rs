@@ -203,9 +203,9 @@ impl Routing {
 
 //     #[test]
 //     fn unit_client_put_get() {
-//         let _ = RoutingNetwork::new(10u32);
+//         // let _ = RoutingNetwork::new(10u32);
+//         debug!("Starting client");
 //         let mut client = ::test_utils::client::Client::new();
-
 //         ::std::thread::sleep_ms(2000);
 
 //         let key = ::std::string::String::from("key");
@@ -214,8 +214,8 @@ impl Routing {
 //         let data = ::utils::encode(&(key, value)).unwrap();
 //         let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
 
+//         debug!("Putting data {:?}", data);
 //         client.put(data.clone());
-
 //         ::std::thread::sleep_ms(5000);
 
 //         let recovered_data = match client.get(::data::DataRequest::PlainData(name)) {
@@ -223,6 +223,7 @@ impl Routing {
 //             None => panic!("Failed to recover stored data: {}.", name),
 //         };
 
+//         debug!("Recovered data {:?}", recovered_data);
 //         assert_eq!(recovered_data, data);
 //     }
 // }

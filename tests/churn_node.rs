@@ -30,10 +30,10 @@ pub fn main () {
     ::env_logger::init().unwrap_or_else(|e| println!("Error initialising logger: {:?}", e));
 
     let mut time = ::time::SteadyTime::now();
-    let runtime = ::time::Duration::minutes(2);
-    let stoptime = ::time::Duration::minutes(1);
+    let runtime = ::time::Duration::minutes(5);
+    let stoptime = ::time::Duration::minutes(2);
     let mut rng = ::rand::thread_rng();
-    let range = ::rand::distributions::Range::new(0, 3);
+    let range = ::rand::distributions::Range::new(0, 20);
     let mut node = ::routing::test_utils::node::Node::new();
     let mut sender = node.get_sender();
 
@@ -44,7 +44,7 @@ pub fn main () {
     debug!("Entering loop.");
     loop {
         if running {
-            debug!("Node is running.");
+            debug!("Node online.");
             if time + runtime < ::time::SteadyTime::now() {
                 debug!("Reached run time.");
                 let sample = range.ind_sample(&mut rng);
@@ -56,7 +56,7 @@ pub fn main () {
                 time = ::time::SteadyTime::now();
             }
         } else {
-            debug!("Node is stopped.");
+            debug!("Node offline.");
             if time + stoptime < ::time::SteadyTime::now() {
                 debug!("Reached stop time.");
                 node = ::routing::test_utils::node::Node::new();
@@ -68,8 +68,6 @@ pub fn main () {
             }
         }
 
-        debug!("Sleeping.");
         ::std::thread::sleep_ms(10000);
-        debug!("Finished sleeping.");
     }
 }
