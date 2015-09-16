@@ -382,7 +382,7 @@ impl DataManager {
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         let mut encoder = cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
-            self.routing.refresh_request(STATS_TAG, our_authority,
+            self.routing.refresh_request(STATS_TAG, Authority(churn_node.clone()),
                                          encoder.as_bytes().to_vec(), churn_node.clone());
         }
         self.nodes_in_table = close_group;
