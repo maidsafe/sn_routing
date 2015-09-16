@@ -55,7 +55,7 @@ impl error::Error for ResponseError {
             ResponseError::LowBalance(_, _) => "LowBalance",
             ResponseError::InvalidRequest(_) => "Invalid request",
             ResponseError::FailedRequestForData(_) => "Failed request for data",
-            ResponseError::HadToClearSacrificial(_, _) => "Had to clear Sacrificial data to
+            ResponseError::HadToClearSacrificial(_, _) => "Had to clear sacrificial data to \
               complete request",
         }
     }
@@ -357,9 +357,8 @@ mod test {
             Err(error) => panic!("Error: {:?}", error),
         }
 
-        //FIXME is that error str meant to be with newline???
         let name: ::name_type::NameType = ::test_utils::Random::generate_random();
-        assert_eq!("Had to clear Sacrificial data to\n              complete request",
+        assert_eq!("Had to clear sacrificial data to complete request",
                    ::std::error::Error::description(
                        &::error::ResponseError::HadToClearSacrificial(name, 0u32)));
     }
