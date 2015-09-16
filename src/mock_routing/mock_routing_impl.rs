@@ -27,12 +27,11 @@ pub struct MockRoutingImpl {
 }
 
 impl MockRoutingImpl {
-    pub fn new(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>)
-            -> MockRoutingImpl {
+    pub fn new(sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> MockRoutingImpl {
         let (client_sender, _) = ::std::sync::mpsc::channel();
 
         MockRoutingImpl {
-            sender: event_sender,
+            sender: sender,
             client_sender: client_sender,
             network_delay_ms: 200,
             get_requests_given: vec![],
@@ -63,13 +62,13 @@ impl MockRoutingImpl {
         };
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-                let _ = cloned_sender.send(::routing::event::Event::Request{
-                    request: ::routing::ExternalRequest::Get(data_request, 0),
-                    our_authority: our_authority,
-                    from_authority: ::routing::Authority::Client(client_address, client_pub_key),
-                    response_token: None
-                });
+            let _ = cloned_sender.send(::routing::event::Event::Request {
+                request: ::routing::ExternalRequest::Get(data_request, 0),
+                our_authority: our_authority,
+                from_authority: ::routing::Authority::Client(client_address, client_pub_key),
+                response_token: None,
             });
+        });
     }
 
     pub fn client_put(&mut self,
@@ -79,14 +78,14 @@ impl MockRoutingImpl {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-                                              ::std::thread::sleep_ms(delay_ms);
-                                              let _ = cloned_sender.send(::routing::event::Event::Request{
+            ::std::thread::sleep_ms(delay_ms);
+            let _ = cloned_sender.send(::routing::event::Event::Request {
                 request: ::routing::ExternalRequest::Put(data),
                 our_authority: ::maid_manager::Authority(client_address),
                 from_authority: ::routing::Authority::Client(client_address, client_pub_key),
-                response_token: None
+                response_token: None,
             });
-                                          });
+        });
     }
 
     pub fn client_post(&mut self,
@@ -97,11 +96,12 @@ impl MockRoutingImpl {
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            let _ = cloned_sender.send(::routing::event::Event::Request{
+            let _ = cloned_sender.send(::routing::event::Event::Request {
                 request: ::routing::ExternalRequest::Post(data.clone()),
                 our_authority: ::sd_manager::Authority(data.name()),
                 from_authority: ::routing::Authority::Client(client_address, client_pub_key),
-                response_token: None });
+                response_token: None,
+            });
         });
     }
 
@@ -122,7 +122,7 @@ impl MockRoutingImpl {
     }
 
     pub fn put_requests_given(&self) -> Vec<super::api_calls::PutRequest> {
-         self.put_requests_given.clone()
+        self.put_requests_given.clone()
     }
 
     pub fn put_responses_given(&self) -> Vec<super::api_calls::PutResponse> {
@@ -138,20 +138,20 @@ impl MockRoutingImpl {
                        our_authority: ::routing::Authority,
                        location: ::routing::Authority,
                        request_for: ::routing::data::DataRequest) {
-        self.get_requests_given.push(
-            super::api_calls::GetRequest::new(our_authority.clone(), location.clone(),
-                                              request_for.clone()));
+        self.get_requests_given.push(super::api_calls::GetRequest::new(our_authority.clone(),
+                                                                       location.clone(),
+                                                                       request_for.clone()));
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            let _ = cloned_sender.send(::routing::event::Event::Request{
-                    request: ::routing::ExternalRequest::Get(request_for, 0),
-                    our_authority: location,
-                    from_authority: our_authority,
-                    response_token: None
-                });
+            let _ = cloned_sender.send(::routing::event::Event::Request {
+                request: ::routing::ExternalRequest::Get(request_for, 0),
+                our_authority: location,
+                from_authority: our_authority,
+                response_token: None,
             });
+        });
     }
 
     pub fn get_response(&mut self,
@@ -160,10 +160,11 @@ impl MockRoutingImpl {
                         data: ::routing::data::Data,
                         data_request: ::routing::data::DataRequest,
                         response_token: Option<::routing::SignedToken>) {
-        self.get_responses_given.push(
-            super::api_calls::GetResponse::new(our_authority.clone(), location.clone(),
-                                               data.clone(), data_request.clone(),
-                                               response_token.clone()));
+        self.get_responses_given.push(super::api_calls::GetResponse::new(our_authority.clone(),
+                                                                         location.clone(),
+                                                                         data.clone(),
+                                                                         data_request.clone(),
+                                                                         response_token.clone()));
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let cloned_client_sender = self.client_sender.clone();
@@ -171,15 +172,16 @@ impl MockRoutingImpl {
             ::std::thread::sleep_ms(delay_ms);
             match location.clone() {
                 ::routing::Authority::NaeManager(_) => {
-                    let _ = cloned_sender.send(::routing::event::Event::Response{
+                    let _ = cloned_sender.send(::routing::event::Event::Response {
                         response: ::routing::ExternalResponse::Get(data.clone(), data_request,
                                                                    response_token),
-                        our_authority: location, from_authority: our_authority
+                        our_authority: location,
+                        from_authority: our_authority,
                     });
-                },
+                }
                 ::routing::Authority::Client(_, _) => {
                     let _ = cloned_client_sender.send(data);
-                },
+                }
                 _ => {}
             }
         });
@@ -189,20 +191,20 @@ impl MockRoutingImpl {
                        our_authority: ::routing::Authority,
                        location: ::routing::Authority,
                        data: ::routing::data::Data) {
-        self.put_requests_given.push(
-            super::api_calls::PutRequest::new(our_authority.clone(), location.clone(),
-                                              data.clone()));
+        self.put_requests_given.push(super::api_calls::PutRequest::new(our_authority.clone(),
+                                                                       location.clone(),
+                                                                       data.clone()));
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            let _ = cloned_sender.send(::routing::event::Event::Request{
-                    request: ::routing::ExternalRequest::Put(data.clone()),
-                    our_authority: location,
-                    from_authority: our_authority,
-                    response_token: None
-                });
+            let _ = cloned_sender.send(::routing::event::Event::Request {
+                request: ::routing::ExternalRequest::Put(data.clone()),
+                our_authority: location,
+                from_authority: our_authority,
+                response_token: None,
             });
+        });
     }
 
     pub fn put_response(&mut self,
@@ -210,19 +212,20 @@ impl MockRoutingImpl {
                         location: ::routing::Authority,
                         response_error: ::routing::error::ResponseError,
                         signed_token: Option<::routing::SignedToken>) {
-        self.put_responses_given.push(
-            super::api_calls::PutResponse::new(our_authority.clone(), location.clone(),
-                                               response_error.clone(), signed_token.clone()));
+        self.put_responses_given.push(super::api_calls::PutResponse::new(our_authority.clone(),
+                                                                         location.clone(),
+                                                                         response_error.clone(),
+                                                                         signed_token.clone()));
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
-            let _ = cloned_sender.send(::routing::event::Event::Response{
-                    response: ::routing::ExternalResponse::Put(response_error, signed_token),
-                    our_authority: location,
-                    from_authority: our_authority
-                });
+            let _ = cloned_sender.send(::routing::event::Event::Response {
+                response: ::routing::ExternalResponse::Put(response_error, signed_token),
+                our_authority: location,
+                from_authority: our_authority,
             });
+        });
     }
 
     pub fn refresh_request(&mut self,
@@ -230,9 +233,8 @@ impl MockRoutingImpl {
                            our_authority: ::routing::Authority,
                            content: Vec<u8>,
                            churn_node: ::routing::NameType) {
-        self.refresh_requests_given.push(
-            super::api_calls::RefreshRequest::new(type_tag, our_authority.clone(),
-                                                  content.clone(), churn_node));
+        self.refresh_requests_given.push(super::api_calls::RefreshRequest::new(
+                type_tag, our_authority.clone(), content.clone(), churn_node));
         // routing is expected to accumulate the refresh requests
         // for the same group into one event request to vault
         let delay_ms = self.network_delay_ms;
@@ -243,7 +245,8 @@ impl MockRoutingImpl {
             for _ in 2..::data_manager::PARALLELISM {
                 refresh_contents.push(content.clone());
             }
-            let _ = cloned_sender.send(::routing::event::Event::Refresh(type_tag, our_authority,
+            let _ = cloned_sender.send(::routing::event::Event::Refresh(type_tag,
+                                                                        our_authority,
                                                                         refresh_contents));
         });
     }

@@ -64,7 +64,8 @@ impl ::types::Refreshable for Account {
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for response in responses {
             if *response.name() == from_group {
-                let push_in_vec = match stats.iter_mut().find(|a| a.0 == *response.data_holders()) {
+                let push_in_vec = match stats.iter_mut()
+                                             .find(|a| a.0 == *response.data_holders()) {
                     Some(find_res) => {
                         find_res.1 += 1;
                         false

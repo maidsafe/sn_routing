@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<DOCUMENT Type="Advanced Installer" CreateVersion="12.0" version="12.3.1" Modules="enterprise" RootPath="." Language="en" Id="{739027E0-9C93-4ABE-B6D1-9A1A6C425609}">
+<DOCUMENT Type="Advanced Installer" CreateVersion="12.0" version="12.4" Modules="enterprise" RootPath="." Language="en" Id="{739027E0-9C93-4ABE-B6D1-9A1A6C425609}">
   <COMPONENT cid="caphyon.advinst.msicomp.MsiPropsComponent">
     <ROW Property="AI_BITMAP_DISPLAY_MODE" Value="0"/>
     <ROW Property="AI_COLOR_DISABLED_TEXT" Value="3026478" MultiBuildValue="DefaultBuild:15461355" MsiKey="AI_COLOR_DISABLED_TEXT"/>
@@ -21,10 +21,10 @@
     <ROW Property="AppLogoIcon" Value="applogoicon" MultiBuildValue="DefaultBuild:maidsafe_triangle.png" Type="1" MsiKey="AppLogoIcon"/>
     <ROW Property="CTRLS" Value="2"/>
     <ROW Property="Manufacturer" Value="SAFE"/>
-    <ROW Property="ProductCode" Value="1033:{673D03E3-D7FE-4DC3-B6FA-72423BF0587D} " Type="16"/>
+    <ROW Property="ProductCode" Value="1033:{F7A38A10-CEC2-4969-A03A-33A543BB80D3} " Type="16"/>
     <ROW Property="ProductLanguage" Value="1033"/>
     <ROW Property="ProductName" Value="SAFE Network Vault"/>
-    <ROW Property="ProductVersion" Value="0.0.1" Type="32"/>
+    <ROW Property="ProductVersion" Value="0.1.6" Type="32"/>
     <ROW Property="SecureCustomProperties" Value="OLDPRODUCTS;AI_NEWERPRODUCTFOUND;AI_SETUPEXEPATH;SETUPEXEDIR"/>
     <ROW Property="UpgradeCode" Value="{5E9B0DC5-46AC-4ABA-B93E-5131A1EFED0A}"/>
     <ROW Property="WindowsType9X" MultiBuildValue="DefaultBuild:Windows 9x/ME" ValueLocId="-"/>
@@ -46,22 +46,22 @@
     <ROW Component="AI_ExePath" ComponentId="{F6FC2898-AED8-4014-B9B8-560920CDC09E}" Directory_="APPDIR" Attributes="260" KeyPath="AI_ExePath"/>
     <ROW Component="MaidSafe" ComponentId="{36BBA577-473C-4623-B11B-534B6F77D65F}" Directory_="MaidSafe_Dir" Attributes="256"/>
     <ROW Component="ProductInformation" ComponentId="{DE4B89DA-D559-498D-BCFF-15CF27E2A16C}" Directory_="APPDIR" Attributes="260" KeyPath="Version"/>
-    <ROW Component="safe_vault.bootstrap.cache_1" ComponentId="{8065D6DF-3B32-41EE-A14D-FE9AA8F10559}" Directory_="MaidSafe_Dir" Attributes="0" KeyPath="safe_vault.bootstrap.cache" Type="0"/>
+    <ROW Component="safe_vault.crust.config" ComponentId="{F4DBE0F4-C47D-4916-86F2-9A67D4666DB6}" Directory_="MaidSafe_Dir" Attributes="0" KeyPath="safe_vault.crust.config" Type="0"/>
     <ROW Component="safe_vault.exe" ComponentId="{9993AFF7-BF41-4BC5-990E-BFE3B05146F9}" Directory_="safe_vault_Dir" Attributes="256" KeyPath="safe_vault.exe"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiFeatsComponent">
-    <ROW Feature="Vault" Title="MainFeature" Description="Vault executable" Display="0" Level="1" Directory_="APPDIR" Attributes="16" Components="AI_ExePath MaidSafe ProductInformation safe_vault.bootstrap.cache_1 safe_vault.exe"/>
+    <ROW Feature="Vault" Title="MainFeature" Description="Vault executable" Display="0" Level="1" Directory_="APPDIR" Attributes="16" Components="AI_ExePath MaidSafe ProductInformation safe_vault.crust.config safe_vault.exe"/>
     <ATTRIBUTE name="CurrentFeature" value="Vault"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiFilesComponent">
-    <ROW File="safe_vault.bootstrap.cache" Component_="safe_vault.bootstrap.cache_1" FileName="SAFE_V~1.CAC|safe_vault.bootstrap.cache" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\common\safe_vault.bootstrap.cache" SelfReg="false"/>
-    <ROW File="safe_vault.exe" Component_="safe_vault.exe" FileName="SAFE_V~1.EXE|safe_vault.exe" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\..\target\release\safe_vault.exe" SelfReg="false" NextFile="safe_vault.bootstrap.cache" DigSign="true"/>
+    <ROW File="safe_vault.crust.config" Component_="safe_vault.crust.config" FileName="SAFE_V~1.CON|safe_vault.crust.config" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\common\safe_vault.crust.config" SelfReg="false"/>
+    <ROW File="safe_vault.exe" Component_="safe_vault.exe" FileName="SAFE_V~1.EXE|safe_vault.exe" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\..\target\release\safe_vault.exe" SelfReg="false" NextFile="safe_vault.crust.config" DigSign="true"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.BootstrOptComponent">
     <ROW BootstrOptKey="GlobalOptions" GeneralOptions="h" DownloadFolder="[AppDataFolder][|Manufacturer]\[|ProductName]\prerequisites"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.BuildComponent">
-    <ROW BuildKey="DefaultBuild" BuildName="DefaultBuild" BuildOrder="1" BuildType="1" PackageFolder="..\..\packages\windows" PackageFileName="safe_vault_installer.[|ProductVersion]" Languages="en" InstallationType="2" CabsLocation="1" CompressCabs="false" UseLzma="true" LzmaMethod="2" LzmaCompressionLevel="4" PackageType="1" FilesInsideExe="true" ExeIconPath="maidsafe_logo.ico" ExtractionFolder="[AppDataFolder][|Manufacturer]\[|ProductName] [|ProductVersion]\install" ExtUI="true" UseLargeSchema="true" MsiPackageType="x64"/>
+    <ROW BuildKey="DefaultBuild" BuildName="DefaultBuild" BuildOrder="1" BuildType="1" PackageFolder="..\..\packages\windows" PackageFileName="safe_vault_installer_x64_[|ProductVersion]" Languages="en" InstallationType="2" CabsLocation="1" CompressCabs="false" UseLzma="true" LzmaMethod="2" LzmaCompressionLevel="4" PackageType="1" FilesInsideExe="true" ExeIconPath="maidsafe_logo.ico" ExtractionFolder="[AppDataFolder][|Manufacturer]\[|ProductName] [|ProductVersion]\install" ExtUI="true" UseLargeSchema="true" MsiPackageType="x64"/>
     <ATTRIBUTE name="CurrentBuild" value="DefaultBuild"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.CacheComponent">
@@ -198,10 +198,10 @@
     <ROW Dialog_="WelcomeDlg" Control="ProductNameTitle" Type="Text" X="83" Y="21" Width="245" Height="50" Attributes="196611" Text="[ProductName]" TextStyle="[ProductNameForSplash]" Order="600" TextLocId="Metro.Control.Text.ProductName" MsiKey="WelcomeDlg#ProductNameTitle"/>
     <ROW Dialog_="WelcomeDlg" Control="ProductLogo" Type="Bitmap" X="17" Y="5" Width="59" Height="63" Attributes="1" Text="[AppLogoIcon]" Order="700" MsiKey="WelcomeDlg#ProductLogo"/>
     <ROW Dialog_="WelcomeDlg" Control="AdvInst" Type="Text" X="5" Y="388" Width="74" Height="11" Attributes="196611" Text="Advanced Installer" TextStyle="[BrandingStyle]" Order="800" MsiKey="WelcomeDlg#AdvInst"/>
-    <ATTRIBUTE name="DeletedRows" value="ExitDialog#ReadmeButton@ExitDialog#MetroReadmeText@UserExit#CompanyText@MaintenanceTypeDlg#MetroModifyButton@MaintenanceTypeDlg#MetroModifyText@ExitDialog#RunButton@PrepareDlg#CompanyText@ExitDialog#RunLabel@InstallDlg#LicenseCheckbox@InstallDlg#YouMustAgreeCtrl@InstallDlg#CompanyText@DiskCostDlg#CompanyText@OutOfRbDiskDlg#CompanyText@WelcomeDlg#CompanyText@OutOfDiskDlg#CompanyText@AdminInstallPointDlg#CompanyText@BrowseDlg#CompanyText@ProgressDlg#CompanyText@ExitDialog#CompanyText@MaintenanceTypeDlg#CompanyText@PatchWelcomeDlg#CompanyText@ResumeDlg#CompanyText@AdminWelcomeDlg#CompanyText@AdminBrowseDlg#CompanyText@CustomizeDlg#CompanyText@FatalError#CompanyText@FilesInUse#CompanyText@MsiRMFilesInUse#CompanyText"/>
+    <ATTRIBUTE name="DeletedRows" value="AdminBrowseDlg#CompanyText@AdminInstallPointDlg#CompanyText@AdminWelcomeDlg#CompanyText@BrowseDlg#CompanyText@CustomizeDlg#CompanyText@DiskCostDlg#CompanyText@ExitDialog#CompanyText@ExitDialog#MetroReadmeText@ExitDialog#ReadmeButton@ExitDialog#RunButton@ExitDialog#RunLabel@FatalError#CompanyText@FilesInUse#CompanyText@InstallDlg#CompanyText@InstallDlg#LicenseCheckbox@InstallDlg#YouMustAgreeCtrl@MaintenanceTypeDlg#CompanyText@MaintenanceTypeDlg#MetroModifyButton@MaintenanceTypeDlg#MetroModifyText@MsiRMFilesInUse#CompanyText@OutOfDiskDlg#CompanyText@OutOfRbDiskDlg#CompanyText@PatchWelcomeDlg#CompanyText@PrepareDlg#CompanyText@ProgressDlg#CompanyText@ResumeDlg#CompanyText@UserExit#CompanyText@WelcomeDlg#CompanyText"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiControlConditionComponent">
-    <ATTRIBUTE name="DeletedRows" value="MaintenanceTypeDlg#MetroModifyText#Hide#NOT AIEXTERNALUI@ExitDialog#ReadmeButton#Hide#((NOT AI_INSTALL) AND (NOT AI_PATCH)) OR ((CTRLS &lt;&gt; 1) AND (CTRLS &lt;&gt; 3)) OR NOT AIEXTERNALUI@ExitDialog#MetroReadmeText#Hide#((NOT AI_INSTALL) AND (NOT AI_PATCH)) OR ((CTRLS &lt;&gt; 1) AND (CTRLS &lt;&gt; 3)) OR NOT AIEXTERNALUI@MaintenanceTypeDlg#MetroModifyButton#Default#AIEXTERNALUI@ExitDialog#RunButton#Hide#((NOT AI_INSTALL) AND (NOT AI_PATCH)) OR ((CTRLS &lt;&gt; 2) AND (CTRLS &lt;&gt; 3)) OR NOT AIEXTERNALUI@ExitDialog#RunLabel#Hide#((NOT AI_INSTALL) AND (NOT AI_PATCH)) OR ((CTRLS &lt;&gt; 2) AND (CTRLS &lt;&gt; 3)) OR NOT AIEXTERNALUI@MaintenanceTypeDlg#MetroModifyText#Show#AIEXTERNALUI@InstallDlg#InstallButton#Enable#AGREE_CHECKBOX@InstallDlg#InstallButton#Disable#NOT AGREE_CHECKBOX"/>
+    <ATTRIBUTE name="DeletedRows" value="ExitDialog#MetroReadmeText#Hide#((NOT AI_INSTALL) AND (NOT AI_PATCH)) OR ((CTRLS &lt;&gt; 1) AND (CTRLS &lt;&gt; 3)) OR NOT AIEXTERNALUI@ExitDialog#ReadmeButton#Hide#((NOT AI_INSTALL) AND (NOT AI_PATCH)) OR ((CTRLS &lt;&gt; 1) AND (CTRLS &lt;&gt; 3)) OR NOT AIEXTERNALUI@ExitDialog#RunButton#Hide#((NOT AI_INSTALL) AND (NOT AI_PATCH)) OR ((CTRLS &lt;&gt; 2) AND (CTRLS &lt;&gt; 3)) OR NOT AIEXTERNALUI@ExitDialog#RunLabel#Hide#((NOT AI_INSTALL) AND (NOT AI_PATCH)) OR ((CTRLS &lt;&gt; 2) AND (CTRLS &lt;&gt; 3)) OR NOT AIEXTERNALUI@InstallDlg#InstallButton#Disable#NOT AGREE_CHECKBOX@InstallDlg#InstallButton#Enable#AGREE_CHECKBOX@MaintenanceTypeDlg#MetroModifyButton#Default#AIEXTERNALUI@MaintenanceTypeDlg#MetroModifyText#Hide#NOT AIEXTERNALUI@MaintenanceTypeDlg#MetroModifyText#Show#AIEXTERNALUI"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiControlEventComponent">
     <ROW Dialog_="InstallDlg" Control_="Next" Event="EndDialog" Argument="Return" Condition="AI_INSTALL" Ordering="301"/>
@@ -248,7 +248,7 @@
     <ROW Dialog_="MaintenanceTypeDlg" Control_="RepairButton" Event="[Text_Next]" Argument="[AI_Text_Next_Orig]" Condition="AI_MAINT" Ordering="1102" Options="2"/>
     <ROW Dialog_="MaintenanceTypeDlg" Control_="Back" Event="[ButtonText_Next]" Argument="[AI_ButtonText_Next_Orig]" Condition="AI_MAINT" Ordering="0" Options="2"/>
     <ROW Dialog_="MaintenanceTypeDlg" Control_="Back" Event="[Text_Next]" Argument="[AI_Text_Next_Orig]" Condition="AI_MAINT" Ordering="1" Options="2"/>
-    <ATTRIBUTE name="DeletedRows" value="ExitDialog#ReadmeButton#[AiEventsControl]#ViewReadmeCheckBox#1@MaintenanceTypeDlg#MetroModifyButton#[AiEventsControl]#ChangeButton#1@ExitDialog#RunButton#[AiEventsControl]#LaunchProdCheckBox#1@InstallDlg#YouMustAgreeCtrl#[AiLicenseAgreement]#1#AI_INSTALL@InstallDlg#YouMustAgreeCtrl#[InstallDlg]#{}#AI_INSTALL@InstallDlg#YouMustAgreeCtrl#SetTargetPath#APPDIR#AI_INSTALL"/>
+    <ATTRIBUTE name="DeletedRows" value="ExitDialog#ReadmeButton#[AiEventsControl]#ViewReadmeCheckBox#1@ExitDialog#RunButton#[AiEventsControl]#LaunchProdCheckBox#1@InstallDlg#YouMustAgreeCtrl#SetTargetPath#APPDIR#AI_INSTALL@InstallDlg#YouMustAgreeCtrl#[AiLicenseAgreement]#1#AI_INSTALL@InstallDlg#YouMustAgreeCtrl#[InstallDlg]#{}#AI_INSTALL@MaintenanceTypeDlg#MetroModifyButton#[AiEventsControl]#ChangeButton#1"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiCreateFolderComponent">
     <ROW Directory_="MaidSafe_Dir" Component_="MaidSafe" ManualDelete="true"/>
@@ -277,7 +277,7 @@
     <ROW Action="AI_ResolveKnownFolders" Type="1" Source="aicustact.dll" Target="AI_ResolveKnownFolders"/>
     <ROW Action="AI_SHOW_LOG" Type="65" Source="aicustact.dll" Target="LaunchLogFile" WithoutSeq="true"/>
     <ROW Action="AI_STORE_LOCATION" Type="51" Source="ARPINSTALLLOCATION" Target="[APPDIR]"/>
-    <ROW Action="SET_APPDIR" Type="307" Source="APPDIR" Target="[ProgramFilesFolder][Manufacturer]\[ProductName]" MultiBuildTarget="DefaultBuild:[ProgramFiles64Folder][Manufacturer]\[ProductName]"/>
+    <ROW Action="SET_APPDIR" Type="307" Source="APPDIR" Target="[ProgramFilesFolder][Manufacturer]\[ProductName]" MultiBuildTarget="DefaultBuild:[ProgramFiles64Folder]\safe_vault"/>
     <ROW Action="SET_SHORTCUTDIR" Type="307" Source="SHORTCUTDIR" Target="[ProgramMenuFolder][ProductName]"/>
     <ROW Action="SET_TARGETDIR_TO_APPDIR" Type="51" Source="TARGETDIR" Target="[APPDIR]"/>
     <ROW Action="StopProcess" Type="1" Source="aicustact.dll" Target="StopProcess" Options="1" AdditionalSeq="AI_DATA_SETTER_1"/>
@@ -294,7 +294,7 @@
     <ROW Action="AI_RESTORE_LOCATION" Condition="APPDIR=&quot;&quot;" Sequence="749"/>
     <ROW Action="AI_STORE_LOCATION" Condition="(Not Installed) OR REINSTALL" Sequence="1501"/>
     <ROW Action="AI_PREPARE_UPGRADE" Condition="AI_UPGRADE=&quot;No&quot; AND (Not Installed)" Sequence="1399"/>
-    <ROW Action="AI_ResolveKnownFolders" Sequence="53"/>
+    <ROW Action="AI_ResolveKnownFolders" Sequence="54"/>
     <ROW Action="AI_BACKUP_AI_SETUPEXEPATH" Sequence="99" Builds="DefaultBuild"/>
     <ROW Action="AI_RESTORE_AI_SETUPEXEPATH" Condition="AI_SETUPEXEPATH_ORIGINAL" Sequence="101" Builds="DefaultBuild"/>
     <ROW Action="AI_DeleteCadLzma" Condition="SETUPEXEDIR=&quot;&quot; AND Installed AND (REMOVE&lt;&gt;&quot;ALL&quot;) AND (AI_INSTALL_MODE&lt;&gt;&quot;Remove&quot;) AND (NOT PATCH)" Sequence="199" Builds="DefaultBuild"/>
@@ -307,7 +307,7 @@
     <ROW Action="AI_ExtractFiles" Sequence="3998" Builds="DefaultBuild"/>
     <ROW Action="AI_DATA_SETTER" Sequence="3997"/>
     <ROW Action="AI_EstimateExtractFiles" Sequence="3999" Builds="DefaultBuild"/>
-    <ROW Action="StopProcess" Condition="( ( Installed AND REMOVE &lt;&gt; &quot;ALL&quot; AND AI_INSTALL_MODE &lt;&gt; &quot;Remove&quot; ) OR ( Installed AND ( REMOVE = &quot;ALL&quot; OR AI_INSTALL_MODE = &quot;Remove&quot; ) ) )" Sequence="52"/>
+    <ROW Action="StopProcess" Condition="( ( Installed AND REMOVE &lt;&gt; &quot;ALL&quot; AND AI_INSTALL_MODE &lt;&gt; &quot;Remove&quot; ) OR ( Installed AND ( REMOVE = &quot;ALL&quot; OR AI_INSTALL_MODE = &quot;Remove&quot; ) ) )" Sequence="53"/>
     <ROW Action="AI_DATA_SETTER_1" Condition="( ( Installed AND REMOVE &lt;&gt; &quot;ALL&quot; AND AI_INSTALL_MODE &lt;&gt; &quot;Remove&quot; ) OR ( Installed AND ( REMOVE = &quot;ALL&quot; OR AI_INSTALL_MODE = &quot;Remove&quot; ) ) )" Sequence="51"/>
     <ROW Action="safe_vault.exe" Condition="( ( NOT Installed ) OR ( Installed AND REMOVE &lt;&gt; &quot;ALL&quot; AND AI_INSTALL_MODE &lt;&gt; &quot;Remove&quot; ) )" Sequence="6601"/>
   </COMPONENT>

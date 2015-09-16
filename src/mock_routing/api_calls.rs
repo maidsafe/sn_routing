@@ -25,7 +25,8 @@ pub struct GetRequest {
 impl GetRequest {
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
-               request_for: ::routing::data::DataRequest) -> GetRequest {
+               request_for: ::routing::data::DataRequest)
+               -> GetRequest {
         GetRequest { our_authority: our_authority, location: location, request_for: request_for }
     }
 }
@@ -40,7 +41,8 @@ pub struct PutRequest {
 impl PutRequest {
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
-               data: ::routing::data::Data) -> PutRequest {
+               data: ::routing::data::Data)
+               -> PutRequest {
         PutRequest { our_authority: our_authority, location: location, data: data }
     }
 }
@@ -53,10 +55,11 @@ pub struct PostRequest {
 }
 
 impl PostRequest {
-                                                                                                    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
-               data: ::routing::data::Data) -> PostRequest {
+               data: ::routing::data::Data)
+               -> PostRequest {
         PostRequest { our_authority: our_authority, location: location, data: data }
     }
 }
@@ -69,10 +72,11 @@ pub struct DeleteRequest {
 }
 
 impl DeleteRequest {
-                                                                                                    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
-               data: ::routing::data::Data) -> DeleteRequest {
+               data: ::routing::data::Data)
+               -> DeleteRequest {
         DeleteRequest { our_authority: our_authority, location: location, data: data }
     }
 }
@@ -91,7 +95,8 @@ impl GetResponse {
                location: ::routing::Authority,
                data: ::routing::data::Data,
                data_request: ::routing::data::DataRequest,
-               response_token: Option<::routing::SignedToken>) -> GetResponse {
+               response_token: Option<::routing::SignedToken>)
+               -> GetResponse {
         GetResponse {
             our_authority: our_authority,
             location: location,
@@ -114,12 +119,13 @@ impl PutResponse {
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
                response_error: ::routing::error::ResponseError,
-               signed_token: Option<::routing::SignedToken>) -> PutResponse {
+               signed_token: Option<::routing::SignedToken>)
+               -> PutResponse {
         PutResponse {
             our_authority: our_authority,
             location: location,
             response_error: response_error,
-            signed_token: signed_token
+            signed_token: signed_token,
         }
     }
 }
@@ -133,16 +139,17 @@ pub struct PostResponse {
 }
 
 impl PostResponse {
-                                                                                                    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
                response_error: ::routing::error::ResponseError,
-               signed_token: Option<::routing::SignedToken>) -> PostResponse {
+               signed_token: Option<::routing::SignedToken>)
+               -> PostResponse {
         PostResponse {
             our_authority: our_authority,
             location: location,
             response_error: response_error,
-            signed_token: signed_token
+            signed_token: signed_token,
         }
     }
 }
@@ -156,16 +163,17 @@ pub struct DeleteResponse {
 }
 
 impl DeleteResponse {
-                                                                                                    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn new(our_authority: ::routing::Authority,
                location: ::routing::Authority,
                response_error: ::routing::error::ResponseError,
-               signed_token: Option<::routing::SignedToken>) -> DeleteResponse {
+               signed_token: Option<::routing::SignedToken>)
+               -> DeleteResponse {
         DeleteResponse {
             our_authority: our_authority,
             location: location,
             response_error: response_error,
-            signed_token: signed_token
+            signed_token: signed_token,
         }
     }
 }

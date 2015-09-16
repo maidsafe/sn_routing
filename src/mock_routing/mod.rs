@@ -22,7 +22,7 @@ mod mock_routing_impl;
 
 #[derive(Clone)]
 pub struct MockRouting {
-  pimpl: ::std::sync::Arc<::std::sync::Mutex<mock_routing_impl::MockRoutingImpl>>,
+    pimpl: ::std::sync::Arc<::std::sync::Mutex<mock_routing_impl::MockRoutingImpl>>,
 }
 
 impl MockRouting {
@@ -64,12 +64,12 @@ impl MockRouting {
         self.pimpl.lock().unwrap().churn_event(nodes, churn_node)
     }
 
-                                                                                            #[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn get_requests_given(&self) -> Vec<api_calls::GetRequest> {
         self.pimpl.lock().unwrap().get_requests_given()
     }
 
-                                                                                            #[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn get_responses_given(&self) -> Vec<api_calls::GetResponse> {
         self.pimpl.lock().unwrap().get_responses_given()
     }
@@ -78,12 +78,12 @@ impl MockRouting {
         self.pimpl.lock().unwrap().put_requests_given()
     }
 
-                                                                                            #[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn put_responses_given(&self) -> Vec<api_calls::PutResponse> {
         self.pimpl.lock().unwrap().put_responses_given()
     }
 
-                                                                                            #[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn refresh_requests_given(&self) -> Vec<api_calls::RefreshRequest> {
         self.pimpl.lock().unwrap().refresh_requests_given()
     }
@@ -104,8 +104,10 @@ impl MockRouting {
                         data: ::routing::data::Data,
                         data_request: ::routing::data::DataRequest,
                         response_token: Option<::routing::SignedToken>) {
-        self.pimpl.lock().unwrap().get_response(our_authority, location, data, data_request,
-                                                response_token)
+        self.pimpl
+            .lock()
+            .unwrap()
+            .get_response(our_authority, location, data, data_request, response_token)
     }
 
     pub fn put_request(&mut self,
@@ -120,8 +122,10 @@ impl MockRouting {
                         location: ::routing::Authority,
                         response_error: ::routing::error::ResponseError,
                         signed_token: Option<::routing::SignedToken>) {
-        self.pimpl.lock().unwrap().put_response(our_authority, location,
-                                                response_error, signed_token)
+        self.pimpl
+            .lock()
+            .unwrap()
+            .put_response(our_authority, location, response_error, signed_token)
     }
 
     pub fn refresh_request(&self,
@@ -133,5 +137,6 @@ impl MockRouting {
                                                    content, churn_node)
     }
 
-    pub fn stop(&self) {}
+    pub fn stop(&self) {
+    }
 }

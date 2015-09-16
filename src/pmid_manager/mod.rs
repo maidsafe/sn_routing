@@ -19,7 +19,7 @@ mod database;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::PmidManagerAccount as u64;
 pub use self::database::Account;
-pub use ::routing::Authority::NodeManager as Authority;
+pub use routing::Authority::NodeManager as Authority;
 
 pub struct PmidManager {
     routing: ::vault::Routing,
@@ -34,14 +34,15 @@ impl PmidManager {
     pub fn handle_put(&mut self,
                       our_authority: &::routing::Authority,
                       from_authority: &::routing::Authority,
-                      data: &::routing::data::Data) -> Option<()> {
+                      data: &::routing::data::Data)
+                      -> Option<()> {
         // Check if this is for this persona.
-        if !::utils::is_pmid_manager_authority_type(&our_authority) {
+        if !::utils::is_pmid_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
 
         // Validate from authority, and that the Data is ImmutableData.
-        if !::utils::is_data_manager_authority_type(&from_authority) {
+        if !::utils::is_data_manager_authority_type(from_authority) {
             warn!("Invalid authority for PUT at PmidManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }
@@ -64,50 +65,37 @@ impl PmidManager {
     }
 
     pub fn handle_put_response(&mut self,
-                               from_address: &::routing::NameType,
-                               response: ::routing::error::ResponseError)
-                               -> Vec<::types::MethodCall> {
-        match response {
-            ::routing::error::ResponseError::FailedRequestForData(data) => {
-                self.database.delete_data(from_address, data.payload_size() as u64);
-                match data {
-                    ::routing::data::Data::ImmutableData(immutable_data) => {
-                        return vec![::types::MethodCall::FailedPut {
-                                        location: ::data_manager::Authority(immutable_data.name()),
-                                        data: ::routing::data::Data::ImmutableData(immutable_data)
-                                    }];
-                    },
-                    _ => return vec![::types::MethodCall::Deprecated],
-                }
+                               our_authority: &::routing::Authority,
+                               from_authority: &::routing::Authority,
+                               response: &::routing::error::ResponseError,
+                               response_token: &Option<::routing::SignedToken>)
+                               -> Option<()> {
+        // Check if this is for this persona.
+        let pmid_node_name = match our_authority {
+            &::pmid_node::Authority(name) => name.clone(),
+            _ => return ::utils::NOT_HANDLED,
+        };
+
+        match from_authority {
+            &::pmid_node::Authority(from_address) => {
+                self.handle_put_response_from_pmid_node(our_authority.clone(),
+                                                        from_address,
+                                                        response.clone(),
+                                                        response_token.clone());
             }
-            ::routing::error::ResponseError::HadToClearSacrificial(name, size) => {
-                self.database.delete_data(from_address, size as u64);
-                return vec![::types::MethodCall::ClearSacrificial {
-                    location: ::data_manager::Authority(name),
-                    name: name,
-                    size: size
-                }];
+            &::data_manager::Authority(_) => {
+                self.handle_put_response_from_data_manager(pmid_node_name, response.clone());
             }
-            _ => {}
+            _ => warn!("Invalid authority for PUT RESPONSE at PmidManager: {:?}", from_authority),
         }
-        vec![]
+        ::utils::HANDLED
     }
 
-    pub fn handle_get_failure_notification(&mut self,
-                                           from_address: &::routing::NameType,
-                                           response: ::routing::error::ResponseError)
-                                           -> Vec<::types::MethodCall> {
-        match response {
-            ::routing::error::ResponseError::FailedRequestForData(data) => {
-                self.database.delete_data(from_address, data.payload_size() as u64);
-            }
-            _ => {}
-        }
-        vec![]
-    }
-
-    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
-                          payloads: &Vec<Vec<u8>>) -> Option<()> {
+    pub fn handle_refresh(&mut self,
+                          type_tag: &u64,
+                          our_authority: &::routing::Authority,
+                          payloads: &Vec<Vec<u8>>)
+                          -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
             if let &Authority(from_group) = our_authority {
                 if let Some(merged_account) = ::utils::merge::<Account>(from_group,
@@ -134,6 +122,48 @@ impl PmidManager {
                       churn_node: &::routing::NameType) -> Option<()> {
         self.database.do_refresh(type_tag, our_authority, churn_node, &self.routing)
     }
+
+    fn handle_put_response_from_pmid_node(&mut self,
+                                          our_authority: ::routing::Authority,
+                                          from_address: ::routing::NameType,
+                                          response: ::routing::error::ResponseError,
+                                          response_token: Option<::routing::SignedToken>) {
+        match response {
+            ::routing::error::ResponseError::FailedRequestForData(data) => {
+                let payload_size = data.payload_size() as u64;
+                match data {
+                    ::routing::data::Data::ImmutableData(immutable_data) => {
+                        self.database.delete_data(&from_address, payload_size);
+                        let location = ::data_manager::Authority(immutable_data.name());
+                        let response = ::routing::error::ResponseError::FailedRequestForData(
+                            ::routing::data::Data::ImmutableData(immutable_data));
+                        self.routing
+                            .put_response(our_authority, location, response, response_token);
+                    }
+                    _ => warn!("Invalid data type for PUT RESPONSE at PmidManager: {:?}", data),
+                }
+            }
+            ::routing::error::ResponseError::HadToClearSacrificial(data_name, data_size) => {
+                self.database.delete_data(&from_address, data_size as u64);
+                let location = ::data_manager::Authority(data_name.clone());
+                let response = ::routing::error::ResponseError::HadToClearSacrificial(data_name,
+                                                                                      data_size);
+                self.routing.put_response(our_authority, location, response, response_token);
+            }
+            _ => warn!("Invalid response type from PmidNode for PUT RESPONSE at PmidManager"),
+        }
+    }
+
+    fn handle_put_response_from_data_manager(&mut self,
+                                             pmid_node_name: ::routing::NameType,
+                                             response: ::routing::error::ResponseError) {
+        match response {
+            ::routing::error::ResponseError::FailedRequestForData(data) => {
+                self.database.delete_data(&pmid_node_name, data.payload_size() as u64);
+            }
+            _ => warn!("Invalid response type from DataManager for PUT RESPONSE at PmidManager"),
+        }
+    }
 }
 
 #[cfg(all(test, feature = "use-mock-routing"))]
@@ -142,15 +172,18 @@ mod test {
 
     use super::*;
 
-    fn env_setup() -> (::routing::Authority, ::vault::Routing, PmidManager,
-                       ::routing::Authority, ::routing::immutable_data::ImmutableData) {
+    fn env_setup() -> (::routing::Authority, ::vault::Routing, PmidManager, ::routing::Authority,
+                       ::routing::immutable_data::ImmutableData) {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let pmid_manager = PmidManager::new(routing.clone());
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
-        (Authority(::utils::random_name()), routing, pmid_manager,
-         ::data_manager::Authority(::utils::random_name()), data)
+        (Authority(::utils::random_name()),
+         routing,
+         pmid_manager,
+         ::data_manager::Authority(::utils::random_name()),
+         data)
     }
 
     #[test]
