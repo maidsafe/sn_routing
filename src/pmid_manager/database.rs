@@ -15,13 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor;
-use rustc_serialize::{Decoder, Encodable, Encoder};
-use std::collections;
-
-use utils;
-
-pub type PmidNodeName = ::routing::NameType;
+type PmidNodeName = ::routing::NameType;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
@@ -30,16 +24,8 @@ pub struct Account {
 }
 
 impl Account {
-    pub fn new(name: PmidNodeName, value: AccountValue) -> Account {
+    fn new(name: PmidNodeName, value: AccountValue) -> Account {
         Account { name: name, value: value }
-    }
-
-    pub fn name(&self) -> &PmidNodeName {
-        &self.name
-    }
-
-    pub fn value(&self) -> &AccountValue {
-        &self.value
     }
 }
 
@@ -49,16 +35,16 @@ impl ::types::Refreshable for Account {
         let mut lost_total_size: Vec<u64> = Vec::new();
         let mut offered_space: Vec<u64> = Vec::new();
         for response in responses {
-            if *response.name() == from_group {
-                stored_total_size.push(response.value().stored_total_size());
-                lost_total_size.push(response.value().lost_total_size());
-                offered_space.push(response.value().offered_space());
+            if response.name == from_group {
+                stored_total_size.push(response.value.stored_total_size);
+                lost_total_size.push(response.value.lost_total_size);
+                offered_space.push(response.value.offered_space);
             }
         }
         Some(Account::new(from_group,
-                          AccountValue::new(utils::median(stored_total_size),
-                                            utils::median(lost_total_size),
-                                            utils::median(offered_space))))
+                          AccountValue::new(::utils::median(stored_total_size),
+                                            ::utils::median(lost_total_size),
+                                            ::utils::median(offered_space))))
     }
 }
 
@@ -80,7 +66,7 @@ impl Default for AccountValue {
 }
 
 impl AccountValue {
-    pub fn new(stored_total_size: u64, lost_total_size: u64, offered_space: u64) -> AccountValue {
+    fn new(stored_total_size: u64, lost_total_size: u64, offered_space: u64) -> AccountValue {
         AccountValue {
             stored_total_size: stored_total_size,
             lost_total_size: lost_total_size,
@@ -91,7 +77,7 @@ impl AccountValue {
   // TODO: Always return true to allow pmid_node carry out removal of Sacrificial copies
   //       Otherwise AccountValue need to remember storage info of Primary, Backup and Sacrificial
   //       copies separately to trigger an early alert
-    pub fn put_data(&mut self, size: u64) -> bool {
+    fn put_data(&mut self, size: u64) -> bool {
         // if (self.stored_total_size + size) > self.offered_space {
         //   return false;
         // }
@@ -99,7 +85,7 @@ impl AccountValue {
         true
     }
 
-    pub fn delete_data(&mut self, size: u64) {
+    fn delete_data(&mut self, size: u64) {
         if self.stored_total_size < size {
             self.stored_total_size = 0;
         } else {
@@ -108,23 +94,23 @@ impl AccountValue {
     }
 
     #[allow(dead_code)]
-    pub fn handle_lost_data(&mut self, size: u64) {
+    fn handle_lost_data(&mut self, size: u64) {
         self.delete_data(size);
         self.lost_total_size += size;
     }
 
     #[allow(dead_code)]
-    pub fn handle_falure(&mut self, size: u64) {
+    fn handle_falure(&mut self, size: u64) {
         self.handle_lost_data(size);
     }
 
     #[allow(dead_code)]
-    pub fn set_available_size(&mut self, available_size: u64) {
+    fn set_available_size(&mut self, available_size: u64) {
         self.offered_space = available_size;
     }
 
     #[allow(dead_code)]
-    pub fn update_account(&mut self, diff_size: u64) {
+    fn update_account(&mut self, diff_size: u64) {
         if self.stored_total_size < diff_size {
             self.stored_total_size = 0;
         } else {
@@ -132,27 +118,17 @@ impl AccountValue {
         }
         self.lost_total_size += diff_size;
     }
-
-    pub fn stored_total_size(&self) -> u64 {
-        self.stored_total_size
-    }
-
-    pub fn lost_total_size(&self) -> u64 {
-        self.lost_total_size
-    }
-
-    pub fn offered_space(&self) -> u64 {
-        self.offered_space
-    }
 }
 
-pub struct PmidManagerDatabase {
-    storage: collections::HashMap<PmidNodeName, AccountValue>,
+
+
+pub struct Database {
+    storage: ::std::collections::HashMap<PmidNodeName, AccountValue>,
 }
 
-impl PmidManagerDatabase {
-    pub fn new() -> PmidManagerDatabase {
-        PmidManagerDatabase { storage: collections::HashMap::with_capacity(10000) }
+impl Database {
+    pub fn new() -> Database {
+        Database { storage: ::std::collections::HashMap::with_capacity(10000) }
     }
 
     pub fn put_data(&mut self, name: &PmidNodeName, size: u64) -> bool {
@@ -168,10 +144,10 @@ impl PmidManagerDatabase {
     }
 
     pub fn handle_account_transfer(&mut self, merged_account: Account) {
-        let _ = self.storage.remove(merged_account.name());
-        let _ = self.storage.insert(*merged_account.name(), merged_account.value().clone());
-        info!("PmidManager updated account {:?} to {:?}",
-              merged_account.name(), merged_account.value());
+        let _ = self.storage.remove(&merged_account.name);
+        let value = merged_account.value.clone();
+        let _ = self.storage.insert(merged_account.name, merged_account.value);
+        info!("PmidManager updated account {:?} to {:?}", merged_account.name, value);
     }
 
     pub fn handle_churn(&mut self,
@@ -180,8 +156,8 @@ impl PmidManagerDatabase {
         for (key, value) in self.storage.iter() {
             if close_group.iter().find(|a| **a == *key).is_some() {
                 let account = Account::new((*key).clone(), (*value).clone());
-                let our_authority = super::Authority(*account.name());
-                let mut encoder = cbor::Encoder::from_memory();
+                let our_authority = super::Authority(account.name);
+                let mut encoder = ::cbor::Encoder::from_memory();
                 if encoder.encode(&[account]).is_ok() {
                     debug!("PmidManager sends out a refresh regarding account {:?}",
                            our_authority.get_location());
@@ -199,12 +175,11 @@ impl PmidManagerDatabase {
 
 #[cfg(test)]
 mod test {
-    use cbor;
     use super::*;
 
     #[test]
     fn exist() {
-        let mut db = PmidManagerDatabase::new();
+        let mut db = Database::new();
         let name = ::utils::random_name();
         assert!(!db.storage.contains_key(&name));
         db.put_data(&name, 1024);
@@ -213,7 +188,7 @@ mod test {
 
     // #[test]
     // fn put_data() {
-    //     let mut db = PmidManagerDatabase::new();
+    //     let mut db = Database::new();
     //     let name = ::utils::random_name();
     //     assert_eq!(db.put_data(&name, 0), true);
     //     assert_eq!(db.exist(&name), true);
@@ -228,7 +203,7 @@ mod test {
 
     #[test]
     fn handle_account_transfer() {
-        let mut db = PmidManagerDatabase::new();
+        let mut db = Database::new();
         let name = ::utils::random_name();
         assert!(db.put_data(&name, 1024));
         assert!(db.storage.contains_key(&name));
@@ -248,10 +223,10 @@ mod test {
                                                         ::rand::random::<u64>(),
                                                         ::rand::random::<u64>()));
 
-        let mut e = cbor::Encoder::from_memory();
+        let mut e = ::cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
-        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
         let obj_after: Account = d.decode().next().unwrap().unwrap();
 
         assert_eq!(obj_before, obj_after);

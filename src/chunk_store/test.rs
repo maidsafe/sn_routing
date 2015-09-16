@@ -17,9 +17,8 @@
 
 #[cfg(test)]
 mod test {
-  static ONE_KB: usize = 1024;
-
-  static K_DEFAULT_MAX_DISK_USAGE: usize = 4 * 1024;// // 4 * OneKB;
+    const ONE_KB: usize = 1024;
+    const K_DEFAULT_MAX_DISK_USAGE: usize = 4 * 1024;// // 4 * OneKB;
 
     struct NameValueContainer(Vec<(::routing::NameType, String)>);
 

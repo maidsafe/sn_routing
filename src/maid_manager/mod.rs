@@ -15,20 +15,22 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-mod database;
+pub use routing::Authority::ClientManager as Authority;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::MaidManagerAccount as u64;
-pub use self::database::Account;
-pub use routing::Authority::ClientManager as Authority;
+
+mod database;
+
+type Account = self::database::Account;
 
 pub struct MaidManager {
     routing: ::vault::Routing,
-    database: database::MaidManagerDatabase,
+    database: database::Database,
 }
 
 impl MaidManager {
     pub fn new(routing: ::vault::Routing) -> MaidManager {
-        MaidManager { routing: routing, database: database::MaidManagerDatabase::new() }
+        MaidManager { routing: routing, database: database::Database::new() }
     }
 
     pub fn handle_put(&mut self,
@@ -103,11 +105,10 @@ impl MaidManager {
     }
 }
 
+
+
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
-    use cbor;
-    use sodiumoxide::crypto;
-
     use super::*;
 
     fn env_setup() -> (::routing::Authority, ::vault::Routing, MaidManager, ::routing::Authority,
@@ -115,7 +116,7 @@ mod test {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let maid_manager = MaidManager::new(routing.clone());
         let from = ::utils::random_name();
-        let keys = crypto::sign::gen_keypair();
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ::routing::immutable_data::ImmutableData::new(
                        ::routing::immutable_data::ImmutableDataType::Normal, value);
@@ -151,7 +152,7 @@ mod test {
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
         assert_eq!(refresh_requests[0].our_authority.get_location(), client.get_location());
 
-        let mut d = cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
+        let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
         if let Some(mm_account) = d.decode().next().and_then(|result| result.ok()) {
             maid_manager.database.handle_account_transfer(mm_account);
         }

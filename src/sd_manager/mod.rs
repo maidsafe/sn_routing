@@ -15,11 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use chunk_store::ChunkStore;
-use types::Refreshable;
-pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
-
 pub use routing::Authority::NaeManager as Authority;
+
+pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
 
 pub struct StructuredDataManager {
     routing: ::vault::Routing,
@@ -27,13 +25,16 @@ pub struct StructuredDataManager {
     // data, and put is overwritable
     // If such assumption becomes invalid, LruCache or Sqlite based persona specific
     // database shall be used
-    chunk_store: ChunkStore,
+    chunk_store: ::chunk_store::ChunkStore,
 }
 
 impl StructuredDataManager {
     pub fn new(routing: ::vault::Routing) -> StructuredDataManager {
         // TODO adjustable max_disk_space
-        StructuredDataManager { routing: routing, chunk_store: ChunkStore::new(1073741824) }
+        StructuredDataManager {
+            routing: routing,
+            chunk_store: ::chunk_store::ChunkStore::new(1073741824),
+        }
     }
 
     pub fn handle_get(&mut self,
@@ -185,12 +186,6 @@ impl StructuredDataManager {
         }
     }
 
-    fn handle_account_transfer(&mut self,
-                               structured_data: ::routing::structured_data::StructuredData) {
-        self.chunk_store.delete(structured_data.name());
-        self.chunk_store.put(structured_data.name(), structured_data.serialised_contents());
-    }
-
     pub fn handle_churn(&mut self) {
         let names = self.chunk_store.names();
         for name in names {
@@ -198,9 +193,18 @@ impl StructuredDataManager {
             debug!("SDManager sends out a refresh regarding data {:?}", name);
             self.routing.refresh_request(ACCOUNT_TAG, Authority(name), data);
         }
-        self.chunk_store = ChunkStore::new(1073741824);
+        self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
+    }
+
+    fn handle_account_transfer(&mut self,
+                               structured_data: ::routing::structured_data::StructuredData) {
+        use ::types::Refreshable;
+        self.chunk_store.delete(structured_data.name());
+        self.chunk_store.put(structured_data.name(), structured_data.serialised_contents());
     }
 }
+
+
 
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
@@ -210,8 +214,7 @@ mod test {
         pub routing: ::vault::Routing,
         pub sd_manager: StructuredDataManager,
         pub data_name: ::routing::NameType,
-        pub keys: (::sodiumoxide::crypto::sign::PublicKey,
- ::sodiumoxide::crypto::sign::SecretKey),
+        pub keys: (::sodiumoxide::crypto::sign::PublicKey, ::sodiumoxide::crypto::sign::SecretKey),
         pub structured_data: ::routing::structured_data::StructuredData,
         pub data: ::routing::data::Data,
         pub us: ::routing::Authority,

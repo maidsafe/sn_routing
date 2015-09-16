@@ -15,25 +15,19 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-mod database;
-
-use std::cmp;
-use cbor;
-use rustc_serialize::Encodable;
-
-use utils;
-
-type Address = ::routing::NameType;
+pub use routing::Authority::NaeManager as Authority;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::DataManagerAccount as u64;
 pub const STATS_TAG: u64 = ::transfer_tag::TransferTag::DataManagerStats as u64;
-pub use self::database::Account;
-pub use routing::Authority::NaeManager as Authority;
+pub const PARALLELISM: usize = 4;
 
-pub static PARALLELISM: usize = 4;
-static LRU_CACHE_SIZE: usize = 1000;
+mod database;
 
+type Account = self::database::Account;
+type Address = ::routing::NameType;
 type ChunkNameAndPmidNode = (::routing::NameType, ::routing::NameType);
+
+const LRU_CACHE_SIZE: usize = 1000;
 
 #[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
 pub struct Stats {
@@ -63,10 +57,9 @@ impl ::types::Refreshable for Stats {
                 resource_indexes.push(value.resource_index());
             }
         }
-        Some(Stats::new(::routing::NameType([0u8; 64]), utils::median(resource_indexes)))
+        Some(Stats::new(::routing::NameType([0u8; 64]), ::utils::median(resource_indexes)))
     }
 }
-
 
 
 
@@ -76,7 +69,7 @@ pub struct DataManager {
     nodes_in_table: Vec<::routing::NameType>,
     request_cache: ::lru_time_cache::LruCache<::routing::NameType,
                              Vec<(::routing::authority::Authority, ::routing::data::DataRequest,
- Option<::routing::SignedToken>)>>,
+                                  Option<::routing::SignedToken>)>>,
     // the higher the index is, the slower the farming rate will be
     resource_index: u64,
     // key is pair of chunk_name and pmid_node, value is insertion time
@@ -205,12 +198,12 @@ impl DataManager {
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
         self.nodes_in_table.sort_by(|a, b| {
             if ::routing::closer_to_target(&a, &b, &data_name) {
-                cmp::Ordering::Less
+                ::std::cmp::Ordering::Less
             } else {
-                cmp::Ordering::Greater
+                ::std::cmp::Ordering::Greater
             }
         });
-        let pmid_nodes_num = cmp::min(self.nodes_in_table.len(), PARALLELISM);
+        let pmid_nodes_num = ::std::cmp::min(self.nodes_in_table.len(), PARALLELISM);
         let mut dest_pmids: Vec<::routing::NameType> = Vec::new();
         for index in 0..pmid_nodes_num {
             dest_pmids.push(self.nodes_in_table[index].clone());
@@ -218,8 +211,9 @@ impl DataManager {
         self.database.put_pmid_nodes(&data_name, dest_pmids.clone());
         match *immutable_data.get_type_tag() {
             ::routing::immutable_data::ImmutableDataType::Sacrificial => {
-                self.resource_index = cmp::min(1048576,
-                                               self.resource_index + dest_pmids.len() as u64);
+                self.resource_index = ::std::cmp::min(1048576,
+                                                      self.resource_index +
+                                                      dest_pmids.len() as u64);
             }
             _ => {}
         }
@@ -371,7 +365,7 @@ impl DataManager {
         let our_authority = Authority(close_group[0].clone());
         self.database.handle_churn(&our_authority, &self.routing);
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
-        let mut encoder = cbor::Encoder::from_memory();
+        let mut encoder = ::cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
             self.routing.refresh_request(STATS_TAG, our_authority, encoder.as_bytes().to_vec());
         }
@@ -388,9 +382,9 @@ impl DataManager {
                 if pmid_nodes.len() < 3 {
                     self.database.close_grp_from_churn.sort_by(|a, b| {
                         if ::routing::closer_to_target(&a, &b, &name) {
-                            cmp::Ordering::Less
+                            ::std::cmp::Ordering::Less
                         } else {
-                            cmp::Ordering::Greater
+                            ::std::cmp::Ordering::Greater
                         }
                     });
                     let mut close_grp_node_to_add = ::routing::NameType::new([0u8; 64]);
@@ -419,7 +413,7 @@ impl DataManager {
         };
 
         // TODO: giving more weight when failed in storing a Normal immutable data ?
-        self.resource_index = cmp::max(1, self.resource_index - 4);
+        self.resource_index = ::std::cmp::max(1, self.resource_index - 4);
 
         let data_name = immutable_data.name();
         self.database.remove_pmid_node(&data_name, pmid_node_name);
@@ -446,10 +440,12 @@ impl DataManager {
                                        data_name: ::routing::NameType,
                                        pmid_node_name: ::routing::NameType) {
         // giving less weight when removing a sacrificial data
-        self.resource_index = cmp::max(1, self.resource_index - 1);
+        self.resource_index = ::std::cmp::max(1, self.resource_index - 1);
         self.database.remove_pmid_node(&data_name, pmid_node_name);
     }
 }
+
+
 
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {

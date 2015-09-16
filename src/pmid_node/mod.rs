@@ -15,19 +15,17 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use chunk_store::ChunkStore;
-
 pub use routing::Authority::ManagedNode as Authority;
 
 pub struct PmidNode {
     routing: ::vault::Routing,
-    chunk_store: ChunkStore,
+    chunk_store: ::chunk_store::ChunkStore,
 }
 
 impl PmidNode {
     pub fn new(routing: ::vault::Routing) -> PmidNode {
         // TODO adjustable max_disk_space
-        PmidNode { routing: routing, chunk_store: ChunkStore::new(1073741824) }
+        PmidNode { routing: routing, chunk_store: ::chunk_store::ChunkStore::new(1073741824) }
     }
 
     pub fn handle_get(&mut self,
@@ -179,6 +177,8 @@ impl PmidNode {
         self.routing.put_response(our_authority.clone(), location, error, response_token.clone());
     }
 }
+
+
 
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {

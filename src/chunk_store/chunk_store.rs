@@ -15,18 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fs::{File, read_dir, remove_file};
-use std::ffi::OsStr;
-use std::path::Path;
-use std::io::{Read, Write};
-use tempdir;
-use rustc_serialize::hex::{FromHex, ToHex};
-
-
 /// Chunkstore is a collection for holding all data chunks.
 /// Implements a maximum disk usage to restrict storage.
 pub struct ChunkStore {
-    tempdir: tempdir::TempDir,
+    tempdir: ::tempdir::TempDir,
     max_disk_usage: usize,
     current_disk_usage: usize,
 }
@@ -35,13 +27,15 @@ impl ChunkStore {
     /// Create new chunkstore with `max_disk_usage` allowed disk usage.
     pub fn new(max_disk_usage: usize) -> ChunkStore {
         ChunkStore {
-            tempdir: tempdir::TempDir::new("safe_vault").unwrap(),
+            tempdir: ::tempdir::TempDir::new("safe_vault").unwrap(),
             max_disk_usage: max_disk_usage,
             current_disk_usage: 0,
         }
     }
 
     pub fn put(&mut self, name: ::routing::NameType, value: Vec<u8>) {
+        use ::std::io::Write;
+
         if !self.has_disk_space(value.len()) {
             panic!("Disk space unavailable. Not enough space");
         }
@@ -50,10 +44,10 @@ impl ChunkStore {
         self.delete(name.clone());
 
         let name = self.to_hex_string(&name);
-        let path_name = Path::new(&name);
+        let path_name = ::std::path::Path::new(&name);
         let path = self.tempdir.path();
         let path = path.join(path_name);
-        let mut file = File::create(&path).unwrap();
+        let mut file = ::std::fs::File::create(&path).unwrap();
 
         match file.write(&value[..]) {
             Ok(size) => self.current_disk_usage += size,
@@ -65,16 +59,16 @@ impl ChunkStore {
     pub fn delete(&mut self, name: ::routing::NameType) {
         let name = self.to_hex_string(&name);
 
-        match read_dir(&self.tempdir.path()) {
+        match ::std::fs::read_dir(&self.tempdir.path()) {
             Ok(dir_entries) => {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
-                            if entry.file_name().to_str() == OsStr::new(&name).to_str() {
+                            if entry.file_name().to_str() == ::std::ffi::OsStr::new(&name).to_str() {
                                 match entry.metadata() {
                                     Ok(metadata) => {
                                         let len = metadata.len() as usize;
-                                        let _ = remove_file(entry.path());
+                                        let _ = ::std::fs::remove_file(entry.path());
                                         self.current_disk_usage -= len;
                                     }
                                     _ => (),
@@ -91,15 +85,17 @@ impl ChunkStore {
     }
 
     pub fn get(&self, name: ::routing::NameType) -> Vec<u8> {
+        use ::std::io::Read;
+
         let name = self.to_hex_string(&name);
 
-        match read_dir(&self.tempdir.path()) {
+        match ::std::fs::read_dir(&self.tempdir.path()) {
             Ok(dir_entries) => {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
-                            if entry.file_name().to_str() == OsStr::new(&name).to_str() {
-                                match File::open(&entry.path()) {
+                            if entry.file_name().to_str() == ::std::ffi::OsStr::new(&name).to_str() {
+                                match ::std::fs::File::open(&entry.path()) {
                                     Ok(mut file) => {
                                         let mut contents = Vec::<u8>::new();
                                         let _ = file.read_to_end(&mut contents);
@@ -130,12 +126,12 @@ impl ChunkStore {
     pub fn has_chunk(&self, name: ::routing::NameType) -> bool {
         let name = self.to_hex_string(&name);
 
-        match read_dir(&self.tempdir.path()) {
+        match ::std::fs::read_dir(&self.tempdir.path()) {
             Ok(dir_entries) => {
                 for dir_entry in dir_entries {
                     match dir_entry {
                         Ok(entry) => {
-                            if entry.file_name().to_str() == OsStr::new(&name).to_str() {
+                            if entry.file_name().to_str() == ::std::ffi::OsStr::new(&name).to_str() {
                                 return true;
                             }
                         }
@@ -150,9 +146,11 @@ impl ChunkStore {
     }
 
     pub fn names(&self) -> Vec<::routing::NameType> {
+        use ::rustc_serialize::hex::FromHex;
+
         let mut names: Vec<::routing::NameType> = Vec::new();
 
-        match read_dir(&self.tempdir.path()) {
+        match ::std::fs::read_dir(&self.tempdir.path()) {
             Ok(dir_entries) => {
                 for dir_entry in dir_entries {
                     match dir_entry {
@@ -183,6 +181,7 @@ impl ChunkStore {
     }
 
     fn to_hex_string(&self, name: &::routing::NameType) -> String {
+        use ::rustc_serialize::hex::ToHex;
         name.get_id().to_hex()
     }
 }
