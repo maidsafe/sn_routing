@@ -18,8 +18,8 @@
 pub mod node;
 pub mod client;
 
-mod random_trait;
-mod types_util;
+pub mod random_trait;
+pub mod types_util;
 pub mod messages_util;
 
 pub use self::node::*;

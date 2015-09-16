@@ -38,12 +38,7 @@ impl NameType {
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
     }
-
-    // TODO(Ben): Resolve from_data
-    // pub fn from_data(data : &[u8]) -> NameType {
-    //     NameType::new(&crypto::hash::sha512::hash(data).0)
-    // }
-
+    
     pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
         self.0
     }

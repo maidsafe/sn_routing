@@ -84,6 +84,6 @@ pub mod plain_data;
 pub mod data;
 
 /// NameType is a 512bit name to address elements on the DHT network.
-pub use name_type::{NameType, closer_to_target};
+pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 pub use messages::{SignedToken, ExternalRequest, ExternalResponse};
 pub use authority::Authority;
