@@ -22,7 +22,6 @@ pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerA
 pub use ::routing::Authority::NaeManager as Authority;
 
 pub struct StructuredDataManager {
-                                                                                                    #[allow(dead_code)]
     routing: ::vault::Routing,
     // TODO: This is assuming ChunkStore has the ability of handling mutable(SDV)
     // data, and put is overwritable
@@ -149,20 +148,25 @@ impl StructuredDataManager {
                           payloads: &Vec<Vec<u8>>) -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
             if let &Authority(from_group) = our_authority {
-                if let Some(merged) =
+                if let Some(merged_structured_data) =
                         ::utils::merge::<::routing::structured_data::StructuredData>(
                                 from_group, payloads.clone()) {
-                    self.handle_account_transfer(merged);
-                    return ::utils::HANDLED;
+                    self.handle_account_transfer(merged_structured_data);
                 }
+            } else {
+                warn!("Invalid authority for refresh at StructuredDataManager: {:?}",
+                      our_authority);
             }
+            ::utils::HANDLED
+        } else {
+            ::utils::NOT_HANDLED
         }
-        ::utils::NOT_HANDLED
     }
 
-    fn handle_account_transfer(&mut self, sd: ::routing::structured_data::StructuredData) {
-        self.chunk_store.delete(sd.name());
-        self.chunk_store.put(sd.name(), sd.serialised_contents());
+    fn handle_account_transfer(&mut self,
+                               structured_data: ::routing::structured_data::StructuredData) {
+        self.chunk_store.delete(structured_data.name());
+        self.chunk_store.put(structured_data.name(), structured_data.serialised_contents());
     }
 
     pub fn handle_churn(&mut self) {
@@ -174,7 +178,6 @@ impl StructuredDataManager {
         }
         self.chunk_store = ChunkStore::new(1073741824);
     }
-
 }
 
 #[cfg(all(test, feature = "use-mock-routing"))]

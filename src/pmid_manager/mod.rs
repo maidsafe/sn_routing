@@ -110,18 +110,17 @@ impl PmidManager {
                           payloads: &Vec<Vec<u8>>) -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
             if let &Authority(from_group) = our_authority {
-                if let Some(merged) = ::utils::merge::<Account>(from_group,
-                                                                payloads.clone()) {
-                    self.handle_account_transfer(merged);
-                    return ::utils::HANDLED;
+                if let Some(merged_account) = ::utils::merge::<Account>(from_group,
+                                                                        payloads.clone()) {
+                    self.database.handle_account_transfer(merged_account);
                 }
+            } else {
+                warn!("Invalid authority for refresh at PmidManager: {:?}", our_authority);
             }
+            ::utils::HANDLED
+        } else {
+            ::utils::NOT_HANDLED
         }
-        ::utils::NOT_HANDLED
-    }
-
-    fn handle_account_transfer(&mut self, merged_account: Account) {
-        self.database.handle_account_transfer(merged_account);
     }
 
     pub fn handle_churn(&mut self, close_group: &Vec<::routing::NameType>) {
@@ -183,7 +182,7 @@ mod test {
 
         let mut d = cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
         if let Some(pm_account) = d.decode().next().and_then(|result| result.ok()) {
-            pmid_manager.handle_account_transfer(pm_account);
+            pmid_manager.database.handle_account_transfer(pm_account);
         }
         pmid_manager.handle_churn(&close_group);
         let refresh_requests = routing.refresh_requests_given();

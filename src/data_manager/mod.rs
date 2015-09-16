@@ -339,35 +339,35 @@ impl DataManager {
 
     pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &::routing::Authority,
                           payloads: &Vec<Vec<u8>>) -> Option<()> {
-        if let &Authority(from_group) = our_authority {
-            match type_tag.clone() {
-                ACCOUNT_TAG => {
-                    if let Some(merged) =
-                            ::utils::merge::<Account>(from_group, payloads.clone()) {
-                        self.handle_account_transfer(merged);
-                        return ::utils::HANDLED;
+        match type_tag {
+            &ACCOUNT_TAG => {
+                if let &Authority(from_group) = our_authority {
+                    if let Some(merged_account) = ::utils::merge::<Account>(from_group,
+                                                                            payloads.clone()) {
+                        self.database.handle_account_transfer(merged_account);
                     }
+                } else {
+                    warn!("Invalid authority for refresh account at DataManager: {:?}",
+                          our_authority);
                 }
-                STATS_TAG => {
-                    if let Some(merged) =
-                            ::utils::merge::<Stats>(from_group, payloads.clone()) {
-                        self.handle_stats_transfer(merged);
-                        return ::utils::HANDLED;
-                    }
-                }
-                _ => {}
+                ::utils::HANDLED
             }
+            &STATS_TAG => {
+                if let &Authority(from_group) = our_authority {
+                    if let Some(merged_stats) = ::utils::merge::<Stats>(from_group,
+                                                                        payloads.clone()) {
+                        // TODO: shall give more priority to the incoming stats?
+                        self.resource_index =
+                            (self.resource_index + merged_stats.resource_index()) / 2;
+                    }
+                } else {
+                    warn!("Invalid authority for refresh stats at DataManager: {:?}",
+                          our_authority);
+                }
+                ::utils::HANDLED
+            }
+            _ => ::utils::NOT_HANDLED
         }
-        ::utils::NOT_HANDLED
-    }
-
-    fn handle_account_transfer(&mut self, merged_account: Account) {
-        self.database.handle_account_transfer(merged_account);
-    }
-
-    fn handle_stats_transfer(&mut self, merged_stats: Stats) {
-        // TODO: shall give more priority to the incoming stats?
-        self.resource_index = (self.resource_index + merged_stats.resource_index()) / 2;
     }
 
     pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
@@ -490,25 +490,5 @@ mod test {
         assert_eq!(refresh_requests[0].our_authority.get_location().clone(), data.name());
         assert_eq!(refresh_requests[1].type_tag, STATS_TAG);
         assert_eq!(refresh_requests[1].our_authority, our_authority);
-    }
-
-    #[test]
-    fn handle_account_transfer() {
-        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-        let mut data_manager = DataManager::new(routing.clone());
-        let name = ::utils::random_name();
-        let account = Account::new(name.clone(), vec![]);
-        data_manager.handle_account_transfer(account);
-        assert_eq!(data_manager.database.exist(&name), true);
-    }
-
-    #[test]
-    fn handle_stats_transfer() {
-        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-        let mut data_manager = DataManager::new(routing.clone());
-        let name = ::utils::random_name();
-        let stats = Stats::new(name.clone(), 1023);
-        data_manager.handle_stats_transfer(stats);
-        assert_eq!(data_manager.resource_index, 512);
     }
 }
