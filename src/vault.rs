@@ -669,7 +669,8 @@ mod test {
                                               ::vault::Vault::new(Some(sender)).do_run();
                                           });
         let new_vault_receivers = vec![receiver];
-        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1, ::time::Duration::seconds(30));
+        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1,
+                         ::time::Duration::minutes(1));
         println!("network_churn_immutable_data_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -701,7 +702,8 @@ mod test {
                                               ::vault::Vault::new(Some(sender)).do_run();
                                           });
         let new_vault_receivers = vec![receiver];
-        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1, ::time::Duration::minutes(1));
+        waiting_for_hits(&new_vault_receivers, 10, ::routing::types::GROUP_SIZE - 1,
+                         ::time::Duration::minutes(1));
         println!("network_churn_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
             ::routing::data::DataRequest::StructuredData(sd.name(), 0));
