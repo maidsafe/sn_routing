@@ -24,16 +24,6 @@ use NameType;
 use sodiumoxide::crypto;
 
 
-fn get_debug_id(input: Vec<u8>) -> String {
-  format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
-          input[0],
-          input[1],
-          input[2],
-          input[input.len()-3],
-          input[input.len()-2],
-          input[input.len()-1])
-}
-
 /// Maximum allowed size for a Structured Data to grow to
 pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 
@@ -240,23 +230,27 @@ impl StructuredData {
 impl Debug for StructuredData {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
         let _ = formatter.write_str(&format!(" type_tag: {:?} , name: {:?} , version: {:?} , data: {:?}",
-                                             self.type_tag, self.name(), self.version, get_debug_id(self.data.clone())));
+                                             self.type_tag, self.name(), self.version,
+                                             ::utils::get_debug_id(self.data.clone())));
 
-        let prev_owner_keys : Vec<String> = self.previous_owner_keys.iter().map(|pub_key| get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
+        let prev_owner_keys : Vec<String> = self.previous_owner_keys.iter().map(|pub_key|
+                ::utils::get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
         let _ = formatter.write_str(&format!(" , previous_owner_keys : ("));
         for itr in prev_owner_keys.iter() {
             let _ = formatter.write_str(&format!("{:?} ", itr));
         }
         let _ = formatter.write_str(&format!(")"));
 
-        let current_owner_keys : Vec<String> = self.current_owner_keys.iter().map(|pub_key| get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
+        let current_owner_keys : Vec<String> = self.current_owner_keys.iter().map(|pub_key|
+                ::utils::get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
         let _ = formatter.write_str(&format!(" , current_owner_keys : ("));
         for itr in current_owner_keys.iter() {
             let _ = formatter.write_str(&format!("{:?} ", itr));
         }
         let _ = formatter.write_str(&format!(") "));
 
-        let prev_owner_signatures : Vec<String> = self.previous_owner_signatures.iter().map(|signature| get_debug_id(::types::array_as_vector(&signature.0))).collect();
+        let prev_owner_signatures : Vec<String> = self.previous_owner_signatures.iter().map(|signature|
+                ::utils::get_debug_id(::types::array_as_vector(&signature.0))).collect();
         let _ = formatter.write_str(&format!(" , prev_owner_signatures : ("));
         for itr in prev_owner_signatures.iter() {
             let _ = formatter.write_str(&format!("{:?} ", itr));

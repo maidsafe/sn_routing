@@ -25,6 +25,16 @@ use error::RoutingError;
 
 use rustc_serialize::{Decodable, Encodable};
 
+pub fn get_debug_id(input: Vec<u8>) -> String {
+  format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+          input[0],
+          input[1],
+          input[2],
+          input[input.len()-3],
+          input[input.len()-2],
+          input[input.len()-1])
+}
+
 pub fn encode<T>(value: &T) -> Result<Vec<u8>, CborError>
     where T: Encodable
 {
