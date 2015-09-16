@@ -19,8 +19,6 @@ use cbor;
 use rustc_serialize::Encodable;
 use std::collections::HashMap;
 
-use transfer_parser::transfer_tags::DATA_MANAGER_ACCOUNT_TAG;
-
 type PmidNode = ::routing::NameType;
 
 pub type DataName = ::routing::NameType;
@@ -65,27 +63,18 @@ impl ::types::Refreshable for Account {
     fn merge(from_group: ::routing::NameType, responses: Vec<Account>) -> Option<Account> {
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for response in responses {
-            let account =
-                match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
-                    Ok(result) => {
-                        if *result.name() != from_group {
-                            continue;
-                        }
-                        result
+            if *response.name() == from_group {
+                let push_in_vec = match stats.iter_mut()
+                                             .find(|a| a.0 == *response.data_holders()) {
+                    Some(find_res) => {
+                        find_res.1 += 1;
+                        false
                     }
-                    Err(_) => continue,
+                    None => true,
                 };
-            let push_in_vec = match stats.iter_mut().find(|a| a.0 == *account.data_holders()) {
-                Some(find_res) => {
-                    find_res.1 += 1;
-                    false
+                if push_in_vec {
+                    stats.push((response.data_holders().clone(), 1));
                 }
-                None => {
-                    true
-                }
-            };
-            if push_in_vec {
-                stats.push((account.data_holders().clone(), 1));
             }
         }
         stats.sort_by(|a, b| b.1.cmp(&a.1));
@@ -157,39 +146,33 @@ impl Database {
               merged_account.name(), merged_account.data_holders());
     }
 
-    pub fn retrieve_all_and_reset(&mut self,
-                                  _close_group: &mut Vec<::routing::NameType>)
-                                  -> Vec<::types::MethodCall> {
+    pub fn handle_churn(&mut self,
+                        our_authority: &::routing::Authority,
+                        routing: &::vault::Routing) {
         self.temp_storage_after_churn = self.storage.clone();
-        let mut actions = Vec::<::types::MethodCall>::new();
         for (key, value) in self.storage.iter() {
             if value.len() < 3 {
                 for pmid_node in value.iter() {
-                    info!("DataManager sends out a Get request in churn, fetching data {:?} from \
-                          pmid_node {:?}", *key, pmid_node);
-                    actions.push(::types::MethodCall::Get {
-                        location: ::routing::authority::Authority::ManagedNode(pmid_node.clone()),
-                        // DataManager only handles ::routing::immutable_data::ImmutableData
-                        data_request:
+                    info!("DataManager sends out a Get request in churn, \
+                           fetching data {:?} from pmid_node {:?}", *key, pmid_node);
+                    routing.get_request(our_authority.clone(),
+                            ::pmid_node::Authority(pmid_node.clone()),
                             ::routing::data::DataRequest::ImmutableData((*key).clone(),
-                                ::routing::immutable_data::ImmutableDataType::Normal)
-                    });
+                                    ::routing::immutable_data::ImmutableDataType::Normal));
                 }
             }
             let account = Account::new((*key).clone(), (*value).clone());
+            let target_authority = super::Authority(*account.name());
             let mut encoder = cbor::Encoder::from_memory();
-            if encoder.encode(&[account.clone()]).is_ok() {
-                debug!("DataManager sends out a refresh regarding account {:?}", account.name());
-                actions.push(::types::MethodCall::Refresh {
-                    type_tag: DATA_MANAGER_ACCOUNT_TAG,
-                    our_authority: ::routing::Authority::NaeManager(*account.name()),
-                    payload: encoder.as_bytes().to_vec()
-                });
+            if encoder.encode(&[account]).is_ok() {
+                debug!("DataManager sends out a refresh regarding account {:?}",
+                       target_authority.get_location());
+                routing.refresh_request(super::ACCOUNT_TAG,
+                                        target_authority,
+                                        encoder.as_bytes().to_vec());
             }
         }
         self.storage.clear();
-        debug!("DataManager storage cleaned in churn with actions.len() = {:?}", actions.len());
-        actions
     }
 }
 

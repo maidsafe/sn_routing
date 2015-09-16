@@ -18,7 +18,8 @@
 //! SAFE Vault provides the interface to SAFE routing.
 //! The resulting executable is the Vault node for the SAFE network.
 
-#![doc(html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
+#![doc(html_logo_url =
+           "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
        html_root_url = "http://maidsafe.github.io/safe_vault")]
 
@@ -113,16 +114,14 @@ mod chunk_store;
 mod data_manager;
 mod macros;
 mod maid_manager;
+mod mock_routing;
 mod pmid_manager;
 mod pmid_node;
 mod sd_manager;
-mod transfer_parser;
+mod transfer_tag;
 mod types;
 mod utils;
 mod vault;
-
-#[cfg(feature = "use-mock-routing")]
-mod non_networking_test_framework;
 
 /// Runs a SAFE Network vault
 pub fn main() {

@@ -15,53 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-/// MethodCall denotes a specific request to be carried out by routing.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum MethodCall {
-    /// request to have `location` to handle put for the `content`
-    Put {
-        location: ::routing::authority::Authority,
-        content: ::routing::data::Data,
-    },
-    /// request to retreive data with specified type and location from network
-    Get {
-        location: ::routing::authority::Authority,
-        data_request: ::routing::data::DataRequest,
-    },
-    // /// request to post
-    // Post { destination: ::routing::NameType, content: Data },
-    // /// Request delete
-    // Delete { name: ::routing::NameType, data : Data },
-    /// request to refresh
-    Refresh {
-        type_tag: u64,
-        our_authority: ::routing::Authority,
-        payload: Vec<u8>,
-    },
-    /// reply
-    Reply {
-        data: ::routing::data::Data,
-    },
-    /// response error indicating failed in putting data
-    FailedPut {
-        location: ::routing::authority::Authority,
-        data: ::routing::data::Data,
-    },
-    /// response error indicating clearing sarificial data
-    ClearSacrificial {
-        location: ::routing::authority::Authority,
-        name: ::routing::NameType,
-        size: u32,
-    },
-    /// response error indicating not enough allowance
-    LowBalance{ location: ::routing::authority::Authority,
-                data: ::routing::data::Data, balance: u32},
-    /// response error indicating invalid request
-    InvalidRequest {
-        data: ::routing::data::Data,
-    },
-}
-
 /// This trait is required for any type (normally an account) which is refreshed on a churn event.
 pub trait Refreshable : ::rustc_serialize::Encodable + ::rustc_serialize::Decodable {
     /// The serialised contents
@@ -71,4 +24,32 @@ pub trait Refreshable : ::rustc_serialize::Encodable + ::rustc_serialize::Decoda
 
     /// Merge multiple refreshable objects into one
     fn merge(from_group: ::routing::NameType, responses: Vec<Self>) -> Option<Self>;
+}
+
+impl Refreshable for ::routing::structured_data::StructuredData {
+    fn merge(from_group: ::routing::NameType,
+             responses: Vec<::routing::structured_data::StructuredData>)
+             -> Option<::routing::structured_data::StructuredData> {
+        let mut sds = Vec::<(::routing::structured_data::StructuredData, u64)>::new();
+        for response in responses {
+            if response.name() == from_group {
+                let push_in_vec = match sds.iter_mut().find(|a| a.0 == response) {
+                    Some(find_res) => {
+                        find_res.1 += 1;
+                        false
+                    }
+                    None => true,
+                };
+                if push_in_vec {
+                    sds.push((response.clone(), 1));
+                }
+            }
+        }
+        sds.sort_by(|a, b| b.1.cmp(&a.1));
+        let (sd, count) = sds[0].clone();
+        if count >= (::routing::types::GROUP_SIZE as u64 + 1) / 2 {
+            return Some(sd);
+        }
+        None
+    }
 }

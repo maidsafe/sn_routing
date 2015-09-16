@@ -19,7 +19,6 @@ use cbor;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
 
-use transfer_parser::transfer_tags::PMID_MANAGER_ACCOUNT_TAG;
 use utils;
 
 pub type PmidNodeName = ::routing::NameType;
@@ -50,19 +49,11 @@ impl ::types::Refreshable for Account {
         let mut lost_total_size: Vec<u64> = Vec::new();
         let mut offered_space: Vec<u64> = Vec::new();
         for response in responses {
-            let account =
-                match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
-                    Ok(result) => {
-                        if *result.name() != from_group {
-                            continue;
-                        }
-                        result
-                    }
-                    Err(_) => continue,
-                };
-            stored_total_size.push(account.value().stored_total_size());
-            lost_total_size.push(account.value().lost_total_size());
-            offered_space.push(account.value().offered_space());
+            if *response.name() == from_group {
+                stored_total_size.push(response.value().stored_total_size());
+                lost_total_size.push(response.value().lost_total_size());
+                offered_space.push(response.value().offered_space());
+            }
         }
         Some(Account::new(from_group,
                           AccountValue::new(utils::median(stored_total_size),
@@ -183,25 +174,24 @@ impl PmidManagerDatabase {
               merged_account.name(), merged_account.value());
     }
 
-    pub fn retrieve_all_and_reset(&mut self,
-                                  close_group: &Vec<::routing::NameType>)
-                                  -> Vec<::types::MethodCall> {
-        let mut actions = Vec::with_capacity(self.storage.len());
+    pub fn handle_churn(&mut self,
+                        close_group: &Vec<::routing::NameType>,
+                        routing: &::vault::Routing) {
         for (key, value) in self.storage.iter() {
             if close_group.iter().find(|a| **a == *key).is_some() {
                 let account = Account::new((*key).clone(), (*value).clone());
+                let our_authority = super::Authority(*account.name());
                 let mut encoder = cbor::Encoder::from_memory();
-                if encoder.encode(&[account.clone()]).is_ok() {
-                    actions.push(::types::MethodCall::Refresh {
-                        type_tag: PMID_MANAGER_ACCOUNT_TAG,
-                        our_authority: ::routing::Authority::NodeManager(*account.name()),
-                        payload: encoder.as_bytes().to_vec()
-                    });
+                if encoder.encode(&[account]).is_ok() {
+                    debug!("PmidManager sends out a refresh regarding account {:?}",
+                           our_authority.get_location());
+                    routing.refresh_request(super::ACCOUNT_TAG,
+                                            our_authority,
+                                            encoder.as_bytes().to_vec());
                 }
             }
         }
         self.storage.clear();
-        actions
     }
 }
 

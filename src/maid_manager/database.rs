@@ -19,7 +19,6 @@ use cbor;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::collections;
 
-use transfer_parser::transfer_tags::MAID_MANAGER_ACCOUNT_TAG;
 use utils;
 
 pub type MaidNodeName = ::routing::NameType;
@@ -49,18 +48,10 @@ impl ::types::Refreshable for Account {
         let mut data_stored: Vec<u64> = Vec::new();
         let mut space_available: Vec<u64> = Vec::new();
         for response in responses {
-            let account =
-                match ::routing::utils::decode::<Account>(&response.serialised_contents()) {
-                    Ok(result) => {
-                        if *result.name() != from_group {
-                            continue;
-                        }
-                        result
-                    }
-                    Err(_) => continue,
-                };
-            data_stored.push(account.value().data_stored());
-            space_available.push(account.value().space_available());
+            if *response.name() == from_group {
+                data_stored.push(response.value().data_stored());
+                space_available.push(response.value().space_available());
+            }
         }
         Some(Account::new(from_group,
                           AccountValue::new(utils::median(data_stored),
@@ -146,21 +137,20 @@ impl MaidManagerDatabase {
               merged_account.name(), merged_account.value());
     }
 
-    pub fn retrieve_all_and_reset(&mut self) -> Vec<::types::MethodCall> {
-        let mut actions = Vec::with_capacity(self.storage.len());
+    pub fn handle_churn(&mut self, routing: &::vault::Routing) {
         for (key, value) in self.storage.iter() {
             let account = Account::new((*key).clone(), (*value).clone());
+            let our_authority = super::Authority(*account.name());
             let mut encoder = cbor::Encoder::from_memory();
-            if encoder.encode(&[account.clone()]).is_ok() {
-                actions.push(::types::MethodCall::Refresh {
-                    type_tag: MAID_MANAGER_ACCOUNT_TAG,
-                    our_authority: ::routing::Authority::ClientManager(*account.name()),
-                    payload: encoder.as_bytes().to_vec()
-                });
+            if encoder.encode(&[account]).is_ok() {
+                debug!("MaidManager sends out a refresh regarding account {:?}",
+                       our_authority.get_location());
+                routing.refresh_request(super::ACCOUNT_TAG,
+                                        our_authority,
+                                        encoder.as_bytes().to_vec());
             }
         }
         self.storage.clear();
-        actions
     }
 
     #[allow(dead_code)]

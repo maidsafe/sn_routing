@@ -15,6 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+/// Indicates a "handle_xxx" function of a persona has dealt with the request (i.e. it was for that
+/// persona).  It doesn't indicate success or failure - only that the request has been handled.
+pub const HANDLED: Option<()> = Some(());
+
+/// Indicates a "handle_xxx" function of a persona has NOT dealt with the request (i.e. it was not
+/// for that persona).
+pub const NOT_HANDLED: Option<()> = None;
+
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
 /// unsorted.  If `values` is empty, returns `0`.
 pub fn median(mut values: Vec<u64>) -> u64 {
@@ -34,6 +42,68 @@ pub fn median(mut values: Vec<u64>) -> u64 {
     }
 }
 
+pub fn merge<T>(from_group: ::routing::NameType, payloads: Vec<Vec<u8>>) -> Option<T>
+    where T: for<'a> ::types::Refreshable + 'static {
+    let mut transfer_entries = Vec::<T>::new();
+    for it in payloads.iter() {
+        let mut decoder = ::cbor::Decoder::from_bytes(&it[..]);
+        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
+            transfer_entries.push(parsed_entry);
+        }
+    }
+    T::merge(from_group, transfer_entries).and_then(|result| {
+        let mut decoder = ::cbor::Decoder::from_bytes(&result.serialised_contents()[..]);
+        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
+            let parsed: T = parsed_entry;
+            Some(parsed)
+        } else {
+            None
+        }
+    })
+}
+
+pub fn is_client_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::routing::Authority::Client(_, _) => true,
+        _ => false,
+    }
+}
+
+pub fn is_maid_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::maid_manager::Authority(_) => true,
+        _ => false,
+    }
+}
+
+pub fn is_pmid_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::pmid_manager::Authority(_) => true,
+        _ => false,
+    }
+}
+
+pub fn is_pmid_node_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::pmid_node::Authority(_) => true,
+        _ => false,
+    }
+}
+
+pub fn is_sd_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::sd_manager::Authority(_) => true,
+        _ => false,
+    }
+}
+
+pub fn is_data_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
+    match provided_authority {
+        &::data_manager::Authority(_) => true,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 pub fn random_name() -> ::routing::NameType {
     // TODO - once Routing provides either a compile-time value for `NameType`'s length or exposes
@@ -41,6 +111,16 @@ pub fn random_name() -> ::routing::NameType {
     // https://github.com/maidsafe/routing/issues/674
     ::routing::NameType(::routing::types::vector_as_u8_64_array(
         ::routing::types::generate_random_vec_u8(64)))
+}
+
+#[cfg(test)]
+pub fn initialise_logger() {
+    match ::env_logger::init() {
+        Ok(()) => {
+            println!("");
+        }
+        Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
+    }
 }
 
 #[cfg(test)]
