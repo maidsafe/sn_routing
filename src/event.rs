@@ -22,7 +22,7 @@ use error::InterfaceError;
 use sodiumoxide::crypto::sign;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     Request {
         request: ExternalRequest,
@@ -67,4 +67,60 @@ pub enum Event {
     Disconnected,
     /// Event::Terminated is called after RoutingNode::stop() has terminated internal processes
     Terminated,
+}
+
+impl ::std::fmt::Debug for Event {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        match self {
+            &Event::Request{ ref request, ref our_authority, ref from_authority, ref response_token } => {
+                formatter.write_str(&format!("Request(request: {:?} , \
+                    our_authority: {:?} , from_authority: {:?}, response_token: {:?})",
+                    request, our_authority, from_authority, response_token))
+            }
+            &Event::Response{ ref response, ref our_authority, ref from_authority } => {
+                formatter.write_str(&format!("Response(response: {:?} , \
+                    our_authority: {:?} , from_authority: {:?})",
+                    response, our_authority, from_authority))
+            }
+            &Event::FailedRequest{ ref request, ref our_authority, ref location, ref interface_error } => {
+                formatter.write_str(&format!("FailedRequest(request: {:?} , \
+                    our_authority: {:?} , location: {:?} , interface_error: {:?})",
+                    request, our_authority, location, interface_error))
+            }
+            &Event::FailedResponse{ ref response, ref our_authority, ref location, ref interface_error } => {
+                formatter.write_str(&format!("FailedResponse(response: {:?} , \
+                    our_authority: {:?} , location: {:?} , interface_error: {:?})",
+                    response, our_authority, location, interface_error))
+            }
+            &Event::Refresh(ref type_tag, ref target, ref payloads) => {
+                let _ = formatter.write_str(&format!("Refresh(type_tag: {:?} , target: {:?} , \
+                    payloads: (", type_tag, target));
+                for payload in payloads.iter() {
+                    let _ = formatter.write_str(&format!("{:?} ",
+                                                ::utils::get_debug_id(payload.clone())));
+                }
+                formatter.write_str(&format!("))"))
+            }
+            &Event::Churn(ref close_group, ref churn_node) => {
+                formatter.write_str(&format!("Churn (close_group: {:?} , churn_node: {:?})",
+                                             close_group, churn_node))
+            }
+            &Event::DoRefresh(ref type_tag, ref target, ref churn_node) => {
+                formatter.write_str(&format!("DoRefresh(type_tag: {:?} , target: {:?} , \
+                    churn_node: {:?})", type_tag, target, churn_node))
+            }
+            &Event::Bootstrapped => {
+                formatter.write_str(&format!("Bootstrapped"))
+            }
+            &Event::Connected => {
+                formatter.write_str(&format!("Connected"))
+            }
+            &Event::Disconnected => {
+                formatter.write_str(&format!("Disconnected"))
+            }
+            &Event::Terminated => {
+                formatter.write_str(&format!("Terminated"))
+            }
+        }
+    }
 }
