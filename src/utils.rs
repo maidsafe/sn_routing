@@ -26,7 +26,7 @@ use error::RoutingError;
 use rustc_serialize::{Decodable, Encodable};
 
 pub fn get_debug_id(input: Vec<u8>) -> String {
-  format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+  format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
           input[0],
           input[1],
           input[2],
