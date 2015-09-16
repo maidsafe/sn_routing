@@ -123,8 +123,9 @@ impl PmidManager {
         }
     }
 
-    pub fn handle_churn(&mut self, close_group: &Vec<::routing::NameType>) {
-        self.database.handle_churn(close_group, &self.routing);
+    pub fn handle_churn(&mut self, close_group: &Vec<::routing::NameType>,
+                        churn_node: &::routing::NameType) {
+        self.database.handle_churn(close_group, &self.routing, churn_node);
     }
 }
 
@@ -174,7 +175,8 @@ mod test {
                                ::routing::NameType::new([6u8; 64]),
                                ::routing::NameType::new([7u8; 64]),
                                ::routing::NameType::new([8u8; 64])];
-        pmid_manager.handle_churn(&close_group);
+        let churn_node = ::utils::random_name();
+        pmid_manager.handle_churn(&close_group, &churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
@@ -184,12 +186,12 @@ mod test {
         if let Some(pm_account) = d.decode().next().and_then(|result| result.ok()) {
             pmid_manager.database.handle_account_transfer(pm_account);
         }
-        pmid_manager.handle_churn(&close_group);
+        pmid_manager.handle_churn(&close_group, &churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0], refresh_requests[1]);
 
-        pmid_manager.handle_churn(&close_group);
+        pmid_manager.handle_churn(&close_group, &churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
     }

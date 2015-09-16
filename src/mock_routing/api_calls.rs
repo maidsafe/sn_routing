@@ -175,12 +175,15 @@ pub struct RefreshRequest {
     pub type_tag: u64,
     pub our_authority: ::routing::Authority,
     pub content: Vec<u8>,
+    pub churn_node: ::routing::NameType,
 }
 
 impl RefreshRequest {
     pub fn new(type_tag: u64,
                our_authority: ::routing::Authority,
-               content: Vec<u8>) -> RefreshRequest {
-        RefreshRequest { type_tag: type_tag, our_authority: our_authority, content: content }
+               content: Vec<u8>,
+               churn_node: ::routing::NameType) -> RefreshRequest {
+        RefreshRequest { type_tag: type_tag, our_authority: our_authority,
+                         content: content, churn_node: churn_node }
     }
 }

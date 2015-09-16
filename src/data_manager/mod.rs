@@ -370,15 +370,16 @@ impl DataManager {
         }
     }
 
-    pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
+    pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
+                        churn_node: &::routing::NameType) {
         // TODO: close_group[0] is supposed to be the vault id
         let our_authority = Authority(close_group[0].clone());
-        self.database.handle_churn(&our_authority, &self.routing);
+        self.database.handle_churn(&our_authority, &self.routing, churn_node);
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         let mut encoder = cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
             self.routing.refresh_request(STATS_TAG, our_authority,
-                                         encoder.as_bytes().to_vec());
+                                         encoder.as_bytes().to_vec(), churn_node.clone());
         }
         self.nodes_in_table = close_group;
     }
@@ -483,7 +484,7 @@ mod test {
                                     &::routing::data::Data::ImmutableData(data.clone())));
         let close_group = vec![our_authority.get_location().clone()].into_iter().chain(
                 data_manager.nodes_in_table.clone().into_iter()).collect();
-        data_manager.handle_churn(close_group);
+        data_manager.handle_churn(close_group, &::utils::random_name());
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);

@@ -169,12 +169,13 @@ impl StructuredDataManager {
         self.chunk_store.put(structured_data.name(), structured_data.serialised_contents());
     }
 
-    pub fn handle_churn(&mut self) {
+    pub fn handle_churn(&mut self, churn_node: &::routing::NameType) {
         let names = self.chunk_store.names();
         for name in names {
             let data = self.chunk_store.get(name.clone());
             debug!("SDManager sends out a refresh regarding data {:?}", name);
-            self.routing.refresh_request(ACCOUNT_TAG, Authority(name), data);
+            self.routing.refresh_request(ACCOUNT_TAG, Authority(name),
+                                         data, churn_node.clone());
         }
         self.chunk_store = ChunkStore::new(1073741824);
     }
@@ -277,11 +278,12 @@ mod test {
 
     #[test]
     fn handle_churn_and_account_transfer() {
+        let churn_node = ::utils::random_name();
         let (our_authority, routing, mut sd_manager, from_authority, sdv, _, _) = env_setup();
         assert_eq!(::utils::HANDLED,
                    sd_manager.handle_put(&our_authority, &from_authority,
                                          &::routing::data::Data::StructuredData(sdv.clone())));
-        sd_manager.handle_churn();
+        sd_manager.handle_churn(&churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
@@ -291,12 +293,12 @@ mod test {
         if let Some(sd_account) = d.decode().next().and_then(|result| result.ok()) {
             sd_manager.handle_account_transfer(sd_account);
         }
-        sd_manager.handle_churn();
+        sd_manager.handle_churn(&churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0], refresh_requests[1]);
 
-        sd_manager.handle_churn();
+        sd_manager.handle_churn(&churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
     }

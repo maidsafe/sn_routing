@@ -175,7 +175,7 @@ impl PmidManagerDatabase {
     }
 
     pub fn handle_churn(&mut self, close_group: &Vec<::routing::NameType>,
-                        routing: &::vault::Routing) {
+                        routing: &::vault::Routing, churn_node: &::routing::NameType) {
         for (key, value) in self.storage.iter() {
             if close_group.iter().find(|a| **a == *key).is_some() {
                 let account = Account::new((*key).clone(), (*value).clone());
@@ -185,7 +185,7 @@ impl PmidManagerDatabase {
                     debug!("PmidManager sends out a refresh regarding account {:?}",
                            our_authority.get_location());
                 routing.refresh_request(super::ACCOUNT_TAG, our_authority,
-                                        encoder.as_bytes().to_vec());
+                                        encoder.as_bytes().to_vec(), churn_node.clone());
                 }
             }
         }

@@ -137,7 +137,8 @@ impl MaidManagerDatabase {
               merged_account.name(), merged_account.value());
     }
 
-    pub fn handle_churn(&mut self, routing: &::vault::Routing) {
+    pub fn handle_churn(&mut self, routing: &::vault::Routing,
+                        churn_node: &::routing::NameType) {
         for (key, value) in self.storage.iter() {
             let account = Account::new((*key).clone(), (*value).clone());
             let our_authority = super::Authority(*account.name());
@@ -146,7 +147,7 @@ impl MaidManagerDatabase {
                 debug!("MaidManager sends out a refresh regarding account {:?}",
                        our_authority.get_location());
                 routing.refresh_request(super::ACCOUNT_TAG, our_authority,
-                                        encoder.as_bytes().to_vec());
+                                        encoder.as_bytes().to_vec(), churn_node.clone());
             }
         }
         self.storage.clear();

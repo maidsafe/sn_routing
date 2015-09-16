@@ -146,7 +146,7 @@ impl Database {
     }
 
     pub fn handle_churn(&mut self, our_authority: &::routing::Authority,
-                        routing: &::vault::Routing) {
+                        routing: &::vault::Routing, churn_node: &::routing::NameType) {
         self.temp_storage_after_churn = self.storage.clone();
         for (key, value) in self.storage.iter() {
             if value.len() < 3 {
@@ -166,7 +166,7 @@ impl Database {
                 debug!("DataManager sends out a refresh regarding account {:?}",
                        target_authority.get_location());
                 routing.refresh_request(super::ACCOUNT_TAG, target_authority,
-                                        encoder.as_bytes().to_vec());
+                                        encoder.as_bytes().to_vec(), churn_node.clone());
             }
         }
         self.storage.clear();

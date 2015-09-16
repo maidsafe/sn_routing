@@ -78,7 +78,8 @@ impl Vault {
                     self.on_response(response, our_authority, from_authority),
                 Event::Refresh(type_tag, our_authority, accounts) =>
                     self.on_refresh(type_tag, our_authority, accounts),
-                Event::Churn(close_group) => self.on_churn(close_group),
+                Event::Churn(close_group, churn_node) => self.on_churn(close_group, churn_node),
+                Event::DoRefresh(_, _, _) => {}
                 Event::Bootstrapped => self.on_bootstrapped(),
                 Event::Connected => self.on_connected(),
                 Event::Disconnected => self.on_disconnected(),
@@ -140,16 +141,17 @@ impl Vault {
         self.handle_refresh(type_tag, our_authority, accounts);
     }
 
-    fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
+    fn on_churn(&mut self, close_group: Vec<::routing::NameType>,
+                churn_node: ::routing::NameType) {
         self.id = close_group[0].clone();
         let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
         let time_now = ::time::SteadyTime::now();
         // During the process of joining network, the vault shall not refresh its just received info
         if !(churn_up && (self.churn_timestamp + ::time::Duration::seconds(5) > time_now)) {
-            self.handle_churn(close_group);
+            self.handle_churn(close_group, churn_node);
         } else {
             // We need to pass the close_group to data_manager to hold.
-            self.data_manager.handle_churn(close_group);
+            self.data_manager.handle_churn(close_group, &churn_node);
         }
         if churn_up {
             info!("Vault added connected node");
@@ -280,11 +282,12 @@ impl Vault {
         vec![]
     }
 
-    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
-        self.maid_manager.handle_churn();
-        self.sd_manager.handle_churn();
-        self.pmid_manager.handle_churn(&close_group);
-        self.data_manager.handle_churn(close_group);
+    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
+                    churn_node: ::routing::NameType) {
+        self.maid_manager.handle_churn(&churn_node);
+        self.sd_manager.handle_churn(&churn_node);
+        self.pmid_manager.handle_churn(&close_group, &churn_node);
+        self.data_manager.handle_churn(close_group, &churn_node);
     }
 
     fn handle_refresh(&mut self,
@@ -404,7 +407,7 @@ mod test {
         for _ in 0..30 {
             available_nodes.push(::utils::random_name());
         }
-        routing.churn_event(available_nodes);
+        routing.churn_event(available_nodes, ::utils::random_name());
         (routing, receiver)
     }
 
@@ -510,7 +513,9 @@ mod test {
                         },
                         Event::Refresh(_type_tag, _group_name, _accounts) =>
                             info!("client received a refresh"),
-                        Event::Churn(_close_group) => info!("client received a churn"),
+                        Event::Churn(_close_group, _churn_node) => info!("client received a churn"),
+                        Event::DoRefresh(_type_tag, _our_authority, _churn_node) =>
+                            info!("client received a do-refresh"),
                         Event::Connected => info!("client connected"),
                         Event::Disconnected => info!("client disconnected"),
                         Event::FailedRequest{ request, our_authority, location, interface_error } =>
@@ -566,7 +571,7 @@ mod test {
                             _ => {}
                         }
                     }
-                    Ok(::routing::event::Event::Churn(_)) => {
+                    Ok(::routing::event::Event::Churn(_, _)) => {
                         if expected_tag == 10 {
                             hits += 1;
                         }
