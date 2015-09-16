@@ -221,20 +221,10 @@ impl Vault {
     // Post is only used to update the content or owners of a StructuredData
     fn handle_post(&mut self,
                    our_authority: ::routing::Authority,
-                   _from_authority: ::routing::Authority,
+                   from_authority: ::routing::Authority,
                    data: ::routing::data::Data,
-                   response_token: Option<::routing::SignedToken>) {
-        let returned_actions = match our_authority {
-            ::sd_manager::Authority(_) => {
-                match data {
-                    ::routing::data::Data::StructuredData(data) =>
-                        self.sd_manager.handle_post(data),
-                    _ => vec![],
-                }
-            }
-            _ => vec![],
-        };
-        self.send(our_authority, returned_actions, response_token, None, None);
+                   _response_token: Option<::routing::SignedToken>) {
+        let _ = self.sd_manager.handle_post(&our_authority, &from_authority, &data);
     }
 
     fn handle_get_response(&mut self,

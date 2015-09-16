@@ -62,6 +62,7 @@ pub enum MethodCall {
         balance: u32,
     },
     /// response error indicating invalid request
+                                                                                            #[allow(dead_code)]
     InvalidRequest {
         data: ::routing::data::Data,
     },
