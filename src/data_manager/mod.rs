@@ -370,6 +370,10 @@ impl DataManager {
         }
     }
 
+    pub fn set_node_table(&mut self, close_group: Vec<::routing::NameType>) {
+        self.nodes_in_table = close_group;
+    }
+
     pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
                         churn_node: &::routing::NameType) {
         // TODO: close_group[0] is supposed to be the vault id

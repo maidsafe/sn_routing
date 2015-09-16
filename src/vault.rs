@@ -151,8 +151,7 @@ impl Vault {
         if !(churn_up && (self.churn_timestamp + ::time::Duration::seconds(5) > time_now)) {
             self.handle_churn(close_group, churn_node);
         } else {
-            // We need to pass the close_group to data_manager to hold.
-            self.data_manager.handle_churn(close_group, &churn_node);
+            self.data_manager.set_node_table(close_group);
         }
         if churn_up {
             info!("Vault added connected node");
