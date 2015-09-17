@@ -243,10 +243,10 @@ mod test {
                                                         ::rand::random::<u64>()));
 
         let mut e = ::cbor::Encoder::from_memory();
-        e.encode(&[&obj_before]).unwrap();
+        evaluate_result!(e.encode(&[&obj_before]));
 
         let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: Account = d.decode().next().unwrap().unwrap();
+        let obj_after: Account = evaluate_result!(evaluate_option!(d.decode().next(), ""));
 
         assert_eq!(obj_before, obj_after);
     }

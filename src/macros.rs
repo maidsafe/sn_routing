@@ -33,9 +33,11 @@
 macro_rules! evaluate_result {
     ($result:expr) => {
         $result.unwrap_or_else(|error| {
-            let decorator_length = ::std::cmp::min(format!("{:?}", error).len() + 4, 100);
+            let message =
+                "Result evaluated to Err: \"".to_string() + &format!("{:?}", error)[..] + "\"";
+            let decorator_length = ::std::cmp::min(message.len() + 2, 100);
             let decorator = (0..decorator_length).map(|_| "=").collect::<String>();
-            panic!("\n\n {}\n| {:?} |\n {}\n\n", decorator, error, decorator)
+            panic!("\n\n {}\n| {} |\n {}\n\n", decorator, message, decorator)
         })
     }
 }
@@ -58,10 +60,13 @@ macro_rules! evaluate_result {
 macro_rules! evaluate_option {
     ($option:expr, $user_string:expr) => {
         $option.unwrap_or_else(|| {
-            let error = "Option evaluated to None with message ".to_string() + $user_string;
-            let decorator_length = ::std::cmp::min(format!("{:?}", error).len() + 4, 100);
+            let mut error = "Option evaluated to None".to_string();
+            if !$user_string.is_empty() {
+                error = error + ": \"" + $user_string + "\"";
+            }
+            let decorator_length = ::std::cmp::min(error.len() + 2, 100);
             let decorator = (0..decorator_length).map(|_| "=").collect::<String>();
-            panic!("\n\n {}\n| {:?} |\n {}\n\n", decorator, error, decorator)
+            panic!("\n\n {}\n| {} |\n {}\n\n", decorator, error, decorator)
         })
     }
 }
