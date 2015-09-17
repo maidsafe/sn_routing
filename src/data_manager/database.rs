@@ -134,9 +134,8 @@ impl Database {
         info!("DataManager updated account {:?} to {:?}", merged_account.name, data_holders);
     }
 
-    pub fn handle_churn(&mut self,
-                        our_authority: &::routing::Authority,
-                        routing: &::vault::Routing) {
+    pub fn handle_churn(&mut self, our_authority: &::routing::Authority,
+                        routing: &::vault::Routing, churn_node: &::routing::NameType) {
         self.temp_storage_after_churn = self.storage.clone();
         for (key, value) in self.storage.iter() {
             if value.len() < 3 {
@@ -155,12 +154,34 @@ impl Database {
             if encoder.encode(&[account]).is_ok() {
                 debug!("DataManager sends out a refresh regarding account {:?}",
                        target_authority.get_location());
-                routing.refresh_request(super::ACCOUNT_TAG,
-                                        target_authority,
-                                        encoder.as_bytes().to_vec());
+                routing.refresh_request(super::ACCOUNT_TAG, target_authority,
+                                        encoder.as_bytes().to_vec(), churn_node.clone());
             }
         }
         self.storage.clear();
+    }
+
+    pub fn do_refresh(&mut self,
+                      type_tag: &u64,
+                      our_authority: &::routing::Authority,
+                      churn_node: &::routing::NameType,
+                      routing: &::vault::Routing) -> Option<()> {
+        if type_tag == &super::ACCOUNT_TAG {
+            for (key, value) in self.storage.iter() {
+                if key == our_authority.get_location() {
+                    let account = Account::new((*key).clone(), (*value).clone());
+                    let mut encoder = ::cbor::Encoder::from_memory();
+                    if encoder.encode(&[account]).is_ok() {
+                        debug!("DataManager on-request sends out a refresh regarding account {:?}",
+                               our_authority.get_location());
+                        routing.refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
+                                                encoder.as_bytes().to_vec(), churn_node.clone());
+                    }
+                }
+            }
+            return ::utils::HANDLED;
+        }
+        ::utils::NOT_HANDLED
     }
 }
 

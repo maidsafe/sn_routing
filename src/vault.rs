@@ -76,7 +76,9 @@ impl Vault {
                 Event::Refresh(type_tag, our_authority, accounts) => self.on_refresh(type_tag,
                                                                                      our_authority,
                                                                                      accounts),
-                Event::Churn(close_group) => self.on_churn(close_group),
+                Event::Churn(close_group, churn_node) => self.on_churn(close_group, churn_node),
+                Event::DoRefresh(type_tag, our_authority, churn_node) =>
+                    self.on_do_refresh(type_tag, our_authority, churn_node),
                 Event::Bootstrapped => self.on_bootstrapped(),
                 Event::Connected => self.on_connected(),
                 Event::Disconnected => self.on_disconnected(),
@@ -140,21 +142,29 @@ impl Vault {
         self.handle_refresh(type_tag, our_authority, accounts);
     }
 
-    fn on_churn(&mut self, close_group: Vec<::routing::NameType>) {
+    fn on_churn(&mut self, close_group: Vec<::routing::NameType>,
+                churn_node: ::routing::NameType) {
         self.id = close_group[0].clone();
         let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
         let time_now = ::time::SteadyTime::now();
         // During the process of joining network, the vault shall not refresh its just received info
         if !(churn_up && (self.churn_timestamp + ::time::Duration::seconds(5) > time_now)) {
-            self.handle_churn(close_group);
+            self.handle_churn(close_group, churn_node);
         } else {
-            // We need to pass the close_group to data_manager to hold.
-            self.data_manager.handle_churn(close_group);
+            self.data_manager.set_node_table(close_group);
         }
         if churn_up {
             info!("Vault added connected node");
             self.churn_timestamp = time_now;
         }
+    }
+
+    fn on_do_refresh(&mut self, type_tag: u64, our_authority: ::routing::Authority,
+                     churn_node: ::routing::NameType) {
+        let _ = self.maid_manager.do_refresh(&type_tag, &our_authority, &churn_node)
+                .or_else(|| self.data_manager.do_refresh(&type_tag, &our_authority, &churn_node))
+                .or_else(|| self.sd_manager.do_refresh(&type_tag, &our_authority, &churn_node))
+                .or_else(|| self.pmid_manager.do_refresh(&type_tag, &our_authority, &churn_node));
     }
 
     fn on_bootstrapped(&self) {
@@ -276,11 +286,12 @@ impl Vault {
                             _: Option<::routing::SignedToken>) {
     }
 
-    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
-        self.maid_manager.handle_churn();
-        self.sd_manager.handle_churn();
-        self.pmid_manager.handle_churn(&close_group);
-        self.data_manager.handle_churn(close_group);
+    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
+                    churn_node: ::routing::NameType) {
+        self.maid_manager.handle_churn(&churn_node);
+        self.sd_manager.handle_churn(&churn_node);
+        self.pmid_manager.handle_churn(&close_group, &churn_node);
+        self.data_manager.handle_churn(close_group, &churn_node);
     }
 
     fn handle_refresh(&mut self,
@@ -327,7 +338,7 @@ mod test {
         for _ in 0..30 {
             available_nodes.push(::utils::random_name());
         }
-        routing.churn_event(available_nodes);
+        routing.churn_event(available_nodes, ::utils::random_name());
         (routing, receiver)
     }
 
@@ -450,7 +461,9 @@ mod test {
                         },
                         Event::Refresh(_type_tag, _group_name, _accounts) =>
                             info!("client received a refresh"),
-                        Event::Churn(_close_group) => info!("client received a churn"),
+                        Event::Churn(_close_group, _churn_node) => info!("client received a churn"),
+                        Event::DoRefresh(_type_tag, _our_authority, _churn_node) =>
+                            info!("client received a do-refresh"),
                         Event::Connected => info!("client connected"),
                         Event::Disconnected => info!("client disconnected"),
                         Event::FailedRequest{ request, our_authority, location, interface_error } =>
@@ -511,7 +524,7 @@ mod test {
                             _ => {}
                         }
                     }
-                    Ok(::routing::event::Event::Churn(_)) => {
+                    Ok(::routing::event::Event::Churn(_, _)) => {
                         if expected_tag == 10 {
                             hits += 1;
                         }
@@ -525,6 +538,25 @@ mod test {
                 // established environment / testing result having a high chance indicates a failure
                 // in code.  So here use panic to terminate the testing directly.
                 panic!("waiting_for_hits can't resolve within the expected duration");
+            }
+        }
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    fn waiting_for_client_get(client_receiver: ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
+                              expected_data: ::routing::data::Data, time_limit: ::time::Duration) {
+        let starting_time = ::time::SteadyTime::now();
+        loop {
+            match client_receiver.try_recv() {
+                Err(_) => {}
+                Ok(data) => {
+                    assert_eq!(data, expected_data);
+                    break
+                }
+            }
+            ::std::thread::sleep_ms(1);
+            if starting_time + time_limit < ::time::SteadyTime::now() {
+                panic!("waiting_for_client_get can't resolve within the expected duration");
             }
         }
     }
@@ -544,15 +576,14 @@ mod test {
         waiting_for_hits(&vault_receivers,
                          3,
                          ::data_manager::PARALLELISM,
-                         ::time::Duration::minutes(1));
+                         ::time::Duration::minutes(3));
         println!("network_put_get_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
                                    ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
-        while let Ok(data) = client_receiver.recv() {
-            assert_eq!(data, ::routing::data::Data::ImmutableData(im_data.clone()));
-            break;
-        }
+        waiting_for_client_get(client_receiver,
+                               ::routing::data::Data::ImmutableData(im_data),
+                               ::time::Duration::minutes(1));
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
@@ -579,7 +610,7 @@ mod test {
         waiting_for_hits(&vault_receivers,
                          1,
                          ::routing::types::GROUP_SIZE,
-                         ::time::Duration::minutes(1));
+                         ::time::Duration::minutes(3));
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd_new = ::routing::structured_data::StructuredData::new(0,
@@ -597,14 +628,13 @@ mod test {
         waiting_for_hits(&vault_receivers,
                          1,
                          ::routing::types::GROUP_SIZE,
-                         ::time::Duration::minutes(1));
+                         ::time::Duration::minutes(3));
         println!("network_post_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
                                    ::routing::data::DataRequest::StructuredData(sd.name(), 0));
-        while let Ok(data) = client_receiver.recv() {
-            assert_eq!(data, ::routing::data::Data::StructuredData(sd_new.clone()));
-            break;
-        }
+        waiting_for_client_get(client_receiver,
+                               ::routing::data::Data::StructuredData(sd_new),
+                               ::time::Duration::minutes(1));
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
@@ -622,7 +652,7 @@ mod test {
         waiting_for_hits(&vault_receivers,
                          3,
                          ::data_manager::PARALLELISM,
-                         ::time::Duration::minutes(1));
+                         ::time::Duration::minutes(3));
 
         println!("network_churn_immutable_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
@@ -633,15 +663,14 @@ mod test {
         waiting_for_hits(&new_vault_receivers,
                          10,
                          ::routing::types::GROUP_SIZE - 1,
-                         ::time::Duration::seconds(30));
+                         ::time::Duration::minutes(3));
         println!("network_churn_immutable_data_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
                                    ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
-        while let Ok(data) = client_receiver.recv() {
-            assert_eq!(data, ::routing::data::Data::ImmutableData(im_data.clone()));
-            break;
-        }
+        waiting_for_client_get(client_receiver,
+                               ::routing::data::Data::ImmutableData(im_data),
+                               ::time::Duration::minutes(1));
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
@@ -668,7 +697,7 @@ mod test {
         waiting_for_hits(&vault_receivers,
                          1,
                          ::routing::types::GROUP_SIZE,
-                         ::time::Duration::minutes(1));
+                         ::time::Duration::minutes(3));
 
         println!("network_churn_structured_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
@@ -679,13 +708,12 @@ mod test {
         waiting_for_hits(&new_vault_receivers,
                          10,
                          ::routing::types::GROUP_SIZE - 1,
-                         ::time::Duration::minutes(1));
+                         ::time::Duration::minutes(3));
         println!("network_churn_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
                                    ::routing::data::DataRequest::StructuredData(sd.name(), 0));
-        while let Ok(data) = client_receiver.recv() {
-            assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));
-            break;
-        }
+        waiting_for_client_get(client_receiver,
+                               ::routing::data::Data::StructuredData(sd),
+                               ::time::Duration::minutes(1));
     }
 }

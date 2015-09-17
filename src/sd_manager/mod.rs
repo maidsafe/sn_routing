@@ -186,14 +186,34 @@ impl StructuredDataManager {
         }
     }
 
-    pub fn handle_churn(&mut self) {
+    pub fn handle_churn(&mut self, churn_node: &::routing::NameType) {
         let names = self.chunk_store.names();
         for name in names {
             let data = self.chunk_store.get(name.clone());
             debug!("SDManager sends out a refresh regarding data {:?}", name);
-            self.routing.refresh_request(ACCOUNT_TAG, Authority(name), data);
+            self.routing.refresh_request(ACCOUNT_TAG, Authority(name),
+                                         data, churn_node.clone());
         }
         self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
+    }
+
+    pub fn do_refresh(&mut self,
+                      type_tag: &u64,
+                      our_authority: &::routing::Authority,
+                      churn_node: &::routing::NameType) -> Option<()> {
+        if type_tag == &ACCOUNT_TAG {
+            let names = self.chunk_store.names();
+            for name in names {
+                if *our_authority.get_location() == name {
+                    let data = self.chunk_store.get(name.clone());
+                    debug!("SDManager on-request sends out a refresh regarding data {:?}", name);
+                    self.routing.refresh_request(ACCOUNT_TAG, our_authority.clone(),
+                                                 data, churn_node.clone());
+                }
+            }
+            return ::utils::HANDLED;
+        }
+        ::utils::NOT_HANDLED
     }
 
     fn handle_account_transfer(&mut self,
@@ -367,9 +387,10 @@ mod test {
     #[test]
     fn handle_churn_and_account_transfer() {
         let mut env = Environment::new();
+        let churn_node = ::utils::random_name();
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_put(&env.us, &env.maid_manager, &env.data));
-        env.sd_manager.handle_churn();
+        env.sd_manager.handle_churn(&churn_node);
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
@@ -379,12 +400,13 @@ mod test {
         if let Some(sd_account) = d.decode().next().and_then(|result| result.ok()) {
             env.sd_manager.handle_account_transfer(sd_account);
         }
-        env.sd_manager.handle_churn();
+
+        env.sd_manager.handle_churn(&churn_node);
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0], refresh_requests[1]);
 
-        env.sd_manager.handle_churn();
+        env.sd_manager.handle_churn(&churn_node);
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
     }

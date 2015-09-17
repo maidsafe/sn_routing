@@ -59,8 +59,9 @@ impl MockRouting {
         self.pimpl.lock().unwrap().client_post(client_address, client_pub_key, data)
     }
 
-    pub fn churn_event(&mut self, nodes: Vec<::routing::NameType>) {
-        self.pimpl.lock().unwrap().churn_event(nodes)
+    pub fn churn_event(&mut self, nodes: Vec<::routing::NameType>,
+                       churn_node: ::routing::NameType) {
+        self.pimpl.lock().unwrap().churn_event(nodes, churn_node)
     }
 
     #[allow(dead_code)]
@@ -130,8 +131,10 @@ impl MockRouting {
     pub fn refresh_request(&self,
                            type_tag: u64,
                            our_authority: ::routing::Authority,
-                           content: Vec<u8>) {
-        self.pimpl.lock().unwrap().refresh_request(type_tag, our_authority, content)
+                           content: Vec<u8>,
+                           churn_node: ::routing::NameType) {
+        self.pimpl.lock().unwrap().refresh_request(type_tag, our_authority,
+                                                   content, churn_node)
     }
 
     pub fn stop(&self) {

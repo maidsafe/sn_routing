@@ -360,16 +360,29 @@ impl DataManager {
         }
     }
 
-    pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>) {
+    pub fn set_node_table(&mut self, close_group: Vec<::routing::NameType>) {
+        self.nodes_in_table = close_group;
+    }
+
+    pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
+                        churn_node: &::routing::NameType) {
         // TODO: close_group[0] is supposed to be the vault id
         let our_authority = Authority(close_group[0].clone());
-        self.database.handle_churn(&our_authority, &self.routing);
+        self.database.handle_churn(&our_authority, &self.routing, churn_node);
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         let mut encoder = ::cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
-            self.routing.refresh_request(STATS_TAG, our_authority, encoder.as_bytes().to_vec());
+            self.routing.refresh_request(STATS_TAG, Authority(churn_node.clone()),
+                                         encoder.as_bytes().to_vec(), churn_node.clone());
         }
         self.nodes_in_table = close_group;
+    }
+
+    pub fn do_refresh(&mut self,
+                      type_tag: &u64,
+                      our_authority: &::routing::Authority,
+                      churn_node: &::routing::NameType) -> Option<()> {
+        self.database.do_refresh(type_tag, our_authority, churn_node, &self.routing)
     }
 
     pub fn nodes_in_table_len(&self) -> usize {
@@ -521,12 +534,13 @@ mod test {
                               .into_iter()
                               .chain(data_manager.nodes_in_table.clone().into_iter())
                               .collect();
-        data_manager.handle_churn(close_group);
+        let churn_node = ::utils::random_name();
+        data_manager.handle_churn(close_group, &churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
         assert_eq!(refresh_requests[0].our_authority.get_location().clone(), data.name());
         assert_eq!(refresh_requests[1].type_tag, STATS_TAG);
-        assert_eq!(refresh_requests[1].our_authority, our_authority);
+        assert_eq!(refresh_requests[1].our_authority.get_location().clone(), churn_node);
     }
 }

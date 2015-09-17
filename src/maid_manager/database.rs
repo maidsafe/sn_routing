@@ -116,7 +116,8 @@ impl Database {
         info!("MaidManager updated account {:?} to {:?}", merged_account.name, value);
     }
 
-    pub fn handle_churn(&mut self, routing: &::vault::Routing) {
+    pub fn handle_churn(&mut self, routing: &::vault::Routing,
+                        churn_node: &::routing::NameType) {
         for (key, value) in self.storage.iter() {
             let account = Account::new((*key).clone(), (*value).clone());
             let our_authority = super::Authority(account.name);
@@ -124,12 +125,34 @@ impl Database {
             if encoder.encode(&[account]).is_ok() {
                 debug!("MaidManager sends out a refresh regarding account {:?}",
                        our_authority.get_location());
-                routing.refresh_request(super::ACCOUNT_TAG,
-                                        our_authority,
-                                        encoder.as_bytes().to_vec());
+                routing.refresh_request(super::ACCOUNT_TAG, our_authority,
+                                        encoder.as_bytes().to_vec(), churn_node.clone());
             }
         }
         self.storage.clear();
+    }
+
+    pub fn do_refresh(&mut self,
+                      type_tag: &u64,
+                      our_authority: &::routing::Authority,
+                      churn_node: &::routing::NameType,
+                      routing: &::vault::Routing) -> Option<()> {
+        if type_tag == &super::ACCOUNT_TAG {
+            for (key, value) in self.storage.iter() {
+                if key == our_authority.get_location() {
+                    let account = Account::new((*key).clone(), (*value).clone());
+                    let mut encoder = ::cbor::Encoder::from_memory();
+                    if encoder.encode(&[account]).is_ok() {
+                        debug!("MaidManager on-request sends out a refresh regarding account {:?}",
+                               our_authority.get_location());
+                        routing.refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
+                                                encoder.as_bytes().to_vec(), churn_node.clone());
+                    }
+                }
+            }
+            return ::utils::HANDLED;
+        }
+        ::utils::NOT_HANDLED
     }
 
     #[allow(dead_code)]

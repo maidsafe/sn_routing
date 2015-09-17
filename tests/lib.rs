@@ -91,8 +91,10 @@ fn start_client() -> (::routing::routing_client::RoutingClient,
                     },
                     ::routing::event::Event::Refresh(_type_tag, _group_name, _accounts) =>
                         println!("client received a refresh"),
-                    ::routing::event::Event::Churn(_close_group) =>
+                    ::routing::event::Event::Churn(_close_group, _churn_node) =>
                         println!("client received a churn"),
+                    ::routing::event::Event::DoRefresh(_type_tag, _our_authority, _churn_node) =>
+                        println!("client received a do-refresh"),
                     ::routing::event::Event::Connected => println!("client connected"),
                     ::routing::event::Event::Disconnected => println!("client disconnected"),
                     ::routing::event::Event::FailedRequest{
