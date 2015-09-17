@@ -15,15 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt::{Debug, Formatter, Error};
-
-use rustc_serialize::{Encodable, Encoder, Decoder};
-use cbor;
-use error::RoutingError;
-use NameType;
-use sodiumoxide::crypto;
-
-
 /// Maximum allowed size for a Structured Data to grow to
 pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 
@@ -34,12 +25,12 @@ pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct StructuredData {
     type_tag: u64,
-    identifier: NameType,
+    identifier: ::NameType,
     data: Vec<u8>,
-    previous_owner_keys: Vec<crypto::sign::PublicKey>,
+    previous_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
     version: u64,
-    current_owner_keys: Vec<crypto::sign::PublicKey>,
-    previous_owner_signatures: Vec<crypto::sign::Signature>,
+    current_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
+    previous_owner_signatures: Vec<::sodiumoxide::crypto::sign::Signature>,
 }
 
 
@@ -47,13 +38,13 @@ impl StructuredData {
 
     /// Constructor
     pub fn new(type_tag: u64,
-               identifier: NameType,
+               identifier: ::NameType,
                version: u64,
                data: Vec<u8>,
-               current_owner_keys: Vec<crypto::sign::PublicKey>,
-               previous_owner_keys: Vec<crypto::sign::PublicKey>,
-               signing_key: Option<&crypto::sign::SecretKey>)
-               -> Result<StructuredData, RoutingError> {
+               current_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
+               previous_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
+               signing_key: Option<&::sodiumoxide::crypto::sign::SecretKey>)
+               -> Result<StructuredData, ::error::RoutingError> {
 
         let mut structured_data = StructuredData {
             type_tag: type_tag,
@@ -73,21 +64,22 @@ impl StructuredData {
 
     /// This is a static function required for computing a name give the tag-type and identifier to
     /// be use by GETs
-    pub fn compute_name(type_tag: u64, identifier: &NameType) -> NameType {
+    pub fn compute_name(type_tag: u64, identifier: &::NameType) -> ::NameType {
         let type_tag_as_string = type_tag.to_string();
 
         let chain = identifier.0.iter()
                     .chain(type_tag_as_string.as_bytes().iter())
                     .map(|a|*a);
 
-        NameType(crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
+        ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
     }
 
     /// replace this data item with an updated version if such exists, otherwise fail.
     /// This is done this way to allow types to be created and previous_owner_signatures added one by one
     /// To transfer ownership the current owner signs over the data, the previous owners field
     /// must have the previous owners of version - 1 as the current owners of that last version.
-    pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), RoutingError> {
+    pub fn replace_with_other(&mut self, other: StructuredData)
+            -> Result<(), ::error::RoutingError> {
         try!(self.validate_self_against_successor(&other));
 
         self.type_tag = other.type_tag;
@@ -101,13 +93,12 @@ impl StructuredData {
     }
 
     /// Returns name and validates invariants
-    pub fn name(&self) -> NameType {
+    pub fn name(&self) -> ::NameType {
         StructuredData::compute_name(self.type_tag, &self.identifier)
     }
 
-    pub fn validate_self_against_successor(&self,
-                                           other: &StructuredData)
-                                           -> Result<(), RoutingError> {
+    pub fn validate_self_against_successor(&self, other: &StructuredData)
+            -> Result<(), ::error::RoutingError> {
         let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
             &other.current_owner_keys
         } else {
@@ -118,46 +109,45 @@ impl StructuredData {
         if other.type_tag != self.type_tag || other.identifier != self.identifier ||
            other.version != self.version + 1 ||
            *owner_keys_to_match != self.current_owner_keys {
-            return Err(RoutingError::UnknownMessageType)
+            return Err(::error::RoutingError::UnknownMessageType)
         }
         other.verify_previous_owner_signatures(owner_keys_to_match)
     }
 
     /// Confirms *unique and valid* owner_signatures are at least 50% of total owners
     fn verify_previous_owner_signatures(&self,
-                                        owner_keys: &Vec<crypto::sign::PublicKey>)
-                                        -> Result<(), RoutingError> {
-         // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
-         // Any duplicates invalidates this type
+            owner_keys: &Vec<::sodiumoxide::crypto::sign::PublicKey>)
+            -> Result<(), ::error::RoutingError> {
+        // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
+        // Any duplicates invalidates this type.
         if self.previous_owner_signatures.iter().filter(|&sig| self.previous_owner_signatures.iter()
-                                  .any(|ref sig_check| NameType(sig.0) == NameType(sig_check.0)))
-                                  .count() > (owner_keys.len() + 1) / 2 {
+                  .any(|ref sig_check| ::NameType(sig.0) == ::NameType(sig_check.0)))
+                  .count() > (owner_keys.len() + 1) / 2 {
 
-            return Err(RoutingError::DuplicateSignatures);
+            return Err(::error::RoutingError::DuplicateSignatures);
         }
 
-
-         // Refuse when not enough previous_owner_signatures found
+        // Refuse when not enough previous_owner_signatures found
         if self.previous_owner_signatures.len() < (owner_keys.len() + 1) / 2 {
-            return Err(RoutingError::NotEnoughSignatures);
+            return Err(::error::RoutingError::NotEnoughSignatures);
         }
 
         let data = try!(self.data_to_sign());
-         // Count valid previous_owner_signatures and refuse if quantity is not enough
+        // Count valid previous_owner_signatures and refuse if quantity is not enough
         if self.previous_owner_signatures.iter()
-                        .filter(|&sig| owner_keys
-                          .iter()
-                          .any(|ref pub_key| crypto::sign::verify_detached(&sig, &data, pub_key)))
-                            .count() < (owner_keys.len() / 2 + owner_keys.len() % 2) {
-            return Err(RoutingError::NotEnoughSignatures);
+            .filter(|&sig| owner_keys
+            .iter()
+            .any(|ref pub_key| ::sodiumoxide::crypto::sign::verify_detached(&sig, &data, pub_key)))
+            .count() < (owner_keys.len() / 2 + owner_keys.len() % 2) {
+            return Err(::error::RoutingError::NotEnoughSignatures);
         }
         Ok(())
     }
 
-    fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
-        // seems overkill to use serialisation here, but done
-        // to ensure cross platform signature handling is OK
-        let mut enc = cbor::Encoder::from_memory();
+    fn data_to_sign(&self) -> Result<Vec<u8>, ::error::RoutingError> {
+        // Seems overkill to use serialisation here, but done to ensure cross platform signature
+        // handling is OK
+        let mut enc = ::cbor::Encoder::from_memory();
         try!(enc.encode(self.type_tag.to_string().as_bytes()));
         try!(enc.encode(&[self.identifier]));
         try!(enc.encode(&self.data));
@@ -168,11 +158,10 @@ impl StructuredData {
     }
 
     /// Returns number of previous_owner_signatures still required (if any, 0 means this is complete)
-    pub fn add_signature(&mut self,
-                         secret_key: &crypto::sign::SecretKey)
-                         -> Result<isize, RoutingError> {
+    pub fn add_signature(&mut self, secret_key: &::sodiumoxide::crypto::sign::SecretKey)
+          -> Result<isize, ::error::RoutingError> {
         let data = try!(self.data_to_sign());
-        let sig = crypto::sign::sign_detached(&data, secret_key);
+        let sig = ::sodiumoxide::crypto::sign::sign_detached(&data, secret_key);
         self.previous_owner_signatures.push(sig);
         let owner_keys = if self.previous_owner_keys.is_empty() {
             &self.current_owner_keys
@@ -183,7 +172,8 @@ impl StructuredData {
     }
 
     /// Overwrite any existing signatures with the new signatures provided
-    pub fn replace_signatures(&mut self, new_signatures: Vec<crypto::sign::Signature>) {
+    pub fn replace_signatures(&mut self,
+          new_signatures: Vec<::sodiumoxide::crypto::sign::Signature>) {
         self.previous_owner_signatures = new_signatures;
     }
 
@@ -193,7 +183,7 @@ impl StructuredData {
     }
 
     /// Get the identifier
-    pub fn get_identifier(&self) -> &NameType {
+    pub fn get_identifier(&self) -> &::NameType {
         &self.identifier
     }
 
@@ -203,7 +193,7 @@ impl StructuredData {
     }
 
     /// Get the previous owner keys
-    pub fn get_previous_owner_keys(&self) -> &Vec<crypto::sign::PublicKey> {
+    pub fn get_previous_owner_keys(&self) -> &Vec<::sodiumoxide::crypto::sign::PublicKey> {
         &self.previous_owner_keys
     }
 
@@ -213,12 +203,12 @@ impl StructuredData {
     }
 
     /// Get the current owner keys
-    pub fn get_owner_keys(&self) -> &Vec<crypto::sign::PublicKey> {
+    pub fn get_owner_keys(&self) -> &Vec<::sodiumoxide::crypto::sign::PublicKey> {
         &self.current_owner_keys
     }
 
     /// Get previous owner signatures
-    pub fn get_previous_owner_signatures(&self) -> &Vec<crypto::sign::Signature> {
+    pub fn get_previous_owner_signatures(&self) -> &Vec<::sodiumoxide::crypto::sign::Signature> {
         &self.previous_owner_signatures
     }
 
@@ -227,11 +217,12 @@ impl StructuredData {
     }
 }
 
-impl Debug for StructuredData {
-    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
-        let _ = formatter.write_str(&format!(" type_tag: {:?} , name: {:?} , version: {:?} , data: {:?}",
-                                             self.type_tag, self.name(), self.version,
-                                             ::utils::get_debug_id(self.data.clone())));
+impl ::std::fmt::Debug for StructuredData {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        let _ = formatter.write_str(
+            &format!(" type_tag: {:?} , name: {:?} , version: {:?} , data: {:?}",
+                     self.type_tag, self.name(), self.version,
+                     ::utils::get_debug_id(self.data.clone())));
 
         let prev_owner_keys : Vec<String> = self.previous_owner_keys.iter().map(|pub_key|
                 ::utils::get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
@@ -249,7 +240,8 @@ impl Debug for StructuredData {
         }
         let _ = formatter.write_str(&format!(") "));
 
-        let prev_owner_signatures : Vec<String> = self.previous_owner_signatures.iter().map(|signature|
+        let prev_owner_signatures: Vec<String> =
+              self.previous_owner_signatures.iter().map(|signature|
                 ::utils::get_debug_id(::types::array_as_vector(&signature.0))).collect();
         let _ = formatter.write_str(&format!(" , prev_owner_signatures : ("));
         for itr in prev_owner_signatures.iter() {
@@ -262,50 +254,110 @@ impl Debug for StructuredData {
 
 #[cfg(test)]
 mod test {
-    use sodiumoxide::crypto;
-    use super::StructuredData;
-    use test_utils::Random;
-    use NameType;
 
     #[test]
     fn single_owner() {
-        let keys = crypto::sign::gen_keypair();
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
 
-        match StructuredData::new(0,
-                                  Random::generate_random(),
+        match super::StructuredData::new(0,
+                                  ::test_utils::Random::generate_random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
                                   vec![],
                                   Some(&keys.1)) {
             Ok(structured_data) =>
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(())),
+                assert_eq!(
+                  structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(())),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    #[test] #[should_panic(expected = "assertion failed")]
+    fn single_owner_unsigned() {
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+        let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+
+        match super::StructuredData::new(0,
+                                  ::test_utils::Random::generate_random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  None) {
+            Ok(structured_data) =>
+                assert_eq!(
+                  structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(())),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    #[test] #[should_panic(expected = "assertion failed")]
+    fn single_owner_other_signing_key() {
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+        let other_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+
+        match super::StructuredData::new(0,
+                                  ::test_utils::Random::generate_random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&other_keys.1)) {
+            Ok(structured_data) => {
+                assert_eq!(
+                  structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(()))
+            },
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    #[test] #[should_panic(expected = "assertion failed")]
+    fn single_owner_other_signature() {
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+        let other_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+
+        match super::StructuredData::new(0,
+                                  ::test_utils::Random::generate_random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  None) {
+            Ok(mut structured_data) => {
+                assert_eq!(structured_data.add_signature(&other_keys.1).ok(), Some(0));
+                assert_eq!(
+                  structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(()))
+            },
             Err(error) => panic!("Error: {:?}", error),
         }
     }
 
     #[test]
     fn three_owners() {
-        let keys1 = crypto::sign::gen_keypair();
-        let keys2 = crypto::sign::gen_keypair();
-        let keys3 = crypto::sign::gen_keypair();
+        let keys1 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys3 = ::sodiumoxide::crypto::sign::gen_keypair();
 
         let owner_keys = vec![keys1.0, keys2.0, keys3.0];
 
-        match StructuredData::new(0,
-                                  Random::generate_random(),
+        match super::StructuredData::new(0,
+                                  ::test_utils::Random::generate_random(),
                                   0,
-                                  // crypto::hash::sha512::hash("test_identity".to_string().as_by
-                                  // tes()),
                                   vec![],
                                   owner_keys.clone(),
                                   vec![],
                                   Some(&keys1.1)) {
             Ok(mut structured_data) => {
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(), None);
+                assert_eq!(
+                  structured_data.verify_previous_owner_signatures(&owner_keys).ok(), None);
                 assert_eq!(structured_data.add_signature(&keys2.1).ok(), Some(0));
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(()));
+                assert_eq!(
+                  structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(()));
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -313,15 +365,15 @@ mod test {
 
     #[test]
     fn transfer_owners() {
-        let keys1       = crypto::sign::gen_keypair();
-        let keys2       = crypto::sign::gen_keypair();
-        let keys3       = crypto::sign::gen_keypair();
-        let new_owner   = crypto::sign::gen_keypair();
+        let keys1 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys3 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let new_owner = ::sodiumoxide::crypto::sign::gen_keypair();
 
-        let identifier : NameType = Random::generate_random();
+        let identifier: ::NameType = ::test_utils::Random::generate_random();
 
         // Owned by keys1 keys2 and keys3
-        match StructuredData::new(0,
+        match super::StructuredData::new(0,
                                   identifier.clone(),
                                   0,
                                   vec![],
@@ -331,7 +383,7 @@ mod test {
             Ok(mut orig_structured_data) => {
                 assert_eq!(orig_structured_data.add_signature(&keys2.1).ok(), Some(0));
                 // Transfer ownership and update to new owner
-                match StructuredData::new(0,
+                match super::StructuredData::new(0,
                                           identifier.clone(),
                                           1,
                                           vec![],
@@ -345,7 +397,7 @@ mod test {
                             Err(e) => panic!("Error {}", e),
                         }
                         // transfer ownership back to keys1 only
-                        match StructuredData::new(0,
+                        match super::StructuredData::new(0,
                                                   identifier,
                                                   2,
                                                   vec![],
@@ -353,7 +405,8 @@ mod test {
                                                   vec![new_owner.0],
                                                   Some(&new_owner.1)) {
                             Ok(another_new_structured_data) => {
-                                match orig_structured_data.replace_with_other(another_new_structured_data) {
+                                match orig_structured_data.replace_with_other(
+                                        another_new_structured_data) {
                                     Ok(()) => println!("All good"),
                                     Err(e) => panic!("Error {}", e),
                                 }
