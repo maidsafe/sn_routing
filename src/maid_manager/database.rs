@@ -15,13 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor;
-use rustc_serialize::{Decoder, Encodable, Encoder};
-use std::collections;
-
-use utils;
-
-pub type MaidNodeName = ::routing::NameType;
+type MaidNodeName = ::routing::NameType;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
@@ -30,16 +24,8 @@ pub struct Account {
 }
 
 impl Account {
-    pub fn new(name: MaidNodeName, value: AccountValue) -> Account {
+    fn new(name: MaidNodeName, value: AccountValue) -> Account {
         Account { name: name, value: value }
-    }
-
-    pub fn name(&self) -> &MaidNodeName {
-        &self.name
-    }
-
-    pub fn value(&self) -> &AccountValue {
-        &self.value
     }
 }
 
@@ -48,14 +34,14 @@ impl ::types::Refreshable for Account {
         let mut data_stored: Vec<u64> = Vec::new();
         let mut space_available: Vec<u64> = Vec::new();
         for response in responses {
-            if *response.name() == from_group {
-                data_stored.push(response.value().data_stored());
-                space_available.push(response.value().space_available());
+            if response.name == from_group {
+                data_stored.push(response.value.data_stored);
+                space_available.push(response.value.space_available);
             }
         }
         Some(Account::new(from_group,
-                          AccountValue::new(utils::median(data_stored),
-                                            utils::median(space_available))))
+                          AccountValue::new(::utils::median(data_stored),
+                                            ::utils::median(space_available))))
     }
 }
 
@@ -76,11 +62,11 @@ impl Default for AccountValue {
 }
 
 impl AccountValue {
-    pub fn new(data_stored: u64, space_available: u64) -> AccountValue {
+    fn new(data_stored: u64, space_available: u64) -> AccountValue {
         AccountValue { data_stored: data_stored, space_available: space_available }
     }
 
-    pub fn put_data(&mut self, size: u64) -> bool {
+    fn put_data(&mut self, size: u64) -> bool {
         if size > self.space_available {
             return false;
         }
@@ -90,7 +76,7 @@ impl AccountValue {
     }
 
     #[allow(dead_code)]
-    pub fn delete_data(&mut self, size: u64) {
+    fn delete_data(&mut self, size: u64) {
         if self.data_stored < size {
             self.space_available += self.data_stored;
             self.data_stored = 0;
@@ -99,29 +85,22 @@ impl AccountValue {
             self.space_available += size;
         }
     }
-
-    pub fn space_available(&self) -> u64 {
-        self.space_available
-    }
-
-    pub fn data_stored(&self) -> u64 {
-        self.data_stored
-    }
 }
 
 
-pub struct MaidManagerDatabase {
-    storage: collections::HashMap<MaidNodeName, AccountValue>,
+
+pub struct Database {
+    storage: ::std::collections::HashMap<MaidNodeName, AccountValue>,
 }
 
-impl MaidManagerDatabase {
-    pub fn new() -> MaidManagerDatabase {
-        MaidManagerDatabase { storage: collections::HashMap::with_capacity(10000) }
+impl Database {
+    pub fn new() -> Database {
+        Database { storage: ::std::collections::HashMap::with_capacity(10000) }
     }
 
     pub fn get_balance(&mut self, name: &MaidNodeName) -> u64 {
         let default: AccountValue = Default::default();
-        self.storage.entry(name.clone()).or_insert(default).space_available()
+        self.storage.entry(name.clone()).or_insert(default).space_available
     }
 
     pub fn put_data(&mut self, name: &MaidNodeName, size: u64) -> bool {
@@ -131,18 +110,18 @@ impl MaidManagerDatabase {
     }
 
     pub fn handle_account_transfer(&mut self, merged_account: Account) {
-        let _ = self.storage.remove(merged_account.name());
-        let _ = self.storage.insert(*merged_account.name(), merged_account.value().clone());
-        info!("MaidManager updated account {:?} to {:?}",
-              merged_account.name(), merged_account.value());
+        let _ = self.storage.remove(&merged_account.name);
+        let value = merged_account.value.clone();
+        let _ = self.storage.insert(merged_account.name, merged_account.value);
+        info!("MaidManager updated account {:?} to {:?}", merged_account.name, value);
     }
 
     pub fn handle_churn(&mut self, routing: &::vault::Routing,
                         churn_node: &::routing::NameType) {
         for (key, value) in self.storage.iter() {
             let account = Account::new((*key).clone(), (*value).clone());
-            let our_authority = super::Authority(*account.name());
-            let mut encoder = cbor::Encoder::from_memory();
+            let our_authority = super::Authority(account.name);
+            let mut encoder = ::cbor::Encoder::from_memory();
             if encoder.encode(&[account]).is_ok() {
                 debug!("MaidManager sends out a refresh regarding account {:?}",
                        our_authority.get_location());
@@ -162,7 +141,7 @@ impl MaidManagerDatabase {
             for (key, value) in self.storage.iter() {
                 if key == our_authority.get_location() {
                     let account = Account::new((*key).clone(), (*value).clone());
-                    let mut encoder = cbor::Encoder::from_memory();
+                    let mut encoder = ::cbor::Encoder::from_memory();
                     if encoder.encode(&[account]).is_ok() {
                         debug!("MaidManager on-request sends out a refresh regarding account {:?}",
                                our_authority.get_location());
@@ -190,14 +169,14 @@ impl MaidManagerDatabase {
 }
 
 
+
 #[cfg(test)]
 mod test {
-    use cbor;
     use super::*;
 
     #[test]
     fn put_data() {
-        let mut db = MaidManagerDatabase::new();
+        let mut db = Database::new();
         let name = ::utils::random_name();
         assert!(db.put_data(&name, 0));
         assert!(db.put_data(&name, 1));
@@ -211,7 +190,7 @@ mod test {
 
     #[test]
     fn delete_data() {
-        let mut db = MaidManagerDatabase::new();
+        let mut db = Database::new();
         let name = ::utils::random_name();
         db.delete_data(&name, 0);
         assert!(!db.storage.contains_key(&name));
@@ -232,7 +211,7 @@ mod test {
 
     #[test]
     fn handle_account_transfer() {
-        let mut db = MaidManagerDatabase::new();
+        let mut db = Database::new();
         let name = ::utils::random_name();
         assert!(db.put_data(&name, 0));
         assert!(db.put_data(&name, 1073741823));
@@ -262,11 +241,11 @@ mod test {
                                       AccountValue::new(::rand::random::<u64>(),
                                                         ::rand::random::<u64>()));
 
-        let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&obj_before]).unwrap();
+        let mut e = ::cbor::Encoder::from_memory();
+        evaluate_result!(e.encode(&[&obj_before]));
 
-        let mut d = cbor::Decoder::from_bytes(e.into_bytes());
-        let obj_after: Account = d.decode().next().unwrap().unwrap();
+        let mut d = ::cbor::Decoder::from_bytes(e.into_bytes());
+        let obj_after: Account = evaluate_result!(evaluate_option!(d.decode().next(), ""));
 
         assert_eq!(obj_before, obj_after);
     }

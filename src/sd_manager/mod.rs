@@ -15,11 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use chunk_store::ChunkStore;
-use types::Refreshable;
-pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
-
 pub use routing::Authority::NaeManager as Authority;
+
+pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
 
 pub struct StructuredDataManager {
     routing: ::vault::Routing,
@@ -27,13 +25,16 @@ pub struct StructuredDataManager {
     // data, and put is overwritable
     // If such assumption becomes invalid, LruCache or Sqlite based persona specific
     // database shall be used
-    chunk_store: ChunkStore,
+    chunk_store: ::chunk_store::ChunkStore,
 }
 
 impl StructuredDataManager {
     pub fn new(routing: ::vault::Routing) -> StructuredDataManager {
         // TODO adjustable max_disk_space
-        StructuredDataManager { routing: routing, chunk_store: ChunkStore::new(1073741824) }
+        StructuredDataManager {
+            routing: routing,
+            chunk_store: ::chunk_store::ChunkStore::new(1073741824),
+        }
     }
 
     pub fn handle_get(&mut self,
@@ -58,7 +59,7 @@ impl StructuredDataManager {
             return ::utils::HANDLED;
         }
 
-        let data = self.chunk_store.get(*structured_data_name_and_type.0);
+        let data = self.chunk_store.get(structured_data_name_and_type.0);
         if data.len() == 0 {
             warn!("Failed to GET data with name {:?}", structured_data_name_and_type.0);
             return ::utils::HANDLED;
@@ -107,9 +108,9 @@ impl StructuredDataManager {
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
-        if !self.chunk_store.has_chunk(structured_data.name()) {
+        if !self.chunk_store.has_chunk(&structured_data.name()) {
             if let Ok(serialised_data) = ::routing::utils::encode(&structured_data) {
-                self.chunk_store.put(structured_data.name(), serialised_data);
+                self.chunk_store.put(&structured_data.name(), serialised_data);
             } else {
                 debug!("Failed to serialise {:?}", structured_data);
             }
@@ -147,7 +148,7 @@ impl StructuredDataManager {
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
-        let serialised_data = self.chunk_store.get(new_data.name());
+        let serialised_data = self.chunk_store.get(&new_data.name());
         if serialised_data.len() == 0 {
             warn!("Don't currently hold data for POST at StructuredDataManager: {:?}", data);
             return ::utils::HANDLED;
@@ -158,7 +159,7 @@ impl StructuredDataManager {
                 debug!("StructuredDataManager updating {:?} to {:?}", existing_data, new_data);
                 existing_data.replace_with_other(new_data.clone()).ok()
                     .and_then(|()| ::routing::utils::encode(&existing_data).ok())
-                    .and_then(|serialised| Some(self.chunk_store.put(new_data.name(), serialised)))
+                    .and_then(|serialised| Some(self.chunk_store.put(&new_data.name(), serialised)))
             });
         ::utils::HANDLED
     }
@@ -185,21 +186,15 @@ impl StructuredDataManager {
         }
     }
 
-    fn handle_account_transfer(&mut self,
-                               structured_data: ::routing::structured_data::StructuredData) {
-        self.chunk_store.delete(structured_data.name());
-        self.chunk_store.put(structured_data.name(), structured_data.serialised_contents());
-    }
-
     pub fn handle_churn(&mut self, churn_node: &::routing::NameType) {
         let names = self.chunk_store.names();
         for name in names {
-            let data = self.chunk_store.get(name.clone());
+            let data = self.chunk_store.get(&name);
             debug!("SDManager sends out a refresh regarding data {:?}", name);
             self.routing.refresh_request(ACCOUNT_TAG, Authority(name),
                                          data, churn_node.clone());
         }
-        self.chunk_store = ChunkStore::new(1073741824);
+        self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
     }
 
     pub fn do_refresh(&mut self,
@@ -210,7 +205,7 @@ impl StructuredDataManager {
             let names = self.chunk_store.names();
             for name in names {
                 if *our_authority.get_location() == name {
-                    let data = self.chunk_store.get(name.clone());
+                    let data = self.chunk_store.get(&name);
                     debug!("SDManager on-request sends out a refresh regarding data {:?}", name);
                     self.routing.refresh_request(ACCOUNT_TAG, our_authority.clone(),
                                                  data, churn_node.clone());
@@ -225,7 +220,16 @@ impl StructuredDataManager {
         self.routing = routing;
         self.chunk_store = ChunkStore::new(1073741824);
     }
+
+    fn handle_account_transfer(&mut self,
+                               structured_data: ::routing::structured_data::StructuredData) {
+        use ::types::Refreshable;
+        self.chunk_store.delete(&structured_data.name());
+        self.chunk_store.put(&structured_data.name(), structured_data.serialised_contents());
+    }
 }
+
+
 
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
@@ -235,8 +239,7 @@ mod test {
         pub routing: ::vault::Routing,
         pub sd_manager: StructuredDataManager,
         pub data_name: ::routing::NameType,
-        pub keys: (::sodiumoxide::crypto::sign::PublicKey,
- ::sodiumoxide::crypto::sign::SecretKey),
+        pub keys: (::sodiumoxide::crypto::sign::PublicKey, ::sodiumoxide::crypto::sign::SecretKey),
         pub structured_data: ::routing::structured_data::StructuredData,
         pub data: ::routing::data::Data,
         pub us: ::routing::Authority,
@@ -250,9 +253,10 @@ mod test {
             let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
             let identifier = ::utils::random_name();
             let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-            let structured_data = ::routing::structured_data::StructuredData::new(0, identifier, 0,
-                                      ::routing::types::generate_random_vec_u8(1024), vec![keys.0],
-                                      vec![], Some(&keys.1)).ok().unwrap();
+            let structured_data =
+                evaluate_result!(::routing::structured_data::StructuredData::new(0, identifier, 0,
+                                     ::routing::types::generate_random_vec_u8(1024), vec![keys.0],
+                                     vec![], Some(&keys.1)));
             let data_name = structured_data.name();
             Environment {
                 routing: routing.clone(),
@@ -271,7 +275,7 @@ mod test {
         pub fn get_from_chunkstore(&self,
                                    data_name: &::routing::NameType)
                                    -> Option<::routing::structured_data::StructuredData> {
-            let data = self.sd_manager.chunk_store.get(*data_name);
+            let data = self.sd_manager.chunk_store.get(data_name);
             if data.len() == 0 {
                 return None;
             }
@@ -310,80 +314,70 @@ mod test {
         // PUT the data
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_put(&env.us, &env.maid_manager, &env.data));
-        assert_eq!(env.structured_data, env.get_from_chunkstore(&env.data_name).unwrap());
+        assert_eq!(env.structured_data,
+                   evaluate_option!(env.get_from_chunkstore(&env.data_name),
+                                    "Failed to get inital data"));
 
         // incorrect version
-        let mut sd_new_bad = ::routing::structured_data::StructuredData::new(0,
-                                                                             *env.structured_data
-                                                                                 .get_identifier(),
-                                                                             3,
-                                                                             env.structured_data
-                                                                                .get_data()
-                                                                                .clone(),
-                                                                             vec![env.keys.0],
-                                                                             vec![],
-                                                                             Some(&env.keys.1))
-                                 .ok()
-                                 .unwrap();
+        let mut sd_new_bad = evaluate_result!(
+            ::routing::structured_data::StructuredData::new(0,
+                                                            *env.structured_data.get_identifier(),
+                                                            3,
+                                                            env.structured_data.get_data().clone(),
+                                                            vec![env.keys.0],
+                                                            vec![],
+                                                            Some(&env.keys.1)));
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_post(&env.us, &env.client,
                        &::routing::data::Data::StructuredData(sd_new_bad)));
-        assert_eq!(env.structured_data, env.get_from_chunkstore(&env.data_name).unwrap());
+        assert_eq!(env.structured_data, evaluate_option!(env.get_from_chunkstore(&env.data_name),
+                                                         "Failed to get original data."));
 
         // correct version
-        let mut sd_new = ::routing::structured_data::StructuredData::new(0,
-                                                                         *env.structured_data
-                                                                             .get_identifier(),
-                                                                         1,
-                                                                         env.structured_data
-                                                                            .get_data()
-                                                                            .clone(),
-                                                                         vec![env.keys.0],
-                                                                         vec![],
-                                                                         Some(&env.keys.1))
-                             .ok()
-                             .unwrap();
+        let mut sd_new = evaluate_result!(
+            ::routing::structured_data::StructuredData::new(0,
+                                                            *env.structured_data.get_identifier(),
+                                                            1,
+                                                            env.structured_data.get_data().clone(),
+                                                            vec![env.keys.0],
+                                                            vec![],
+                                                            Some(&env.keys.1)));
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_post(&env.us, &env.client,
                        &::routing::data::Data::StructuredData(sd_new.clone())));
-        assert_eq!(sd_new, env.get_from_chunkstore(&env.data_name).unwrap());
+        assert_eq!(sd_new, evaluate_option!(env.get_from_chunkstore(&env.data_name),
+                                            "Failed to get updated data"));
 
         // update to a new owner, wrong signature
         let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
-        sd_new_bad = ::routing::structured_data::StructuredData::new(0,
-                                                                     *env.structured_data
-                                                                         .get_identifier(),
-                                                                     2,
-                                                                     env.structured_data
-                                                                        .get_data()
-                                                                        .clone(),
-                                                                     vec![keys2.0],
-                                                                     vec![env.keys.0],
-                                                                     Some(&keys2.1))
-                         .ok()
-                         .unwrap();
+        sd_new_bad = evaluate_result!(
+            ::routing::structured_data::StructuredData::new(0,
+                                                            *env.structured_data.get_identifier(),
+                                                            2,
+                                                            env.structured_data.get_data().clone(),
+                                                            vec![keys2.0],
+                                                            vec![env.keys.0],
+                                                            Some(&keys2.1)));
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_post(&env.us, &env.client,
                        &::routing::data::Data::StructuredData(sd_new_bad.clone())));
-        assert_eq!(sd_new, env.get_from_chunkstore(&env.data_name).unwrap());
+        assert_eq!(sd_new, evaluate_option!(env.get_from_chunkstore(&env.data_name),
+                                            "Failed to get updated data"));
 
         // update to a new owner, correct signature
-        sd_new = ::routing::structured_data::StructuredData::new(0,
-                                                                 *env.structured_data
-                                                                     .get_identifier(),
-                                                                 2,
-                                                                 env.structured_data
-                                                                    .get_data()
-                                                                    .clone(),
-                                                                 vec![keys2.0],
-                                                                 vec![env.keys.0],
-                                                                 Some(&env.keys.1))
-                     .ok()
-                     .unwrap();
+        sd_new = evaluate_result!(
+            ::routing::structured_data::StructuredData::new(0,
+                                                            *env.structured_data.get_identifier(),
+                                                            2,
+                                                            env.structured_data.get_data().clone(),
+                                                            vec![keys2.0],
+                                                            vec![env.keys.0],
+                                                            Some(&env.keys.1)));
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_post(&env.us, &env.client,
                        &::routing::data::Data::StructuredData(sd_new.clone())));
-        assert_eq!(sd_new, env.get_from_chunkstore(&env.data_name).unwrap());
+        assert_eq!(sd_new, evaluate_option!(env.get_from_chunkstore(&env.data_name),
+                                            "Failed to get re-updated data"));
     }
 
     #[test]

@@ -15,20 +15,22 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-mod database;
+pub use routing::Authority::NodeManager as Authority;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::PmidManagerAccount as u64;
-pub use self::database::Account;
-pub use routing::Authority::NodeManager as Authority;
+
+mod database;
+
+type Account = self::database::Account;
 
 pub struct PmidManager {
     routing: ::vault::Routing,
-    database: database::PmidManagerDatabase,
+    database: database::Database,
 }
 
 impl PmidManager {
     pub fn new(routing: ::vault::Routing) -> PmidManager {
-        PmidManager { routing: routing, database: database::PmidManagerDatabase::new() }
+        PmidManager { routing: routing, database: database::Database::new() }
     }
 
     pub fn handle_put(&mut self,
@@ -171,10 +173,10 @@ impl PmidManager {
     }
 }
 
+
+
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
-    use cbor;
-
     use super::*;
 
     fn env_setup() -> (::routing::Authority, ::vault::Routing, PmidManager, ::routing::Authority,
@@ -227,7 +229,7 @@ mod test {
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
         assert_eq!(refresh_requests[0].our_authority.get_location(), our_authority.get_location());
 
-        let mut d = cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
+        let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
         if let Some(pm_account) = d.decode().next().and_then(|result| result.ok()) {
             pmid_manager.database.handle_account_transfer(pm_account);
         }
