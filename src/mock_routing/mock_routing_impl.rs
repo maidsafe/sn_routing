@@ -105,10 +105,11 @@ impl MockRoutingImpl {
         });
     }
 
-    pub fn churn_event(&mut self, nodes: Vec<::routing::NameType>) {
+    pub fn churn_event(&mut self, nodes: Vec<::routing::NameType>,
+                       churn_node: ::routing::NameType) {
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let _ = cloned_sender.send(::routing::event::Event::Churn(nodes));
+            let _ = cloned_sender.send(::routing::event::Event::Churn(nodes, churn_node));
         });
     }
 
@@ -230,10 +231,10 @@ impl MockRoutingImpl {
     pub fn refresh_request(&mut self,
                            type_tag: u64,
                            our_authority: ::routing::Authority,
-                           content: Vec<u8>) {
-        self.refresh_requests_given.push(super::api_calls::RefreshRequest::new(type_tag,
-                                                        our_authority.clone(),
-                                                        content.clone()));
+                           content: Vec<u8>,
+                           churn_node: ::routing::NameType) {
+        self.refresh_requests_given.push(super::api_calls::RefreshRequest::new(
+                type_tag, our_authority.clone(), content.clone(), churn_node));
         // routing is expected to accumulate the refresh requests
         // for the same group into one event request to vault
         let delay_ms = self.network_delay_ms;

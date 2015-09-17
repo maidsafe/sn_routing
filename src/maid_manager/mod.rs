@@ -98,8 +98,15 @@ impl MaidManager {
         }
     }
 
-    pub fn handle_churn(&mut self) {
-        self.database.handle_churn(&self.routing);
+    pub fn handle_churn(&mut self, churn_node: &::routing::NameType) {
+        self.database.handle_churn(&self.routing, churn_node);
+    }
+
+    pub fn do_refresh(&mut self,
+                      type_tag: &u64,
+                      our_authority: &::routing::Authority,
+                      churn_node: &::routing::NameType) -> Option<()> {
+        self.database.do_refresh(type_tag, our_authority, churn_node, &self.routing)
     }
 }
 
@@ -141,11 +148,12 @@ mod test {
 
     #[test]
     fn handle_churn_and_account_transfer() {
+        let churn_node = ::utils::random_name();
         let (our_authority, routing, mut maid_manager, client, data) = env_setup();
         assert_eq!(::utils::HANDLED,
             maid_manager.handle_put(&our_authority, &client,
                                     &::routing::data::Data::ImmutableData(data.clone()), &None));
-        maid_manager.handle_churn();
+        maid_manager.handle_churn(&churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
@@ -155,12 +163,12 @@ mod test {
         if let Some(mm_account) = d.decode().next().and_then(|result| result.ok()) {
             maid_manager.database.handle_account_transfer(mm_account);
         }
-        maid_manager.handle_churn();
+        maid_manager.handle_churn(&churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0], refresh_requests[1]);
 
-        maid_manager.handle_churn();
+        maid_manager.handle_churn(&churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
     }

@@ -174,9 +174,8 @@ impl PmidManagerDatabase {
               merged_account.name(), merged_account.value());
     }
 
-    pub fn handle_churn(&mut self,
-                        close_group: &Vec<::routing::NameType>,
-                        routing: &::vault::Routing) {
+    pub fn handle_churn(&mut self, close_group: &Vec<::routing::NameType>,
+                        routing: &::vault::Routing, churn_node: &::routing::NameType) {
         for (key, value) in self.storage.iter() {
             if close_group.iter().find(|a| **a == *key).is_some() {
                 let account = Account::new((*key).clone(), (*value).clone());
@@ -185,17 +184,37 @@ impl PmidManagerDatabase {
                 if encoder.encode(&[account]).is_ok() {
                     debug!("PmidManager sends out a refresh regarding account {:?}",
                            our_authority.get_location());
-                    routing.refresh_request(super::ACCOUNT_TAG,
-                                            our_authority,
-                                            encoder.as_bytes().to_vec());
+                routing.refresh_request(super::ACCOUNT_TAG, our_authority,
+                                        encoder.as_bytes().to_vec(), churn_node.clone());
                 }
             }
         }
         self.storage.clear();
     }
+
+    pub fn do_refresh(&mut self,
+                      type_tag: &u64,
+                      our_authority: &::routing::Authority,
+                      churn_node: &::routing::NameType,
+                      routing: &::vault::Routing) -> Option<()> {
+        if type_tag == &super::ACCOUNT_TAG {
+            for (key, value) in self.storage.iter() {
+                if key == our_authority.get_location() {
+                    let account = Account::new((*key).clone(), (*value).clone());
+                    let mut encoder = cbor::Encoder::from_memory();
+                    if encoder.encode(&[account]).is_ok() {
+                        debug!("PmidManager on-request sends out a refresh regarding account {:?}",
+                               our_authority.get_location());
+                        routing.refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
+                                                encoder.as_bytes().to_vec(), churn_node.clone());
+                    }
+                }
+            }
+            return ::utils::HANDLED;
+        }
+        ::utils::NOT_HANDLED
+    }
 }
-
-
 
 #[cfg(test)]
 mod test {
