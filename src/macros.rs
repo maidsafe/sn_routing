@@ -15,29 +15,58 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![macro_use]
-
-/// This macro is intended to be used in all cases where we unwrap() a result to delebrately panic
-/// in case of error - eg., in test-cases. Such unwraps don't give a precise point of failure in
-/// our code and instead indicate some line number in core library. This macro will provide a
-/// precise point of failure and will decorate the failure for easy viewing.
+/// A replacement for calling `unwrap()` on a `Result`.
 ///
-/// #Examples
+/// This macro is intended to be used in all cases where we `unwrap` a `Result` to deliberately
+/// panic in case of error - eg., in test-cases.  Such `unwrap`s don't give a precise point of
+/// failure in our code and instead indicate some line number in core library.  This macro will
+/// provide a precise point of failure and will decorate the failure for easy viewing.
+///
+/// # Examples
 ///
 /// ```
-/// # #[macro_use] extern crate safe_client;
-/// # fn main() {
-/// let some_result: Result<String, safe_client::errors::ClientError> = Ok("Hello".to_string());
-/// let string_length = eval_result!(some_result).len();
+/// let some_result: Result<String, u32> = Ok("Hello".to_string());
+/// let string_length = evaluate_result!(some_result).len();
 /// assert_eq!(string_length, 5);
-/// # }
 /// ```
 #[macro_export]
-macro_rules! eval_result {
+macro_rules! evaluate_result {
     ($result:expr) => {
         $result.unwrap_or_else(|error| {
-            let decorator = (0..50).map(|_| "-").collect::<String>();
-            panic!("\n\n {}\n| {:?}\n {}\n\n", decorator, error, decorator)
+            let message =
+                "Result evaluated to Err: \"".to_string() + &format!("{:?}", error)[..] + "\"";
+            let decorator_length = ::std::cmp::min(message.len() + 2, 100);
+            let decorator = (0..decorator_length).map(|_| "=").collect::<String>();
+            panic!("\n\n {}\n| {} |\n {}\n\n", decorator, message, decorator)
+        })
+    }
+}
+
+/// A replacement for calling `unwrap()` on an `Option`.
+///
+/// This macro is intended to be used in all cases where we `unwrap` an `Option` to deliberately
+/// panic in case of error - eg., in test-cases.  Such `unwrap`s don't give a precise point of
+/// failure in our code and instead indicate some line number in core library.  This macro will
+/// provide a precise point of failure and will decorate the failure for easy viewing.
+///
+/// # Examples
+///
+/// ```
+/// let some_result = Some("Hello".to_string());
+/// let string_length = evaluate_option!(some_result, "This is a user-supplied text.").len();
+/// assert_eq!(string_length, 5);
+/// ```
+#[macro_export]
+macro_rules! evaluate_option {
+    ($option:expr, $user_string:expr) => {
+        $option.unwrap_or_else(|| {
+            let mut error = "Option evaluated to None".to_string();
+            if !$user_string.is_empty() {
+                error = error + ": \"" + $user_string + "\"";
+            }
+            let decorator_length = ::std::cmp::min(error.len() + 2, 100);
+            let decorator = (0..decorator_length).map(|_| "=").collect::<String>();
+            panic!("\n\n {}\n| {} |\n {}\n\n", decorator, error, decorator)
         })
     }
 }

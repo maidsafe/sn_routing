@@ -104,23 +104,22 @@ pub fn is_data_manager_authority_type(provided_authority: &::routing::Authority)
     }
 }
 
+pub fn initialise_logger() {
+    match ::env_logger::init() {
+        Ok(()) => {
+            println!("");
+        }
+        Err(error) => println!("Error initialising logger; continuing without: {:?}", error),
+    }
+}
+
 #[cfg(test)]
 pub fn random_name() -> ::routing::NameType {
     // TODO - once Routing provides either a compile-time value for `NameType`'s length or exposes
     // `NameType::generate_random()` this should be used here.  Issue reported at
     // https://github.com/maidsafe/routing/issues/674
     ::routing::NameType(::routing::types::vector_as_u8_64_array(
-        ::routing::types::generate_random_vec_u8(64)))
-}
-
-#[cfg(test)]
-pub fn initialise_logger() {
-    match ::env_logger::init() {
-        Ok(()) => {
-            println!("");
-        }
-        Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
-    }
+        ::routing::types::generate_random_vec_u8(::routing::NAME_TYPE_LEN)))
 }
 
 #[cfg(test)]

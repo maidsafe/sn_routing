@@ -315,6 +315,8 @@ impl Vault {
     }
 }
 
+
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -372,15 +374,14 @@ mod test {
         let name = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd = ::routing::structured_data::StructuredData::new(0,
-                                                                 name,
-                                                                 0,
-                                                                 value.clone(),
-                                                                 vec![sign_keys.0],
-                                                                 vec![],
-                                                                 Some(&sign_keys.1))
-                     .ok()
-                     .unwrap();
+        let sd = evaluate_result!(
+            ::routing::structured_data::StructuredData::new(0,
+                                                            name,
+                                                            0,
+                                                            value.clone(),
+                                                            vec![sign_keys.0],
+                                                            vec![],
+                                                            Some(&sign_keys.1)));
 
         let client_name = ::utils::random_name();
         routing.client_put(client_name,
@@ -389,15 +390,14 @@ mod test {
         ::std::thread::sleep_ms(2000);
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd_new = ::routing::structured_data::StructuredData::new(0,
-                                                                     name,
-                                                                     1,
-                                                                     value.clone(),
-                                                                     vec![keys.0],
-                                                                     vec![sign_keys.0],
-                                                                     Some(&sign_keys.1))
-                         .ok()
-                         .unwrap();
+        let sd_new = evaluate_result!(
+            ::routing::structured_data::StructuredData::new(0,
+                                                            name,
+                                                            1,
+                                                            value.clone(),
+                                                            vec![keys.0],
+                                                            vec![sign_keys.0],
+                                                            Some(&sign_keys.1)));
         routing.client_post(client_name,
                             sign_keys.0,
                             ::routing::data::Data::StructuredData(sd_new.clone()));
@@ -602,15 +602,14 @@ mod test {
         let name = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd = ::routing::structured_data::StructuredData::new(0,
-                                                                 name,
-                                                                 0,
-                                                                 value.clone(),
-                                                                 vec![sign_keys.0],
-                                                                 vec![],
-                                                                 Some(&sign_keys.1))
-                     .ok()
-                     .unwrap();
+        let sd = evaluate_result!(
+            ::routing::structured_data::StructuredData::new(0,
+                                                            name,
+                                                            0,
+                                                            value.clone(),
+                                                            vec![sign_keys.0],
+                                                            vec![],
+                                                            Some(&sign_keys.1)));
         println!("network_post_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
@@ -620,15 +619,14 @@ mod test {
                          ::time::Duration::minutes(3));
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd_new = ::routing::structured_data::StructuredData::new(0,
-                                                                     name,
-                                                                     1,
-                                                                     value.clone(),
-                                                                     vec![keys.0],
-                                                                     vec![sign_keys.0],
-                                                                     Some(&sign_keys.1))
-                         .ok()
-                         .unwrap();
+        let sd_new = evaluate_result!(
+            ::routing::structured_data::StructuredData::new(0,
+                                                            name,
+                                                            1,
+                                                            value.clone(),
+                                                            vec![keys.0],
+                                                            vec![sign_keys.0],
+                                                            Some(&sign_keys.1)));
         println!("network_post_test posting data");
         client_routing.post_request(::sd_manager::Authority(sd.name()),
                                     ::routing::data::Data::StructuredData(sd_new.clone()));
@@ -689,15 +687,14 @@ mod test {
         let name = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd = ::routing::structured_data::StructuredData::new(0,
-                                                                 name,
-                                                                 0,
-                                                                 value.clone(),
-                                                                 vec![sign_keys.0],
-                                                                 vec![],
-                                                                 Some(&sign_keys.1))
-                     .ok()
-                     .unwrap();
+        let sd = evaluate_result!(
+            ::routing::structured_data::StructuredData::new(0,
+                                                            name,
+                                                            0,
+                                                            value.clone(),
+                                                            vec![sign_keys.0],
+                                                            vec![],
+                                                            Some(&sign_keys.1)));
         println!("network_churn_structured_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));

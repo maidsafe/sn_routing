@@ -34,7 +34,7 @@ impl MockRouting {
     }
 
     pub fn get_client_receiver(&mut self) -> ::std::sync::mpsc::Receiver<::routing::data::Data> {
-        self.pimpl.lock().unwrap().get_client_receiver()
+        evaluate_result!(self.pimpl.lock()).get_client_receiver()
     }
 
     // -----------  the following methods are for testing purpose only   ------------- //
@@ -42,50 +42,50 @@ impl MockRouting {
                       client_address: ::routing::NameType,
                       client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                       data_request: ::routing::data::DataRequest) {
-        self.pimpl.lock().unwrap().client_get(client_address, client_pub_key, data_request)
+        evaluate_result!(self.pimpl.lock()).client_get(client_address, client_pub_key, data_request)
     }
 
     pub fn client_put(&mut self,
                       client_address: ::routing::NameType,
                       client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                       data: ::routing::data::Data) {
-        self.pimpl.lock().unwrap().client_put(client_address, client_pub_key, data)
+        evaluate_result!(self.pimpl.lock()).client_put(client_address, client_pub_key, data)
     }
 
     pub fn client_post(&mut self,
                        client_address: ::routing::NameType,
                        client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                        data: ::routing::data::Data) {
-        self.pimpl.lock().unwrap().client_post(client_address, client_pub_key, data)
+        evaluate_result!(self.pimpl.lock()).client_post(client_address, client_pub_key, data)
     }
 
     pub fn churn_event(&mut self, nodes: Vec<::routing::NameType>,
                        churn_node: ::routing::NameType) {
-        self.pimpl.lock().unwrap().churn_event(nodes, churn_node)
+        evaluate_result!(self.pimpl.lock()).churn_event(nodes, churn_node)
     }
 
     #[allow(dead_code)]
     pub fn get_requests_given(&self) -> Vec<api_calls::GetRequest> {
-        self.pimpl.lock().unwrap().get_requests_given()
+        evaluate_result!(self.pimpl.lock()).get_requests_given()
     }
 
     #[allow(dead_code)]
     pub fn get_responses_given(&self) -> Vec<api_calls::GetResponse> {
-        self.pimpl.lock().unwrap().get_responses_given()
+        evaluate_result!(self.pimpl.lock()).get_responses_given()
     }
 
     pub fn put_requests_given(&self) -> Vec<api_calls::PutRequest> {
-        self.pimpl.lock().unwrap().put_requests_given()
+        evaluate_result!(self.pimpl.lock()).put_requests_given()
     }
 
     #[allow(dead_code)]
     pub fn put_responses_given(&self) -> Vec<api_calls::PutResponse> {
-        self.pimpl.lock().unwrap().put_responses_given()
+        evaluate_result!(self.pimpl.lock()).put_responses_given()
     }
 
     #[allow(dead_code)]
     pub fn refresh_requests_given(&self) -> Vec<api_calls::RefreshRequest> {
-        self.pimpl.lock().unwrap().refresh_requests_given()
+        evaluate_result!(self.pimpl.lock()).refresh_requests_given()
     }
 
 
@@ -95,7 +95,7 @@ impl MockRouting {
                        our_authority: ::routing::Authority,
                        location: ::routing::Authority,
                        request_for: ::routing::data::DataRequest) {
-        self.pimpl.lock().unwrap().get_request(our_authority, location, request_for)
+        evaluate_result!(self.pimpl.lock()).get_request(our_authority, location, request_for)
     }
 
     pub fn get_response(&self,
@@ -104,9 +104,7 @@ impl MockRouting {
                         data: ::routing::data::Data,
                         data_request: ::routing::data::DataRequest,
                         response_token: Option<::routing::SignedToken>) {
-        self.pimpl
-            .lock()
-            .unwrap()
+        evaluate_result!(self.pimpl.lock())
             .get_response(our_authority, location, data, data_request, response_token)
     }
 
@@ -114,7 +112,7 @@ impl MockRouting {
                        our_authority: ::routing::Authority,
                        location: ::routing::Authority,
                        data: ::routing::data::Data) {
-        self.pimpl.lock().unwrap().put_request(our_authority, location, data)
+        evaluate_result!(self.pimpl.lock()).put_request(our_authority, location, data)
     }
 
     pub fn put_response(&self,
@@ -122,9 +120,7 @@ impl MockRouting {
                         location: ::routing::Authority,
                         response_error: ::routing::error::ResponseError,
                         signed_token: Option<::routing::SignedToken>) {
-        self.pimpl
-            .lock()
-            .unwrap()
+        evaluate_result!(self.pimpl.lock())
             .put_response(our_authority, location, response_error, signed_token)
     }
 
@@ -133,7 +129,7 @@ impl MockRouting {
                            our_authority: ::routing::Authority,
                            content: Vec<u8>,
                            churn_node: ::routing::NameType) {
-        self.pimpl.lock().unwrap().refresh_request(type_tag, our_authority,
+        evaluate_result!(self.pimpl.lock()).refresh_request(type_tag, our_authority,
                                                    content, churn_node)
     }
 
