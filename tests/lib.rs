@@ -33,12 +33,8 @@ extern crate sodiumoxide;
 extern crate routing;
 
 #[cfg(not(feature = "use-mock-routing"))]
-use std::error::Error;
-#[cfg(not(feature = "use-mock-routing"))]
-use std::io::Read;
-
-#[cfg(not(feature = "use-mock-routing"))]
 fn start_vaults(num_of_nodes: u32) -> Vec<::std::process::Child> {
+    use std::error::Error;
     let mut processes = Vec::new();
     let executable_path = match std::env::current_exe() {
         Ok(mut exe_path) => {
@@ -67,10 +63,8 @@ fn start_vaults(num_of_nodes: u32) -> Vec<::std::process::Child> {
 }
 
 #[cfg(not(feature = "use-mock-routing"))]
-fn start_client
-                ()
-                 -> (::routing::routing_client::RoutingClient,
- ::std::sync::mpsc::Receiver<(::routing::data::Data)>, ::routing::NameType) {
+fn start_client() -> (::routing::routing_client::RoutingClient,
+                      ::std::sync::mpsc::Receiver<(::routing::data::Data)>, ::routing::NameType) {
     let (sender, receiver) = ::std::sync::mpsc::channel();
     let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
     let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(::routing::event::Event)>,
@@ -135,6 +129,7 @@ fn start_client
 #[cfg(not(feature = "use-mock-routing"))]
 #[test]
 fn executable_connection_test() {
+    use std::io::Read;
     let num_of_nodes = 8;
     let mut processes = start_vaults(num_of_nodes);
     let mut test_failed = false;
@@ -157,6 +152,7 @@ fn executable_connection_test() {
 #[cfg(not(feature = "use-mock-routing"))]
 #[test]
 fn executable_immutable_data_churn_test() {
+    use std::io::Read;
     let mut processes = start_vaults(4);
     let (mut client_routing, client_receiver, client_name) = start_client();
 
@@ -200,6 +196,7 @@ fn executable_immutable_data_churn_test() {
 #[cfg(not(feature = "use-mock-routing"))]
 #[test]
 fn executable_structured_data_churn_test() {
+    use std::io::Read;
     let mut processes = start_vaults(4);
     let (mut client_routing, client_receiver, client_name) = start_client();
 

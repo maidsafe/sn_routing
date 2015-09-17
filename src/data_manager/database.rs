@@ -15,14 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use cbor;
-use rustc_serialize::Encodable;
-use std::collections::HashMap;
-
-type PmidNode = ::routing::NameType;
-
 pub type DataName = ::routing::NameType;
 pub type PmidNodes = Vec<PmidNode>;
+
+type PmidNode = ::routing::NameType;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
@@ -33,21 +29,13 @@ pub struct Account {
 }
 
 impl Account {
-    pub fn new(name: DataName, data_holders: PmidNodes) -> Account {
+    fn new(name: DataName, data_holders: PmidNodes) -> Account {
         Account {
             name: name,
             data_holders: data_holders,
             preserialised_content: Vec::new(),
             has_preserialised_content: false,
         }
-    }
-
-    pub fn name(&self) -> &DataName {
-        &self.name
-    }
-
-    pub fn data_holders(&self) -> &PmidNodes {
-        &self.data_holders
     }
 }
 
@@ -63,9 +51,9 @@ impl ::types::Refreshable for Account {
     fn merge(from_group: ::routing::NameType, responses: Vec<Account>) -> Option<Account> {
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for response in responses {
-            if *response.name() == from_group {
+            if response.name == from_group {
                 let push_in_vec = match stats.iter_mut()
-                                             .find(|a| a.0 == *response.data_holders()) {
+                                             .find(|a| a.0 == response.data_holders) {
                     Some(find_res) => {
                         find_res.1 += 1;
                         false
@@ -73,7 +61,7 @@ impl ::types::Refreshable for Account {
                     None => true,
                 };
                 if push_in_vec {
-                    stats.push((response.data_holders().clone(), 1));
+                    stats.push((response.data_holders.clone(), 1));
                 }
             }
         }
@@ -89,17 +77,17 @@ impl ::types::Refreshable for Account {
 
 
 pub struct Database {
-    storage: HashMap<DataName, PmidNodes>,
     pub close_grp_from_churn: Vec<::routing::NameType>,
-    pub temp_storage_after_churn: HashMap<::routing::NameType, PmidNodes>,
+    pub temp_storage_after_churn: ::std::collections::HashMap<::routing::NameType, PmidNodes>,
+    storage: ::std::collections::HashMap<DataName, PmidNodes>,
 }
 
 impl Database {
     pub fn new() -> Database {
         Database {
-            storage: HashMap::with_capacity(10000),
             close_grp_from_churn: Vec::new(),
-            temp_storage_after_churn: HashMap::new(),
+            temp_storage_after_churn: ::std::collections::HashMap::new(),
+            storage: ::std::collections::HashMap::with_capacity(10000),
         }
     }
 
@@ -140,10 +128,10 @@ impl Database {
 
 
     pub fn handle_account_transfer(&mut self, merged_account: Account) {
-        let _ = self.storage.remove(merged_account.name());
-        let _ = self.storage.insert(*merged_account.name(), merged_account.data_holders().clone());
-        info!("DataManager updated account {:?} to {:?}",
-              merged_account.name(), merged_account.data_holders());
+        let _ = self.storage.remove(&merged_account.name);
+        let data_holders = merged_account.data_holders.clone();
+        let _ = self.storage.insert(merged_account.name, merged_account.data_holders);
+        info!("DataManager updated account {:?} to {:?}", merged_account.name, data_holders);
     }
 
     pub fn handle_churn(&mut self, our_authority: &::routing::Authority,
@@ -161,8 +149,8 @@ impl Database {
                 }
             }
             let account = Account::new((*key).clone(), (*value).clone());
-            let target_authority = super::Authority(*account.name());
-            let mut encoder = cbor::Encoder::from_memory();
+            let target_authority = super::Authority(account.name);
+            let mut encoder = ::cbor::Encoder::from_memory();
             if encoder.encode(&[account]).is_ok() {
                 debug!("DataManager sends out a refresh regarding account {:?}",
                        target_authority.get_location());
@@ -182,7 +170,7 @@ impl Database {
             for (key, value) in self.storage.iter() {
                 if key == our_authority.get_location() {
                     let account = Account::new((*key).clone(), (*value).clone());
-                    let mut encoder = cbor::Encoder::from_memory();
+                    let mut encoder = ::cbor::Encoder::from_memory();
                     if encoder.encode(&[account]).is_ok() {
                         debug!("DataManager on-request sends out a refresh regarding account {:?}",
                                our_authority.get_location());
@@ -196,6 +184,8 @@ impl Database {
         ::utils::NOT_HANDLED
     }
 }
+
+
 
 #[cfg(test)]
 mod test {

@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+pub use self::chunk_store::ChunkStore;
+
 mod chunk_store;
 mod test;
-pub use self::chunk_store::*;
