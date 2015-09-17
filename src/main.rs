@@ -110,9 +110,11 @@ extern crate rand;
 extern crate lru_time_cache;
 extern crate routing;
 
+#[macro_use]
+mod macros;
+
 mod chunk_store;
 mod data_manager;
-mod macros;
 mod maid_manager;
 mod mock_routing;
 mod pmid_manager;
@@ -123,11 +125,8 @@ mod types;
 mod utils;
 mod vault;
 
-/// Runs a SAFE Network vault
+/// Runs a SAFE Network vault.
 pub fn main() {
-    match env_logger::init() {
-        Ok(()) => {}
-        Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
-    }
+    ::utils::initialise_logger();
     ::vault::Vault::run();
 }
