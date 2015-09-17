@@ -179,7 +179,7 @@ impl PmidNode {
 
     pub fn reset(&mut self, routing: ::vault::Routing) {
         self.routing = routing;
-        self.chunk_store = ChunkStore::new(1073741824);
+        self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
     }    
 }
 
