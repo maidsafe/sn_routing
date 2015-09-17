@@ -169,6 +169,8 @@ impl DataManager {
 
         for pmid in self.database.get_pmid_nodes(data_name) {
             let location = ::pmid_node::Authority(pmid.clone());
+            debug!("DataManager {:?} sending get request to {:?}",
+                   self.nodes_in_table[0], location);
             self.routing.get_request(our_authority.clone(), location, data_request.clone());
             let _ = self.ongoing_gets
                         .insert((data_name.clone(), pmid.clone()), ::time::SteadyTime::now());
@@ -340,6 +342,8 @@ impl DataManager {
                 if let &Authority(from_group) = our_authority {
                     if let Some(merged_account) = ::utils::merge::<Account>(from_group,
                                                                             payloads.clone()) {
+                        debug!("DataManager {:?} receiving refreshed account {:?}",
+                               self.nodes_in_table[0], merged_account);
                         self.database.handle_account_transfer(merged_account);
                     }
                 } else {

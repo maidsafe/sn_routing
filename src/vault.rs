@@ -500,7 +500,8 @@ mod test {
     //               2 -- Authority::NodeManager
     //               3 -- Authority::ManagedNode
     //               4 -- Authority::Client
-    //              10 -- Event::Churn
+    //              10 -- Event::Refresh(type_tag -- 2) for immutable_data test
+    //              11 -- Event::Refresh(type_tag -- 5) for structured_data test
     fn waiting_for_hits(
             vault_receivers: &Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
             expected_tag: u32,
@@ -522,9 +523,11 @@ mod test {
                             _ => {}
                         }
                     }
-                    Ok(::routing::event::Event::Churn(_, _)) => {
-                        if expected_tag == 10 {
-                            hits += 1;
+                    Ok(::routing::event::Event::Refresh(type_tag, _, _)) => {
+                        match (expected_tag, type_tag) {
+                            (10, 2) => hits += 1,
+                            (11, 5) => hits += 1,
+                            _ => {}
                         }
                     }
                     Ok(_) => {}
@@ -660,7 +663,7 @@ mod test {
         let new_vault_receivers = vec![receiver];
         waiting_for_hits(&new_vault_receivers,
                          10,
-                         ::routing::types::GROUP_SIZE - 1,
+                         ::routing::types::GROUP_SIZE,
                          ::time::Duration::minutes(3));
         println!("network_churn_immutable_data_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
@@ -704,8 +707,8 @@ mod test {
         });
         let new_vault_receivers = vec![receiver];
         waiting_for_hits(&new_vault_receivers,
-                         10,
-                         ::routing::types::GROUP_SIZE - 1,
+                         11,
+                         ::routing::types::GROUP_SIZE,
                          ::time::Duration::minutes(3));
         println!("network_churn_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
