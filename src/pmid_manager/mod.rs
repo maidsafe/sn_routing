@@ -123,6 +123,11 @@ impl PmidManager {
         self.database.do_refresh(type_tag, our_authority, churn_node, &self.routing)
     }
 
+    pub fn reset(&mut self, routing: ::vault::Routing) {
+        self.routing = routing;
+        self.database.cleanup();
+    }
+
     fn handle_put_response_from_pmid_node(&mut self,
                                           our_authority: ::routing::Authority,
                                           from_address: ::routing::NameType,

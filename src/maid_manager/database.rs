@@ -150,7 +150,7 @@ impl MaidManagerDatabase {
                                         encoder.as_bytes().to_vec(), churn_node.clone());
             }
         }
-        self.storage.clear();
+        self.cleanup();
     }
 
     pub fn do_refresh(&mut self,
@@ -174,6 +174,10 @@ impl MaidManagerDatabase {
             return ::utils::HANDLED;
         }
         ::utils::NOT_HANDLED
+    }
+
+    pub fn cleanup(&mut self) {
+        self.storage.clear();
     }
 
     #[allow(dead_code)]

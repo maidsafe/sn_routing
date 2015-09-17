@@ -220,6 +220,11 @@ impl StructuredDataManager {
         }
         ::utils::NOT_HANDLED
     }
+
+    pub fn reset(&mut self, routing: ::vault::Routing) {
+        self.routing = routing;
+        self.chunk_store = ChunkStore::new(1073741824);
+    }
 }
 
 #[cfg(all(test, feature = "use-mock-routing"))]

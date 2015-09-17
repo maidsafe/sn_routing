@@ -108,6 +108,11 @@ impl MaidManager {
                       churn_node: &::routing::NameType) -> Option<()> {
         self.database.do_refresh(type_tag, our_authority, churn_node, &self.routing)
     }
+
+    pub fn reset(&mut self, routing: ::vault::Routing) {
+        self.routing = routing;
+        self.database.cleanup();
+    }
 }
 
 #[cfg(all(test, feature = "use-mock-routing"))]

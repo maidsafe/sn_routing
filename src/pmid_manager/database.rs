@@ -189,7 +189,7 @@ impl PmidManagerDatabase {
                 }
             }
         }
-        self.storage.clear();
+        self.cleanup();
     }
 
     pub fn do_refresh(&mut self,
@@ -213,6 +213,10 @@ impl PmidManagerDatabase {
             return ::utils::HANDLED;
         }
         ::utils::NOT_HANDLED
+    }
+
+    pub fn cleanup(&mut self) {
+        self.storage.clear();
     }
 }
 

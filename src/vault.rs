@@ -179,9 +179,19 @@ impl Vault {
 
     fn on_disconnected(&mut self) {
         self.routing.stop();
+        self.id = ::routing::NameType::new([0u8; 64]);
+
+        self.churn_timestamp = ::time::SteadyTime::now();
         let (sender, receiver) = ::std::sync::mpsc::channel();
         self.routing = Routing::new(sender);
         self.receiver = receiver;
+
+        self.maid_manager.reset(self.routing.clone());
+        self.data_manager.reset(self.routing.clone());
+        self.pmid_manager.reset(self.routing.clone());
+        // TODO: shall pmid_node and sd_manager still keeps the data so they can be reused?
+        self.pmid_node.reset(self.routing.clone());
+        self.sd_manager.reset(self.routing.clone());
     }
 
     fn on_failed_request(&mut self,

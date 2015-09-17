@@ -178,6 +178,11 @@ impl PmidNode {
                data.name(), data.payload_size(), location);
         self.routing.put_response(our_authority.clone(), location, error, response_token.clone());
     }
+
+    pub fn reset(&mut self, routing: ::vault::Routing) {
+        self.routing = routing;
+        self.chunk_store = ChunkStore::new(1073741824);
+    }    
 }
 
 #[cfg(all(test, feature = "use-mock-routing"))]
