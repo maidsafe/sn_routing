@@ -55,8 +55,10 @@ impl Filter {
         };
         // already get the return value, but continue processing the analytics
         let blocked = self.message_filter.check(&digest);
-        if signed_message.get_routing_message().from_authority.is_group() {
-            self.threshold.hit_message(blocked); };
+        // TODO (ben 17/09/2015) the results from the threshold calculations are not yet used
+        // as such these are currently manually deactivated
+        // if signed_message.get_routing_message().from_authority.is_group() {
+        //     self.threshold.hit_message(blocked); };
         !blocked
     }
 
@@ -69,14 +71,17 @@ impl Filter {
             Err(_) => return,
         };
 
-        if routing_message.from_authority.is_group()
-            && !self.message_filter.check(&digest) {
-            self.threshold.hit_uniquemessage();
-        };
+        // TODO (ben 17/09/2015) the results from the threshold calculations are not yet used
+        // as such these are currently manually deactivated
+        // if routing_message.from_authority.is_group()
+        //     && !self.message_filter.check(&digest) {
+        //     self.threshold.hit_uniquemessage();
+        // };
         self.message_filter.add(digest);
     }
 }
 
+#[allow(unused)]
 pub struct SimpleThresholdCalculator {
     total_messages: u32,
     total_blockedmessages: u32,
@@ -105,9 +110,9 @@ impl SimpleThresholdCalculator {
     pub fn hit_message(&mut self, blocked: bool) {
         if blocked { self.total_blockedmessages += 1u32; };
         self.total_messages += 1u32;
-        let debug_average = self.total_blockedmessages as f64 / self.total_messages as f64;
-        println!("BLOCKED {:?}% of group messages ({:?}/{:?})", (debug_average * 100f64).round(),
-            self.total_blockedmessages, self.total_messages);
+        // let debug_average = self.total_blockedmessages as f64 / self.total_messages as f64;
+        // println!("BLOCKED {:?}% of group messages ({:?}/{:?})", (debug_average * 100f64).round(),
+        //     self.total_blockedmessages, self.total_messages);
         if self.total_messages >= self.cap {
             self.calculate_average();
         }
@@ -117,16 +122,16 @@ impl SimpleThresholdCalculator {
     pub fn hit_uniquemessage(&mut self) {
         self.total_uniquemessages += 1u32;
         let message_multiplicity = self.total_messages as f64 / self.total_uniquemessages as f64;
-        let debug_blocked = self.total_blockedmessages as f64 / self.total_messages as f64;
-        let debug_threshold = message_multiplicity * debug_blocked;
-        println!("MULTIPLICITY {:?} for group messages ({:?}/{:?})",
-            (message_multiplicity * 100f64).round() / 100f64,
-            self.total_messages, self.total_uniquemessages);
-        println!("DEBUG THRESHOLD would be {:?} - NOT EFFECTUATED",
-            debug_threshold);
-        println!("RUNNING AVERAGE BLOCKED {:?} - MULTIPLICITY {:?}",
-            self.blocked_percentage.get_average(),
-            self.multiplicity.get_average());
+        // let debug_blocked = self.total_blockedmessages as f64 / self.total_messages as f64;
+        // let debug_threshold = message_multiplicity * debug_blocked;
+        // println!("MULTIPLICITY {:?} for group messages ({:?}/{:?})",
+        //     (message_multiplicity * 100f64).round() / 100f64,
+        //     self.total_messages, self.total_uniquemessages);
+        // println!("DEBUG THRESHOLD would be {:?} - NOT EFFECTUATED",
+        //     debug_threshold);
+        // println!("RUNNING AVERAGE BLOCKED {:?} - MULTIPLICITY {:?}",
+        //     self.blocked_percentage.get_average(),
+        //     self.multiplicity.get_average());
     }
 
     fn calculate_average(&mut self) {
@@ -145,6 +150,7 @@ impl SimpleThresholdCalculator {
     }
 }
 
+#[allow(unused)]
 pub struct RunningAverage {
     average: f64,
     block_average: f64,
@@ -235,39 +241,6 @@ mod test {
         ::std::thread::sleep_ms(2);
         assert!(filter.check(&signed_message));
     }
-
-    // FIXME (ben 16/09/2015) this function ::message_digest has been deprecated and removed
-    // and is integrated inside ::block
-    // #[test]
-    // #[ignore]
-    // fn filter_check_message_digest() {
-    //     let duration = ::time::Duration::seconds(3);
-    //     let mut filter = super::Filter::with_expiry_duration(duration);
-    //     let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
-    //     let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-    //     let routing_message =
-    //         ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-    //     let signed_message =
-    //         ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
-    //     let signed_message = signed_message.unwrap();
-    //
-    //     assert!(filter.check(&signed_message));
-    //
-    //     let signed_message_routing_message = signed_message.get_routing_message();
-    //     let encode_message = ::utils::encode(signed_message_routing_message);
-    //
-    //     assert!(encode_message.is_ok());
-    //
-    //     let encode_message = encode_message.unwrap();
-    //     let message_digest = ::sodiumoxide::crypto::hash::sha256::hash(&encode_message[..]);
-    //     let filter_message_digest = super::Filter::message_digest(&routing_message);
-    //
-    //     assert!(filter_message_digest.is_some());
-    //
-    //     let filter_message_digest = filter_message_digest.unwrap();
-    //
-    //     assert_eq!(filter_message_digest, message_digest);
-    // }
 
     #[test]
     fn filter_block() {
