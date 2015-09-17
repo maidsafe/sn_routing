@@ -196,13 +196,7 @@ impl DataManager {
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        self.nodes_in_table.sort_by(|a, b| {
-            if ::routing::closer_to_target(&a, &b, &data_name) {
-                ::std::cmp::Ordering::Less
-            } else {
-                ::std::cmp::Ordering::Greater
-            }
-        });
+        Self::sort_from_target(&mut self.nodes_in_table, &data_name);
         let pmid_nodes_num = ::std::cmp::min(self.nodes_in_table.len(), PARALLELISM);
         let mut dest_pmids: Vec<::routing::NameType> = Vec::new();
         for index in 0..pmid_nodes_num {
@@ -393,13 +387,7 @@ impl DataManager {
         match self.database.temp_storage_after_churn.get(name) {
             Some(pmid_nodes) => {
                 if pmid_nodes.len() < 3 {
-                    self.database.close_grp_from_churn.sort_by(|a, b| {
-                        if ::routing::closer_to_target(&a, &b, &name) {
-                            ::std::cmp::Ordering::Less
-                        } else {
-                            ::std::cmp::Ordering::Greater
-                        }
-                    });
+                    Self::sort_from_target(&mut self.database.close_grp_from_churn, &name);
                     let mut close_grp_node_to_add = ::routing::NameType::new([0u8; 64]);
                     for close_grp_it in self.database.close_grp_from_churn.iter() {
                         if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
@@ -413,6 +401,16 @@ impl DataManager {
             None => {}
         }
         None
+    }
+
+    fn sort_from_target(names: &mut Vec<::routing::NameType>, target: &::routing::NameType) {
+        names.sort_by(|a, b| {
+            if ::routing::closer_to_target(&a, &b, target) {
+                ::std::cmp::Ordering::Less
+            } else {
+                ::std::cmp::Ordering::Greater
+            }
+        });
     }
 
     fn handle_failed_request_for_data(&mut self,
