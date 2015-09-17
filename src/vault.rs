@@ -531,8 +531,8 @@ mod test {
                     }
                     Ok(::routing::event::Event::Refresh(type_tag, _, _)) => {
                         match (expected_tag, type_tag) {
-                            (10, 2) => hits += 1,
-                            (11, 5) => hits += 1,
+                            (20, 2) => hits += 1,
+                            (21, 5) => hits += 1,
                             _ => {}
                         }
                     }
@@ -668,7 +668,7 @@ mod test {
         });
         vault_receivers.push(receiver);
         waiting_for_hits(&vault_receivers,
-                         10,
+                         20,
                          ::routing::types::GROUP_SIZE,
                          ::time::Duration::minutes(3));
         println!("network_churn_immutable_data_test getting data");
@@ -713,7 +713,7 @@ mod test {
         });
         vault_receivers.push(receiver);
         waiting_for_hits(&vault_receivers,
-                         11,
+                         21,
                          ::routing::types::GROUP_SIZE,
                          ::time::Duration::minutes(3));
         println!("network_churn_structured_data_test getting data");
