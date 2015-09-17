@@ -53,7 +53,7 @@ impl PmidNode {
             }
         };
 
-        let data = self.chunk_store.get(*immutable_data_name_and_type.0);
+        let data = self.chunk_store.get(immutable_data_name_and_type.0);
         if data.len() == 0 {
             warn!("Failed to GET data with name {:?}", immutable_data_name_and_type.0);
             return ::utils::HANDLED;
@@ -109,7 +109,7 @@ impl PmidNode {
         };
         if self.chunk_store.has_disk_space(serialised_data.len()) {
             // the type_tag needs to be stored as well
-            self.chunk_store.put(immutable_data.name(), serialised_data);
+            self.chunk_store.put(&immutable_data.name(), serialised_data);
             return ::utils::HANDLED;
         }
 
@@ -130,7 +130,7 @@ impl PmidNode {
         let names = self.chunk_store.names();
         let mut emptied_space = 0;
         for name in names.iter() {
-            let fetched_data = self.chunk_store.get(name.clone());
+            let fetched_data = self.chunk_store.get(name);
             let parsed_data: ::routing::immutable_data::ImmutableData =
                 match ::routing::utils::decode(&fetched_data) {
                     Ok(data) => data,
@@ -140,13 +140,13 @@ impl PmidNode {
             match *parsed_data.get_type_tag() {
                 ::routing::immutable_data::ImmutableDataType::Sacrificial => {
                     emptied_space += fetched_data.len();
-                    self.chunk_store.delete(name.clone());
+                    self.chunk_store.delete(name);
                     // For sacrificed data, just notify PmidManager to update the account and
                     // DataManager need to adjust its farming rate, replication shall not be carried
                     // out for it.
                     self.notify_managers_of_sacrifice(&our_authority, parsed_data, &response_token);
                     if emptied_space > required_space {
-                        self.chunk_store.put(immutable_data.name(), serialised_data);
+                        self.chunk_store.put(&immutable_data.name(), serialised_data);
                         return ::utils::HANDLED;
                     }
                 }
