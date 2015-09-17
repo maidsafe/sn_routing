@@ -129,8 +129,8 @@ impl DataManager {
         // Cache the request
         let data_name = immutable_data_name_and_type.0;
         if self.request_cache.contains_key(data_name) {
-            debug!("DataManager handle_get inserting original request {:?} from {:?} into {:?} ",
-                   data_request, from_authority, data_name);
+            debug!("DataManager {:?} inserting original request {:?} from {:?} into {:?} ",
+                   self.nodes_in_table[0], data_request, from_authority, data_name);
             match self.request_cache.get_mut(data_name) {
                 Some(ref mut request) => request.push((from_authority.clone(),
                                                        data_request.clone(),
@@ -138,8 +138,8 @@ impl DataManager {
                 None => error!("Failed to insert get request in the cache."),
             };
         } else {
-            debug!("DataManager handle_get created original request {:?} from {:?} as entry {:?}",
-                   data_request, from_authority, data_name);
+            debug!("DataManager {:?} created original request {:?} from {:?} as entry {:?}",
+                   self.nodes_in_table[0], data_request, from_authority, data_name);
             let _ = self.request_cache.insert(*data_name,
                                               vec![(from_authority.clone(),
                 data_request.clone(), response_token.clone())]);

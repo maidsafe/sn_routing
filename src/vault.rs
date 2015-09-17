@@ -500,8 +500,9 @@ mod test {
     //               2 -- Authority::NodeManager
     //               3 -- Authority::ManagedNode
     //               4 -- Authority::Client
-    //              10 -- Event::Refresh(type_tag -- 2) for immutable_data test
-    //              11 -- Event::Refresh(type_tag -- 5) for structured_data test
+    //              10 -- Event::Churn
+    //              20 -- Event::Refresh(type_tag -- 2) for immutable_data test
+    //              21 -- Event::Refresh(type_tag -- 5) for structured_data test
     fn waiting_for_hits(
             vault_receivers: &Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
             expected_tag: u32,
@@ -521,6 +522,11 @@ mod test {
                             (::routing::Authority::NaeManager(_), 1) => hits += 1,
                             (::routing::Authority::ManagedNode(_), 3) => hits += 1,
                             _ => {}
+                        }
+                    }
+                    Ok(::routing::event::Event::Churn(_, _)) => {
+                        if expected_tag == 10 {
+                            hits += 1;
                         }
                     }
                     Ok(::routing::event::Event::Refresh(type_tag, _, _)) => {
@@ -641,7 +647,7 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_churn_immutable_data_test() {
-        let (vault_receivers, mut client_routing, client_receiver, client_name) =
+        let (mut vault_receivers, mut client_routing, client_receiver, client_name) =
             network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -660,8 +666,8 @@ mod test {
         let _ = ::std::thread::spawn(move || {
             ::vault::Vault::new(Some(sender)).do_run();
         });
-        let new_vault_receivers = vec![receiver];
-        waiting_for_hits(&new_vault_receivers,
+        vault_receivers.push(receiver);
+        waiting_for_hits(&vault_receivers,
                          10,
                          ::routing::types::GROUP_SIZE,
                          ::time::Duration::minutes(3));
@@ -677,7 +683,7 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_churn_structured_data_test() {
-        let (vault_receivers, mut client_routing, client_receiver, client_name) =
+        let (mut vault_receivers, mut client_routing, client_receiver, client_name) =
             network_env_setup();
 
         let name = ::utils::random_name();
@@ -705,8 +711,8 @@ mod test {
         let _ = ::std::thread::spawn(move || {
             ::vault::Vault::new(Some(sender)).do_run();
         });
-        let new_vault_receivers = vec![receiver];
-        waiting_for_hits(&new_vault_receivers,
+        vault_receivers.push(receiver);
+        waiting_for_hits(&vault_receivers,
                          11,
                          ::routing::types::GROUP_SIZE,
                          ::time::Duration::minutes(3));
