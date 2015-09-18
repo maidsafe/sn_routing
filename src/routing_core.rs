@@ -39,9 +39,9 @@ pub enum ConnectionName {
     Relay(Address),
     Routing(NameType),
     Bootstrap(NameType),
-    Unidentified(crust::Endpoint, bool),
-   //                            ~|~~
-   //                             | set true when connected as a bootstrap connection
+    Unidentified(crust::Connection, bool),
+   //                               ~|~~
+   //                                | set true when connected as a bootstrap connection
 }
 
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
@@ -135,11 +135,11 @@ impl RoutingCore {
         self.assign_network_name(name)
     }
 
-    /// Look up an endpoint in the routing table and the relay map and return the ConnectionName
-    pub fn lookup_endpoint(&self, endpoint: &crust::Endpoint) -> Option<ConnectionName> {
+    /// Look up a connection in the routing table and the relay map and return the ConnectionName
+    pub fn lookup_connection(&self, connection: &crust::Connection) -> Option<ConnectionName> {
         let routing_name = match self.routing_table {
             Some(ref routing_table) => {
-                match routing_table.lookup_endpoint(&endpoint) {
+                match routing_table.lookup_connection(&connection) {
                     Some(name) => Some(ConnectionName::Routing(name)),
                     None => None,
                 }
@@ -149,7 +149,7 @@ impl RoutingCore {
 
         match routing_name {
             Some(name) => Some(name),
-            None => match self.relay_map.lookup_endpoint(&endpoint) {
+            None => match self.relay_map.lookup_connection(&connection) {
                 Some(peer) => Some(peer.identity().clone()),
                 None => None,
             },
@@ -244,9 +244,11 @@ impl RoutingCore {
     /// To be documented
     pub fn add_peer(&mut self,
                     identity: ConnectionName,
-                    endpoint: crust::Endpoint,
+                    connection: crust::Connection,
                     public_id: Option<PublicId>)
                     -> bool {
+        let endpoint = connection.peer_endpoint();
+
         match identity {
             ConnectionName::Routing(routing_name) => {
                 match self.routing_table {
@@ -279,7 +281,7 @@ impl RoutingCore {
                                             .map(|node_info| node_info.public_id.name())
                                             .collect::<Vec<::NameType>>();
                                     close_group.insert(0, self.id.name());
-                                    let target_endpoints : Vec<::crust::Endpoint> = our_close_group
+                                    let target_endpoints = our_close_group
                                         .iter()
                                         .filter_map(|node_info| node_info.connected_endpoint)
                                         .collect::<Vec<::crust::Endpoint>>();
@@ -371,16 +373,16 @@ impl RoutingCore {
     /// a set of endpoints to send parallel to or our full close group (ourselves excluded)
     /// when the destination is in range.
     /// If resulting vector is empty there are no routing connections.
-    pub fn target_endpoints(&self, to_authority: &Authority) -> Vec<crust::Endpoint> {
-        let mut target_endpoints : Vec<crust::Endpoint> = Vec::new();
+    pub fn target_connections(&self, to_authority: &Authority) -> Vec<crust::Connection> {
+        let mut target_connections : Vec<crust::Connection> = Vec::new();
         // if we can relay to the client, return that client connection
         match *to_authority {
             Authority::Client(_, ref client_public_key) => {
                 match self.relay_map.lookup_connection_name(
                     &ConnectionName::Relay(Address::Client(client_public_key.clone()))) {
                     Some(ref client_peer) => {
-                        target_endpoints.push(client_peer.endpoint().clone());
-                        return target_endpoints;
+                        target_connections.push(client_peer.endpoint().clone());
+                        return target_connections;
                     }
                     None => {}
                 }
@@ -394,14 +396,14 @@ impl RoutingCore {
             Some(ref routing_table) => {
                 for node_info in routing_table.target_nodes(destination) {
                     match node_info.connected_endpoint {
-                        Some(endpoint) => target_endpoints.push(endpoint.clone()),
+                        Some(endpoint) => target_connections.push(endpoint.clone()),
                         None => {}
                     }
                 };
             }
             None => {}
         };
-        target_endpoints
+        target_connections
     }
 
     /// Returns the available Boostrap connections as Peers. If we are a connected node,

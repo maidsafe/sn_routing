@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use time::SteadyTime;
-use crust::Endpoint;
+use crust::{Endpoint, Connection};
 use id::Id;
 use public_id::PublicId;
 use types::Address;
@@ -38,7 +38,7 @@ const MAX_RELAY : usize = 100;
 /// These have to identify as Client(sign::PublicKey)
 pub struct RelayMap {
     relay_map: BTreeMap<ConnectionName, Peer>,
-    lookup_map: HashMap<Endpoint, ConnectionName>,
+    lookup_map: HashMap<Connection, ConnectionName>,
 }
 
 impl RelayMap {
@@ -50,12 +50,12 @@ impl RelayMap {
     /// Adds a Peer to the relay map if the relay map has open
     /// slots, and the Peer is not marked for RoutingTable.
     /// This returns true if the Peer was addded.
-    /// Returns true is the endpoint is newly added, or was already present.
+    /// Returns true is the connection is newly added, or was already present.
     /// Returns false if the threshold was reached or identity already exists.
-    /// Returns false if the endpoint is already assigned (to a different name).
+    /// Returns false if the connection is already assigned (to a different name).
     pub fn add_peer(&mut self,
                     identity: ConnectionName,
-                    endpoint: Endpoint,
+                    connection: Connection,
                     public_id: Option<PublicId>)
                     -> bool {
         // reject Routing peers from relay_map
@@ -68,28 +68,28 @@ impl RelayMap {
             error!("REJECTED because of MAX_RELAY");
             return false;
         }
-        // check if endpoint already exists
-        if self.lookup_map.contains_key(&endpoint) {
+        // check if connection already exists
+        if self.lookup_map.contains_key(&connection) {
             return false;
         }
         // for now don't allow multiple endpoints on a Peer
         if self.relay_map.contains_key(&identity) {
             return false;
         }
-        self.lookup_map.entry(endpoint.clone())
+        self.lookup_map.entry(connection.clone())
                        .or_insert(identity.clone());
-        let new_peer = || Peer::new(identity.clone(), endpoint, public_id);
+        let new_peer = || Peer::new(identity.clone(), connection, public_id);
         self.relay_map.entry(identity.clone())
                       .or_insert_with(new_peer);
         true
     }
 
-    /// This removes the provided endpoint and returns the Peer this endpoint
+    /// This removes the provided connection and returns the Peer this connection
     /// was registered to; otherwise returns None.
-    //  TODO (ben 6/08/2015) drop_endpoint has been simplified for a single endpoint per Peer
+    //  TODO (ben 6/08/2015) drop_endpoint has been simplified for a single connection per Peer
     //  find the archived version on 628febf879a9d3684f69967e00b5a45dc880c6e3 for reference
-    pub fn drop_endpoint(&mut self, endpoint_to_drop: &Endpoint) -> Option<Peer> {
-        match self.lookup_map.remove(endpoint_to_drop) {
+    pub fn drop_connection(&mut self, connection_to_drop: &Connection) -> Option<Peer> {
+        match self.lookup_map.remove(connection_to_drop) {
             Some(identity) => self.relay_map.remove(&identity),
             None => None,
         }
@@ -115,13 +115,13 @@ impl RelayMap {
 
     /// Returns true if we already have a name associated with this endpoint.
     #[allow(dead_code)]
-    pub fn contains_endpoint(&self, endpoint: &Endpoint) -> bool {
-        self.lookup_map.contains_key(endpoint)
+    pub fn contains_connection(&self, connection: &Connection) -> bool {
+        self.lookup_map.contains_key(connection)
     }
 
-    /// Returns Option<&Peer> if an endpoint is found
-    pub fn lookup_endpoint(&self, endpoint: &Endpoint) -> Option<&Peer> {
-        match self.lookup_map.get(endpoint) {
+    /// Returns Option<&Peer> if a connection is found
+    pub fn lookup_connection(&self, connection: &Connection) -> Option<&Peer> {
+        match self.lookup_map.get(connection) {
             Some(identity) => self.relay_map.get(&identity),
             None => None,
         }

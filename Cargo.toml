@@ -22,7 +22,10 @@ itertools = "*"
 log = "*"
 env_logger = "*"
 sodiumoxide = "*"
-crust = "0.2.*"
+#crust = "0.2.*"
+
+[dependencies.crust]
+path = "/home/peter/work/rust/crust"
 
 [dev-dependencies]
 bit-vec = "*"
