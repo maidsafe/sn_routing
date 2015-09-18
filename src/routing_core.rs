@@ -509,8 +509,6 @@ impl RoutingCore {
 mod test {
     #[test]
     fn add_peers_as_client() {
-        use ::test_utils::random_trait::Random;
-
         let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let (action_sender, action_receiver) = ::std::sync::mpsc::channel::<::action::Action>();
         let id = ::id::Id::new();
