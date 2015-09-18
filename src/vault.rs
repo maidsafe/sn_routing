@@ -667,7 +667,7 @@ mod test {
         vault_receivers.push(receiver);
         waiting_for_hits(&vault_receivers,
                          20,
-                         ::routing::types::GROUP_SIZE,
+                         ::routing::types::GROUP_SIZE / 2 + 1,
                          ::time::Duration::minutes(3));
         println!("network_churn_immutable_data_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
@@ -711,7 +711,7 @@ mod test {
         vault_receivers.push(receiver);
         waiting_for_hits(&vault_receivers,
                          21,
-                         ::routing::types::GROUP_SIZE,
+                         ::routing::types::GROUP_SIZE / 2 + 1,
                          ::time::Duration::minutes(3));
         println!("network_churn_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
