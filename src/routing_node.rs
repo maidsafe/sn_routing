@@ -27,7 +27,7 @@ use time::{Duration, SteadyTime};
 use std::cmp::min;
 
 use crust;
-use crust::{ConnectionManager, Endpoint, Port};
+use crust::{Service, Endpoint, Port, Connection};
 use lru_time_cache::LruCache;
 
 use action::Action;
@@ -58,12 +58,11 @@ use message_accumulator::MessageAccumulator;
 
 type RoutingResult = Result<(), RoutingError>;
 
-static MAX_BOOTSTRAP_CONNECTIONS : usize = 1;
 /// Routing Node
 pub struct RoutingNode {
     // for CRUST
     crust_receiver: mpsc::Receiver<crust::Event>,
-    connection_manager: crust::ConnectionManager,
+    crust_service: crust::Service,
     accepting_on: Vec<crust::Endpoint>,
     // for RoutingNode
     client_restriction: bool,
@@ -89,15 +88,25 @@ impl RoutingNode {
                -> RoutingNode {
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
-        let cm = crust::ConnectionManager::new(crust_sender);
-        let accepting_on = cm.get_own_endpoints();
+        let crust_service = match crust::Service::new(crust_sender) {
+            Ok(service) => service,
+            Err(what) => panic!(format!("Unable to start crust::Service {}", what)),
+        };
+
+        // TODO:crust3
+        //// This will give us only local endpoints, use
+        //// Service::get_external_endpoints (async) to get external ones.
+        //let accepting_on = crust_service.start_default_acceptors().into_iter()
+        //                   .filter_map(|ep|ep.ok())
+        //                   .collect();
+        let accepting_on = Vec::new();
 
         let core = RoutingCore::new(event_sender.clone(), action_sender.clone(), keys);
         info!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
 
         RoutingNode {
             crust_receiver: crust_receiver,
-            connection_manager: cm,
+            crust_service: crust_service,
             accepting_on: accepting_on,
             client_restriction: client_restriction,
             action_sender: action_sender.clone(),
@@ -117,7 +126,7 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
-        self.connection_manager.bootstrap(MAX_BOOTSTRAP_CONNECTIONS);
+        self.crust_service.bootstrap();
         debug!("RoutingNode started running and started bootstrap");
         loop {
             match self.action_receiver.try_recv() {
@@ -141,7 +150,7 @@ impl RoutingNode {
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
                     let _ = self.event_sender.send(Event::Terminated);
-                    self.connection_manager.stop();
+                    self.crust_service.stop();
                     break;
                 }
             };
@@ -151,14 +160,14 @@ impl RoutingNode {
                     // main error assumed now to be no new crust events
                     // break;
                 }
-                Ok(crust::Event::NewMessage(endpoint, bytes)) => {
+                Ok(crust::Event::NewMessage(connection, bytes)) => {
                     match decode::<SignedMessage>(&bytes) {
                         Ok(message) => {
-                            // handle SignedMessage for any identified endpoint
-                            match self.core.lookup_endpoint(&endpoint) {
+                            // handle SignedMessage for any identified connection
+                            match self.core.lookup_connection(&connection) {
                                 Some(ConnectionName::Unidentified(_, _)) => debug!("message
                                         from unidentified connection"),
-                                    None => debug!("message from unknown endpoint"),
+                                    None => debug!("message from unknown connection"),
                                     _ => ignore(self.message_received(message)),
                             };
                         }
@@ -167,20 +176,33 @@ impl RoutingNode {
                         Err(_) => {
                             match decode::<::direct_messages::DirectMessage>(&bytes) {
                                 Ok(direct_message) => self.direct_message_received(
-                                        direct_message, endpoint),
-                                    _ => error!("Unparsable message received on {:?}", endpoint),
+                                        direct_message, connection),
+                                    _ => error!("Unparsable message received on {:?}", connection),
                             };
                         }
                     };
                 }
-                Ok(crust::Event::NewConnection(endpoint)) => {
-                    self.handle_new_connection(endpoint);
+                // Pre crust 3 code
+                //Ok(crust::Event::NewConnection(endpoint)) => {
+                //    self.handle_new_connection(endpoint);
+                //}
+                //Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
+                //    self.handle_new_bootstrap_connection(endpoint);
+                //}
+                Ok(crust::Event::OnConnect(connection)) => {
+                    // TODO:crust3
+                    panic!();
                 }
-                Ok(crust::Event::LostConnection(endpoint)) => {
-                    self.handle_lost_connection(endpoint);
+                Ok(crust::Event::OnAccept(connection)) => {
+                    // TODO:crust3
+                    panic!();
                 }
-                Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                    self.handle_new_bootstrap_connection(endpoint);
+                Ok(crust::Event::LostConnection(connection)) => {
+                    self.handle_lost_connection(connection);
+                }
+                Ok(crust::Event::BootstrapFinished) => {
+                }
+                Ok(crust::Event::ExternalEndpoints(endpoints)) => {
                 }
             };
             thread::sleep_ms(1);
@@ -189,15 +211,15 @@ impl RoutingNode {
 
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
-    fn handle_new_connection(&mut self, endpoint: Endpoint) {
-        debug!("New connection on {:?}", endpoint);
+    fn handle_new_connection(&mut self, connection: Connection) {
+        debug!("New connection on {:?}", connection);
         // only accept new connections if we are a full node
         // FIXME(dirvine) I am not sure we should not accept connections here :16/08/2015
         let has_bootstrap_endpoints = self.core.has_bootstrap_endpoints();
         if !self.core.is_node() {
             if has_bootstrap_endpoints {
                 // we are bootstrapping, refuse all normal connections
-                self.connection_manager.drop_node(endpoint);
+                self.crust_service.drop_node(connection);
                 return;
             } else {
                 let assigned_name = NameType::new(crypto::hash::sha512::hash(
@@ -206,52 +228,52 @@ impl RoutingNode {
             }
         }
 
-        if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), false),
-            endpoint.clone(), None) {
+        if !self.core.add_peer(ConnectionName::Unidentified(connection.clone(), false),
+            connection.clone(), None) {
             // only fails if relay_map is full for unidentified connections
-            self.connection_manager.drop_node(endpoint.clone());
+            self.crust_service.drop_node(connection.clone());
         }
-        ignore(self.send_hello(endpoint, None));
+        ignore(self.send_hello(connection, None));
     }
 
-    /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
-    fn handle_lost_connection(&mut self, endpoint: Endpoint) {
-        debug!("Lost connection on {:?}", endpoint);
-        let connection_name = self.core.lookup_endpoint(&endpoint);
-        if connection_name.is_some() {
-            self.core.drop_peer(&connection_name.unwrap());
-        }
-    }
-
-    fn handle_new_bootstrap_connection(&mut self, endpoint: Endpoint) {
-        debug!("New bootstrap connection on {:?}", endpoint);
+    fn handle_new_bootstrap_connection(&mut self, connection: Connection) {
+        debug!("New bootstrap connection on {:?}", connection);
         if !self.core.is_node() {
-            if !self.core.add_peer(ConnectionName::Unidentified(endpoint.clone(), true),
-                endpoint.clone(), None) {
+            if !self.core.add_peer(ConnectionName::Unidentified(connection.clone(), true),
+                connection.clone(), None) {
                 // only fails if relay_map is full for unidentified connections
                 error!("New bootstrap connection on {:?} failed to be labeled as unidentified",
-                    endpoint);
-                self.connection_manager.drop_node(endpoint.clone());
+                    connection);
+                self.crust_service.drop_node(connection.clone());
                 return;
             }
         } else {
             // if core is a full node, don't accept new bootstrap connections
             error!("New bootstrap connection on {:?} but we are a node",
-                endpoint);
-            self.connection_manager.drop_node(endpoint);
+                connection);
+            self.crust_service.drop_node(connection);
             return;
         }
-        ignore(self.send_hello(endpoint, None));
+        ignore(self.send_hello(connection, None));
+    }
+
+    /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
+    fn handle_lost_connection(&mut self, connection: Connection) {
+        debug!("Lost connection on {:?}", connection);
+        let connection_name = self.core.lookup_connection(&connection);
+        if connection_name.is_some() {
+            self.core.drop_peer(&connection_name.unwrap());
+        }
     }
 
     // ---- Hello connection identification -------------------------------------------------------
 
     fn send_hello(&mut self,
-                  endpoint: Endpoint,
+                  connection: Connection,
                   confirmed_address: Option<Address>)
                   -> RoutingResult {
         debug!("Saying hello I am {:?} on {:?}, confirming {:?}", self.core.our_address(),
-            endpoint, confirmed_address);
+            connection, confirmed_address);
         let direct_message = match ::direct_messages::DirectMessage::new(
             ::direct_messages::Content::Hello( ::direct_messages::Hello {
                 address: self.core.our_address(),
@@ -262,28 +284,28 @@ impl RoutingNode {
                     Err(e) => return Err(RoutingError::Cbor(e)),
                 };
         let bytes = try!(::utils::encode(&direct_message));
-        ignore(self.connection_manager.send(endpoint, bytes));
+        self.crust_service.send(connection, bytes);
         Ok(())
     }
 
-    fn handle_hello(&mut self, endpoint: Endpoint, hello: &::direct_messages::Hello)
+    fn handle_hello(&mut self, connection: Connection, hello: &::direct_messages::Hello)
         -> RoutingResult {
 
-        debug!("Hello, it is {:?} on {:?}", hello.address, endpoint);
-        let old_identity = match self.core.lookup_endpoint(&endpoint) {
+        debug!("Hello, it is {:?} on {:?}", hello.address, connection);
+        let old_identity = match self.core.lookup_connection(&connection) {
             // if already connected through the routing table, just confirm or destroy
             Some(ConnectionName::Routing(known_name)) => {
-                debug!("Endpoint {:?} registered to routing node {:?}", endpoint,
+                debug!("Connection {:?} registered to routing node {:?}", connection,
                     known_name);
                 match hello.address {
                     // FIXME (ben 11/08/2015) Hello messages need to be signed and
                     // we also need to check the match with the PublicId stored in RT
                     Address::Node(known_name) => return Ok(()),
                     _ => {
-                        // the endpoint does not match with the routing information
+                        // the connection does not match with the routing information
                         // we know about it; drop it
                         let _ = self.core.drop_peer(&ConnectionName::Routing(known_name));
-                        self.connection_manager.drop_node(endpoint.clone());
+                        self.crust_service.drop_node(connection.clone());
                         return Err(RoutingError::RejectedPublicId);
                     }
                 }
@@ -314,14 +336,14 @@ impl RoutingNode {
             (Address::Client(his_public_key), Address::Node(our_name)) => {
             // He is a client, we are a node, establish a relay connection
                 debug!("Connection {:?} will be labeled as a relay to {:?}",
-                    endpoint, Address::Client(his_public_key));
+                    connection, Address::Client(his_public_key));
                 alpha = true;
                 ConnectionName::Relay(Address::Client(his_public_key))
             }
             (Address::Node(his_name), Address::Client(our_public_key)) => {
             // He is a node, we are a client, establish a bootstrap connection
                 debug!("Connection {:?} will be labeled as a bootstrap node name {:?}",
-                    endpoint, his_name);
+                    connection, his_name);
                 ConnectionName::Bootstrap(his_name)
             }
             (Address::Client(his_public_key), Address::Client(our_public_key)) => {
@@ -332,7 +354,7 @@ impl RoutingNode {
                     }
                     None => {}
                 };
-                self.connection_manager.drop_node(endpoint.clone());
+                self.crust_service.drop_node(connection.clone());
                 return Err(RoutingError::BadAuthority);
             }
         };
@@ -343,9 +365,9 @@ impl RoutingNode {
                         address);
                     true
                 } else {
-                    self.connection_manager.drop_node(endpoint.clone());
+                    self.crust_service.drop_node(connection.clone());
                     error!("Wrongfully confirmed as {:?} on {:?} and dropped the connection",
-                        address, endpoint);
+                        address, connection);
                     return Err(RoutingError::RejectedPublicId);
                 }
             }
@@ -362,24 +384,24 @@ impl RoutingNode {
                 &None => None,
             };
             // add the new identity, or drop the connection
-            if self.core.add_peer(new_identity.clone(), endpoint.clone(),
+            if self.core.add_peer(new_identity.clone(), connection.clone(),
                 Some(hello.public_id.clone())) {
-                debug!("Added {:?} to the core on {:?}", hello_address, endpoint);
+                debug!("Added {:?} to the core on {:?}", hello_address, connection);
                 if alpha {
-                    ignore(self.send_hello(endpoint.clone(), Some(hello_address)));
+                    ignore(self.send_hello(connection.clone(), Some(hello_address)));
                 };
                 match new_identity {
                     ConnectionName::Bootstrap(bootstrap_name) => {
-                        ignore(self.request_network_name(&bootstrap_name, &endpoint));
+                        ignore(self.request_network_name(&bootstrap_name, &connection));
                     }
                     _ => {}
                 };
             } else {
                 // depending on the identity of the connection, follow the rules on dropping
                 // to avoid both sides drop the other connection, possibly leaving none
-                self.connection_manager.drop_node(endpoint.clone());
+                self.crust_service.drop_node(connection.clone());
                 debug!("Core refused {:?} on {:?} and dropped the connection",
-                    hello_address, endpoint);
+                    hello_address, connection);
             };
         } else {
             debug!("We are not alpha and the hello was not confirmed yet, awaiting alpha.");
@@ -598,16 +620,16 @@ impl RoutingNode {
     // ---- Direct Messages -----------------------------------------------------------------------
 
     fn direct_message_received(&mut self, direct_message: ::direct_messages::DirectMessage,
-        endpoint: ::crust::Endpoint) {
+        connection: ::crust::Connection) {
 
         match direct_message.content() {
             &::direct_messages::Content::Hello(ref hello) => {
                 // verify signature of hello
                 if !direct_message.verify_signature(&hello.public_id.signing_public_key()) {
                     error!("DirectMessage::Hello failed signature verification on {:?}",
-                        endpoint);
-                    self.connection_manager.drop_node(endpoint); };
-                let _ = self.handle_hello(endpoint, hello);
+                        connection);
+                    self.crust_service.drop_node(connection); };
+                let _ = self.handle_hello(connection, hello);
             },
             &::direct_messages::Content::Churn(ref his_close_group) => {
                 // TODO (ben 26/08/2015) verify the signature with the public_id
@@ -619,7 +641,7 @@ impl RoutingNode {
 
     // ---- Churn ---------------------------------------------------------------------------------
 
-    fn generate_churn(&mut self, churn: ::direct_messages::Churn, target: Vec<::crust::Endpoint>,
+    fn generate_churn(&mut self, churn: ::direct_messages::Churn, target: Vec<::crust::Connection>,
         cause: ::NameType) -> RoutingResult {
         debug!("CHURN: sending {:?} names to {:?} close nodes",
             churn.close_group.len(), target.len());
@@ -633,7 +655,7 @@ impl RoutingNode {
             };
         let bytes = try!(::utils::encode(&direct_message));
         for endpoint in target {
-            ignore(self.connection_manager.send(endpoint, bytes.clone()));
+            self.crust_service.send(endpoint, bytes.clone());
         }
         // notify the user
         let _ = self.event_sender.send(::event::Event::Churn(churn.close_group, cause));
@@ -651,7 +673,7 @@ impl RoutingNode {
 
     fn request_network_name(&mut self,
                             bootstrap_name: &NameType,
-                            bootstrap_endpoint: &Endpoint)
+                            bootstrap_connection: &Connection)
                             -> RoutingResult {
         // if RoutingNode is restricted from becoming a node,
         // it suffices to never request a network name.
@@ -662,7 +684,7 @@ impl RoutingNode {
             return Err(RoutingError::AlreadyConnected);
         };
         debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
-            bootstrap_endpoint);
+            bootstrap_connection);
         let core_id = self.core.id();
         let routing_message = RoutingMessage {
             from_authority: Authority::Client(bootstrap_name.clone(),
@@ -894,8 +916,8 @@ impl RoutingNode {
                 };
                 // TODO (ben 13/08/2015) use public_id_cache or result of future RFC
                 // to validate the public_id from the network
-                self.connection_manager.connect(connect_request.local_endpoints.clone());
-                self.connection_manager.connect(connect_request.external_endpoints.clone());
+                self.crust_service.connect(connect_request.local_endpoints.clone());
+                self.crust_service.connect(connect_request.external_endpoints.clone());
                 self.connection_filter.add(connect_request.requester_fob.name());
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
@@ -945,8 +967,8 @@ impl RoutingNode {
                     return Err(RoutingError::RefusedFromRoutingTable);
                 };
                 debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
-                self.connection_manager.connect(connect_response.local_endpoints.clone());
-                self.connection_manager.connect(connect_response.external_endpoints.clone());
+                self.crust_service.connect(connect_response.local_endpoints.clone());
+                self.crust_service.connect(connect_response.external_endpoints.clone());
                 self.connection_filter.add(connect_response.receiver_fob.name());
                 Ok(())
             }
@@ -1054,13 +1076,13 @@ impl RoutingNode {
         let destination = signed_message.get_routing_message().destination();
         let bytes = try!(encode(&signed_message));
         // query the routing table for parallel or swarm
-        let endpoints = self.core.target_endpoints(&destination);
-        if !endpoints.is_empty() {
+        let connections = self.core.target_connections(&destination);
+        if !connections.is_empty() {
             debug!("Sending {:?} to {:?} target connection(s)",
-                signed_message.get_routing_message().content, endpoints.len());
-            for endpoint in endpoints {
+                signed_message.get_routing_message().content, connections.len());
+            for connection in connections {
                 // TODO(ben 10/08/2015) drop endpoints that fail to send
-                ignore(self.connection_manager.send(endpoint, bytes.clone()));
+                self.crust_service.send(connection, bytes.clone());
             }
         }
 
@@ -1071,14 +1093,11 @@ impl RoutingNode {
                 // the name of the bootstrap connection we're sending it on.  Although this might
                 // open a window for attacking a node, in v0.3.* we can leave this unresolved.
                 for bootstrap_peer in bootstrap_peers {
-                    // TODO(ben 10/08/2015) drop bootstrap endpoints that fail to send
-                    if self.connection_manager.send(bootstrap_peer.endpoint().clone(),
-                        bytes.clone()).is_ok() {
-                        debug!("Sent {:?} to bootstrap connection {:?}",
-                            signed_message.get_routing_message().content,
-                            bootstrap_peer.identity());
-                        break;
-                    };
+                    self.crust_service.send(bootstrap_peer.connection().clone(), bytes.clone());
+                    debug!("Sent {:?} to bootstrap connection {:?}",
+                        signed_message.get_routing_message().content,
+                        bootstrap_peer.identity());
+                    break;
                 }
             }
             None => {}
