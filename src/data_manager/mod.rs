@@ -145,6 +145,8 @@ impl DataManager {
         let mut failing_entries = Vec::new();
         for ongoing_get in ongoing_gets {
             if ongoing_get.1 + ::time::Duration::seconds(10) < ::time::SteadyTime::now() {
+                debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
+                       self.id, (ongoing_get.0).1, (ongoing_get.0).0);
                 self.database.remove_pmid_node(&(ongoing_get.0).0, (ongoing_get.0).1.clone());
                 failing_entries.push(ongoing_get.0.clone());
                 if self.failed_pmids.contains_key(&data_name) {
@@ -161,7 +163,8 @@ impl DataManager {
         for failed_entry in failing_entries {
             let _ = self.ongoing_gets.remove(&failed_entry);
         }
-
+        debug!("DataManager {:?} having {:?} records for chunk {:?}",
+               self.id, self.database.exist(&data_name), data_name);
         for pmid in self.database.get_pmid_nodes(data_name) {
             let location = ::pmid_node::Authority(pmid.clone());
             debug!("DataManager {:?} sending get request to {:?}", self.id, location);

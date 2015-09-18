@@ -194,7 +194,10 @@ impl StructuredDataManager {
             self.routing.refresh_request(ACCOUNT_TAG, Authority(name),
                                          data, churn_node.clone());
         }
-        self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
+        // FIXME: as pointed out in https://github.com/maidsafe/safe_vault/issues/250
+        //        the uncontrollable order of events (churn/refresh/account_transfer)
+        //        forcing the node have to keep its current records to avoid losing
+        // self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
     }
 
     pub fn do_refresh(&mut self,
@@ -396,9 +399,5 @@ mod test {
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0], refresh_requests[1]);
-
-        env.sd_manager.handle_churn(&churn_node);
-        let refresh_requests = env.routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), 2);
     }
 }

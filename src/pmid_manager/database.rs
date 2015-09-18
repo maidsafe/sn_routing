@@ -165,7 +165,10 @@ impl Database {
                 }
             }
         }
-        self.storage.clear();
+        // FIXME: as pointed out in https://github.com/maidsafe/safe_vault/issues/250
+        //        the uncontrollable order of events (churn/refresh/account_transfer)
+        //        forcing the node have to keep its current records to avoid losing
+        // self.storage.clear();
     }
 
     pub fn do_refresh(&mut self,
