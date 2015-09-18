@@ -508,3 +508,75 @@ impl RoutingCore {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn add_peers_as_client() {
+        use ::test_utils::random_trait::Random;
+
+        let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
+        let (action_sender, action_receiver) = ::std::sync::mpsc::channel::<::action::Action>();
+        let id = ::id::Id::new();
+        let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
+
+        // routing core is not yet a full node, so it should not accept routing connections
+        let public_id = ::public_id::PublicId::new(&::id::Id::new());
+        let routing_peer = super::ConnectionName::Routing(public_id.name());
+        assert!(!routing_core.add_peer(routing_peer,
+            ::test_utils::messages_util::test::random_endpoint(),
+            Some(public_id)));
+        assert!(event_receiver.try_recv().is_err());
+        assert!(action_receiver.try_recv().is_err());
+
+        // a Bootstrap connection should be accepted though
+        let public_id = ::public_id::PublicId::new(&::id::Id::new());
+        let bootstrap_peer = super::ConnectionName::Bootstrap(public_id.name());
+        assert!(routing_core.add_peer(bootstrap_peer,
+            ::test_utils::messages_util::test::random_endpoint(),
+            Some(public_id)));
+        assert_eq!(event_receiver.try_recv(), Ok(::event::Event::Bootstrapped));
+        assert!(action_receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn add_peers_as_full_node() {
+        use ::test_utils::random_trait::Random;
+
+        let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
+        let (action_sender, action_receiver) = ::std::sync::mpsc::channel::<::action::Action>();
+        let id = ::id::Id::new();
+        let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
+
+        let our_name = ::NameType::generate_random();
+        assert!(routing_core.assign_network_name(&our_name));
+
+        // routing core is not yet a full node, so it should not accept routing connections
+        let public_id = ::public_id::PublicId::new(&::id::Id::new());
+        let name = public_id.name();
+        let endpoint = ::test_utils::messages_util::test::random_endpoint();
+        let routing_peer = super::ConnectionName::Routing(public_id.name());
+        assert!(routing_core.add_peer(routing_peer, endpoint.clone(), Some(public_id)));
+        assert!(event_receiver.try_recv().is_err());
+        match action_receiver.try_recv() {
+            Ok(::action::Action::Churn(close_group, targets, churn)) => {
+                assert_eq!(close_group, ::direct_messages::Churn {
+                    close_group: vec![our_name.clone(), name.clone()] } );
+                assert_eq!(targets, vec![endpoint]);
+                assert_eq!(churn, name);
+            },
+            _ => panic!("Should have caused a churn action."),
+        };
+        // assert that was the only action and the queue is now empty.
+        assert!(action_receiver.try_recv().is_err());
+
+        // a Bootstrap connection will still be accepted as a full node
+        let public_id = ::public_id::PublicId::new(&::id::Id::new());
+        let bootstrap_peer = super::ConnectionName::Bootstrap(public_id.name());
+        assert!(routing_core.add_peer(bootstrap_peer,
+            ::test_utils::messages_util::test::random_endpoint(),
+            Some(public_id)));
+        assert!(event_receiver.try_recv().is_err());
+        assert!(action_receiver.try_recv().is_err());
+    }
+}
