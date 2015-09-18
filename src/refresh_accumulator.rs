@@ -219,18 +219,14 @@ mod test {
                 assert_eq!(vector_of_bytes.len(), threshold);
                 let mut number_of_bytes = 0usize;
                 let mut number_of_new_bytes = 0usize;
-                for bytes in vector_of_bytes {
-                    match bytes {
-                        new_bytes => {
-                            number_of_new_bytes += 1;
-                        },
-                        bytes => {
-                            number_of_bytes += 1;
-                        },
-                        _ => {
-                            panic!("Unexpected bytes");
-                        },
-                    }
+                for returned_bytes in vector_of_bytes {
+                    if returned_bytes == new_bytes {
+                        number_of_new_bytes += 1;
+                    } else if returned_bytes == bytes {
+                        number_of_bytes += 1;
+                    } else {
+                        panic!("Unexpected bytes");
+                    };
                 }
                 assert_eq!(number_of_new_bytes, threshold - 1);
                 assert_eq!(number_of_bytes, 1usize);
