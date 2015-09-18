@@ -17,6 +17,7 @@
 
 use messages::{SignedMessage, Content};
 use authority::Authority;
+use types::CacheOptions;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
@@ -24,7 +25,7 @@ use authority::Authority;
 ///    2. Terminate indicates to RoutingNode that no new actions should be taken and all
 ///       pending events should be handled.
 ///       After completion RoutingNode will send Event::Terminated.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
     SendMessage(SignedMessage),
     //          ~~|~~~~~~~~~~
@@ -35,7 +36,7 @@ pub enum Action {
     //            |          | the bare content for a message to be formed
     //            | the destination authority
     // RoutingNode will form the RoutingMessage and sign it as its own identity
-    Churn(::direct_messages::Churn, Vec<::crust::Endpoint>),
-    WakeUp,
+    Churn(::direct_messages::Churn, Vec<::crust::Endpoint>, ::NameType),
+    SetCacheOptions(CacheOptions),
     Terminate,
 }

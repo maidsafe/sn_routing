@@ -1,5 +1,6 @@
 // Copyright 2015 MaidSafe.net limited.
 //
+//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -15,36 +16,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::sync::mpsc;
-use std::thread::spawn;
-use std::thread;
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+extern crate routing;
 
-use action::Action;
-
-pub struct WakeUpCaller {
-    action_sender: mpsc::Sender<Action>,
-}
-
-impl WakeUpCaller {
-    pub fn new(action_sender: mpsc::Sender<Action>) -> WakeUpCaller {
-        WakeUpCaller { action_sender: action_sender }
-    }
-
-    pub fn start(&self, sleep_duration: u32) {
-        let action_sender_clone = self.action_sender.clone();
-        spawn(move || {
-                       loop {
-                           thread::sleep_ms(sleep_duration);
-                           match action_sender_clone.send(Action::WakeUp) {
-                               Ok(_) => {}
-                               Err(_) => {
-                                   debug!("Failed to send Action::WakeUp. Stopped WakeUpCaller.");
-                                   break;
-                               }
-                           };
-                       }
-                   });
-    }
-
-    // TODO (ben 16/08/2015) implement stop
+/// Run a routing node.
+pub fn main () {
+    ::env_logger::init().unwrap_or_else(|e| println!("Error initialising logger: {:?}", e));
+    ::routing::test_utils::node::Node::new().run();
 }

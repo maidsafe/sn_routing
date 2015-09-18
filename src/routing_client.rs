@@ -81,6 +81,7 @@ impl RoutingClient {
 
     /// Add something to the network
     pub fn put_request(&self, location: Authority, data: Data) {
+        debug!("Received put request from Client for {:?}", data);
         let _ = self.action_sender.send(Action::ClientSendContent(
                 location,
                 Content::ExternalRequest(ExternalRequest::Put(data))));

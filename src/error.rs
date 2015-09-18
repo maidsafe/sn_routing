@@ -32,6 +32,8 @@ pub enum ResponseError {
     /// Abort is for user to indicate that the state can be dropped;
     /// if received by routing, it will drop the state.
     Abort,
+    /// On low balance or no account registered
+    LowBalance(Data, u32),
     /// invalid request
     InvalidRequest(Data),
     /// failure to complete request for data
@@ -50,9 +52,10 @@ impl error::Error for ResponseError {
     fn description(&self) -> &str {
         match *self {
             ResponseError::Abort => "Abort",
+            ResponseError::LowBalance(_, _) => "LowBalance",
             ResponseError::InvalidRequest(_) => "Invalid request",
             ResponseError::FailedRequestForData(_) => "Failed request for data",
-            ResponseError::HadToClearSacrificial(_, _) => "Had to clear Sacrificial data to
+            ResponseError::HadToClearSacrificial(_, _) => "Had to clear sacrificial data to \
               complete request",
         }
     }
@@ -65,9 +68,10 @@ impl error::Error for ResponseError {
 impl fmt::Display for ResponseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ResponseError::Abort => fmt::Display::fmt("ResponseError:: Abort", f),
-            ResponseError::InvalidRequest(_) => fmt::Display::fmt("ResponsError::InvalidRequest",
-                                  f),
+            ResponseError::Abort => fmt::Display::fmt("ResponseError::Abort", f),
+            ResponseError::LowBalance(_, _) => fmt::Display::fmt("ResponseError::LowBalance", f),
+            ResponseError::InvalidRequest(_) =>
+                fmt::Display::fmt("ResponsError::InvalidRequest", f),
             ResponseError::FailedRequestForData(_) =>
                 fmt::Display::fmt("ResponseError::FailedToStoreData", f),
             ResponseError::HadToClearSacrificial(_, _) =>
@@ -208,7 +212,7 @@ impl error::Error for RoutingError {
             RoutingError::FilterCheckFailed => "Filter check failure",
             RoutingError::FailedSignature => "Signature check failure",
             RoutingError::NotEnoughSignatures => "Not enough signatures",
-            RoutingError::DuplicateSignatures => "Not enough signatures",
+            RoutingError::DuplicateSignatures => "Duplicated signatures",
             RoutingError::FailedToBootstrap => "Could not bootstrap",
             RoutingError::RoutingTableEmpty => "Routing table empty",
             RoutingError::RejectedPublicId => "Rejected Public Id",
@@ -266,23 +270,285 @@ impl fmt::Display for RoutingError {
 
 #[cfg(test)]
 mod test {
-    //FIXME (ben 18/08/2015) Tests can be expanded
-    use super::*;
-    use rustc_serialize::{Decodable, Encodable};
-    use cbor;
 
     fn test_object<T>(obj_before: T)
-        where T: for<'a> Encodable + Decodable + Eq
+        where T: for<'a> ::rustc_serialize::Encodable + ::rustc_serialize::Decodable + Eq
     {
-        let mut e = cbor::Encoder::from_memory();
+        let mut e = ::cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
-        let mut d = cbor::Decoder::from_bytes(e.as_bytes());
+        let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
         let obj_after: T = d.decode().next().unwrap().unwrap();
         assert_eq!(obj_after == obj_before, true)
     }
 
-    #[test]
-    fn test_response_error() {
-        test_object(ResponseError::Abort)
+    fn create_data() -> Result<::structured_data::StructuredData, ::error::RoutingError> {
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+        ::structured_data::StructuredData::new(0,
+                                  ::test_utils::Random::generate_random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&keys.1))
     }
+
+    #[test]
+    fn response_error_serialization() {
+        // test serialization of ResponseError::Abort
+        test_object(::error::ResponseError::Abort);
+
+        // test serialization of LowBalance(Data, u32)
+        match create_data() {
+            Ok(d) => test_object(::error::ResponseError::LowBalance(
+                ::data::Data::StructuredData(d),
+                0u32)),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+
+        // test serialization of InvalidRequest(Data)
+        match create_data() {
+            Ok(d) => test_object(::error::ResponseError::InvalidRequest(
+                ::data::Data::StructuredData(d))),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+
+        // test serialization of FailedRequestForData(Data)
+        match create_data() {
+            Ok(d) => test_object(::error::ResponseError::FailedRequestForData(
+                ::data::Data::StructuredData(d))),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+
+        // test serialization of HadToClearSacrificial(::NameType, u32)
+        let name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        test_object(::error::ResponseError::HadToClearSacrificial(name, 0u32));
+    }
+
+    #[test]
+    fn response_error_from() {
+        let e = ::cbor::CborError::UnexpectedEOF;
+        // from() returns Abort for a CborError
+        assert_eq!(::error::ResponseError::Abort, ::error::ResponseError::from(e));
+    }
+
+    #[test]
+    fn response_error_description() {
+        assert_eq!("Abort", ::std::error::Error::description(& ::error::ResponseError::Abort));
+
+        match create_data() {
+            Ok(d) => assert_eq!("LowBalance",
+                ::std::error::Error::description(
+                    &::error::ResponseError::LowBalance(::data::Data::StructuredData(d), 0u32))),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+
+        match create_data() {
+            Ok(d) => assert_eq!("Invalid request",
+                ::std::error::Error::description(
+                    &::error::ResponseError::InvalidRequest(::data::Data::StructuredData(d)))),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+
+        match create_data() {
+            Ok(d) => assert_eq!("Failed request for data",
+                ::std::error::Error::description(
+                   &::error::ResponseError::FailedRequestForData(::data::Data::StructuredData(d)))),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+
+        let name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        assert_eq!("Had to clear sacrificial data to complete request",
+                   ::std::error::Error::description(
+                       &::error::ResponseError::HadToClearSacrificial(name, 0u32)));
+    }
+
+    #[test]
+    fn response_error_cause() {
+        match ::std::error::Error::cause(&::error::ResponseError::Abort) {
+            None => {},
+            Some(cause) => assert!(false)
+        }
+    }
+
+    #[test]
+    fn interface_error_description() {
+        assert_eq!(
+            "Not Connected",
+            ::std::error::Error::description(& ::error::InterfaceError::NotConnected)
+        );
+    }
+
+    #[test]
+    fn inferface_error_cause() {
+        match ::std::error::Error::cause(&::error::InterfaceError::NotConnected) {
+            None => {},
+            Some(cause) => assert!(false)
+        }
+    }
+
+    #[test]
+    fn routing_error_description() {
+        assert_eq!(
+            "Not bootstrapped",
+            ::std::error::Error::description(& ::error::RoutingError::NotBootstrapped)
+        );
+        assert_eq!(
+             "Invalid authority",
+             ::std::error::Error::description(& ::error::RoutingError::BadAuthority)
+        );
+        assert_eq!(
+            "Already connected",
+            ::std::error::Error::description(& ::error::RoutingError::AlreadyConnected)
+        );
+        assert_eq!(
+            "Invalid message type",
+            ::std::error::Error::description(& ::error::RoutingError::UnknownMessageType)
+        );
+        assert_eq!(
+            "Filter check failure",
+            ::std::error::Error::description(& ::error::RoutingError::FilterCheckFailed)
+        );
+        assert_eq!(
+            "Signature check failure",
+            ::std::error::Error::description(& ::error::RoutingError::FailedSignature)
+        );
+        assert_eq!(
+            "Not enough signatures",
+            ::std::error::Error::description(& ::error::RoutingError::NotEnoughSignatures)
+        );
+        assert_eq!(
+            "Duplicated signatures",
+            ::std::error::Error::description(& ::error::RoutingError::DuplicateSignatures)
+        );
+        assert_eq!(
+            "Could not bootstrap",
+            ::std::error::Error::description(& ::error::RoutingError::FailedToBootstrap)
+        );
+        assert_eq!(
+            "Routing table empty",
+            ::std::error::Error::description(& ::error::RoutingError::RoutingTableEmpty)
+        );
+        assert_eq!(
+            "Rejected Public Id",
+            ::std::error::Error::description(& ::error::RoutingError::RejectedPublicId)
+        );
+        assert_eq!(
+            "Refused from routing table",
+            ::std::error::Error::description(& ::error::RoutingError::RefusedFromRoutingTable)
+        );
+        assert_eq!(
+            "Refresh message not from group",
+            ::std::error::Error::description(& ::error::RoutingError::RefreshNotFromGroup)
+        );
+        // FIXME could not create a Utf8Error-struct
+        //let utf8 = ::std::str::Utf8Error::new();
+        //assert_eq!(
+        //    "String/Utf8 error",
+        //    ::std::error::Error::description(& ::error::RoutingError::Utf8Error(utf8))
+        //);
+        assert_eq!(
+            "Interface error",
+            ::std::error::Error::description(
+                &::error::RoutingError::Interface(::error::InterfaceError::NotConnected))
+        );
+        assert_eq!(
+            "I/O error",
+            ::std::error::Error::description(
+                &::error::RoutingError::Io(::std::io::Error::new(
+                    ::std::io::ErrorKind::Other,
+                    "I/O error")))
+        );
+        assert_eq!(
+            "Serialisation error",
+            ::std::error::Error::description(
+                &::error::RoutingError::Cbor(::cbor::CborError::UnexpectedEOF))
+        );
+        assert_eq!(
+            "Response error",
+            ::std::error::Error::description(
+                &::error::RoutingError::Response(::error::ResponseError::Abort))
+        );
+    }
+
+    #[test]
+    fn routing_error_cause() {
+        match ::std::error::Error::cause(&::error::RoutingError::NotBootstrapped) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::BadAuthority) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::AlreadyConnected) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::FilterCheckFailed) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::FailedSignature) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::NotEnoughSignatures) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::DuplicateSignatures) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::FailedToBootstrap) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::RoutingTableEmpty) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::RejectedPublicId) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::RefusedFromRoutingTable) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(&::error::RoutingError::RefreshNotFromGroup) {
+            None => {},
+            Some(err) => assert!(false)
+        }
+        match ::std::error::Error::cause(
+            &::error::RoutingError::Interface(::error::InterfaceError::NotConnected)) {
+                Some(err) => {},
+                None => assert!(false)
+        }
+        // FIXME could not create a Utf8Error-struct
+        //let utf8 = ::std::str::Utf8Error::new();
+        //match ::std::error::Error::cause(&::error::RoutingError::Utf8(utf8)) {
+        //    None => {},
+        //    Some(err) => assert!(false)
+        //}
+        match ::std::error::Error::cause(
+            &::error::RoutingError::Io(::std::io::Error::new(
+                ::std::io::ErrorKind::Other,
+                "I/O error"))) {
+            Some(err) => {},
+            None => assert!(false)
+        }
+        match ::std::error::Error::cause(
+            &::error::RoutingError::Response(::error::ResponseError::Abort)) {
+                Some(err) => {},
+                None => assert!(false)
+        }
+        match ::std::error::Error::cause(
+            &::error::RoutingError::Cbor(::cbor::CborError::UnexpectedEOF)) {
+                None => {},
+                Some(err) => assert!(false)
+        }
+    }
+
 }

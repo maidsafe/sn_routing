@@ -83,24 +83,78 @@ impl PublicId {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use NameType;
-    use test_utils::Random;
-    use sodiumoxide::crypto;
+    extern crate cbor;
+
+    #[test]
+    fn serialisation_public_id() {
+        let obj_before = ::public_id::PublicId::new(&::id::Id::new());
+
+        let mut e = ::cbor::Encoder::from_memory();
+        e.encode(&[&obj_before]).unwrap();
+
+        let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
+        let obj_after: ::public_id::PublicId = d.decode().next().unwrap().unwrap();
+        assert_eq!(obj_before, obj_after);
+    }
+
+    #[test]
+    fn set_name() {
+        let id = ::id::Id::new();
+        let id_name = id.name().clone();
+        let relocated_name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let mut public_id = ::public_id::PublicId::new(&id);
+        let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();
+
+        public_id.set_name(relocated_name);
+
+        // set_name sets name properly
+        assert_eq!(relocated_name, public_id.name());
+
+        // id name is not changed
+        assert_eq!(id_name, id.name());
+
+        // set_name dit not change signing public key
+        assert_eq!(cloned_signing_public_key, public_id.signing_public_key().0.to_vec());
+    }
 
     #[test]
     fn assign_relocated_name_public_id() {
-        let before = PublicId::generate_random();
+        let before = ::public_id::PublicId::new(&::id::Id::new());
         let original_name = before.name();
         assert_eq!(original_name,
-            NameType::new(crypto::hash::sha512::hash(&before.signing_public_key()[..]).0));
+            ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
+                &before.signing_public_key()[..]).0));
         assert!(!before.is_relocated());
-        let relocated_name: NameType = Random::generate_random();
+        let relocated_name: ::NameType = ::test_utils::Random::generate_random();
         let mut relocated = before.clone();
         relocated.assign_relocated_name(relocated_name.clone());
         assert!(relocated.is_relocated());
         assert_eq!(before.signing_public_key(), relocated.signing_public_key());
         assert_eq!(relocated.client_name(), original_name);
         assert_eq!(relocated.name(), relocated_name);
+    }
+
+    #[test]
+    fn is_relocated() {
+        let mut public_id: ::public_id::PublicId = ::test_utils::Random::generate_random();
+        let name_before = public_id.name();
+        let relocated_name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();
+
+        // is not relocated
+        assert!(!public_id.is_relocated());
+
+        public_id.assign_relocated_name(relocated_name);
+
+        // is relocated
+        assert!(public_id.is_relocated());
+
+        // set_name dit not change signing public key
+        assert_eq!(cloned_signing_public_key, public_id.signing_public_key().0.to_vec());
+
+        public_id.assign_relocated_name(name_before);
+
+        // is no longer relocated
+        assert!(!public_id.is_relocated());
     }
 }

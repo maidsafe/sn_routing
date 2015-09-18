@@ -93,9 +93,11 @@ struct Args {
 
 ////////////////////////////////////////////////////////////////////////////////
 struct Node {
-    routing  : Routing,
-    receiver : Receiver<Event>,
-    db       : BTreeMap<NameType, PlainData>,
+    routing: Routing,
+    receiver: Receiver<Event>,
+    db: BTreeMap<::routing::NameType, PlainData>,
+    client_accounts: BTreeMap<::routing::NameType, u64>,
+    connected: bool,
 }
 
 impl Node {
@@ -104,9 +106,11 @@ impl Node {
         let routing = Routing::new(sender);
 
         Node {
-            routing  : routing,
-            receiver : receiver,
-            db       : BTreeMap::new(),
+            routing: routing,
+            receiver: receiver,
+            db: BTreeMap::new(),
+            client_accounts: BTreeMap::new(),
+            connected: false,
         }
     }
 
@@ -120,7 +124,7 @@ impl Node {
                 }
             };
 
-            println!("Node: Received event {:?}", event);
+            info!("Node: Received event {:?}", event);
 
             match event {
                 Event::Request{request,
@@ -132,7 +136,28 @@ impl Node {
                                         from_authority,
                                         response_token);
                 },
-                _ => {}
+                Event::Connected => {
+                    self.connected = true;
+                    println!("Node is connected.")
+                },
+                Event::Churn(our_close_group, cause) => {
+                    self.handle_churn(our_close_group, cause);
+                },
+                Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
+                    if type_tag != 1u64 { error!("Received refresh for tag {:?} from {:?}",
+                        type_tag, our_authority); continue; };
+                    self.handle_refresh(our_authority, vec_of_bytes);
+                },
+                Event::DoRefresh(type_tag, our_authority, cause) => {
+                    // on DoRefresh, refresh the explicit record provided with that cause
+                    if type_tag != 1u64 { error!("Received DoRefresh for tag {:?} from {:?}",
+                        type_tag, our_authority); continue; };
+                    self.handle_do_refresh(our_authority, cause);
+                }
+                Event::Terminated => {
+                    break;
+                },
+                _ => {},
             }
         }
     }
@@ -186,7 +211,7 @@ impl Node {
 
     fn handle_put_request(&mut self, data            : Data,
                                      our_authority   : Authority,
-                                     _from_authority : Authority,
+                                     from_authority  : Authority,
                                      _response_token : Option<SignedToken>) {
         let plain_data = match data.clone() {
             Data::PlainData(plain_data) => plain_data,
@@ -195,18 +220,122 @@ impl Node {
 
         match our_authority {
             Authority::NaeManager(_) => {
-                debug!("Storing: key {:?}, value {:?}", plain_data.name(), plain_data);
+                println!("Storing: key {:?}, value {:?}", plain_data.name(), plain_data);
                 let _ = self.db.insert(plain_data.name(), plain_data);
             },
             Authority::ClientManager(_) => {
-                debug!("Sending: key {:?}, value {:?}", plain_data.name(), plain_data);
-                self.routing.put_request(
-                    our_authority, Authority::NaeManager(plain_data.name()), data); 
+                match from_authority {
+                    ::routing::authority::Authority::Client(_, public_key) => {
+                        let client_name = ::routing::NameType::new(
+                            ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0);
+                        *self.client_accounts.entry(client_name)
+                            .or_insert(0u64) += data.payload_size() as u64;
+                        println!("Client ({:?}) stored {:?} bytes", client_name,
+                            self.client_accounts.get(&client_name));
+                        debug!("Sending: key {:?}, value {:?}", plain_data.name(), plain_data);
+                        self.routing.put_request(
+                            our_authority, Authority::NaeManager(plain_data.name()), data);
+                    },
+                    _ => {
+                        println!("Node: Unexpected from_authority ({:?})", from_authority);
+                        assert!(false);
+                    },
+                };
+
             },
             _ => {
                 println!("Node: Unexpected our_authority ({:?})", our_authority);
                 assert!(false);
             }
+        }
+    }
+
+    fn handle_churn(&mut self, our_close_group: Vec<::routing::NameType>,
+        cause: ::routing::NameType) {
+        let mut exit = false;
+        if our_close_group.len() < ::routing::types::GROUP_SIZE {
+            if self.connected {
+                println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
+                    our_close_group.len(), ::routing::types::GROUP_SIZE);
+                exit = true;
+            } else {
+                println!("Ignoring churn as we are not yet connected.");
+                return;
+            }
+        }
+        println!("Handle churn for close group size {:?}", our_close_group.len());
+        // for value in self.db.values() {
+        //     println!("CHURN {:?}", value.name());
+        //     self.routing.put_request(::routing::authority::Authority::NaeManager(value.name()),
+        //         ::routing::authority::Authority::NaeManager(value.name()),
+        //         ::routing::data::Data::PlainData(value.clone()));
+        // }
+
+        for (client_name, stored) in self.client_accounts.iter() {
+            println!("REFRESH {:?} - {:?}", client_name, stored);
+            self.routing.refresh_request(1u64,
+                ::routing::authority::Authority::ClientManager(client_name.clone()),
+                encode(&stored).unwrap(), cause.clone());
+        }
+        // self.db = BTreeMap::new();
+        if exit { self.routing.stop(); };
+    }
+
+    fn handle_refresh(&mut self, our_authority: Authority, vec_of_bytes: Vec<Vec<u8>>) {
+        let mut records : Vec<u64> = Vec::new();
+        let mut fail_parsing_count = 0usize;
+        for bytes in vec_of_bytes {
+            match decode(&bytes) {
+                Ok(record) => records.push(record),
+                Err(_) => fail_parsing_count += 1usize,
+            };
+        }
+        let median = median(records.clone());
+        println!("Refresh for {:?}: median {:?} from {:?} (errs {:?})", our_authority, median,
+            records, fail_parsing_count);
+        match our_authority {
+             ::routing::authority::Authority::ClientManager(client_name) => {
+                 let _ = self.client_accounts.insert(client_name, median);
+             },
+             _ => {},
+        };
+    }
+
+    fn handle_do_refresh(&self, our_authority: ::routing::authority::Authority,
+        cause: ::routing::NameType) {
+        match our_authority {
+            ::routing::authority::Authority::ClientManager(client_name) => {
+                match self.client_accounts.get(&client_name) {
+                    Some(stored) => {
+                        println!("DoRefresh for client {:?} storing {:?} caused by {:?}",
+                            client_name, stored, cause);
+                        self.routing.refresh_request(1u64,
+                            ::routing::authority::Authority::ClientManager(client_name.clone()),
+                            encode(&stored).unwrap(), cause.clone());
+                    },
+                    None => {},
+                };
+            },
+            _ => {},
+        };
+    }
+}
+
+/// Returns the median (rounded down to the nearest integral value) of `values` which can be
+/// unsorted.  If `values` is empty, returns `0`.
+pub fn median(mut values: Vec<u64>) -> u64 {
+    match values.len() {
+        0 => 0u64,
+        1 => values[0],
+        len if len % 2 == 0 => {
+            values.sort();
+            let lower_value = values[(len / 2) - 1];
+            let upper_value = values[len / 2];
+            (lower_value + upper_value) / 2
+        }
+        len => {
+            values.sort();
+            values[len / 2]
         }
     }
 }
@@ -246,7 +375,7 @@ struct Client {
     event_receiver: Receiver<Event>,
     command_receiver: Receiver<UserCommand>,
     public_id: PublicId,
-    is_done: bool,
+    exit: bool,
 }
 
 impl Client {
@@ -267,7 +396,7 @@ impl Client {
             event_receiver: event_receiver,
             command_receiver: command_receiver,
             public_id: public_id,
-            is_done: false,
+            exit: false,
         }
     }
 
@@ -279,13 +408,13 @@ impl Client {
                 self.handle_user_command(command);
             }
 
-            if self.is_done { break; }
+            if self.exit { break; }
 
             while let Ok(event) = self.event_receiver.try_recv() {
                 self.handle_routing_event(event);
             }
 
-            if self.is_done { break; }
+            if self.exit { break; }
 
             thread::sleep_ms(10);
         }
@@ -321,7 +450,7 @@ impl Client {
     fn handle_user_command(&mut self, cmd : UserCommand) {
         match cmd {
             UserCommand::Exit => {
-                self.is_done = true;
+                self.exit = true;
             }
             UserCommand::Get(what) => {
                 self.send_get_request(what);

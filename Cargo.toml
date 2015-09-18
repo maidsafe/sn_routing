@@ -1,6 +1,6 @@
 [package]
 name = "routing"
-version = "0.3.8"
+version = "0.3.11"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A secured storage DHT"
 documentation = "http://maidsafe.net/routing/latest"
@@ -16,7 +16,7 @@ time = "*"
 rand = "*"
 message_filter = "0.1.*"
 lru_time_cache = "0.2.*"
-accumulator = "0.0.*"
+accumulator = "0.1.*"
 docopt = "*"
 itertools = "*"
 log = "*"
@@ -37,4 +37,16 @@ bench = false
 name = "key_value_store"
 path = "examples/key_value_store.rs"
 test = true
+bench = false
+
+[[bin]]
+name = "node"
+path = "tests/node.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "churn_node"
+path = "tests/churn_node.rs"
+test = false
 bench = false

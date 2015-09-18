@@ -15,10 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-mod random_trait;
-mod types_util;
-mod messages_util;
+pub mod node;
+pub mod client;
 
+pub mod random_trait;
+pub mod types_util;
+pub mod messages_util;
+
+pub use self::node::*;
+pub use self::client::*;
 pub use self::random_trait::*;
 pub use self::types_util::*;
 pub use self::messages_util::*;

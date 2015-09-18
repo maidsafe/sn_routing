@@ -1,4 +1,31 @@
 # Routing - Change Log
+
+## [0.3.11]
+- [#696](https://github.com/maidsafe/routing/pull/696) expose NAME_TYPE_LEN and random traits
+- [#695](https://github.com/maidsafe/routing/pull/695) correct style error in error.rs
+- [#692](https://github.com/maidsafe/routing/pull/692) add cause and event::DoRefresh for improvements to churn
+- [#691](https://github.com/maidsafe/routing/pull/691) update QA libsodium documentation
+- [#690](https://github.com/maidsafe/routing/pull/690) correct failing test
+- [MAID-1361](https://maidsafe.atlassian.net/browse/MAID-1361) unit tests for id, public_id, error, data, direct_messages
+- [MAID-1356](https://maidsafe.atlassian.net/browse/MAID-1356) unit test filter.rs
+- [MAID-1358](https://maidsafe.atlassian.net/browse/MAID-1358) unit test signed_message
+
+## [0.3.10]
+- [#685](https://github.com/maidsafe/routing/pull/685) use latest accumulator
+
+## [0.3.9]
+- [MAID-1349](https://maidsafe.atlassian.net/browse/MAID-1349) refresh_request to use authority
+- [MAID-1363](https://maidsafe.atlassian.net/browse/MAID-1363) remove wake_up.rs
+- [MAID-1344](https://maidsafe.atlassian.net/browse/MAID-1344) ::error::ResponseError::LowBalance
+- [MAID-1364](https://maidsafe.atlassian.net/browse/MAID-1364) clean out types.rs
+- [#663](https://github.com/maidsafe/routing/issues/663) only churn on QUORUM connected nodes
+- [#662](https://github.com/maidsafe/routing/issues/662) enable dynamic caching
+- [#670](https://github.com/maidsafe/routing/issues/670) update Travis with ElfUtils
+- [#669](https://github.com/maidsafe/routing/issues/669) update Travis with install_libsodium.sh
+
+## [0.3.8]
+- [#664](https://github.com/maidsafe/routing/pull/664) update to match Crust's api change
+
 ## [0.3.7] Unique signed messages
 - [#660](https://github.com/maidsafe/routing/pull/660) Unique SignedMessage with random bits and routing event loop
 
