@@ -25,7 +25,7 @@ use types::CacheOptions;
 ///    2. Terminate indicates to RoutingNode that no new actions should be taken and all
 ///       pending events should be handled.
 ///       After completion RoutingNode will send Event::Terminated.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
     SendMessage(SignedMessage),
     //          ~~|~~~~~~~~~~

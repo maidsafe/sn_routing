@@ -1,6 +1,14 @@
 # Routing - Change Log
+## [0.3.12]
+- [MAID-1360](https://maidsafe.atlassian.net/browse/MAID-1360) unit tests for RoutingCore
+- [MAID-1357](https://maidsafe.atlassian.net/browse/MAID-1357) unit tests for message and refresh accumulator
+- [MAID-1359](https://maidsafe.atlassian.net/browse/MAID-1359) unit tests for Relay
+- [MAID-1362](https://maidsafe.atlassian.net/browse/MAID-1362) more unit tests for StructuredData, Types and Utils
+- [MAID-1350](https://maidsafe.atlassian.net/browse/MAID-1350) introduce simple measuring tools for establishing the threshold for the accumulators
+- [MAID-1348](https://maidsafe.atlassian.net/browse/MAID-1348) ChurnNode for integration tests
 
 ## [0.3.11]
+- [#699](https://github.com/maidsafe/routing/pull/699) implement debug for StructuredData
 - [#696](https://github.com/maidsafe/routing/pull/696) expose NAME_TYPE_LEN and random traits
 - [#695](https://github.com/maidsafe/routing/pull/695) correct style error in error.rs
 - [#692](https://github.com/maidsafe/routing/pull/692) add cause and event::DoRefresh for improvements to churn
