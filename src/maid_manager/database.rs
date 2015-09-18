@@ -132,7 +132,7 @@ impl Database {
         // FIXME: as pointed out in https://github.com/maidsafe/safe_vault/issues/250
         //        the uncontrollable order of events (churn/refresh/account_transfer)
         //        forcing the node have to keep its current records to avoid losing
-        // self.storage.clear();
+        // self.cleanup();
     }
 
     pub fn do_refresh(&mut self,
@@ -156,6 +156,10 @@ impl Database {
             return ::utils::HANDLED;
         }
         ::utils::NOT_HANDLED
+    }
+
+    pub fn cleanup(&mut self) {
+        self.storage.clear();
     }
 
     #[allow(dead_code)]

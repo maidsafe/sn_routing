@@ -381,6 +381,17 @@ impl DataManager {
         self.set_node_table(close_group);
     }
 
+    pub fn reset(&mut self, routing: ::vault::Routing) {
+        self.routing = routing;
+        self.nodes_in_table.clear();
+        self.request_cache = ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
+                ::time::Duration::minutes(5), 1000);
+        self.resource_index = 1;
+        self.ongoing_gets = ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE);
+        self.failed_pmids = ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE);
+        self.database.cleanup();
+    }
+
     pub fn do_refresh(&mut self,
                       type_tag: &u64,
                       our_authority: &::routing::Authority,

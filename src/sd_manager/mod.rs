@@ -219,6 +219,11 @@ impl StructuredDataManager {
         ::utils::NOT_HANDLED
     }
 
+    pub fn reset(&mut self, routing: ::vault::Routing) {
+        self.routing = routing;
+        self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
+    }
+
     fn handle_account_transfer(&mut self,
                                structured_data: ::routing::structured_data::StructuredData) {
         use ::types::Refreshable;
