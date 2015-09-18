@@ -176,9 +176,12 @@ impl RelayMap {
 mod test {
 
     fn generate_random_endpoint() -> ::crust::Endpoint {
-        use std::str::FromStr;
-        ::crust::Endpoint::Tcp(::std::net::SocketAddr::from_str(
-            &format!("127.0.0.1:{}", ::rand::random::<u16>())).unwrap())
+        ::crust::Endpoint::Tcp(::std::net::SocketAddr::V4(::std::net::SocketAddrV4::new(
+            ::std::net::Ipv4Addr::new(::rand::random::<u8>(),
+                                      ::rand::random::<u8>(),
+                                      ::rand::random::<u8>(),
+                                      ::rand::random::<u8>()),
+            ::rand::random::<u16>())))
     }
 
     #[test]
