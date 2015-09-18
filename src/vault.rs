@@ -97,6 +97,7 @@ impl Vault {
                     match app_action_receiver.try_recv() {
                         Err(_) => {}
                         Ok(action) => {
+                            debug!("vault {:?} is being asked to terminate", self.id);
                             match action {
                                 0 => break,
                                 _ => {}
@@ -107,6 +108,8 @@ impl Vault {
             }
             ::std::thread::sleep_ms(1);
         }
+        debug!("vault {:?} is stopping", self.id);
+        self.routing.stop();
     }
 
     fn on_request(&mut self,
@@ -675,14 +678,14 @@ mod test {
 
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
-    fn network_churn_immutable_data_test() {
+    fn network_churn_up_immutable_data_test() {
         let (mut vault_notifiers, mut client_routing, client_receiver, client_name) =
             network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data = ::routing::immutable_data::ImmutableData::new(
                           ::routing::immutable_data::ImmutableDataType::Normal, value);
-        println!("network_churn_immutable_data_test putting data");
+        println!("network_churn_up_immutable_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         let _ = waiting_for_hits(&vault_notifiers,
@@ -690,7 +693,7 @@ mod test {
                                  ::data_manager::PARALLELISM,
                                  ::time::Duration::minutes(3));
 
-        println!("network_churn_immutable_data_test starting new vault");
+        println!("network_churn_up_immutable_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let (app_sender, app_receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
@@ -701,7 +704,7 @@ mod test {
                                  20,
                                  ::routing::types::GROUP_SIZE / 2 + 1,
                                  ::time::Duration::minutes(3));
-        println!("network_churn_immutable_data_test getting data");
+        println!("network_churn_up_immutable_data_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
                                    ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
@@ -712,7 +715,7 @@ mod test {
 
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
-    fn network_churn_structured_data_test() {
+    fn network_churn_up_structured_data_test() {
         let (mut vault_notifiers, mut client_routing, client_receiver, client_name) =
             network_env_setup();
 
@@ -727,7 +730,7 @@ mod test {
                                                             vec![sign_keys.0],
                                                             vec![],
                                                             Some(&sign_keys.1)));
-        println!("network_churn_structured_data_test putting data");
+        println!("network_churn_up_structured_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
         let _ = waiting_for_hits(&vault_notifiers,
@@ -735,7 +738,7 @@ mod test {
                                  ::routing::types::GROUP_SIZE,
                                  ::time::Duration::minutes(3));
 
-        println!("network_churn_structured_data_test starting new vault");
+        println!("network_churn_up_structured_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let (app_sender, app_receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
@@ -746,11 +749,43 @@ mod test {
                                  21,
                                  ::routing::types::GROUP_SIZE / 2 + 1,
                                  ::time::Duration::minutes(3));
-        println!("network_churn_structured_data_test getting data");
+        println!("network_churn_up_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
                                    ::routing::data::DataRequest::StructuredData(sd.name(), 0));
         waiting_for_client_get(client_receiver,
                                ::routing::data::Data::StructuredData(sd),
+                               ::time::Duration::minutes(1));
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    #[test]
+    fn network_churn_down_immutable_data_test() {
+        let (vault_notifiers, mut client_routing, client_receiver, client_name) =
+            network_env_setup();
+
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+                          ::routing::immutable_data::ImmutableDataType::Normal, value);
+        println!("network_churn_down_immutable_data_test putting data");
+        client_routing.put_request(::maid_manager::Authority(client_name),
+                                   ::routing::data::Data::ImmutableData(im_data.clone()));
+        let pmind_nodes = waiting_for_hits(&vault_notifiers,
+                                           3,
+                                           ::data_manager::PARALLELISM,
+                                           ::time::Duration::minutes(3));
+
+        println!("network_churn_down_immutable_data_test dropping a pmid_node");
+        let _ = vault_notifiers[pmind_nodes[0]].1.send(0);
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 20,
+                                 ::routing::types::GROUP_SIZE / 2 + 1,
+                                 ::time::Duration::minutes(3));
+        println!("network_churn_down_immutable_data_test getting data");
+        client_routing.get_request(::data_manager::Authority(im_data.name()),
+                                   ::routing::data::DataRequest::ImmutableData(im_data.name(),
+                ::routing::immutable_data::ImmutableDataType::Normal));
+        waiting_for_client_get(client_receiver,
+                               ::routing::data::Data::ImmutableData(im_data),
                                ::time::Duration::minutes(1));
     }
 }
