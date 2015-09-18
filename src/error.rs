@@ -169,6 +169,8 @@ pub enum RoutingError {
     Cbor(CborError),
     /// invalid response
     Response(ResponseError),
+    /// crust error
+    Crust(::crust::error::Error),
 }
 
 impl From<str::Utf8Error> for RoutingError {
@@ -202,6 +204,12 @@ impl From<InterfaceError> for RoutingError {
     }
 }
 
+impl From<::crust::error::Error> for RoutingError {
+    fn from(e: ::crust::error::Error) -> RoutingError {
+        RoutingError::Crust(e)
+    }
+}
+
 impl error::Error for RoutingError {
     fn description(&self) -> &str {
         match *self {
@@ -223,6 +231,7 @@ impl error::Error for RoutingError {
             RoutingError::Io(_) => "I/O error",
             RoutingError::Cbor(_) => "Serialisation error",
             RoutingError::Response(_) => "Response error",
+            RoutingError::Crust(_) => "Crust error",
         }
     }
 
@@ -247,11 +256,9 @@ impl fmt::Display for RoutingError {
             RoutingError::FilterCheckFailed => fmt::Display::fmt("filter check failed", f),
             RoutingError::FailedSignature => fmt::Display::fmt("Signature check failed", f),
             RoutingError::NotEnoughSignatures => fmt::Display::fmt("Not enough signatures \
-                                   (multi-sig)",
-                                  f),
+                                   (multi-sig)", f),
             RoutingError::DuplicateSignatures => fmt::Display::fmt("Duplicated signatures \
-                                   (multi-sig)",
-                                  f),
+                                   (multi-sig)", f),
             RoutingError::FailedToBootstrap => fmt::Display::fmt("could not bootstrap", f),
             RoutingError::RoutingTableEmpty => fmt::Display::fmt("routing table empty", f),
             RoutingError::RejectedPublicId => fmt::Display::fmt("Rejected Public Id", f),
@@ -264,6 +271,7 @@ impl fmt::Display for RoutingError {
             RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Cbor(ref err) => fmt::Display::fmt(err, f),
             RoutingError::Response(ref err) => fmt::Display::fmt(err, f),
+            RoutingError::Crust(ref err) => fmt::Display::fmt(err, f),
         }
     }
 }
