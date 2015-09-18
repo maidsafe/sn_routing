@@ -17,8 +17,7 @@
 
 use std::io;
 use std::convert::From;
-use cbor::CborError;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encodable, Encoder};
 use std::error;
 use std::fmt;
 use std::str;
@@ -27,7 +26,7 @@ use data::Data;
 //------------------------------------------------------------------------------
 #[deny(missing_docs)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-/// represents response errors
+/// Represents response errors.
 pub enum ResponseError {
     /// Abort is for user to indicate that the state can be dropped;
     /// if received by routing, it will drop the state.
@@ -42,8 +41,8 @@ pub enum ResponseError {
     HadToClearSacrificial(::NameType, u32),
 }
 
-impl From<CborError> for ResponseError {
-    fn from(e: CborError) -> ResponseError {
+impl From<::cbor::CborError> for ResponseError {
+    fn from(_error: ::cbor::CborError) -> ResponseError {
         ResponseError::Abort
     }
 }
@@ -83,7 +82,9 @@ impl fmt::Display for ResponseError {
 
 //------------------------------------------------------------------------------
 #[derive(PartialEq, Eq, Clone, Debug)]
+/// InterfaceError.
 pub enum InterfaceError {
+    /// NotConnected.
     NotConnected,
 }
 
@@ -110,13 +111,16 @@ impl fmt::Display for InterfaceError {
 }
 
 //------------------------------------------------------------------------------
+/// ClientError.
 pub enum ClientError {
+    /// Report Input/Output error.
     Io(io::Error),
-    Cbor(CborError),
+    /// Report erialisation error.
+    Cbor(::cbor::CborError),
 }
 
-impl From<CborError> for ClientError {
-    fn from(e: CborError) -> ClientError {
+impl From<::cbor::CborError> for ClientError {
+    fn from(e: ::cbor::CborError) -> ClientError {
         ClientError::Cbor(e)
     }
 }
@@ -130,7 +134,7 @@ impl From<io::Error> for ClientError {
 //------------------------------------------------------------------------------
 #[deny(missing_docs)]
 #[derive(Debug)]
-/// Represents routing error types
+/// RoutingError.
 pub enum RoutingError {
     /// The node/client has not bootstrapped yet
     NotBootstrapped,
@@ -166,7 +170,7 @@ pub enum RoutingError {
     /// i/o error
     Io(io::Error),
     /// serialisation error
-    Cbor(CborError),
+    Cbor(::cbor::CborError),
     /// invalid response
     Response(ResponseError),
 }
@@ -184,8 +188,8 @@ impl From<ResponseError> for RoutingError {
     }
 }
 
-impl From<CborError> for RoutingError {
-    fn from(e: CborError) -> RoutingError {
+impl From<::cbor::CborError> for RoutingError {
+    fn from(e: ::cbor::CborError) -> RoutingError {
         RoutingError::Cbor(e)
     }
 }
@@ -228,10 +232,10 @@ impl error::Error for RoutingError {
 
     fn cause(&self) -> Option<&error::Error> {
         match *self {
-            RoutingError::Interface(ref err) => Some(err as &error::Error),
-            RoutingError::Io(ref err) => Some(err as &error::Error),
-            // RoutingError::Cbor(ref err) => Some(err as &error::Error),
-            RoutingError::Response(ref err) => Some(err as &error::Error),
+            RoutingError::Interface(ref err) => Some(err),
+            RoutingError::Io(ref err) => Some(err),
+            // RoutingError::Cbor(ref err) => Some(err),
+            RoutingError::Response(ref err) => Some(err),
             _ => None,
         }
     }

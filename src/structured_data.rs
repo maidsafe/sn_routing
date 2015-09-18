@@ -97,6 +97,7 @@ impl StructuredData {
         StructuredData::compute_name(self.type_tag, &self.identifier)
     }
 
+    /// Validate...
     pub fn validate_self_against_successor(&self, other: &StructuredData)
             -> Result<(), ::error::RoutingError> {
         let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
@@ -212,6 +213,7 @@ impl StructuredData {
         &self.previous_owner_signatures
     }
 
+    /// Return data size.
     pub fn payload_size(&self) -> usize {
         self.data.len()
     }

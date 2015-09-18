@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+/// Convert a u8 array to u8 vector.
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
     let mut vector = Vec::new();
     for i in arr.iter() {
@@ -23,7 +24,9 @@ pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
     vector
 }
 
+/// Convert u8 vector to a fixed 64 byte size array.
 pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8; 64] {
+    assert!(vector.len() >= 64);
     let mut arr = [0u8;64];
     for i in (0..64) {
         arr[i] = vector[i];
@@ -31,7 +34,9 @@ pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8; 64] {
     arr
 }
 
+/// Convert u8 vector to a fixed 32 byte size array.
 pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8; 32] {
+    assert!(vector.len() >= 32);
     let mut arr = [0u8;32];
     for i in (0..32) {
         arr[i] = vector[i];
@@ -39,6 +44,7 @@ pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8; 32] {
     arr
 }
 
+/// Return a random vector of bytes of the given size.
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
     for _ in 0..size {
@@ -47,14 +53,19 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
+/// Group size.
 pub static GROUP_SIZE: usize = 8;
+/// Quorum size.
 pub static QUORUM_SIZE: usize = 5;
-
+/// Type definition.
 pub type Bytes = Vec<u8>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
+/// Address.
 pub enum Address {
+    /// Is a client with supplied public key.
     Client(::sodiumoxide::crypto::sign::PublicKey),
+    /// Is a node with given name.
     Node(::NameType),
 }
 
@@ -73,6 +84,7 @@ impl ::std::fmt::Debug for Address {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
+/// CacheOptions.
 pub struct CacheOptions {
     cache_plain_data: bool,
     cache_structured_data: bool,

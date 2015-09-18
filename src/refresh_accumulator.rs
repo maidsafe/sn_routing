@@ -71,7 +71,7 @@ impl RefreshAccumulator {
             }
 
             let map = self.requests.entry(request.clone()).or_insert_with(||Map::new());
-            map.insert(sender_node, payload);
+            let _ = map.insert(sender_node, payload);
 
             if map.len() < threshold {
                 return None;
@@ -80,7 +80,7 @@ impl RefreshAccumulator {
             Some(map.iter().map(|(_, msg)| msg.clone()).collect())
 
         }.map(|messages| {
-            self.requests.remove(&request);
+            let _ = self.requests.remove(&request);
             messages
         })
     }

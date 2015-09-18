@@ -143,7 +143,7 @@ impl RoutingTable {
             } else {
                 let removal_node = self.routing_table[removal_node_index].clone();
                 self.remove_dangling_endpoints(&removal_node.id());
-                self.routing_table.remove(removal_node_index);
+                let _ = self.routing_table.remove(removal_node_index);
                 return (true, Some(removal_node));
             }
         }
@@ -153,7 +153,7 @@ impl RoutingTable {
            self.new_node_is_better_than_existing(&their_info.id(), removal_node_index) {
             let removal_node = self.routing_table[removal_node_index].clone();
             self.remove_dangling_endpoints(&removal_node.id());
-            self.routing_table.remove(removal_node_index);
+            let _ = self.routing_table.remove(removal_node_index);
             self.push_back_then_sort(their_info);
             return (true, Some(removal_node));
         }
@@ -178,9 +178,9 @@ impl RoutingTable {
             Some(index) => {
                 self.routing_table[index].connected_endpoint = Some(endpoint.clone());
                 // always force update lookup_map
-                self.lookup_map.remove(&endpoint);
-                self.lookup_map.entry(endpoint.clone())
-                               .or_insert(self.routing_table[index].id());
+                let _ = self.lookup_map.remove(&endpoint);
+                let _ = self.lookup_map.entry(endpoint.clone())
+                                       .or_insert(self.routing_table[index].id());
                 Some(self.routing_table[index].id())
             }
         }
@@ -221,7 +221,7 @@ impl RoutingTable {
         if index_of_removal < self.routing_table.len() {
             let removal_name : NameType = self.routing_table[index_of_removal].id();
             self.remove_dangling_endpoints(&removal_name);
-            self.routing_table.remove(index_of_removal);
+            let _ = self.routing_table.remove(index_of_removal);
         }
     }
 
@@ -394,9 +394,9 @@ impl RoutingTable {
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
         match node_info.connected_endpoint.clone() {
             Some(endpoint) => {
-                self.lookup_map.remove(&endpoint);
-                self.lookup_map.entry(endpoint.clone())
-                               .or_insert(node_info.id());
+                let _ = self.lookup_map.remove(&endpoint);
+                let _ = self.lookup_map.entry(endpoint.clone())
+                                       .or_insert(node_info.id());
             }
             None => (),
         };
@@ -448,7 +448,7 @@ impl RoutingTable {
                 } else { None })
             .collect::<Vec<_>>();
         for endpoint in dangling_endpoints {
-            self.lookup_map.remove(&endpoint);
+            let _ = self.lookup_map.remove(&endpoint);
         }
     }
 }

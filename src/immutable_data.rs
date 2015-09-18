@@ -22,9 +22,13 @@ use NameType;
 use sodiumoxide::crypto;
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable, Debug)]
+/// ImmutableDataType.
 pub enum ImmutableDataType {
+    /// Normal.
     Normal,
+    /// Backup.
     Backup,
+    /// Sacrificial.
     Sacrificial,
 }
 
@@ -64,6 +68,7 @@ impl ImmutableData {
         }
     }
 
+    /// Return size of contained value.
     pub fn payload_size(&self) -> usize {
         self.value.len()
     }

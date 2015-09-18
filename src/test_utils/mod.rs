@@ -15,11 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+/// Simulate a vault.
 pub mod node;
+/// Simulate a client.
 pub mod client;
-
+/// Random trait.
 pub mod random_trait;
+/// Expose Random values for specific types to tests.
 pub mod types_util;
+/// Various random values for types available to tests.
 pub mod messages_util;
 
 pub use self::node::*;
@@ -30,6 +34,7 @@ pub use self::messages_util::*;
 
 use NameType;
 
+/// Return XOR of two NameType's.
 pub fn xor(lhs: &NameType, rhs: &NameType) -> NameType {
     let mut result = NameType::new([0u8; 64]);
     for i in 0..lhs.0.len() {

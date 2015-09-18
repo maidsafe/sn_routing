@@ -22,6 +22,7 @@ pub type RoutingMessageFilter = ::sodiumoxide::crypto::hash::sha256::Digest;
 /// the claimant has not been seen before.  The second layer validates that the routing message
 /// (which is content and source plus destination) is not already already resolved and as such
 /// should no longer be handled.
+#[allow(unused)]
 pub struct Filter {
     claimant_filter: ::message_filter::MessageFilter<ClaimantFilter>,
     message_filter: ::message_filter::MessageFilter<RoutingMessageFilter>,
@@ -92,8 +93,9 @@ pub struct SimpleThresholdCalculator {
     current_threshold: usize,
 }
 
+#[allow(unused)]
 impl SimpleThresholdCalculator {
-    /// start a new calculator
+    /// Start a new calculator.
     pub fn new(cap: u16, start_threshold: usize) -> SimpleThresholdCalculator {
         SimpleThresholdCalculator {
             total_messages: 0u32,
@@ -106,7 +108,7 @@ impl SimpleThresholdCalculator {
         }
     }
 
-    /// register a new (bool)blocked message
+    /// Register a new blocked message.
     pub fn hit_message(&mut self, blocked: bool) {
         if blocked { self.total_blockedmessages += 1u32; };
         self.total_messages += 1u32;
@@ -118,7 +120,7 @@ impl SimpleThresholdCalculator {
         }
     }
 
-    /// register a new unique message
+    /// Register a new unique message.
     pub fn hit_uniquemessage(&mut self) {
         self.total_uniquemessages += 1u32;
         let message_multiplicity = self.total_messages as f64 / self.total_uniquemessages as f64;
@@ -159,7 +161,10 @@ pub struct RunningAverage {
     block_size: u32,
 }
 
+#[allow(unused)]
 impl RunningAverage {
+
+    /// Create a new running average object.
     pub fn new(block_size: u32) -> RunningAverage {
         RunningAverage {
             average: 0f64,
@@ -170,6 +175,7 @@ impl RunningAverage {
         }
     }
 
+    /// Add a new value to the running average.
     pub fn add_value(&mut self, value: f64) -> f64 {
         if self.counter == self.block_size {
             let next_block: f64 = self.block_counter as f64 + 1f64;
@@ -197,6 +203,7 @@ impl RunningAverage {
         }
     }
 
+    /// Return the current running average.
     pub fn get_average(&self) -> f64 {
         if self.block_counter > 0 {
             self.block_average.clone()

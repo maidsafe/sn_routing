@@ -36,6 +36,7 @@ pub struct Peer {
     //                      | this allows unidentified connections to time-out
 }
 
+#[allow(unused)]
 impl Peer {
     pub fn new(identity: ::routing_core::ConnectionName,
                endpoint: ::crust::Endpoint,

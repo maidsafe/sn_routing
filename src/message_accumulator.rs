@@ -58,7 +58,7 @@ impl MessageAccumulator {
             Some(message)
 
         }.map(|message| {
-            self.requests.remove(&message);
+            let _ = self.requests.remove(&message);
             message
         })
     }
