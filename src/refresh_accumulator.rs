@@ -217,10 +217,23 @@ mod test {
             ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone()) {
             Some(vector_of_bytes) => {
                 assert_eq!(vector_of_bytes.len(), threshold);
-                for i in 0..threshold - 1 {
-                    assert_eq!(vector_of_bytes[i], new_bytes);
+                let mut number_of_bytes = 0usize;
+                let mut number_of_new_bytes = 0usize;
+                for bytes in vector_of_bytes {
+                    match bytes {
+                        new_bytes => {
+                            number_of_new_bytes += 1;
+                        },
+                        bytes => {
+                            number_of_bytes += 1;
+                        },
+                        _ => {
+                            panic!("Unexpected bytes");
+                        },
+                    }
                 }
-                assert_eq!(vector_of_bytes[threshold - 1], bytes);
+                assert_eq!(number_of_new_bytes, threshold - 1);
+                assert_eq!(number_of_bytes, 1usize);
             },
             None => panic!("Refresh accumulator should have resolved to a vector of bytes"),
         };
