@@ -66,6 +66,7 @@ impl ::types::Refreshable for Stats {
 pub struct DataManager {
     routing: ::vault::Routing,
     database: database::Database,
+    id: ::routing::NameType,
     nodes_in_table: Vec<::routing::NameType>,
     request_cache: ::lru_time_cache::LruCache<::routing::NameType,
                              Vec<(::routing::authority::Authority, ::routing::data::DataRequest,
@@ -83,6 +84,7 @@ impl DataManager {
         DataManager {
             routing: routing,
             database: database::Database::new(),
+            id: ::routing::NameType::new([0u8; 64]),
             nodes_in_table: vec![],
             request_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
                 ::time::Duration::minutes(5), 1000),
@@ -122,8 +124,8 @@ impl DataManager {
         // Cache the request
         let data_name = immutable_data_name_and_type.0;
         if self.request_cache.contains_key(data_name) {
-            debug!("DataManager handle_get inserting original request {:?} from {:?} into {:?} ",
-                   data_request, from_authority, data_name);
+            debug!("DataManager {:?} inserting original request {:?} from {:?} into {:?} ",
+                   self.id, data_request, from_authority, data_name);
             match self.request_cache.get_mut(data_name) {
                 Some(ref mut request) => request.push((from_authority.clone(),
                                                        data_request.clone(),
@@ -131,8 +133,8 @@ impl DataManager {
                 None => error!("Failed to insert get request in the cache."),
             };
         } else {
-            debug!("DataManager handle_get created original request {:?} from {:?} as entry {:?}",
-                   data_request, from_authority, data_name);
+            debug!("DataManager {:?} created original request {:?} from {:?} as entry {:?}",
+                   self.id, data_request, from_authority, data_name);
             let _ = self.request_cache.insert(*data_name,
                                               vec![(from_authority.clone(),
                 data_request.clone(), response_token.clone())]);
@@ -143,6 +145,8 @@ impl DataManager {
         let mut failing_entries = Vec::new();
         for ongoing_get in ongoing_gets {
             if ongoing_get.1 + ::time::Duration::seconds(10) < ::time::SteadyTime::now() {
+                debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
+                       self.id, (ongoing_get.0).1, (ongoing_get.0).0);
                 self.database.remove_pmid_node(&(ongoing_get.0).0, (ongoing_get.0).1.clone());
                 failing_entries.push(ongoing_get.0.clone());
                 if self.failed_pmids.contains_key(&data_name) {
@@ -159,9 +163,11 @@ impl DataManager {
         for failed_entry in failing_entries {
             let _ = self.ongoing_gets.remove(&failed_entry);
         }
-
+        debug!("DataManager {:?} having {:?} records for chunk {:?}",
+               self.id, self.database.exist(&data_name), data_name);
         for pmid in self.database.get_pmid_nodes(data_name) {
             let location = ::pmid_node::Authority(pmid.clone());
+            debug!("DataManager {:?} sending get request to {:?}", self.id, location);
             self.routing.get_request(our_authority.clone(), location, data_request.clone());
             let _ = self.ongoing_gets
                         .insert((data_name.clone(), pmid.clone()), ::time::SteadyTime::now());
@@ -328,6 +334,8 @@ impl DataManager {
                 if let &Authority(from_group) = our_authority {
                     if let Some(merged_account) = ::utils::merge::<Account>(from_group,
                                                                             payloads.clone()) {
+                        debug!("DataManager {:?} receiving refreshed account {:?}",
+                               self.id, merged_account);
                         self.database.handle_account_transfer(merged_account);
                     }
                 } else {
@@ -355,6 +363,7 @@ impl DataManager {
     }
 
     pub fn set_node_table(&mut self, close_group: Vec<::routing::NameType>) {
+        self.id = close_group[0].clone();
         self.nodes_in_table = close_group;
     }
 
@@ -369,7 +378,7 @@ impl DataManager {
             self.routing.refresh_request(STATS_TAG, Authority(churn_node.clone()),
                                          encoder.as_bytes().to_vec(), churn_node.clone());
         }
-        self.nodes_in_table = close_group;
+        self.set_node_table(close_group);
     }
 
     pub fn do_refresh(&mut self,
