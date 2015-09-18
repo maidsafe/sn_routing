@@ -268,12 +268,14 @@ impl DataManager {
             };
         }
 
-        let _ = self.ongoing_gets.remove(&(from_authority.get_location().clone(), response.name()));
+        let _ = self.ongoing_gets.remove(&(response.name(), from_authority.get_location().clone()));
         match self.failed_pmids.remove(&response.name()) {
             Some(failed_pmids) => {
                 for failed_pmid in failed_pmids {
                     // TODO: utilise FailedPut here as currently ResponseError only has
                     // FailedRequestForData defined
+                    debug!("DataManager {:?} notifying a failed pmid_node {:?} regarding chunk {:?}",
+                           self.id, failed_pmid, response.name())
                     let location = ::pmid_manager::Authority(failed_pmid);
                     self.routing.put_response(our_authority.clone(), location,
                         ::routing::error::ResponseError::FailedRequestForData(response.clone()),
@@ -284,6 +286,8 @@ impl DataManager {
         }
 
         if let Some(pmid_node) = self.replicate_to(&response.name()) {
+            debug!("DataManager {:?} re-put chunk {:?} to a new pmid_node {:?}",
+                   self.id, response.name(), pmid_node)
             self.database.add_pmid_node(&response.name(), pmid_node.clone());
             let location = ::pmid_node::Authority(pmid_node);
             self.routing.put_request(our_authority.clone(), location, response.clone());

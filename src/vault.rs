@@ -787,5 +787,15 @@ mod test {
         waiting_for_client_get(client_receiver,
                                ::routing::data::Data::ImmutableData(im_data),
                                ::time::Duration::minutes(1));
+        // the waiting time to allow DM realize failed fetch
+        ::std::thread::sleep_seconds(10);
+        // Another get_request to trigger the check on failing get
+        println!("network_churn_down_immutable_data_test getting data again");
+        client_routing.get_request(::data_manager::Authority(im_data.name()),
+                                   ::routing::data::DataRequest::ImmutableData(im_data.name(),
+                ::routing::immutable_data::ImmutableDataType::Normal));
+        waiting_for_client_get(client_receiver,
+                               ::routing::data::Data::ImmutableData(im_data),
+                               ::time::Duration::minutes(1));
     }
 }
