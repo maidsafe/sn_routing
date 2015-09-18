@@ -237,9 +237,5 @@ mod test {
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0], refresh_requests[1]);
-
-        pmid_manager.handle_churn(&close_group, &churn_node);
-        let refresh_requests = routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), 2);
     }
 }

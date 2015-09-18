@@ -129,7 +129,10 @@ impl Database {
                                         encoder.as_bytes().to_vec(), churn_node.clone());
             }
         }
-        self.cleanup();
+        // FIXME: as pointed out in https://github.com/maidsafe/safe_vault/issues/250
+        //        the uncontrollable order of events (churn/refresh/account_transfer)
+        //        forcing the node have to keep its current records to avoid losing
+        // self.cleanup();
     }
 
     pub fn do_refresh(&mut self,
