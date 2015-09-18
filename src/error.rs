@@ -15,14 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::io;
-use std::convert::From;
-use rustc_serialize::{Decoder, Encodable, Encoder};
-use std::error;
-use std::fmt;
-use std::str;
-use data::Data;
-
 //------------------------------------------------------------------------------
 #[deny(missing_docs)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -32,11 +24,11 @@ pub enum ResponseError {
     /// if received by routing, it will drop the state.
     Abort,
     /// On low balance or no account registered
-    LowBalance(Data, u32),
+    LowBalance(::data::Data, u32),
     /// invalid request
-    InvalidRequest(Data),
+    InvalidRequest(::data::Data),
     /// failure to complete request for data
-    FailedRequestForData(Data),
+    FailedRequestForData(::data::Data),
     /// had to clear Sacrificial Data in order to complete request
     HadToClearSacrificial(::NameType, u32),
 }
@@ -47,7 +39,7 @@ impl From<::cbor::CborError> for ResponseError {
     }
 }
 
-impl error::Error for ResponseError {
+impl ::std::error::Error for ResponseError {
     fn description(&self) -> &str {
         match *self {
             ResponseError::Abort => "Abort",
@@ -59,22 +51,24 @@ impl error::Error for ResponseError {
         }
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&::std::error::Error> {
         None
     }
 }
 
-impl fmt::Display for ResponseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl ::std::fmt::Display for ResponseError {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            ResponseError::Abort => fmt::Display::fmt("ResponseError::Abort", f),
-            ResponseError::LowBalance(_, _) => fmt::Display::fmt("ResponseError::LowBalance", f),
+            ResponseError::Abort =>
+                ::std::fmt::Display::fmt("ResponseError::Abort", formatter),
+            ResponseError::LowBalance(_, _) =>
+                ::std::fmt::Display::fmt("ResponseError::LowBalance", formatter),
             ResponseError::InvalidRequest(_) =>
-                fmt::Display::fmt("ResponsError::InvalidRequest", f),
+                ::std::fmt::Display::fmt("ResponsError::InvalidRequest", formatter),
             ResponseError::FailedRequestForData(_) =>
-                fmt::Display::fmt("ResponseError::FailedToStoreData", f),
+                ::std::fmt::Display::fmt("ResponseError::FailedToStoreData", formatter),
             ResponseError::HadToClearSacrificial(_, _) =>
-                fmt::Display::fmt("ResponseError::HadToClearSacrificial", f),
+                ::std::fmt::Display::fmt("ResponseError::HadToClearSacrificial", formatter),
         }
     }
 }
@@ -88,24 +82,25 @@ pub enum InterfaceError {
     NotConnected,
 }
 
-impl error::Error for InterfaceError {
+impl ::std::error::Error for InterfaceError {
     fn description(&self) -> &str {
         match *self {
             InterfaceError::NotConnected => "Not Connected",
         }
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&::std::error::Error> {
         match *self {
             _ => None,
         }
     }
 }
 
-impl fmt::Display for InterfaceError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl ::std::fmt::Display for InterfaceError {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            InterfaceError::NotConnected => fmt::Display::fmt("InterfaceError::NotConnected", f),
+            InterfaceError::NotConnected =>
+                ::std::fmt::Display::fmt("InterfaceError::NotConnected", formatter),
         }
     }
 }
@@ -114,25 +109,25 @@ impl fmt::Display for InterfaceError {
 /// ClientError.
 pub enum ClientError {
     /// Report Input/Output error.
-    Io(io::Error),
+    Io(::std::io::Error),
     /// Report erialisation error.
     Cbor(::cbor::CborError),
 }
 
 impl From<::cbor::CborError> for ClientError {
-    fn from(e: ::cbor::CborError) -> ClientError {
-        ClientError::Cbor(e)
+    fn from(error: ::cbor::CborError) -> ClientError {
+        ClientError::Cbor(error)
     }
 }
 
-impl From<io::Error> for ClientError {
-    fn from(e: io::Error) -> ClientError {
-        ClientError::Io(e)
+impl From<::std::io::Error> for ClientError {
+    fn from(error: ::std::io::Error) -> ClientError {
+        ClientError::Io(error)
     }
 }
 
 //------------------------------------------------------------------------------
-#[deny(missing_docs)]
+#[allow(variant_size_differences)]
 #[derive(Debug)]
 /// RoutingError.
 pub enum RoutingError {
@@ -164,49 +159,49 @@ pub enum RoutingError {
     /// We received a refresh message but it did not contain group source address
     RefreshNotFromGroup,
     /// String errors
-    Utf8(str::Utf8Error),
+    Utf8(::std::str::Utf8Error),
     /// interface error
     Interface(InterfaceError),
     /// i/o error
-    Io(io::Error),
+    Io(::std::io::Error),
     /// serialisation error
     Cbor(::cbor::CborError),
     /// invalid response
     Response(ResponseError),
 }
 
-impl From<str::Utf8Error> for RoutingError {
-    fn from(e: str::Utf8Error) -> RoutingError {
-        RoutingError::Utf8(e)
+impl From<::std::str::Utf8Error> for RoutingError {
+    fn from(error: ::std::str::Utf8Error) -> RoutingError {
+        RoutingError::Utf8(error)
     }
 }
 
 
 impl From<ResponseError> for RoutingError {
-    fn from(e: ResponseError) -> RoutingError {
-        RoutingError::Response(e)
+    fn from(error: ResponseError) -> RoutingError {
+        RoutingError::Response(error)
     }
 }
 
 impl From<::cbor::CborError> for RoutingError {
-    fn from(e: ::cbor::CborError) -> RoutingError {
-        RoutingError::Cbor(e)
+    fn from(error: ::cbor::CborError) -> RoutingError {
+        RoutingError::Cbor(error)
     }
 }
 
-impl From<io::Error> for RoutingError {
-    fn from(e: io::Error) -> RoutingError {
-        RoutingError::Io(e)
+impl From<::std::io::Error> for RoutingError {
+    fn from(error: ::std::io::Error) -> RoutingError {
+        RoutingError::Io(error)
     }
 }
 
 impl From<InterfaceError> for RoutingError {
-    fn from(e: InterfaceError) -> RoutingError {
-        RoutingError::Interface(e)
+    fn from(error: InterfaceError) -> RoutingError {
+        RoutingError::Interface(error)
     }
 }
 
-impl error::Error for RoutingError {
+impl ::std::error::Error for RoutingError {
     fn description(&self) -> &str {
         match *self {
             RoutingError::NotBootstrapped => "Not bootstrapped",
@@ -230,7 +225,7 @@ impl error::Error for RoutingError {
         }
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&::std::error::Error> {
         match *self {
             RoutingError::Interface(ref err) => Some(err),
             RoutingError::Io(ref err) => Some(err),
@@ -241,33 +236,45 @@ impl error::Error for RoutingError {
     }
 }
 
-impl fmt::Display for RoutingError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl ::std::fmt::Display for RoutingError {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            RoutingError::NotBootstrapped => fmt::Display::fmt("Not bootstrapped", f),
-            RoutingError::BadAuthority => fmt::Display::fmt("Bad authority", f),
-            RoutingError::AlreadyConnected => fmt::Display::fmt("already connected", f),
-            RoutingError::UnknownMessageType => fmt::Display::fmt("Unknown message", f),
-            RoutingError::FilterCheckFailed => fmt::Display::fmt("filter check failed", f),
-            RoutingError::FailedSignature => fmt::Display::fmt("Signature check failed", f),
-            RoutingError::NotEnoughSignatures => fmt::Display::fmt("Not enough signatures \
-                                   (multi-sig)",
-                                  f),
-            RoutingError::DuplicateSignatures => fmt::Display::fmt("Duplicated signatures \
-                                   (multi-sig)",
-                                  f),
-            RoutingError::FailedToBootstrap => fmt::Display::fmt("could not bootstrap", f),
-            RoutingError::RoutingTableEmpty => fmt::Display::fmt("routing table empty", f),
-            RoutingError::RejectedPublicId => fmt::Display::fmt("Rejected Public Id", f),
+            RoutingError::NotBootstrapped =>
+                ::std::fmt::Display::fmt("Not bootstrapped", formatter),
+            RoutingError::BadAuthority =>
+                ::std::fmt::Display::fmt("Bad authority", formatter),
+            RoutingError::AlreadyConnected =>
+                ::std::fmt::Display::fmt("Already connected", formatter),
+            RoutingError::UnknownMessageType =>
+                ::std::fmt::Display::fmt("Unknown message", formatter),
+            RoutingError::FilterCheckFailed =>
+                ::std::fmt::Display::fmt("Filter check failed", formatter),
+            RoutingError::FailedSignature =>
+                ::std::fmt::Display::fmt("Signature check failed", formatter),
+            RoutingError::NotEnoughSignatures =>
+                ::std::fmt::Display::fmt("Not enough signatures (multi-sig)", formatter),
+            RoutingError::DuplicateSignatures =>
+                ::std::fmt::Display::fmt("Duplicated signatures (multi-sig)", formatter),
+            RoutingError::FailedToBootstrap =>
+                ::std::fmt::Display::fmt("Could not bootstrap", formatter),
+            RoutingError::RoutingTableEmpty =>
+                ::std::fmt::Display::fmt("Routing table empty", formatter),
+            RoutingError::RejectedPublicId =>
+                ::std::fmt::Display::fmt("Rejected Public Id", formatter),
             RoutingError::RefusedFromRoutingTable =>
-                fmt::Display::fmt("Refused from routing table", f),
+                ::std::fmt::Display::fmt("Refused from routing table", formatter),
             RoutingError::RefreshNotFromGroup =>
-                fmt::Display::fmt("Refresh message not from group", f),
-            RoutingError::Utf8(ref err) => fmt::Display::fmt(err, f),
-            RoutingError::Interface(ref err) => fmt::Display::fmt(err, f),
-            RoutingError::Io(ref err) => fmt::Display::fmt(err, f),
-            RoutingError::Cbor(ref err) => fmt::Display::fmt(err, f),
-            RoutingError::Response(ref err) => fmt::Display::fmt(err, f),
+                ::std::fmt::Display::fmt("Refresh message not from group", formatter),
+            RoutingError::Utf8(ref error) =>
+                ::std::fmt::Display::fmt(error, formatter),
+            RoutingError::Interface(ref error) =>
+                ::std::fmt::Display::fmt(error, formatter),
+            RoutingError::Io(ref error) =>
+                ::std::fmt::Display::fmt(error, formatter),
+            RoutingError::Cbor(ref error) =>
+                ::std::fmt::Display::fmt(error, formatter),
+            RoutingError::Response(ref error) =>
+                ::std::fmt::Display::fmt(error, formatter),
         }
     }
 }
@@ -371,7 +378,7 @@ mod test {
     fn response_error_cause() {
         match ::std::error::Error::cause(&::error::ResponseError::Abort) {
             None => {},
-            Some(cause) => assert!(false)
+            Some(_) => assert!(false)
         }
     }
 
@@ -387,7 +394,7 @@ mod test {
     fn inferface_error_cause() {
         match ::std::error::Error::cause(&::error::InterfaceError::NotConnected) {
             None => {},
-            Some(cause) => assert!(false)
+            Some(_) => assert!(false)
         }
     }
 
@@ -479,55 +486,55 @@ mod test {
     fn routing_error_cause() {
         match ::std::error::Error::cause(&::error::RoutingError::NotBootstrapped) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::BadAuthority) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::AlreadyConnected) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::FilterCheckFailed) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::FailedSignature) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::NotEnoughSignatures) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::DuplicateSignatures) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::FailedToBootstrap) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::RoutingTableEmpty) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::RejectedPublicId) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::RefusedFromRoutingTable) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(&::error::RoutingError::RefreshNotFromGroup) {
             None => {},
-            Some(err) => assert!(false)
+            Some(_) => assert!(false)
         }
         match ::std::error::Error::cause(
             &::error::RoutingError::Interface(::error::InterfaceError::NotConnected)) {
-                Some(err) => {},
+                Some(_) => {},
                 None => assert!(false)
         }
         // FIXME could not create a Utf8Error-struct
@@ -540,18 +547,18 @@ mod test {
             &::error::RoutingError::Io(::std::io::Error::new(
                 ::std::io::ErrorKind::Other,
                 "I/O error"))) {
-            Some(err) => {},
+            Some(_) => {},
             None => assert!(false)
         }
         match ::std::error::Error::cause(
             &::error::RoutingError::Response(::error::ResponseError::Abort)) {
-                Some(err) => {},
+                Some(_) => {},
                 None => assert!(false)
         }
         match ::std::error::Error::cause(
             &::error::RoutingError::Cbor(::cbor::CborError::UnexpectedEOF)) {
                 None => {},
-                Some(err) => assert!(false)
+                Some(_) => assert!(false)
         }
     }
 

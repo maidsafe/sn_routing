@@ -280,7 +280,6 @@ mod test {
     fn single_owner_unsigned() {
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
-        let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
 
         match super::StructuredData::new(0,
                                   ::test_utils::Random::generate_random(),

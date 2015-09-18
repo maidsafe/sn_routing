@@ -210,10 +210,9 @@ fn determine_authority(message: &RoutingMessage,
 mod test {
     use routing_table::{RoutingTable, NodeInfo};
     use public_id::PublicId;
-    use messages::{RoutingMessage, Content, ExternalRequest, ExternalResponse};
+    use messages::{RoutingMessage, Content, ExternalRequest};
     use id::Id;
     use test_utils::{Random, xor, test};
-    use rand::random;
     use utils::public_key_to_client_name;
     use name_type::{closer_to_target, NameType};
     use authority::Authority;
@@ -227,10 +226,10 @@ mod test {
         let mut routing_table = RoutingTable::new(&id.name());
         let mut count : usize = 0;
         loop {
-            routing_table.add_node(NodeInfo::new(
-                               PublicId::new(&Id::new()),
-                               test::random_endpoints(),
-                               Some(test::random_endpoint())));
+            let _ = routing_table.add_node(NodeInfo::new(
+                PublicId::new(&Id::new()),
+                test::random_endpoints(),
+                Some(test::random_endpoint())));
             count += 1;
             if count > 100 {
                 break;

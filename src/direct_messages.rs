@@ -32,6 +32,7 @@ pub struct Churn {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(variant_size_differences)]
 pub enum Content {
     Hello(Hello),
     Churn(Churn),

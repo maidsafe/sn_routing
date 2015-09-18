@@ -155,7 +155,7 @@ mod test {
         let name = ::name_type::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
 
         // name() resolves correctly for StructuedData    
-        let tag = 0 as u64;
+        let tag = 0;
         assert_eq!(
             ::structured_data::StructuredData::compute_name(tag, &name),
             ::data::DataRequest::StructuredData(name, tag).name()

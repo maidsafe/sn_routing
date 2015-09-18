@@ -1234,12 +1234,12 @@ impl RoutingNode {
                                         }
                                         return None;
                                     }
-                                    DataRequest::StructuredData(data_name, _) => {
+                                    DataRequest::StructuredData(_, _) => {
                                         if self.cache_options.structured_data_caching_enabled() {
-                                            match data_cache.get(&data_name) {
+                                            match data_cache.get(&data_request.name()) {
                                                 Some(data) => {
                                                     debug!("Got StructuredData {:?} from cache",
-                                                           data_name);
+                                                           data_request.name());
                                                     let response =
                                                         ExternalResponse::Get(
                                                             data.clone(),
@@ -1291,7 +1291,6 @@ fn ignore<R, E>(_result: Result<R, E>) {
 #[cfg(test)]
 mod test {
     use action::Action;
-    use crust;
     use sodiumoxide::crypto;
     use data::{Data, DataRequest};
     use event::Event;

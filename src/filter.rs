@@ -260,12 +260,6 @@ mod test {
         let signed_message =
             ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
         let signed_message = signed_message.unwrap();
-        let encode_message = ::utils::encode(&routing_message);
-
-        assert!(encode_message.is_ok());
-
-        let encode_message = encode_message.unwrap();
-        let message_digest = ::sodiumoxide::crypto::hash::sha256::hash(&encode_message[..]);
 
         filter.block(signed_message.get_routing_message());
 
@@ -283,7 +277,7 @@ mod test {
             let sum = set.iter().fold(0f64, |acc, &item| acc + &item);
             sum / (set.len() as f64) };
         let mut set: Vec<f64> = Vec::new();
-        for i in 0..5000u32 {
+        for _ in 0..5000u32 {
             let new_value = rng.gen::<u8>() as f64;
             set.push(new_value.clone());
             let result = running_average.add_value(new_value);
@@ -301,7 +295,7 @@ mod test {
         use ::rand::Rng;
         let mut rng = ::rand::thread_rng();
         let mut running_average = super::RunningAverage::new(1000u32);
-        for i in 0..100000u32 {
+        for _ in 0..100000u32 {
             let new_value = rng.gen::<u8>() as f64;
             let _ = running_average.add_value(new_value);
         }

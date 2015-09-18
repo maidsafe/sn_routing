@@ -110,7 +110,6 @@ impl Id {
     #[test]
     fn is_relocated() {
         let mut id = ::id::Id::new();
-        let original_name = id.name();
 
         // is not relocated
         assert!(!id.is_relocated());
