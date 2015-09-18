@@ -32,15 +32,17 @@ pub struct Vault {
     routing: Routing,
     churn_timestamp: ::time::SteadyTime,
     id: ::routing::NameType,
-    event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>,
+    app_event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>,
+    app_action_receiver: Option<::std::sync::mpsc::Receiver<(u8)>>,
 }
 
 impl Vault {
     pub fn run() {
-        Vault::new(None).do_run();
+        Vault::new(None, None).do_run();
     }
 
-    fn new(event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>) -> Vault {
+    fn new(app_event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>,
+           app_action_receiver: Option<::std::sync::mpsc::Receiver<(u8)>>) -> Vault {
         ::sodiumoxide::init();
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let routing = Routing::new(sender);
@@ -54,40 +56,56 @@ impl Vault {
             receiver: receiver,
             routing: routing,
             id: ::routing::NameType::new([0u8; 64]),
-            event_sender: event_sender,
+            app_event_sender: app_event_sender,
+            app_action_receiver: app_action_receiver,
         }
     }
 
     fn do_run(&mut self) {
         use routing::event::Event;
-        while let Ok(event) = self.receiver.recv() {
-            match self.event_sender.clone() {
-                Some(sender) => {
-                    let _ = sender.send(event.clone());
+        loop {
+            match self.receiver.try_recv() {
+                Err(_) => {}
+                Ok(event) => {
+                    let _ = self.app_event_sender.clone().and_then(|sender| Some(sender.send(event.clone())));
+                    info!("Vault {} received an event from routing : {:?}", self.id, event);
+                    match event {
+                        Event::Request{ request, our_authority, from_authority, response_token } =>
+                            self.on_request(request, our_authority, from_authority, response_token),
+                        Event::Response{ response, our_authority, from_authority } =>
+                            self.on_response(response, our_authority, from_authority),
+                        Event::Refresh(type_tag, our_authority, accounts) => self.on_refresh(type_tag,
+                                                                                             our_authority,
+                                                                                             accounts),
+                        Event::Churn(close_group, churn_node) => self.on_churn(close_group, churn_node),
+                        Event::DoRefresh(type_tag, our_authority, churn_node) =>
+                            self.on_do_refresh(type_tag, our_authority, churn_node),
+                        Event::Bootstrapped => self.on_bootstrapped(),
+                        Event::Connected => self.on_connected(),
+                        Event::Disconnected => self.on_disconnected(),
+                        Event::FailedRequest{ request, our_authority, location, interface_error } =>
+                            self.on_failed_request(request, our_authority, location, interface_error),
+                        Event::FailedResponse{ response, our_authority, location, interface_error } =>
+                            self.on_failed_response(response, our_authority, location, interface_error),
+                        Event::Terminated => break,
+                    };
                 }
-                None => {}
             }
-            info!("Vault {} received an event from routing : {:?}", self.id, event);
-            match event {
-                Event::Request{ request, our_authority, from_authority, response_token } =>
-                    self.on_request(request, our_authority, from_authority, response_token),
-                Event::Response{ response, our_authority, from_authority } =>
-                    self.on_response(response, our_authority, from_authority),
-                Event::Refresh(type_tag, our_authority, accounts) => self.on_refresh(type_tag,
-                                                                                     our_authority,
-                                                                                     accounts),
-                Event::Churn(close_group, churn_node) => self.on_churn(close_group, churn_node),
-                Event::DoRefresh(type_tag, our_authority, churn_node) =>
-                    self.on_do_refresh(type_tag, our_authority, churn_node),
-                Event::Bootstrapped => self.on_bootstrapped(),
-                Event::Connected => self.on_connected(),
-                Event::Disconnected => self.on_disconnected(),
-                Event::FailedRequest{ request, our_authority, location, interface_error } =>
-                    self.on_failed_request(request, our_authority, location, interface_error),
-                Event::FailedResponse{ response, our_authority, location, interface_error } =>
-                    self.on_failed_response(response, our_authority, location, interface_error),
-                Event::Terminated => break,
-            };
+            match &self.app_action_receiver {
+                &None => {}
+                &Some(ref app_action_receiver) => {
+                    match app_action_receiver.try_recv() {
+                        Err(_) => {}
+                        Ok(action) => {
+                            match action {
+                                0 => break,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            ::std::thread::sleep_ms(1);
         }
     }
 
@@ -338,7 +356,7 @@ mod test {
                 vault.do_run();
             });
         };
-        let mut vault = Vault::new(None);
+        let mut vault = Vault::new(None, None);
         let receiver = vault.routing.get_client_receiver();
         let mut routing = vault.routing.clone();
         let _ = run_vault(vault);
@@ -421,7 +439,8 @@ mod test {
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
-    fn network_env_setup() -> (Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
+    fn network_env_setup() -> (Vec<(::std::sync::mpsc::Receiver<(::routing::event::Event)>,
+                                    ::std::sync::mpsc::Sender<(u8)>)>,
             ::routing::routing_client::RoutingClient,
             ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
             ::routing::NameType) {
@@ -436,14 +455,15 @@ mod test {
                 vault.do_run();
             });
         };
-        let mut vault_receivers = Vec::new();
+        let mut vault_notifiers = Vec::new();
         for i in 0..8 {
             println!("starting node {:?}", i);
-            let (sender, receiver) = ::std::sync::mpsc::channel();
-            let _ = run_vault(Vault::new(Some(sender)));
-            let mut cur_receiver = vec![receiver];
-            waiting_for_hits(&cur_receiver, 10, i, ::time::Duration::seconds(10 * (i + 1) as i64));
-            vault_receivers.push(cur_receiver.swap_remove(0));
+            let (vault_sender, vault_receiver) = ::std::sync::mpsc::channel();
+            let (app_sender, app_receiver) = ::std::sync::mpsc::channel();
+            let _ = run_vault(Vault::new(Some(vault_sender), Some(app_receiver)));
+            let mut cur_notifier = vec![(vault_receiver, app_sender)];
+            let _ = waiting_for_hits(&cur_notifier, 10, i, ::time::Duration::seconds(10 * (i + 1) as i64));
+            vault_notifiers.push(cur_notifier.swap_remove(0));
         }
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
@@ -500,7 +520,7 @@ mod test {
         let client_name = id.name();
         let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
         if let Ok(_) = client_receiver.recv() {}
-        (vault_receivers, client_routing, client_receiver, client_name)
+        (vault_notifiers, client_routing, client_receiver, client_name)
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
@@ -512,36 +532,37 @@ mod test {
     //              10 -- Event::Churn
     //              20 -- Event::Refresh(type_tag -- 2) for immutable_data test
     //              21 -- Event::Refresh(type_tag -- 5) for structured_data test
-    fn waiting_for_hits(
-            vault_receivers: &Vec<::std::sync::mpsc::Receiver<(::routing::event::Event)>>,
+    fn waiting_for_hits (
+            vault_notifiers: &Vec<(::std::sync::mpsc::Receiver<(::routing::event::Event)>,
+                                   ::std::sync::mpsc::Sender<(u8)>)>,
             expected_tag: u32,
             expected_hits: usize,
-            time_limit: ::time::Duration) {
-        let mut hits = 0;
+            time_limit: ::time::Duration) -> Vec<usize> {
         let starting_time = ::time::SteadyTime::now();
-        while hits < expected_hits {
-            for receiver in vault_receivers.iter() {
-                match receiver.try_recv() {
+        let mut hit_vaults = vec![];
+        while hit_vaults.len() < expected_hits {
+            for i in 0..vault_notifiers.len() {
+                match vault_notifiers[i].0.try_recv() {
                     Err(_) => {}
                     Ok(::routing::event::Event::Request{ request, our_authority,
                                                          from_authority, response_token }) => {
                         info!("as {:?} received request: {:?} from {:?} having token {:?}",
                               our_authority, request, from_authority, response_token == None);
                         match (our_authority, expected_tag) {
-                            (::routing::Authority::NaeManager(_), 1) => hits += 1,
-                            (::routing::Authority::ManagedNode(_), 3) => hits += 1,
+                            (::routing::Authority::NaeManager(_), 1) => hit_vaults.push(i),
+                            (::routing::Authority::ManagedNode(_), 3) => hit_vaults.push(i),
                             _ => {}
                         }
                     }
                     Ok(::routing::event::Event::Churn(_, _)) => {
                         if expected_tag == 10 {
-                            hits += 1;
+                            hit_vaults.push(i);
                         }
                     }
                     Ok(::routing::event::Event::Refresh(type_tag, _, _)) => {
                         match (expected_tag, type_tag) {
-                            (20, 2) => hits += 1,
-                            (21, 5) => hits += 1,
+                            (20, 2) => hit_vaults.push(i),
+                            (21, 5) => hit_vaults.push(i),
                             _ => {}
                         }
                     }
@@ -556,6 +577,7 @@ mod test {
                 panic!("waiting_for_hits can't resolve within the expected duration");
             }
         }
+        hit_vaults
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
@@ -580,7 +602,7 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_put_get_test() {
-        let (vault_receivers, mut client_routing, client_receiver, client_name) =
+        let (vault_notifiers, mut client_routing, client_receiver, client_name) =
             network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -589,10 +611,10 @@ mod test {
         println!("network_put_get_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        waiting_for_hits(&vault_receivers,
-                         3,
-                         ::data_manager::PARALLELISM,
-                         ::time::Duration::minutes(3));
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 3,
+                                 ::data_manager::PARALLELISM,
+                                 ::time::Duration::minutes(3));
         println!("network_put_get_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
                                    ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -605,7 +627,7 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_post_test() {
-        let (vault_receivers, mut client_routing, client_receiver, client_name) =
+        let (vault_notifiers, mut client_routing, client_receiver, client_name) =
             network_env_setup();
 
         let name = ::utils::random_name();
@@ -622,10 +644,10 @@ mod test {
         println!("network_post_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        waiting_for_hits(&vault_receivers,
-                         1,
-                         ::routing::types::GROUP_SIZE,
-                         ::time::Duration::minutes(3));
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 1,
+                                 ::routing::types::GROUP_SIZE,
+                                 ::time::Duration::minutes(3));
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd_new = evaluate_result!(
@@ -639,10 +661,10 @@ mod test {
         println!("network_post_test posting data");
         client_routing.post_request(::sd_manager::Authority(sd.name()),
                                     ::routing::data::Data::StructuredData(sd_new.clone()));
-        waiting_for_hits(&vault_receivers,
-                         1,
-                         ::routing::types::GROUP_SIZE,
-                         ::time::Duration::minutes(3));
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 1,
+                                 ::routing::types::GROUP_SIZE,
+                                 ::time::Duration::minutes(3));
         println!("network_post_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
                                    ::routing::data::DataRequest::StructuredData(sd.name(), 0));
@@ -654,7 +676,7 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_churn_immutable_data_test() {
-        let (mut vault_receivers, mut client_routing, client_receiver, client_name) =
+        let (mut vault_notifiers, mut client_routing, client_receiver, client_name) =
             network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -663,21 +685,22 @@ mod test {
         println!("network_churn_immutable_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        waiting_for_hits(&vault_receivers,
-                         3,
-                         ::data_manager::PARALLELISM,
-                         ::time::Duration::minutes(3));
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 3,
+                                 ::data_manager::PARALLELISM,
+                                 ::time::Duration::minutes(3));
 
         println!("network_churn_immutable_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
+        let (app_sender, app_receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-            ::vault::Vault::new(Some(sender)).do_run();
+            ::vault::Vault::new(Some(sender), Some(app_receiver)).do_run();
         });
-        vault_receivers.push(receiver);
-        waiting_for_hits(&vault_receivers,
-                         20,
-                         ::routing::types::GROUP_SIZE / 2 + 1,
-                         ::time::Duration::minutes(3));
+        vault_notifiers.push((receiver, app_sender));
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 20,
+                                 ::routing::types::GROUP_SIZE / 2 + 1,
+                                 ::time::Duration::minutes(3));
         println!("network_churn_immutable_data_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
                                    ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -690,7 +713,7 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_churn_structured_data_test() {
-        let (mut vault_receivers, mut client_routing, client_receiver, client_name) =
+        let (mut vault_notifiers, mut client_routing, client_receiver, client_name) =
             network_env_setup();
 
         let name = ::utils::random_name();
@@ -707,21 +730,22 @@ mod test {
         println!("network_churn_structured_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::StructuredData(sd.clone()));
-        waiting_for_hits(&vault_receivers,
-                         1,
-                         ::routing::types::GROUP_SIZE,
-                         ::time::Duration::minutes(3));
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 1,
+                                 ::routing::types::GROUP_SIZE,
+                                 ::time::Duration::minutes(3));
 
         println!("network_churn_structured_data_test starting new vault");
         let (sender, receiver) = ::std::sync::mpsc::channel();
+        let (app_sender, app_receiver) = ::std::sync::mpsc::channel();
         let _ = ::std::thread::spawn(move || {
-            ::vault::Vault::new(Some(sender)).do_run();
+            ::vault::Vault::new(Some(sender), Some(app_receiver)).do_run();
         });
-        vault_receivers.push(receiver);
-        waiting_for_hits(&vault_receivers,
-                         21,
-                         ::routing::types::GROUP_SIZE / 2 + 1,
-                         ::time::Duration::minutes(3));
+        vault_notifiers.push((receiver, app_sender));
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 21,
+                                 ::routing::types::GROUP_SIZE / 2 + 1,
+                                 ::time::Duration::minutes(3));
         println!("network_churn_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
                                    ::routing::data::DataRequest::StructuredData(sd.name(), 0));
