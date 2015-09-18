@@ -1,6 +1,6 @@
 [package]
 name = "routing"
-version = "0.3.11"
+version = "0.3.12"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A secured storage DHT"
 documentation = "http://maidsafe.net/routing/latest"
