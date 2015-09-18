@@ -412,7 +412,7 @@ mod test {
                             ::routing::data::Data::StructuredData(sd_new.clone()));
         ::std::thread::sleep_ms(2000);
 
-        let data_request = ::routing::data::DataRequest::StructuredData(sd.name(), 0);
+        let data_request = ::routing::data::DataRequest::StructuredData(name, 0);
         routing.client_get(client_name, sign_keys.0, data_request);
         for it in receiver.iter() {
             assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
@@ -645,7 +645,7 @@ mod test {
                          ::time::Duration::minutes(3));
         println!("network_post_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
-                                   ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+                                   ::routing::data::DataRequest::StructuredData(name, 0));
         waiting_for_client_get(client_receiver,
                                ::routing::data::Data::StructuredData(sd_new),
                                ::time::Duration::minutes(1));
@@ -724,7 +724,7 @@ mod test {
                          ::time::Duration::minutes(3));
         println!("network_churn_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
-                                   ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+                                   ::routing::data::DataRequest::StructuredData(name, 0));
         waiting_for_client_get(client_receiver,
                                ::routing::data::Data::StructuredData(sd),
                                ::time::Duration::minutes(1));
