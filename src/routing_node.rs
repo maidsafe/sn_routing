@@ -88,18 +88,20 @@ impl RoutingNode {
                -> RoutingNode {
 
         let (crust_sender, crust_receiver) = mpsc::channel::<crust::Event>();
-        let crust_service = match crust::Service::new(crust_sender) {
+        let mut crust_service = match crust::Service::new(crust_sender) {
             Ok(service) => service,
             Err(what) => panic!(format!("Unable to start crust::Service {}", what)),
         };
 
-        // TODO:crust3
-        //// This will give us only local endpoints, use
-        //// Service::get_external_endpoints (async) to get external ones.
-        //let accepting_on = crust_service.start_default_acceptors().into_iter()
-        //                   .filter_map(|ep|ep.ok())
-        //                   .collect();
-        let accepting_on = Vec::new();
+        let accepting_on = crust_service.start_default_acceptors().into_iter()
+                           .filter_map(|ep|ep.ok())
+                           .collect();
+
+        // The above command will give us only internal endpoints on which
+        // we're accepting. The next command will try to contact an IGD device
+        // and create external mapping to those endpoints. The result
+        // shall be returned async through the ExternalEndpoints event.
+        crust_service.get_external_endpoints();
 
         let core = RoutingCore::new(event_sender.clone(), action_sender.clone(), keys);
         info!("RoutingNode {:?} listens on {:?}", core.our_address(), accepting_on);
@@ -202,7 +204,10 @@ impl RoutingNode {
                 }
                 Ok(crust::Event::BootstrapFinished) => {
                 }
-                Ok(crust::Event::ExternalEndpoints(endpoints)) => {
+                Ok(crust::Event::ExternalEndpoints(ext_endpoints)) => {
+                    for ext_ep in ext_endpoints {
+                        self.accepting_on.push(ext_ep);
+                    }
                 }
             };
             thread::sleep_ms(1);

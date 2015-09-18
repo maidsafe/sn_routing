@@ -25,7 +25,8 @@ sodiumoxide = "*"
 #crust = "0.2.*"
 
 [dependencies.crust]
-git = "https://github.com/maidsafe/crust"
+branch = "accept-returns-endpoint"
+git = "https://github.com/inetic/crust"
 
 [dev-dependencies]
 bit-vec = "*"
