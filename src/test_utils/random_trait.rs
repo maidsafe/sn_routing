@@ -18,5 +18,7 @@
 
 /// Trait to self construct a type with random values
 pub trait Random {
+
+	/// Generate a random instance of a type that implements the trait.
     fn generate_random() -> Self;
 }

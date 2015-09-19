@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+/// Formatted string from a vector of bytes.
 pub fn get_debug_id(input: Vec<u8>) -> ::std::string::String {
   format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
           input[0],
@@ -25,6 +26,7 @@ pub fn get_debug_id(input: Vec<u8>) -> ::std::string::String {
           input[input.len()-1])
 }
 
+/// Encode a value of type T to a vector of bytes.
 pub fn encode<T>(value: &T) -> Result<Vec<u8>, ::cbor::CborError>
     where T: ::rustc_serialize::Encodable
 {
@@ -33,6 +35,7 @@ pub fn encode<T>(value: &T) -> Result<Vec<u8>, ::cbor::CborError>
     Ok(enc.into_bytes())
 }
 
+/// Decode a vcetor of bytes to a value of type T, otherwise error on failure.
 pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, ::cbor::CborError>
     where T: ::rustc_serialize::Decodable
 {
@@ -48,9 +51,9 @@ pub fn public_key_to_client_name(key: &::sodiumoxide::crypto::sign::PublicKey) -
     ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&key[..]).0)
 }
 
-// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
-// In case of only one close node provided (in initial network setup scenario),
-// relocated_name = Hash(original_name + 1st closest node id)
+/// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
+/// In case of only one close node provided (in initial network setup scenario),
+/// relocated_name = Hash(original_name + 1st closest node id)
 pub fn calculate_relocated_name(mut close_nodes: Vec<::NameType>, original_name: &::NameType)
         -> Result<::NameType, ::error::RoutingError> {
     if close_nodes.is_empty() {

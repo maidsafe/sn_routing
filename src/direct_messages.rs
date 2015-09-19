@@ -19,8 +19,6 @@
 //! are restricted to transfer on a single connection.  They cannot be transferred
 //! as SignedMessages (wrapping RoutingMessages) over the routing network.
 
-pub static VERSION_NUMBER : u8 = 0;
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct Hello {
     pub address: ::types::Address,
@@ -34,6 +32,7 @@ pub struct Churn {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(variant_size_differences)]
 pub enum Content {
     Hello(Hello),
     Churn(Churn),
@@ -47,13 +46,15 @@ pub struct DirectMessage {
     signature: ::sodiumoxide::crypto::sign::Signature,
 }
 
+#[allow(unused)]
 impl DirectMessage {
     pub fn new(content: Content,
                private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
                -> Result<DirectMessage, ::cbor::CborError> {
 
         let encoded_content = try!(::utils::encode(&content));
-        let signature    = ::sodiumoxide::crypto::sign::sign_detached(&encoded_content, private_sign_key);
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(
+                &encoded_content, private_sign_key);
 
         Ok(DirectMessage { content: content, signature: signature })
     }

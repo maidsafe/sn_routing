@@ -31,6 +31,7 @@ pub struct RelayMap {
     lookup_map: ::std::collections::HashMap<::crust::Endpoint, ::routing_core::ConnectionName>,
 }
 
+#[allow(unused)]
 impl RelayMap {
     /// This creates a new RelayMap.
     pub fn new() -> RelayMap {
@@ -69,9 +70,9 @@ impl RelayMap {
         if self.relay_map.contains_key(&identity) {
             return false;
         }
-        self.lookup_map.entry(endpoint.clone()).or_insert(identity.clone());
+        let _ = self.lookup_map.entry(endpoint.clone()).or_insert(identity.clone());
         let new_peer = || ::peer::Peer::new(identity.clone(), endpoint, public_id);
-        self.relay_map.entry(identity.clone()).or_insert_with(new_peer);
+        let _ = self.relay_map.entry(identity.clone()).or_insert_with(new_peer);
         true
     }
 

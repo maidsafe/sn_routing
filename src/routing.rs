@@ -20,17 +20,14 @@ use sodiumoxide;
 use std::sync::mpsc;
 use std::thread::spawn;
 
-use id::Id;
 use action::Action;
 use event::Event;
 use messages::SignedToken;
 use routing_node::RoutingNode;
-use NameType;
 use data::{Data, DataRequest};
 use types::{Bytes, CacheOptions};
 use error::{RoutingError, ResponseError};
 use authority::Authority;
-use sodiumoxide::crypto;
 use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
 
 type RoutingResult = Result<(), RoutingError>;
@@ -54,17 +51,14 @@ impl Routing {
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
         // start the handler for routing without a restriction to become a full node
-        let mut routing_node = RoutingNode::new(action_sender.clone(),
-                                                action_receiver,
-                                                event_sender,
-                                                false,
-                                                None);
+        let mut routing_node =
+            RoutingNode::new(action_sender.clone(), action_receiver, event_sender, false, None);
 
-        spawn(move || {
-                       debug!("started routing run()");
-                       routing_node.run();
-                       debug!("Routing node terminated running.");
-                   });
+        let _ = spawn(move || {
+            debug!("Started routing run().");
+            routing_node.run();
+            debug!("Routing node terminated running.");
+        });
 
         Routing { action_sender: action_sender }
     }

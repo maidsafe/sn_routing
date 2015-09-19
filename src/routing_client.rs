@@ -23,15 +23,11 @@ use std::thread::spawn;
 use id::Id;
 use action::Action;
 use event::Event;
-use messages::SignedToken;
 use routing_node::RoutingNode;
-use NameType;
 use data::{Data, DataRequest};
-use types::Bytes;
-use error::{RoutingError, ResponseError};
+use error::RoutingError;
 use authority::Authority;
-use sodiumoxide::crypto;
-use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
+use messages::{ExternalRequest, Content};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -56,16 +52,14 @@ impl RoutingClient {
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
         // start the handler for routing with a restriction to become a full node
-        let mut routing_node = RoutingNode::new(action_sender.clone(),
-                                                action_receiver,
-                                                event_sender,
-                                                true,
-                                                keys);
+        let mut routing_node =
+            RoutingNode::new(action_sender.clone(), action_receiver, event_sender, true, keys);
 
-        spawn(move || {
-                       routing_node.run();
-                       debug!("Routing node terminated running.");
-                   });
+        let _ = spawn(move || {
+            debug!("Started routing client run().");
+            routing_node.run();
+            debug!("Routing client node terminated running.");
+        });
 
         RoutingClient { action_sender: action_sender, get_counter: 0u8 }
     }

@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+/// Return a random u8.
 pub fn generate_random_u8() -> u8 {
     use rand::Rng;
 
@@ -29,7 +30,6 @@ fn generate_random_nametype() -> ::NameType {
 fn generate_random_authority(name: ::NameType, key: &::sodiumoxide::crypto::sign::PublicKey)
         -> ::authority::Authority {
     use rand::distributions::IndependentSample;
-    use rand::Rng;
 
     let mut rng = ::rand::thread_rng();
     let range = ::rand::distributions::Range::new(0, 5);
@@ -49,7 +49,6 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
                         secret_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
         -> ::data::Data {
     use rand::distributions::IndependentSample;
-    use rand::Rng;
 
     let mut rng = ::rand::thread_rng();
     let range = ::rand::distributions::Range::new(0, 3);
@@ -80,6 +79,7 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
     }
 }
 
+/// Semi-random routing message.
 // TODO Brian: Randomize Content and rename to random_routing_message.
 pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::PublicKey,
                           secret_key: &::sodiumoxide::crypto::sign::SecretKey)

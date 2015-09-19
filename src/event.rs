@@ -16,36 +16,52 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use messages::{RoutingMessage, ExternalRequest, ExternalResponse, SignedToken};
-use name_type::NameType;
+use messages::{ExternalRequest, ExternalResponse, SignedToken};
 use error::InterfaceError;
-use sodiumoxide::crypto::sign;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
+    /// Request.
     Request {
+        /// External request.
         request: ExternalRequest,
+        /// Our authority.
         our_authority: Authority,
+        /// From authority.
         from_authority: Authority,
-        response_token: Option<SignedToken>, /* Not set when the request came from
-                                              * a group */
+        /// Not set when the request came from a group.
+        response_token: Option<SignedToken>, 
     },
+    /// Response.
     Response {
+        /// External response.
         response: ExternalResponse,
+        /// Our authority.
         our_authority: Authority,
+        /// From authority.
         from_authority: Authority,
     },
+    /// FailedRequest.
     FailedRequest {
+        /// External request.
         request: ExternalRequest,
+        /// Our authority.
         our_authority: Option<Authority>,
+        /// From authority.
         location: Authority,
+        /// Interface error.
         interface_error: InterfaceError,
     },
+    /// FailedResponse.
     FailedResponse {
+        /// External response.
         response: ExternalResponse,
+        /// Our authority.
         our_authority: Option<Authority>,
+        /// From authority.
         location: Authority,
+        /// Interface error.
         interface_error: InterfaceError,
     },
     /// Refresh reports to the user the collected accounts for a given refresh event,
@@ -62,8 +78,11 @@ pub enum Event {
     /// also accumulated a DoRefresh indicates precisely one account routing will expect the
     /// user to do a ::routing::request_refresh for, if a matching account is held by the user.
     DoRefresh(u64, ::authority::Authority, ::NameType),
+    /// Bootstrapped.
     Bootstrapped,
+    /// Connected.
     Connected,
+    /// Disconnected.
     Disconnected,
     /// Event::Terminated is called after RoutingNode::stop() has terminated internal processes
     Terminated,

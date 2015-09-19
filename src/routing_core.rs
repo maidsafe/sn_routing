@@ -56,6 +56,7 @@ pub struct RoutingCore {
     action_sender: Sender<Action>,
 }
 
+#[allow(unused)]
 impl RoutingCore {
     /// Start a RoutingCore with a new Id and the disabled RoutingTable
     pub fn new(event_sender: Sender<Event>,
@@ -83,13 +84,13 @@ impl RoutingCore {
         }
     }
 
-    /// Borrow RoutingNode id
+    /// Borrow RoutingNode id.
     pub fn id(&self) -> &Id {
         &self.id
     }
 
-    /// Returns Address::Node(network_given_name)
-    /// or Address::Client(PublicKey) when no network name is given
+    /// Returns Address::Node(network_given_name) or Address::Client(PublicKey) when no network name
+    /// is given.
     pub fn our_address(&self) -> Address {
         match self.network_name {
             Some(name) => Address::Node(name.clone()),
@@ -97,10 +98,10 @@ impl RoutingCore {
         }
     }
 
-    /// Returns true if Client(public_key) matches our public signing key,
-    /// even if we are a full node; or returns true if Node(name) is our current name.
-    /// Note that there is a difference to using core::our_address, as that would
-    /// fail to assert an (old) Client identification after we were assigned a network name.
+    /// Returns true if Client(public_key) matches our public signing key, even if we are a full
+    /// node; or returns true if Node(name) is our current name.  Note that there is a difference to
+    /// using core::our_address, as that would fail to assert an (old) Client identification after
+    /// we were assigned a network name.
     pub fn is_us(&self, address: &Address) -> bool {
         match *address {
             Address::Client(public_key) => public_key == self.id.signing_public_key(),
@@ -108,9 +109,9 @@ impl RoutingCore {
         }
     }
 
-    /// Assigning a network received name to the core.
-    /// If a name is already assigned, the function returns false and no action is taken.
-    /// After a name is assigned, Routing connections can be accepted.
+    /// Assigning a network received name to the core.  If a name is already assigned, the function
+    /// returns false and no action is taken.  After a name is assigned, Routing connections can be
+    /// accepted.
     pub fn assign_network_name(&mut self, network_name: &NameType) -> bool {
         // if routing_table is constructed, reject name assignment
         match self.routing_table {
@@ -156,8 +157,8 @@ impl RoutingCore {
         }
     }
 
-    /// Returns the ConnectionName if either a Routing(name) is found in RoutingTable,
-    /// or Relay(Address::Node(name)) or Bootstrap(name) is found in the RelayMap.
+    /// Returns the ConnectionName if either a Routing(name) is found in RoutingTable, or
+    /// Relay(Address::Node(name)) or Bootstrap(name) is found in the RelayMap.
     pub fn lookup_name(&self, name: &NameType) -> Option<ConnectionName> {
         let routing_name = match self.routing_table {
             Some(ref routing_table) => {
@@ -179,10 +180,9 @@ impl RoutingCore {
         }
     }
 
-    /// Returns a copy of the peer information if found in the relay_map.
-    /// The routing table does not support retrieval of peer information,
-    /// and this does not pose a problem, as connections, once a Routing connection,
-    /// do not need to be moved; they can only be dropped.
+    /// Returns a copy of the peer information if found in the relay_map.  The routing table does
+    /// not support retrieval of peer information, and this does not pose a problem, as connections,
+    /// once a Routing connection, do not need to be moved; they can only be dropped.
     pub fn get_relay_peer(&self, connection_name: &ConnectionName) -> Option<Peer> {
         match *connection_name {
             ConnectionName::Routing(name) => None,
@@ -193,9 +193,8 @@ impl RoutingCore {
         }
     }
 
-    /// Returns the peer if successfully dropped from the relay_map
-    /// If dropped from the routing table a churn event is triggered for the user
-    /// if the dropped peer changed our close group.
+    /// Returns the peer if successfully dropped from the relay_map.  If dropped from the routing
+    /// table a churn event is triggered for the user if the dropped peer changed our close group.
     pub fn drop_peer(&mut self, connection_name: &ConnectionName) -> Option<Peer> {
         match *connection_name {
             ConnectionName::Routing(name) => {
@@ -363,14 +362,13 @@ impl RoutingCore {
         }
     }
 
-    /// Get the endpoints to send on as a node.  This will exclude the bootstrap connections
-    /// we might have.  Endpoints returned here will expect us to send the message,
-    /// as anything but a Client.  If to_authority is Client(_, public_key) and this client is
-    /// connected, then we only return this endpoint.
-    /// If the above condition is not satisfied, the routing table will either provide
-    /// a set of endpoints to send parallel to or our full close group (ourselves excluded)
-    /// when the destination is in range.
-    /// If resulting vector is empty there are no routing connections.
+    /// Get the endpoints to send on as a node.  This will exclude the bootstrap connections we
+    /// might have.  Endpoints returned here will expect us to send the message, as anything but a
+    /// Client.  If to_authority is Client(_, public_key) and this client is connected, then we only
+    /// return this endpoint.
+    /// If the above condition is not satisfied, the routing table will either provide a set of
+    /// endpoints to send parallel to or our full close group (ourselves excluded) when the
+    /// destination is in range.  If resulting vector is empty there are no routing connections.
     pub fn target_endpoints(&self, to_authority: &Authority) -> Vec<crust::Endpoint> {
         let mut target_endpoints : Vec<crust::Endpoint> = Vec::new();
         // if we can relay to the client, return that client connection
@@ -388,8 +386,7 @@ impl RoutingCore {
             _ => {}
         };
         let destination = to_authority.get_location();
-        // query the routing table to send it out parallel or to our close group
-        // (ourselves excluded)
+        // query routing table to send it out parallel or to our close group (ourselves excluded)
         match self.routing_table {
             Some(ref routing_table) => {
                 for node_info in routing_table.target_nodes(destination) {
@@ -404,9 +401,8 @@ impl RoutingCore {
         target_endpoints
     }
 
-    /// Returns the available Boostrap connections as Peers. If we are a connected node,
-    /// then access to the bootstrap connections will be blocked, and an empty
-    /// vector is returned.
+    /// Returns the available Boostrap connections as Peers. If we are a connected node, then access
+    /// to the bootstrap connections will be blocked, and an empty vector is returned.
     pub fn bootstrap_endpoints(&self) -> Option<Vec<Peer>> {
         // block explicitly if we are a connected node
         if self.is_connected_node() {
@@ -415,10 +411,9 @@ impl RoutingCore {
         Some(self.relay_map.bootstrap_connections())
     }
 
-    /// Returns true if bootstrap connections are available. If we are a connected node,
-    /// then access to the bootstrap connections will be blocked, and false
-    /// is returned.  We might still receive messages from our bootstrap connections,
-    /// but active usage is blocked once we are a node.
+    /// Returns true if bootstrap connections are available. If we are a connected node, then access
+    /// to the bootstrap connections will be blocked, and false is returned.  We might still receive
+    /// messages from our bootstrap connections, but active usage is blocked once we are a node.
     pub fn has_bootstrap_endpoints(&self) -> bool {
         // block explicitly if routing table is available
         !self.is_connected_node() && self.relay_map.has_bootstrap_connections()
@@ -451,9 +446,9 @@ impl RoutingCore {
         }
     }
 
-    /// Our authority is defined by the routing message
-    /// if we are a full node;  if we are a client, this always returns
-    /// Client authority (where the relay name is taken from the routing message destination)
+    /// Our authority is defined by the routing message, if we are a full node;  if we are a client,
+    /// this always returns Client authority (where the relay name is taken from the routing message
+    /// destination)
     pub fn our_authority(&self, message: &RoutingMessage) -> Option<Authority> {
         match self.routing_table {
             Some(ref routing_table) => {
@@ -466,9 +461,9 @@ impl RoutingCore {
         }
     }
 
-    /// Returns our close group as a vector of NameTypes, sorted from our own name;
-    /// Our own name is always included, and the first member of the result.
-    /// If we are not a full node None is returned.
+    /// Returns our close group as a vector of NameTypes, sorted from our own name;  Our own name is
+    /// always included, and the first member of the result.  If we are not a full node None is
+    /// returned.
     pub fn our_close_group(&self) -> Option<Vec<NameType>> {
         match self.routing_table {
             Some(ref routing_table) => {
@@ -483,9 +478,9 @@ impl RoutingCore {
         }
     }
 
-    /// Returns our close group as a vector of PublicIds, sorted from our own name;
-    /// Our own PublicId is always included, and the first member of the result.
-    /// If we are not a full node None is returned.
+    /// Returns our close group as a vector of PublicIds, sorted from our own name; Our own PublicId
+    /// is always included, and the first member of the result.  If we are not a full node None is
+    /// returned.
     pub fn our_close_group_with_public_ids(&self) -> Option<Vec<PublicId>> {
         match self.routing_table {
             Some(ref routing_table) => {
@@ -500,6 +495,7 @@ impl RoutingCore {
         }
     }
 
+    /// Returns the number of connected peers in routing table.
     pub fn routing_table_size(&self) -> usize {
         if let Some(ref rt) = self.routing_table {
             rt.size()
@@ -513,8 +509,6 @@ impl RoutingCore {
 mod test {
     #[test]
     fn add_peers_as_client() {
-        use ::test_utils::random_trait::Random;
-
         let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let (action_sender, action_receiver) = ::std::sync::mpsc::channel::<::action::Action>();
         let id = ::id::Id::new();
