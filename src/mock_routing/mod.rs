@@ -132,7 +132,4 @@ impl MockRouting {
         evaluate_result!(self.pimpl.lock()).refresh_request(type_tag, our_authority,
                                                    content, churn_node)
     }
-
-    pub fn stop(&self) {
-    }
 }
