@@ -447,7 +447,6 @@ mod test {
             ::routing::routing_client::RoutingClient,
             ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
             ::routing::NameType) {
-        use routing::event::Event;
         ::utils::initialise_logger();
         match ::env_logger::init() {
             Ok(()) => {}
@@ -468,6 +467,15 @@ mod test {
             let _ = waiting_for_hits(&cur_notifier, 10, i, ::time::Duration::seconds(10 * (i + 1) as i64));
             vault_notifiers.push(cur_notifier.swap_remove(0));
         }
+        let (client_routing, client_receiver, client_name) = create_client();
+        (vault_notifiers, client_routing, client_receiver, client_name)
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    fn create_client() -> (::routing::routing_client::RoutingClient,
+                           ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
+                           ::routing::NameType) {
+        use routing::event::Event;
         let (sender, receiver) = ::std::sync::mpsc::channel();
         let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
         let client_receiving =
@@ -523,18 +531,16 @@ mod test {
         let client_name = id.name();
         let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
         if let Ok(_) = client_receiver.recv() {}
-        (vault_notifiers, client_routing, client_receiver, client_name)
+        (client_routing, client_receiver, client_name)
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
-    // expected_tag: 0 -- Authority::ClientManager
-    //               1 -- Authority::NaeManager
-    //               2 -- Authority::NodeManager
-    //               3 -- Authority::ManagedNode
-    //               4 -- Authority::Client
+    // expected_tag: 1 -- Authority::NaeManager
+    //               3 -- Authority::ManagedNode for put request
     //              10 -- Event::Churn
     //              20 -- Event::Refresh(type_tag -- 2) for immutable_data test
     //              21 -- Event::Refresh(type_tag -- 5) for structured_data test
+    //              30 -- Event::Response -- PutResponseError from DM to PM
     fn waiting_for_hits (
             vault_notifiers: &Vec<(::std::sync::mpsc::Receiver<(::routing::event::Event)>,
                                    ::std::sync::mpsc::Sender<(u8)>)>,
@@ -549,11 +555,12 @@ mod test {
                     Err(_) => {}
                     Ok(::routing::event::Event::Request{ request, our_authority,
                                                          from_authority, response_token }) => {
-                        info!("as {:?} received request: {:?} from {:?} having token {:?}",
-                              our_authority, request, from_authority, response_token == None);
-                        match (our_authority, expected_tag) {
-                            (::routing::Authority::NaeManager(_), 1) => hit_vaults.push(i),
-                            (::routing::Authority::ManagedNode(_), 3) => hit_vaults.push(i),
+                        debug!("as {:?} received request: {:?} from {:?} having token {:?}",
+                               our_authority, request, from_authority, response_token == None);
+                        match (expected_tag, our_authority, request) {
+                            (1, ::routing::Authority::NaeManager(_), _) => hit_vaults.push(i),
+                            (3, ::routing::Authority::ManagedNode(_),
+                                ::routing::ExternalRequest::Put(_)) => hit_vaults.push(i),
                             _ => {}
                         }
                     }
@@ -566,6 +573,17 @@ mod test {
                         match (expected_tag, type_tag) {
                             (20, 2) => hit_vaults.push(i),
                             (21, 5) => hit_vaults.push(i),
+                            _ => {}
+                        }
+                    }
+                    Ok(::routing::event::Event::Response{ response, our_authority,
+                                                          from_authority }) => {
+                        debug!("as {:?} received response: {:?} from {:?}",
+                               our_authority, response, from_authority);
+                        match (expected_tag, response, our_authority, from_authority) {
+                            (30, ::routing::ExternalResponse::Put(_, _),
+                             ::routing::Authority::NodeManager(_),
+                             ::routing::Authority::NaeManager(_)) => hit_vaults.push(i),
                             _ => {}
                         }
                     }
@@ -759,8 +777,8 @@ mod test {
 
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
-    fn network_churn_down_immutable_data_test() {
-        let (vault_notifiers, mut client_routing, client_receiver, client_name) =
+    fn network_churn_down_one_node_immutable_data_test() {
+        let (vault_notifiers, client_routing, _, client_name) =
             network_env_setup();
 
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -769,33 +787,92 @@ mod test {
         println!("network_churn_down_immutable_data_test putting data");
         client_routing.put_request(::maid_manager::Authority(client_name),
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
-        let pmind_nodes = waiting_for_hits(&vault_notifiers,
-                                           3,
-                                           ::data_manager::PARALLELISM,
-                                           ::time::Duration::minutes(3));
+        let pmid_nodes = waiting_for_hits(&vault_notifiers,
+                                          3,
+                                          ::data_manager::PARALLELISM,
+                                          ::time::Duration::minutes(3));
 
         println!("network_churn_down_immutable_data_test dropping a pmid_node");
-        let _ = vault_notifiers[pmind_nodes[0]].1.send(0);
+        let _ = vault_notifiers[pmid_nodes[0]].1.send(0);
         let _ = waiting_for_hits(&vault_notifiers,
                                  20,
                                  ::routing::types::GROUP_SIZE / 2 + 1,
                                  ::time::Duration::minutes(3));
-        println!("network_churn_down_immutable_data_test getting data");
-        client_routing.get_request(::data_manager::Authority(im_data.name()),
-                                   ::routing::data::DataRequest::ImmutableData(im_data.name(),
+        // To avoid the situation that the stopped vault being the portal of the client
+        // a new client shall be constructed to carry out the get requests
+        let (mut new_client_routing, new_client_receiver, _) = create_client();
+        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
+                ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
-        waiting_for_client_get(client_receiver,
-                               ::routing::data::Data::ImmutableData(im_data),
+        println!("network_churn_down_immutable_data_test getting data");
+        waiting_for_client_get(new_client_receiver,
+                               ::routing::data::Data::ImmutableData(im_data.clone()),
                                ::time::Duration::minutes(1));
         // the waiting time to allow DM realize failed fetch
-        ::std::thread::sleep_seconds(10);
+        ::std::thread::sleep_ms(10000);
         // Another get_request to trigger the check on failing get
         println!("network_churn_down_immutable_data_test getting data again");
-        client_routing.get_request(::data_manager::Authority(im_data.name()),
-                                   ::routing::data::DataRequest::ImmutableData(im_data.name(),
+        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
+                ::routing::data::DataRequest::ImmutableData(im_data.name(),
+                ::routing::immutable_data::ImmutableDataType::Sacrificial));
+        // Waiting for the notifications happen
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 30,
+                                 ::routing::types::GROUP_SIZE / 2 + 1,
+                                 ::time::Duration::minutes(3));
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    #[test]
+    fn network_churn_down_two_nodes_immutable_data_test() {
+        let (vault_notifiers, client_routing, _, client_name) =
+            network_env_setup();
+
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+                          ::routing::immutable_data::ImmutableDataType::Normal, value);
+        println!("network_churn_down_immutable_data_test putting data");
+        client_routing.put_request(::maid_manager::Authority(client_name),
+                                   ::routing::data::Data::ImmutableData(im_data.clone()));
+        let pmid_nodes = waiting_for_hits(&vault_notifiers,
+                                          3,
+                                          ::data_manager::PARALLELISM,
+                                          ::time::Duration::minutes(3));
+
+        println!("network_churn_down_immutable_data_test dropping the first pmid_node");
+        let _ = vault_notifiers[pmid_nodes[0]].1.send(0);
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 20,
+                                 ::routing::types::GROUP_SIZE / 2 + 1,
+                                 ::time::Duration::minutes(3));
+
+        println!("network_churn_down_immutable_data_test dropping the second pmid_node");
+        let _ = vault_notifiers[pmid_nodes[1]].1.send(0);
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 20,
+                                 ::routing::types::GROUP_SIZE / 2,
+                                 ::time::Duration::minutes(3));
+        // To avoid the situation that the stopped vault being the portal of the client
+        // a new client shall be constructed to carry out the get requests
+        let (mut new_client_routing, new_client_receiver, _) = create_client();
+        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
+                ::routing::data::DataRequest::ImmutableData(im_data.name(),
                 ::routing::immutable_data::ImmutableDataType::Normal));
-        waiting_for_client_get(client_receiver,
-                               ::routing::data::Data::ImmutableData(im_data),
+        println!("network_churn_down_immutable_data_test getting data");
+        waiting_for_client_get(new_client_receiver,
+                               ::routing::data::Data::ImmutableData(im_data.clone()),
                                ::time::Duration::minutes(1));
+        // the waiting time to allow DM realize failed fetch
+        ::std::thread::sleep_ms(10000);
+        // Another get_request to trigger the check on failing get
+        println!("network_churn_down_immutable_data_test getting data again");
+        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
+                ::routing::data::DataRequest::ImmutableData(im_data.name(),
+                ::routing::immutable_data::ImmutableDataType::Sacrificial));
+        // Waiting for the replications happen
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 3,
+                                 1,
+                                 ::time::Duration::minutes(3));
     }
 }
