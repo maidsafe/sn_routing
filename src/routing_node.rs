@@ -19,7 +19,7 @@
 use std::sync::mpsc;
 use std::thread::spawn;
 use std::thread;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use sodiumoxide::crypto::sign::{verify_detached, Signature};
 use sodiumoxide::crypto::sign;
 use sodiumoxide::crypto;
@@ -77,6 +77,7 @@ pub struct RoutingNode {
     refresh_accumulator: RefreshAccumulator,
     cache_options: CacheOptions,
     data_cache: Option<LruCache<NameType, Data>>,
+    connect_requests: BTreeSet<crust::Endpoint>,
 }
 
 impl RoutingNode {
@@ -124,6 +125,7 @@ impl RoutingNode {
                 ::time::Duration::minutes(5), event_sender),
             cache_options: CacheOptions::no_caching(),
             data_cache: None,
+            connect_requests: BTreeSet::new(),
         }
     }
 
@@ -184,20 +186,16 @@ impl RoutingNode {
                         }
                     };
                 }
-                // Pre crust 3 code
-                //Ok(crust::Event::NewConnection(endpoint)) => {
-                //    self.handle_new_connection(endpoint);
-                //}
-                //Ok(crust::Event::NewBootstrapConnection(endpoint)) => {
-                //    self.handle_new_bootstrap_connection(endpoint);
-                //}
                 Ok(crust::Event::OnConnect(connection)) => {
-                    // TODO:crust3
-                    panic!();
+                    if self.connect_requests.contains(&connection.peer_endpoint()) {
+                        self.handle_new_connection(connection);
+                    }
+                    else {
+                        self.handle_new_bootstrap_connection(connection);
+                    }
                 }
                 Ok(crust::Event::OnAccept(connection)) => {
-                    // TODO:crust3
-                    panic!();
+                    self.handle_new_connection(connection);
                 }
                 Ok(crust::Event::LostConnection(connection)) => {
                     self.handle_lost_connection(connection);
@@ -921,8 +919,8 @@ impl RoutingNode {
                 };
                 // TODO (ben 13/08/2015) use public_id_cache or result of future RFC
                 // to validate the public_id from the network
-                self.crust_service.connect(connect_request.local_endpoints.clone());
-                self.crust_service.connect(connect_request.external_endpoints.clone());
+                self.connect(&connect_request.local_endpoints);
+                self.connect(&connect_request.external_endpoints);
                 self.connection_filter.add(connect_request.requester_fob.name());
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
@@ -972,13 +970,20 @@ impl RoutingNode {
                     return Err(RoutingError::RefusedFromRoutingTable);
                 };
                 debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
-                self.crust_service.connect(connect_response.local_endpoints.clone());
-                self.crust_service.connect(connect_response.external_endpoints.clone());
+                self.connect(&connect_response.local_endpoints);
+                self.connect(&connect_response.external_endpoints);
                 self.connection_filter.add(connect_response.receiver_fob.name());
                 Ok(())
             }
             _ => return Err(RoutingError::BadAuthority),
         }
+    }
+
+    fn connect(&mut self, endpoints: &Vec<Endpoint>) {
+        for e in endpoints {
+            self.connect_requests.insert(e.clone());
+        }
+        self.crust_service.connect(endpoints.clone());
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
