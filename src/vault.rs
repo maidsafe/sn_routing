@@ -167,12 +167,16 @@ impl Vault {
 
     fn on_bootstrapped(&self) {
         // TODO: what is expected to be done here?
-        assert_eq!(0, self.data_manager.nodes_in_table_len());
+        debug!("vault bootstrapped having {:?} connections",
+               self.data_manager.nodes_in_table_len());
+        // assert_eq!(0, self.data_manager.nodes_in_table_len());
     }
 
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
-        assert_eq!(::routing::types::GROUP_SIZE, self.data_manager.nodes_in_table_len());
+        debug!("vault connected having {:?} connections",
+               self.data_manager.nodes_in_table_len());
+        // assert_eq!(::routing::types::GROUP_SIZE, self.data_manager.nodes_in_table_len());
     }
 
     fn on_disconnected(&mut self) {
