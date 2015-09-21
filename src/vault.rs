@@ -29,7 +29,6 @@ pub struct Vault {
     pmid_node: ::pmid_node::PmidNode,
     sd_manager: ::sd_manager::StructuredDataManager,
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
-    routing: Routing,
     churn_timestamp: ::time::SteadyTime,
     id: ::routing::NameType,
     event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>,
@@ -52,7 +51,6 @@ impl Vault {
             sd_manager: ::sd_manager::StructuredDataManager::new(routing.clone()),
             churn_timestamp: ::time::SteadyTime::now(),
             receiver: receiver,
-            routing: routing,
             id: ::routing::NameType::new([0u8; 64]),
             event_sender: event_sender,
         }
@@ -178,19 +176,17 @@ impl Vault {
     }
 
     fn on_disconnected(&mut self) {
-        self.routing.stop();
-
         self.churn_timestamp = ::time::SteadyTime::now();
         let (sender, receiver) = ::std::sync::mpsc::channel();
-        self.routing = Routing::new(sender);
+        let routing = Routing::new(sender);
         self.receiver = receiver;
 
-        self.maid_manager.reset(self.routing.clone());
-        self.data_manager.reset(self.routing.clone());
-        self.pmid_manager.reset(self.routing.clone());
-        // TODO: shall pmid_node and sd_manager still keeps the data so they can be reused?
-        self.pmid_node.reset(self.routing.clone());
-        self.sd_manager.reset(self.routing.clone());
+        self.maid_manager.reset(routing.clone());
+        self.data_manager.reset(routing.clone());
+        self.pmid_manager.reset(routing.clone());
+        // TODO: shall pmid_node and sd_manager still keep the data so they can be reused?
+        self.pmid_node.reset(routing.clone());
+        self.sd_manager.reset(routing.clone());
     }
 
     fn on_failed_request(&mut self,
@@ -338,9 +334,9 @@ mod test {
                 vault.do_run();
             });
         };
-        let mut vault = Vault::new(None);
-        let receiver = vault.routing.get_client_receiver();
-        let mut routing = vault.routing.clone();
+        let vault = Vault::new(None);
+        let mut routing = vault.pmid_node.routing();
+        let receiver = routing.get_client_receiver();
         let _ = run_vault(vault);
 
         let mut available_nodes = Vec::with_capacity(30);
