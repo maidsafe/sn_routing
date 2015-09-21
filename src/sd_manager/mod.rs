@@ -47,9 +47,8 @@ impl StructuredDataManager {
         if !::utils::is_sd_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
-        let structured_data_name_and_type = match data_request {
-            &::routing::data::DataRequest::StructuredData(ref data_name, ref data_type) =>
-                (data_name, data_type),
+        let structured_data_name = match data_request {
+            &::routing::data::DataRequest::StructuredData(_, _) => data_request.name(),
             _ => return ::utils::NOT_HANDLED,
         };
 
@@ -59,16 +58,16 @@ impl StructuredDataManager {
             return ::utils::HANDLED;
         }
 
-        let data = self.chunk_store.get(structured_data_name_and_type.0);
+        let data = self.chunk_store.get(&structured_data_name);
         if data.len() == 0 {
-            warn!("Failed to GET data with name {:?}", structured_data_name_and_type.0);
+            warn!("Failed to GET data with name {:?}", structured_data_name);
             return ::utils::HANDLED;
         }
         let decoded: ::routing::structured_data::StructuredData =
             match ::routing::utils::decode(&data) {
                 Ok(data) => data,
                 Err(_) => {
-                    warn!("Failed to parse data with name {:?}", structured_data_name_and_type.0);
+                    warn!("Failed to parse data with name {:?}", structured_data_name);
                     return ::utils::HANDLED;
                 }
             };
@@ -242,6 +241,7 @@ mod test {
         pub routing: ::vault::Routing,
         pub sd_manager: StructuredDataManager,
         pub data_name: ::routing::NameType,
+        pub identifier: ::routing::NameType,
         pub keys: (::sodiumoxide::crypto::sign::PublicKey, ::sodiumoxide::crypto::sign::SecretKey),
         pub structured_data: ::routing::structured_data::StructuredData,
         pub data: ::routing::data::Data,
@@ -265,6 +265,7 @@ mod test {
                 routing: routing.clone(),
                 sd_manager: StructuredDataManager::new(routing),
                 data_name: data_name.clone(),
+                identifier: identifier,
                 keys: keys,
                 structured_data: structured_data.clone(),
                 data: ::routing::data::Data::StructuredData(structured_data),
@@ -295,7 +296,7 @@ mod test {
         assert_eq!(0, env.routing.put_requests_given().len());
         assert_eq!(0, env.routing.put_responses_given().len());
 
-        let request = ::routing::data::DataRequest::StructuredData(env.data_name.clone(), 0);
+        let request = ::routing::data::DataRequest::StructuredData(env.identifier.clone(), 0);
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_get(&env.us, &env.client, &request, &None));
         let get_responses = env.routing.get_responses_given();

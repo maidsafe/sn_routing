@@ -29,7 +29,6 @@ pub struct Vault {
     pmid_node: ::pmid_node::PmidNode,
     sd_manager: ::sd_manager::StructuredDataManager,
     receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
-    routing: Routing,
     churn_timestamp: ::time::SteadyTime,
     id: ::routing::NameType,
     app_event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>,
@@ -54,7 +53,6 @@ impl Vault {
             sd_manager: ::sd_manager::StructuredDataManager::new(routing.clone()),
             churn_timestamp: ::time::SteadyTime::now(),
             receiver: receiver,
-            routing: routing,
             id: ::routing::NameType::new([0u8; 64]),
             app_event_sender: app_event_sender,
             app_action_receiver: app_action_receiver,
@@ -190,28 +188,30 @@ impl Vault {
 
     fn on_bootstrapped(&self) {
         // TODO: what is expected to be done here?
-        assert_eq!(0, self.data_manager.nodes_in_table_len());
+        debug!("vault bootstrapped having {:?} connections",
+               self.data_manager.nodes_in_table_len());
+        // assert_eq!(0, self.data_manager.nodes_in_table_len());
     }
 
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
-        assert_eq!(::routing::types::GROUP_SIZE, self.data_manager.nodes_in_table_len());
+        debug!("vault connected having {:?} connections",
+               self.data_manager.nodes_in_table_len());
+        // assert_eq!(::routing::types::GROUP_SIZE, self.data_manager.nodes_in_table_len());
     }
 
     fn on_disconnected(&mut self) {
-        self.routing.stop();
-
         self.churn_timestamp = ::time::SteadyTime::now();
         let (sender, receiver) = ::std::sync::mpsc::channel();
-        self.routing = Routing::new(sender);
+        let routing = Routing::new(sender);
         self.receiver = receiver;
 
-        self.maid_manager.reset(self.routing.clone());
-        self.data_manager.reset(self.routing.clone());
-        self.pmid_manager.reset(self.routing.clone());
-        // TODO: shall pmid_node and sd_manager still keeps the data so they can be reused?
-        self.pmid_node.reset(self.routing.clone());
-        self.sd_manager.reset(self.routing.clone());
+        self.maid_manager.reset(routing.clone());
+        self.data_manager.reset(routing.clone());
+        self.pmid_manager.reset(routing.clone());
+        // TODO: shall pmid_node and sd_manager still keep the data so they can be reused?
+        self.pmid_node.reset(routing.clone());
+        self.sd_manager.reset(routing.clone());
     }
 
     fn on_failed_request(&mut self,
@@ -359,9 +359,9 @@ mod test {
                 vault.do_run();
             });
         };
-        let mut vault = Vault::new(None, None);
-        let receiver = vault.routing.get_client_receiver();
-        let mut routing = vault.routing.clone();
+        let vault = Vault::new(None);
+        let mut routing = vault.pmid_node.routing();
+        let receiver = routing.get_client_receiver();
         let _ = run_vault(vault);
 
         let mut available_nodes = Vec::with_capacity(30);
@@ -433,7 +433,7 @@ mod test {
                             ::routing::data::Data::StructuredData(sd_new.clone()));
         ::std::thread::sleep_ms(2000);
 
-        let data_request = ::routing::data::DataRequest::StructuredData(sd.name(), 0);
+        let data_request = ::routing::data::DataRequest::StructuredData(name, 0);
         routing.client_get(client_name, sign_keys.0, data_request);
         for it in receiver.iter() {
             assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
@@ -448,10 +448,7 @@ mod test {
             ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
             ::routing::NameType) {
         ::utils::initialise_logger();
-        match ::env_logger::init() {
-            Ok(()) => {}
-            Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
-        }
+
         let run_vault = |mut vault: Vault| {
             let _ = ::std::thread::spawn(move || {
                 vault.do_run();
@@ -688,7 +685,7 @@ mod test {
                                  ::time::Duration::minutes(3));
         println!("network_post_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
-                                   ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+                                   ::routing::data::DataRequest::StructuredData(name, 0));
         waiting_for_client_get(client_receiver,
                                ::routing::data::Data::StructuredData(sd_new),
                                ::time::Duration::minutes(1));
@@ -769,7 +766,7 @@ mod test {
                                  ::time::Duration::minutes(3));
         println!("network_churn_up_structured_data_test getting data");
         client_routing.get_request(::sd_manager::Authority(sd.name()),
-                                   ::routing::data::DataRequest::StructuredData(sd.name(), 0));
+                                   ::routing::data::DataRequest::StructuredData(name, 0));
         waiting_for_client_get(client_receiver,
                                ::routing::data::Data::StructuredData(sd),
                                ::time::Duration::minutes(1));

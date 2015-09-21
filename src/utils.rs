@@ -23,6 +23,8 @@ pub const HANDLED: Option<()> = Some(());
 /// for that persona).
 pub const NOT_HANDLED: Option<()> = None;
 
+static INITIALISE_LOGGER: ::std::sync::Once = ::std::sync::ONCE_INIT;
+
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
 /// unsorted.  If `values` is empty, returns `0`.
 pub fn median(mut values: Vec<u64>) -> u64 {
@@ -105,12 +107,9 @@ pub fn is_data_manager_authority_type(provided_authority: &::routing::Authority)
 }
 
 pub fn initialise_logger() {
-    match ::env_logger::init() {
-        Ok(()) => {
-            println!("");
-        }
-        Err(error) => println!("Error initialising logger; continuing without: {:?}", error),
-    }
+    INITIALISE_LOGGER.call_once(|| {
+        ::env_logger::init().unwrap_or_else(|err| println!("Error initialising logger: {}", err));
+    });
 }
 
 #[cfg(test)]
