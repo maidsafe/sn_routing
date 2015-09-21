@@ -24,12 +24,17 @@ use NameType;
 /// This is the data types routing handles in the public interface
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum Data {
+    /// StructuredData Data type.
     StructuredData(StructuredData),
+    /// ImmutableData Data type.
     ImmutableData(ImmutableData),
+    /// PlainData Data type.
     PlainData(PlainData),
 }
 
 impl Data {
+
+    /// Return data name.
     pub fn name(&self) -> NameType {
         match *self {
             Data::StructuredData(ref d) => d.name(),
@@ -38,6 +43,7 @@ impl Data {
         }
     }
 
+    /// Return data size.
     pub fn payload_size(&self) -> usize {
         match *self {
             Data::StructuredData(ref d) => d.payload_size(),
@@ -48,14 +54,19 @@ impl Data {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+/// DataRequest.
 pub enum DataRequest {
-    // (Identifier, TypeTag) pair for name resolution.
+    /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
     StructuredData(NameType, u64),
+    /// Data request, (Identifier, Type), for ImmutableData types.
     ImmutableData(NameType, ImmutableDataType),
+    /// Request for PlainData.
     PlainData(NameType),
 }
 
 impl DataRequest {
+
+    /// DataRequest name.
     pub fn name(&self) -> NameType {
         match *self {
             DataRequest::StructuredData(ref name, tag) => StructuredData::compute_name(tag, name),
@@ -144,7 +155,7 @@ mod test {
         let name = ::name_type::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
 
         // name() resolves correctly for StructuedData    
-        let tag = 0 as u64;
+        let tag = 0;
         assert_eq!(
             ::structured_data::StructuredData::compute_name(tag, &name),
             ::data::DataRequest::StructuredData(name, tag).name()

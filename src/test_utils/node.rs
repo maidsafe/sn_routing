@@ -16,6 +16,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+/// Network Node.
 pub struct Node {
     routing: ::routing::Routing,
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
@@ -26,6 +27,8 @@ pub struct Node {
 }
 
 impl Node {
+
+    /// Construct a new node.
     pub fn new() -> Node {
         let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let routing = ::routing::Routing::new(sender.clone());
@@ -40,6 +43,7 @@ impl Node {
         }
     }
 
+    /// Run event loop.
     pub fn run(&mut self) {
         while let Ok(event) = self.receiver.recv() {
             debug!("Node: Received event {:?}", event);
@@ -48,7 +52,7 @@ impl Node {
                     self.handle_request(request, our_authority, from_authority, response_token),
                 ::event::Event::Response{ response, our_authority, from_authority } => {
                     debug!("Received response event");
-                    // self.handle_response(response, our_authority, from_authority)
+                    self.handle_response(response, our_authority, from_authority)
                 },
                 ::event::Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
                     debug!("Received refresh event");
@@ -74,11 +78,11 @@ impl Node {
                 ::event::Event::Disconnected => debug!("Received disconnected event"),
                 ::event::Event::FailedRequest{ request, our_authority, location, interface_error } => {
                     debug!("Received failed request event");
-                    // self.handle_failed_request(request, our_authority, location, interface_error)
+                    self.handle_failed_request(request, our_authority, location, interface_error)
                 },
                 ::event::Event::FailedResponse{ response, our_authority, location, interface_error } => {
                     debug!("Received failed response event");
-                    // self.handle_failed_response(response, our_authority, location, interface_error)
+                    self.handle_failed_response(response, our_authority, location, interface_error)
                 },
                 ::event::Event::Terminated => {
                     debug!("Received terminate event");
@@ -89,10 +93,12 @@ impl Node {
         }
     }
 
+    /// Allows external tests to send events.
     pub fn get_sender(&self) -> ::std::sync::mpsc::Sender<::event::Event> {
         self.sender.clone()
     }
 
+    /// Terminate event loop.
     pub fn stop(&mut self) {
         debug!("Node terminating.");
         self.routing.stop();
@@ -214,6 +220,26 @@ impl Node {
             },
             _ => {},
         };
+    }
+
+    fn handle_response(&mut self, _response: ::ExternalResponse,
+                                  _our_authority: ::authority::Authority,
+                                  _from_authority: ::authority::Authority,) {
+        unimplemented!();
+    }
+
+    fn handle_failed_request(&mut self, _request: ::ExternalRequest,
+                                        _our_authority: Option<::authority::Authority>,
+                                        _location: ::authority::Authority,
+                                        _interface_error: ::error::InterfaceError) {
+        unimplemented!();
+    }
+
+    fn handle_failed_response(&mut self, _response: ::ExternalResponse,
+                                         _our_authority: Option<::authority::Authority>,
+                                         _location: ::authority::Authority,
+                                         _interface_error: ::error::InterfaceError) {
+        unimplemented!();
     }
 }
 

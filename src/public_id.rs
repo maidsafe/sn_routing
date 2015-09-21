@@ -26,6 +26,7 @@ use utils;
 use std::fmt::{Debug, Formatter, Error};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+/// PublicId.
 pub struct PublicId {
     public_encrypt_key: box_::PublicKey,
     public_sign_key: sign::PublicKey,
@@ -39,6 +40,8 @@ impl Debug for PublicId {
 }
 
 impl PublicId {
+
+    /// Construct new PublicId.
     pub fn new(id: &Id) -> PublicId {
         PublicId {
             public_encrypt_key: id.encrypting_public_key().clone(),
@@ -47,35 +50,40 @@ impl PublicId {
         }
     }
 
+    /// Return initial/relocated name.
     pub fn name(&self) -> NameType {
         self.name
     }
 
+    /// Set the name to new value.
     pub fn set_name(&mut self, name: NameType) {
         self.name = name;
     }
 
+    /// Return client name derived from public key.
     pub fn client_name(&self) -> NameType {
         utils::public_key_to_client_name(&self.public_sign_key)
     }
 
+    /// Serialise the content of self.
     pub fn serialised_contents(&self) -> Result<Vec<u8>, RoutingError> {
         let mut e = cbor::Encoder::from_memory();
         try!(e.encode(&[&self]));
         Ok(e.into_bytes())
     }
 
-    // name field is initially same as original_name, this should be replaced by relocated name
-    // calculated by the nodes close to original_name by using this method
+    /// Name field is initially same as original_name, this should be replaced by relocated name
+    /// calculated by the nodes close to original_name by using this method
     pub fn assign_relocated_name(&mut self, relocated_name: NameType) {
         self.name = relocated_name;
     }
 
+    /// Return public signing key.
     pub fn signing_public_key(&self) -> sign::PublicKey {
         self.public_sign_key
     }
 
-    // checks if the name is updated to a relocated name
+    /// Checks if the name is updated to a relocated name.
     pub fn is_relocated(&self) -> bool {
         self.name != utils::public_key_to_client_name(&self.public_sign_key)
     }

@@ -18,6 +18,7 @@
 
 extern crate time;
 
+/// Network Client.
 pub struct Client {
     routing_client: ::routing_client::RoutingClient,
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
@@ -25,6 +26,8 @@ pub struct Client {
 }
 
 impl Client {
+
+    /// Construct new Client.
     pub fn new() -> Client {
         let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
@@ -106,6 +109,7 @@ impl Client {
     //     self.routing.delete_request(location, data)
     // }
 
+    /// Return network name.
     pub fn name(&self) -> ::NameType {
         self.id.name()
     }
