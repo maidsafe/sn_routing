@@ -514,6 +514,8 @@ impl RoutingCore {
 
 #[cfg(test)]
 mod test {
+    use test_utils::test;
+
     #[test]
     fn add_peers_as_client() {
         let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
@@ -525,7 +527,7 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let routing_peer = super::ConnectionName::Routing(public_id.name());
         assert!(!routing_core.add_peer(routing_peer,
-            ::test_utils::messages_util::test::random_endpoint(),
+            test::random_connection(),
             Some(public_id)));
         assert!(event_receiver.try_recv().is_err());
         assert!(action_receiver.try_recv().is_err());
@@ -534,7 +536,7 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let bootstrap_peer = super::ConnectionName::Bootstrap(public_id.name());
         assert!(routing_core.add_peer(bootstrap_peer,
-            ::test_utils::messages_util::test::random_endpoint(),
+            test::random_connection(),
             Some(public_id)));
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::Bootstrapped));
         assert!(action_receiver.try_recv().is_err());
@@ -555,15 +557,15 @@ mod test {
         // routing core is a full node, so it will accept routing connections and generate churn
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let name = public_id.name();
-        let endpoint = ::test_utils::messages_util::test::random_endpoint();
+        let connection = test::random_connection();
         let routing_peer = super::ConnectionName::Routing(public_id.name());
-        assert!(routing_core.add_peer(routing_peer, endpoint.clone(), Some(public_id)));
+        assert!(routing_core.add_peer(routing_peer, connection.clone(), Some(public_id)));
         assert!(event_receiver.try_recv().is_err());
         match action_receiver.try_recv() {
             Ok(::action::Action::Churn(direct_churn, targets, churn)) => {
                 assert_eq!(direct_churn, ::direct_messages::Churn {
                     close_group: vec![our_name.clone(), name.clone()] } );
-                assert_eq!(targets, vec![endpoint]);
+                assert_eq!(targets, vec![connection]);
                 assert_eq!(churn, name);
             },
             _ => panic!("Should have caused a churn action."),
@@ -575,7 +577,7 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let bootstrap_peer = super::ConnectionName::Bootstrap(public_id.name());
         assert!(routing_core.add_peer(bootstrap_peer,
-            ::test_utils::messages_util::test::random_endpoint(),
+            test::random_connection(),
             Some(public_id)));
         assert!(event_receiver.try_recv().is_err());
         assert!(action_receiver.try_recv().is_err());
@@ -584,9 +586,9 @@ mod test {
         for i in 1..::types::GROUP_SIZE - 1 {
             let public_id = ::public_id::PublicId::new(&::id::Id::new());
             let name = public_id.name();
-            let endpoint = ::test_utils::messages_util::test::random_endpoint();
+            let connection = test::random_connection();
             let routing_peer = super::ConnectionName::Routing(public_id.name());
-            assert!(routing_core.add_peer(routing_peer, endpoint.clone(), Some(public_id)));
+            assert!(routing_core.add_peer(routing_peer, connection.clone(), Some(public_id)));
             assert!(event_receiver.try_recv().is_err());
             match action_receiver.try_recv() {
                 Ok(::action::Action::Churn(direct_churn, targets, churn)) => {
@@ -603,9 +605,9 @@ mod test {
         // on reaching group size plus ourselves, core needs to signal we are connected
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let name = public_id.name();
-        let endpoint = ::test_utils::messages_util::test::random_endpoint();
+        let connection = test::random_connection();
         let routing_peer = super::ConnectionName::Routing(public_id.name());
-        assert!(routing_core.add_peer(routing_peer, endpoint.clone(), Some(public_id)));
+        assert!(routing_core.add_peer(routing_peer, connection.clone(), Some(public_id)));
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::Connected));
         assert!(event_receiver.try_recv().is_err());
         match action_receiver.try_recv() {

@@ -25,7 +25,7 @@ sodiumoxide = "*"
 #crust = "0.2.*"
 
 [dependencies.crust]
-branch = "accept-returns-endpoint"
+branch = "pub-proto"
 git = "https://github.com/inetic/crust"
 
 [dev-dependencies]

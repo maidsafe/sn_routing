@@ -100,13 +100,25 @@ pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::Publi
 pub mod test {
 
     // TODO: Use IPv6 and non-TCP
-    pub fn random_endpoint() -> ::crust::Endpoint {
-        ::crust::Endpoint::Tcp(::std::net::SocketAddr::V4(::std::net::SocketAddrV4::new(
+    pub fn random_socket_addr() -> ::std::net::SocketAddr {
+        ::std::net::SocketAddr::V4(::std::net::SocketAddrV4::new(
             ::std::net::Ipv4Addr::new(::rand::random::<u8>(),
                                       ::rand::random::<u8>(),
                                       ::rand::random::<u8>(),
                                       ::rand::random::<u8>()),
-            ::rand::random::<u16>())))
+            ::rand::random::<u16>()))
+    }
+
+    pub fn random_endpoint() -> ::crust::Endpoint {
+        // TODO: Udt
+        ::crust::Endpoint::Tcp(random_socket_addr())
+    }
+
+    pub fn random_connection() -> ::crust::Connection {
+        let local = random_socket_addr();
+        let remote = random_socket_addr();
+        // TODO: Udt
+        ::crust::Connection::new(::crust::Protocol::Tcp, local, remote)
     }
 
     pub fn random_endpoints() -> Vec<::crust::Endpoint> {

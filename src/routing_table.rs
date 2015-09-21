@@ -633,7 +633,7 @@ mod test {
             id: public_id.name(),
             public_id: public_id,
             endpoints: random_endpoints(),
-            connected_endpoint: None,
+            connection: None,
         }
     }
 

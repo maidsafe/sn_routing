@@ -229,7 +229,7 @@ mod test {
             let _ = routing_table.add_node(NodeInfo::new(
                 PublicId::new(&Id::new()),
                 test::random_endpoints(),
-                Some(test::random_endpoint())));
+                Some(test::random_connection())));
             count += 1;
             if count > 100 {
                 break;

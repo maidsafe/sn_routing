@@ -175,15 +175,7 @@ impl RelayMap {
 
 #[cfg(test)]
 mod test {
-
-    fn generate_random_endpoint() -> ::crust::Endpoint {
-        ::crust::Endpoint::Tcp(::std::net::SocketAddr::V4(::std::net::SocketAddrV4::new(
-            ::std::net::Ipv4Addr::new(::rand::random::<u8>(),
-                                      ::rand::random::<u8>(),
-                                      ::rand::random::<u8>(),
-                                      ::rand::random::<u8>()),
-            ::rand::random::<u16>())))
-    }
+    use test_utils::test;
 
     #[test]
     fn add_max_peers() {
@@ -194,26 +186,26 @@ mod test {
             let public_id = ::public_id::PublicId::new(&id);
             let identity = ::routing_core::ConnectionName::Relay(
                     ::types::Address::Client(public_id.signing_public_key()));
-            let endpoint = generate_random_endpoint();
+            let connection = test::random_connection();
 
-            assert!(relay_map.add_peer(identity.clone(), endpoint.clone(),
+            assert!(relay_map.add_peer(identity.clone(), connection.clone(),
                     Some(public_id.clone())));
             assert!(relay_map.contains_identity(&identity));
-            assert!(relay_map.contains_endpoint(&endpoint));
+            assert!(relay_map.contains_connection(&connection));
             assert!(relay_map.lookup_connection_name(&identity).is_some());
-            assert!(relay_map.lookup_endpoint(&endpoint).is_some());
+            assert!(relay_map.lookup_connection(&connection).is_some());
 
-            let peer = ::peer::Peer::new(identity.clone(), endpoint.clone(), Some(public_id));
+            let peer = ::peer::Peer::new(identity.clone(), connection.clone(), Some(public_id));
             let relay_peer = relay_map.lookup_connection_name(&identity).unwrap();
 
             assert_eq!(peer.identity(), relay_peer.identity());
-            assert_eq!(peer.endpoint(), relay_peer.endpoint());
+            assert_eq!(peer.connection(), relay_peer.connection());
             assert_eq!(peer.public_id(), relay_peer.public_id());
 
-            let relay_peer = relay_map.lookup_endpoint(&endpoint).unwrap();
+            let relay_peer = relay_map.lookup_connection(&connection).unwrap();
 
             assert_eq!(peer.identity(), relay_peer.identity());
-            assert_eq!(peer.endpoint(), relay_peer.endpoint());
+            assert_eq!(peer.connection(), relay_peer.connection());
             assert_eq!(peer.public_id(), relay_peer.public_id());
             assert!(!relay_map.has_bootstrap_connections());
 
@@ -228,33 +220,33 @@ mod test {
         let public_id = ::public_id::PublicId::new(&id);
         let identity = ::routing_core::ConnectionName::Relay(
                 ::types::Address::Client(public_id.signing_public_key()));
-        let endpoint = generate_random_endpoint();
+        let connection = test::random_connection();
 
-        assert!(!relay_map.add_peer(identity.clone(), endpoint.clone(), Some(public_id)));
+        assert!(!relay_map.add_peer(identity.clone(), connection.clone(), Some(public_id)));
         assert!(!relay_map.contains_identity(&identity));
-        assert!(!relay_map.contains_endpoint(&endpoint));
+        assert!(!relay_map.contains_connection(&connection));
         assert!(relay_map.lookup_connection_name(&identity).is_none());
-        assert!(relay_map.lookup_endpoint(&endpoint).is_none());
+        assert!(relay_map.lookup_connection(&connection).is_none());
         assert!(!relay_map.has_bootstrap_connections());
         assert!(relay_map.is_full());
     }
 
     #[test]
-    fn drop_endpoint() {
+    fn drop_connection() {
         let mut relay_map = super::RelayMap::new();
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let identity = ::routing_core::ConnectionName::Relay(
                 ::types::Address::Client(public_id.signing_public_key()));
-        let endpoint = generate_random_endpoint();
+        let connection = test::random_connection();
 
-        assert!(relay_map.add_peer(identity.clone(), endpoint.clone(), Some(public_id)));
+        assert!(relay_map.add_peer(identity.clone(), connection.clone(), Some(public_id)));
         assert!(relay_map.contains_identity(&identity));
-        assert!(relay_map.contains_endpoint(&endpoint));
+        assert!(relay_map.contains_connection(&connection));
 
-        let _ = relay_map.drop_endpoint(&endpoint);
+        let _ = relay_map.drop_connection(&connection);
 
         assert!(!relay_map.contains_identity(&identity));
-        assert!(!relay_map.contains_endpoint(&endpoint));
+        assert!(!relay_map.contains_connection(&connection));
     }
 
     #[test]
@@ -263,16 +255,16 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let identity = ::routing_core::ConnectionName::Relay(
                 ::types::Address::Client(public_id.signing_public_key()));
-        let endpoint = generate_random_endpoint();
+        let endpoint = test::random_connection();
 
         assert!(relay_map.add_peer(identity.clone(), endpoint.clone(), Some(public_id)));
         assert!(relay_map.contains_identity(&identity));
-        assert!(relay_map.contains_endpoint(&endpoint));
+        assert!(relay_map.contains_connection(&endpoint));
 
         let _ = relay_map.drop_connection_name(&identity);
 
         assert!(!relay_map.contains_identity(&identity));
-        assert!(!relay_map.contains_endpoint(&endpoint));
+        assert!(!relay_map.contains_connection(&endpoint));
     }
 
     #[test]
@@ -281,18 +273,18 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let identity = ::routing_core::ConnectionName::Relay(
                 ::types::Address::Client(public_id.signing_public_key()));
-        let endpoint = generate_random_endpoint();
+        let endpoint = test::random_connection();
         let conflicting_public_id = ::public_id::PublicId::new(&::id::Id::new());
         let conflicting_identity = ::routing_core::ConnectionName::Relay(
                 ::types::Address::Client(conflicting_public_id.signing_public_key()));
 
         assert!(relay_map.add_peer(identity.clone(), endpoint.clone(), Some(public_id)));
         assert!(relay_map.contains_identity(&identity));
-        assert!(relay_map.contains_endpoint(&endpoint));
+        assert!(relay_map.contains_connection(&endpoint));
         assert!(!relay_map.add_peer(
                 conflicting_identity.clone(), endpoint.clone(), Some(conflicting_public_id)));
         assert!(!relay_map.contains_identity(&conflicting_identity));
-        assert!(relay_map.contains_endpoint(&endpoint));
+        assert!(relay_map.contains_connection(&endpoint));
     }
 
     #[test]
@@ -301,26 +293,26 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let identity = ::routing_core::ConnectionName::Relay(
                 ::types::Address::Client(public_id.signing_public_key()));
-        let endpoint = generate_random_endpoint();
+        let connection = test::random_connection();
 
-        assert!(relay_map.add_peer(identity.clone(), endpoint.clone(), Some(public_id)));
+        assert!(relay_map.add_peer(identity.clone(), connection.clone(), Some(public_id)));
         assert!(relay_map.contains_identity(&identity));
-        assert!(relay_map.contains_endpoint(&endpoint));
+        assert!(relay_map.contains_connection(&connection));
 
         let name: ::NameType = ::test_utils::Random::generate_random();
         let bootstrap_identity = ::routing_core::ConnectionName::Bootstrap(name.clone());
-        let bootstrap_endpoint = generate_random_endpoint();
+        let bootstrap_endpoint = test::random_connection();
 
         assert!(relay_map.add_peer(bootstrap_identity.clone(), bootstrap_endpoint.clone(), None));
         assert!(relay_map.contains_identity(&bootstrap_identity));
-        assert!(relay_map.contains_endpoint(&bootstrap_endpoint));
+        assert!(relay_map.contains_connection(&bootstrap_endpoint));
 
-        let endpoint = generate_random_endpoint();
-        let identity = ::routing_core::ConnectionName::Unidentified(endpoint.clone(), false);
+        let connection = test::random_connection();
+        let identity = ::routing_core::ConnectionName::Unidentified(connection.clone(), false);
 
-        assert!(relay_map.add_peer(identity.clone(), endpoint.clone(), None));
+        assert!(relay_map.add_peer(identity.clone(), connection.clone(), None));
         assert!(relay_map.contains_identity(&identity));
-        assert!(relay_map.contains_endpoint(&endpoint));
+        assert!(relay_map.contains_connection(&connection));
         assert!(relay_map.lookup_name(&name).is_some());
 
         let identity = relay_map.lookup_name(&name).unwrap();
@@ -332,7 +324,7 @@ mod test {
 
         assert_eq!(1, bootstrap_connections.len());
         assert_eq!(bootstrap_connections[0].identity(), &bootstrap_identity);
-        assert_eq!(bootstrap_connections[0].endpoint(), &bootstrap_endpoint);
+        assert_eq!(bootstrap_connections[0].connection(), &bootstrap_endpoint);
         assert_eq!(bootstrap_connections[0].public_id(), &None);
     }
 
@@ -341,11 +333,11 @@ mod test {
         let mut relay_map = super::RelayMap::new();
         let name: ::NameType = ::test_utils::Random::generate_random();
         let identity = ::routing_core::ConnectionName::Routing(name.clone());
-        let endpoint = generate_random_endpoint();
+        let connection = test::random_connection();
 
-        assert!(!relay_map.add_peer(identity.clone(), endpoint.clone(), None));
+        assert!(!relay_map.add_peer(identity.clone(), connection.clone(), None));
         assert!(!relay_map.contains_identity(&identity));
-        assert!(!relay_map.contains_endpoint(&endpoint));
+        assert!(!relay_map.contains_connection(&connection));
     }
 
     #[test]
@@ -354,11 +346,11 @@ mod test {
         let name: ::NameType = ::test_utils::Random::generate_random();
         let identity = ::routing_core::ConnectionName::Relay(
                 ::types::Address::Node(name.clone()));
-        let endpoint = generate_random_endpoint();
+        let connection = test::random_connection();
 
-        assert!(relay_map.add_peer(identity.clone(), endpoint.clone(), None));
+        assert!(relay_map.add_peer(identity.clone(), connection.clone(), None));
         assert!(relay_map.contains_identity(&identity));
-        assert!(relay_map.contains_endpoint(&endpoint));
+        assert!(relay_map.contains_connection(&connection));
         assert!(relay_map.lookup_name(&name).is_some());
 
         let relay_identity = relay_map.lookup_name(&name).unwrap();
