@@ -107,7 +107,7 @@ impl Vault {
             ::std::thread::sleep_ms(1);
         }
         debug!("vault {:?} is stopping", self.id);
-        self.routing.stop();
+        self.pmid_node.routing().stop();
     }
 
     fn on_request(&mut self,
@@ -359,7 +359,7 @@ mod test {
                 vault.do_run();
             });
         };
-        let vault = Vault::new(None);
+        let vault = Vault::new(None, None);
         let mut routing = vault.pmid_node.routing();
         let receiver = routing.get_client_receiver();
         let _ = run_vault(vault);
