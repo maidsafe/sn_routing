@@ -427,10 +427,7 @@ mod test {
             ::routing::NameType) {
         use routing::event::Event;
         ::utils::initialise_logger();
-        match ::env_logger::init() {
-            Ok(()) => {}
-            Err(e) => println!("Error initialising logger; continuing without: {:?}", e),
-        }
+
         let run_vault = |mut vault: Vault| {
             let _ = ::std::thread::spawn(move || {
                 vault.do_run();
