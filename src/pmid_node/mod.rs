@@ -182,7 +182,6 @@ impl PmidNode {
         self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
     }
 
-    #[cfg(all(test, feature = "use-mock-routing"))]
     pub fn routing(&self) -> ::vault::Routing {
         self.routing.clone()
     }

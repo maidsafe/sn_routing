@@ -77,16 +77,12 @@ impl ::types::Refreshable for Account {
 
 
 pub struct Database {
-    pub close_grp_from_churn: Vec<::routing::NameType>,
-    pub temp_storage_after_churn: ::std::collections::HashMap<::routing::NameType, PmidNodes>,
     storage: ::std::collections::HashMap<DataName, PmidNodes>,
 }
 
 impl Database {
     pub fn new() -> Database {
         Database {
-            close_grp_from_churn: Vec::new(),
-            temp_storage_after_churn: ::std::collections::HashMap::new(),
             storage: ::std::collections::HashMap::with_capacity(10000),
         }
     }
@@ -136,7 +132,6 @@ impl Database {
 
     pub fn handle_churn(&mut self, our_authority: &::routing::Authority,
                         routing: &::vault::Routing, churn_node: &::routing::NameType) {
-        self.temp_storage_after_churn = self.storage.clone();
         for (key, value) in self.storage.iter() {
             if value.len() < 3 {
                 for pmid_node in value.iter() {

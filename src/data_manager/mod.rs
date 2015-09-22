@@ -87,7 +87,7 @@ impl DataManager {
             id: ::routing::NameType::new([0u8; 64]),
             nodes_in_table: vec![],
             request_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
-                ::time::Duration::minutes(5), 1000),
+                ::time::Duration::minutes(5), LRU_CACHE_SIZE),
             resource_index: 1,
             ongoing_gets: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
             failed_pmids: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
@@ -104,9 +104,8 @@ impl DataManager {
         if !::utils::is_data_manager_authority_type(our_authority) {
             return ::utils::NOT_HANDLED;
         }
-        let immutable_data_name_and_type = match data_request {
-            &::routing::data::DataRequest::ImmutableData(ref data_name, ref data_type) =>
-                (data_name, data_type),
+        let data_name = match data_request {
+            &::routing::data::DataRequest::ImmutableData(ref data_name, _) => data_name,
             _ => return ::utils::NOT_HANDLED,
         };
 
@@ -115,14 +114,14 @@ impl DataManager {
             warn!("Invalid authority for GET at DataManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }
-        if *immutable_data_name_and_type.1 != ::routing::immutable_data::ImmutableDataType::Normal {
-            warn!("Invalid immutable data type for GET at DataManager: {:?}",
-                  immutable_data_name_and_type.1);
-            return ::utils::HANDLED;
-        }
+        // FIXME: all immutable_data type shall be allowed?
+        // if *immutable_data_name_and_type.1 != ::routing::immutable_data::ImmutableDataType::Normal {
+        //     warn!("Invalid immutable data type for GET at DataManager: {:?}",
+        //           immutable_data_name_and_type.1);
+        //     return ::utils::HANDLED;
+        // }
 
         // Cache the request
-        let data_name = immutable_data_name_and_type.0;
         if self.request_cache.contains_key(data_name) {
             debug!("DataManager {:?} inserting original request {:?} from {:?} into {:?} ",
                    self.id, data_request, from_authority, data_name);
@@ -147,6 +146,8 @@ impl DataManager {
             if ongoing_get.1 + ::time::Duration::seconds(10) < ::time::SteadyTime::now() {
                 debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
                        self.id, (ongoing_get.0).1, (ongoing_get.0).0);
+                // TODO: if not enough copies and is not currently under fetching,
+                //       shall a fetch being triggered here?
                 self.database.remove_pmid_node(&(ongoing_get.0).0, (ongoing_get.0).1.clone());
                 failing_entries.push(ongoing_get.0.clone());
                 if self.failed_pmids.contains_key(&data_name) {
@@ -155,8 +156,8 @@ impl DataManager {
                         None => error!("Failed to insert failed_pmid in the cache."),
                     };
                 } else {
-                    let _ = self.failed_pmids
-                                .insert(data_name.clone(), vec![(ongoing_get.0).1.clone()]);
+                    let _ = self.failed_pmids.insert(data_name.clone(),
+                                                     vec![(ongoing_get.0).1.clone()]);
                 }
             }
         }
@@ -268,12 +269,14 @@ impl DataManager {
             };
         }
 
-        let _ = self.ongoing_gets.remove(&(from_authority.get_location().clone(), response.name()));
+        let _ = self.ongoing_gets.remove(&(response.name(), from_authority.get_location().clone()));
         match self.failed_pmids.remove(&response.name()) {
             Some(failed_pmids) => {
                 for failed_pmid in failed_pmids {
                     // TODO: utilise FailedPut here as currently ResponseError only has
                     // FailedRequestForData defined
+                    debug!("DataManager {:?} notifying a failed pmid_node {:?} regarding chunk {:?}",
+                           self.id, failed_pmid, response.name());
                     let location = ::pmid_manager::Authority(failed_pmid);
                     self.routing.put_response(our_authority.clone(), location,
                         ::routing::error::ResponseError::FailedRequestForData(response.clone()),
@@ -284,6 +287,8 @@ impl DataManager {
         }
 
         if let Some(pmid_node) = self.replicate_to(&response.name()) {
+            debug!("DataManager {:?} replicate chunk {:?} to a new pmid_node {:?}",
+                   self.id, response.name(), pmid_node);
             self.database.add_pmid_node(&response.name(), pmid_node.clone());
             let location = ::pmid_node::Authority(pmid_node);
             self.routing.put_request(our_authority.clone(), location, response.clone());
@@ -404,21 +409,14 @@ impl DataManager {
     }
 
     fn replicate_to(&mut self, name: &::routing::NameType) -> Option<::routing::NameType> {
-        match self.database.temp_storage_after_churn.get(name) {
-            Some(pmid_nodes) => {
-                if pmid_nodes.len() < 3 {
-                    Self::sort_from_target(&mut self.database.close_grp_from_churn, &name);
-                    let mut close_grp_node_to_add = ::routing::NameType::new([0u8; 64]);
-                    for close_grp_it in self.database.close_grp_from_churn.iter() {
-                        if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
-                            close_grp_node_to_add = close_grp_it.clone();
-                            break;
-                        }
-                    }
-                    return Some(close_grp_node_to_add);
+        let pmid_nodes = self.database.get_pmid_nodes(name);
+        if pmid_nodes.len() < 3 && pmid_nodes.len() > 0 {
+            Self::sort_from_target(&mut self.nodes_in_table, &name);
+            for close_grp_it in self.nodes_in_table.iter() {
+                if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
+                    return Some(close_grp_it.clone());
                 }
             }
-            None => {}
         }
         None
     }
