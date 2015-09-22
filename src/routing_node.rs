@@ -155,10 +155,10 @@ impl RoutingNode {
                             // handle SignedMessage for any identified connection
                             match self.core.lookup_connection(&connection) {
                                 Some(ConnectionName::Unidentified(_, _)) => debug!("message
-                                        from unidentified connection"),
-                                    None => debug!("message from unknown connection {:?}",
-                                        connection),
-                                    _ => ignore(self.message_received(message)),
+                                        from unidentified connection {:?}", connection),
+                                None => debug!("message from unknown connection {:?}",
+                                    connection),
+                                _ => ignore(self.message_received(message)),
                             };
                         }
                         // The message received is not a Signed Routing Message,
