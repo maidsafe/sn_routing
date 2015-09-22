@@ -173,10 +173,12 @@ impl RoutingNode {
                     };
                 }
                 Ok(::crust::Event::OnConnect(connection)) => {
-                    if self.connect_requests.contains(&connection.peer_endpoint()) {
+                    // FIXME (ben 21/09/2015) new logic needs to be considered to properly remove
+                    // the concept of a first node, as it is just hidden, not logically removed
+                    // refactoring to crust 0.3 has made this logic even worse than it was.
+                    if self.core.is_node() {
                         self.handle_new_connection(connection);
-                    }
-                    else {
+                    } else {
                         self.handle_new_bootstrap_connection(connection);
                     }
                 }
