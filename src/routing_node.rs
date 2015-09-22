@@ -61,7 +61,6 @@ pub struct RoutingNode {
     refresh_accumulator: ::refresh_accumulator::RefreshAccumulator,
     cache_options: CacheOptions,
     data_cache: Option<LruCache<NameType, Data>>,
-    connect_requests: ::std::collections::BTreeSet<::crust::Endpoint>,
 }
 
 impl RoutingNode {
@@ -101,7 +100,7 @@ impl RoutingNode {
             event_sender: event_sender.clone(),
             filter: ::filter::Filter::with_expiry_duration(::time::Duration::minutes(20)),
             connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
-                ::time::Duration::minutes(20)),
+                ::time::Duration::seconds(20)),
             core: core,
             public_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
             accumulator: ::message_accumulator::MessageAccumulator::with_expiry_duration(
@@ -110,7 +109,6 @@ impl RoutingNode {
                 ::time::Duration::minutes(5), event_sender),
             cache_options: CacheOptions::no_caching(),
             data_cache: None,
-            connect_requests: ::std::collections::BTreeSet::new(),
         }
     }
 
@@ -967,9 +965,6 @@ impl RoutingNode {
     }
 
     fn connect(&mut self, endpoints: &Vec<::crust::Endpoint>) {
-        for e in endpoints {
-            self.connect_requests.insert(e.clone());
-        }
         self.crust_service.connect(endpoints.clone());
     }
 
