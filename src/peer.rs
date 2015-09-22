@@ -24,9 +24,9 @@ pub struct Peer {
     identity: ::routing_core::ConnectionName,
     //                    ~~|~~~~~~~~~~~
     //                      | identifies the peer in relation to us
-    endpoint: ::crust::Endpoint,
-    //                    ~~|~~~~~~~~~~~~
-    //                      | initially only support a single endpoint
+    connection: ::crust::Connection,
+    //                   ~~|~~~~~~~
+    //                     | initially only support a single endpoint
     public_id: Option<::public_id::PublicId>,
     //                    ~~|~~~~~~~~~~~~~
     //                      | store public_id once obtained
@@ -39,12 +39,12 @@ pub struct Peer {
 #[allow(unused)]
 impl Peer {
     pub fn new(identity: ::routing_core::ConnectionName,
-               endpoint: ::crust::Endpoint,
+               connection: ::crust::Connection,
                public_id: Option<::public_id::PublicId>)
                -> Peer {
         Peer {
             identity: identity,
-            endpoint: endpoint,
+            connection: connection,
             public_id: public_id,
             connected_timestamp: ::time::SteadyTime::now(),
         }
@@ -54,8 +54,8 @@ impl Peer {
         &self.identity
     }
 
-    pub fn endpoint(&self) -> &::crust::Endpoint {
-        &self.endpoint
+    pub fn connection(&self) -> &::crust::Connection {
+        &self.connection
     }
 
     pub fn public_id(&self) -> &Option<::public_id::PublicId> {
@@ -75,7 +75,7 @@ impl Peer {
     pub fn change_identity(&mut self, identity: ::routing_core::ConnectionName) -> Peer {
         Peer {
             identity: identity,
-            endpoint: self.endpoint.clone(),
+            connection: self.connection.clone(),
             public_id: self.public_id.clone(),
             connected_timestamp: self.connected_timestamp.clone(),
         }

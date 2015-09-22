@@ -22,7 +22,7 @@ itertools = "*"
 log = "*"
 env_logger = "*"
 sodiumoxide = "*"
-crust = "0.2.*"
+crust = "0.3.*"
 
 [dev-dependencies]
 bit-vec = "*"

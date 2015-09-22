@@ -19,7 +19,7 @@ use std::cmp;
 use std::usize;
 use std::collections::HashMap;
 
-use crust::Endpoint;
+use crust::{Endpoint, Connection};
 
 use common_bits::*;
 use public_id::PublicId;
@@ -34,7 +34,8 @@ static OPTIMAL_SIZE: usize = 64;
 pub struct NodeInfo {
     pub public_id: PublicId,
     pub endpoints: Vec<Endpoint>,
-    pub connected_endpoint: Option<Endpoint>,
+    //pub connected_endpoint: Option<Endpoint>,
+    pub connection: Option<Connection>,
     #[cfg(test)]
     pub id: NameType,
 }
@@ -43,12 +44,12 @@ impl NodeInfo {
     #[cfg(not(test))]
     pub fn new(public_id: PublicId,
                endpoints: Vec<Endpoint>,
-               connected_endpoint: Option<Endpoint>)
+               connection: Option<Connection>)
                -> NodeInfo {
         NodeInfo {
             public_id: public_id,
             endpoints: endpoints,
-            connected_endpoint: connected_endpoint,
+            connection: connection,
         }
     }
     #[cfg(not(test))]
@@ -59,13 +60,13 @@ impl NodeInfo {
     #[cfg(test)]
     pub fn new(public_id: PublicId,
                endpoints: Vec<Endpoint>,
-               connected_endpoint: Option<Endpoint>)
+               connection: Option<Connection>)
                -> NodeInfo {
         let id = public_id.name();
         NodeInfo {
             public_id: public_id,
             endpoints: endpoints,
-            connected_endpoint: connected_endpoint,
+            connection: connection,
             id: id,
         }
     }
@@ -164,10 +165,11 @@ impl RoutingTable {
     /// allowed per node, so this returns None if the endpoint doesn't exist anywhere in the table
     /// or if the peer already has a connected endpoint.  Otherwise it returns the peer's ID.
     #[allow(dead_code)]
-    pub fn mark_as_connected(&mut self, endpoint: &Endpoint) -> Option<NameType> {
+    pub fn mark_as_connected(&mut self, connection: &Connection) -> Option<NameType> {
+        let endpoint = connection.peer_endpoint();
         let has_endpoint = |ref node_info: &NodeInfo| {
                                for ref candidate_endpoint in &node_info.endpoints {
-                                   if **candidate_endpoint == *endpoint {
+                                   if **candidate_endpoint == endpoint {
                                        return true;
                                    }
                                }
@@ -176,7 +178,7 @@ impl RoutingTable {
         match self.routing_table.iter().position(has_endpoint) {
             None => None,
             Some(index) => {
-                self.routing_table[index].connected_endpoint = Some(endpoint.clone());
+                self.routing_table[index].connection = Some(connection.clone());
                 // always force update lookup_map
                 let _ = self.lookup_map.remove(&endpoint);
                 let _ = self.lookup_map.entry(endpoint.clone())
@@ -392,7 +394,7 @@ impl RoutingTable {
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
-        match node_info.connected_endpoint.clone() {
+        match node_info.connection.clone().map(|c|c.peer_endpoint()) {
             Some(endpoint) => {
                 let _ = self.lookup_map.remove(&endpoint);
                 let _ = self.lookup_map.entry(endpoint.clone())
@@ -631,7 +633,7 @@ mod test {
             id: public_id.name(),
             public_id: public_id,
             endpoints: random_endpoints(),
-            connected_endpoint: None,
+            connection: None,
         }
     }
 
