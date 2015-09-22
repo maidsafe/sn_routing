@@ -23,20 +23,10 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 
 #Todo Items
 
-## [0.1.6]
-- [x] Default to use real Routing rather than the mock
-- [x] Updated config file to match Crust changes
-- [x] Refactored flow for put_response
-- [x] Added churn tests
-- [x] Refactored returns from most persona functions to not use Result
-
 ## [0.1.7]
-- [ ] [MAID-1017](https://maidsafe.atlassian.net/browse/MAID-1017) churn (account transfer when nodes join or leave)
-
-## [0.1.8]
-- [ ] [MAID-1189](https://maidsafe.atlassian.net/browse/MAID-1189) Proper PmidNode Initialisation (max diskspace)
-- [ ] [MAID-1190](https://maidsafe.atlassian.net/browse/MAID-1190) Proper MaidManager account entry creation (allowance)
-- [ ] [MAID-1191](https://maidsafe.atlassian.net/browse/MAID-1191) Proper PmidManager account entry creation (pmidnode diskspace info)
+- [x] [MAID-1324](https://maidsafe.atlassian.net/browse/MAID-1324) Churn verification -- Integration test with real network and client
+- [x] [MAID-1325](https://maidsafe.atlassian.net/browse/MAID-1325) Error handling and response flow to client
+- [x] [MAID-1329](https://maidsafe.atlassian.net/browse/MAID-1329) Various code cleanup
 
 ## [0.2.0] - messaging
 - [ ] [MAID-1192](https://maidsafe.atlassian.net/browse/MAID-1192) messaging
@@ -45,6 +35,11 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
     - [ ] [MAID-1198](https://maidsafe.atlassian.net/browse/MAID-1198) sending message
     - [ ] [MAID-1199](https://maidsafe.atlassian.net/browse/MAID-1199) retrieving message
     - [ ] [MAID-1200](https://maidsafe.atlassian.net/browse/MAID-1200) withdraw message
+
+## [0.2.1]
+- [ ] [MAID-1189](https://maidsafe.atlassian.net/browse/MAID-1189) Proper PmidNode Initialisation (max diskspace)
+- [ ] [MAID-1190](https://maidsafe.atlassian.net/browse/MAID-1190) Proper MaidManager account entry creation (allowance)
+- [ ] [MAID-1191](https://maidsafe.atlassian.net/browse/MAID-1191) Proper PmidManager account entry creation (pmidnode diskspace info)
 
 ## [0.3.0] - initial safe coin implementation
 - [ ] [MAID-1201](https://maidsafe.atlassian.net/browse/MAID-1201) initial safe coin implementation

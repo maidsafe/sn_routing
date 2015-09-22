@@ -1,6 +1,6 @@
 [package]
 name = "safe_vault"
-version = "0.1.6"
+version = "0.1.7"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
 documentation = "http://maidsafe.net/safe_vault/latest"
@@ -22,7 +22,7 @@ time = "*"
 
 # ---- MaidSafe ------
 lru_time_cache = "0.2.*"
-routing = "0.3.*"
+routing = "0.4.*"
 
 [features]
 use-mock-routing = []

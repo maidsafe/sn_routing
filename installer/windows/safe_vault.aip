@@ -24,7 +24,7 @@
     <ROW Property="ProductCode" Value="1033:{F7A38A10-CEC2-4969-A03A-33A543BB80D3} " Type="16"/>
     <ROW Property="ProductLanguage" Value="1033"/>
     <ROW Property="ProductName" Value="SAFE Network Vault"/>
-    <ROW Property="ProductVersion" Value="0.1.6" Type="32"/>
+    <ROW Property="ProductVersion" Value="0.1.7" Type="32"/>
     <ROW Property="SecureCustomProperties" Value="OLDPRODUCTS;AI_NEWERPRODUCTFOUND;AI_SETUPEXEPATH;SETUPEXEDIR"/>
     <ROW Property="UpgradeCode" Value="{5E9B0DC5-46AC-4ABA-B93E-5131A1EFED0A}"/>
     <ROW Property="WindowsType9X" MultiBuildValue="DefaultBuild:Windows 9x/ME" ValueLocId="-"/>

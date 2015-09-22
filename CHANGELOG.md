@@ -1,5 +1,12 @@
 # Safe Vault - Change Log
 
+## [0.1.6]
+- Default to use real Routing rather than the mock
+- Updated config file to match Crust changes
+- Refactored flow for put_response
+- Added churn tests
+- Refactored returns from most persona functions to not use Result
+
 ## [0.1.5]
 - Major refactor of production code and tests to match Routing's new API, allowing testing on a real network rather than a mock
 - Updated installers to match Crust's config/bootstrap file changes
