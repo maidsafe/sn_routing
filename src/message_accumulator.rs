@@ -58,7 +58,7 @@ impl MessageAccumulator {
             Some(message)
 
         }.map(|message| {
-            self.requests.remove(&message);
+            let _ = self.requests.remove(&message);
             message
         })
     }
@@ -76,7 +76,7 @@ mod test {
             &id.signing_public_key(), &id.signing_private_key());
         let mut accumulator = ::message_accumulator::MessageAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10));
-        for i in 0..threshold - 1 {
+        for _ in 0..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), ::NameType::generate_random(),
                 routing_message.clone()).is_none());
         }
@@ -84,7 +84,7 @@ mod test {
             routing_message.clone()), Some(routing_message.clone()));
 
         // assert that the accumulator has been cleared; repeat with the same message
-        for i in 0..threshold - 1 {
+        for _ in 0..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), ::NameType::generate_random(),
                 routing_message.clone()).is_none());
         }
@@ -102,7 +102,7 @@ mod test {
             &id.signing_public_key(), &id.signing_private_key());
         let mut accumulator = ::message_accumulator::MessageAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10));
-        for i in 0..threshold - 1 {
+        for _ in 0..threshold - 1 {
             let claimant = ::NameType::generate_random();
             assert!(accumulator.add_message(threshold.clone(), claimant.clone(),
                 routing_message.clone()).is_none());
@@ -128,7 +128,7 @@ mod test {
             &id.signing_public_key(), &id.signing_private_key());
         let mut accumulator = ::message_accumulator::MessageAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10));
-        for i in 0..threshold - 1 {
+        for _ in 0..threshold - 1 {
             let claimant = ::NameType::generate_random();
             assert!(accumulator.add_message(threshold.clone(), claimant.clone(),
                 routing_message1.clone()).is_none());

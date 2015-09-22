@@ -71,7 +71,7 @@ impl RefreshAccumulator {
             }
 
             let map = self.requests.entry(request.clone()).or_insert_with(||Map::new());
-            map.insert(sender_node, payload);
+            let _ = map.insert(sender_node, payload);
 
             if map.len() < threshold {
                 return None;
@@ -80,7 +80,7 @@ impl RefreshAccumulator {
             Some(map.iter().map(|(_, msg)| msg.clone()).collect())
 
         }.map(|messages| {
-            self.requests.remove(&request);
+            let _ = self.requests.remove(&request);
             messages
         })
     }
@@ -108,7 +108,7 @@ mod test {
             .is_none());
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::DoRefresh(1u64, group.clone(),
             cause.clone())));
-        for i in 1..threshold - 1 {
+        for _ in 1..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), 1u64,
                 ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
                 .is_none());
@@ -125,7 +125,7 @@ mod test {
             .is_none());
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::DoRefresh(1u64, group.clone(),
             cause.clone())));
-        for i in 1..threshold - 1 {
+        for _ in 1..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), 1u64,
                 ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
                 .is_none());
@@ -154,7 +154,7 @@ mod test {
             ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
             .is_none());
         assert!(event_receiver.try_recv().is_err());
-        for i in 1..threshold - 1 {
+        for _ in 1..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), 1u64,
                 ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
                 .is_none());
@@ -170,7 +170,7 @@ mod test {
             ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
             .is_none());
         assert!(event_receiver.try_recv().is_err());
-        for i in 1..threshold - 1 {
+        for _ in 1..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), 1u64,
                 ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
                 .is_none());
@@ -203,7 +203,7 @@ mod test {
         assert!(accumulator.add_message(threshold.clone(), 1u64,
             sender, group.clone(), new_bytes.clone(), cause.clone())
             .is_none());
-        for i in 1..threshold - 1 {
+        for _ in 1..threshold - 1 {
             let sender = ::NameType::generate_random();
             assert!(accumulator.add_message(threshold.clone(), 1u64,
                 sender.clone(), group.clone(), bytes.clone(), cause.clone())

@@ -21,11 +21,10 @@ use rustc_serialize::hex::ToHex;
 use std::cmp::*;
 use std::fmt;
 
+/// Constant byte length of NameType.
 pub const NAME_TYPE_LEN : usize = 64;
 
-///
-/// Returns true if both slices are equal in length and have equal contents
-///
+/// Returns true if both slices are equal in length and have equal contents.
 pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
 }
@@ -34,16 +33,20 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
 #[derive(Eq, Copy)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
+#[allow(unused)]
 impl NameType {
+
+    /// Construct a NameType from a NAME_TYPE_LEN byte array.
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
     }
     
+    /// Return the internal array. 
     pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
         self.0
     }
 
-    // private function exposed in fmt Debug {:?} and Display {} traits
+    // Private function exposed in fmt Debug {:?} and Display {} traits.
     fn get_debug_id(&self) -> String {
         format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
               self.0[0],
@@ -54,7 +57,7 @@ impl NameType {
               self.0[NAME_TYPE_LEN-1])
     }
 
-    // private function returning hex encoded NameType as String
+    // Private function returning hex encoded NameType as String.
     fn get_full_id(&self) -> String {
         self.0.to_hex()
     }

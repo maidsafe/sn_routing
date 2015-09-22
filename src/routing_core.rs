@@ -39,9 +39,9 @@ pub enum ConnectionName {
     Relay(Address),
     Routing(NameType),
     Bootstrap(NameType),
-    Unidentified(crust::Endpoint, bool),
-   //                            ~|~~
-   //                             | set true when connected as a bootstrap connection
+    Unidentified(crust::Connection, bool),
+   //                               ~|~~
+   //                                | set true when connected as a bootstrap connection
 }
 
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
@@ -56,6 +56,7 @@ pub struct RoutingCore {
     action_sender: Sender<Action>,
 }
 
+#[allow(unused)]
 impl RoutingCore {
     /// Start a RoutingCore with a new Id and the disabled RoutingTable
     pub fn new(event_sender: Sender<Event>,
@@ -83,13 +84,13 @@ impl RoutingCore {
         }
     }
 
-    /// Borrow RoutingNode id
+    /// Borrow RoutingNode id.
     pub fn id(&self) -> &Id {
         &self.id
     }
 
-    /// Returns Address::Node(network_given_name)
-    /// or Address::Client(PublicKey) when no network name is given
+    /// Returns Address::Node(network_given_name) or Address::Client(PublicKey) when no network name
+    /// is given.
     pub fn our_address(&self) -> Address {
         match self.network_name {
             Some(name) => Address::Node(name.clone()),
@@ -97,10 +98,10 @@ impl RoutingCore {
         }
     }
 
-    /// Returns true if Client(public_key) matches our public signing key,
-    /// even if we are a full node; or returns true if Node(name) is our current name.
-    /// Note that there is a difference to using core::our_address, as that would
-    /// fail to assert an (old) Client identification after we were assigned a network name.
+    /// Returns true if Client(public_key) matches our public signing key, even if we are a full
+    /// node; or returns true if Node(name) is our current name.  Note that there is a difference to
+    /// using core::our_address, as that would fail to assert an (old) Client identification after
+    /// we were assigned a network name.
     pub fn is_us(&self, address: &Address) -> bool {
         match *address {
             Address::Client(public_key) => public_key == self.id.signing_public_key(),
@@ -108,9 +109,9 @@ impl RoutingCore {
         }
     }
 
-    /// Assigning a network received name to the core.
-    /// If a name is already assigned, the function returns false and no action is taken.
-    /// After a name is assigned, Routing connections can be accepted.
+    /// Assigning a network received name to the core.  If a name is already assigned, the function
+    /// returns false and no action is taken.  After a name is assigned, Routing connections can be
+    /// accepted.
     pub fn assign_network_name(&mut self, network_name: &NameType) -> bool {
         // if routing_table is constructed, reject name assignment
         match self.routing_table {
@@ -135,11 +136,11 @@ impl RoutingCore {
         self.assign_network_name(name)
     }
 
-    /// Look up an endpoint in the routing table and the relay map and return the ConnectionName
-    pub fn lookup_endpoint(&self, endpoint: &crust::Endpoint) -> Option<ConnectionName> {
+    /// Look up a connection in the routing table and the relay map and return the ConnectionName
+    pub fn lookup_connection(&self, connection: &crust::Connection) -> Option<ConnectionName> {
         let routing_name = match self.routing_table {
             Some(ref routing_table) => {
-                match routing_table.lookup_endpoint(&endpoint) {
+                match routing_table.lookup_endpoint(&connection.peer_endpoint()) {
                     Some(name) => Some(ConnectionName::Routing(name)),
                     None => None,
                 }
@@ -149,15 +150,15 @@ impl RoutingCore {
 
         match routing_name {
             Some(name) => Some(name),
-            None => match self.relay_map.lookup_endpoint(&endpoint) {
+            None => match self.relay_map.lookup_connection(&connection) {
                 Some(peer) => Some(peer.identity().clone()),
                 None => None,
             },
         }
     }
 
-    /// Returns the ConnectionName if either a Routing(name) is found in RoutingTable,
-    /// or Relay(Address::Node(name)) or Bootstrap(name) is found in the RelayMap.
+    /// Returns the ConnectionName if either a Routing(name) is found in RoutingTable, or
+    /// Relay(Address::Node(name)) or Bootstrap(name) is found in the RelayMap.
     pub fn lookup_name(&self, name: &NameType) -> Option<ConnectionName> {
         let routing_name = match self.routing_table {
             Some(ref routing_table) => {
@@ -179,10 +180,9 @@ impl RoutingCore {
         }
     }
 
-    /// Returns a copy of the peer information if found in the relay_map.
-    /// The routing table does not support retrieval of peer information,
-    /// and this does not pose a problem, as connections, once a Routing connection,
-    /// do not need to be moved; they can only be dropped.
+    /// Returns a copy of the peer information if found in the relay_map.  The routing table does
+    /// not support retrieval of peer information, and this does not pose a problem, as connections,
+    /// once a Routing connection, do not need to be moved; they can only be dropped.
     pub fn get_relay_peer(&self, connection_name: &ConnectionName) -> Option<Peer> {
         match *connection_name {
             ConnectionName::Routing(name) => None,
@@ -193,9 +193,8 @@ impl RoutingCore {
         }
     }
 
-    /// Returns the peer if successfully dropped from the relay_map
-    /// If dropped from the routing table a churn event is triggered for the user
-    /// if the dropped peer changed our close group.
+    /// Returns the peer if successfully dropped from the relay_map.  If dropped from the routing
+    /// table a churn event is triggered for the user if the dropped peer changed our close group.
     pub fn drop_peer(&mut self, connection_name: &ConnectionName) -> Option<Peer> {
         match *connection_name {
             ConnectionName::Routing(name) => {
@@ -212,16 +211,20 @@ impl RoutingCore {
                         info!("RT({:?}) dropped node {:?}", routing_table.size(), name);
                         if trigger_churn {
                             let our_close_group = routing_table.our_close_group();
-                            let mut close_group : Vec<NameType> = our_close_group.iter()
+
+                            let mut close_group = our_close_group.iter()
                                     .map(|node_info| node_info.public_id.name())
                                     .collect::<Vec<::NameType>>();
+
                             close_group.insert(0, self.id.name());
-                            let target_endpoints : Vec<::crust::Endpoint> = our_close_group.iter()
-                                .filter_map(|node_info| node_info.connected_endpoint)
-                                .collect::<Vec<::crust::Endpoint>>();
+
+                            let target_connections = our_close_group.iter()
+                                .filter_map(|node_info| node_info.connection)
+                                .collect::<Vec<::crust::Connection>>();
+
                             let _ = self.action_sender.send(Action::Churn(
                                 ::direct_messages::Churn{ close_group: close_group },
-                                target_endpoints, name ));
+                                target_connections, name ));
                         };
                         None
                     }
@@ -244,9 +247,11 @@ impl RoutingCore {
     /// To be documented
     pub fn add_peer(&mut self,
                     identity: ConnectionName,
-                    endpoint: crust::Endpoint,
+                    connection: crust::Connection,
                     public_id: Option<PublicId>)
                     -> bool {
+        let endpoint = connection.peer_endpoint();
+
         match identity {
             ConnectionName::Routing(routing_name) => {
                 match self.routing_table {
@@ -261,7 +266,7 @@ impl RoutingCore {
                                     .address_in_our_close_group_range(&routing_name);
                                 let node_info = NodeInfo::new(given_public_id,
                                                               vec![endpoint.clone()],
-                                                              Some(endpoint));
+                                                              Some(connection));
                                 let routing_table_count_prior = routing_table.size();
                                 // TODO (ben 10/08/2015) drop connection of dropped node
                                 let (added, _) = routing_table.add_node(node_info);
@@ -279,13 +284,13 @@ impl RoutingCore {
                                             .map(|node_info| node_info.public_id.name())
                                             .collect::<Vec<::NameType>>();
                                     close_group.insert(0, self.id.name());
-                                    let target_endpoints : Vec<::crust::Endpoint> = our_close_group
+                                    let targets = our_close_group
                                         .iter()
-                                        .filter_map(|node_info| node_info.connected_endpoint)
-                                        .collect::<Vec<::crust::Endpoint>>();
+                                        .filter_map(|node_info| node_info.connection)
+                                        .collect::<Vec<::crust::Connection>>();
                                     let _ = self.action_sender.send(Action::Churn(
                                         ::direct_messages::Churn{ close_group: close_group },
-                                        target_endpoints, routing_name ));
+                                        targets, routing_name ));
                                 };
                                 added
                             }
@@ -300,7 +305,7 @@ impl RoutingCore {
                     ConnectionName::Bootstrap(_) => true,
                     _ => false,
                 };
-                let added = self.relay_map.add_peer(identity, endpoint, public_id);
+                let added = self.relay_map.add_peer(identity, connection, public_id);
                 if !bootstrapped_prior && added && is_bootstrap_connection &&
                    self.routing_table.is_none() {
                     info!("Routing Client bootstrapped.");
@@ -371,16 +376,16 @@ impl RoutingCore {
     /// a set of endpoints to send parallel to or our full close group (ourselves excluded)
     /// when the destination is in range.
     /// If resulting vector is empty there are no routing connections.
-    pub fn target_endpoints(&self, to_authority: &Authority) -> Vec<crust::Endpoint> {
-        let mut target_endpoints : Vec<crust::Endpoint> = Vec::new();
+    pub fn target_connections(&self, to_authority: &Authority) -> Vec<crust::Connection> {
+        let mut target_connections : Vec<crust::Connection> = Vec::new();
         // if we can relay to the client, return that client connection
         match *to_authority {
             Authority::Client(_, ref client_public_key) => {
                 match self.relay_map.lookup_connection_name(
                     &ConnectionName::Relay(Address::Client(client_public_key.clone()))) {
                     Some(ref client_peer) => {
-                        target_endpoints.push(client_peer.endpoint().clone());
-                        return target_endpoints;
+                        target_connections.push(client_peer.connection().clone());
+                        return target_connections;
                     }
                     None => {}
                 }
@@ -388,25 +393,23 @@ impl RoutingCore {
             _ => {}
         };
         let destination = to_authority.get_location();
-        // query the routing table to send it out parallel or to our close group
-        // (ourselves excluded)
+        // query routing table to send it out parallel or to our close group (ourselves excluded)
         match self.routing_table {
             Some(ref routing_table) => {
                 for node_info in routing_table.target_nodes(destination) {
-                    match node_info.connected_endpoint {
-                        Some(endpoint) => target_endpoints.push(endpoint.clone()),
+                    match node_info.connection {
+                        Some(c) => target_connections.push(c.clone()),
                         None => {}
                     }
                 };
             }
             None => {}
         };
-        target_endpoints
+        target_connections
     }
 
-    /// Returns the available Boostrap connections as Peers. If we are a connected node,
-    /// then access to the bootstrap connections will be blocked, and an empty
-    /// vector is returned.
+    /// Returns the available Boostrap connections as Peers. If we are a connected node, then access
+    /// to the bootstrap connections will be blocked, and an empty vector is returned.
     pub fn bootstrap_endpoints(&self) -> Option<Vec<Peer>> {
         // block explicitly if we are a connected node
         if self.is_connected_node() {
@@ -415,10 +418,9 @@ impl RoutingCore {
         Some(self.relay_map.bootstrap_connections())
     }
 
-    /// Returns true if bootstrap connections are available. If we are a connected node,
-    /// then access to the bootstrap connections will be blocked, and false
-    /// is returned.  We might still receive messages from our bootstrap connections,
-    /// but active usage is blocked once we are a node.
+    /// Returns true if bootstrap connections are available. If we are a connected node, then access
+    /// to the bootstrap connections will be blocked, and false is returned.  We might still receive
+    /// messages from our bootstrap connections, but active usage is blocked once we are a node.
     pub fn has_bootstrap_endpoints(&self) -> bool {
         // block explicitly if routing table is available
         !self.is_connected_node() && self.relay_map.has_bootstrap_connections()
@@ -451,9 +453,9 @@ impl RoutingCore {
         }
     }
 
-    /// Our authority is defined by the routing message
-    /// if we are a full node;  if we are a client, this always returns
-    /// Client authority (where the relay name is taken from the routing message destination)
+    /// Our authority is defined by the routing message, if we are a full node;  if we are a client,
+    /// this always returns Client authority (where the relay name is taken from the routing message
+    /// destination)
     pub fn our_authority(&self, message: &RoutingMessage) -> Option<Authority> {
         match self.routing_table {
             Some(ref routing_table) => {
@@ -466,9 +468,9 @@ impl RoutingCore {
         }
     }
 
-    /// Returns our close group as a vector of NameTypes, sorted from our own name;
-    /// Our own name is always included, and the first member of the result.
-    /// If we are not a full node None is returned.
+    /// Returns our close group as a vector of NameTypes, sorted from our own name;  Our own name is
+    /// always included, and the first member of the result.  If we are not a full node None is
+    /// returned.
     pub fn our_close_group(&self) -> Option<Vec<NameType>> {
         match self.routing_table {
             Some(ref routing_table) => {
@@ -483,9 +485,9 @@ impl RoutingCore {
         }
     }
 
-    /// Returns our close group as a vector of PublicIds, sorted from our own name;
-    /// Our own PublicId is always included, and the first member of the result.
-    /// If we are not a full node None is returned.
+    /// Returns our close group as a vector of PublicIds, sorted from our own name; Our own PublicId
+    /// is always included, and the first member of the result.  If we are not a full node None is
+    /// returned.
     pub fn our_close_group_with_public_ids(&self) -> Option<Vec<PublicId>> {
         match self.routing_table {
             Some(ref routing_table) => {
@@ -500,6 +502,7 @@ impl RoutingCore {
         }
     }
 
+    /// Returns the number of connected peers in routing table.
     pub fn routing_table_size(&self) -> usize {
         if let Some(ref rt) = self.routing_table {
             rt.size()
@@ -511,10 +514,10 @@ impl RoutingCore {
 
 #[cfg(test)]
 mod test {
+    use test_utils::test;
+
     #[test]
     fn add_peers_as_client() {
-        use ::test_utils::random_trait::Random;
-
         let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let (action_sender, action_receiver) = ::std::sync::mpsc::channel::<::action::Action>();
         let id = ::id::Id::new();
@@ -524,7 +527,7 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let routing_peer = super::ConnectionName::Routing(public_id.name());
         assert!(!routing_core.add_peer(routing_peer,
-            ::test_utils::messages_util::test::random_endpoint(),
+            test::random_connection(),
             Some(public_id)));
         assert!(event_receiver.try_recv().is_err());
         assert!(action_receiver.try_recv().is_err());
@@ -533,7 +536,7 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let bootstrap_peer = super::ConnectionName::Bootstrap(public_id.name());
         assert!(routing_core.add_peer(bootstrap_peer,
-            ::test_utils::messages_util::test::random_endpoint(),
+            test::random_connection(),
             Some(public_id)));
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::Bootstrapped));
         assert!(action_receiver.try_recv().is_err());
@@ -554,15 +557,15 @@ mod test {
         // routing core is a full node, so it will accept routing connections and generate churn
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let name = public_id.name();
-        let endpoint = ::test_utils::messages_util::test::random_endpoint();
+        let connection = test::random_connection();
         let routing_peer = super::ConnectionName::Routing(public_id.name());
-        assert!(routing_core.add_peer(routing_peer, endpoint.clone(), Some(public_id)));
+        assert!(routing_core.add_peer(routing_peer, connection.clone(), Some(public_id)));
         assert!(event_receiver.try_recv().is_err());
         match action_receiver.try_recv() {
             Ok(::action::Action::Churn(direct_churn, targets, churn)) => {
                 assert_eq!(direct_churn, ::direct_messages::Churn {
                     close_group: vec![our_name.clone(), name.clone()] } );
-                assert_eq!(targets, vec![endpoint]);
+                assert_eq!(targets, vec![connection]);
                 assert_eq!(churn, name);
             },
             _ => panic!("Should have caused a churn action."),
@@ -574,7 +577,7 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let bootstrap_peer = super::ConnectionName::Bootstrap(public_id.name());
         assert!(routing_core.add_peer(bootstrap_peer,
-            ::test_utils::messages_util::test::random_endpoint(),
+            test::random_connection(),
             Some(public_id)));
         assert!(event_receiver.try_recv().is_err());
         assert!(action_receiver.try_recv().is_err());
@@ -583,9 +586,9 @@ mod test {
         for i in 1..::types::GROUP_SIZE - 1 {
             let public_id = ::public_id::PublicId::new(&::id::Id::new());
             let name = public_id.name();
-            let endpoint = ::test_utils::messages_util::test::random_endpoint();
+            let connection = test::random_connection();
             let routing_peer = super::ConnectionName::Routing(public_id.name());
-            assert!(routing_core.add_peer(routing_peer, endpoint.clone(), Some(public_id)));
+            assert!(routing_core.add_peer(routing_peer, connection.clone(), Some(public_id)));
             assert!(event_receiver.try_recv().is_err());
             match action_receiver.try_recv() {
                 Ok(::action::Action::Churn(direct_churn, targets, churn)) => {
@@ -602,9 +605,9 @@ mod test {
         // on reaching group size plus ourselves, core needs to signal we are connected
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let name = public_id.name();
-        let endpoint = ::test_utils::messages_util::test::random_endpoint();
+        let connection = test::random_connection();
         let routing_peer = super::ConnectionName::Routing(public_id.name());
-        assert!(routing_core.add_peer(routing_peer, endpoint.clone(), Some(public_id)));
+        assert!(routing_core.add_peer(routing_peer, connection.clone(), Some(public_id)));
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::Connected));
         assert!(event_receiver.try_recv().is_err());
         match action_receiver.try_recv() {

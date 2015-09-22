@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub static VERSION_NUMBER : u8 = 0;
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectRequest {
     pub local_endpoints: Vec<::crust::Endpoint>,
@@ -32,14 +30,19 @@ pub struct ConnectResponse {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+/// SignedToken.
 pub struct SignedToken {
+    /// Encoded request to be signed.
     pub serialised_request: Vec<u8>,
+    /// Signature of the serialised_request signed by secret sign key.
     pub signature: ::sodiumoxide::crypto::sign::Signature,
 }
 
 impl SignedToken {
-    pub fn verify_signature(&self,
-                            public_sign_key: &::sodiumoxide::crypto::sign::PublicKey) -> bool {
+
+    /// Verify the request was signed by the secret key corresponding to the passed in public key. 
+    pub fn verify_signature(&self, public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
+            -> bool {
         ::sodiumoxide::crypto::sign::verify_detached(
             &self.signature, &self.serialised_request, &public_sign_key)
     }
@@ -50,29 +53,41 @@ impl ::std::fmt::Debug for SignedToken {
         formatter.write_str(&format!("SignedToken"))
     }
 }
-/// These are the messageTypes routing provides
+
+/// These are the message types routing provides.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+/// ExternalRequest.
 pub enum ExternalRequest {
+    /// Request to get data from the network.
     Get(::data::DataRequest, u8),
+    /// Request to put data onto the network.
     Put(::data::Data),
+    /// Request to mutate data on the network.
     Post(::data::Data),
+    /// Request to delete data from the network.
     Delete(::data::Data),
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+/// ExternalResponse.
 pub enum ExternalResponse {
-    // TODO: Technical depth: if the third param here is Some(...) then
+    // TODO: Applies to Get: Technical depth: if the third param here is Some(...) then
     // the it shares most of the data with the second argument, which
     // needlessly increases bandwidth.
+
+    /// Response to get data request.
     Get(::data::Data, ::data::DataRequest, Option<SignedToken>),
+    /// Response to put data request on error.
     Put(::error::ResponseError, Option<SignedToken>),
+    /// Response to post data request on error.
     Post(::error::ResponseError, Option<SignedToken>),
+    /// Response to delete data request on error.
     Delete(::error::ResponseError, Option<SignedToken>),
 }
 
 impl ExternalResponse {
-    // If the *request* was from a group entity, then there is
-    // no signed token.
+
+    /// If the *request* was from a group entity, then there is no signed token.
     pub fn get_signed_token(&self) -> &Option<SignedToken> {
         match *self {
             ExternalResponse::Get(_, _, ref r) => r,
@@ -172,14 +187,13 @@ impl RoutingMessage {
 pub struct SignedMessage {
     body: RoutingMessage,
     claimant: ::types::Address,
-    //          when signed by Client(PublicKey) the data needs to contain it as
-    // an owner
-    //          when signed by a Node(NameType), Sentinel needs to validate the
-    // signature
+    //          when signed by Client(PublicKey) the data needs to contain it as an owner
+    //          when signed by a Node(NameType), Sentinel needs to validate the signature
     random_bits: u8,
     signature: ::sodiumoxide::crypto::sign::Signature,
 }
 
+#[allow(unused)]
 impl SignedMessage {
     pub fn new(claimant: ::types::Address,
                message: RoutingMessage,
@@ -196,6 +210,7 @@ impl SignedMessage {
             random_bits: random_bits, signature: signature })
     }
 
+    /// Construct a signed message passing in the signature.
     pub fn with_signature(claimant: ::types::Address,
                           message: RoutingMessage,
                           random_bits: u8,
@@ -206,6 +221,7 @@ impl SignedMessage {
               random_bits: random_bits, signature: signature })
     }
 
+    /// Construct a signed message from a signed token.
     pub fn new_from_token(signed_token: SignedToken) -> Result<SignedMessage, ::cbor::CborError> {
         let (message, claimant, random_bits) =
             try!(::utils::decode(&signed_token.serialised_request));
@@ -214,8 +230,9 @@ impl SignedMessage {
             random_bits: random_bits, signature: signed_token.signature })
     }
 
-    pub fn verify_signature(&self,
-                            public_sign_key: &::sodiumoxide::crypto::sign::PublicKey) -> bool {
+    /// Verify the signature using the given public key.
+    pub fn verify_signature(&self, public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
+            -> bool {
         let encoded_body = match ::utils::encode(&(&self.body, &self.claimant, &self.random_bits)) {
             Ok(x) => x,
             Err(_) => return false,
@@ -225,18 +242,22 @@ impl SignedMessage {
             &self.signature, &encoded_body, public_sign_key)
     }
 
+    /// Return the internal routing message.
     pub fn get_routing_message(&self) -> &RoutingMessage {
         &self.body
     }
 
+    /// Return the signature.
     pub fn signature(&self) -> &::sodiumoxide::crypto::sign::Signature {
         &self.signature
     }
 
+    /// Return the encoded unsigned body of the message.
     pub fn encoded_body(&self) -> Result<Vec<u8>, ::cbor::CborError> {
         ::utils::encode(&(&self.body, &self.claimant, &self.random_bits))
     }
 
+    /// Return the associated signed token.
     pub fn as_token(&self) -> Result<SignedToken, ::cbor::CborError> {
         Ok(SignedToken {
                 serialised_request: try!(self.encoded_body()),
@@ -244,6 +265,7 @@ impl SignedMessage {
             })
     }
 
+    /// Return the message claimant.
     pub fn claimant(&self) -> &::types::Address {
         &self.claimant
     }
