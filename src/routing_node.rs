@@ -156,7 +156,8 @@ impl RoutingNode {
                             match self.core.lookup_connection(&connection) {
                                 Some(ConnectionName::Unidentified(_, _)) => debug!("message
                                         from unidentified connection"),
-                                    None => debug!("message from unknown connection"),
+                                    None => debug!("message from unknown connection {:?}",
+                                        connection),
                                     _ => ignore(self.message_received(message)),
                             };
                         }
