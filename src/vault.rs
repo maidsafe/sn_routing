@@ -455,7 +455,7 @@ mod test {
             });
         };
         let mut vault_notifiers = Vec::new();
-        for i in 0..8 {
+        for i in 0..::routing::types::GROUP_SIZE {
             println!("starting node {:?}", i);
             let (vault_sender, vault_receiver) = ::std::sync::mpsc::channel();
             let (app_sender, app_receiver) = ::std::sync::mpsc::channel();
@@ -527,7 +527,18 @@ mod test {
         let id = ::routing::id::Id::new();
         let client_name = id.name();
         let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
-        if let Ok(_) = client_receiver.recv() {}
+        let starting_time = ::time::SteadyTime::now();
+        let time_limit = ::time::Duration::minutes(1);
+        loop {
+            match client_receiver.try_recv() {
+                Err(_) => {}
+                Ok(_) => break,
+            }
+            ::std::thread::sleep_ms(1);
+            if starting_time + time_limit < ::time::SteadyTime::now() {
+                panic!("new client can't get bootstrapped in expected duration");
+            }
+        }
         (client_routing, client_receiver, client_name)
     }
 
@@ -840,14 +851,14 @@ mod test {
         let _ = vault_notifiers[pmid_nodes[0]].1.send(0);
         let _ = waiting_for_hits(&vault_notifiers,
                                  20,
-                                 ::routing::types::GROUP_SIZE / 2 + 1,
+                                 ::routing::types::GROUP_SIZE - 2,
                                  ::time::Duration::minutes(3));
 
         println!("network_churn_down_immutable_data_test dropping the second pmid_node");
         let _ = vault_notifiers[pmid_nodes[1]].1.send(0);
         let _ = waiting_for_hits(&vault_notifiers,
                                  20,
-                                 ::routing::types::GROUP_SIZE / 2,
+                                 ::routing::types::GROUP_SIZE - 3,
                                  ::time::Duration::minutes(3));
         // To avoid the situation that the stopped vault being the portal of the client
         // a new client shall be constructed to carry out the get requests
