@@ -101,7 +101,7 @@ impl RoutingNode {
             event_sender: event_sender.clone(),
             filter: ::filter::Filter::with_expiry_duration(::time::Duration::minutes(20)),
             connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
-                ::time::Duration::minutes(20)),
+                ::time::Duration::minutes(2)),
             core: core,
             public_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
             accumulator: ::message_accumulator::MessageAccumulator::with_expiry_duration(
@@ -176,7 +176,7 @@ impl RoutingNode {
                     // FIXME (ben 21/09/2015) new logic needs to be considered to properly remove
                     // the concept of a first node, as it is just hidden, not logically removed
                     // refactoring to crust 0.3 has made this logic even worse than it was.
-                    if self.core.is_node() {
+                    if self.connect_requests.contains(&connection.peer_endpoint()) {
                         self.handle_new_connection(connection);
                     } else {
                         self.handle_new_bootstrap_connection(connection);
