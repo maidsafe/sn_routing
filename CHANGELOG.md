@@ -1,4 +1,6 @@
 # Routing - Change Log
+## [0.4.1] Updated to CRUST 0.4
+
 ## [0.4.0] Updated to CRUST 0.3
 - [#711](https://github.com/maidsafe/routing/pull/711) remove unneeded state on ::connect
 - [MAID-1366](https://maidsafe.atlassian.net/browse/MAID-1366) update routing to crust 0.3 API
