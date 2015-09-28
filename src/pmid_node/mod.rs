@@ -24,7 +24,8 @@ pub struct PmidNode {
 
 impl PmidNode {
     pub fn new(routing: ::vault::Routing) -> PmidNode {
-        // TODO adjustable max_disk_space
+        // TODO: https://maidsafe.atlassian.net/browse/MAID-1189
+        //       adjustable max_disk_space
         PmidNode { routing: routing, chunk_store: ::chunk_store::ChunkStore::new(1073741824) }
     }
 

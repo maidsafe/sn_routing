@@ -114,7 +114,7 @@ impl DataManager {
             warn!("Invalid authority for GET at DataManager: {:?}", from_authority);
             return ::utils::HANDLED;
         }
-        // FIXME: all immutable_data type shall be allowed?
+        // all immutable_data type shall be handled in DataManager
         // if *immutable_data_name_and_type.1 != ::routing::immutable_data::ImmutableDataType::Normal {
         //     warn!("Invalid immutable data type for GET at DataManager: {:?}",
         //           immutable_data_name_and_type.1);
@@ -146,8 +146,7 @@ impl DataManager {
             if ongoing_get.1 + ::time::Duration::seconds(10) < ::time::SteadyTime::now() {
                 debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
                        self.id, (ongoing_get.0).1, (ongoing_get.0).0);
-                // TODO: if not enough copies and is not currently under fetching,
-                //       shall a fetch being triggered here?
+                // TODO: https://github.com/maidsafe/safe_vault/issues/263
                 self.database.remove_pmid_node(&(ongoing_get.0).0, (ongoing_get.0).1.clone());
                 failing_entries.push(ongoing_get.0.clone());
                 if self.failed_pmids.contains_key(&data_name) {
@@ -273,8 +272,7 @@ impl DataManager {
         match self.failed_pmids.remove(&response.name()) {
             Some(failed_pmids) => {
                 for failed_pmid in failed_pmids {
-                    // TODO: utilise FailedPut here as currently ResponseError only has
-                    // FailedRequestForData defined
+                    // utilise put_response as get_response doesn't take ResponseError
                     debug!("DataManager {:?} notifying a failed pmid_node {:?} regarding chunk {:?}",
                            self.id, failed_pmid, response.name());
                     let location = ::pmid_manager::Authority(failed_pmid);
@@ -353,9 +351,8 @@ impl DataManager {
                 if let &Authority(from_group) = our_authority {
                     if let Some(merged_stats) = ::utils::merge::<Stats>(from_group,
                                                                         payloads.clone()) {
-                        // TODO: shall give more priority to the incoming stats?
-                        self.resource_index =
-                            (self.resource_index + merged_stats.resource_index()) / 2;
+                        // give priority to incoming stats
+                        self.resource_index = merged_stats.resource_index();
                     }
                 } else {
                     warn!("Invalid authority for refresh stats at DataManager: {:?}",
@@ -374,7 +371,7 @@ impl DataManager {
 
     pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
                         churn_node: &::routing::NameType) {
-        // TODO: close_group[0] is supposed to be the vault id
+        // close_group[0] is supposed to be the vault id
         let our_authority = Authority(close_group[0].clone());
         self.database.handle_churn(&our_authority, &self.routing, churn_node);
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
@@ -441,7 +438,8 @@ impl DataManager {
             _ => return,
         };
 
-        // TODO: giving more weight when failed in storing a Normal immutable data ?
+        // giving more weight when failed in storing a Normal immutable data
+        // i.e increasing slowly but dropping quickly
         self.resource_index = ::std::cmp::max(1, self.resource_index - 4);
 
         let data_name = immutable_data.name();

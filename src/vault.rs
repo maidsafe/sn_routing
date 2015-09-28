@@ -187,7 +187,6 @@ impl Vault {
     }
 
     fn on_bootstrapped(&self) {
-        // TODO: what is expected to be done here?
         debug!("vault bootstrapped having {:?} connections",
                self.data_manager.nodes_in_table_len());
         // assert_eq!(0, self.data_manager.nodes_in_table_len());
@@ -209,7 +208,8 @@ impl Vault {
         self.maid_manager.reset(routing.clone());
         self.data_manager.reset(routing.clone());
         self.pmid_manager.reset(routing.clone());
-        // TODO: shall pmid_node and sd_manager still keep the data so they can be reused?
+        // TODO: https://github.com/maidsafe/safe_vault/issues/269
+        //   pmid_node and sd_manager shall discard the data when routing address changed
         self.pmid_node.reset(routing.clone());
         self.sd_manager.reset(routing.clone());
     }
@@ -328,8 +328,8 @@ impl Vault {
                       type_tag: u64,
                       our_authority: ::routing::Authority,
                       payloads: Vec<Vec<u8>>) {
-        // TODO: The assumption of the incoming payloads is that it is a vector of serialised
-        //       account entries from the close group nodes of `from_group`
+        // The incoming payloads is a vector of serialised account entries,
+        // collected from the close group nodes regarding `from_group`
         debug!("refresh tag {:?} & authority {:?}", type_tag, our_authority);
         let _ = self.maid_manager
                     .handle_refresh(&type_tag, &our_authority, &payloads)
