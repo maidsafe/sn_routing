@@ -77,7 +77,6 @@ impl AccountValue {
         //   return false;
         // }
         self.stored_total_size += size;
-        true
     }
 
     fn delete_data(&mut self, size: u64) {
@@ -121,7 +120,7 @@ impl Database {
         Database { storage: ::std::collections::HashMap::with_capacity(10000) }
     }
 
-    pub fn put_data(&mut self, name: &PmidNodeName, size: u64) -> bool {
+    pub fn put_data(&mut self, name: &PmidNodeName, size: u64) {
         let default: AccountValue = Default::default();
         let entry = self.storage.entry(name.clone()).or_insert(default);
         entry.put_data(size)
@@ -221,11 +220,10 @@ mod test {
     fn handle_account_transfer() {
         let mut db = Database::new();
         let name = ::utils::random_name();
-        assert!(db.put_data(&name, 1024));
+        db.put_data(&name, 1024);
         assert!(db.storage.contains_key(&name));
 
         let account_value = AccountValue::new(::rand::random::<u64>(),
-                                              ::rand::random::<u64>(),
                                               ::rand::random::<u64>());
         let account = Account::new(name.clone(), account_value.clone());
         db.handle_account_transfer(account);
@@ -236,7 +234,6 @@ mod test {
     fn pmid_manager_account_serialisation() {
         let obj_before = Account::new(::routing::NameType([1u8; 64]),
                                       AccountValue::new(::rand::random::<u64>(),
-                                                        ::rand::random::<u64>(),
                                                         ::rand::random::<u64>()));
 
         let mut e = ::cbor::Encoder::from_memory();
