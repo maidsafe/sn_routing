@@ -30,10 +30,10 @@ test_script:
           $env:config_flags = "--release"
         }
   - cargo build --verbose --features "use-mock-routing" %config_flags%
-  - cargo test --verbose --features "use-mock-routing"
-  - cargo test -- --nocapture vault::test::network_put_get_test
-  - cargo test -- --nocapture vault::test::network_post_test
-  - cargo test -- --nocapture vault::test::network_churn_up_immutable_data_test
-  - cargo test -- --nocapture vault::test::network_churn_up_structured_data_test
-  - cargo test -- --nocapture vault::test::network_churn_down_one_node_immutable_data_test
-  - cargo test -- --nocapture vault::test::network_churn_down_two_nodes_immutable_data_test
+  - cargo test --verbose --features "use-mock-routing" %config_flags%
+  - cargo test %config_flags% -- --nocapture vault::test::network_put_get_test
+  - cargo test %config_flags% -- --nocapture vault::test::network_post_test
+  - cargo test %config_flags% -- --nocapture vault::test::network_churn_up_immutable_data_test
+  - cargo test %config_flags% -- --nocapture vault::test::network_churn_up_structured_data_test
+  - cargo test %config_flags% -- --nocapture vault::test::network_churn_down_one_node_immutable_data_test
+  - cargo test %config_flags% -- --nocapture vault::test::network_churn_down_two_nodes_immutable_data_test
