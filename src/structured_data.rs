@@ -221,35 +221,34 @@ impl StructuredData {
 
 impl ::std::fmt::Debug for StructuredData {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        let _ = formatter.write_str(
-            &format!(" type_tag: {:?} , name: {:?} , version: {:?} , data: {:?}",
+        try!(write!(formatter, " type_tag: {:?} , name: {:?} , version: {:?} , data: {:?}",
                      self.type_tag, self.name(), self.version,
                      ::utils::get_debug_id(self.data.clone())));
 
         let prev_owner_keys : Vec<String> = self.previous_owner_keys.iter().map(|pub_key|
                 ::utils::get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
-        let _ = formatter.write_str(&format!(" , previous_owner_keys : ("));
+        try!(write!(formatter, " , previous_owner_keys : ("));
         for itr in prev_owner_keys.iter() {
-            let _ = formatter.write_str(&format!("{:?} ", itr));
+            try!(write!(formatter, "{:?} ", itr));
         }
-        let _ = formatter.write_str(&format!(")"));
+        try!(write!(formatter, ")"));
 
         let current_owner_keys : Vec<String> = self.current_owner_keys.iter().map(|pub_key|
                 ::utils::get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
-        let _ = formatter.write_str(&format!(" , current_owner_keys : ("));
+        try!(write!(formatter, " , current_owner_keys : ("));
         for itr in current_owner_keys.iter() {
-            let _ = formatter.write_str(&format!("{:?} ", itr));
+            try!(write!(formatter, "{:?} ", itr));
         }
-        let _ = formatter.write_str(&format!(") "));
+        try!(write!(formatter, ") "));
 
         let prev_owner_signatures: Vec<String> =
               self.previous_owner_signatures.iter().map(|signature|
                 ::utils::get_debug_id(::types::array_as_vector(&signature.0))).collect();
-        let _ = formatter.write_str(&format!(" , prev_owner_signatures : ("));
+        try!(write!(formatter, " , prev_owner_signatures : ("));
         for itr in prev_owner_signatures.iter() {
-            let _ = formatter.write_str(&format!("{:?} ", itr));
+            try!(write!(formatter, "{:?} ", itr));
         }
-        formatter.write_str(&format!(") "))
+        write!(formatter, ") ")
     }
 }
 
