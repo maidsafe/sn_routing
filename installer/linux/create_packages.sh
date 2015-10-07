@@ -29,6 +29,6 @@ OR
   exit 2;
 }
 
-Platform=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+Platform=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-"${0%/*}/../../common/scripts/invoke_fpm.sh" ${Platform##*/}
+"${0%/*}/../common/invoke_fpm.sh" ${Platform##*/}

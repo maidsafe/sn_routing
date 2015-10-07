@@ -7,10 +7,16 @@ set -o errtrace
 trap 'exit' ERR
 
 # Get current version and executable's name from Cargo.toml
-RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
 VaultName=$(sed -n 's/[ \t]*name[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
-VaultPath=/usr/bin/
+if [[ "$1" == "linux" ]]
+then
+  VaultPath=/usr/bin/
+elif [[ "$1" == "osx" ]]
+then
+  VaultPath=/usr/local/bin/
+fi
 ConfigFilePath=/var/cache/$VaultName/
 Platform=$1
 Description="SAFE Network vault"
@@ -34,7 +40,7 @@ function remove_safe_user {
 function set_owner {
   printf 'chown -R safe:safe %s\n' "$ConfigFilePath" >> after_install.sh
   printf 'chown safe:safe %s\n' "$VaultPath$VaultName" >> after_install.sh
-  printf 'chmod 775 %s\n\n' "$VaultPath$VaultName" >> after_install.sh
+  printf 'chmod 775 %s\n' "$VaultPath$VaultName" >> after_install.sh
 }
 
 function prepare_for_tar {
@@ -44,7 +50,7 @@ function prepare_for_tar {
   PackageName="$VaultName"_"$Version"_"$Bits"-bit
   AfterInstallCommand=
   BeforeRemoveCommand=
-  ExtraFilesCommand=
+  ExtraFile1=
 }
 
 function prepare_systemd_scripts {
@@ -64,7 +70,7 @@ function prepare_systemd_scripts {
   add_file_check "$ServiceName" "$ServicePath"
   add_safe_user
   set_owner
-  printf 'systemctl enable %s\n' "$ServiceName" >> after_install.sh
+  printf '\nsystemctl enable %s\n' "$ServiceName" >> after_install.sh
   printf 'systemctl start %s\n' "$ServiceName" >> after_install.sh
 
   # This will remove the "safe" user and group then stop and remove the service
@@ -82,7 +88,7 @@ function prepare_systemd_scripts {
   PackageName=$VaultName
   AfterInstallCommand='--after-install scripts/after_install.sh'
   BeforeRemoveCommand='--before-remove scripts/before_remove.sh'
-  ExtraFilesCommand=scripts/$ServiceName=$ServicePath
+  ExtraFile1=scripts/$ServiceName=$ServicePath
 
   chmod 755 after_install.sh before_remove.sh
   cd ..
@@ -104,7 +110,7 @@ function prepare_sysv_style_scripts {
   add_file_check "$VaultName" "$VaultPath"
   add_safe_user
   set_owner
-  printf 'if [ $(command -v update-rc.d >/dev/null; echo $?) -eq 0 ]; then\n' >> after_install.sh
+  printf '\nif [ $(command -v update-rc.d >/dev/null; echo $?) -eq 0 ]; then\n' >> after_install.sh
   printf '  update-rc.d %s defaults\n' "$InitName" >> after_install.sh
   printf 'elif [ $(command -v chkconfig >/dev/null; echo $?) -eq 0 ]; then\n' >> after_install.sh
   printf '  chkconfig --add %s\n' "$InitName" >> after_install.sh
@@ -230,10 +236,95 @@ function prepare_sysv_style_scripts {
   PackageName=$VaultName
   AfterInstallCommand='--after-install scripts/after_install.sh'
   BeforeRemoveCommand='--before-remove scripts/before_remove.sh'
-  ExtraFilesCommand=scripts/$InitName=/etc/init.d/
+  ExtraFile1=scripts/$InitName=/etc/init.d/
 
   chmod 755 after_install.sh before_remove.sh $InitName
   cd ..
+}
+
+function prepare_for_osx {
+  UninstallScript=uninstall_"$VaultName".sh
+  PlistFile=org.maidsafe."$VaultName".plist
+
+  mkdir -p "$RootDir/packages/$Platform"
+  cd "$RootDir/packages/$Platform"
+  cp "$RootDir/installer/osx/$PlistFile" "./$PlistFile"
+
+  # This will:
+  #   * check the exe file is installed
+  #   * create a user and group called "safe" if they don't already exist
+  #   * set these as the owner/group for the installed files
+  #   * add and start the service
+  printf '#!/bin/sh\n' > after_install.sh
+  add_file_check "$VaultName" "$VaultPath"
+  printf 'function get_new_user_id() {\n' >> after_install.sh
+  printf '  local UserIds=$(dscl . -list /Users UniqueID | awk '"'"'{print $2}'"'"' | sort -ugr)\n' >> after_install.sh
+  printf '  local NewId\n' >> after_install.sh
+  printf '  for NewId in $UserIds\n' >> after_install.sh
+  printf '  do\n' >> after_install.sh
+  printf '    if [[ $NewId -lt 499 ]]\n' >> after_install.sh
+  printf '    then\n' >> after_install.sh
+  printf '      break;\n' >> after_install.sh
+  printf '    fi\n' >> after_install.sh
+  printf '  done\n' >> after_install.sh
+  printf '  echo $((NewId + 1))\n' >> after_install.sh
+  printf '}\n\n' >> after_install.sh
+  printf 'function get_new_group_id {\n' >> after_install.sh
+  printf '  PreferredId=$1\n' >> after_install.sh
+  printf '  # Try to use the same ID for UserID and GroupID\n' >> after_install.sh
+  printf '  if dscl . -list /Groups PrimaryGroupID | awk '"'"'{print $2}'"'"' | grep $PreferredId >/dev/null 2>&1\n' >> after_install.sh
+  printf '  then\n' >> after_install.sh
+  printf '    local GroupIds=$(dscl . -list /Groups PrimaryGroupID | awk '"'"'{print $2}'"'"' | sort -ugr)\n' >> after_install.sh
+  printf '    local NewId\n' >> after_install.sh
+  printf '    for NewId in $GroupIds\n' >> after_install.sh
+  printf '    do\n' >> after_install.sh
+  printf '      if [[ $NewId -lt 499 ]]\n' >> after_install.sh
+  printf '      then\n' >> after_install.sh
+  printf '        break;\n' >> after_install.sh
+  printf '      fi\n' >> after_install.sh
+  printf '    done\n' >> after_install.sh
+  printf '    echo $((NewId + 1))\n' >> after_install.sh
+  printf '  else\n' >> after_install.sh
+  printf '    echo $PreferredId\n' >> after_install.sh
+  printf '  fi\n' >> after_install.sh
+  printf '}\n\n' >> after_install.sh
+  printf 'UserId=$(get_new_user_id)\n' >> after_install.sh
+  printf 'GroupId=$(get_new_group_id $UserId)\n\n' >> after_install.sh
+  printf 'dscl . -create /Users/safe\n' >> after_install.sh
+  printf 'dscl . -create /Users/safe UniqueID "$UserId"\n' >> after_install.sh
+  printf 'dscl . -create /Users/safe PrimaryGroupID "$GroupId"\n' >> after_install.sh
+  printf 'dscl . -create /Users/safe UserShell /usr/bin/false\n' >> after_install.sh
+  printf 'dseditgroup -o create -i "$GroupId" safe\n\n' >> after_install.sh
+  printf 'mkdir -p /var/log/safe\n' >> after_install.sh
+  set_owner
+  printf 'chown safe:safe /var/log/safe\n' >> after_install.sh
+  printf 'chmod 775 %s\n\n' "$VaultPath$UninstallScript" >> after_install.sh
+  printf 'launchctl load /Library/LaunchDaemons/%s\n' "$PlistFile" >> after_install.sh
+
+  # This will be a script to allow users to uninstall safe_vault
+  printf '#!/bin/sh\n' > $UninstallScript
+  printf 'if [ $EUID != 0 ]; then\n' >> $UninstallScript
+  printf '  sudo "$0" "$@"\n' >> $UninstallScript
+  printf '  exit $?\n' >> $UninstallScript
+  printf 'fi\n\n' >> $UninstallScript
+  printf 'launchctl unload /Library/LaunchDaemons/%s\n' "$PlistFile" >> $UninstallScript
+  printf 'rm /Library/LaunchDaemons/%s\n\n' "$PlistFile" >> $UninstallScript
+  printf 'dscl . -delete /Users/safe\n' >> $UninstallScript
+  printf 'dseditgroup -o delete safe\n\n' >> $UninstallScript
+  printf 'rm -rf %s\n' "$ConfigFilePath" >> $UninstallScript
+  printf 'rm %s\n' "$VaultPath$VaultName" >> $UninstallScript
+  printf 'rm %s\n' "$VaultPath$UninstallScript" >> $UninstallScript
+  printf 'echo "\nFinished uninstalling safe_vault.\n\n"\n' "$VaultPath" >> $UninstallScript
+
+  # Set vars to allow fpm to include these files
+  PackageName=$VaultName
+  AfterInstallCommand='--after-install after_install.sh'
+  BeforeRemoveCommand=
+  OsxCommands='--osxpkg-identifier-prefix org.maidsafe'
+  ExtraFile1=$UninstallScript=$VaultPath
+  ExtraFile2=./$PlistFile=/Library/LaunchDaemons/$PlistFile
+
+  chmod 755 after_install.sh "$UninstallScript"
 }
 
 function create_package {
@@ -251,9 +342,11 @@ function create_package {
     --url "http://maidsafe.net" \
     $AfterInstallCommand \
     $BeforeRemoveCommand \
+    $OsxCommands \
     "$RootDir/target/release/$VaultName"=$VaultPath \
     "$RootDir/installer/common/$VaultName.crust.config"=$ConfigFilePath \
-    $ExtraFilesCommand
+    $ExtraFile1 \
+    $ExtraFile2
 }
 
 cd "$RootDir"
@@ -262,12 +355,12 @@ cargo build --release
 strip "$RootDir/target/release/$VaultName"
 rm -rf "$RootDir/packages/$Platform" || true
 
-prepare_for_tar
-create_package tar
-gzip $PackageName.tar
-
 if [[ "$1" == "linux" ]]
 then
+  prepare_for_tar
+  create_package tar
+  gzip $PackageName.tar
+
   prepare_systemd_scripts
   create_package deb
   create_package rpm
@@ -277,5 +370,6 @@ then
   create_package rpm
 elif [[ "$1" == "osx" ]]
 then
+  prepare_for_osx
   create_package osxpkg
 fi
