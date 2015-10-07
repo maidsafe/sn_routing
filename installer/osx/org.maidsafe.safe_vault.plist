@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>KeepAlive</key>
+    <true/>
+    <key>Label</key>
+    <string>org.maidsafe.safe_vault</string>
+    <key>Program</key>
+    <string>/usr/local/bin/safe_vault</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RUST_LOG</key>
+        <string>accumulator=info,crust=info,lru_time_cache=info,memory_map=info,message_filter=info,routing=info,safe_vault=info</string>
+    </dict>
+    <key>UserName</key>
+    <string>safe</string>
+    <key>StandardOutPath</key>
+    <string>/var/log/safe/safe_vault.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/safe/safe_vault.err</string>
+</dict>
+</plist>
