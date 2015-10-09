@@ -43,9 +43,9 @@ impl ChunkStore {
     pub fn put(&mut self, name: &::routing::NameType, value: Vec<u8>) {
         use ::std::io::Write;
 
-        // FIXME - we probably shouldn't panic here.  Same comments as above in ChunkStore::new.
         if !self.has_disk_space(value.len()) {
-            panic!("Disk space unavailable. Not enough space");
+            debug!("Disk space unavailable. Not enough space");
+            return;
         }
 
         // If a file with name 'name' already exists, delete it.
@@ -54,8 +54,13 @@ impl ChunkStore {
         let hex_name = self.to_hex_string(name);
         let path_name = ::std::path::Path::new(&hex_name);
         let path = self.tempdir.path().join(path_name);
-        // FIXME - another panic.
-        let mut file = evaluate_result!(::std::fs::File::create(&path));
+        let mut file = match ::std::fs::File::create(&path) {
+            Ok(file) => file,
+            Err(_) => {
+                debug!("Unable to create file.");
+                return;
+            },
+        };
 
         let _ = file.write(&value[..]).and_then(|size| Ok(self.current_disk_usage += size));
         let _ = file.sync_all();
