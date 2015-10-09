@@ -25,7 +25,7 @@ pub struct PmidNode {
 impl PmidNode {
     pub fn new(routing: ::vault::Routing) -> PmidNode {
         // TODO adjustable max_disk_space
-        PmidNode { routing: routing, chunk_store: ::chunk_store::ChunkStore::new(1073741824) }
+        PmidNode { routing: routing, chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap() }
     }
 
     pub fn handle_get(&mut self,
@@ -179,7 +179,10 @@ impl PmidNode {
 
     pub fn reset(&mut self, routing: ::vault::Routing) {
         self.routing = routing;
-        self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
+        match ::chunk_store::ChunkStore::new(1073741824) {
+            Ok(chunk_store) => self.chunk_store = chunk_store,
+            Err(err) => { debug!("Failed to reset pmid_node chunk store {:?}", err); },
+        };
     }
 
     pub fn routing(&self) -> ::vault::Routing {

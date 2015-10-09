@@ -33,7 +33,7 @@ impl StructuredDataManager {
         // TODO adjustable max_disk_space
         StructuredDataManager {
             routing: routing,
-            chunk_store: ::chunk_store::ChunkStore::new(1073741824),
+            chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap(),
         }
     }
 
@@ -220,7 +220,10 @@ impl StructuredDataManager {
 
     pub fn reset(&mut self, routing: ::vault::Routing) {
         self.routing = routing;
-        self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
+        match ::chunk_store::ChunkStore::new(1073741824) {
+            Ok(chunk_store) => self.chunk_store = chunk_store,
+            Err(err) => { debug!("Failed to reset sd_manager chunk store {:?}", err); },
+        };
     }
 
     fn handle_account_transfer(&mut self,

@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use error::ChunkStoreError;
+
 /// Chunkstore is a collection for holding all data chunks.
 /// Implements a maximum disk usage to restrict storage.
 pub struct ChunkStore {
@@ -25,14 +27,16 @@ pub struct ChunkStore {
 
 impl ChunkStore {
     /// Create new chunkstore with `max_disk_usage` allowed disk usage.
-    pub fn new(max_disk_usage: usize) -> ChunkStore {
-        ChunkStore {
-            // FIXME - Do we really want to panic?  Can we run without chunkstore?  Or try some
-            // other path.  Either way, we could return an error which would indicate to the user to
-            // specify a different path via the config file.
-            tempdir: evaluate_result!(::tempdir::TempDir::new("safe_vault")),
-            max_disk_usage: max_disk_usage,
-            current_disk_usage: 0,
+    pub fn new(max_disk_usage: usize) -> Result<ChunkStore, ChunkStoreError> {
+        match ::tempdir::TempDir::new("safe_vault") {
+            Ok(tempdir) => {
+                Ok(ChunkStore {
+                    tempdir: tempdir,
+                    max_disk_usage: max_disk_usage,
+                    current_disk_usage: 0,
+                })
+            },
+            Err(_) => Err(ChunkStoreError::DirectoryCreate),
         }
     }
 
