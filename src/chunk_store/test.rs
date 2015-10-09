@@ -30,7 +30,7 @@ mod test {
     #[test]
     fn successful_store() {
         let k_disk_size: usize = 116;
-        let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size).unwrap();
+        let mut chunk_store = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
 
         let mut names = vec![];
 
@@ -59,7 +59,7 @@ mod test {
     fn remove_from_disk_store() {
         let k_size: usize = 1;
         let k_disk_size: usize = 116;
-        let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size).unwrap();
+        let mut chunk_store = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
 
         let mut put_and_delete = |size| {
             let name = ::utils::random_name();
@@ -79,7 +79,7 @@ mod test {
     fn put_and_get_value_should_be_same() {
         let data_size = 50;
         let k_disk_size: usize = 116;
-        let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size).unwrap();
+        let mut chunk_store = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
 
         let name = ::utils::random_name();
         let data = get_random_non_empty_string(data_size).into_bytes();
@@ -92,7 +92,7 @@ mod test {
     #[test]
     fn repeatedly_storing_same_name() {
         let k_disk_size: usize = 116;
-        let mut chunk_store = ::chunk_store::ChunkStore::new(k_disk_size).unwrap();
+        let mut chunk_store = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
 
         let mut put = |name, size| {
             let data = get_random_non_empty_string(size);
