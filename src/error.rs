@@ -17,28 +17,24 @@
 
 //------------------------------------------------------------------------------
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Debug)]
 pub enum ChunkStoreError {
-    /// The base directory failed to be created
-    DirectoryCreate,
+    // Report Input/Output error.
+    Io(::std::io::Error),
 }
 
-impl ::std::error::Error for ChunkStoreError {
-    fn description(&self) -> &str {
-        match *self {
-            ChunkStoreError::DirectoryCreate => "Failed to create directory",
-        }
-    }
-
-    fn cause(&self) -> Option<&::std::error::Error> {
-        None
+impl From<::std::io::Error> for ChunkStoreError {
+    fn from(err: ::std::io::Error) -> ChunkStoreError {
+        ChunkStoreError::Io(err)
     }
 }
+
 
 impl ::std::fmt::Display for ChunkStoreError {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            ChunkStoreError::DirectoryCreate => ::std::fmt::Display::fmt("ChunkStoreError::DirectoryCreate", formatter),
+            ChunkStoreError::Io(_) =>
+                ::std::fmt::Display::fmt("ChunkStoreError::Io", formatter),
         }
     }
 }

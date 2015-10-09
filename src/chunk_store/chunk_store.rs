@@ -36,7 +36,7 @@ impl ChunkStore {
                     current_disk_usage: 0,
                 })
             },
-            Err(_) => Err(ChunkStoreError::DirectoryCreate),
+            Err(err) => Err(ChunkStoreError::from(err)),
         }
     }
 
