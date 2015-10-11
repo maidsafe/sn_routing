@@ -145,6 +145,8 @@ pub enum RoutingError {
     NotEnoughSignatures,
     /// Duplicate signatures
     DuplicateSignatures,
+    /// Current date is ouside specified range [min_date .. max_date] of structured data
+    OutOfRangeDate,
     /// duplicate request received
     FilterCheckFailed,
     /// failure to bootstrap off the provided endpoints
@@ -212,6 +214,7 @@ impl ::std::error::Error for RoutingError {
             RoutingError::FailedSignature => "Signature check failure",
             RoutingError::NotEnoughSignatures => "Not enough signatures",
             RoutingError::DuplicateSignatures => "Duplicated signatures",
+            RoutingError::OutOfRangeDate => "Current date is outside specified range",
             RoutingError::FailedToBootstrap => "Could not bootstrap",
             RoutingError::RoutingTableEmpty => "Routing table empty",
             RoutingError::RejectedPublicId => "Rejected Public Id",
@@ -255,6 +258,8 @@ impl ::std::fmt::Display for RoutingError {
                 ::std::fmt::Display::fmt("Not enough signatures (multi-sig)", formatter),
             RoutingError::DuplicateSignatures =>
                 ::std::fmt::Display::fmt("Duplicated signatures (multi-sig)", formatter),
+            RoutingError::OutOfRangeDate =>
+                ::std::fmt::Display::fmt("Current date is outside specified range", formatter),
             RoutingError::FailedToBootstrap =>
                 ::std::fmt::Display::fmt("Could not bootstrap", formatter),
             RoutingError::RoutingTableEmpty =>
