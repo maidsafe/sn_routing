@@ -121,11 +121,12 @@ impl StructuredData {
             -> Result<(), ::error::RoutingError> {
         // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
         // Any duplicates invalidates this type.
-        if self.previous_owner_signatures.iter().filter(|&sig| self.previous_owner_signatures.iter()
-                  .any(|ref sig_check| ::NameType(sig.0) == ::NameType(sig_check.0)))
-                  .count() > (owner_keys.len() + 1) / 2 {
-
-            return Err(::error::RoutingError::DuplicateSignatures);
+        for (i, sig) in self.previous_owner_signatures.iter().enumerate() {
+            for sig_check in &self.previous_owner_signatures[..i] {
+                if sig == sig_check {
+                    return Err(::error::RoutingError::DuplicateSignatures);
+                }
+            }
         }
 
         // Refuse when not enough previous_owner_signatures found
