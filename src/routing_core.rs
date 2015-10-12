@@ -250,9 +250,16 @@ impl RoutingCore {
                             .address_in_our_close_group_range(&name);
                         let routing_table_count_prior = routing_table.size();
                         routing_table.drop_node(&name);
-                        if routing_table_count_prior == 1usize {
-                            error!("Routing Node has disconnected.");
-                            let _ = self.event_sender.send(Event::Disconnected);
+                        match routing_table_count_prior {
+                            1usize => {
+                                error!("Routing Node has disconnected.");
+                                self.state = State::Disconnected;
+                                let _ = self.event_sender.send(Event::Disconnected);
+                            },
+                            ::types::GROUP_SIZE => {
+                                self.state = State::Connected;
+                            },
+                            _ => {},
                         };
                         info!("RT({:?}) dropped node {:?}", routing_table.size(), name);
                         if trigger_churn {
@@ -283,6 +290,7 @@ impl RoutingCore {
                 let bootstrapped_posterior = self.relay_map.has_bootstrap_connections();
                 if !bootstrapped_posterior && bootstrapped_prior && !self.is_node() {
                     error!("Routing Client has disconnected.");
+                    self.state = State::Disconnected;
                     let _ = self.event_sender.send(Event::Disconnected);
                 };
                 dropped_peer

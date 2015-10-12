@@ -54,9 +54,9 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 }
 
 /// Group size.
-pub static GROUP_SIZE: usize = 8;
+pub const GROUP_SIZE: usize = 8;
 /// Quorum size.
-pub static QUORUM_SIZE: usize = 5;
+pub const QUORUM_SIZE: usize = 5;
 /// Type definition.
 pub type Bytes = Vec<u8>;
 
