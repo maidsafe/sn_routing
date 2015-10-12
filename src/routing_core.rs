@@ -44,6 +44,34 @@ pub enum ConnectionName {
    //                                | set true when connected as a bootstrap connection
 }
 
+
+/// State determines the current state of RoutingCore based on the established connections.
+/// State will start at Disconnected and for a full node under expected behaviour cycle from
+/// Disconnected to Bootstrapped.  Once Bootstrapped it requires a relocated name provided by
+/// the network.  Once the name has been acquired, the state is Relocated and a routing table
+/// is initialised with this name.  Once routing connections with the network are established,
+/// the state is Connected.  Once more than ::types::GROUP_SIZE connections have been established,
+/// the state is marked as GroupConnected. If the routing connections are lost, the state returns
+/// to Disconnected and the routing table is destroyed.  If the node accepts an incoming connection
+/// while itself disconnected it can jump from Disconnected to Relocated (assigning itself a name).
+/// For a client the cycle is reduced to Disconnected and Bootstrapped.
+/// When the user calls ::stop(), the state is set to Terminated.
+#[allow(unused)]
+pub enum State {
+    /// There are no connections.
+    Disconnected,
+    /// There are only bootstrap connections, and we do not yet have a name.
+    Bootstrapped,
+    /// There are only bootstrap connections, and we have received a name.
+    Relocated,
+    /// There are 0 < n < GROUP_SIZE routing connections, and we have a name.
+    Connected,
+    /// There are n >= GROUP_SIZE routing connections, and we have a name.
+    GroupConnected,
+    /// ::stop() has been called.
+    Terminated,
+}
+
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
 /// table and the relay map.  Routing core
 pub struct RoutingCore {
