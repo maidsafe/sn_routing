@@ -57,6 +57,7 @@ pub enum ConnectionName {
 /// For a client the cycle is reduced to Disconnected and Bootstrapped.
 /// When the user calls ::stop(), the state is set to Terminated.
 #[allow(unused)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum State {
     /// There are no connections.
     Disconnected,
@@ -76,6 +77,7 @@ pub enum State {
 /// table and the relay map.  Routing core
 pub struct RoutingCore {
     id: Id,
+    state: State,
     network_name: Option<NameType>,
     routing_table: Option<RoutingTable>,
     relay_map: RelayMap,
@@ -104,6 +106,7 @@ impl RoutingCore {
 
         RoutingCore {
             id: id,
+            state: State::Disconnected,
             network_name: None,
             routing_table: None,
             relay_map: RelayMap::new(),
@@ -137,13 +140,31 @@ impl RoutingCore {
         }
     }
 
+    /// Returns a borrow of the current state
+    pub fn state(&self) -> &::routing_core::State {
+        &self.state
+    }
+
     /// Assigning a network received name to the core.  If a name is already assigned, the function
     /// returns false and no action is taken.  After a name is assigned, Routing connections can be
     /// accepted.
     pub fn assign_network_name(&mut self, network_name: &NameType) -> bool {
+        match self.state {
+            State::Disconnected => {
+                debug!("Assigning name {:?} while disconnected.", network_name);
+            },
+            State::Bootstrapped => {},
+            State::Relocated => return false,
+            State::Connected => return false,
+            State::GroupConnected => return false,
+            State::Terminated => return false,
+        };
         // if routing_table is constructed, reject name assignment
         match self.routing_table {
-            Some(_) => return false,
+            Some(_) => {
+              error!("Attempt to assign name {:?} while status is {:?}", network_name, self.state);
+              return false;
+            },
             None => {}
         };
         if !self.id.assign_relocated_name(network_name.clone()) {
@@ -151,10 +172,7 @@ impl RoutingCore {
         };
         self.routing_table = Some(RoutingTable::new(&network_name));
         self.network_name = Some(network_name.clone());
-        // TODO (ben 11/08/2015) assigning a network name changes our address from
-        // client to node; minimally we need to send a new hello on unidentified
-        // connections, we currently freeze our bootstrap connections
-        // ie send nothing new.
+        self.state = State::Relocated;
         true
     }
 
