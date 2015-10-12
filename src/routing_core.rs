@@ -242,7 +242,7 @@ impl RoutingCore {
     /// Returns the peer if successfully dropped from the relay_map.  If dropped from the routing
     /// table a churn event is triggered for the user if the dropped peer changed our close group.
     pub fn drop_peer(&mut self, connection_name: &ConnectionName) -> Option<Peer> {
-        match *connection_name {
+        let result = match *connection_name {
             ConnectionName::Routing(name) => {
                 match self.routing_table {
                     Some(ref mut routing_table) => {
@@ -300,7 +300,23 @@ impl RoutingCore {
                 }
                 dropped_peer
             }
-        }
+        };
+
+        match self.state {
+            State::Disconnected => {
+                self.routing_table = None;
+                match self.action_sender.send(::action::Action::Rebootstrap) {
+                    Ok(()) => {},
+                    Err(_) => {
+                        error!("Action receiver in RoutingNode disconnected. Terminating from core.");
+                        self.state = State::Terminated;
+                    }
+                };
+            },
+            _ => {},
+        };
+
+        result
     }
 
     /// To be documented
