@@ -15,9 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use error::ChunkStoreError;
-
-/// Chunkstore is a collection for holding all data chunks.
+/// ChunkStore is a collection for holding all data chunks.
 /// Implements a maximum disk usage to restrict storage.
 pub struct ChunkStore {
     tempdir: ::tempdir::TempDir,
@@ -27,25 +25,20 @@ pub struct ChunkStore {
 
 impl ChunkStore {
     /// Create new chunkstore with `max_disk_usage` allowed disk usage.
-    pub fn new(max_disk_usage: usize) -> Result<ChunkStore, ChunkStoreError> {
-        match ::tempdir::TempDir::new("safe_vault") {
-            Ok(tempdir) => {
-                Ok(ChunkStore {
-                    tempdir: tempdir,
-                    max_disk_usage: max_disk_usage,
-                    current_disk_usage: 0,
-                })
-            },
-            Err(err) => Err(ChunkStoreError::from(err)),
-        }
+    pub fn new(max_disk_usage: usize) -> Result<ChunkStore, ::error::ChunkStoreError> {
+        let tempdir = try!(::tempdir::TempDir::new("safe_vault"));
+        Ok(ChunkStore {
+            tempdir: tempdir,
+            max_disk_usage: max_disk_usage,
+            current_disk_usage: 0,
+        })
     }
 
     pub fn put(&mut self, name: &::routing::NameType, value: Vec<u8>) {
         use ::std::io::Write;
 
         if !self.has_disk_space(value.len()) {
-            debug!("Disk space unavailable. Not enough space");
-            return;
+            return warn!("Not enough space in ChunkStore.");
         }
 
         // If a file with name 'name' already exists, delete it.
@@ -54,24 +47,38 @@ impl ChunkStore {
         let hex_name = self.to_hex_string(name);
         let path_name = ::std::path::Path::new(&hex_name);
         let path = self.tempdir.path().join(path_name);
-        let mut file = match ::std::fs::File::create(&path) {
-            Ok(file) => file,
-            Err(_) => {
-                debug!("Unable to create file.");
-                return;
-            },
-        };
-
-        let _ = file.write(&value[..]).and_then(|size| Ok(self.current_disk_usage += size));
-        let _ = file.sync_all();
+        let _ = ::std::fs::File::create(&path)
+            .and_then(|mut file| {
+                file.write(&value[..])
+                    .and_then(|size| {
+                        self.current_disk_usage += size;
+                        file.sync_all().map(|_| self.current_disk_usage)
+                    })
+                    .map(|_| file)
+            })
+            .or_else(|error| {
+                error!("ChunkStore failed to put to file {:?}: {}", path, error);
+                Err(error)
+            });
     }
 
     pub fn delete(&mut self, name: &::routing::NameType) {
         let _ = self.dir_entry(name)
                     .and_then(|entry| {
-                        let _ = entry.metadata().and_then(|metadata|
-                                    Ok(self.current_disk_usage -= metadata.len() as usize));
-                        ::std::fs::remove_file(entry.path()).ok()
+                        let _ = entry.metadata()
+                                     .and_then(|metadata|
+                                         Ok(self.current_disk_usage -= metadata.len() as usize))
+                                     .or_else(|error| {
+                                         error!("ChunkStore failed to get metadata for {:?}: {}",
+                                                entry.path(), error);
+                                         Err(error)
+                                     });
+                        ::std::fs::remove_file(entry.path())
+                            .or_else(|error| {
+                                error!("ChunkStore failed to remove {:?}: {}", entry.path(), error);
+                                Err(error)
+                            })
+                            .ok()
                     });
     }
 
