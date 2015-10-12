@@ -25,13 +25,6 @@ install:
   - . install_libsodium.sh
 script:
   - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/build_and_run_tests.sh | bash
-  - if [ "$TRAVIS_OS_NAME" == "linux" ]; then
-      cargo test --release -- --nocapture vault::test::network_put_get_test;
-      cargo test --release -- --nocapture vault::test::network_post_test;
-      cargo test --release -- --nocapture vault::test::network_churn_up_immutable_data_test;
-      cargo test --release -- --nocapture vault::test::network_churn_up_structured_data_test;
-      cargo test --release -- --nocapture vault::test::network_churn_down_one_node_immutable_data_test;
-      cargo test --release -- --nocapture vault::test::network_churn_down_two_nodes_immutable_data_test;
-    fi
+  - cargo test --release -- --nocapture vault::test::network_test;
 after_success:
   - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/after_success.sh | bash

@@ -610,8 +610,28 @@ mod test {
     }
 
     #[cfg(not(feature = "use-mock-routing"))]
+    fn fading_vaults_events (
+            vault_notifiers: &Vec<(::std::sync::mpsc::Receiver<(::routing::event::Event)>,
+                                   ::std::sync::mpsc::Sender<(u8)>)>,
+            time_limit: ::time::Duration) {
+        let starting_time = ::time::SteadyTime::now();
+        loop {
+            for i in 0..vault_notifiers.len() {
+                match vault_notifiers[i].0.try_recv() {
+                    Err(_) => {}
+                    Ok(event) => debug!("vault {} received event {:?}", i, event),
+                }
+            }
+            ::std::thread::sleep_ms(1);
+            if starting_time + time_limit < ::time::SteadyTime::now() {
+                break;
+            }
+        }
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
     fn wait_for_client_get(client_receiver: &::std::sync::mpsc::Receiver<(::routing::data::Data)>,
-                              expected_data: ::routing::data::Data, time_limit: ::time::Duration) {
+                           expected_data: ::routing::data::Data, time_limit: ::time::Duration) {
         let starting_time = ::time::SteadyTime::now();
         loop {
             match client_receiver.try_recv() {
@@ -653,6 +673,7 @@ mod test {
         wait_for_client_get(&client_receiver,
                             ::routing::data::Data::ImmutableData(im_data),
                             ::time::Duration::minutes(1));
+        fading_vaults_events(&vault_notifiers, ::time::Duration::seconds(10));
 
         // ======================= Post test =======================
         println!("\n======================= Post test =======================");
