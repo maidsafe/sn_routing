@@ -28,7 +28,7 @@ pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
 pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8; 64] {
     assert!(vector.len() >= 64);
     let mut arr = [0u8;64];
-    for i in (0..64) {
+    for i in 0..64 {
         arr[i] = vector[i];
     }
     arr
@@ -38,7 +38,7 @@ pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8; 64] {
 pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8; 32] {
     assert!(vector.len() >= 32);
     let mut arr = [0u8;32];
-    for i in (0..32) {
+    for i in 0..32 {
         arr[i] = vector[i];
     }
     arr
