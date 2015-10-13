@@ -15,16 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//! The main API for routing nodes (this is where you give the network its rules)
-//!
-//! The network will report **from authority your authority** and validate cryptographically any
-//! message via group consensus. This means any facade you implement will set out what you deem to
-//! be a valid operation.  Routing will provide a valid message sender and authority that will allow
-//! you to set up many decentralised services.
-//!
-//! The data types are encoded with Concise Binary Object Representation (CBOR).
-//!
-//! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
+//! Utilities contains objects and functions used by the main routing objects.
 //!
 
 mod expiration_map;

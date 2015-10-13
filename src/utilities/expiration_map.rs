@@ -17,7 +17,7 @@
 
 extern crate time;
 
-/// A time limited cache of routing connection requests or responses.
+/// A time limited map of key-value pairs.
 #[allow(unused)]
 pub struct ExpirationMap<K, V> {
     map: ::std::collections::BTreeMap<K, (V, time::SteadyTime)>,
@@ -34,16 +34,15 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
         }
     }
 
-    /// Inserts a key/value pair into the cache and returns expired entries, if any.
-    pub fn insert(&mut self, key: K, value: V) -> Option<Vec<V>> {
-        if !self.contains_key(&key) {
-            let _ = self.map.insert(key, (value, ::time::SteadyTime::now()));
+    /// Inserts a key-value pair into the map. Returns replaced value if key is already present.
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        match self.map.insert(key, (value, ::time::SteadyTime::now())) {
+            Some((value, _)) => Some(value),
+            None => None,
         }
-
-        self.remove_expired()
     }
 
-    /// If key exists, returns Some(value), otherwise returns None.
+    /// If key exists remove it from the map and return corresponding value.
     pub fn remove(&mut self, key: &K) -> Option<V> {
         match self.map.remove(key) {
             Some((value, _)) => Some(value),
@@ -51,55 +50,42 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
         }
     }
 
-    /// Retrieves a value from the cache if it exists and has not expired, otherwise, if it exists
-    /// removes it and returns None.
-    pub fn get(&mut self, key: &K) -> Option<V> {
+    /// Retrieves a value for the given key if present in the map.
+    pub fn get(&mut self, key: &K) -> Option<&V> {
         match self.map.get(key) {
-            Some(&(ref value, time)) => {
-                if time + self.time_to_live >= ::time::SteadyTime::now() {
-                    return Some(value.clone())
-                }
-            },
-            None => return None
+            Some(&(ref value, _)) => Some(value),
+            None => None,
         }
-
-        let _ = self.map.remove(key);
-        return None
     }
 
-    /// Returns true if a value exists and has not expired for the specified key, otherwise, if it
-    /// exists removes it and returns false.
-    pub fn contains_key(&mut self, key: &K) -> bool {
+    /// True if key exists and value has expired, otherwise false.
+    pub fn has_expired(&mut self, key: &K) -> bool {
         match self.map.get(key) {
-            Some(&(_, time)) => {
-                if time + self.time_to_live < ::time::SteadyTime::now() {
-                    let _ = self.map.remove(key);
-                    return false
-                } else {
-                    return true
-                }
-            },
+            Some(&(_, time)) => time + self.time_to_live < ::time::SteadyTime::now(),
             None => false,
         }
     }
 
-    fn remove_expired(&mut self) -> Option<Vec<V>> {
-        let mut expired_keys = Vec::new();
-        let mut expired_values = Vec::new();
+    /// Returns true if a value exists for the specified key.
+    pub fn contains_key(&mut self, key: &K) -> bool {
+        self.map.contains_key(key)
+    }
+
+    /// Recover expired key-value pairs removing any such from the map.
+    pub fn remove_expired(&mut self) -> Option<Vec<(K,V)>> {
+        let mut expired = Vec::new();
 
         for (key, &(ref value, time)) in self.map.iter() {
             if time + self.time_to_live < ::time::SteadyTime::now() {
-                expired_keys.push(key.clone());
-                expired_values.push(value.clone());
+                expired.push((key.clone(), value.clone()));
             }
         }
 
-        if expired_keys.len() > 0 {
-            for expired_key in expired_keys {
-                let _ = self.map.remove(&expired_key);
+        if expired.len() > 0 {
+            for key_value in expired.clone() {
+                let _ = self.map.remove(&key_value.0);
             }
-            assert!(expired_values.len() > 0);
-            return Some(expired_values);
+            return Some(expired);
         }
 
         return None;
@@ -108,10 +94,42 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
 
 #[cfg(test)]
 mod test {
-    extern crate rand;
 
     #[test]
-    fn check_expired_values() {
+    fn remove_before_expiration_time() {
+        let duration = ::time::Duration::milliseconds(500);
+        let mut expiration_map =
+            super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
+        let key = 1; let value = 1;
+        let old_value = expiration_map.insert(key, value);
+
+        assert!(old_value.is_none());
+
+        let removed_value = expiration_map.remove(&key);
+
+        assert!(!expiration_map.contains_key(&key));
+        assert!(removed_value.is_some());
+        assert_eq!(removed_value.unwrap(), value);
+    }
+
+    #[test]
+    fn check_value_has_expired() {
+        let duration = ::time::Duration::milliseconds(500);
+        let mut expiration_map =
+            super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
+        let key = 1; let value = 1;
+
+        let old_value = expiration_map.insert(key, value);
+
+        assert!(old_value.is_none());
+
+        ::std::thread::sleep_ms(500);
+
+        assert!(expiration_map.has_expired(&key));
+    }
+
+    #[test]
+    fn remove_expired_values() {
         let duration = ::time::Duration::milliseconds(500);
         let mut expiration_map =
             super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
@@ -122,17 +140,21 @@ mod test {
 
         ::std::thread::sleep_ms(500);
 
-        let expired_values = expiration_map.insert(11, 11);
+        let old_value = expiration_map.insert(11, 11);
+
+        assert!(old_value.is_none());
+
+        let expired_values = expiration_map.remove_expired();
 
         assert!(expired_values.is_some());
 
         let expired_values = expired_values.unwrap();
 
         for i in 0..10 {
-            let value = expired_values.iter().find(|&value| *value == i);
+            let key_value = expired_values.iter().find(|&&(_, ref value)| *value == i);
 
-            assert!(value.is_some());
-            assert_eq!(*value.unwrap(), i);
+            assert!(key_value.is_some());
+            assert_eq!(key_value.unwrap().1, i);
         }
 
         for i in 0..10 {
@@ -140,7 +162,7 @@ mod test {
         }
 
         assert!(expiration_map.contains_key(&11));
-        assert_eq!(expiration_map.get(&11).unwrap(), 11);
+        assert_eq!(expiration_map.get(&11).unwrap(), &11);
     }
 
     #[test]
@@ -148,42 +170,34 @@ mod test {
         let duration = ::time::Duration::milliseconds(500);
         let mut expiration_map =
             super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
+        let key = 1; let value1 = 1; let value2 = 2;
+        let old_value = expiration_map.insert(key, value1);
 
-        let expired_values = expiration_map.insert(1, 1);
+        assert!(old_value.is_none());
 
-        assert!(expired_values.is_none());
+        let old_value = expiration_map.insert(key, value2);
 
-        let expired_values = expiration_map.insert(1, 2);
-
-        assert!(expired_values.is_none());
-        assert!(expiration_map.contains_key(&1));
-        assert_eq!(expiration_map.get(&1).unwrap(), 1);
+        assert!(old_value.is_some());
+        assert_eq!(old_value.unwrap(), value1);
+        assert!(expiration_map.contains_key(&key));
+        assert_eq!(expiration_map.get(&key).unwrap(), &value2);
 
         ::std::thread::sleep_ms(500);
 
-        let expired_values = expiration_map.insert(1, 2);
+        let expired_values = expiration_map.remove_expired();
 
-        assert!(expired_values.is_none());
-        assert!(expiration_map.contains_key(&1));
-        assert_eq!(expiration_map.get(&1).unwrap(), 2);
-    }
+        assert!(expired_values.is_some());
 
-    #[test]
-    fn remove_before_expiration_time() {
-        let duration = ::time::Duration::milliseconds(1000);
-        let mut expiration_map =
-            super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
-        let key = 1;
-        let value = 1;
+        let expired_values = expired_values.unwrap();
 
-        let expired_values = expiration_map.insert(key, value);
+        assert_eq!(expired_values.len(), 1);
+        assert_eq!(expired_values[0].0, key);
+        assert_eq!(expired_values[0].1, value2);
 
-        assert!(expired_values.is_none());
+        let old_value = expiration_map.insert(key, value1);
 
-        let removed_value = expiration_map.remove(&key);
-
-        assert!(!expiration_map.contains_key(&key));
-        assert!(removed_value.is_some());
-        assert_eq!(removed_value.unwrap(), value);
+        assert!(old_value.is_none());
+        assert!(expiration_map.contains_key(&key));
+        assert_eq!(expiration_map.get(&key).unwrap(), &value1);
     }
 }
