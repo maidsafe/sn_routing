@@ -31,12 +31,14 @@ pub struct StructuredData {
     version: u64,
     current_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
     previous_owner_signatures: Vec<::sodiumoxide::crypto::sign::Signature>,
+    min_date: i64,
+    max_date: i64,
 }
 
 
 impl StructuredData {
 
-    /// Constructor
+    /// Constructor with default min/max dates.
     pub fn new(type_tag: u64,
                identifier: ::NameType,
                version: u64,
@@ -54,6 +56,39 @@ impl StructuredData {
             version: version,
             current_owner_keys: current_owner_keys,
             previous_owner_signatures: vec![],
+            min_date : 0i64,
+            max_date : i64::max_value(),
+        };
+
+        if let Some(key) = signing_key {
+            let _ = try!(structured_data.add_signature(key));
+        }
+        Ok(structured_data)
+    }
+
+    /// Constructor with min/max dates.
+    /// StructuredData::new cannot simply be called and then dates added because dates must be part of signed data.
+    pub fn with_dates(type_tag: u64,
+               identifier: ::NameType,
+               version: u64,
+               data: Vec<u8>,
+               current_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
+               previous_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
+               signing_key: Option<&::sodiumoxide::crypto::sign::SecretKey>,
+               min_date: i64,
+               max_date: i64)
+               -> Result<StructuredData, ::error::RoutingError> {
+
+        let mut structured_data = StructuredData {
+            type_tag: type_tag,
+            identifier: identifier,
+            data: data,
+            previous_owner_keys: previous_owner_keys,
+            version: version,
+            current_owner_keys: current_owner_keys,
+            previous_owner_signatures: vec![],
+            min_date : min_date,
+            max_date : max_date,
         };
 
         if let Some(key) = signing_key {
@@ -115,6 +150,18 @@ impl StructuredData {
         other.verify_previous_owner_signatures(owner_keys_to_match)
     }
 
+    /// Validate date. An error is generated when current date is not in the range [min_date .. max_date]
+    pub fn validate_date(&self) -> Result<(), ::error::RoutingError> {
+        use time;
+        let now_utc = time::now_utc().to_timespec().sec;
+        if now_utc < self.min_date || now_utc > self.max_date {
+            Err(::error::RoutingError::OutOfRangeDate)
+        }
+        else {
+            Ok(())
+        }
+    }
+ 
     /// Confirms *unique and valid* owner_signatures are at least 50% of total owners
     fn verify_previous_owner_signatures(&self,
             owner_keys: &Vec<::sodiumoxide::crypto::sign::PublicKey>)
@@ -156,6 +203,8 @@ impl StructuredData {
         try!(enc.encode(&self.previous_owner_keys));
         try!(enc.encode(&self.current_owner_keys));
         try!(enc.encode(self.version.to_string().as_bytes()));
+        try!(enc.encode(self.min_date.to_string().as_bytes()));
+        try!(enc.encode(self.max_date.to_string().as_bytes()));
         Ok(enc.into_bytes())
     }
 
@@ -214,17 +263,42 @@ impl StructuredData {
         &self.previous_owner_signatures
     }
 
+    /// Get the min date
+    pub fn get_min_date(&self) -> i64 {
+        self.min_date
+    }
+
+    /// Get the max date
+    pub fn get_max_date(&self) -> i64 {
+        self.max_date
+    }
+
     /// Return data size.
     pub fn payload_size(&self) -> usize {
         self.data.len()
     }
 }
 
+fn format_date(date: i64) -> String {
+    use time;
+    match date {
+        0 => "origin".to_string(),
+        x if x == i64::max_value() => "infinity".to_string(),
+        _ => {
+            let time_spec = time::Timespec::new(date, 0);
+            let tm = time::at_utc(time_spec);
+            let tm_fmt = tm.rfc3339();
+            format!("{}", tm_fmt)
+        }
+    }
+}
+
 impl ::std::fmt::Debug for StructuredData {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         let _ = formatter.write_str(
-            &format!(" type_tag: {:?} , name: {:?} , version: {:?} , data: {:?}",
+            &format!(" type_tag: {:?} , name: {:?} , version: {:?} , dates: [{}..{}], data: {:?}",
                      self.type_tag, self.name(), self.version,
+                     format_date(self.min_date), format_date(self.max_date),
                      ::utils::get_debug_id(self.data.clone())));
 
         let prev_owner_keys : Vec<String> = self.previous_owner_keys.iter().map(|pub_key|
@@ -257,6 +331,86 @@ impl ::std::fmt::Debug for StructuredData {
 
 #[cfg(test)]
 mod test {
+
+    #[test]
+    fn default_dates() {
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+
+        match super::StructuredData::new(0,
+                                  ::test_utils::Random::generate_random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&keys.1)) {
+            Ok(structured_data) => {
+                assert_eq!(structured_data.min_date, 0);
+                assert_eq!(structured_data.max_date, i64::max_value());
+                assert!(structured_data.validate_date().is_ok());
+                }
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    #[test]
+    fn valid_dates() {
+        use time;
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+
+        // Current date is inside specified [min_date .. max_date] range
+        let now_utc = time::now_utc().to_timespec();
+        let min_date = (now_utc + time::Duration::minutes(-20)).sec;
+        let max_date = (now_utc + time::Duration::minutes(10)).sec;
+
+        match super::StructuredData::with_dates(0,
+                                  ::test_utils::Random::generate_random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&keys.1),
+                                  min_date,
+                                  max_date) {
+            Ok(structured_data) => {
+                assert_eq!(structured_data.min_date, now_utc.sec - 20*60);
+                assert_eq!(structured_data.max_date, now_utc.sec + 10*60);
+                assert!(structured_data.validate_date().is_ok());
+                }
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    #[test]
+    fn invalid_dates() {
+        use time;
+        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+
+        // Current date is outside specified [min_date .. max_date] range
+        let now_utc = time::now_utc().to_timespec();
+        let min_date = (now_utc + time::Duration::minutes(-20)).sec;
+        let max_date = (now_utc + time::Duration::minutes(-10)).sec;
+
+        match super::StructuredData::with_dates(0,
+                                  ::test_utils::Random::generate_random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&keys.1),
+                                  min_date,
+                                  max_date) {
+            Ok(structured_data) => {
+                assert_eq!(structured_data.min_date, now_utc.sec - 20*60);
+                assert_eq!(structured_data.max_date, now_utc.sec - 10*60);
+                // Check that an error is returned
+                assert!(structured_data.validate_date().is_err());
+                }
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
 
     #[test]
     fn single_owner() {
