@@ -24,6 +24,7 @@ pub const HANDLED: Option<()> = Some(());
 pub const NOT_HANDLED: Option<()> = None;
 
 static INITIALISE_LOGGER: ::std::sync::Once = ::std::sync::ONCE_INIT;
+static HANDLE_VERSION: ::std::sync::Once = ::std::sync::ONCE_INIT;
 
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
 /// unsorted.  If `values` is empty, returns `0`.
@@ -109,6 +110,20 @@ pub fn is_data_manager_authority_type(provided_authority: &::routing::Authority)
 pub fn initialise_logger() {
     INITIALISE_LOGGER.call_once(|| {
         ::env_logger::init().unwrap_or_else(|err| println!("Error initialising logger: {}", err));
+    });
+}
+
+pub fn handle_version() {
+    HANDLE_VERSION.call_once(|| {
+        let name = ::crust::exe_file_stem().unwrap_or(::std::path::Path::new("").to_path_buf());
+        let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));
+        if ::std::env::args().any(|arg| arg == "--version") {
+            println!("{}", name_and_version);
+            ::std::process::exit(0);
+        }
+        let message = String::from("Running ") + &name_and_version;
+        let underline = String::from_utf8(vec!['=' as u8; message.len()]).unwrap();
+        info!("\n\n{}\n{}", message, underline);
     });
 }
 

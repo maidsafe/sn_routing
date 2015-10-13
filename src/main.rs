@@ -51,7 +51,6 @@ extern crate time;
 extern crate rand;
 
 // MaidSafe crates
-#[cfg(all(test, not(feature = "use-mock-routing")))]
 extern crate crust;
 extern crate lru_time_cache;
 extern crate routing;
@@ -74,5 +73,6 @@ mod vault;
 /// Runs a SAFE Network vault.
 pub fn main() {
     ::utils::initialise_logger();
+    ::utils::handle_version();
     ::vault::Vault::run();
 }
