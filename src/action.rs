@@ -38,5 +38,6 @@ pub enum Action {
     // RoutingNode will form the RoutingMessage and sign it as its own identity
     Churn(::direct_messages::Churn, Vec<::crust::Connection>, ::NameType),
     SetCacheOptions(CacheOptions),
+    Rebootstrap,
     Terminate,
 }

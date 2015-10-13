@@ -135,6 +135,7 @@ impl RoutingNode {
                 Ok(Action::SetCacheOptions(cache_options)) => {
                     self.set_cache_options(cache_options);
                 },
+                Ok(Action::Rebootstrap) => {},
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
                     let _ = self.event_sender.send(Event::Terminated);

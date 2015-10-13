@@ -44,10 +44,40 @@ pub enum ConnectionName {
    //                                | set true when connected as a bootstrap connection
 }
 
+
+/// State determines the current state of RoutingCore based on the established connections.
+/// State will start at Disconnected and for a full node under expected behaviour cycle from
+/// Disconnected to Bootstrapped.  Once Bootstrapped it requires a relocated name provided by
+/// the network.  Once the name has been acquired, the state is Relocated and a routing table
+/// is initialised with this name.  Once routing connections with the network are established,
+/// the state is Connected.  Once more than ::types::GROUP_SIZE connections have been established,
+/// the state is marked as GroupConnected. If the routing connections are lost, the state returns
+/// to Disconnected and the routing table is destroyed.  If the node accepts an incoming connection
+/// while itself disconnected it can jump from Disconnected to Relocated (assigning itself a name).
+/// For a client the cycle is reduced to Disconnected and Bootstrapped.
+/// When the user calls ::stop(), the state is set to Terminated.
+#[allow(unused)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+pub enum State {
+    /// There are no connections.
+    Disconnected,
+    /// There are only bootstrap connections, and we do not yet have a name.
+    Bootstrapped,
+    /// There are only bootstrap connections, and we have received a name.
+    Relocated,
+    /// There are 0 < n < GROUP_SIZE routing connections, and we have a name.
+    Connected,
+    /// There are n >= GROUP_SIZE routing connections, and we have a name.
+    GroupConnected,
+    /// ::stop() has been called.
+    Terminated,
+}
+
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
 /// table and the relay map.  Routing core
 pub struct RoutingCore {
     id: Id,
+    state: State,
     network_name: Option<NameType>,
     routing_table: Option<RoutingTable>,
     relay_map: RelayMap,
@@ -76,6 +106,7 @@ impl RoutingCore {
 
         RoutingCore {
             id: id,
+            state: State::Disconnected,
             network_name: None,
             routing_table: None,
             relay_map: RelayMap::new(),
@@ -109,13 +140,31 @@ impl RoutingCore {
         }
     }
 
+    /// Returns a borrow of the current state
+    pub fn state(&self) -> &::routing_core::State {
+        &self.state
+    }
+
     /// Assigning a network received name to the core.  If a name is already assigned, the function
     /// returns false and no action is taken.  After a name is assigned, Routing connections can be
     /// accepted.
     pub fn assign_network_name(&mut self, network_name: &NameType) -> bool {
+        match self.state {
+            State::Disconnected => {
+                debug!("Assigning name {:?} while disconnected.", network_name);
+            },
+            State::Bootstrapped => {},
+            State::Relocated => return false,
+            State::Connected => return false,
+            State::GroupConnected => return false,
+            State::Terminated => return false,
+        };
         // if routing_table is constructed, reject name assignment
         match self.routing_table {
-            Some(_) => return false,
+            Some(_) => {
+              error!("Attempt to assign name {:?} while status is {:?}", network_name, self.state);
+              return false;
+            },
             None => {}
         };
         if !self.id.assign_relocated_name(network_name.clone()) {
@@ -123,10 +172,7 @@ impl RoutingCore {
         };
         self.routing_table = Some(RoutingTable::new(&network_name));
         self.network_name = Some(network_name.clone());
-        // TODO (ben 11/08/2015) assigning a network name changes our address from
-        // client to node; minimally we need to send a new hello on unidentified
-        // connections, we currently freeze our bootstrap connections
-        // ie send nothing new.
+        self.state = State::Relocated;
         true
     }
 
@@ -196,7 +242,7 @@ impl RoutingCore {
     /// Returns the peer if successfully dropped from the relay_map.  If dropped from the routing
     /// table a churn event is triggered for the user if the dropped peer changed our close group.
     pub fn drop_peer(&mut self, connection_name: &ConnectionName) -> Option<Peer> {
-        match *connection_name {
+        let result = match *connection_name {
             ConnectionName::Routing(name) => {
                 match self.routing_table {
                     Some(ref mut routing_table) => {
@@ -204,9 +250,16 @@ impl RoutingCore {
                             .address_in_our_close_group_range(&name);
                         let routing_table_count_prior = routing_table.size();
                         routing_table.drop_node(&name);
-                        if routing_table_count_prior == 1usize {
-                            error!("Routing Node has disconnected.");
-                            let _ = self.event_sender.send(Event::Disconnected);
+                        match routing_table_count_prior {
+                            1usize => {
+                                error!("Routing Node has disconnected.");
+                                self.state = State::Disconnected;
+                                let _ = self.event_sender.send(Event::Disconnected);
+                            },
+                            ::types::GROUP_SIZE => {
+                                self.state = State::Connected;
+                            },
+                            _ => {},
                         };
                         info!("RT({:?}) dropped node {:?}", routing_table.size(), name);
                         if trigger_churn {
@@ -234,14 +287,36 @@ impl RoutingCore {
             _ => {
                 let bootstrapped_prior = self.relay_map.has_bootstrap_connections();
                 let dropped_peer = self.relay_map.drop_connection_name(connection_name);
-                let bootstrapped_posterior = self.relay_map.has_bootstrap_connections();
-                if !bootstrapped_posterior && bootstrapped_prior && !self.is_node() {
-                    error!("Routing Client has disconnected.");
-                    let _ = self.event_sender.send(Event::Disconnected);
-                };
+                match self.state {
+                    State::Bootstrapped | State::Relocated => {
+                        if !self.relay_map.has_bootstrap_connections()
+                            && bootstrapped_prior {
+                            error!("Routing Client has disconnected.");
+                            self.state = State::Disconnected;
+                            let _ = self.event_sender.send(Event::Disconnected);
+                        };
+                    },
+                    _ => {},
+                }
                 dropped_peer
             }
-        }
+        };
+
+        match self.state {
+            State::Disconnected => {
+                self.routing_table = None;
+                match self.action_sender.send(::action::Action::Rebootstrap) {
+                    Ok(()) => {},
+                    Err(_) => {
+                        error!("Action receiver in RoutingNode disconnected. Terminating from core.");
+                        self.state = State::Terminated;
+                    }
+                };
+            },
+            _ => {},
+        };
+
+        result
     }
 
     /// To be documented
@@ -271,13 +346,19 @@ impl RoutingCore {
                                 // TODO (ben 10/08/2015) drop connection of dropped node
                                 let (added, _) = routing_table.add_node(node_info);
                                 if added {
-                                    // if we transition from zero to one routing connection
-                                    if routing_table_count_prior == ::types::GROUP_SIZE - 1usize {
+                                    if routing_table_count_prior == 0usize {
+                                        // if we transition from zero to one routing connection
                                         info!("Routing Node has connected.");
+                                        self.state = State::Connected;
+                                    } else if routing_table_count_prior
+                                        == ::types::GROUP_SIZE - 1usize {
+                                        info!("Routing Node has connected to {:?} nodes.",
+                                            routing_table.size());
+                                        self.state = State::GroupConnected;
                                         let _ = self.event_sender.send(Event::Connected);
                                     };
                                     info!("RT({:?}) added {:?}", routing_table.size(),
-                                        routing_name);                                };
+                                        routing_name); };
                                 if added && trigger_churn {
                                     let our_close_group = routing_table.our_close_group();
                                     let mut close_group : Vec<NameType> = our_close_group.iter()
@@ -309,6 +390,7 @@ impl RoutingCore {
                 if !bootstrapped_prior && added && is_bootstrap_connection &&
                    self.routing_table.is_none() {
                     info!("Routing Client bootstrapped.");
+                    self.state = State::Bootstrapped;
                     let _ = self.event_sender.send(Event::Bootstrapped);
                 };
                 added
@@ -412,10 +494,12 @@ impl RoutingCore {
     /// to the bootstrap connections will be blocked, and an empty vector is returned.
     pub fn bootstrap_endpoints(&self) -> Option<Vec<Peer>> {
         // block explicitly if we are a connected node
-        if self.is_connected_node() {
-            return None
-        };
-        Some(self.relay_map.bootstrap_connections())
+        match self.state {
+            State::Bootstrapped | State::Relocated => {
+                Some(self.relay_map.bootstrap_connections())
+            },
+            _ => None,
+        }
     }
 
     /// Returns true if bootstrap connections are available. If we are a connected node, then access
@@ -423,7 +507,10 @@ impl RoutingCore {
     /// messages from our bootstrap connections, but active usage is blocked once we are a node.
     pub fn has_bootstrap_endpoints(&self) -> bool {
         // block explicitly if routing table is available
-        !self.is_connected_node() && self.relay_map.has_bootstrap_connections()
+        match self.state {
+            State::Bootstrapped | State::Relocated => self.relay_map.has_bootstrap_connections(),
+            _ => false,
+        }
     }
 
     /// Returns true if the core is a full routing node, but not necessarily connected
