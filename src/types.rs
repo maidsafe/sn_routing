@@ -28,7 +28,7 @@ pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
 pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8; 64] {
     assert!(vector.len() >= 64);
     let mut arr = [0u8;64];
-    for i in (0..64) {
+    for i in 0..64 {
         arr[i] = vector[i];
     }
     arr
@@ -38,7 +38,7 @@ pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8; 64] {
 pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8; 32] {
     assert!(vector.len() >= 32);
     let mut arr = [0u8;32];
-    for i in (0..32) {
+    for i in 0..32 {
         arr[i] = vector[i];
     }
     arr
@@ -54,9 +54,9 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 }
 
 /// Group size.
-pub static GROUP_SIZE: usize = 8;
+pub const GROUP_SIZE: usize = 8;
 /// Quorum size.
-pub static QUORUM_SIZE: usize = 5;
+pub const QUORUM_SIZE: usize = 5;
 /// Type definition.
 pub type Bytes = Vec<u8>;
 
