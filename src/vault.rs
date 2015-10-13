@@ -651,6 +651,8 @@ mod test {
     #[cfg(not(feature = "use-mock-routing"))]
     #[test]
     fn network_test() {
+        remove_bootstrap_file();
+        create_empty_bootstrap_file();
         let (mut vault_notifiers, mut client_routing, client_receiver, client_name) =
             network_env_setup();
 
@@ -885,5 +887,48 @@ mod test {
                                  3,
                                  1,
                                  ::time::Duration::minutes(3));
+
+        remove_bootstrap_file();
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    fn current_bin_dir() -> Result<::std::path::PathBuf, ::std::io::Error> {
+        let mut path = try!(::std::env::current_exe());
+        let pop_result = path.pop();
+        debug_assert!(pop_result);
+        Ok(path)
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    fn get_file_name() -> ::std::path::PathBuf {
+        let mut name = exe_file_stem().unwrap_or(::std::path::Path::new("unknown").to_path_buf());
+        name.set_extension("bootstrap.cache");
+        name
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    fn exe_file_stem() -> Result<::std::path::PathBuf, ::std::io::Error> {
+        let exe_path = try!(::std::env::current_exe());
+        Ok(::std::path::PathBuf::from(try!(exe_path.file_stem().ok_or(
+            ::std::io::Error::new(::std::io::ErrorKind::NotFound, "No file name component")))))
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    fn remove_bootstrap_file() {
+        let _ = current_bin_dir().and_then(|mut cur_bin_dir| {
+            cur_bin_dir.push(get_file_name());
+            ::std::fs::remove_file(cur_bin_dir)
+        });
+    }
+
+    #[cfg(not(feature = "use-mock-routing"))]
+    fn create_empty_bootstrap_file() {
+        use std::io::Write;
+        let _ = current_bin_dir().and_then(|mut cur_bin_dir| {
+            cur_bin_dir.push(get_file_name());
+            let mut file = try!(::std::fs::File::create(cur_bin_dir));
+            let _ = try!(write!(&mut file, "[]"));
+            file.sync_all().map_err(|error| error)
+        });
     }
 }
