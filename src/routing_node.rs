@@ -135,7 +135,10 @@ impl RoutingNode {
                 Ok(Action::SetCacheOptions(cache_options)) => {
                     self.set_cache_options(cache_options);
                 },
-                Ok(Action::Rebootstrap) => {},
+                Ok(Action::Rebootstrap) => {
+                    let _open_connections = self.core.reset(self.client_restriction);
+                    self.crust_service.bootstrap();
+                },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
                     let _ = self.event_sender.send(Event::Terminated);
