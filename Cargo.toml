@@ -21,6 +21,7 @@ tempdir = "*"
 time = "*"
 
 # ---- MaidSafe ------
+crust = "0.4.*"
 lru_time_cache = "0.2.*"
 routing = "0.4.*"
 

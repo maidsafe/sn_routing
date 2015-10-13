@@ -51,6 +51,8 @@ extern crate time;
 extern crate rand;
 
 // MaidSafe crates
+#[cfg(all(test, not(feature = "use-mock-routing")))]
+extern crate crust;
 extern crate lru_time_cache;
 extern crate routing;
 
