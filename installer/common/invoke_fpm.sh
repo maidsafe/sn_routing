@@ -24,9 +24,9 @@ Description="SAFE Network vault"
 function add_file_check {
   local TargetFileName=$1
   local TargetPath=$2
-  printf 'if [ ! -f %s ]; then\n' "$TargetPath$TargetFileName" >>  after_install.sh
-  printf '  echo "%s is missing from %s" >&2\n' "$TargetFileName" "$TargetPath" >>  after_install.sh
-  printf '  exit 1\nfi\n\n' >>  after_install.sh
+  printf 'if [ ! -f %s ]; then\n' "$TargetPath$TargetFileName" >> after_install.sh
+  printf '  echo "%s is missing from %s" >&2\n' "$TargetFileName" "$TargetPath" >> after_install.sh
+  printf '  exit 1\nfi\n\n' >> after_install.sh
 }
 
 function add_safe_user {
@@ -300,6 +300,7 @@ function prepare_for_osx {
   printf 'chown safe:safe /var/log/safe\n' >> after_install.sh
   printf 'chmod 775 %s\n\n' "$VaultPath$UninstallScript" >> after_install.sh
   printf 'launchctl load /Library/LaunchDaemons/%s\n' "$PlistFile" >> after_install.sh
+  printf 'osascript -e '"'"'tell app "System Events" to display dialog "To remove %s, run %s" buttons {"OK"} default button "OK" giving up after 10'"'"'\n' "$VaultName" "$VaultPath$UninstallScript" >> after_install.sh
 
   # This will be a script to allow users to uninstall safe_vault
   printf '#!/bin/sh\n' > $UninstallScript
@@ -313,13 +314,28 @@ function prepare_for_osx {
   printf 'dseditgroup -o delete safe\n\n' >> $UninstallScript
   printf 'rm -rf %s\n' "$ConfigFilePath" >> $UninstallScript
   printf 'rm %s\n' "$VaultPath$VaultName" >> $UninstallScript
-  printf 'rm %s\n' "$VaultPath$UninstallScript" >> $UninstallScript
+  printf 'rm %s\n\n' "$VaultPath$UninstallScript" >> $UninstallScript
+  printf 'if [[ "$1" == "-y" ]]; then\n' >> $UninstallScript
+  printf '  rm -rf /var/log/safe\n' >> $UninstallScript
+  printf 'elif [[ "$1" != "-n" ]]; then\n' >> $UninstallScript
+  printf '  read -p "Do you wish to remove the logfiles from /var/log/safe/  [y/N]? " -r\n' >> $UninstallScript
+  printf '  if [[ $REPLY =~ ^[Yy]$ ]]; then\n' >> $UninstallScript
+  printf '    rm -rf /var/log/safe\n' >> $UninstallScript
+  printf '  fi\n' >> $UninstallScript
+  printf 'fi\n\n' >> $UninstallScript
   printf 'echo "\nFinished uninstalling safe_vault.\n\n"\n' "$VaultPath" >> $UninstallScript
+
+  # This will invoke the previously-installed version's uninstall script if it exists.  If the name
+  # of the uninstall script changes between this version and previous versions, we need to invoke
+  # all variants of the script, hence the script's name should be hard-coded rather than using the
+  # $UninstallScript variable which may only apply to this version of the installer.
+  printf '#!/bin/sh\n' > before_install.sh
+  printf '/bin/sh /usr/local/bin/uninstall_safe_vault.sh -n&\n' >> before_install.sh  # First version of uninstall script
 
   # Set vars to allow fpm to include these files
   PackageName=$VaultName
   AfterInstallCommand='--after-install after_install.sh'
-  BeforeRemoveCommand=
+  BeforeInstallCommand='--before-install before_install.sh'
   OsxCommands='--osxpkg-identifier-prefix org.maidsafe'
   ExtraFile1=$UninstallScript=$VaultPath
   ExtraFile2=./$PlistFile=/Library/LaunchDaemons/$PlistFile
@@ -337,9 +353,10 @@ function create_package {
     --license GPLv3 \
     --vendor MaidSafe \
     --directories $ConfigFilePath \
-    --maintainer "MaidSafeQA <qa@maidsafe.net>" \
+    --maintainer "MaidSafe QA <qa@maidsafe.net>" \
     --description "$Description" \
     --url "http://maidsafe.net" \
+    $BeforeInstallCommand \
     $AfterInstallCommand \
     $BeforeRemoveCommand \
     $OsxCommands \
