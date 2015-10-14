@@ -145,6 +145,29 @@ impl RoutingCore {
         &self.state
     }
 
+    /// Resets the full routing core to a disconnected state and will return a full list of all
+    /// open connections to drop, if any should linger.  Resetting with persistant identity will
+    /// preserve the Id, only if it has not been relocated.
+    pub fn reset(&mut self, persistant: bool) -> Vec<::crust::Connection> {
+        if self.id.is_relocated() || !persistant {
+            self.id = ::id::Id::new(); };
+        self.state = State::Disconnected;
+        let mut open_connections = self.relay_map.all_connections();
+        // routing table should be empty in all sensible use-cases of reset() already.
+        // this is merely a redundancy measure.
+        let routing_connections = match self.routing_table {
+            Some(ref rt) => rt.all_connections(),
+            None => vec![],
+        };
+        for connection in routing_connections {
+            open_connections.push(connection.clone());
+        };
+        self.routing_table = None;
+        self.network_name = None;
+        self.relay_map = ::relay::RelayMap::new();
+        open_connections
+    }
+
     /// Assigning a network received name to the core.  If a name is already assigned, the function
     /// returns false and no action is taken.  After a name is assigned, Routing connections can be
     /// accepted.

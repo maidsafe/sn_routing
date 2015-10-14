@@ -171,6 +171,11 @@ impl RelayMap {
         }
         false
     }
+
+    /// Returns all connections listed
+    pub fn all_connections(&self) -> Vec<::crust::Connection> {
+        self.lookup_map.keys().map(|c| c.clone()).collect::<Vec<::crust::Connection>>()
+    }
 }
 
 #[cfg(test)]

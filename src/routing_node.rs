@@ -135,7 +135,10 @@ impl RoutingNode {
                 Ok(Action::SetCacheOptions(cache_options)) => {
                     self.set_cache_options(cache_options);
                 },
-                Ok(Action::Rebootstrap) => {},
+                Ok(Action::Rebootstrap) => {
+                    self.reset();
+                    self.crust_service.bootstrap();
+                },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
                     let _ = self.event_sender.send(Event::Terminated);
@@ -198,6 +201,26 @@ impl RoutingNode {
             };
             ::std::thread::sleep_ms(1);
         }
+    }
+
+    /// reset keeps the persistant state, but drops all connections
+    /// and restarts the cycle from disconnected.
+    fn reset(&mut self) {
+          let open_connections = self.core.reset(self.client_restriction);
+          for connection in open_connections {
+              self.crust_service.drop_node(connection);
+          }
+          self.filter = ::filter::Filter::with_expiry_duration(::time::Duration::minutes(20));
+          self.connection_filter = ::message_filter::MessageFilter::with_expiry_duration(
+              ::time::Duration::seconds(20));
+          self.public_id_cache = LruCache::with_expiry_duration(::time::Duration::minutes(10));
+          self.accumulator = ::message_accumulator::MessageAccumulator::with_expiry_duration(
+              ::time::Duration::minutes(5));
+          self.refresh_accumulator = ::refresh_accumulator::RefreshAccumulator
+              ::with_expiry_duration(::time::Duration::minutes(5), self.event_sender.clone());
+          self.data_cache = None;
+          let preserve_cache_options = self.cache_options.clone();
+          self.set_cache_options(preserve_cache_options);
     }
 
     /// When CRUST receives a connect to our listening port and establishes a new connection,

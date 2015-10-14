@@ -314,6 +314,11 @@ impl RoutingTable {
         self.our_id.clone()
     }
 
+    /// Returns all connections listed in the routing table
+    pub fn all_connections(&self) -> Vec<::crust::Connection> {
+        self.routing_table.iter().filter_map(|n| n.connection.clone()).collect::<Vec<::crust::Connection>>()
+    }
+
     /// This returns true if the provided id is closer than or equal to the furthest node in our
     /// close group. If the routing table contains less than GroupSize nodes, then every address is
     /// considered to be in our close group range.
