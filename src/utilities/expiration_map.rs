@@ -15,19 +15,17 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate time;
-
 /// A time limited map of key-value pairs.
 #[allow(unused)]
 pub struct ExpirationMap<K, V> {
-    map: ::std::collections::BTreeMap<K, (V, time::SteadyTime)>,
-    time_to_live: time::Duration,
+    map: ::std::collections::BTreeMap<K, (V, ::time::SteadyTime)>,
+    time_to_live: ::time::Duration,
 }
 
 #[allow(unused)] // remove when an ExpirationMap has been included elsewhere in the code
 impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
     /// Constructor
-    pub fn with_expiry_duration(time_to_live: time::Duration) -> ExpirationMap<K, V> {
+    pub fn with_expiry_duration(time_to_live: ::time::Duration) -> ExpirationMap<K, V> {
         ExpirationMap {
             map: ::std::collections::BTreeMap::new(),
             time_to_live: time_to_live,
