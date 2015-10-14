@@ -112,7 +112,7 @@ pub enum InternalRequest {
     //                 | the network assigned name
     /// Refresh allows a persona to republish account records (identified with type_tag:u64 and
     /// the serialised payload:Vec<u8>).  The cause of the Refresh is the NameType of the node
-    //. that caused the churn event.
+    /// that caused the churn event.
     Refresh(u64, Vec<u8>, ::NameType),
 }
 
