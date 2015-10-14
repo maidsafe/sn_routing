@@ -42,8 +42,7 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
 
     /// Returns true if the identifier is unique in the map
     /// and the connection can be added.  Returns false if the public id is not valid
-    /// for the given identifier, or if either the connection or
-    /// the identifier already are registered.
+    /// for the given identifier, or if either the connection is already are registered.
     pub fn add_peer(&mut self, connection: ::crust::Connection, identifier: V,
         public_id: ::public_id::PublicId) -> bool {
         if !identifier.valid_public_id(&public_id) { return false; };
@@ -82,4 +81,6 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
             .collect::<Vec<::crust::Connection>>();
         (public_id, connections)
     }
+
+
 }
