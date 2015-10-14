@@ -135,8 +135,11 @@ impl PmidNode {
             let parsed_data: ::routing::immutable_data::ImmutableData =
                 match ::routing::utils::decode(&fetched_data) {
                     Ok(data) => data,
-                    // FIXME - for error case, remove this chunk and continue?
-                    Err(_) => return ::utils::HANDLED,
+                    Err(_) => {
+                        // remove corrupted data
+                        self.chunk_store.delete(name);
+                        continue
+                    }
                 };
             match *parsed_data.get_type_tag() {
                 ::routing::immutable_data::ImmutableDataType::Sacrificial => {
