@@ -372,10 +372,8 @@ impl RoutingCore {
                                     Some(node) => {
                                         match node.connection {
                                             Some(connection) => {
-                                                let mut connections = Vec::new();
-                                                connections.push(connection);
                                                 let _ = self.action_sender.send(
-                                                    Action::DropConnections(connections));
+                                                    Action::DropConnections(vec![connection]));
                                             },
                                             None => ()
                                         }
