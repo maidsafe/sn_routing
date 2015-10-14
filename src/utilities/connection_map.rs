@@ -87,5 +87,12 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
         (public_id, connections)
     }
 
-
+    /// Returns Option<PublicId> if the connection is registered
+    pub fn lookup_connection(&self, connection: &::crust::Connection)
+        -> Option<&::public_id::PublicId> {
+        match self.lookup_map.get(connection) {
+            Some(identity) => self.connection_map.get(&identity),
+            None => None,
+        }
+    }
 }
