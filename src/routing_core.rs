@@ -366,8 +366,12 @@ impl RoutingCore {
                                                               vec![endpoint.clone()],
                                                               Some(connection));
                                 let routing_table_count_prior = routing_table.size();
-                                // TODO (ben 10/08/2015) drop connection of dropped node
-                                let (added, _) = routing_table.add_node(node_info);
+                                let (added, previous) = routing_table.add_node(node_info);
+                                match previous {
+                                    Some(previous_node_info)
+                                        => { routing_table.drop_node(&previous_node_info.id()); },
+                                    None => { },
+                                }
                                 if added {
                                     if routing_table_count_prior == 0usize {
                                         // if we transition from zero to one routing connection
