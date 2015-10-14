@@ -33,18 +33,15 @@ impl ::types::Refreshable for Account {
     fn merge(from_group: ::routing::NameType, responses: Vec<Account>) -> Option<Account> {
         let mut stored_total_size: Vec<u64> = Vec::new();
         let mut lost_total_size: Vec<u64> = Vec::new();
-        let mut offered_space: Vec<u64> = Vec::new();
         for response in responses {
             if response.name == from_group {
                 stored_total_size.push(response.value.stored_total_size);
                 lost_total_size.push(response.value.lost_total_size);
-                offered_space.push(response.value.offered_space);
             }
         }
         Some(Account::new(from_group,
                           AccountValue::new(::utils::median(stored_total_size),
-                                            ::utils::median(lost_total_size),
-                                            ::utils::median(offered_space))))
+                                            ::utils::median(lost_total_size))))
     }
 }
 
@@ -54,35 +51,32 @@ impl ::types::Refreshable for Account {
 pub struct AccountValue {
     stored_total_size: u64,
     lost_total_size: u64,
-    offered_space: u64,
 }
 
 impl Default for AccountValue {
-    // FIXME: to bypass the AccountCreation process for simple network, capacity is assumed
-    // automatically
+    // FIXME: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
+    //   To bypass the the process for a simple network, allowance is granted by default
     fn default() -> AccountValue {
-        AccountValue { stored_total_size: 0, lost_total_size: 0, offered_space: 1073741824 }
+        AccountValue { stored_total_size: 0, lost_total_size: 0 }
     }
 }
 
 impl AccountValue {
-    fn new(stored_total_size: u64, lost_total_size: u64, offered_space: u64) -> AccountValue {
+    fn new(stored_total_size: u64, lost_total_size: u64) -> AccountValue {
         AccountValue {
             stored_total_size: stored_total_size,
             lost_total_size: lost_total_size,
-            offered_space: offered_space,
         }
     }
 
-  // TODO: Always return true to allow pmid_node carry out removal of Sacrificial copies
-  //       Otherwise AccountValue need to remember storage info of Primary, Backup and Sacrificial
-  //       copies separately to trigger an early alert
-    fn put_data(&mut self, size: u64) -> bool {
+  // Always return true to allow pmid_node carry out removal of Sacrificial copies
+  // Otherwise AccountValue need to remember storage info of Primary, Backup and Sacrificial
+  // copies separately to trigger an early alert
+    fn put_data(&mut self, size: u64) {
         // if (self.stored_total_size + size) > self.offered_space {
         //   return false;
         // }
         self.stored_total_size += size;
-        true
     }
 
     fn delete_data(&mut self, size: u64) {
@@ -102,11 +96,6 @@ impl AccountValue {
     #[allow(dead_code)]
     fn handle_falure(&mut self, size: u64) {
         self.handle_lost_data(size);
-    }
-
-    #[allow(dead_code)]
-    fn set_available_size(&mut self, available_size: u64) {
-        self.offered_space = available_size;
     }
 
     #[allow(dead_code)]
@@ -131,7 +120,7 @@ impl Database {
         Database { storage: ::std::collections::HashMap::with_capacity(10000) }
     }
 
-    pub fn put_data(&mut self, name: &PmidNodeName, size: u64) -> bool {
+    pub fn put_data(&mut self, name: &PmidNodeName, size: u64) {
         let default: AccountValue = Default::default();
         let entry = self.storage.entry(name.clone()).or_insert(default);
         entry.put_data(size)
@@ -165,9 +154,9 @@ impl Database {
                 }
             }
         }
-        // FIXME: as pointed out in https://github.com/maidsafe/safe_vault/issues/250
-        //        the uncontrollable order of events (churn/refresh/account_transfer)
-        //        forcing the node have to keep its current records to avoid losing
+        // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
+        // the uncontrollable order of events (churn/refresh/account_transfer)
+        // forcing the node have to keep its current records to avoid losing record
         // self.cleanup();
     }
 
@@ -231,11 +220,10 @@ mod test {
     fn handle_account_transfer() {
         let mut db = Database::new();
         let name = ::utils::random_name();
-        assert!(db.put_data(&name, 1024));
+        db.put_data(&name, 1024);
         assert!(db.storage.contains_key(&name));
 
         let account_value = AccountValue::new(::rand::random::<u64>(),
-                                              ::rand::random::<u64>(),
                                               ::rand::random::<u64>());
         let account = Account::new(name.clone(), account_value.clone());
         db.handle_account_transfer(account);
@@ -246,7 +234,6 @@ mod test {
     fn pmid_manager_account_serialisation() {
         let obj_before = Account::new(::routing::NameType([1u8; 64]),
                                       AccountValue::new(::rand::random::<u64>(),
-                                                        ::rand::random::<u64>(),
                                                         ::rand::random::<u64>()));
 
         let mut e = ::cbor::Encoder::from_memory();

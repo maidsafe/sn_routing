@@ -54,8 +54,8 @@ pub struct AccountValue {
 }
 
 impl Default for AccountValue {
-    // FIXME: to bypass the AccountCreation process for simple network allowance is granted
-    // automatically
+    // FIXME: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
+    //   To bypass the the process for a simple network, allowance is granted by default
     fn default() -> AccountValue {
         AccountValue { data_stored: 0, space_available: 1073741824 }
     }
@@ -129,9 +129,9 @@ impl Database {
                                         encoder.as_bytes().to_vec(), churn_node.clone());
             }
         }
-        // FIXME: as pointed out in https://github.com/maidsafe/safe_vault/issues/250
-        //        the uncontrollable order of events (churn/refresh/account_transfer)
-        //        forcing the node have to keep its current records to avoid losing
+        // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
+        // the uncontrollable order of events (churn/refresh/account_transfer)
+        // forcing the node have to keep its current records to avoid losing record
         // self.cleanup();
     }
 
