@@ -62,13 +62,18 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
         true
     }
 
-    /// Removes the provided connection and returns the Peer this connection was registered to,
-    /// otherwise returns None.
-    pub fn drop_connection(&mut self, connection_to_drop: &::crust::Connection) -> Option<::public_id::PublicId> {
-        match self.lookup_map.remove(connection_to_drop) {
-            Some(identity) => self.connection_map.remove(&identity),
-            None => None,
-        }
+    /// Removes the provided connection and returns the public id of this connection.
+    /// If there are other connections still registered for the identity, also
+    /// None is returned.
+    pub fn drop_connection(&mut self, connection_to_drop: &::crust::Connection)
+        -> Option<::public_id::PublicId> {
+        let affected_identity = match self.lookup_map.remove(connection_to_drop) {
+            Some(identity) => identity,
+            None => return None,
+        };
+        if self.lookup_map.iter().find(|&(_, ref i)| **i == affected_identity).is_none() {
+            self.connection_map.remove(&affected_identity)
+        } else { None }
     }
 
     /// Removes the given identity from the connection map if it exists, returning the public id
