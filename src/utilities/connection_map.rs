@@ -84,6 +84,13 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
         let connections = self.lookup_map.iter()
             .filter_map(|(c, i)| if i == identity { Some(c.clone()) } else { None })
             .collect::<Vec<::crust::Connection>>();
+        for connection in &connections {
+            let old_identity = self.lookup_map.remove(connection);
+            debug_assert!( match old_identity {
+                Some(ref iden) => iden == identity,
+                None => false,
+            });
+        };
         (public_id, connections)
     }
 
@@ -94,5 +101,36 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
             Some(identity) => self.connection_map.get(&identity),
             None => None,
         }
+    }
+
+    /// Returns the registered public id for a given identifier
+    pub fn lookup_identity(&self, identity: &V) -> Option<&::public_id::PublicId> {
+        self.connection_map.get(identity)
+    }
+
+    /// Returns true if more connections are registered than the maximum allowed number of
+    /// connections.
+    pub fn is_full(&self) -> bool {
+        self.lookup_map.len() >= _MAX_ENTRIES
+    }
+
+    /// Returns the number of registered unique identities
+    pub fn identities_len(&self) -> usize {
+        self.connection_map.len()
+    }
+
+    /// Returns the number of registered connections
+    pub fn connections_len(&self) -> usize {
+        self.lookup_map.len()
+    }
+
+    /// Returns all identities listed without connections or public identities
+    pub fn identities(&self) -> Vec<V> {
+        self.connection_map.keys().map(|v| v.clone()).collect::<Vec<V>>()
+    }
+
+    /// Returns all connections listed without identities or public identities
+    pub fn connections(&self) -> Vec<::crust::Connection> {
+        self.lookup_map.keys().map(|c| c.clone()).collect::<Vec<::crust::Connection>>()
     }
 }
