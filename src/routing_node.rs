@@ -138,6 +138,12 @@ impl RoutingNode {
                 Ok(Action::DropConnections(connections)) => {
                     self.drop_connections(connections);
                 },
+                Ok(Action::ExpectedConnection(expected_connection)) => {
+                    self.expected_connection(expected_connection);
+                },
+                Ok(Action::UnknownConnection(unknown_connection)) => {
+                    self.unknown_connection(unknown_connection);
+                },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
                     self.crust_service.bootstrap();
@@ -1000,6 +1006,14 @@ impl RoutingNode {
         for connection in connections {
             self.crust_service.drop_node(connection);
         }
+    }
+
+    fn expected_connection(&mut self, _expected_connection: ::routing_core::ExpectedConnection) {
+        unimplemented!();
+    }
+
+    fn unknown_connection(&mut self, _unknown_connection: ::routing_core::UnknownConnection) {
+        unimplemented!();
     }
 
     // ----- Send Functions -----------------------------------------------------------------------

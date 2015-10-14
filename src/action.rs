@@ -15,10 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use messages::{SignedMessage, Content};
-use authority::Authority;
-use types::CacheOptions;
-
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
 ///       for it to be sent on across the network.
@@ -26,19 +22,22 @@ use types::CacheOptions;
 ///       pending events should be handled.
 ///       After completion RoutingNode will send Event::Terminated.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(unused)]
 pub enum Action {
-    SendMessage(SignedMessage),
+    SendMessage(::messages::SignedMessage),
     //          ~~|~~~~~~~~~~
     //            | a fully signed message with a given claimant
-    SendContent(Authority, Authority, Content),
-    ClientSendContent(Authority, Content),
+    SendContent(::authority::Authority, ::authority::Authority, ::messages::Content),
+    ClientSendContent(::authority::Authority, ::messages::Content),
     //          ~~|~~~~~~  ~~|~~~~
     //            |          | the bare content for a message to be formed
     //            | the destination authority
     // RoutingNode will form the RoutingMessage and sign it as its own identity
     Churn(::direct_messages::Churn, Vec<::crust::Connection>, ::NameType),
-    SetCacheOptions(CacheOptions),
+    SetCacheOptions(::types::CacheOptions),
     DropConnections(Vec<::crust::Connection>),
+    ExpectedConnection(::routing_core::ExpectedConnection),
+    UnknownConnection(::routing_core::UnknownConnection),
     Rebootstrap,
     Terminate,
 }

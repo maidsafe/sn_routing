@@ -73,6 +73,26 @@ pub enum State {
     Terminated,
 }
 
+/// ExpectedConnection.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[allow(unused)]
+pub enum ExpectedConnection {
+    /// ConnectRequest sent by peer.
+    Request(::messages::ConnectRequest),
+    /// ConnectResponse in response to a ConnectRequest sent by peer.
+    Response(::messages::ConnectResponse),
+}
+
+/// UnknownConnection.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[allow(unused)]
+pub struct UnknownConnection {
+    /// Unknown crust Connection.
+    connection: ::crust::Connection,
+    /// Hello Message.
+    message: Option<::direct_messages::Hello>,
+}
+
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
 /// table and the relay map.  Routing core
 pub struct RoutingCore {
