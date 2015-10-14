@@ -135,6 +135,9 @@ impl RoutingNode {
                 Ok(Action::SetCacheOptions(cache_options)) => {
                     self.set_cache_options(cache_options);
                 },
+                Ok(Action::DropConnections(connections)) => {
+                    self.drop_connections(connections);
+                },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
                     self.crust_service.bootstrap();
@@ -991,6 +994,12 @@ impl RoutingNode {
 
     fn connect(&mut self, endpoints: &Vec<::crust::Endpoint>) {
         self.crust_service.connect(endpoints.clone());
+    }
+
+    fn drop_connections(&mut self, connections: Vec<::crust::Connection>) {
+        for connection in connections {
+            self.crust_service.drop_node(connection);
+        }
     }
 
     // ----- Send Functions -----------------------------------------------------------------------

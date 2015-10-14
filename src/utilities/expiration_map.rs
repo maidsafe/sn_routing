@@ -77,11 +77,12 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
     }
 
     /// Recover expired key-value pairs removing any such from the map.
-    pub fn remove_expired(&mut self) -> Option<Vec<(K,V)>> {
+    pub fn remove_expired(&mut self) -> Vec<(K,V)> {
         let mut expired = Vec::new();
+        let now = ::time::SteadyTime::now();
 
         for (key, &(ref value, time)) in self.map.iter() {
-            if time + self.time_to_live < ::time::SteadyTime::now() {
+            if time + self.time_to_live < now {
                 expired.push((key.clone(), value.clone()));
             }
         }
@@ -90,10 +91,9 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
             for key_value in expired.clone() {
                 let _ = self.map.remove(&key_value.0);
             }
-            return Some(expired);
         }
 
-        return None;
+        return expired;
     }
 }
 
@@ -153,9 +153,7 @@ mod test {
 
         let expired_values = expiration_map.remove_expired();
 
-        assert!(expired_values.is_some());
-
-        let expired_values = expired_values.unwrap();
+        assert!(!expired_values.is_empty());
 
         for i in 0..10 {
             let key_value = expired_values.iter().find(|&&(_, ref value)| *value == i);
@@ -193,10 +191,7 @@ mod test {
 
         let expired_values = expiration_map.remove_expired();
 
-        assert!(expired_values.is_some());
-
-        let expired_values = expired_values.unwrap();
-
+        assert!(!expired_values.is_empty());
         assert_eq!(expired_values.len(), 1);
         assert_eq!(expired_values[0].0, key);
         assert_eq!(expired_values[0].1, value2);
