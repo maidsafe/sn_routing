@@ -72,6 +72,7 @@ mod relay;
 mod peer;
 mod refresh_accumulator;
 mod message_accumulator;
+mod utilities;
 
 /// Routing provides an actionable interface to routing.
 pub mod routing;
