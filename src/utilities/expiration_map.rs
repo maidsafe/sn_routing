@@ -40,7 +40,7 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
         }
     }
 
-    /// If key exists remove it from the map and return corresponding value.
+    /// If key exists remove it from the map and return corresponding value, whether expired or not.
     pub fn remove(&mut self, key: &K) -> Option<V> {
         match self.map.remove(key) {
             Some((value, _)) => Some(value),
@@ -51,22 +51,29 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
     /// Retrieves a value for the given key if present in the map.
     pub fn get(&mut self, key: &K) -> Option<&V> {
         match self.map.get(key) {
-            Some(&(ref value, _)) => Some(value),
-            None => None,
-        }
-    }
-
-    /// True if key exists and value has expired, otherwise false.
-    pub fn has_expired(&mut self, key: &K) -> bool {
-        match self.map.get(key) {
-            Some(&(_, time)) => time + self.time_to_live < ::time::SteadyTime::now(),
-            None => false,
+            Some(&(ref value, time)) => {
+                if time + self.time_to_live < ::time::SteadyTime::now() {
+                    None
+                } else {
+                    Some(value)
+                }
+            },
+            None => None
         }
     }
 
     /// Returns true if a value exists for the specified key.
     pub fn contains_key(&mut self, key: &K) -> bool {
-        self.map.contains_key(key)
+        match self.map.get(key) {
+            Some(&(_, time)) => {
+                if time + self.time_to_live < ::time::SteadyTime::now() {
+                    false
+                } else {
+                    true
+                }
+            },
+            None => false
+        }
     }
 
     /// Recover expired key-value pairs removing any such from the map.
@@ -95,7 +102,7 @@ mod test {
 
     #[test]
     fn remove_before_expiration_time() {
-        let duration = ::time::Duration::milliseconds(500);
+        let duration = ::time::Duration::milliseconds(10);
         let mut expiration_map =
             super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
         let key = 1; let value = 1;
@@ -111,24 +118,26 @@ mod test {
     }
 
     #[test]
-    fn check_value_has_expired() {
-        let duration = ::time::Duration::milliseconds(500);
+    fn get_after_expiration_time() {
+        let duration = ::time::Duration::milliseconds(10);
         let mut expiration_map =
             super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
         let key = 1; let value = 1;
-
         let old_value = expiration_map.insert(key, value);
 
         assert!(old_value.is_none());
+        assert!(expiration_map.contains_key(&key));
+        assert_eq!(expiration_map.get(&key).unwrap(), &value);
 
-        ::std::thread::sleep_ms(500);
+        ::std::thread::sleep_ms(10);
 
-        assert!(expiration_map.has_expired(&key));
+        assert!(!expiration_map.contains_key(&key));
+        assert!(expiration_map.get(&key).is_none());
     }
 
     #[test]
     fn remove_expired_values() {
-        let duration = ::time::Duration::milliseconds(500);
+        let duration = ::time::Duration::milliseconds(50);
         let mut expiration_map =
             super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
 
@@ -136,7 +145,7 @@ mod test {
             let _ = expiration_map.insert(i, i);
         }
 
-        ::std::thread::sleep_ms(500);
+        ::std::thread::sleep_ms(50);
 
         let old_value = expiration_map.insert(11, 11);
 
@@ -165,7 +174,7 @@ mod test {
 
     #[test]
     fn insert_same_key_with_different_value() {
-        let duration = ::time::Duration::milliseconds(500);
+        let duration = ::time::Duration::milliseconds(50);
         let mut expiration_map =
             super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
         let key = 1; let value1 = 1; let value2 = 2;
@@ -180,7 +189,7 @@ mod test {
         assert!(expiration_map.contains_key(&key));
         assert_eq!(expiration_map.get(&key).unwrap(), &value2);
 
-        ::std::thread::sleep_ms(500);
+        ::std::thread::sleep_ms(50);
 
         let expired_values = expiration_map.remove_expired();
 
