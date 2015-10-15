@@ -138,6 +138,12 @@ impl RoutingNode {
                 Ok(Action::DropConnections(connections)) => {
                     self.drop_connections(connections);
                 },
+                Ok(Action::MatchExpectedConnection(connection)) => {
+                    self.match_expected_connection(connection);
+                },
+                Ok(Action::MatchUnknownConnection(hello_message)) => {
+                    self.match_unknown_connection(hello_message);
+                },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
                     self.crust_service.bootstrap();
@@ -1000,6 +1006,14 @@ impl RoutingNode {
         for connection in connections {
             self.crust_service.drop_node(connection);
         }
+    }
+
+    fn match_expected_connection(&mut self, _connection: ::crust::Connection) {
+        unimplemented!();
+    }
+
+    fn match_unknown_connection(&mut self, _hello: ::direct_messages::Hello) {
+        unimplemented!();
     }
 
     // ----- Send Functions -----------------------------------------------------------------------

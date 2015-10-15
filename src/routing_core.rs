@@ -73,6 +73,16 @@ pub enum State {
     Terminated,
 }
 
+/// ExpectedConnection.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[allow(unused)]
+pub enum ExpectedConnection {
+    /// ConnectRequest sent by peer.
+    Request(::messages::ConnectRequest),
+    /// ConnectResponse in response to a ConnectRequest sent by peer.
+    Response(::messages::ConnectResponse),
+}
+
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
 /// table and the relay map.  Routing core
 pub struct RoutingCore {
