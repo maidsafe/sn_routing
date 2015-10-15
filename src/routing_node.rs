@@ -189,7 +189,8 @@ impl RoutingNode {
                     // the concept of a first node, as it is just hidden, not logically removed
                     // refactoring to crust 0.3 has made this logic even worse than it was.
                     if self.core.is_node() {
-                        self.handle_new_connection(connection);
+                        // self.handle_new_connection(connection);
+                        self.handle_on_connect(connection);
                     } else {
                         self.handle_new_bootstrap_connection(connection);
                     }
@@ -230,6 +231,33 @@ impl RoutingNode {
           self.data_cache = None;
           let preserve_cache_options = self.cache_options.clone();
           self.set_cache_options(preserve_cache_options);
+    }
+
+    fn handle_on_connect(&mut self, connection: ::crust::Connection) {
+        match self.core.state() {
+            &::routing_core::State::Disconnected => {
+                self.core.add_bootstrap_connection(connection.clone());
+                ignore(self.send_hello(connection, None));
+                return;
+            },
+            &::routing_core::State::Bootstrapped => {
+                self.crust_service.drop_node(connection);
+                return;
+            },
+            &::routing_core::State::Relocated => {},
+            &::routing_core::State::Connected => {},
+            &::routing_core::State::GroupConnected => {},
+            &::routing_core::State::Terminated => {
+                self.crust_service.drop_node(connection);
+                return;
+            },
+        };
+
+        if self.core.match_expected_connection(connection) {
+            ignore(self.send_hello(connection, None));
+        } else {
+            self.crust_service.drop_node(connection);
+        }
     }
 
     /// When CRUST receives a connect to our listening port and establishes a new connection,

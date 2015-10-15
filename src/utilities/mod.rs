@@ -18,4 +18,6 @@
 //! Utilities contains objects and functions used by the main routing objects.
 //!
 
-mod expiration_map;
+pub mod expiration_map;
+
+pub use ::utilities::expiration_map::ExpirationMap;

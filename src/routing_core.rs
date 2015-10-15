@@ -85,12 +85,17 @@ pub enum ExpectedConnection {
 
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
 /// table and the relay map.  Routing core
+#[allow(unused)]
 pub struct RoutingCore {
     id: Id,
     state: State,
     network_name: Option<NameType>,
     routing_table: Option<RoutingTable>,
     relay_map: RelayMap,
+    expected_connections: ::utilities::expiration_map::ExpirationMap<ExpectedConnection,
+        Option<::crust::Connection>>,
+    unknown_connections: ::utilities::expiration_map::ExpirationMap<::crust::Connection,
+        Option<::direct_messages::Hello>>,
     // sender for signaling events and action
     event_sender: Sender<Event>,
     action_sender: Sender<Action>,
@@ -120,6 +125,10 @@ impl RoutingCore {
             network_name: None,
             routing_table: None,
             relay_map: RelayMap::new(),
+            expected_connections: ::utilities::expiration_map::ExpirationMap::with_expiry_duration(
+                ::time::Duration::minutes(5)),
+            unknown_connections: ::utilities::expiration_map::ExpirationMap::with_expiry_duration(
+                ::time::Duration::minutes(5)),
             event_sender: event_sender,
             action_sender: action_sender,
         }
@@ -642,6 +651,16 @@ impl RoutingCore {
         } else {
             0
         }
+    }
+
+    /// Check whether the connection has been sent in a ConnectRequest/ConnectResponse.
+    pub fn match_expected_connection(&self, _connection: ::crust::Connection) -> bool {
+        unimplemented!();
+    }
+
+    /// Add a bootstrap connection.
+    pub fn add_bootstrap_connection(&self, _connection: ::crust::Connection) {
+        unimplemented!();
     }
 }
 
