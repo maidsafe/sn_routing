@@ -134,3 +134,46 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
         self.lookup_map.keys().map(|c| c.clone()).collect::<Vec<::crust::Connection>>()
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+    struct TestPeer {
+        pub name: ::NameType,
+    }
+
+    impl super::Identifiable for TestPeer {
+        fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
+            self.name == public_id.name()
+        }
+    }
+
+    #[test]
+    fn add_max_peers() {
+        let mut connection_map : super::ConnectionMap<TestPeer>
+            = super::ConnectionMap::new();
+
+        for i in 0..super::_MAX_ENTRIES + 1 {
+            let id = ::id::Id::new();
+            let public_id = ::public_id::PublicId::new(&id);
+            let identity = TestPeer{ name: public_id.name() };
+            let connection = ::test_utils::test::random_connection();
+
+            assert!(connection_map.add_peer(connection.clone(), identity.clone(),
+                public_id.clone()));
+            let retrieved_from_identity = connection_map.lookup_identity(&identity);
+            assert!(retrieved_from_identity.is_some());
+            assert_eq!(retrieved_from_identity.unwrap(), &public_id);
+            let retrieved_from_connection = connection_map.lookup_connection(&connection);
+            assert!(retrieved_from_connection.is_some());
+            assert_eq!(retrieved_from_connection.unwrap(), &public_id);
+
+            if i != super::_MAX_ENTRIES-1 {
+                assert!(!connection_map.is_full());
+            } else {
+                assert!(connection_map.is_full());
+            }
+        }
+    }
+}
