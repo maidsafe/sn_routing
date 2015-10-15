@@ -51,7 +51,7 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
             Some(stored_public_id) => { if stored_public_id != &public_id { return false; }},
             None => {},
         };
-        if self.lookup_map.len() > _MAX_ENTRIES { warn!("Exceeded maximum number of connections \
+        if self.lookup_map.len() >= _MAX_ENTRIES { warn!("Exceeded maximum number of connections \
             {:?} when adding {:?} on {:?}", self.lookup_map.len(), identifier, connection); };
         let old_value = self.lookup_map.insert(connection, identifier.clone());
         debug_assert!(old_value.is_none(), "Already verified above the lookup_map does \
@@ -169,7 +169,7 @@ mod test {
             assert!(retrieved_from_connection.is_some());
             assert_eq!(retrieved_from_connection.unwrap(), &public_id);
 
-            if i != super::_MAX_ENTRIES-1 {
+            if i < super::_MAX_ENTRIES - 1 {
                 assert!(!connection_map.is_full());
             } else {
                 assert!(connection_map.is_full());
