@@ -826,7 +826,7 @@ mod test {
                             ::routing::data::Data::ImmutableData(im_data.clone()),
                             ::time::Duration::minutes(1));
         // the waiting time to allow DM realize failed fetch
-        ::std::thread::sleep_ms(10000);
+        ::std::thread::sleep_ms(12000);
         // Another get_request to trigger the check on failing get
         println!("network_churn_down_immutable_data_test getting data again");
         new_client_routing.get_request(::data_manager::Authority(im_data.name()),
@@ -876,11 +876,13 @@ mod test {
                             ::routing::data::Data::ImmutableData(im_data.clone()),
                             ::time::Duration::minutes(1));
         // the waiting time to allow DM realize failed fetch
-        ::std::thread::sleep_ms(10000);
+        ::std::thread::sleep_ms(12000);
         // Another get_request to trigger the check on failing get
+        // This time the get_request can targeting any data closing to the previous one
         println!("network_churn_down_immutable_data_test getting data again");
-        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
+        let closing_data_name = ::utils::neighbouring_name(&im_data.name());
+        new_client_routing.get_request(::data_manager::Authority(closing_data_name.clone()),
+                ::routing::data::DataRequest::ImmutableData(closing_data_name.clone(),
                 ::routing::immutable_data::ImmutableDataType::Sacrificial));
         // Waiting for the replications happen
         let _ = waiting_for_hits(&vault_notifiers,

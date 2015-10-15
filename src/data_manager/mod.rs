@@ -142,20 +142,27 @@ impl DataManager {
         // Before querying the records, first ensure all records are valid
         let ongoing_gets = self.ongoing_gets.retrieve_all();
         let mut failing_entries = Vec::new();
+        let mut fetching_list = ::std::collections::BTreeSet::new();
+        fetching_list.insert(data_name.clone());
         for ongoing_get in ongoing_gets {
             if ongoing_get.1 + ::time::Duration::seconds(10) < ::time::SteadyTime::now() {
                 debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
                        self.id, (ongoing_get.0).1, (ongoing_get.0).0);
-                // TODO: https://github.com/maidsafe/safe_vault/issues/263
                 self.database.remove_pmid_node(&(ongoing_get.0).0, (ongoing_get.0).1.clone());
+                // Starts fecthing immediately no matter how many alive pmid_nodes left over
+                // so that correspondent PmidManagers can be notified ASAP, also reduce the risk
+                // of account status not synchronized among the DataManagers
+                //         let _ = self.replicate_to((ongoing_get.0).0).and_then(
+                //                 fetching_list.insert((ongoing_get.0).0.clone()));
+                fetching_list.insert((ongoing_get.0).0.clone());
                 failing_entries.push(ongoing_get.0.clone());
-                if self.failed_pmids.contains_key(&data_name) {
-                    match self.failed_pmids.get_mut(&data_name) {
+                if self.failed_pmids.contains_key(&(ongoing_get.0).0) {
+                    match self.failed_pmids.get_mut(&(ongoing_get.0).0) {
                         Some(ref mut pmids) => pmids.push((ongoing_get.0).1.clone()),
                         None => error!("Failed to insert failed_pmid in the cache."),
                     };
                 } else {
-                    let _ = self.failed_pmids.insert(data_name.clone(),
+                    let _ = self.failed_pmids.insert((ongoing_get.0).0.clone(),
                                                      vec![(ongoing_get.0).1.clone()]);
                 }
             }
@@ -163,14 +170,19 @@ impl DataManager {
         for failed_entry in failing_entries {
             let _ = self.ongoing_gets.remove(&failed_entry);
         }
-        debug!("DataManager {:?} having {:?} records for chunk {:?}",
-               self.id, self.database.exist(&data_name), data_name);
-        for pmid in self.database.get_pmid_nodes(data_name) {
-            let location = ::pmid_node::Authority(pmid.clone());
-            debug!("DataManager {:?} sending get request to {:?}", self.id, location);
-            self.routing.get_request(our_authority.clone(), location, data_request.clone());
-            let _ = self.ongoing_gets
-                        .insert((data_name.clone(), pmid.clone()), ::time::SteadyTime::now());
+        for fetch_name in fetching_list.iter() {
+            debug!("DataManager {:?} having {:?} records for chunk {:?}",
+                   self.id, self.database.exist(&fetch_name), fetch_name);
+            for pmid in self.database.get_pmid_nodes(fetch_name) {
+                let location = ::pmid_node::Authority(pmid.clone());
+                debug!("DataManager {:?} sending get {:?} request to {:?}",
+                       self.id, fetch_name, location);
+                self.routing.get_request(Authority(fetch_name.clone()), location,
+                    ::routing::data::DataRequest::ImmutableData(fetch_name.clone(),
+                        ::routing::immutable_data::ImmutableDataType::Normal));
+                let _ = self.ongoing_gets
+                            .insert((fetch_name.clone(), pmid.clone()), ::time::SteadyTime::now());
+            }
         }
         ::utils::HANDLED
     }
@@ -493,7 +505,7 @@ mod test {
                                            ::routing::NameType::new([6u8; 64]),
                                            ::routing::NameType::new([7u8; 64]),
                                            ::routing::NameType::new([8u8; 64])];
-        (Authority(::utils::random_name()),
+        (Authority(data.name().clone()),
          routing,
          data_manager,
          ::maid_manager::Authority(::utils::random_name()),
