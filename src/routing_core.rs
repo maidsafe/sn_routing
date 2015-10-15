@@ -33,6 +33,17 @@ use action::Action;
 use event::Event;
 use messages::RoutingMessage;
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct Relay {
+    pub public_key: ::sodiumoxide::crypto::sign::PublicKey,
+}
+
+impl ::utilities::Identifiable for Relay {
+    fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
+        self.public_key == public_id.signing_public_key()
+    }
+}
+
 /// ConnectionName labels the counterparty on a connection in relation to us
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum ConnectionName {
@@ -82,6 +93,7 @@ pub struct RoutingCore {
     network_name: Option<NameType>,
     routing_table: Option<RoutingTable>,
     bootstrap_map: Option<::utilities::ConnectionMap<::NameType>>,
+    relay_map: Option<::utilities::ConnectionMap<Relay>>,
     deprecate_relay_map: RelayMap,
     // sender for signaling events and action
     event_sender: Sender<Event>,
@@ -112,6 +124,7 @@ impl RoutingCore {
             network_name: None,
             routing_table: None,
             bootstrap_map: None,
+            relay_map: None,
             deprecate_relay_map: RelayMap::new(),
             event_sender: event_sender,
             action_sender: action_sender,
