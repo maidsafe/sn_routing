@@ -30,9 +30,10 @@ pub struct StructuredDataManager {
 
 impl StructuredDataManager {
     pub fn new(routing: ::vault::Routing) -> StructuredDataManager {
-        // TODO adjustable max_disk_space
         StructuredDataManager {
             routing: routing,
+            // TODO allow adjustable max_disk_space and return meaningful error rather than panic
+            // if the ChunkStore creation fails.
             chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap(),
         }
     }

@@ -24,8 +24,12 @@ pub struct PmidNode {
 
 impl PmidNode {
     pub fn new(routing: ::vault::Routing) -> PmidNode {
-        // TODO adjustable max_disk_space
-        PmidNode { routing: routing, chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap() }
+        PmidNode {
+            routing: routing,
+            // TODO allow adjustable max_disk_space and return meaningful error rather than panic
+            // if the ChunkStore creation fails.
+            chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap()
+        }
     }
 
     pub fn handle_get(&mut self,

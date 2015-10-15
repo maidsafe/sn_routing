@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//------------------------------------------------------------------------------
-
 #[derive(Debug)]
 pub enum ChunkStoreError {
     // Report Input/Output error.
@@ -24,17 +22,15 @@ pub enum ChunkStoreError {
 }
 
 impl From<::std::io::Error> for ChunkStoreError {
-    fn from(err: ::std::io::Error) -> ChunkStoreError {
-        ChunkStoreError::Io(err)
+    fn from(error: ::std::io::Error) -> ChunkStoreError {
+        ChunkStoreError::Io(error)
     }
 }
 
-
 impl ::std::fmt::Display for ChunkStoreError {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self {
-            ChunkStoreError::Io(_) =>
-                ::std::fmt::Display::fmt("ChunkStoreError::Io", formatter),
+        match self {
+            &ChunkStoreError::Io(ref error) => write!(formatter, "ChunkStoreError::Io: {}", error),
         }
     }
 }
