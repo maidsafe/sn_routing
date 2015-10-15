@@ -56,15 +56,12 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
         let old_value = self.lookup_map.insert(connection, identifier.clone());
         debug_assert!(old_value.is_none(), "Already verified above the lookup_map does \
             not contain the connection; old identifier is {:?}", identifier);
-        let old_value = self.connection_map.insert(identifier, public_id);
-        debug_assert!(old_value.is_none(), "Already verified above the connection map does \
-            not contain the identifier");
+        let _old_value = self.connection_map.insert(identifier, public_id);
         true
     }
 
     /// Removes the provided connection and returns the public id of this connection.
-    /// If there are other connections still registered for the identity, also
-    /// None is returned.
+    /// If there are other connections still registered for the identity,  None is returned.
     pub fn drop_connection(&mut self, connection_to_drop: &::crust::Connection)
         -> Option<::public_id::PublicId> {
         let affected_identity = match self.lookup_map.remove(connection_to_drop) {
@@ -175,5 +172,83 @@ mod test {
                 assert!(connection_map.is_full());
             }
         }
+    }
+
+    #[test]
+    fn drop_connection() {
+        let mut connection_map : super::ConnectionMap<TestPeer>
+            = super::ConnectionMap::new();
+        let public_id = ::public_id::PublicId::new(&::id::Id::new());
+        let identity = TestPeer{ name: public_id.name() };
+        let connection = ::test_utils::test::random_connection();
+
+        assert!(connection_map.add_peer(connection.clone(), identity.clone(), public_id.clone()));
+        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_connection(&connection).is_some());
+
+        assert_eq!(connection_map.drop_connection(&connection).unwrap(), public_id);
+
+        assert!(connection_map.lookup_identity(&identity).is_none());
+        assert!(connection_map.lookup_connection(&connection).is_none());
+    }
+
+    #[test]
+    fn multiple_connections() {
+        let mut connection_map : super::ConnectionMap<TestPeer>
+            = super::ConnectionMap::new();
+        let public_id = ::public_id::PublicId::new(&::id::Id::new());
+        let identity = TestPeer{ name: public_id.name() };
+        let connection1 = ::test_utils::test::random_connection();
+        let connection2 = ::test_utils::test::random_connection();
+        assert!(connection2 != connection1);
+
+        assert!(connection_map.add_peer(connection1.clone(), identity.clone(), public_id.clone()));
+        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_connection(&connection1).is_some());
+
+        assert!(connection_map.add_peer(connection2.clone(), identity.clone(), public_id.clone()));
+        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_connection(&connection2).is_some());
+
+        let (opt_public_id, registered_connections) = connection_map.drop_identity(&identity);
+        assert!(opt_public_id.is_some());
+        assert_eq!(registered_connections.len(), 2usize);
+        assert!(registered_connections.contains(&connection1));
+        assert!(registered_connections.contains(&connection2));
+
+        assert!(connection_map.lookup_identity(&identity).is_none());
+        assert!(connection_map.lookup_connection(&connection1).is_none());
+        assert!(connection_map.lookup_connection(&connection2).is_none());
+    }
+
+    #[test]
+    fn multiple_connections_drop_connection() {
+        let mut connection_map : super::ConnectionMap<TestPeer>
+            = super::ConnectionMap::new();
+        let public_id = ::public_id::PublicId::new(&::id::Id::new());
+        let identity = TestPeer{ name: public_id.name() };
+        let connection1 = ::test_utils::test::random_connection();
+        let connection2 = ::test_utils::test::random_connection();
+        assert!(connection2 != connection1);
+
+        assert!(connection_map.add_peer(connection1.clone(), identity.clone(), public_id.clone()));
+        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_connection(&connection1).is_some());
+
+        assert!(connection_map.add_peer(connection2.clone(), identity.clone(), public_id.clone()));
+        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_connection(&connection2).is_some());
+
+        assert!(connection_map.drop_connection(&connection1).is_none());
+
+        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_connection(&connection1).is_none());
+        assert!(connection_map.lookup_connection(&connection2).is_some());
+
+        assert_eq!(connection_map.drop_connection(&connection2).unwrap(), public_id);
+
+        assert!(connection_map.lookup_identity(&identity).is_none());
+        assert!(connection_map.lookup_connection(&connection1).is_none());
+        assert!(connection_map.lookup_connection(&connection2).is_none());
     }
 }
