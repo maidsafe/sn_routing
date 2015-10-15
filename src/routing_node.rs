@@ -138,11 +138,11 @@ impl RoutingNode {
                 Ok(Action::DropConnections(connections)) => {
                     self.drop_connections(connections);
                 },
-                Ok(Action::ExpectedConnection(expected_connection)) => {
-                    self.expected_connection(expected_connection);
+                Ok(Action::MatchExpectedConnection(connection)) => {
+                    self.match_expected_connection(connection);
                 },
-                Ok(Action::UnknownConnection(unknown_connection)) => {
-                    self.unknown_connection(unknown_connection);
+                Ok(Action::MatchUnknownConnection(hello_message)) => {
+                    self.match_unknown_connection(hello_message);
                 },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
@@ -1008,11 +1008,11 @@ impl RoutingNode {
         }
     }
 
-    fn expected_connection(&mut self, _expected_connection: ::routing_core::ExpectedConnection) {
+    fn match_expected_connection(&mut self, _connection: ::crust::Connection) {
         unimplemented!();
     }
 
-    fn unknown_connection(&mut self, _unknown_connection: ::routing_core::UnknownConnection) {
+    fn match_unknown_connection(&mut self, _hello: ::direct_messages::Hello) {
         unimplemented!();
     }
 

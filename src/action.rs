@@ -36,8 +36,8 @@ pub enum Action {
     Churn(::direct_messages::Churn, Vec<::crust::Connection>, ::NameType),
     SetCacheOptions(::types::CacheOptions),
     DropConnections(Vec<::crust::Connection>),
-    ExpectedConnection(::routing_core::ExpectedConnection),
-    UnknownConnection(::routing_core::UnknownConnection),
+    MatchExpectedConnection(::crust::Connection),
+    MatchUnknownConnection(::direct_messages::Hello),
     Rebootstrap,
     Terminate,
 }
