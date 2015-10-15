@@ -75,12 +75,14 @@ pub enum State {
 
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
 /// table and the relay map.  Routing core
+#[allow(unused)]
 pub struct RoutingCore {
     id: Id,
     state: State,
     network_name: Option<NameType>,
     routing_table: Option<RoutingTable>,
-    relay_map: RelayMap,
+    bootstrap_map: Option<::utilities::ConnectionMap<::NameType>>,
+    deprecate_relay_map: RelayMap,
     // sender for signaling events and action
     event_sender: Sender<Event>,
     action_sender: Sender<Action>,
@@ -109,7 +111,8 @@ impl RoutingCore {
             state: State::Disconnected,
             network_name: None,
             routing_table: None,
-            relay_map: RelayMap::new(),
+            bootstrap_map: None,
+            deprecate_relay_map: RelayMap::new(),
             event_sender: event_sender,
             action_sender: action_sender,
         }
@@ -152,7 +155,7 @@ impl RoutingCore {
         if self.id.is_relocated() || !persistant {
             self.id = ::id::Id::new(); };
         self.state = State::Disconnected;
-        let mut open_connections = self.relay_map.all_connections();
+        let mut open_connections = self.deprecate_relay_map.all_connections();
         // routing table should be empty in all sensible use-cases of reset() already.
         // this is merely a redundancy measure.
         let routing_connections = match self.routing_table {
@@ -164,7 +167,7 @@ impl RoutingCore {
         };
         self.routing_table = None;
         self.network_name = None;
-        self.relay_map = ::relay::RelayMap::new();
+        self.deprecate_relay_map = ::relay::RelayMap::new();
         open_connections
     }
 
@@ -219,7 +222,7 @@ impl RoutingCore {
 
         match routing_name {
             Some(name) => Some(name),
-            None => match self.relay_map.lookup_connection(&connection) {
+            None => match self.deprecate_relay_map.lookup_connection(&connection) {
                 Some(peer) => Some(peer.identity().clone()),
                 None => None,
             },
@@ -242,27 +245,27 @@ impl RoutingCore {
 
         match routing_name {
             Some(found_name) => Some(found_name),
-            None => match self.relay_map.lookup_name(name) {
+            None => match self.deprecate_relay_map.lookup_name(name) {
                 Some(relay_name) => Some(relay_name),
                 None => None,
             },
         }
     }
 
-    /// Returns a copy of the peer information if found in the relay_map.  The routing table does
+    /// Returns a copy of the peer information if found in the deprecate_relay_map.  The routing table does
     /// not support retrieval of peer information, and this does not pose a problem, as connections,
     /// once a Routing connection, do not need to be moved; they can only be dropped.
     pub fn get_relay_peer(&self, connection_name: &ConnectionName) -> Option<Peer> {
         match *connection_name {
             ConnectionName::Routing(name) => None,
-            _ => match self.relay_map.lookup_connection_name(connection_name) {
+            _ => match self.deprecate_relay_map.lookup_connection_name(connection_name) {
                 Some(peer) => Some(peer.clone()),
                 None => None,
             },
         }
     }
 
-    /// Returns the peer if successfully dropped from the relay_map.  If dropped from the routing
+    /// Returns the peer if successfully dropped from the deprecate_relay_map.  If dropped from the routing
     /// table a churn event is triggered for the user if the dropped peer changed our close group.
     pub fn drop_peer(&mut self, connection_name: &ConnectionName) -> Option<Peer> {
         let result = match *connection_name {
@@ -308,11 +311,11 @@ impl RoutingCore {
                 }
             }
             _ => {
-                let bootstrapped_prior = self.relay_map.has_bootstrap_connections();
-                let dropped_peer = self.relay_map.drop_connection_name(connection_name);
+                let bootstrapped_prior = self.deprecate_relay_map.has_bootstrap_connections();
+                let dropped_peer = self.deprecate_relay_map.drop_connection_name(connection_name);
                 match self.state {
                     State::Bootstrapped | State::Relocated => {
-                        if !self.relay_map.has_bootstrap_connections()
+                        if !self.deprecate_relay_map.has_bootstrap_connections()
                             && bootstrapped_prior {
                             error!("Routing Client has disconnected.");
                             self.state = State::Disconnected;
@@ -417,12 +420,12 @@ impl RoutingCore {
                 }
             }
             _ => {
-                let bootstrapped_prior = self.relay_map.has_bootstrap_connections();
+                let bootstrapped_prior = self.deprecate_relay_map.has_bootstrap_connections();
                 let is_bootstrap_connection = match identity {
                     ConnectionName::Bootstrap(_) => true,
                     _ => false,
                 };
-                let added = self.relay_map.add_peer(identity, connection, public_id);
+                let added = self.deprecate_relay_map.add_peer(identity, connection, public_id);
                 if !bootstrapped_prior && added && is_bootstrap_connection &&
                    self.routing_table.is_none() {
                     info!("Routing Client bootstrapped.");
@@ -464,7 +467,7 @@ impl RoutingCore {
         // currently don't support double endpoints per peer,
         // so if relay map (all but routing table peer) already has the peer,
         // then check_node returns false.
-        match self.relay_map.lookup_connection_name(identity) {
+        match self.deprecate_relay_map.lookup_connection_name(identity) {
             None => {}
             Some(_) => return false,
         };
@@ -476,11 +479,11 @@ impl RoutingCore {
                     None => return false,
                 }
             }
-            ConnectionName::Relay(_) => !self.relay_map.is_full(),
+            ConnectionName::Relay(_) => !self.deprecate_relay_map.is_full(),
             // TODO (ben 6/08/2015) up for debate, don't show interest for bootstrap connections,
             // after we have established a routing table.
             ConnectionName::Bootstrap(_) => {
-                !self.relay_map.is_full() && self.routing_table.is_none()
+                !self.deprecate_relay_map.is_full() && self.routing_table.is_none()
             }
             ConnectionName::Unidentified(_, _) => true,
         }
@@ -499,7 +502,7 @@ impl RoutingCore {
         // if we can relay to the client, return that client connection
         match *to_authority {
             Authority::Client(_, ref client_public_key) => {
-                match self.relay_map.lookup_connection_name(
+                match self.deprecate_relay_map.lookup_connection_name(
                     &ConnectionName::Relay(Address::Client(client_public_key.clone()))) {
                     Some(ref client_peer) => {
                         target_connections.push(client_peer.connection().clone());
@@ -532,7 +535,7 @@ impl RoutingCore {
         // block explicitly if we are a connected node
         match self.state {
             State::Bootstrapped | State::Relocated => {
-                Some(self.relay_map.bootstrap_connections())
+                Some(self.deprecate_relay_map.bootstrap_connections())
             },
             _ => None,
         }
@@ -544,7 +547,7 @@ impl RoutingCore {
     pub fn has_bootstrap_endpoints(&self) -> bool {
         // block explicitly if routing table is available
         match self.state {
-            State::Bootstrapped | State::Relocated => self.relay_map.has_bootstrap_connections(),
+            State::Bootstrapped | State::Relocated => self.deprecate_relay_map.has_bootstrap_connections(),
             _ => false,
         }
     }
@@ -564,7 +567,7 @@ impl RoutingCore {
 
     /// Returns true if the relay map contains bootstrap connections
     pub fn has_bootstrap_connections(&self) -> bool {
-        self.relay_map.has_bootstrap_connections()
+        self.deprecate_relay_map.has_bootstrap_connections()
     }
 
     /// Returns true if a name is in range for our close group.
