@@ -280,19 +280,6 @@ impl RoutingCore {
         }
     }
 
-    /// Returns a copy of the peer information if found in the deprecate_relay_map.  The routing table does
-    /// not support retrieval of peer information, and this does not pose a problem, as connections,
-    /// once a Routing connection, do not need to be moved; they can only be dropped.
-    pub fn get_relay_peer(&self, connection_name: &ConnectionName) -> Option<Peer> {
-        match *connection_name {
-            ConnectionName::Routing(name) => None,
-            _ => match self.deprecate_relay_map.lookup_connection_name(connection_name) {
-                Some(peer) => Some(peer.clone()),
-                None => None,
-            },
-        }
-    }
-
     /// Returns the peer if successfully dropped from the deprecate_relay_map.  If dropped from the routing
     /// table a churn event is triggered for the user if the dropped peer changed our close group.
     pub fn drop_peer(&mut self, connection_name: &ConnectionName) -> Option<Peer> {
