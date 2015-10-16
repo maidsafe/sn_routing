@@ -185,15 +185,7 @@ impl RoutingNode {
                     };
                 }
                 Ok(::crust::Event::OnConnect(connection)) => {
-                    // FIXME (ben 21/09/2015) new logic needs to be considered to properly remove
-                    // the concept of a first node, as it is just hidden, not logically removed
-                    // refactoring to crust 0.3 has made this logic even worse than it was.
-                    if self.core.is_node() {
-                        // self.handle_new_connection(connection);
-                        self.handle_on_connect(connection);
-                    } else {
-                        self.handle_new_bootstrap_connection(connection);
-                    }
+                    self.handle_on_connect(connection);
                 }
                 Ok(::crust::Event::OnAccept(connection)) => {
                     self.handle_new_connection(connection);
@@ -236,17 +228,22 @@ impl RoutingNode {
     fn handle_on_connect(&mut self, connection: ::crust::Connection) {
         match self.core.state() {
             &::routing_core::State::Disconnected => {
+                // This is our first connection, add as bootstrap and send hello.
                 self.core.add_bootstrap_connection(connection.clone());
                 ignore(self.send_hello(connection, None));
                 return;
             },
             &::routing_core::State::Bootstrapped => {
+                // We're bootstrapped at our side but haven't received hello response and relocated,
+                // so drop this connection.
                 self.crust_service.drop_node(connection);
                 return;
             },
+            // We have at least one connection, so continue unless terminate has been received.
             &::routing_core::State::Relocated => {},
             &::routing_core::State::Connected => {},
             &::routing_core::State::GroupConnected => {},
+            // Terminate has been called don't act on any further events.
             &::routing_core::State::Terminated => {
                 self.crust_service.drop_node(connection);
                 return;
