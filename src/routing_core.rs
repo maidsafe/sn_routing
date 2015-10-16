@@ -283,14 +283,18 @@ impl RoutingCore {
     /// Returns the ConnectionName if either a Routing(name) is found in RoutingTable, or
     /// Relay(Address::Node(name)) or Bootstrap(name) is found in the RelayMap.
     pub fn lookup_name(&self, name: &NameType) -> Option<ConnectionName> {
-        let routing_name = match self.routing_table {
-            Some(ref routing_table) => {
-                if routing_table.has_node(name) {
-                    Some(ConnectionName::Routing(name.clone()))
-                } else {
+        match self.state {
+            State::Connected | State::GroupConnected => {
+                match self.routing_table {
+                    Some(ref routing_table) => {
+                        if routing_table.has_node(name) {
+                            return Some(ConnectionName::Routing(name.clone())) };
+                    },
                     None
-                }
-            }
+            },
+
+        }
+        let routing_name =
             None => None,
         };
 
