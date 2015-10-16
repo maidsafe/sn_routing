@@ -84,6 +84,16 @@ pub enum State {
     Terminated,
 }
 
+/// ExpectedConnection.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[allow(unused)]
+pub enum ExpectedConnection {
+    /// ConnectRequest sent by peer.
+    Request(::messages::ConnectRequest),
+    /// ConnectResponse in response to a ConnectRequest sent by peer.
+    Response(::messages::ConnectResponse),
+}
+
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
 /// table and the relay map.  Routing core
 #[allow(unused)]
@@ -95,6 +105,10 @@ pub struct RoutingCore {
     bootstrap_map: Option<::utilities::ConnectionMap<::NameType>>,
     relay_map: Option<::utilities::ConnectionMap<Relay>>,
     deprecate_relay_map: RelayMap,
+    expected_connections: ::utilities::expiration_map::ExpirationMap<ExpectedConnection,
+        Option<::crust::Connection>>,
+    unknown_connections: ::utilities::expiration_map::ExpirationMap<::crust::Connection,
+        Option<::direct_messages::Hello>>,
     // sender for signaling events and action
     event_sender: Sender<Event>,
     action_sender: Sender<Action>,
@@ -126,6 +140,10 @@ impl RoutingCore {
             bootstrap_map: None,
             relay_map: None,
             deprecate_relay_map: RelayMap::new(),
+            expected_connections: ::utilities::expiration_map::ExpirationMap::with_expiry_duration(
+                ::time::Duration::minutes(5)),
+            unknown_connections: ::utilities::expiration_map::ExpirationMap::with_expiry_duration(
+                ::time::Duration::minutes(5)),
             event_sender: event_sender,
             action_sender: action_sender,
         }
@@ -668,6 +686,16 @@ impl RoutingCore {
         } else {
             0
         }
+    }
+
+    /// Check whether the connection has been sent in a ConnectRequest/ConnectResponse.
+    pub fn match_expected_connection(&self, _connection: ::crust::Connection) -> bool {
+        unimplemented!();
+    }
+
+    /// Add a bootstrap connection.
+    pub fn add_bootstrap_connection(&self, _connection: ::crust::Connection) {
+        unimplemented!();
     }
 }
 
