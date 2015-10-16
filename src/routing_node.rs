@@ -188,7 +188,7 @@ impl RoutingNode {
                     self.handle_on_connect(connection);
                 }
                 Ok(::crust::Event::OnAccept(connection)) => {
-                    self.handle_new_connection(connection);
+                    self.handle_on_accept(connection);
                 }
                 Ok(::crust::Event::LostConnection(connection)) => {
                     self.handle_lost_connection(connection);
@@ -257,31 +257,27 @@ impl RoutingNode {
         }
     }
 
-    /// When CRUST receives a connect to our listening port and establishes a new connection,
-    /// the endpoint is given here as new connection
-    fn handle_new_connection(&mut self, connection: ::crust::Connection) {
-        debug!("New connection on {:?}", connection);
-        // only accept new connections if we are a full node
-        // FIXME(dirvine) I am not sure we should not accept connections here :16/08/2015
-        let has_bootstrap_endpoints = self.core.has_bootstrap_endpoints();
-        if !self.core.is_node() {
-            if has_bootstrap_endpoints {
-                // we are bootstrapping, refuse all normal connections
-                self.crust_service.drop_node(connection);
-                return;
-            } else {
+    fn handle_on_accept(&mut self, connection: ::crust::Connection) {
+        match self.core.state() {
+            &::routing_core::State::Disconnected => {
                 let assigned_name = NameType::new(crypto::hash::sha512::hash(
                     &self.core.id().name().0).0);
-                let _ = self.core.assign_name(&assigned_name);
-            }
-        }
+                self.core.assign_name(&assigned_name);
+            },
+            &::routing_core::State::Bootstrapped => {
+                self.crust_service.drop_node(connection);
+                return;
+            },
+            &::routing_core::State::Relocated => {},
+            &::routing_core::State::Connected => {},
+            &::routing_core::State::GroupConnected => {},
+            &::routing_core::State::Terminated => {
+                self.crust_service.drop_node(connection);
+                return;
+            },
+        };
 
-        if !self.core.add_peer(ConnectionName::Unidentified(connection.clone(), false),
-            connection.clone(), None) {
-            // only fails if relay_map is full for unidentified connections
-            self.crust_service.drop_node(connection.clone());
-        }
-        ignore(self.send_hello(connection, None));
+        let _ = self.core.add_unknown_connection(connection);
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
