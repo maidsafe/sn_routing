@@ -105,9 +105,9 @@ pub struct RoutingCore {
     bootstrap_map: Option<::utilities::ConnectionMap<::NameType>>,
     relay_map: Option<::utilities::ConnectionMap<Relay>>,
     deprecate_relay_map: RelayMap,
-    expected_connections: ::utilities::expiration_map::ExpirationMap<ExpectedConnection,
+    expected_connections: ::utilities::ExpirationMap<ExpectedConnection,
         Option<::crust::Connection>>,
-    unknown_connections: ::utilities::expiration_map::ExpirationMap<::crust::Connection,
+    unknown_connections: ::utilities::ExpirationMap<::crust::Connection,
         Option<::direct_messages::Hello>>,
     // sender for signaling events and action
     event_sender: Sender<Event>,
@@ -140,9 +140,9 @@ impl RoutingCore {
             bootstrap_map: None,
             relay_map: None,
             deprecate_relay_map: RelayMap::new(),
-            expected_connections: ::utilities::expiration_map::ExpirationMap::with_expiry_duration(
+            expected_connections: ::utilities::ExpirationMap::with_expiry_duration(
                 ::time::Duration::minutes(5)),
-            unknown_connections: ::utilities::expiration_map::ExpirationMap::with_expiry_duration(
+            unknown_connections: ::utilities::ExpirationMap::with_expiry_duration(
                 ::time::Duration::minutes(5)),
             event_sender: event_sender,
             action_sender: action_sender,
@@ -277,33 +277,6 @@ impl RoutingCore {
                 }
             },
             State::Disconnected | State::Terminated => None,
-        }
-    }
-
-    /// Returns the ConnectionName if either a Routing(name) is found in RoutingTable, or
-    /// Relay(Address::Node(name)) or Bootstrap(name) is found in the RelayMap.
-    pub fn lookup_name(&self, name: &NameType) -> Option<ConnectionName> {
-        match self.state {
-            State::Connected | State::GroupConnected => {
-                match self.routing_table {
-                    Some(ref routing_table) => {
-                        if routing_table.has_node(name) {
-                            return Some(ConnectionName::Routing(name.clone())) };
-                    },
-                    None
-            },
-
-        }
-        let routing_name =
-            None => None,
-        };
-
-        match routing_name {
-            Some(found_name) => Some(found_name),
-            None => match self.deprecate_relay_map.lookup_name(name) {
-                Some(relay_name) => Some(relay_name),
-                None => None,
-            },
         }
     }
 
