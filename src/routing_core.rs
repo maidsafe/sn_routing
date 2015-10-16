@@ -280,10 +280,14 @@ impl RoutingCore {
         }
     }
 
-    /// Returns the peer if successfully dropped from the deprecate_relay_map.  If dropped from the routing
-    /// table a churn event is triggered for the user if the dropped peer changed our close group.
-    pub fn drop_peer(&mut self, connection_name: &ConnectionName) -> Option<Peer> {
-        let result = match *connection_name {
+    /// Drops the associated name from the relevant connection map or from routing table.
+    /// If dropped from the routing table a churn event is triggered for the user
+    /// if the dropped peer changed our close group and churn is generated in routing.
+    /// If dropped from a connection map and multiple connections are active on the same identity
+    /// all connections will be dropped asynchronously.  Removing a node from the routing table
+    /// does not ensure the connection is dropped.
+    pub fn drop_peer(&mut self, connection_name: &ConnectionName) {
+        match *connection_name {
             ConnectionName::Routing(name) => {
                 match self.routing_table {
                     Some(ref mut routing_table) => {
@@ -320,26 +324,47 @@ impl RoutingCore {
                                 ::direct_messages::Churn{ close_group: close_group },
                                 target_connections, name ));
                         };
-                        None
-                    }
-                    None => None,
-                }
-            }
-            _ => {
-                let bootstrapped_prior = self.deprecate_relay_map.has_bootstrap_connections();
-                let dropped_peer = self.deprecate_relay_map.drop_connection_name(connection_name);
-                match self.state {
-                    State::Bootstrapped | State::Relocated => {
-                        if !self.deprecate_relay_map.has_bootstrap_connections()
-                            && bootstrapped_prior {
-                            error!("Routing Client has disconnected.");
-                            self.state = State::Disconnected;
-                            let _ = self.event_sender.send(Event::Disconnected);
+                    },
+                    None => {},
+                };
+            },
+            ConnectionName::Bootstrap(name) => {
+                match self.bootstrap_map {
+                    Some(ref mut bootstrap_map) => {
+                        let bootstrapped_prior = bootstrap_map.identities_len() > 0usize;
+                        let (dropped_public_id, connections_to_drop)
+                            = bootstrap_map.drop_identity(&name);
+                        if !connections_to_drop.is_empty() {
+                            match self.action_sender.send(
+                            Action::DropConnections(connections_to_drop)) {
+                                Ok(()) => {},
+                                Err(_) => {
+                                    error!("Action receiver in RoutingNode disconnected. \
+                                        Terminating from core.");
+                                    self.state = State::Terminated;
+                                },
+                            };
+                        };
+                        match self.state {
+                            State::Bootstrapped | State::Relocated => {
+                                if bootstrap_map.identities_len() == 0usize
+                                    && bootstrapped_prior {
+                                    error!("Routing Client has disconnected.");
+                                    self.state = State::Disconnected;
+                                    let _ = self.event_sender.send(Event::Disconnected);
+                                };
+                            },
+                            _ => {},
                         };
                     },
-                    _ => {},
-                }
-                dropped_peer
+                    None => {},
+                };
+            },
+            ConnectionName::Relay(::types::Address::Client(public_key)) => {
+
+            },
+            _ => {
+
             }
         };
 
@@ -349,15 +374,14 @@ impl RoutingCore {
                 match self.action_sender.send(::action::Action::Rebootstrap) {
                     Ok(()) => {},
                     Err(_) => {
-                        error!("Action receiver in RoutingNode disconnected. Terminating from core.");
+                        error!("Action receiver in RoutingNode disconnected. \
+                            Terminating from core.");
                         self.state = State::Terminated;
                     }
                 };
             },
             _ => {},
         };
-
-        result
     }
 
     /// To be documented

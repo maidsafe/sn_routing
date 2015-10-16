@@ -289,7 +289,7 @@ impl RoutingNode {
         debug!("Lost connection on {:?}", connection);
         let connection_name = self.core.lookup_connection(&connection);
         if connection_name.is_some() {
-            let _ = self.core.drop_peer(&connection_name.unwrap());
+            self.core.drop_peer(&connection_name.unwrap());
         }
     }
 
@@ -330,7 +330,7 @@ impl RoutingNode {
                     _ => {
                         // the connection does not match with the routing information
                         // we know about it; drop it
-                        let _ = self.core.drop_peer(&ConnectionName::Routing(known_name));
+                        self.core.drop_peer(&ConnectionName::Routing(known_name));
                         self.crust_service.drop_node(connection.clone());
                         return Err(RoutingError::RejectedPublicId);
                     }
@@ -376,7 +376,7 @@ impl RoutingNode {
             // He is a client, we are a client, no-go
                 match old_identity {
                     Some(old_connection_name) => {
-                        let _ = self.core.drop_peer(&old_connection_name);
+                        self.core.drop_peer(&old_connection_name);
                     }
                     None => {}
                 };
@@ -401,11 +401,11 @@ impl RoutingNode {
         };
         if alpha || confirmed {
             // we know it's not a routing connection, remove it from the relay map
-            let _ = match &old_identity {
+            match &old_identity {
                 &Some(ConnectionName::Routing(_)) => unreachable!(),
                 // drop any relay connection in favour of new to-be-determined identity
                 &Some(ref old_connection_name) => self.core.drop_peer(old_connection_name),
-                &None => None,
+                &None => {},
             };
             // add the new identity, or drop the connection
             if self.core.add_peer(new_identity.clone(), connection.clone(),
