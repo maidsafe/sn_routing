@@ -24,9 +24,13 @@ pub struct PmidNode {
 
 impl PmidNode {
     pub fn new(routing: ::vault::Routing) -> PmidNode {
-        // TODO: https://maidsafe.atlassian.net/browse/MAID-1189
-        //       adjustable max_disk_space
-        PmidNode { routing: routing, chunk_store: ::chunk_store::ChunkStore::new(1073741824) }
+        PmidNode {
+            routing: routing,
+            // TODO allow adjustable max_disk_space and return meaningful error rather than panic
+            // if the ChunkStore creation fails.
+            // See https://maidsafe.atlassian.net/browse/MAID-1189
+            chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap()
+        }
     }
 
     pub fn handle_get(&mut self,
@@ -135,8 +139,11 @@ impl PmidNode {
             let parsed_data: ::routing::immutable_data::ImmutableData =
                 match ::routing::utils::decode(&fetched_data) {
                     Ok(data) => data,
-                    // FIXME - for error case, remove this chunk and continue?
-                    Err(_) => return ::utils::HANDLED,
+                    Err(_) => {
+                        // remove corrupted data
+                        self.chunk_store.delete(name);
+                        continue
+                    }
                 };
             match *parsed_data.get_type_tag() {
                 ::routing::immutable_data::ImmutableDataType::Sacrificial => {
@@ -180,7 +187,10 @@ impl PmidNode {
 
     pub fn reset(&mut self, routing: ::vault::Routing) {
         self.routing = routing;
-        self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
+        match ::chunk_store::ChunkStore::new(1073741824) {
+            Ok(chunk_store) => self.chunk_store = chunk_store,
+            Err(err) => { debug!("Failed to reset pmid_node chunk store {:?}", err); },
+        };
     }
 
     pub fn routing(&self) -> ::vault::Routing {
