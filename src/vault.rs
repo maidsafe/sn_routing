@@ -811,27 +811,6 @@ mod test {
 
         println!("network_churn_down_immutable_data_test dropping a pmid_node");
         let _ = vault_notifiers[pmid_nodes[0]].1.send(0);
-        let _ = waiting_for_hits(&vault_notifiers,
-                                 20,
-                                 ::routing::types::GROUP_SIZE / 2 + 1,
-                                 ::time::Duration::minutes(3));
-        // To avoid the situation that the stopped vault being the portal of the client
-        // a new client shall be constructed to carry out the get requests
-        let (mut new_client_routing, new_client_receiver, _) = create_client();
-        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ::routing::immutable_data::ImmutableDataType::Normal));
-        println!("network_churn_down_immutable_data_test getting data");
-        wait_for_client_get(&new_client_receiver,
-                            ::routing::data::Data::ImmutableData(im_data.clone()),
-                            ::time::Duration::minutes(1));
-        // the waiting time to allow DM realize failed fetch
-        ::std::thread::sleep_ms(12000);
-        // Another get_request to trigger the check on failing get
-        println!("network_churn_down_immutable_data_test getting data again");
-        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ::routing::immutable_data::ImmutableDataType::Sacrificial));
         // Waiting for the notifications happen
         let _ = waiting_for_hits(&vault_notifiers,
                                  30,
@@ -854,36 +833,8 @@ mod test {
 
         println!("network_churn_down_immutable_data_test dropping the first pmid_node");
         let _ = vault_notifiers[pmid_nodes[0]].1.send(0);
-        let _ = waiting_for_hits(&vault_notifiers,
-                                 20,
-                                 ::routing::types::GROUP_SIZE - 2,
-                                 ::time::Duration::minutes(3));
-
         println!("network_churn_down_immutable_data_test dropping the second pmid_node");
         let _ = vault_notifiers[pmid_nodes[1]].1.send(0);
-        let _ = waiting_for_hits(&vault_notifiers,
-                                 20,
-                                 ::routing::types::GROUP_SIZE - 3,
-                                 ::time::Duration::minutes(3));
-        // To avoid the situation that the stopped vault being the portal of the client
-        // a new client shall be constructed to carry out the get requests
-        let (mut new_client_routing, new_client_receiver, _) = create_client();
-        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ::routing::immutable_data::ImmutableDataType::Normal));
-        println!("network_churn_down_immutable_data_test getting data");
-        wait_for_client_get(&new_client_receiver,
-                            ::routing::data::Data::ImmutableData(im_data.clone()),
-                            ::time::Duration::minutes(1));
-        // the waiting time to allow DM realize failed fetch
-        ::std::thread::sleep_ms(12000);
-        // Another get_request to trigger the check on failing get
-        // This time the get_request can targeting any data closing to the previous one
-        println!("network_churn_down_immutable_data_test getting data again");
-        let closing_data_name = ::utils::neighbouring_name(&im_data.name());
-        new_client_routing.get_request(::data_manager::Authority(closing_data_name.clone()),
-                ::routing::data::DataRequest::ImmutableData(closing_data_name.clone(),
-                ::routing::immutable_data::ImmutableDataType::Sacrificial));
         // Waiting for the replications happen
         let _ = waiting_for_hits(&vault_notifiers,
                                  3,

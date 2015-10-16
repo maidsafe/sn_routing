@@ -383,9 +383,24 @@ impl DataManager {
 
     pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
                         churn_node: &::routing::NameType) {
+        let on_going_gets = self.database.handle_churn(&self.routing,
+                churn_node, close_group.len() < self.nodes_in_table.len());
+        for entry in on_going_gets.iter() {
+            if self.failed_pmids.contains_key(&entry.0) {
+                match self.failed_pmids.get_mut(&entry.0) {
+                    Some(ref mut pmids) => pmids.push(churn_node.clone()),
+                    None => error!("Failed to insert failed_pmid in the cache."),
+                };
+            } else {
+                let _ = self.failed_pmids.insert(entry.0.clone(),
+                                                 vec![churn_node.clone()]);
+            }
+            for pmid in entry.1.iter() {
+                let _ = self.ongoing_gets
+                            .insert((entry.0.clone(), pmid.clone()), ::time::SteadyTime::now());
+            }
+        }
         // close_group[0] is supposed to be the vault id
-        let our_authority = Authority(close_group[0].clone());
-        self.database.handle_churn(&our_authority, &self.routing, churn_node);
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         let mut encoder = ::cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {

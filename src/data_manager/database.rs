@@ -130,19 +130,28 @@ impl Database {
         info!("DataManager updated account {:?} to {:?}", merged_account.name, data_holders);
     }
 
-    pub fn handle_churn(&mut self, our_authority: &::routing::Authority,
-                        routing: &::vault::Routing, churn_node: &::routing::NameType) {
-        for (key, value) in self.storage.iter() {
-            if value.len() < 3 {
-                for pmid_node in value.iter() {
-                    info!("DataManager sends out a Get request in churn, \
-                           fetching data {:?} from pmid_node {:?}", *key, pmid_node);
-                    routing.get_request(our_authority.clone(),
-                            ::pmid_node::Authority(pmid_node.clone()),
-                            ::routing::data::DataRequest::ImmutableData((*key).clone(),
-                                    ::routing::immutable_data::ImmutableDataType::Normal));
+    pub fn handle_churn(&mut self, routing: &::vault::Routing, churn_node: &::routing::NameType,
+                        offline: bool) -> Vec<(::routing::NameType, Vec<::routing::NameType>)> {
+        let mut on_going_gets = vec![];
+        for (key, mut value) in self.storage.iter_mut() {
+            if offline {
+                for i in 0..value.len() {
+                    if value[i] == *churn_node {
+                        let _ = value.remove(i);
+                        for pmid_node in value.iter() {
+                            info!("DataManager sends out a Get request in churn_down, \
+                                   fetching data {:?} from pmid_node {:?}", *key, pmid_node);
+                            routing.get_request(::routing::Authority::NaeManager((*key).clone()),
+                                    ::pmid_node::Authority(pmid_node.clone()),
+                                    ::routing::data::DataRequest::ImmutableData((*key).clone(),
+                                            ::routing::immutable_data::ImmutableDataType::Backup));
+                        }
+                        on_going_gets.push(((*key).clone(), (*value).clone()));
+                        break;
+                    }
                 }
             }
+
             let account = Account::new((*key).clone(), (*value).clone());
             let target_authority = super::Authority(account.name);
             let mut encoder = ::cbor::Encoder::from_memory();
@@ -157,6 +166,7 @@ impl Database {
         // the uncontrollable order of events (churn/refresh/account_transfer)
         // forcing the node have to keep its current records to avoid losing record
         // self.cleanup();
+        on_going_gets
     }
 
     pub fn do_refresh(&mut self,
