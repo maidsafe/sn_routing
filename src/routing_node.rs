@@ -185,14 +185,7 @@ impl RoutingNode {
                     };
                 }
                 Ok(::crust::Event::OnConnect(connection)) => {
-                    // FIXME (ben 21/09/2015) new logic needs to be considered to properly remove
-                    // the concept of a first node, as it is just hidden, not logically removed
-                    // refactoring to crust 0.3 has made this logic even worse than it was.
-                    if self.core.is_node() {
-                        self.handle_new_connection(connection);
-                    } else {
-                        self.handle_new_bootstrap_connection(connection);
-                    }
+                    self.handle_on_connect(connection);
                 }
                 Ok(::crust::Event::OnAccept(connection)) => {
                     self.handle_new_connection(connection);
@@ -232,6 +225,38 @@ impl RoutingNode {
           self.set_cache_options(preserve_cache_options);
     }
 
+    fn handle_on_connect(&mut self, connection: ::crust::Connection) {
+        match self.core.state() {
+            &::routing_core::State::Disconnected => {
+                // This is our first connection, add as bootstrap and send hello.
+                self.core.add_bootstrap_connection(connection.clone());
+                ignore(self.send_hello(connection, None));
+                return;
+            },
+            &::routing_core::State::Bootstrapped => {
+                // We're bootstrapped at our side but haven't received hello response and relocated,
+                // so drop this connection.
+                self.crust_service.drop_node(connection);
+                return;
+            },
+            // We have at least one connection, so continue unless terminate has been received.
+            &::routing_core::State::Relocated => {},
+            &::routing_core::State::Connected => {},
+            &::routing_core::State::GroupConnected => {},
+            // Terminate has been called don't act on any further events.
+            &::routing_core::State::Terminated => {
+                self.crust_service.drop_node(connection);
+                return;
+            },
+        };
+
+        if self.core.match_expected_connection(connection) {
+            ignore(self.send_hello(connection, None));
+        } else {
+            self.crust_service.drop_node(connection);
+        }
+    }
+
     /// When CRUST receives a connect to our listening port and establishes a new connection,
     /// the endpoint is given here as new connection
     fn handle_new_connection(&mut self, connection: ::crust::Connection) {
@@ -255,27 +280,6 @@ impl RoutingNode {
             connection.clone(), None) {
             // only fails if relay_map is full for unidentified connections
             self.crust_service.drop_node(connection.clone());
-        }
-        ignore(self.send_hello(connection, None));
-    }
-
-    fn handle_new_bootstrap_connection(&mut self, connection: ::crust::Connection) {
-        debug!("New bootstrap connection on {:?}", connection);
-        if !self.core.is_node() {
-            if !self.core.add_peer(ConnectionName::Unidentified(connection.clone(), true),
-                connection.clone(), None) {
-                // only fails if relay_map is full for unidentified connections
-                error!("New bootstrap connection on {:?} failed to be labeled as unidentified",
-                    connection);
-                self.crust_service.drop_node(connection.clone());
-                return;
-            }
-        } else {
-            // if core is a full node, don't accept new bootstrap connections
-            error!("New bootstrap connection on {:?} but we are a node",
-                connection);
-            self.crust_service.drop_node(connection);
-            return;
         }
         ignore(self.send_hello(connection, None));
     }
