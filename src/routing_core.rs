@@ -201,8 +201,9 @@ impl RoutingCore {
         // if routing_table is constructed, reject name assignment
         match self.routing_table {
             Some(_) => {
-              error!("Attempt to assign name {:?} while status is {:?}", network_name, self.state);
-              return false;
+                error!("Attempt to assign name {:?} while status is {:?}",
+                    network_name, self.state);
+                return false;
             },
             None => {}
         };
@@ -223,30 +224,41 @@ impl RoutingCore {
 
     /// Look up a connection in the routing table and the relay map and return the ConnectionName
     pub fn lookup_connection(&self, connection: &crust::Connection) -> Option<ConnectionName> {
-        let routing_name = match self.routing_table {
-            Some(ref routing_table) => {
-                match routing_table.lookup_endpoint(&connection.peer_endpoint()) {
-                    Some(name) => Some(ConnectionName::Routing(name)),
+        match self.state {
+            State::Connected | State::GroupConnected => {
+                match self.routing_table {
+                    Some(ref routing_table) => {
+                        match routing_table.lookup_endpoint(&connection.peer_endpoint()) {
+                            Some(name) => return Some(ConnectionName::Routing(name)),
+                            None => {},
+                        };
+                    },
+                    None => {},
+                };
+
+                match self.relay_map {
+                    Some(ref relay_map) => {
+                        match relay_map.lookup_connection(&connection) {
+                            Some(public_id) => Some(ConnectionName::Relay(::types::Address::Client(
+                                public_id.signing_public_key().clone()))),
+                            None => None,
+                        }
+                    },
                     None => None,
                 }
-            }
-            None => None,
-        };
-
-        let relay_name = match routing_name {
-            Some(name) => Some(name),
-            None => match self.relay_map {
-                Some(relay_map) => match relay_map.lookup_connection(connection) {
-                    Some(relay) => Some(ConnectionName::Relay(::types::Address::Client(
-                        relay.public_key.clone()))),
-                    None => None,
-                },
-
-            }
-            match self.deprecate_relay_map.lookup_connection(&connection) {
-                Some(peer) => Some(peer.identity().clone()),
-                None => None,
             },
+            State::Bootstrapped | State::Relocated => {
+                match self.bootstrap_map {
+                    Some(ref bootstrap_map) => {
+                        match bootstrap_map.lookup_connection(&connection) {
+                            Some(public_id) => Some(ConnectionName::Bootstrap(public_id.name())),
+                            None => None,
+                        }
+                    },
+                    None => None,
+                }
+            },
+            State::Disconnected | State::Terminated => None,
         }
     }
 
