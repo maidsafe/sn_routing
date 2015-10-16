@@ -369,7 +369,8 @@ function create_package {
 cd "$RootDir"
 cargo update
 cargo build --release
-strip "$RootDir/target/release/$VaultName"
+BuiltVault="$RootDir/target/release/$VaultName"
+strip "$BuiltVault"
 rm -rf "$RootDir/packages/$Platform" || true
 
 if [[ "$1" == "linux" ]]
@@ -388,5 +389,16 @@ then
 elif [[ "$1" == "osx" ]]
 then
   prepare_for_osx
+
+  # Sign the binary
+  codesign -s "Developer ID Application: MaidSafe.net Ltd (MEGSB2GXGZ)" "$BuiltVault"
+  codesign -vvv -d "$BuiltVault"
+
   create_package osxpkg
+
+  # Sign the installer
+  OsxPackage="$RootDir/packages/$Platform/$PackageName-$Version.pkg"
+  productsign --sign "Developer ID Installer: MaidSafe.net Ltd (MEGSB2GXGZ)" "$OsxPackage" "$OsxPackage.signed"
+  mv "$OsxPackage.signed" "$OsxPackage"
+  spctl -a -v --type install "$OsxPackage"
 fi
