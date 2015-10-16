@@ -60,6 +60,7 @@ mod macros;
 
 mod chunk_store;
 mod data_manager;
+mod error;
 mod maid_manager;
 mod mock_routing;
 mod pmid_manager;
