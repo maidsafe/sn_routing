@@ -284,27 +284,6 @@ impl RoutingNode {
         ignore(self.send_hello(connection, None));
     }
 
-    fn handle_new_bootstrap_connection(&mut self, connection: ::crust::Connection) {
-        debug!("New bootstrap connection on {:?}", connection);
-        if !self.core.is_node() {
-            if !self.core.add_peer(ConnectionName::Unidentified(connection.clone(), true),
-                connection.clone(), None) {
-                // only fails if relay_map is full for unidentified connections
-                error!("New bootstrap connection on {:?} failed to be labeled as unidentified",
-                    connection);
-                self.crust_service.drop_node(connection.clone());
-                return;
-            }
-        } else {
-            // if core is a full node, don't accept new bootstrap connections
-            error!("New bootstrap connection on {:?} but we are a node",
-                connection);
-            self.crust_service.drop_node(connection);
-            return;
-        }
-        ignore(self.send_hello(connection, None));
-    }
-
     /// When CRUST reports a lost connection, ensure we remove the endpoint anywhere
     fn handle_lost_connection(&mut self, connection: ::crust::Connection) {
         debug!("Lost connection on {:?}", connection);
