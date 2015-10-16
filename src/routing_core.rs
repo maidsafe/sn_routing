@@ -233,9 +233,17 @@ impl RoutingCore {
             None => None,
         };
 
-        match routing_name {
+        let relay_name = match routing_name {
             Some(name) => Some(name),
-            None => match self.deprecate_relay_map.lookup_connection(&connection) {
+            None => match self.relay_map {
+                Some(relay_map) => match relay_map.lookup_connection(connection) {
+                    Some(relay) => Some(ConnectionName::Relay(::types::Address::Client(
+                        relay.public_key.clone()))),
+                    None => None,
+                },
+
+            }
+            match self.deprecate_relay_map.lookup_connection(&connection) {
                 Some(peer) => Some(peer.identity().clone()),
                 None => None,
             },
