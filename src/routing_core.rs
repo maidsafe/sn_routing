@@ -619,7 +619,12 @@ impl RoutingCore {
     pub fn has_bootstrap_endpoints(&self) -> bool {
         // block explicitly if routing table is available
         match self.state {
-            State::Bootstrapped | State::Relocated => self.deprecate_relay_map.has_bootstrap_connections(),
+            State::Bootstrapped | State::Relocated => {
+                match self.bootstrap_map {
+                    Some(ref bootstrap_map) => bootstrap_map.identities_len() > 0usize,
+                    None => false,
+                }
+            },
             _ => false,
         }
     }
@@ -639,7 +644,10 @@ impl RoutingCore {
 
     /// Returns true if the relay map contains bootstrap connections
     pub fn has_bootstrap_connections(&self) -> bool {
-        self.deprecate_relay_map.has_bootstrap_connections()
+        match self.bootstrap_map {
+            Some(ref bootstrap_map) => bootstrap_map.identities_len() > 0usize,
+            None => false,
+        }
     }
 
     /// Returns true if a name is in range for our close group.
