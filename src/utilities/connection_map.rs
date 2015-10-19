@@ -101,8 +101,13 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
     }
 
     /// Returns the registered public id for a given identifier
-    pub fn lookup_identity(&self, identity: &V) -> Option<&::public_id::PublicId> {
-        self.connection_map.get(identity)
+    pub fn lookup_identity(&self, identity: &V)
+        -> (Option<&::public_id::PublicId>, Vec<::crust::Connection>) {
+        let public_id = self.connection_map.get(identity);
+        let connections = self.lookup_map.iter()
+            .filter_map(|(c, i)| if i == identity { Some(c.clone()) } else { None })
+            .collect::<Vec<::crust::Connection>>();
+        (public_id, connections)
     }
 
     /// Returns true if more connections are registered than the maximum allowed number of
@@ -159,7 +164,7 @@ mod test {
 
             assert!(connection_map.add_peer(connection.clone(), identity.clone(),
                 public_id.clone()));
-            let retrieved_from_identity = connection_map.lookup_identity(&identity);
+            let (retrieved_from_identity, _) = connection_map.lookup_identity(&identity);
             assert!(retrieved_from_identity.is_some());
             assert_eq!(retrieved_from_identity.unwrap(), &public_id);
             let retrieved_from_connection = connection_map.lookup_connection(&connection);
@@ -183,12 +188,12 @@ mod test {
         let connection = ::test_utils::test::random_connection();
 
         assert!(connection_map.add_peer(connection.clone(), identity.clone(), public_id.clone()));
-        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_identity(&identity).0.is_some());
         assert!(connection_map.lookup_connection(&connection).is_some());
 
         assert_eq!(connection_map.drop_connection(&connection).unwrap(), public_id);
 
-        assert!(connection_map.lookup_identity(&identity).is_none());
+        assert!(connection_map.lookup_identity(&identity).0.is_none());
         assert!(connection_map.lookup_connection(&connection).is_none());
     }
 
@@ -203,11 +208,11 @@ mod test {
         assert!(connection2 != connection1);
 
         assert!(connection_map.add_peer(connection1.clone(), identity.clone(), public_id.clone()));
-        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_identity(&identity).0.is_some());
         assert!(connection_map.lookup_connection(&connection1).is_some());
 
         assert!(connection_map.add_peer(connection2.clone(), identity.clone(), public_id.clone()));
-        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_identity(&identity).0.is_some());
         assert!(connection_map.lookup_connection(&connection2).is_some());
 
         let (opt_public_id, registered_connections) = connection_map.drop_identity(&identity);
@@ -216,7 +221,7 @@ mod test {
         assert!(registered_connections.contains(&connection1));
         assert!(registered_connections.contains(&connection2));
 
-        assert!(connection_map.lookup_identity(&identity).is_none());
+        assert!(connection_map.lookup_identity(&identity).0.is_none());
         assert!(connection_map.lookup_connection(&connection1).is_none());
         assert!(connection_map.lookup_connection(&connection2).is_none());
     }
@@ -232,22 +237,22 @@ mod test {
         assert!(connection2 != connection1);
 
         assert!(connection_map.add_peer(connection1.clone(), identity.clone(), public_id.clone()));
-        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_identity(&identity).0.is_some());
         assert!(connection_map.lookup_connection(&connection1).is_some());
 
         assert!(connection_map.add_peer(connection2.clone(), identity.clone(), public_id.clone()));
-        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_identity(&identity).0.is_some());
         assert!(connection_map.lookup_connection(&connection2).is_some());
 
         assert!(connection_map.drop_connection(&connection1).is_none());
 
-        assert!(connection_map.lookup_identity(&identity).is_some());
+        assert!(connection_map.lookup_identity(&identity).0.is_some());
         assert!(connection_map.lookup_connection(&connection1).is_none());
         assert!(connection_map.lookup_connection(&connection2).is_some());
 
         assert_eq!(connection_map.drop_connection(&connection2).unwrap(), public_id);
 
-        assert!(connection_map.lookup_identity(&identity).is_none());
+        assert!(connection_map.lookup_identity(&identity).0.is_none());
         assert!(connection_map.lookup_connection(&connection1).is_none());
         assert!(connection_map.lookup_connection(&connection2).is_none());
     }

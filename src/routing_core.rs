@@ -523,27 +523,39 @@ impl RoutingCore {
     ///     contacts, which is also not within our close group), and if the new contact will fit in
     ///     a bucket closer to our own bucket, then we add the new contact."
     pub fn check_node(&self, identity: &ConnectionName) -> bool {
-        // currently don't support double endpoints per peer,
-        // so if relay map (all but routing table peer) already has the peer,
-        // then check_node returns false.
-        match self.deprecate_relay_map.lookup_connection_name(identity) {
-            None => {}
-            Some(_) => return false,
-        };
-
         match *identity {
             ConnectionName::Routing(name) => {
+                match self.state {
+                    State::Disconnected => return false,
+                    _ => {},
+                };
                 match self.routing_table {
                     Some(ref routing_table) => routing_table.check_node(&name),
                     None => return false,
                 }
-            }
-            ConnectionName::Relay(_) => !self.deprecate_relay_map.is_full(),
+            },
+            ConnectionName::Relay(_) => {
+                match self.state {
+                    State::Disconnected => return false,
+                    _ => {},
+                };
+                match self.relay_map {
+                    Some(ref relay_map) => !relay_map.is_full(),
+                    None => return false,
+                }
+            },
             // TODO (ben 6/08/2015) up for debate, don't show interest for bootstrap connections,
-            // after we have established a routing table.
+            // after we have established a single bootstrap connection.
             ConnectionName::Bootstrap(_) => {
-                !self.deprecate_relay_map.is_full() && self.routing_table.is_none()
-            }
+                match self.state {
+                    State::Disconnected => {},
+                    _ => return false,
+                };
+                match self.bootstrap_map {
+                    Some(ref bootstrap_map) => !bootstrap_map.is_full(),
+                    None => return false,
+                }
+            },
             ConnectionName::Unidentified(_, _) => true,
         }
     }
@@ -557,21 +569,22 @@ impl RoutingCore {
     /// when the destination is in range.
     /// If resulting vector is empty there are no routing connections.
     pub fn target_connections(&self, to_authority: &Authority) -> Vec<crust::Connection> {
-        let mut target_connections : Vec<crust::Connection> = Vec::new();
         // if we can relay to the client, return that client connection
-        match *to_authority {
-            Authority::Client(_, ref client_public_key) => {
-                match self.deprecate_relay_map.lookup_connection_name(
-                    &ConnectionName::Relay(Address::Client(client_public_key.clone()))) {
-                    Some(ref client_peer) => {
-                        target_connections.push(client_peer.connection().clone());
-                        return target_connections;
+        match self.relay_map {
+            Some(ref relay_map) => {
+                match *to_authority {
+                    Authority::Client(_, ref client_public_key) => {
+                        let (_, connections) = relay_map.lookup_identity(
+                            &Relay{public_key: client_public_key.clone()});
+                        return connections;
                     }
-                    None => {}
-                }
-            }
-            _ => {}
-        };
+                    _ => {}
+                };
+            },
+            None => {},
+        }
+
+        let mut target_connections : Vec<crust::Connection> = Vec::new();
         let destination = to_authority.get_location();
         // query routing table to send it out parallel or to our close group (ourselves excluded)
         match self.routing_table {

@@ -21,11 +21,13 @@
 //! As such the relay module handles messages that need to flow in or out of the SAFE network.
 //! These messages include bootstrap actions by starting nodes or relay messages for clients.
 
+#[allow(unused)]
 const MAX_RELAY : usize = 100;
 
 /// The relay map is used to maintain a list of contacts for whom
 /// we are relaying messages, when we are ourselves connected to the network.
 /// These have to identify as Client(sign::PublicKey)
+#[allow(unused)]
 pub struct RelayMap {
     relay_map: ::std::collections::BTreeMap<::routing_core::ConnectionName, ::peer::Peer>,
     lookup_map: ::std::collections::HashMap<::crust::Connection, ::routing_core::ConnectionName>,
