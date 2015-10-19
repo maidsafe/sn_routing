@@ -220,6 +220,8 @@ impl DataManager {
         for index in 0..pmid_nodes_num {
             dest_pmids.push(self.nodes_in_table[index].clone());
         }
+        debug!("DataManager {:?} chosen {:?} as pmid_nodes for chunk {:?}",
+                self.id, dest_pmids, data_name);
         self.database.put_pmid_nodes(&data_name, dest_pmids.clone());
         match *immutable_data.get_type_tag() {
             ::routing::immutable_data::ImmutableDataType::Sacrificial => {
@@ -383,8 +385,13 @@ impl DataManager {
 
     pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
                         churn_node: &::routing::NameType) {
-        let on_going_gets = self.database.handle_churn(&self.routing,
-                churn_node, close_group.len() < self.nodes_in_table.len());
+        // If the churn_node exists in the previous DM's nodes_in_table,
+        // but not in this reported close_group, it indicates such node is leaving the group.
+        // However, it is not to say the node is offline, as it may still connected with other
+        let node_leaving = !close_group.contains(churn_node) &&
+                           self.nodes_in_table.contains(churn_node);
+        let on_going_gets = self.database.handle_churn(&self.routing, churn_node, node_leaving);
+
         for entry in on_going_gets.iter() {
             if self.failed_pmids.contains_key(&entry.0) {
                 match self.failed_pmids.get_mut(&entry.0) {
@@ -434,10 +441,12 @@ impl DataManager {
 
     fn replicate_to(&mut self, name: &::routing::NameType) -> Option<::routing::NameType> {
         let pmid_nodes = self.database.get_pmid_nodes(name);
-        if pmid_nodes.len() < 3 && pmid_nodes.len() > 0 {
+        if pmid_nodes.len() < (PARALLELISM / 2 + 1) && pmid_nodes.len() > 0 {
             Self::sort_from_target(&mut self.nodes_in_table, &name);
             for close_grp_it in self.nodes_in_table.iter() {
                 if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
+                    debug!("node {:?} replicating chunk {:?} to a new node {:?}",
+                           self.id, name, close_grp_it);
                     return Some(close_grp_it.clone());
                 }
             }

@@ -51,6 +51,8 @@ impl ::types::Refreshable for Account {
     fn merge(from_group: ::routing::NameType, responses: Vec<Account>) -> Option<Account> {
         let mut stats = Vec::<(PmidNodes, u64)>::new();
         for response in responses {
+            debug!("DataManager merging one response of chunk {:?} stored on nodes {:?}",
+                    response.name, response.data_holders);
             if response.name == from_group {
                 let push_in_vec = match stats.iter_mut()
                                              .find(|a| a.0 == response.data_holders) {
@@ -153,6 +155,7 @@ impl Database {
             }
 
             let account = Account::new((*key).clone(), (*value).clone());
+            debug!("DataManager refreshing account {:?} out to the network", account);
             let target_authority = super::Authority(account.name);
             let mut encoder = ::cbor::Encoder::from_memory();
             if encoder.encode(&[account]).is_ok() {
