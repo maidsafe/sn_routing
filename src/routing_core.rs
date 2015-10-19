@@ -21,7 +21,6 @@ use std::sync::mpsc::Sender;
 use crust;
 
 use routing_table::{RoutingTable, NodeInfo};
-use relay::RelayMap;
 use types::Address;
 use authority;
 use authority::Authority;
@@ -208,7 +207,7 @@ impl RoutingCore {
         self.routing_table = None;
         self.network_name = None;
         self.relay_map = None;
-        self.bootstrap_map = ::utilities::ConnectionMap::new();
+        self.bootstrap_map = Some(::utilities::ConnectionMap::new());
         open_connections
     }
 
