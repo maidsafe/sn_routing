@@ -474,7 +474,22 @@ impl RoutingCore {
                     }
                     None => false,
                 }
-            }
+            },
+            ConnectionName::Bootstrap(bootstrap_name) => {
+                match self.bootstrap_map {
+                    Some(ref mut bootstrap_map) => {
+                        let bootstrapped_prior = bootstrap_map.identities_len() > 0usize;
+                        let added = bootstrap_map.add_peer(connection, bootstrap_name, public_id);
+                        if !bootstrapped_prior && added && self.routing_table.is_none() {
+                            info!("Routing Client bootstrapped.");
+                            self.state = State::Bootstrapped;
+                            let _ = self.event_sender.send(Event::Bootstrapped);
+                        };
+                        added
+                    },
+                    None => false
+                }
+            },
             _ => {
                 let bootstrapped_prior = self.deprecate_relay_map.has_bootstrap_connections();
                 let is_bootstrap_connection = match identity {
