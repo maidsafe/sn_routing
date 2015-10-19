@@ -104,7 +104,6 @@ pub struct RoutingCore {
     routing_table: Option<RoutingTable>,
     bootstrap_map: Option<::utilities::ConnectionMap<::NameType>>,
     relay_map: Option<::utilities::ConnectionMap<Relay>>,
-    deprecate_relay_map: RelayMap,
     expected_connections: ::utilities::ExpirationMap<ExpectedConnection,
         Option<::crust::Connection>>,
     unknown_connections: ::utilities::ExpirationMap<::crust::Connection,
@@ -139,7 +138,6 @@ impl RoutingCore {
             routing_table: None,
             bootstrap_map: Some(::utilities::ConnectionMap::new()),
             relay_map: None,
-            deprecate_relay_map: RelayMap::new(),
             expected_connections: ::utilities::ExpirationMap::with_expiry_duration(
                 ::time::Duration::minutes(5)),
             unknown_connections: ::utilities::ExpirationMap::with_expiry_duration(
@@ -186,7 +184,19 @@ impl RoutingCore {
         if self.id.is_relocated() || !persistant {
             self.id = ::id::Id::new(); };
         self.state = State::Disconnected;
-        let mut open_connections = self.deprecate_relay_map.all_connections();
+        let mut open_connections = Vec::new();
+        let bootstrap_connections = match self.bootstrap_map {
+            Some(ref bootstrap_map) => bootstrap_map.connections(),
+            None => vec![],
+        };
+        for connection in bootstrap_connections {
+            open_connections.push(connection.clone()); };
+        let relay_connections = match self.relay_map {
+            Some(ref relay_map) => relay_map.connections(),
+            None => vec![],
+        };
+        for connection in relay_connections {
+            open_connections.push(connection.clone()); };
         // routing table should be empty in all sensible use-cases of reset() already.
         // this is merely a redundancy measure.
         let routing_connections = match self.routing_table {
@@ -194,11 +204,11 @@ impl RoutingCore {
             None => vec![],
         };
         for connection in routing_connections {
-            open_connections.push(connection.clone());
-        };
+            open_connections.push(connection.clone()); };
         self.routing_table = None;
         self.network_name = None;
-        self.deprecate_relay_map = ::relay::RelayMap::new();
+        self.relay_map = None;
+        self.bootstrap_map = ::utilities::ConnectionMap::new();
         open_connections
     }
 
