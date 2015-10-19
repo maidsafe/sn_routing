@@ -46,6 +46,7 @@ impl ::utilities::Identifiable for Relay {
 
 /// ConnectionName labels the counterparty on a connection in relation to us
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[allow(unused)]
 pub enum ConnectionName {
     Relay(Address),
     Routing(NameType),
@@ -708,8 +709,14 @@ impl RoutingCore {
     }
 
     /// Add a bootstrap connection.
-    pub fn add_bootstrap_connection(&self, _connection: ::crust::Connection) {
+    pub fn add_bootstrap_connection(&mut self, _connection: ::crust::Connection) {
         unimplemented!();
+    }
+
+    /// Add an unknown connection.
+    pub fn add_unknown_connection(&mut self, connection: ::crust::Connection)
+            -> Option<Option<::direct_messages::Hello>> {
+        self.unknown_connections.insert(connection, None)
     }
 }
 
