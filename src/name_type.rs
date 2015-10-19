@@ -40,8 +40,8 @@ impl NameType {
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
     }
-    
-    /// Return the internal array. 
+
+    /// Return the internal array.
     pub fn get_id(&self) -> [u8; NAME_TYPE_LEN] {
         self.0
     }
@@ -60,6 +60,12 @@ impl NameType {
     // Private function returning hex encoded NameType as String.
     fn get_full_id(&self) -> String {
         self.0.to_hex()
+    }
+}
+
+impl ::utilities::Identifiable for NameType {
+    fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
+        *self == public_id.name()
     }
 }
 

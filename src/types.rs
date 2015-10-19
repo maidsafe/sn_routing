@@ -69,6 +69,15 @@ pub enum Address {
     Node(::NameType),
 }
 
+impl ::utilities::Identifiable for Address {
+    fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
+        match *self {
+            Address::Client(ref public_key) => public_key == &public_id.signing_public_key(),
+            Address::Node(ref name) => name == &public_id.name(),
+        }
+    }
+}
+
 impl ::std::fmt::Debug for Address {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         match self {
