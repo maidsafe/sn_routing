@@ -405,7 +405,7 @@ impl RoutingNode {
             };
             // add the new identity, or drop the connection
             if self.core.add_peer(new_identity.clone(), connection.clone(),
-                Some(hello.public_id.clone())) {
+                hello.public_id.clone()) {
                 debug!("Added {:?} to the core on {:?}", hello_address, connection);
                 if alpha {
                     ignore(self.send_hello(connection.clone(), Some(hello_address)));

@@ -138,7 +138,7 @@ impl RoutingCore {
             state: State::Disconnected,
             network_name: None,
             routing_table: None,
-            bootstrap_map: None,
+            bootstrap_map: Some(::utilities::ConnectionMap::new()),
             relay_map: None,
             deprecate_relay_map: RelayMap::new(),
             expected_connections: ::utilities::ExpirationMap::with_expiry_duration(
@@ -406,7 +406,7 @@ impl RoutingCore {
     pub fn add_peer(&mut self,
                     identity: ConnectionName,
                     connection: crust::Connection,
-                    public_id: Option<PublicId>)
+                    public_id: PublicId)
                     -> bool {
         let endpoint = connection.peer_endpoint();
 
@@ -414,64 +414,57 @@ impl RoutingCore {
             ConnectionName::Routing(routing_name) => {
                 match self.routing_table {
                     Some(ref mut routing_table) => {
-                        match public_id {
-                            None => return false,
-                            Some(given_public_id) => {
-                                if given_public_id.name() != routing_name {
-                                    return false;
-                                }
-                                let trigger_churn = routing_table
-                                    .address_in_our_close_group_range(&routing_name);
-                                let node_info = NodeInfo::new(given_public_id,
-                                                              vec![endpoint.clone()],
-                                                              Some(connection));
-                                let routing_table_count_prior = routing_table.size();
-                                let (added, removal_node) = routing_table.add_node(node_info);
+                        if public_id.name() != routing_name { return false; };
+                        let trigger_churn = routing_table
+                            .address_in_our_close_group_range(&routing_name);
+                        let node_info = NodeInfo::new(public_id,
+                                                      vec![endpoint.clone()],
+                                                      Some(connection));
+                        let routing_table_count_prior = routing_table.size();
+                        let (added, removal_node) = routing_table.add_node(node_info);
 
-                                match removal_node {
-                                    Some(node) => {
-                                        match node.connection {
-                                            Some(connection) => {
-                                                let _ = self.action_sender.send(
-                                                    Action::DropConnections(vec![connection]));
-                                            },
-                                            None => ()
-                                        }
+                        match removal_node {
+                            Some(node) => {
+                                match node.connection {
+                                    Some(connection) => {
+                                        let _ = self.action_sender.send(
+                                            Action::DropConnections(vec![connection]));
                                     },
                                     None => ()
                                 }
-
-                                if added {
-                                    if routing_table_count_prior == 0usize {
-                                        // if we transition from zero to one routing connection
-                                        info!("Routing Node has connected.");
-                                        self.state = State::Connected;
-                                    } else if routing_table_count_prior
-                                        == ::types::GROUP_SIZE - 1usize {
-                                        info!("Routing Node has connected to {:?} nodes.",
-                                            routing_table.size());
-                                        self.state = State::GroupConnected;
-                                        let _ = self.event_sender.send(Event::Connected);
-                                    };
-                                    info!("RT({:?}) added {:?}", routing_table.size(),
-                                        routing_name); };
-                                if added && trigger_churn {
-                                    let our_close_group = routing_table.our_close_group();
-                                    let mut close_group : Vec<NameType> = our_close_group.iter()
-                                            .map(|node_info| node_info.public_id.name())
-                                            .collect::<Vec<::NameType>>();
-                                    close_group.insert(0, self.id.name());
-                                    let targets = our_close_group
-                                        .iter()
-                                        .filter_map(|node_info| node_info.connection)
-                                        .collect::<Vec<::crust::Connection>>();
-                                    let _ = self.action_sender.send(Action::Churn(
-                                        ::direct_messages::Churn{ close_group: close_group },
-                                        targets, routing_name ));
-                                };
-                                added
-                            }
+                            },
+                            None => ()
                         }
+
+                        if added {
+                            if routing_table_count_prior == 0usize {
+                                // if we transition from zero to one routing connection
+                                info!("Routing Node has connected.");
+                                self.state = State::Connected;
+                            } else if routing_table_count_prior
+                                == ::types::GROUP_SIZE - 1usize {
+                                info!("Routing Node has connected to {:?} nodes.",
+                                    routing_table.size());
+                                self.state = State::GroupConnected;
+                                let _ = self.event_sender.send(Event::Connected);
+                            };
+                            info!("RT({:?}) added {:?}", routing_table.size(),
+                                routing_name); };
+                        if added && trigger_churn {
+                            let our_close_group = routing_table.our_close_group();
+                            let mut close_group : Vec<NameType> = our_close_group.iter()
+                                    .map(|node_info| node_info.public_id.name())
+                                    .collect::<Vec<::NameType>>();
+                            close_group.insert(0, self.id.name());
+                            let targets = our_close_group
+                                .iter()
+                                .filter_map(|node_info| node_info.connection)
+                                .collect::<Vec<::crust::Connection>>();
+                            let _ = self.action_sender.send(Action::Churn(
+                                ::direct_messages::Churn{ close_group: close_group },
+                                targets, routing_name ));
+                        };
+                        added
                     }
                     None => false,
                 }
@@ -735,8 +728,7 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let routing_peer = super::ConnectionName::Routing(public_id.name());
         assert!(!routing_core.add_peer(routing_peer,
-            test::random_connection(),
-            Some(public_id)));
+            test::random_connection(), public_id));
         assert!(event_receiver.try_recv().is_err());
         assert!(action_receiver.try_recv().is_err());
 
@@ -744,8 +736,7 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let bootstrap_peer = super::ConnectionName::Bootstrap(public_id.name());
         assert!(routing_core.add_peer(bootstrap_peer,
-            test::random_connection(),
-            Some(public_id)));
+            test::random_connection(), public_id));
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::Bootstrapped));
         assert!(action_receiver.try_recv().is_err());
     }
@@ -767,7 +758,7 @@ mod test {
         let name = public_id.name();
         let connection = test::random_connection();
         let routing_peer = super::ConnectionName::Routing(public_id.name());
-        assert!(routing_core.add_peer(routing_peer, connection.clone(), Some(public_id)));
+        assert!(routing_core.add_peer(routing_peer, connection.clone(), public_id));
         assert!(event_receiver.try_recv().is_err());
         match action_receiver.try_recv() {
             Ok(::action::Action::Churn(direct_churn, targets, churn)) => {
@@ -785,8 +776,7 @@ mod test {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         let bootstrap_peer = super::ConnectionName::Bootstrap(public_id.name());
         assert!(routing_core.add_peer(bootstrap_peer,
-            test::random_connection(),
-            Some(public_id)));
+            test::random_connection(), public_id));
         assert!(event_receiver.try_recv().is_err());
         assert!(action_receiver.try_recv().is_err());
 
@@ -796,7 +786,7 @@ mod test {
             let name = public_id.name();
             let connection = test::random_connection();
             let routing_peer = super::ConnectionName::Routing(public_id.name());
-            assert!(routing_core.add_peer(routing_peer, connection.clone(), Some(public_id)));
+            assert!(routing_core.add_peer(routing_peer, connection.clone(), public_id));
             assert!(event_receiver.try_recv().is_err());
             match action_receiver.try_recv() {
                 Ok(::action::Action::Churn(direct_churn, targets, churn)) => {
@@ -815,7 +805,7 @@ mod test {
         let name = public_id.name();
         let connection = test::random_connection();
         let routing_peer = super::ConnectionName::Routing(public_id.name());
-        assert!(routing_core.add_peer(routing_peer, connection.clone(), Some(public_id)));
+        assert!(routing_core.add_peer(routing_peer, connection.clone(), public_id));
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::Connected));
         assert!(event_receiver.try_recv().is_err());
         match action_receiver.try_recv() {
