@@ -490,21 +490,15 @@ impl RoutingCore {
                     None => false
                 }
             },
-            _ => {
-                let bootstrapped_prior = self.deprecate_relay_map.has_bootstrap_connections();
-                let is_bootstrap_connection = match identity {
-                    ConnectionName::Bootstrap(_) => true,
-                    _ => false,
-                };
-                let added = self.deprecate_relay_map.add_peer(identity, connection, public_id);
-                if !bootstrapped_prior && added && is_bootstrap_connection &&
-                   self.routing_table.is_none() {
-                    info!("Routing Client bootstrapped.");
-                    self.state = State::Bootstrapped;
-                    let _ = self.event_sender.send(Event::Bootstrapped);
-                };
-                added
-            }
+            ConnectionName::Relay(::types::Address::Client(public_key)) => {
+                match self.relay_map {
+                    Some(ref mut relay_map) => {
+                        relay_map.add_peer(connection, Relay{public_key: public_key}, public_id)
+                    },
+                    None => false,
+                }
+            },
+            _ => false,
         }
     }
 
