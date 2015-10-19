@@ -664,10 +664,16 @@ impl RoutingCore {
         unimplemented!();
     }
 
+    /// Add an expected connection.
+    pub fn add_expected_connection(&mut self, expected_connection: ExpectedConnection)
+            -> Option<Option<::crust::Connection>> {
+        self.expected_connections.insert(expected_connection, None)
+    }
+
     /// Add an unknown connection.
-    pub fn add_unknown_connection(&mut self, connection: ::crust::Connection)
+    pub fn add_unknown_connection(&mut self, unknown_connection: ::crust::Connection)
             -> Option<Option<::direct_messages::Hello>> {
-        self.unknown_connections.insert(connection, None)
+        self.unknown_connections.insert(unknown_connection, None)
     }
 }
 
