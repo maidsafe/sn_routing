@@ -1,4 +1,30 @@
 # Routing - Change Log
+## [0.4.1] Updated to CRUST 0.4
+
+## [0.4.0] Updated to CRUST 0.3
+- [#711](https://github.com/maidsafe/routing/pull/711) remove unneeded state on ::connect
+- [MAID-1366](https://maidsafe.atlassian.net/browse/MAID-1366) update routing to crust 0.3 API
+- [#369](https://github.com/maidsafe/routing/pull/369) enforce LINT checks
+
+## [0.3.12]
+- [MAID-1360](https://maidsafe.atlassian.net/browse/MAID-1360) unit tests for RoutingCore
+- [MAID-1357](https://maidsafe.atlassian.net/browse/MAID-1357) unit tests for message and refresh accumulator
+- [MAID-1359](https://maidsafe.atlassian.net/browse/MAID-1359) unit tests for Relay
+- [MAID-1362](https://maidsafe.atlassian.net/browse/MAID-1362) more unit tests for StructuredData, Types and Utils
+- [MAID-1350](https://maidsafe.atlassian.net/browse/MAID-1350) introduce simple measuring tools for establishing the threshold for the accumulators
+- [MAID-1348](https://maidsafe.atlassian.net/browse/MAID-1348) ChurnNode for integration tests
+
+## [0.3.11]
+- [#699](https://github.com/maidsafe/routing/pull/699) implement debug for StructuredData
+- [#696](https://github.com/maidsafe/routing/pull/696) expose NAME_TYPE_LEN and random traits
+- [#695](https://github.com/maidsafe/routing/pull/695) correct style error in error.rs
+- [#692](https://github.com/maidsafe/routing/pull/692) add cause and event::DoRefresh for improvements to churn
+- [#691](https://github.com/maidsafe/routing/pull/691) update QA libsodium documentation
+- [#690](https://github.com/maidsafe/routing/pull/690) correct failing test
+- [MAID-1361](https://maidsafe.atlassian.net/browse/MAID-1361) unit tests for id, public_id, error, data, direct_messages
+- [MAID-1356](https://maidsafe.atlassian.net/browse/MAID-1356) unit test filter.rs
+- [MAID-1358](https://maidsafe.atlassian.net/browse/MAID-1358) unit test signed_message
+
 ## [0.3.10]
 - [#685](https://github.com/maidsafe/routing/pull/685) use latest accumulator
 

@@ -21,23 +21,27 @@ use NameType;
 use sodiumoxide::crypto;
 use std::fmt::{Debug, Formatter, Error};
 
-use messages::{RoutingMessage, Content, ExternalRequest, ExternalResponse, InternalRequest,
-               InternalResponse};
+use messages::{RoutingMessage, Content, ExternalRequest, InternalRequest};
 use types::Address;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
+/// Authority.
 pub enum Authority {
-    ClientManager(NameType),  // signed by a client and corresponding ClientName is in our range
-    NaeManager(NameType),     // we are responsible for this element
-                              // and the destination is the element
-    NodeManager(NameType),    // the destination is not the element, and we are responsible for it
-    ManagedNode(NameType),    // our name is the destination
-                              // and the message came from within our range
-    Client(NameType, crypto::sign::PublicKey),   // client can specify a location where a relay
-                                                 // will be found
+    /// Signed by a client and corresponding ClientName is in our range.
+    ClientManager(NameType),
+    /// We are responsible for this element and the destination is the element.
+    NaeManager(NameType),
+    /// The destination is not the element, and we are responsible for it.
+    NodeManager(NameType),
+    /// Our name is the destination and the message came from within our range.
+    ManagedNode(NameType),
+    /// Client can specify a location where a relay will be found.
+    Client(NameType, crypto::sign::PublicKey),
 }
 
 impl Authority {
+
+    /// Return true if group authority, otherwise false.
     pub fn is_group(&self) -> bool {
         match self {
             &Authority::ClientManager(_) => true,
@@ -48,6 +52,7 @@ impl Authority {
         }
     }
 
+    /// Return the named part of an authority.
     pub fn get_location(&self) -> &NameType {
         match self {
             &Authority::ClientManager(ref loc) => loc,
@@ -58,6 +63,7 @@ impl Authority {
         }
     }
 
+    /// Return the address of none group nodes.
     pub fn get_address(&self) -> Option<Address> {
         match self {
             &Authority::ClientManager(_) => None,
@@ -131,10 +137,10 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
         }
         Content::InternalRequest(ref request) => {
             match *request {
-                InternalRequest::Connect(ref connect_request) => None,
+                InternalRequest::Connect(_) => None,
                 InternalRequest::RequestNetworkName(ref public_id) => Some(public_id.name()),
                 InternalRequest::CacheNetworkName(ref public_id, _) => Some(public_id.name()),
-                InternalRequest::Refresh(_, _)                      => {
+                InternalRequest::Refresh(_, _, _)                      => {
                     let destination = message.destination();
                     if destination != message.source() { return None; };
                     if destination.is_group()
@@ -204,10 +210,9 @@ fn determine_authority(message: &RoutingMessage,
 mod test {
     use routing_table::{RoutingTable, NodeInfo};
     use public_id::PublicId;
-    use messages::{RoutingMessage, Content, ExternalRequest, ExternalResponse};
+    use messages::{RoutingMessage, Content, ExternalRequest};
     use id::Id;
     use test_utils::{Random, xor, test};
-    use rand::random;
     use utils::public_key_to_client_name;
     use name_type::{closer_to_target, NameType};
     use authority::Authority;
@@ -221,10 +226,10 @@ mod test {
         let mut routing_table = RoutingTable::new(&id.name());
         let mut count : usize = 0;
         loop {
-            routing_table.add_node(NodeInfo::new(
-                               PublicId::new(&Id::new()),
-                               test::random_endpoints(),
-                               Some(test::random_endpoint())));
+            let _ = routing_table.add_node(NodeInfo::new(
+                PublicId::new(&Id::new()),
+                test::random_endpoints(),
+                Some(test::random_connection())));
             count += 1;
             if count > 100 {
                 break;
@@ -332,7 +337,7 @@ mod test {
             from_authority : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone())),
+                some_bytes.clone(), Random::generate_random())),
         };
         assert_eq!(super::our_authority(&refresh_message, &routing_table),
             Some(Authority::NaeManager(nae_or_client_in_our_close_group.clone())));
@@ -342,7 +347,7 @@ mod test {
             from_authority : Authority::ClientManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone())),
+                some_bytes.clone(), Random::generate_random())),
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
         // assert that this is not a valid Refresh Authority
@@ -350,7 +355,7 @@ mod test {
             from_authority : Authority::NaeManager(closest_node_in_our_close_group.id.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone())),
+                some_bytes.clone(), Random::generate_random())),
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
     }

@@ -43,6 +43,7 @@ impl PlainData {
         self.name.clone()
     }
 
+    /// Return size of contained data.
     pub fn payload_size(&self) -> usize {
         self.value.len()
     }

@@ -22,6 +22,7 @@ use NameType;
 // Note: name field is initially same as original_name, this should be later overwritten by
 // relocated name provided by the network using assign_relocated_name method
 // TODO (ben 2015-04-01) : implement order based on name
+/// Id.
 pub struct Id {
     sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
     encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey),
@@ -29,6 +30,8 @@ pub struct Id {
 }
 
 impl Id {
+
+    /// Contruct new Id.
     pub fn new() -> Id {
 
         let sign_keys =  sodiumoxide::crypto::sign::gen_keypair();
@@ -41,18 +44,22 @@ impl Id {
     }
 
     // FIXME: We should not copy private nor public keys.
+    /// Public signing key.
     pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
         self.sign_keys.0
     }
 
+    /// Secret signing key.
     pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
         &self.sign_keys.1
     }
 
+    /// Public encryption key.
     pub fn encrypting_public_key(&self) -> crypto::box_::PublicKey {
         self.encrypt_keys.0
     }
 
+    /// Construct with given keys, (Client requirement).
     pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
                      encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey))
                      -> Id {
@@ -60,12 +67,13 @@ impl Id {
         Id { sign_keys: sign_keys, encrypt_keys: encrypt_keys, name: name }
     }
 
+    /// Original/relocated name.
     pub fn name(&self) -> NameType {
         self.name
     }
 
-    // name field is initially same as original_name, this should be later overwritten by
-    // relocated name provided by the network using this method
+    /// Name field is initially same as original_name, this should be later overwritten by relocated
+    /// name provided by the network using this method
     pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
         if self.is_relocated() || self.name == relocated_name {
             return false;
@@ -74,7 +82,7 @@ impl Id {
         return true;
     }
 
-    // checks if the name is updated to a relocated name
+    /// Checks if the name is updated to a relocated name.
     pub fn is_relocated(&self) -> bool {
         self.name != NameType::new(crypto::hash::sha512::hash(&self.sign_keys.0[..]).0)
     }
@@ -102,7 +110,6 @@ impl Id {
     #[test]
     fn is_relocated() {
         let mut id = ::id::Id::new();
-        let original_name = id.name();
 
         // is not relocated
         assert!(!id.is_relocated());

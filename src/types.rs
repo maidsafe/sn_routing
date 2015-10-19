@@ -15,12 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use sodiumoxide::crypto;
-use rand::random;
-use std::fmt::{Debug, Formatter, Error};
-
-use NameType;
-
+/// Convert a u8 array to u8 vector.
 pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
     let mut vector = Vec::new();
     for i in arr.iter() {
@@ -29,47 +24,66 @@ pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
     vector
 }
 
+/// Convert u8 vector to a fixed 64 byte size array.
 pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8; 64] {
+    assert!(vector.len() >= 64);
     let mut arr = [0u8;64];
-    for i in (0..64) {
+    for i in 0..64 {
         arr[i] = vector[i];
     }
     arr
 }
 
+/// Convert u8 vector to a fixed 32 byte size array.
 pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8; 32] {
+    assert!(vector.len() >= 32);
     let mut arr = [0u8;32];
-    for i in (0..32) {
+    for i in 0..32 {
         arr[i] = vector[i];
     }
     arr
 }
 
+/// Return a random vector of bytes of the given size.
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
     for _ in 0..size {
-        vec.push(random::<u8>());
+        vec.push(::rand::random::<u8>());
     }
     vec
 }
 
-pub static GROUP_SIZE: usize = 8;
-pub static QUORUM_SIZE: usize = 6;
-
+/// Group size.
+pub const GROUP_SIZE: usize = 8;
+/// Quorum size.
+pub const QUORUM_SIZE: usize = 5;
+/// Type definition.
 pub type Bytes = Vec<u8>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
+/// Address.
 pub enum Address {
-    Client(crypto::sign::PublicKey),
-    Node(NameType),
+    /// Is a client with supplied public key.
+    Client(::sodiumoxide::crypto::sign::PublicKey),
+    /// Is a node with given name.
+    Node(::NameType),
 }
 
-impl Debug for Address {
-    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
+impl ::utilities::Identifiable for Address {
+    fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
+        match *self {
+            Address::Client(ref public_key) => public_key == &public_id.signing_public_key(),
+            Address::Node(ref name) => name == &public_id.name(),
+        }
+    }
+}
+
+impl ::std::fmt::Debug for Address {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         match self {
             &Address::Client(ref public_key) => {
-                formatter.write_str(&format!("Client({:?})", NameType::new(
-                    crypto::hash::sha512::hash(&public_key[..]).0)))
+                formatter.write_str(&format!("Client({:?})", ::NameType::new(
+                    ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0)))
             }
             &Address::Node(ref name) => {
                 formatter.write_str(&format!("Node({:?})", name))
@@ -79,6 +93,7 @@ impl Debug for Address {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
+/// CacheOptions.
 pub struct CacheOptions {
     cache_plain_data: bool,
     cache_structured_data: bool,
@@ -97,8 +112,8 @@ impl CacheOptions {
     }
 
     /// Construct with caching optionally set.
-    pub fn with_caching(cache_plain_data: bool, cache_structured_data: bool, cache_immutable_data: bool)
-            -> CacheOptions {
+    pub fn with_caching(cache_plain_data: bool, cache_structured_data: bool,
+            cache_immutable_data: bool) -> CacheOptions {
         CacheOptions {
             cache_plain_data: cache_plain_data,
             cache_structured_data: cache_structured_data,
@@ -134,5 +149,96 @@ impl CacheOptions {
     /// Return ImmutableData caching option.
     pub fn immutable_data_caching_enabled(& self) -> bool {
         self.cache_immutable_data
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn check_conversions() {
+        let bytes: super::Bytes = super::generate_random_vec_u8(64);
+        let array = super::vector_as_u8_64_array(bytes.clone());
+        let vector = super::array_as_vector(&array);
+
+        assert_eq!(64, vector.len());
+        assert_eq!(bytes, vector);
+
+        let bytes: super::Bytes = super::generate_random_vec_u8(32);
+        let array = super::vector_as_u8_32_array(bytes.clone());
+        let vector = super::array_as_vector(&array);
+
+        assert_eq!(32, vector.len());
+        assert_eq!(bytes, vector);
+    }
+
+    #[test]
+    fn cache_options_no_caching() {
+        let cache_options = super::CacheOptions::no_caching();
+
+        assert!(!cache_options.plain_data_caching_enabled());
+        assert!(!cache_options.structured_data_caching_enabled());
+        assert!(!cache_options.immutable_data_caching_enabled());
+        assert!(!cache_options.caching_enabled());
+    }
+
+    #[test]
+    fn cache_options_with_caching() {
+        let cache_options = super::CacheOptions::with_caching(true, true, true);
+
+        assert!(cache_options.plain_data_caching_enabled());
+        assert!(cache_options.structured_data_caching_enabled());
+        assert!(cache_options.immutable_data_caching_enabled());
+        assert!(cache_options.caching_enabled());
+    }
+
+    #[test]
+    fn cache_options_set_options() {
+        let mut cache_options = super::CacheOptions::with_caching(false, false, false);
+
+        assert!(!cache_options.plain_data_caching_enabled());
+        assert!(!cache_options.structured_data_caching_enabled());
+        assert!(!cache_options.immutable_data_caching_enabled());
+        assert!(!cache_options.caching_enabled());
+
+        cache_options.set_cache_options(super::CacheOptions::with_caching(true, false, false));
+
+        assert!(cache_options.plain_data_caching_enabled());
+        assert!(!cache_options.structured_data_caching_enabled());
+        assert!(!cache_options.immutable_data_caching_enabled());
+        assert!(cache_options.caching_enabled());
+
+        cache_options.set_cache_options(super::CacheOptions::with_caching(false, true, false));
+
+        assert!(!cache_options.plain_data_caching_enabled());
+        assert!(cache_options.structured_data_caching_enabled());
+        assert!(!cache_options.immutable_data_caching_enabled());
+        assert!(cache_options.caching_enabled());
+
+        cache_options.set_cache_options(super::CacheOptions::with_caching(false, false, true));
+
+        assert!(!cache_options.plain_data_caching_enabled());
+        assert!(!cache_options.structured_data_caching_enabled());
+        assert!(cache_options.immutable_data_caching_enabled());
+        assert!(cache_options.caching_enabled());
+    }
+
+    #[test]
+    fn address() {
+        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let client_address = super::Address::Client(sign_keys.0);
+
+        match client_address {
+            super::Address::Client(public_sign_key) => assert_eq!(sign_keys.0, public_sign_key),
+            _ => panic!("Unexpected error."),
+        }
+
+        let name: ::NameType = ::test_utils::Random::generate_random();
+        let node_address = super::Address::Node(name);
+
+        match node_address {
+            super::Address::Node(node_name) => assert_eq!(name, node_name),
+            _ => panic!("Unexpected error."),
+        }
     }
 }

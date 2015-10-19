@@ -20,17 +20,14 @@ use sodiumoxide;
 use std::sync::mpsc;
 use std::thread::spawn;
 
-use id::Id;
 use action::Action;
 use event::Event;
 use messages::SignedToken;
 use routing_node::RoutingNode;
-use NameType;
 use data::{Data, DataRequest};
 use types::{Bytes, CacheOptions};
 use error::{RoutingError, ResponseError};
 use authority::Authority;
-use sodiumoxide::crypto;
 use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
 
 type RoutingResult = Result<(), RoutingError>;
@@ -54,17 +51,14 @@ impl Routing {
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
         // start the handler for routing without a restriction to become a full node
-        let mut routing_node = RoutingNode::new(action_sender.clone(),
-                                                action_receiver,
-                                                event_sender,
-                                                false,
-                                                None);
+        let mut routing_node =
+            RoutingNode::new(action_sender.clone(), action_receiver, event_sender, false, None);
 
-        spawn(move || {
-                       debug!("started routing run()");
-                       routing_node.run();
-                       debug!("Routing node terminated running.");
-                   });
+        let _ = spawn(move || {
+            debug!("Started routing run().");
+            routing_node.run();
+            debug!("Routing node terminated running.");
+        });
 
         Routing { action_sender: action_sender }
     }
@@ -151,13 +145,14 @@ impl Routing {
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content. If the authority provided (our_authority) is not a group, the request for refresh will be dropped.
-    pub fn refresh_request(&self, type_tag: u64, our_authority: Authority, content: Bytes) {
+    pub fn refresh_request(&self, type_tag: u64, our_authority: Authority, content: Bytes,
+        cause: ::NameType) {
         if !our_authority.is_group() {
             error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
                 type_tag, our_authority);
             return; };
         let _ = self.action_sender.send(Action::SendContent(our_authority.clone(), our_authority,
-            Content::InternalRequest(InternalRequest::Refresh(type_tag, content))));
+            Content::InternalRequest(InternalRequest::Refresh(type_tag, content, cause))));
     }
 
     /// Dynamically enable/disable caching for Data types.
@@ -202,9 +197,9 @@ impl Routing {
 
 //     #[test]
 //     fn unit_client_put_get() {
-//         let _ = RoutingNetwork::new(10u32);
+//         // let _ = RoutingNetwork::new(10u32);
+//         debug!("Starting client");
 //         let mut client = ::test_utils::client::Client::new();
-
 //         ::std::thread::sleep_ms(2000);
 
 //         let key = ::std::string::String::from("key");
@@ -213,8 +208,8 @@ impl Routing {
 //         let data = ::utils::encode(&(key, value)).unwrap();
 //         let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
 
+//         debug!("Putting data {:?}", data);
 //         client.put(data.clone());
-
 //         ::std::thread::sleep_ms(5000);
 
 //         let recovered_data = match client.get(::data::DataRequest::PlainData(name)) {
@@ -222,6 +217,7 @@ impl Routing {
 //             None => panic!("Failed to recover stored data: {}.", name),
 //         };
 
+//         debug!("Recovered data {:?}", recovered_data);
 //         assert_eq!(recovered_data, data);
 //     }
 // }

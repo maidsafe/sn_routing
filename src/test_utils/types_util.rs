@@ -21,7 +21,6 @@ mod test {
     use public_id::PublicId;
     use id::Id;
     use name_type::NameType;
-    use rand::random;
     use test_utils::random_trait::Random;
 
     impl Random for PublicId {

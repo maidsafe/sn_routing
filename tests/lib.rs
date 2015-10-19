@@ -16,6 +16,20 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// For explanation of lint checks, run `rustc -W help` or see
+// https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
+#![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
+          unknown_crate_types, warnings)]
+#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
+        private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
+        unconditional_recursion, unknown_lints, unsafe_code, unused, unused_allocation,
+        unused_attributes, unused_comparisons, unused_features, unused_parens, while_true)]
+#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+        unused_qualifications, unused_results, variant_size_differences)]
+#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+         missing_debug_implementations)]
+
 #[macro_use]
 extern crate log;
 extern crate env_logger;
@@ -60,9 +74,9 @@ fn stop_nodes(processes: &mut Vec<::std::process::Child>) {
     }
 }
 
-// fn calculate_key_name(key: &::std::string::String) -> ::routing::NameType {
-//     ::routing::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
-// }
+fn calculate_key_name(key: &::std::string::String) -> ::routing::NameType {
+    ::routing::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+}
 
 #[cfg(test)]
 mod test {
@@ -73,30 +87,31 @@ mod test {
 		super::stop_nodes(&mut nodes);
 	}
 
-    // #[test]
-    // fn client_put_get() {
-    //     let mut nodes = super::start_nodes(10u32);
-    //     let mut client = ::routing::test_utils::client::Client::new();
+    #[test]
+    #[ignore]
+    fn client_put_get() {
+        debug!("Starting client");
+        let mut client = ::routing::test_utils::client::Client::new();
+        ::std::thread::sleep_ms(2000);
 
-    //     ::std::thread::sleep_ms(5000);
+        let key = ::std::string::String::from("key");
+        let value = ::std::string::String::from("value");
+        let name = super::calculate_key_name(&key.clone());
+        let data = ::routing::utils::encode(&(key, value)).unwrap();
+        let data = ::routing::data::Data::PlainData(
+            ::routing::plain_data::PlainData::new(name.clone(), data));
 
-    //     let key = ::std::string::String::from("key");
-    //     let value = ::std::string::String::from("value");
-    //     let name = super::calculate_key_name(&key.clone());
-    //     let data = ::routing::utils::encode(&(key, value)).unwrap();
-    //     let data = ::routing::data::Data::PlainData(
-    //             ::routing::plain_data::PlainData::new(name.clone(), data));
+        debug!("Putting data {:?}", data);
+        client.put(data.clone());
 
-    //     client.put(data.clone());
+        ::std::thread::sleep_ms(5000);
 
-    //     ::std::thread::sleep_ms(5000);
+        let recovered_data = match client.get(::routing::data::DataRequest::PlainData(name)) {
+            Some(data) => data,
+            None => panic!("Failed to recover stored data: {}.", name),
+        };
 
-    //     let recovered_data = match client.get(::routing::data::DataRequest::PlainData(name)) {
-    //         Some(data) => Some(data),
-    //         None => { debug!("Failed to recover stored data: {}.", name); None },
-    //     };
-
-    //     super::stop_nodes(&mut nodes);
-    //     assert_eq!(recovered_data.unwrap(), data);
-    // }
+        debug!("Recovered data {:?}", recovered_data);
+        assert_eq!(recovered_data, data);
+    }
 }
