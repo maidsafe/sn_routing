@@ -135,6 +135,11 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
     pub fn connections(&self) -> Vec<::crust::Connection> {
         self.lookup_map.keys().map(|c| c.clone()).collect::<Vec<::crust::Connection>>()
     }
+
+    /// Return a borrow to the full lookup_map
+    pub fn lookup_map(&self) -> &::std::collections::HashMap<::crust::Connection, V> {
+        &self.lookup_map
+    }
 }
 
 #[cfg(test)]

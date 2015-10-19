@@ -1126,17 +1126,17 @@ impl RoutingNode {
             }
         }
 
-        match self.core.bootstrap_endpoints() {
-            Some(bootstrap_peers) => {
+        match self.core.bootstrap_connections() {
+            Some(bootstrap_connections) => {
                 // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
                 // the relay_name in from_authority Client(relay_name, client_public_key) is
                 // the name of the bootstrap connection we're sending it on.  Although this might
                 // open a window for attacking a node, in v0.3.* we can leave this unresolved.
-                for bootstrap_peer in bootstrap_peers {
-                    self.crust_service.send(bootstrap_peer.connection().clone(), bytes.clone());
+                for connection in bootstrap_connections {
+                    self.crust_service.send(connection.clone(), bytes.clone());
                     debug!("Sent {:?} to bootstrap connection {:?}",
                         signed_message.get_routing_message().content,
-                        bootstrap_peer.identity());
+                        connection);
                     break;
                 }
             }
@@ -1208,19 +1208,14 @@ impl RoutingNode {
     }
 
     fn get_a_bootstrap_name(&self) -> Option<NameType> {
-        match self.core.bootstrap_endpoints() {
-            Some(bootstrap_peers) => {
-                // TODO (ben 13/08/2015) for now just take the first bootstrap peer as our relay
-                match bootstrap_peers.first() {
-                    Some(bootstrap_peer) => {
-                        match *bootstrap_peer.identity() {
-                            ConnectionName::Bootstrap(bootstrap_name) => Some(bootstrap_name),
-                            _ => None,
-                        }
-                    }
+        match self.core.bootstrap_names() {
+            Some(bootstrap_names) => {
+                // TODO (ben 13/08/2015) for now just take the first bootstrap name as our relay
+                match bootstrap_names.first() {
+                    Some(bootstrap_name) => Some(bootstrap_name.clone()),
                     None => None,
                 }
-            }
+            },
             None => None,
         }
     }

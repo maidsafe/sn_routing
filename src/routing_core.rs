@@ -28,7 +28,6 @@ use authority::Authority;
 use id::Id;
 use public_id::PublicId;
 use NameType;
-use peer::Peer;
 use action::Action;
 use event::Event;
 use messages::RoutingMessage;
@@ -601,13 +600,31 @@ impl RoutingCore {
         target_connections
     }
 
-    /// Returns the available Boostrap connections as Peers. If we are a connected node, then access
-    /// to the bootstrap connections will be blocked, and an empty vector is returned.
-    pub fn bootstrap_endpoints(&self) -> Option<Vec<Peer>> {
+    /// Returns the available Boostrap connections as connections. If we are a connected node,
+    /// then access to the bootstrap connections will be blocked, and None is returned.
+    pub fn bootstrap_connections(&self) -> Option<Vec<::crust::Connection>> {
         // block explicitly if we are a connected node
         match self.state {
             State::Bootstrapped | State::Relocated => {
-                Some(self.deprecate_relay_map.bootstrap_connections())
+                match self.bootstrap_map {
+                    Some(ref bootstrap_map) => Some(bootstrap_map.connections()),
+                    None => None,
+                }
+            },
+            _ => None,
+        }
+    }
+
+    /// Returns the available Boostrap connections as names. If we are a connected node,
+    /// then access to the bootstrap names will be blocked, and None is returned.
+    pub fn bootstrap_names(&self) -> Option<Vec<::NameType>> {
+        // block explicitly if we are a connected node
+        match self.state {
+            State::Bootstrapped | State::Relocated => {
+                match self.bootstrap_map {
+                    Some(ref bootstrap_map) => Some(bootstrap_map.identities()),
+                    None => None,
+                }
             },
             _ => None,
         }
