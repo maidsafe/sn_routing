@@ -1,6 +1,6 @@
 env:
   global:
-    - secure: "Kh4TbgJ7jQdL+dPOuNmPIWZfQJL6zDzc0clGIVQP3oP5yDt0qcxUziSxTzRmwoGDRdWDTr+TjdzUaRprfkGpwHsNBKcL90G8GcoBEyevtrzCCtBDUJJrtABaDAJCqa7Rl29d9UNXu01Cnpfskhxv6miwHOuQfzfFKe2OW+RwTy0="
+    - secure: M/HmbF8k9maPj0JbbreweB/2cff+Khw+mU9HRHVB+K3LDjOuMRjqM4K5SegbEBTa04CIP59h40wWl3Z0OLW3Co/BqTBe6UiUfyPvM2rBdkm3BJcAbw2dJWR5wUv2635XgKJOz2hEtg63nAdO0L4zeyKrAoxUljGvKQksLlehBV8=
     - LibSodiumVersion=1.0.3
     - ElfUtilsVersion=0.163
     - Features=use-mock-routing
