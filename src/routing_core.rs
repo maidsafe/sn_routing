@@ -336,7 +336,7 @@ impl RoutingCore {
                             = bootstrap_map.drop_identity(&name);
                         if !connections_to_drop.is_empty() {
                             match self.action_sender.send(
-                            Action::DropConnections(connections_to_drop)) {
+                                Action::DropConnections(connections_to_drop)) {
                                 Ok(()) => {},
                                 Err(_) => {
                                     error!("Action receiver in RoutingNode disconnected. \
@@ -361,7 +361,24 @@ impl RoutingCore {
                 };
             },
             ConnectionName::Relay(::types::Address::Client(public_key)) => {
-
+                match self.relay_map {
+                    Some(ref mut relay_map) => {
+                        let (_dropped_public_id, connections_to_drop)
+                            = relay_map.drop_identity(&Relay{public_key: public_key});
+                        if !connections_to_drop.is_empty() {
+                            match self.action_sender.send(
+                                Action::DropConnections(connections_to_drop)) {
+                                Ok(()) => {},
+                                Err(_) => {
+                                    error!("Action receiver in RoutingNode disconnected. \
+                                        Terminating from core.");
+                                    self.state = State::Terminated;
+                                },
+                            };
+                        };
+                    },
+                    None => {},
+                };
             },
             _ => {
 
