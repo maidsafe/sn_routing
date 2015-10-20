@@ -195,7 +195,7 @@ impl RoutingNode {
                 }
                 Ok(::crust::Event::BootstrapFinished) => {
                     match self.core.state() {
-                        State::Disconnected => {
+                        &::routing_core::State::Disconnected => {
                             self.reset();
                             ::std::thread::sleep_ms(100);
                             self.crust_service.bootstrap();
