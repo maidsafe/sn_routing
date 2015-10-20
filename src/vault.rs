@@ -666,7 +666,7 @@ mod test {
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         let _ = waiting_for_hits(&vault_notifiers,
                                  3,
-                                 ::data_manager::PARALLELISM,
+                                 ::data_manager::REPLICANTS,
                                  ::time::Duration::minutes(3));
         println!("network_put_get_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
@@ -733,7 +733,7 @@ mod test {
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         let pmid_nodes = waiting_for_hits(&vault_notifiers,
                                           3,
-                                          ::data_manager::PARALLELISM,
+                                          ::data_manager::REPLICANTS,
                                           ::time::Duration::minutes(3));
 
         println!("network_churn_down_immutable_data_test dropping a pmid_node");
@@ -756,7 +756,7 @@ mod test {
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         let _ = waiting_for_hits(&vault_notifiers,
                                  3,
-                                 ::data_manager::PARALLELISM,
+                                 ::data_manager::REPLICANTS,
                                  ::time::Duration::minutes(3));
 
         println!("network_churn_up_immutable_data_test starting new vault");
@@ -790,7 +790,7 @@ mod test {
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         let pmid_nodes = waiting_for_hits(&vault_notifiers,
                                           3,
-                                          ::data_manager::PARALLELISM,
+                                          ::data_manager::REPLICANTS,
                                           ::time::Duration::minutes(3));
 
         println!("network_churn_down_immutable_data_test dropping the first pmid_node");

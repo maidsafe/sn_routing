@@ -242,7 +242,7 @@ impl MockRoutingImpl {
         let _ = ::std::thread::spawn(move || {
             ::std::thread::sleep_ms(delay_ms);
             let mut refresh_contents = vec![content.clone()];
-            for _ in 2..::data_manager::PARALLELISM {
+            for _ in 2..::data_manager::REPLICANTS {
                 refresh_contents.push(content.clone());
             }
             let _ = cloned_sender.send(::routing::event::Event::Refresh(type_tag,

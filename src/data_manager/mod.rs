@@ -19,7 +19,8 @@ pub use routing::Authority::NaeManager as Authority;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::DataManagerAccount as u64;
 pub const STATS_TAG: u64 = ::transfer_tag::TransferTag::DataManagerStats as u64;
-pub const PARALLELISM: usize = 4;
+pub const REPLICANTS: usize = 4;
+pub const MIN_REPLICANTS: usize = 3;
 
 mod database;
 
@@ -215,7 +216,7 @@ impl DataManager {
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
         Self::sort_from_target(&mut self.nodes_in_table, &data_name);
-        let pmid_nodes_num = ::std::cmp::min(self.nodes_in_table.len(), PARALLELISM);
+        let pmid_nodes_num = ::std::cmp::min(self.nodes_in_table.len(), REPLICANTS);
         let mut dest_pmids: Vec<::routing::NameType> = Vec::new();
         for index in 0..pmid_nodes_num {
             dest_pmids.push(self.nodes_in_table[index].clone());
@@ -441,7 +442,7 @@ impl DataManager {
 
     fn replicate_to(&mut self, name: &::routing::NameType) -> Option<::routing::NameType> {
         let pmid_nodes = self.database.get_pmid_nodes(name);
-        if pmid_nodes.len() < (PARALLELISM / 2 + 1) && pmid_nodes.len() > 0 {
+        if pmid_nodes.len() < MIN_REPLICANTS && pmid_nodes.len() > 0 {
             Self::sort_from_target(&mut self.nodes_in_table, &name);
             for close_grp_it in self.nodes_in_table.iter() {
                 if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
@@ -544,7 +545,7 @@ mod test {
                 data_manager.handle_put(&our_authority, &from_authority,
                                         &::routing::data::Data::ImmutableData(data.clone())));
             let put_requests = routing.put_requests_given();
-            assert_eq!(put_requests.len(), PARALLELISM);
+            assert_eq!(put_requests.len(), REPLICANTS);
             for i in 0..put_requests.len() {
                 assert_eq!(put_requests[i].our_authority, our_authority);
                 assert_eq!(put_requests[i].location,
@@ -564,7 +565,7 @@ mod test {
             assert_eq!(::utils::HANDLED,
                        data_manager.handle_get(&our_authority, &client, &request, &None));
             let get_requests = routing.get_requests_given();
-            assert_eq!(get_requests.len(), PARALLELISM);
+            assert_eq!(get_requests.len(), REPLICANTS);
             for i in 0..get_requests.len() {
                 assert_eq!(get_requests[i].our_authority, our_authority);
                 assert_eq!(get_requests[i].location,
