@@ -144,6 +144,9 @@ impl RoutingNode {
                 Ok(Action::MatchUnknownConnection(hello_message)) => {
                     self.match_unknown_connection(hello_message);
                 },
+                Ok(Action::MatchConnection(expected_connection, unknown_connection)) => {
+                    self.match_connection(expected_connection, unknown_connection);
+                },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
                     self.crust_service.bootstrap();
@@ -1016,6 +1019,23 @@ impl RoutingNode {
 
     fn match_unknown_connection(&mut self, _hello: ::direct_messages::Hello) {
         unimplemented!();
+    }
+
+    fn match_connection(&mut self,
+            expected_connection: Option<(::routing_core::ExpectedConnection,
+                                         Option<::crust::Connection>)>,
+            unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
+        match expected_connection {
+            Some((_expected_connection, _connection)) => {
+                unimplemented!();
+            },
+            None => match unknown_connection {
+                Some((_connection, _hello)) => {
+                    unimplemented!();
+                },
+                None => {}
+            }
+        }
     }
 
     // ----- Send Functions -----------------------------------------------------------------------

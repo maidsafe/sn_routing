@@ -38,6 +38,8 @@ pub enum Action {
     DropConnections(Vec<::crust::Connection>),
     MatchExpectedConnection(::crust::Connection),
     MatchUnknownConnection(::direct_messages::Hello),
+    MatchConnection(Option<(::routing_core::ExpectedConnection, Option<::crust::Connection>)>,
+                    Option<(::crust::Connection, Option<::direct_messages::Hello>)>),
     Rebootstrap,
     Terminate,
 }

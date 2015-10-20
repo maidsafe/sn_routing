@@ -776,15 +776,24 @@ impl RoutingCore {
         match unconnected_key {
             Some(key) => {
                 let _ = self.expected_connections.insert(key.clone(), Some(connection.clone()));
+                // self.action_sender.send(::action::Action::MatchConnection(
+                //     Some(key.clone(), Some(connection.clone())), None));
                 true
             },
             None => false,
         }
     }
 
-    /// Check whether the connection has been sent in a ConnectRequest/ConnectResponse.
-    pub fn match_unknown_connection(&self, _hello: ::direct_messages::Hello) -> bool {
-        unimplemented!();
+    /// Check whether the connection has been made.
+    pub fn match_unknown_connection(&mut self, connection: &::crust::Connection,
+            hello: &::direct_messages::Hello) -> bool {
+        if self.unknown_connections.contains_key(connection) {
+            let _ = self.unknown_connections.insert(connection.clone(), Some(hello.clone()));
+            true
+        }
+        else {
+            false
+        }
     }
 
     /// Add a bootstrap connection.
