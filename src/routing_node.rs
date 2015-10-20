@@ -194,6 +194,14 @@ impl RoutingNode {
                     self.handle_lost_connection(connection);
                 }
                 Ok(::crust::Event::BootstrapFinished) => {
+                    match self.core.state() {
+                        &::routing_core::State::Disconnected => {
+                            self.reset();
+                            ::std::thread::sleep_ms(100);
+                            self.crust_service.bootstrap();
+                        },
+                        _ => {},
+                    };
                 }
                 Ok(::crust::Event::ExternalEndpoints(external_endpoints)) => {
                     for external_endpoint in external_endpoints {
