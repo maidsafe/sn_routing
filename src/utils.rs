@@ -136,14 +136,6 @@ pub fn random_name() -> ::routing::NameType {
         ::routing::types::generate_random_vec_u8(::routing::NAME_TYPE_LEN)))
 }
 
-// #[cfg(all(test, not(feature = "use-mock-routing")))]
-// pub fn neighbouring_name(target: &::routing::NameType) -> ::routing::NameType {
-//     let mut neighbour = target.clone();
-//     neighbour.0[target.0.len() - 1] = 0u8;
-//     println!("generated neighbouring name {:?} to the target {:?}", neighbour, target);
-//     neighbour
-// }
-
 #[cfg(test)]
 mod test {
     use super::*;
