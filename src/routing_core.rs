@@ -744,7 +744,46 @@ impl RoutingCore {
     }
 
     /// Check whether the connection has been sent in a ConnectRequest/ConnectResponse.
-    pub fn match_expected_connection(&self, _connection: ::crust::Connection) -> bool {
+    pub fn match_expected_connection(&mut self, connection: &::crust::Connection) -> bool {
+        let endpoint = connection.peer_endpoint();
+        let keys = self.expected_connections.keys().filter(|&k| match k {
+            &ExpectedConnection::Request(ref connect_request) => {
+                connect_request.external_endpoints.iter().filter(|&e| *e == endpoint)
+                .collect::<Vec<_>>().len() > 0usize
+            },
+            &ExpectedConnection::Response(ref connect_response) => {
+                connect_response.external_endpoints.iter().filter(|&e| *e == endpoint)
+                .collect::<Vec<_>>().len() > 0usize
+            },
+        }).cloned().collect::<Vec<_>>();
+
+        debug_assert!(keys.len() <= 1usize);
+        let unconnected_key = match keys.first() {
+            Some(key) => {
+                match self.expected_connections.get(&key) {
+                    Some(_existing_connection) => {
+                        // If we already have a matched connection drop the new one.
+                        let _ = self.action_sender.send(::action::Action::DropConnections(
+                            vec![connection.clone()]));
+                        None
+                    },
+                    None => Some(key.clone()),
+                }
+            },
+            None => None,
+        };
+
+        match unconnected_key {
+            Some(key) => {
+                let _ = self.expected_connections.insert(key.clone(), Some(connection.clone()));
+                true
+            },
+            None => false,
+        }
+    }
+
+    /// Check whether the connection has been sent in a ConnectRequest/ConnectResponse.
+    pub fn match_unknown_connection(&self, _hello: ::direct_messages::Hello) -> bool {
         unimplemented!();
     }
 

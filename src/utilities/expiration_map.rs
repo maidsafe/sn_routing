@@ -76,6 +76,11 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
         }
     }
 
+    /// Returns a iterator of the keys.
+    pub fn keys(&self) -> ::std::collections::btree_map::Keys<K, (V, ::time::SteadyTime)> {
+        self.map.keys()
+    }
+
     /// Recover expired key-value pairs removing any such from the map.
     pub fn remove_expired(&mut self) -> Vec<(K,V)> {
         let mut expired = Vec::new();

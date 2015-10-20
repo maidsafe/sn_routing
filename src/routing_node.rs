@@ -250,7 +250,7 @@ impl RoutingNode {
             },
         };
 
-        if self.core.match_expected_connection(connection) {
+        if self.core.match_expected_connection(&connection) {
             ignore(self.send_hello(connection, None));
         } else {
             self.crust_service.drop_node(connection);
@@ -310,6 +310,11 @@ impl RoutingNode {
         self.crust_service.send(connection, bytes);
         Ok(())
     }
+
+    // fn handle_hello(&mut self, _connection: ::crust::Connection, _hello: &::direct_messages::Hello)
+    //     -> RoutingResult {
+    //         unimplemented!()
+    // }
 
     fn handle_hello(&mut self, connection: ::crust::Connection, hello: &::direct_messages::Hello)
         -> RoutingResult {
