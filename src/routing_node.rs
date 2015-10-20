@@ -977,15 +977,18 @@ impl RoutingNode {
                     },
                     None => return Err(RoutingError::BadAuthority),
                 }
-                // are we already connected (returns false), or still interested ?s
+                // Are we already connected (returns false), or still interested?
                 if !self.core.check_node(&ConnectionName::Routing(
                     connect_response.receiver_fob.name())) {
                     return Err(RoutingError::RefusedFromRoutingTable);
                 };
+
                 debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
                 self.connect(&connect_response.local_endpoints);
                 self.connect(&connect_response.external_endpoints);
                 self.connection_filter.add(connect_response.receiver_fob.name());
+                let _ = self.core.add_expected_connection(
+                    ::routing_core::ExpectedConnection::Response(connect_response));
                 Ok(())
             }
             _ => return Err(RoutingError::BadAuthority),

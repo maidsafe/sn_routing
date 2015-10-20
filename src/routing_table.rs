@@ -198,7 +198,6 @@ impl RoutingTable {
         if self.has_node(their_id) {
             return false;
         }
-        //  std::lock_guard<std::mutex> lock(mutex_);
         if self.routing_table.len() < RoutingTable::get_optimal_size() {
             return true;
         }
