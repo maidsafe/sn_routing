@@ -34,7 +34,7 @@ macro_rules! evaluate_result {
     ($result:expr) => {
         $result.unwrap_or_else(|error| {
             let message =
-                "Result evaluated to Err: \"".to_string() + &format!("{:?}", error)[..] + "\"";
+                "Result evaluated to Err: ".to_string() + &format!("{:?}", error)[..];
             let decorator_length = ::std::cmp::min(message.len() + 2, 100);
             let decorator = (0..decorator_length).map(|_| "=").collect::<String>();
             panic!("\n\n {}\n| {} |\n {}\n\n", decorator, message, decorator)
